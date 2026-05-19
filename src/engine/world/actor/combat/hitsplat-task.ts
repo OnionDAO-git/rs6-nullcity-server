@@ -1,9 +1,11 @@
 import { Task } from '@engine/task/task';
 import type { Actor } from '@engine/world/actor/actor';
 import type { Npc } from '@engine/world/actor/npc';
+import { Skill } from '@engine/world/actor/skills';
 import type { DamageType } from '@engine/world/actor/update-flags';
-import { isNpc } from '@engine/world/actor/util';
+import { isNpc, isPlayer } from '@engine/world/actor/util';
 import { animationIds } from '@engine/world/config/animation-ids';
+import { logger } from '@runejs/common';
 import { handleDeath } from './death';
 
 /**
@@ -37,6 +39,14 @@ export class HitsplatTask extends Task {
     }
 
     public execute(): void {
+        try {
+            this.executeInner();
+        } catch (err) {
+            logger.error(`HitsplatTask.execute crashed. ${(err as Error)?.stack ?? err}`);
+        }
+    }
+
+    private executeInner(): void {
         const target = this.target;
         const skills = target.skills;
 
@@ -48,6 +58,15 @@ export class HitsplatTask extends Task {
 
         const result = skills.damage(this.damage);
         const maxHp = skills.getMaxLevel('hitpoints');
+
+        // Sync the new HP level to the client UI (HP orb / stats panel).
+        // `Skills.damage` calls `setLevel` directly and does not push an
+        // updateSkill packet — without this the client UI stays at full HP
+        // even though the hitsplat displays the correct value.
+        if (isPlayer(target)) {
+            const hpValue = skills.get('hitpoints');
+            target.outgoingPackets.updateSkill(Skill.HITPOINTS, result.remaining, hpValue.exp);
+        }
 
         target.updateFlags.addDamage(this.damage, this.type, result.remaining, maxHp);
 

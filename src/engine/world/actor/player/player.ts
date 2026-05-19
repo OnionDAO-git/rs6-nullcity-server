@@ -41,6 +41,7 @@ import type { Chunk, ChunkUpdateItem } from '@engine/world/map/chunk';
 import { Position } from '@engine/world/position';
 import { MusicPlayerMode } from '@engine/world/sound/music';
 import type { QuadtreeKey } from '@engine/world/world';
+import { World } from '@engine/world/world';
 import { logger } from '@runejs/common';
 import { filestore, serverConfig } from '@server/game/game-server';
 import { Subject } from 'rxjs';
@@ -429,12 +430,27 @@ export class Player extends Actor {
     /**
      * Handle this player dying in combat.
      *
-     * Stops scheduler tasks, plays the death animation for 3 ticks, drops all
-     * carried items (inventory + equipment) as a world item owned by `attacker`,
-     * resets HP and stat-drained levels, teleports to Lumbridge spawn, and
-     * shows the canonical death chatbox message.
+     * Phase 1 of the death pipeline: cancels in-flight actions, clears the
+     * walking queue / combat target, and plays the death animation. The actual
+     * drop / teleport / hp-reset is deferred to {@link completeDeath} so the
+     * animation has time to visibly play (~3 ticks / 1.8s).
+     *
+     * Re-entry is guarded by the `dying` metadata flag — a second call (e.g. a
+     * stacked hit landing during the death-anim window) is a no-op.
      */
     public handleDeath(attacker: Actor): void {
+        // Guard against re-entry: if we're already dying, ignore further hits.
+        if (this.metadata.dying) {
+            return;
+        }
+        this.metadata.dying = true;
+
+        // NOTE: Disengaging attackers (NPCs/players currently targeting this
+        // player) is handled centrally by `combat/death.ts:disengageAttackers`,
+        // which is invoked from `handleDeath(target, attacker)` in that module
+        // — the single source of truth. We deliberately do NOT duplicate that
+        // loop here.
+
         // Cancel any in-flight actions / tasks via the legacy signal.
         try {
             this.actionsCancelled.next('death' as never);
@@ -447,9 +463,27 @@ export class Player extends Actor {
         // Death animation for ~3 ticks.
         this.playAnimation({ id: animationIds.death, delay: 0 });
 
+        // Defer the drop / teleport / hp-reset until the animation has played.
+        setTimeout(() => this.completeDeath(attacker), World.TICK_LENGTH * 3);
+    }
+
+    /**
+     * Phase 2 of the death pipeline. Drops carried items as a world item owned
+     * by `attacker` (if still active and a player), resets HP and stat-drained
+     * levels, teleports to Lumbridge spawn, and shows the canonical death
+     * chatbox message. Skipped entirely if the player logged out during the
+     * death-animation window.
+     */
+    private completeDeath(attacker: Actor): void {
+        // If the player logged out during the death anim, bail out entirely.
+        if (!this.active) {
+            return;
+        }
+
         const deathPosition = this.position.copy();
         const deathInstance = activeWorld.globalInstance;
-        const dropOwner: Player | undefined = attacker && attacker.type === 'player' ? (attacker as Player) : undefined;
+        const dropOwner: Player | undefined =
+            attacker && attacker.type === 'player' && (attacker as Player).active ? (attacker as Player) : undefined;
 
         // Drop inventory + worn equipment.
         const droppedItems: Item[] = [];
@@ -494,6 +528,14 @@ export class Player extends Actor {
         this.teleport(new Position(3222, 3219, 0));
 
         this.outgoingPackets.chatboxMessage('Oh dear, you are dead!');
+
+        // Reset any lingering death-animation frame on the client. The base
+        // Actor.stopAnimation sends id -1 (encoded as 65535) which the client
+        // decodes as a reset.
+        this.stopAnimation();
+
+        // Clear the dying flag so the player can take damage / die again later.
+        this.metadata.dying = undefined;
     }
 
     /**

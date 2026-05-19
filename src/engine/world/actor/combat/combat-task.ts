@@ -3,6 +3,9 @@ import { TaskStackType } from '@engine/task/types';
 import type { Actor } from '@engine/world/actor/actor';
 import type { Player } from '@engine/world/actor/player/player';
 import { isPlayer } from '@engine/world/actor/util';
+import { logger } from '@runejs/common';
+import type { Subscription } from 'rxjs';
+import { take } from 'rxjs/operators';
 import type { CombatStrategy } from './combat-strategy';
 import { engageRetaliation } from './retaliation';
 
@@ -26,6 +29,8 @@ import { engageRetaliation } from './retaliation';
  * attack order cancels any in-flight combat task on the same actor.
  */
 export class CombatTask extends Task {
+    private cancelSubscription?: Subscription;
+
     constructor(
         private readonly attacker: Actor,
         private readonly defender: Actor,
@@ -39,20 +44,42 @@ export class CombatTask extends Task {
         });
 
         attacker.metadata.combatTarget = defender;
+
+        // Stop combat IMMEDIATELY (next tick boundary, not next attack interval)
+        // when the attacker's actions are cancelled — e.g. because the defender
+        // died, the attacker died, or any other system fired the legacy signal.
+        // Without this subscription the in-task liveness check is delayed by up
+        // to `attackSpeedTicks` ticks.
+        this.cancelSubscription = attacker.actionsCancelled
+            .pipe(take(1))
+            .subscribe(() => this.stop());
     }
 
     /**
      * Called by {@link Task.stop} on every termination path. Clears the
      * combat-target flag so retaliation / aggression scans see this actor
-     * as idle on the next tick.
+     * as idle on the next tick, and unsubscribes from the cancel signal
+     * to avoid leaks.
      */
     public onStop(): void {
         if (this.attacker.metadata.combatTarget === this.defender) {
             this.attacker.metadata.combatTarget = undefined;
         }
+        this.cancelSubscription?.unsubscribe();
+        this.cancelSubscription = undefined;
     }
 
     public execute(): void {
+        try {
+            this.executeInner();
+        } catch (err) {
+            // Combat must NEVER kill the world tick. Log and stop this task.
+            logger.error(`CombatTask.execute crashed; stopping task. ${(err as Error)?.stack ?? err}`);
+            this.stop();
+        }
+    }
+
+    private executeInner(): void {
         const attacker = this.attacker;
         const defender = this.defender;
 

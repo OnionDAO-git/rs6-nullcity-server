@@ -54,4 +54,14 @@ export type ActorMetadata = {
      * already busy fighting.
      */
     combatTarget: Actor | undefined;
+
+    /**
+     * Whether the actor is currently in the death animation window.
+     *
+     * Set at the start of `handleDeath` to suppress re-entry / further damage
+     * cascades, and cleared once the deferred respawn logic in `completeDeath`
+     * finishes. This is the marker the death pipeline uses to gate the
+     * drop / teleport / hp-reset phase.
+     */
+    dying?: boolean;
 };

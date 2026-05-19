@@ -81,15 +81,12 @@ export class NpcSyncTask extends SyncTask<void> {
     }
 
     /**
-     * As of 2024-09-03 this has been modified to include an extra `short` if
-     * any updates are required. This extra `short` includes the `worldIndex`
-     * for this NPC, which helps the client figure out which NPC to apply the
-     * updates to.
+     * Append per-NPC update-block data the client expects, in the order the
+     * client parses fields. See `Client.getNpcPosExtended` in the rs6-client-ts
+     * sources for the canonical parse order and per-field byte encodings.
      *
-     * For the sake of efficiency, this `short` will only be added once, and it
-     * will always be added after the first updated value's data is processed.
-     *
-     * Make sure to keep your client updated so that it can handle it.
+     * HITMARK fields use the `g1_alt1` / `g1_alt3` byte transforms, so we
+     * pre-transform the values before writing.
      */
     private appendUpdateMaskData(npc: Npc, updateMaskData: ByteBuffer): void {
         const updateFlags = npc.updateFlags;
@@ -124,33 +121,42 @@ export class NpcSyncTask extends SyncTask<void> {
 
         updateMaskData.put(mask, 'BYTE');
 
-        let alreadyPutWorldIndex = false;
-        const putWorldIndex = () => {
-            if (alreadyPutWorldIndex) {
-                return;
-            }
-            updateMaskData.put(npc.worldIndex, 'SHORT');
-            alreadyPutWorldIndex = true;
-        };
+        // Field write order MUST match client `getNpcPosExtended` parse order:
+        // HITMARK (0x1), SPOTANIM (0x20), FACEENTITY (0x4), [HITMARK2 0x2 skipped],
+        // SAY (0x40), CHANGETYPE (0x80), FACESQUARE (0x8), ANIM (0x10).
 
         if (updateFlags.damage !== null) {
             const damage = updateFlags.damage;
-            updateMaskData.put(damage.damageDealt);
-            updateMaskData.put(damage.damageType.valueOf());
-            updateMaskData.put(damage.remainingHitpoints);
-            updateMaskData.put(damage.maxHitpoints);
+            // Client decodes HITMARK as:
+            //   damage      = g1_alt1()  → (byte - 128) & 0xff
+            //   damageType  = g1_alt3()  → (128 - byte) & 0xff
+            //   health      = g1_alt1()
+            //   totalHealth = g1()       → raw byte
+            updateMaskData.put((damage.damageDealt + 128) & 0xff);
+            updateMaskData.put((128 - damage.damageType.valueOf()) & 0xff);
+            updateMaskData.put((damage.remainingHitpoints + 128) & 0xff);
+            updateMaskData.put(damage.maxHitpoints & 0xff);
+        }
 
-            putWorldIndex();
+        if (updateFlags.graphics) {
+            const { id, delay = 0, height } = updateFlags.graphics;
+            // SPOTANIM id read as g2_alt3() → bytes are [(high - 128), low].
+            // Server must write [((high + 128) & 0xff), low].
+            updateMaskData.put((((id >> 8) & 0xff) + 128) & 0xff, 'BYTE');
+            updateMaskData.put(id & 0xff, 'BYTE');
+            // Info int read as g4() (big-endian, no transform).
+            updateMaskData.put((height << 16) | (delay & 0xffff), 'INT');
         }
 
         if (updateFlags.faceActor !== null) {
             const actor = updateFlags.faceActor;
 
+            let worldIndex: number;
             if (actor === 'CLEAR') {
-                // Reset faced actor
-                updateMaskData.put(65535, 'SHORT');
+                // Reset faced actor — sentinel 65535 (client checks decoded == 65535).
+                worldIndex = 65535;
             } else {
-                let worldIndex = actor.worldIndex;
+                worldIndex = actor.worldIndex;
 
                 if (isPlayer(actor)) {
                     // Client checks if index is less than 32768.
@@ -158,57 +164,62 @@ export class NpcSyncTask extends SyncTask<void> {
                     // If it isn't, it looks for a player (subtracting 32768 to find the index).
                     worldIndex += 32768 + 1;
                 }
-
-                updateMaskData.put(worldIndex, 'SHORT');
             }
 
-            putWorldIndex();
+            // FACEENTITY read as g2_alt2() → bytes are [high, (low - 128)].
+            // Server writes [high, ((low + 128) & 0xff)].
+            updateMaskData.put((worldIndex >> 8) & 0xff, 'BYTE');
+            updateMaskData.put(((worldIndex & 0xff) + 128) & 0xff, 'BYTE');
         }
 
         if (updateFlags.chatMessages.length !== 0) {
             const message = updateFlags.chatMessages[0];
 
+            // SAY read as gjstr() — terminated string. Leave putString as-is
+            // (matches existing dialogue chat path).
             if (message.message) {
                 updateMaskData.putString(message.message);
             } else {
                 updateMaskData.putString('Undefined Message');
             }
-
-            putWorldIndex();
         }
 
         if (updateFlags.appearanceUpdateRequired) {
-            updateMaskData.put(npc.id, 'SHORT');
-            putWorldIndex();
+            // CHANGETYPE read as g2_alt2() → same transform as FACEENTITY.
+            const id = npc.id;
+            updateMaskData.put((id >> 8) & 0xff, 'BYTE');
+            updateMaskData.put(((id & 0xff) + 128) & 0xff, 'BYTE');
         }
 
         if (updateFlags.facePosition) {
             const position = updateFlags.facePosition;
-            updateMaskData.put(position.x * 2 + 1, 'SHORT');
+            // FACESQUARE x read as g2_alt2() → same transform as FACEENTITY.
+            const x = position.x * 2 + 1;
+            updateMaskData.put((x >> 8) & 0xff, 'BYTE');
+            updateMaskData.put(((x & 0xff) + 128) & 0xff, 'BYTE');
+            // FACESQUARE z read as g2_alt1() → little-endian, no transform.
             updateMaskData.put(position.y * 2 + 1, 'SHORT', 'LITTLE_ENDIAN');
-            putWorldIndex();
         }
 
         if (updateFlags.animation) {
             const animation = updateFlags.animation;
 
+            let animId: number;
+            let delay: number;
             if (animation === null || animation.id === -1) {
-                // Reset animation
-                updateMaskData.put(65535, 'SHORT');
-                updateMaskData.put(0);
+                // Reset animation — sentinel 65535.
+                animId = 65535;
+                delay = 0;
             } else {
-                const delay = updateFlags.animation.delay || 0;
-                updateMaskData.put(animation.id, 'SHORT');
-                updateMaskData.put(delay);
+                animId = animation.id;
+                delay = animation.delay || 0;
             }
-            putWorldIndex();
-        }
 
-        if (updateFlags.graphics) {
-            const { id, delay = 0, height } = updateFlags.graphics;
-            updateMaskData.put(id, 'SHORT', 'LITTLE_ENDIAN');
-            updateMaskData.put((height << 16) | (delay & 0xffff), 'INT');
-            putWorldIndex();
+            // ANIM id read as g2_alt2() → [high, (low - 128)].
+            updateMaskData.put((animId >> 8) & 0xff, 'BYTE');
+            updateMaskData.put(((animId & 0xff) + 128) & 0xff, 'BYTE');
+            // ANIM delay read as g1_alt2() → (0 - byte) & 0xff.
+            updateMaskData.put((0 - delay) & 0xff, 'BYTE');
         }
     }
 }

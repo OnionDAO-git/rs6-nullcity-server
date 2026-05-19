@@ -2,6 +2,7 @@ import { findNpc } from '@engine/config/config-handler';
 import type { Actor } from '@engine/world/actor/actor';
 import type { Npc } from '@engine/world/actor/npc';
 import { DamageType } from '@engine/world/actor/update-flags';
+import { animationIds } from '@engine/world/config/animation-ids';
 import type { CombatStrategy } from './combat-strategy';
 import { defenseRoll, meleeAttackRoll, meleeMaxHit, rollAccuracy, rollDamage } from './formulas';
 
@@ -28,10 +29,11 @@ export function createNpcMeleeStrategy(npc: Npc): CombatStrategy {
 
     const attackAnim = (() => {
         const raw = npc.animations?.attack;
-        if (Array.isArray(raw)) {
-            return raw[0];
+        const resolved = Array.isArray(raw) ? raw[0] : raw;
+        if (typeof resolved === 'number' && resolved > 0) {
+            return resolved;
         }
-        return raw;
+        return animationIds.combat.punch;
     })();
 
     return {

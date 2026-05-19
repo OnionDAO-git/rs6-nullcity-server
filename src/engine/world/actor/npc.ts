@@ -128,14 +128,37 @@ export class Npc extends Actor {
         return new Promise<void>(resolve => {
             const deathPosition = defender.position;
 
-            let deathAnim: number = animationIds.death;
-            deathAnim = findNpc((defender as Npc).id).combatAnimations?.death || animationIds.death;
+            // `findNpc` throws for NPCs without a project / cache config entry.
+            // Don't let that take the world tick down — fall back to the default
+            // death animation and skip drop processing.
+            let npcDetails: NpcDetails | undefined;
+            try {
+                npcDetails = findNpc((defender as Npc).id);
+            } catch {
+                npcDetails = undefined;
+            }
+
+            const deathAnim: number = npcDetails?.combatAnimations?.death || animationIds.death;
 
             defender.playAnimation(deathAnim);
             activeWorld.playLocationSound(deathPosition, defender.instance.instanceId, soundIds.npc.human.maleDeath, 5);
-            const npcDetails = findNpc((defender as Npc).id);
 
-            if (!npcDetails.dropTable) {
+            if (!npcDetails || !npcDetails.dropTable) {
+                // No project-level drop table (e.g. cache-only NPCs like "Man").
+                // Fall back to the canonical "every humanoid drops bones" behavior
+                // so player kills still yield a world item.
+                if (isPlayer(assailant)) {
+                    const bonesItem = findItem('rs:bones');
+                    if (bonesItem) {
+                        activeWorld.globalInstance.spawnWorldItem({ itemId: bonesItem.gameId, amount: 1 }, deathPosition, {
+                            owner: assailant,
+                            expires: 300,
+                        });
+                    } else {
+                        logger.error('Unable to find fallback bones item with key: rs:bones');
+                    }
+                }
+                resolve();
                 return;
             }
 
@@ -160,6 +183,8 @@ export class Npc extends Actor {
                     });
                 });
             }
+
+            resolve();
         });
     }
 
@@ -180,7 +205,14 @@ export class Npc extends Actor {
         activeWorld.deregisterNpc(this);
 
         if (respawn) {
-            const npcDetails = findNpc(this.id);
+            let npcDetails: NpcDetails | number;
+            try {
+                npcDetails = findNpc(this.id);
+            } catch {
+                // No project / cache config — respawn using the raw game id so
+                // the world keeps churning even for stub NPCs.
+                npcDetails = this.id;
+            }
             activeWorld.scheduleNpcRespawn(new Npc(npcDetails, this.npcSpawn));
         }
     }

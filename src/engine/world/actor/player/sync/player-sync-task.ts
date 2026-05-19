@@ -145,10 +145,15 @@ export class PlayerSyncTask extends SyncTask<void> {
 
         if (updateFlags.damage !== null) {
             const damage = updateFlags.damage;
-            updateMaskData.put(damage.damageDealt);
-            updateMaskData.put(damage.damageType.valueOf());
-            updateMaskData.put(damage.remainingHitpoints);
-            updateMaskData.put(damage.maxHitpoints);
+            // Client decodes player HITMARK as:
+            //   damage      = g1_alt3()  → (128 - byte) & 0xff
+            //   damageType  = g1_alt1()  → (byte - 128) & 0xff
+            //   health      = g1_alt3()
+            //   totalHealth = g1_alt1()
+            updateMaskData.put((128 - damage.damageDealt) & 0xff);
+            updateMaskData.put((damage.damageType.valueOf() + 128) & 0xff);
+            updateMaskData.put((128 - damage.remainingHitpoints) & 0xff);
+            updateMaskData.put((damage.maxHitpoints + 128) & 0xff);
         }
 
         if (updateFlags.facePosition) {
@@ -173,8 +178,11 @@ export class PlayerSyncTask extends SyncTask<void> {
 
         if (updateFlags.faceActor !== null) {
             if (updateFlags.faceActor === 'CLEAR') {
-                // Reset faced actor
-                updateMaskData.put(65535, 'SHORT');
+                // Reset faced actor.
+                // Client reads via g2_alt2(): (high << 8) + ((low - 128) & 0xff)
+                // So to transmit 65535 (0xFFFF): high=0xff, low=(0xff + 128) & 0xff = 0x7f
+                updateMaskData.put(0xff, 'BYTE');
+                updateMaskData.put((0xff + 128) & 0xff, 'BYTE');
             } else {
                 const actor = updateFlags.faceActor;
                 let worldIndex = actor.worldIndex;
@@ -186,7 +194,9 @@ export class PlayerSyncTask extends SyncTask<void> {
                     worldIndex += 32768 + 1;
                 }
 
-                updateMaskData.put(worldIndex, 'SHORT');
+                // Client reads via g2_alt2(): (high << 8) + ((low - 128) & 0xff)
+                updateMaskData.put((worldIndex >> 8) & 0xff, 'BYTE');
+                updateMaskData.put(((worldIndex & 0xff) + 128) & 0xff, 'BYTE');
             }
         }
 
