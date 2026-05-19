@@ -109,31 +109,39 @@ own souls.
    │                    ▼                        ▼                    │
    │              PromptEnvelope            AgentAction[]             │
    │                                                                  │
-   │   per tick:                                                      │
-   │     1. ingest perception (push to history, append events to mem) │
-   │     2. update needs (decay attention, recompute pressure)        │
-   │     3. if it's a decision tick:                                  │
-   │           a. Spark.candidates(perception, needs, legacy)         │
-   │           b. assemble PromptEnvelope (soul + qmd queries + hist) │
-   │           c. LLM.completions(envelope) → {actions, memo}         │
-   │           d. enqueue actions to gateway                          │
-   │           e. write memo to memory if salient                     │
-   │           f. update legacy progress                              │
-   │     4. spend attention per action emitted                        │
-   │     5. if attention ≤ 0: submit_action {kind:'logout'} + reason  │
+   │   per tick (fast, deterministic — never blocks on inference):    │
+   │     1. ingest perception → ring + memory router (salient events) │
+   │     2. update needs, attention decay, soul-defined variables     │
+   │     3. evaluate hooks → highest-priority firing hook (if any)    │
+   │     4. branch by mode:                                           │
+   │        - hook beats current activity → interrupt + issue LLM     │
+   │        - LLM call resolved → install its plan / memo / hooks     │
+   │        - executing       → progress current plan by one step     │
+   │        - idle, no hook   → noop                                  │
+   │     5. spend attention (per action emitted, or per LLM event)    │
+   │     6. if attention ≤ 0 → graceful logout                        │
+   │                                                                   │
+   │   off-tick (async, may take seconds):                             │
+   │     LLM calls run with an AbortController; a later tick can      │
+   │     preempt an in-flight call when an urgent hook fires.         │
    └────────────────────────────────────────────────────────────────┘
 ```
 
-The game tick is ~600ms. A round-trip to a cloud LLM is typically 800–4000ms.
-Decisions therefore run on a **multi-tick cadence** (default: one decision
-every 5 ticks ≈ 3s) and use the previous-tick fallback rule from
-`residents.md §9`: while inference is in flight, the resident continues
-executing the *previous* decision's residual actions; if a tick passes with
-no decision ready, `noop` is queued.
+The game tick is ~600ms and deterministic. A round-trip to an LLM is
+typically 1–30s and *variable*. We do not put the LLM on the tick — we
+treat it as a strategic advisor consulted on events, whose output is a
+**plan** the runtime executes autonomously for many ticks. The runtime
+re-consults the LLM only when a **hook** (§8.5) fires: a deterministic
+predicate on perception or scalar state that says "this warrants
+thinking". Urgent hooks (taking damage, being addressed, trade
+requests) can **interrupt** an in-flight LLM call via AbortController
+and trigger a new one. This is the central design of Spark — see §8.
 
 Inference is parallelised across residents on the controller side. Each
 runtime owns at most one in-flight request; the host pools concurrent
-requests with a configurable cap (`maxConcurrentInferences`, default 8).
+requests with a configurable cap (`maxConcurrentInferences`, default 8),
+priority-ordered by the triggering hook so an "I got hit" call from
+one resident is not blocked behind an "I'm bored" call from another.
 
 ## 4. Files to create
 
@@ -144,11 +152,17 @@ src/controller/                              # new entry point
     controller-host.ts                       # gateway WS client + runtime pool
     resident-runtime.ts                      # one per online resident
     spark/
-        spark.ts                             # Spark framework: needs, scoring
+        spark.ts                             # Spark facade: modes, per-tick orchestration
+        modes.ts                             # idle | executing | deciding state machine
         needs.ts                             # Need types (Attention, plus stubs)
         attention.ts                         # decay curve + spend table
+        variables.ts                         # soul-defined scalar DSL evaluator
+        hooks.ts                             # Hook + HookCondition types; system hooks table
+        hook-evaluator.ts                    # per-tick hook firing + priority arbitration
+        plan.ts                              # Plan + PlanStep + AdvanceCondition types
+        plan-executor.ts                     # per-tick plan-step advance
         legacy.ts                            # 3 legacy types + progress tracker
-        candidates.ts                        # action candidate generator
+        candidates.ts                        # first-step candidate generator (hint for the LLM)
     soul/
         soul-loader.ts                       # parses Soul .md w/ frontmatter
         soul-schema.ts                       # zod schema for soul frontmatter
@@ -160,6 +174,7 @@ src/controller/                              # new entry point
         memory-store.ts                      # facade over qmd + filesystem
         memory-router.ts                     # event → which file does it go in
         memory-summariser.ts                 # periodic compaction
+        hooks-md.ts                          # read/write data/memory/<resident>/hooks.md (LLM-proposed hooks)
         templates/
             geography.md                     # template for places memory
             social.md                        # template for actor memory
@@ -173,7 +188,8 @@ src/controller/                              # new entry point
         perception-diff.ts                   # pure pairwise delta algorithm
         salience.ts                          # which events are memory-worthy
     llm/
-        llm-client.ts                        # OpenAI-compatible client
+        llm-client.ts                        # OpenAI-compatible client (AbortController-aware)
+        mailbox.ts                           # per-runtime in-flight tracking, abort + result drain
         prompt-envelope.ts                   # assembles the request body
         completion-parser.ts                 # JSON schema response, zod-validated
         budgets.ts                           # token + RPM caps
@@ -199,6 +215,7 @@ data/                                        # controller-owned, per-deploy
             skills.md                        # single own-progression file
             monsters/<npc-key>.md            # one file per known monster
             events/<YYYY-MM-DD>.md           # daily episodic log
+            hooks.md                         # LLM-proposed memory hooks (§8.5)
             INDEX.md                         # hand-written + auto-maintained
     logs/
         <resident-name>/
@@ -506,12 +523,46 @@ perception envelope and can decide whether to add subjective colour.
 
 ## 8. Spark framework
 
-Spark is the small piece of code that decides, on each decision tick,
-*what kind of choice this is*. It does not pick the action; the LLM does.
-Spark assembles the candidate set, the need pressure, and the legacy
-progress, and hands them to the prompt envelope.
+Spark is the deterministic layer between the world tick and the LLM. It
+runs every game tick; **it never calls the LLM directly**. The LLM is
+invoked only when a **hook** fires, and what it produces is a **plan**
+that the runtime executes autonomously — tick by tick — until the plan
+finishes or a higher-priority hook interrupts it.
 
-### 8.1 Needs
+This is the central asymmetry we're working with: the world tick is
+600ms and deterministic; LLM inference is 1–30s and variable. Putting
+the LLM on a fixed tick cadence is fighting the asymmetry. Treating it
+as a strategic advisor that the resident consults *on events* — and
+that the resident *interrupts* when something urgent intrudes — works
+with it.
+
+### 8.1 Modes
+
+A runtime is in exactly one of three modes at any moment:
+
+| mode        | meaning                          | per-tick behaviour                                |
+|-------------|----------------------------------|----------------------------------------------------|
+| `idle`      | no plan, no LLM call in flight   | watch hooks; emit `noop`                           |
+| `executing` | running a plan, one step at a time | advance plan; submit current step's action       |
+| `deciding`  | LLM call in flight (cancellable) | continue prior plan's tail if any; otherwise noop  |
+
+State transitions:
+
+```
+idle       ── hook fires ─────────────────────────▶ deciding
+deciding   ── LLM returns a plan ─────────────────▶ executing
+deciding   ── LLM returns no plan ────────────────▶ idle
+executing  ── plan exhausted ─────────────────────▶ idle  (plan_exhausted hook may fire next tick)
+executing  ── plan.abandonIf matches ─────────────▶ idle  (hooks re-evaluate next tick)
+executing  ── higher-priority hook fires ─────────▶ deciding (plan paused)
+deciding   ── higher-priority hook fires ─────────▶ deciding (in-flight call aborted; new one issued)
+```
+
+The tick never blocks on inference. Inference is awaited off the tick
+thread; the tick handler reads completion state if ready and otherwise
+keeps doing whatever the current mode allows.
+
+### 8.2 Needs
 
 ```ts
 export type NeedKind =
@@ -543,7 +594,7 @@ candidate list is restricted to safety-relevant actions (eat, flee, fight
 back). This prevents the LLM from emitting `say "hello friend"` while on
 fire.
 
-### 8.2 Attention — the only real resource in v1
+### 8.3 Attention — the only real resource in v1
 
 `attention.value` is a positive integer initialised to
 `soul.attentionProfile.startingAttention`. Each game tick, it decays by
@@ -564,22 +615,34 @@ Numbers are tuned so that:
 - A `standard / 5000` resident, idle, lives ~6 game-hours.
 - A `steep / 3000` resident, idle, lives ~2 game-hours.
 
-Actions also spend attention. The spend table (in `attention.ts`):
+Actions and LLM events both spend attention. The spend table (in
+`attention.ts`):
 
-| action kind            | spend |
-|------------------------|-------|
-| noop                   | 0     |
-| move_to (per tile)     | 0.2   |
-| say / whisper          | 2     |
-| interact (non-combat)  | 1     |
-| attack / cast_spell    | 3     |
-| trade_*                | 2     |
-| any decision-tick LLM call (whether or not actions emitted) | 5 |
+| event                                          | spend |
+|------------------------------------------------|-------|
+| noop                                           | 0     |
+| move_to (per tile)                             | 0.2   |
+| say / whisper                                  | 2     |
+| interact (non-combat)                          | 1     |
+| attack / cast_spell                            | 3     |
+| trade_*                                        | 2     |
+| LLM call resolved successfully                 | 5     |
+| LLM call aborted (preempted by a higher hook)  | 1     |
+| LLM call failed (parse error / network / abort by timeout) | 2 |
 
 The LLM-call cost is the dominant cost — *thinking is expensive*. This is
-intentional and meta-honest: the resource that disappears is literally the
-inference budget. A resident on `steep` decay who LLM-decides every 5 ticks
-spends ~60 attention/game-minute on thinking alone.
+intentional and meta-honest: the resource that disappears is literally
+the inference budget. Because the new model fires LLM calls on hooks
+(not on a fixed cadence), a well-planned resident that produces long,
+useful plans spends dramatically less attention than one that thrashes:
+50 ticks of activity from a single 50-step plan costs ~5 + (50 × per-step
+cost), versus the old model's ~50 attention on inference alone. Patience
+is rewarded by design.
+
+The aborted-call cost (1) makes preemption nearly-free *for the
+preempting hook* but still non-zero for the resident — a resident whose
+hooks thrash will burn attention from cancellations alone. This bounds
+hook misconfiguration.
 
 When `attention.value` hits 0 or below, the runtime:
 1. Stops issuing decisions immediately.
@@ -595,44 +658,226 @@ The save file (server-side, `data/residents/<name>.json`) is preserved.
 Future mechanics may resurrect; v1 leaves the file alone and considers the
 resident dead.
 
-### 8.3 Candidate generation
+### 8.4 Resident variables
 
-`spark.candidates(perception, needs, legacy)` returns a small set of
-*action shapes* (at most 8) the LLM is asked to choose among:
+Some hooks watch scalars that aren't universal (hp, attention) and
+aren't quite needs. Souls declare custom variables in frontmatter:
 
-1. Start from `perception.availableActions` (residents.md §8.3) — the
-   server already tells us what's legal.
-2. Filter by top need: if a need has pressure > 0.7, only actions
-   plausibly relevant to that need are kept (table-driven mapping in
-   `candidates.ts`).
-3. Score by a cheap heuristic (distance, need-relevance, legacy-relevance)
-   and keep top 8.
-4. Always include `noop` and `say` as fallback shapes so the LLM never
-   feels forced into a wrong move.
+```yaml
+variables:
+  loneliness:
+    initial: 0
+    increment_per_tick_when:
+      condition: { kind: no_event_since, eventKind: chat, ticks: 500 }
+      amount: 0.002
+    decrement_on_event:
+      kind: chat
+      from: { not_kind: hostile }
+      amount: 0.15
+    clamp: [0, 1]
+  bridge_traversal_risk:
+    initial: 0
+    increment_on_event:
+      kind: hit_taken
+      where_chunk_includes: river-lum-bridge
+      amount: 0.2
+    decay_per_tick: 0.0001
+    clamp: [0, 1]
+```
 
-The set is passed to the LLM as a JSON list in the user message. The LLM
-is **not** required to choose from it (residents.md §8.3) but is strongly
-encouraged in the system prompt to. Off-list actions are still applied if
-valid; the gateway returns `ok: false` otherwise.
+Variables are recomputed each tick by `spark/variables.ts`, a small DSL
+evaluator. They surface in the prompt envelope as a table alongside
+needs. The LLM may also propose new variables via a `proposeVariables`
+field on its response (validated, scoped to the resident, no shadowing
+of system variables).
 
-### 8.4 Decision cadence
+Variables are the substrate of soul-specific hooks: a mentor watches
+`loneliness`; an achiever watches a custom `progress_stall_ticks`; an
+endurer watches `boredom`. Without resident-defined variables, every
+soul would share the same trigger surface; with them, dispositions
+diverge.
 
-Spark also decides *when to think*. By default the runtime invokes the LLM
-every 5 ticks. It thinks earlier (next tick) if:
+### 8.5 Hooks — what triggers an LLM call
 
-- An event of kind `'hit_taken'`, `'died'`, or `'chat'` arrives with the
-  resident as target.
-- A previously-unseen actor enters perception range.
-- Legacy progress changed.
+A hook is `(condition, priority, contextHint, cooldown, interruptInflight)`.
+The runtime evaluates every hook every tick. When a hook *fires*, the
+runtime either issues a new LLM call or — if the hook's priority is
+high enough relative to the current activity — interrupts the current
+activity (a plan, or an in-flight LLM call) and issues a new call.
 
-It thinks later (skip the scheduled tick, save attention) if:
+```ts
+interface Hook {
+    id: string;                 // unique within a resident
+    priority: number;           // 0–100
+    cooldownTicks: number;      // can't re-fire within this window
+    condition: HookCondition;   // deterministic predicate
+    contextHint: string;        // injected into the prompt envelope when this hook fires
+    interruptInflight: boolean; // can this hook abort an LLM call already in flight?
+    source: 'system' | 'soul' | 'memory';
+}
 
-- All needs have pressure < 0.2 and no new perception events since last
-  decision.
-- The resident is currently executing a multi-tick action that hasn't
-  finished (e.g. walking a path of length > 1 that the LLM emitted).
+type HookCondition =
+    | { kind: 'event';        eventKind: PerceptionEvent['kind']; predicate?: string }
+    | { kind: 'scalar';       variable: string; op: '<'|'<='|'>'|'>='|'=='; value: number }
+    | { kind: 'state_change'; field: 'mode' | 'plan_exhausted' | 'in_combat' | 'new_actor' }
+    | { kind: 'compound';     any?: HookCondition[]; all?: HookCondition[] };
+```
 
-A `forceDecide()` API exists for tests.
+Three layers, loaded in order:
+
+**System hooks** — built into Spark, identical for every resident:
+
+| priority | id                       | condition                                          | interrupt? |
+|----------|--------------------------|----------------------------------------------------|------------|
+| —        | `attention_zero`         | scalar: attention ≤ 0                              | deterministic logout (no LLM) |
+| —        | `died`                   | event: died                                        | deterministic logout (no LLM) |
+| 95       | `hit_taken_critical`     | event: hit_taken AND hp/max < 0.3                  | yes        |
+| 90       | `chat_to_me`             | event: chat AND target == self                     | yes        |
+| 90       | `trade_requested`        | event: trade_requested                             | yes        |
+| 85       | `hit_taken`              | event: hit_taken AND hp/max ≥ 0.3                  | yes        |
+| 80       | `attention_critical`     | scalar: attention < startingAttention × 0.1        | yes        |
+| 75       | `new_player_in_range`    | state_change: new_actor where kind == 'player'     | no         |
+| 70       | `plan_exhausted`         | state_change: plan_exhausted                       | no         |
+| 50       | `attention_low`          | scalar: attention < startingAttention × 0.3        | no         |
+| 30       | `idle_reflection`        | mode == idle for ≥ 300 ticks                       | no         |
+
+**Soul hooks** — declared in soul frontmatter, reference soul variables.
+Priority is capped at 80 (souls cannot override system hooks that
+protect immediate safety / social affordances):
+
+```yaml
+hooks:
+  - id: feeling_lonely
+    priority: 60
+    cooldownTicks: 1000
+    condition: { kind: scalar, variable: loneliness, op: '>=', value: 0.7 }
+    contextHint: "You feel lonely. Consider seeking company."
+    interruptInflight: false
+  - id: newcomer_appeared
+    priority: 75
+    cooldownTicks: 500
+    condition:
+      kind: compound
+      all:
+        - { kind: state_change, field: new_actor }
+        - { kind: event, eventKind: arrived, predicate: "actor.kind == 'player'" }
+    contextHint: "A new face. As a mentor this matters."
+    interruptInflight: false
+```
+
+**Memory hooks** — proposed by the LLM mid-life via a `proposeHook`
+field on its response, persisted to `data/memory/<resident>/hooks.md`,
+reloaded on controller restart. Same shape, same priority cap (80).
+The LLM may retire a memory hook by id via `retireHook`. This is how a
+*learned* disposition shows up in future planning: "after being
+ambushed near the bridge, watch the bridge tile and re-plan before
+traversing it."
+
+#### 8.5.1 Firing rules and cooldown
+
+Each tick, for each hook:
+1. If cooldown is still active → ignore.
+2. If priority ≤ current activity priority → ignore (logged as
+   *shadowed* so we can tune later).
+3. Else → fire: set the cooldown timer, schedule an LLM call tagged
+   with this hook's priority and contextHint.
+
+`idle_reflection` only fires while no other hook has fired in its
+cooldown window — it is the "occasional check-in" path. Without it,
+residents in long idle stretches never re-plan; with it, they get
+periodic, low-priority reflection at controllable cost.
+
+If multiple hooks fire on the same tick, tie-break by `priority desc,
+hook id lexicographic` (deterministic). Only the winner runs; the
+others log as shadowed.
+
+#### 8.5.2 Interruption
+
+The runtime tracks the **current activity priority**:
+- `idle` → 0
+- `executing` → the priority of the hook whose plan is running
+- `deciding` → the priority of the hook whose LLM call is in flight
+
+A firing hook with `priority ≥ current + 10` AND (in `deciding` mode)
+`interruptInflight === true` interrupts:
+
+- In `deciding`: abort the in-flight fetch via AbortController, charge
+  1 attention for the cancelled call, immediately issue a new LLM
+  call for the winning hook. The aborted prompt is recorded in
+  `inference/<date>.jsonl` with a `cancelled_by: <hook id>` field.
+- In `executing`: stop emitting plan actions, transition to `deciding`,
+  issue an LLM call. The aborted plan's remaining steps are passed to
+  the prompt envelope as a `previousIntent` section so the LLM can
+  decide whether to resume (return the remaining steps as the new
+  plan) or pivot.
+
+The `+10` buffer prevents thrash. A hook firing repeatedly at the same
+priority as the current activity cannot pre-empt itself; a hook at
+priority 90 can pre-empt a plan at priority 80 but not one already at
+priority 90.
+
+### 8.6 Plans — the long-running output of an LLM call
+
+The LLM's response (§11.2) returns a `plan`. A plan is the unit of
+"long-running task": a sequence of steps that the runtime executes
+autonomously, one at a time, until completion or interruption.
+
+```ts
+export interface Plan {
+    intent: string;              // short human label; appears in INDEX.md and logs
+    triggeredByHook: string;     // hook id that produced this plan
+    priority: number;            // inherited from the hook
+    steps: PlanStep[];
+    abandonIf?: HookCondition[]; // any match → plan aborts; runtime returns to idle
+    maxTicks?: number;           // safety: if exceeded, plan ends as exhausted
+}
+
+export interface PlanStep {
+    action: AgentAction;
+    advanceWhen: AdvanceCondition;
+    onResult?: { success?: 'next'|'abort'; failure?: 'next'|'abort'|'retry' };
+}
+
+type AdvanceCondition =
+    | { kind: 'action_result_ok' }                                       // server accepted
+    | { kind: 'event_seen';    eventKind: string; predicate?: string }
+    | { kind: 'scalar';        variable: string; op: '<'|'<='|'>'|'>='|'=='; value: number }
+    | { kind: 'ticks_elapsed'; ticks: number }
+    | { kind: 'state';         predicate: string };                      // e.g. "inventory.has(shrimp) >= 4"
+```
+
+Each tick in `executing` mode, `spark/plan-executor.ts`:
+
+1. Evaluate the head step's `advanceWhen` against the latest perception
+   + scalar state.
+2. If true: pop the step. If steps remain, submit the next step's
+   action; else transition to `idle`.
+3. If false: leave the head step in place. Submit its action if not
+   already in flight server-side; otherwise no-op for this tick.
+4. Evaluate `abandonIf`. If any predicate is true, transition to `idle`
+   and log `plan_abandoned`.
+5. Decrement `maxTicks`. If zero, transition to `idle` and log
+   `plan_exhausted`.
+
+Typical advance conditions:
+- `move_to <pos>` step → `advanceWhen: { kind: 'event_seen', eventKind: 'arrived' }`
+- `attack <npc>` step → `advanceWhen: { kind: 'state', predicate: 'target.hp == 0' }`
+- "wait for HP to recover" step → `advanceWhen: { kind: 'scalar', variable: 'hp_fraction', op: '>=', value: 0.9 }`
+- "rest a tick" step → `advanceWhen: { kind: 'ticks_elapsed', ticks: 1 }`
+
+A plan replaces the old "emit up to 3 actions per LLM call" pattern.
+Each plan step submits *at most one action per tick*, matching the
+throttle a real player has. The server never sees a burst.
+
+#### 8.6.1 First-step candidates
+
+`spark.candidates(perception)` still exists, but is now an input to the
+prompt envelope rather than the only thing the LLM picks from. The
+envelope tells the LLM "here are reasonable first steps given the
+current perception"; the LLM is free to plan beyond them. For
+event-triggered hooks the candidate list is sharply narrowed (e.g. a
+`hit_taken` hook restricts candidates to fight / flee / eat), so the
+plan's first step almost always lands somewhere defensible.
 
 ## 9. Legacy goals
 
@@ -757,7 +1002,7 @@ context regardless of tick-rate config:
 ```ts
 export interface CompressorConfig {
     windowSeconds: number;     // default 10  (≈ 17 ticks @ 600ms)
-    maxRenderedTokens: number; // default 1500 — hard cap; baseline advances if exceeded
+    maxRenderedTokens: number; // default 15000 — hard cap; baseline advances if exceeded
     idleCoalesceMin: number;   // default 3   — minimum run length to coalesce
 }
 ```
@@ -939,14 +1184,22 @@ llm:
 
 The client uses `fetch` plus a small request queue per endpoint with
 `p-queue`-style concurrency control. Streaming is not used in v1 — the
-completion is small (≤600 tokens) and we need it parsed atomically.
+completion is small (≤800 tokens) and we need it parsed atomically.
+
+**Every request carries an AbortController.** The runtime stores the
+controller alongside the in-flight request id; Spark's interruption
+rule (§8.5.2) calls `controller.abort('preempted_by:' + hookId)` when
+a higher-priority hook fires. An aborted request resolves with a
+sentinel that the parser turns into `{ ok: false, cause: 'aborted',
+cancelledBy: hookId }`; no plan is installed and 1 attention is spent
+(per §8.3). Late-arriving responses from aborted requests are
+discarded by a request-id match.
 
 Retry policy: one retry on 429 or 5xx with jittered backoff (250ms +
-random 0–250ms). A second failure surfaces as a `decision_failed`
-perception-event-like entry in the runtime's log and the resident
-executes `noop` for that tick. No third retry — a remote endpoint that
-fails twice consecutively is treated as flaky and the resident pauses
-decisions for 30s.
+random 0–250ms). A second failure surfaces as `{ ok: false, cause:
+'failed' }`, the resident transitions back to `idle`, 2 attention is
+spent, and the endpoint enters a 30s pause during which all calls from
+this controller fail-fast.
 
 ### 11.2 Response shape — structured JSON
 
@@ -961,12 +1214,13 @@ Schema:
 ```jsonc
 {
   "type": "object",
-  "required": ["actions"],
+  "required": ["plan"],
   "properties": {
-    "actions": {
-      "type": "array",
-      "maxItems": 3,
-      "items": { "$ref": "#/$defs/AgentAction" }
+    "plan": {
+      "anyOf": [
+        { "$ref": "#/$defs/Plan" },          // Plan shape from §8.6
+        { "type": "null" }                    // explicit "do nothing right now"; runtime → idle
+      ]
     },
     "memo": {
       "type": "object",
@@ -980,43 +1234,82 @@ Schema:
     "indexPatch": {
       "type": "string",
       "description": "Optional. Replaces the resident's INDEX.md body."
+    },
+    "proposeHook": {
+      "type": "object",
+      "description": "Optional. Add or replace a memory hook by id.",
+      "$ref": "#/$defs/Hook"
+    },
+    "retireHook": {
+      "type": "string",
+      "description": "Optional. Id of an existing memory hook to remove."
+    },
+    "proposeVariables": {
+      "type": "array",
+      "description": "Optional. New resident variables to track.",
+      "items": { "$ref": "#/$defs/VariableDef" }
     }
   }
 }
 ```
 
-The `AgentAction` `$defs` mirrors the union in `residents.md §8.1`.
+The `AgentAction`, `Plan`, `PlanStep`, `AdvanceCondition`, `Hook`,
+`HookCondition`, and `VariableDef` `$defs` mirror the type
+declarations in §8.5 / §8.6. `Plan = null` is the LLM's way of saying
+"I considered the trigger and there's nothing to do right now"; the
+runtime accepts it, returns to `idle`, and respects the hook's
+cooldown like any other firing.
 
 ### 11.3 Prompt envelope
 
 Assembled in `prompt-envelope.ts`. Hierarchy (top to bottom):
 
 1. **System message** — fixed framework prompt (≤500 tokens), explaining:
-   the resident is an inhabitant of NullCity, what attention is and that it
-   is finite, that they should choose actions from the candidate list when
-   reasonable, the output JSON schema, and the fact that the world is
-   real-time (replies should arrive within seconds, not minutes).
-2. **Soul body** verbatim (≤2KB).
-3. **INDEX.md** verbatim (≤4KB).
-4. **Targeted memory excerpts** for new actors/places/monsters in the
+   the resident is an inhabitant of NullCity; what attention is and that
+   it is finite; that the LLM is being consulted because a *hook* fired
+   (the trigger context appears below); the output is a *plan*, not a
+   single action, and the runtime will execute it autonomously until
+   the plan finishes or another hook interrupts; the JSON schema; the
+   fact that the world is real-time (replies should arrive within
+   seconds, not minutes).
+2. **Trigger context** — the firing hook's id, priority, and
+   `contextHint`. This is what tells the LLM *why it is being asked
+   now*. Without it the LLM tends to drift into generic-helpful mode.
+3. **Previous intent** (only when interrupting an executing plan) —
+   the prior plan's `intent`, the steps completed, and the steps
+   remaining. The LLM may choose to resume by returning the remaining
+   steps as the new plan, or to pivot.
+4. **Soul body** verbatim (≤2KB).
+5. **INDEX.md** verbatim (≤4KB).
+6. **Targeted memory excerpts** for new actors/places/monsters in the
    current perception (§7.5 #2). At most 3 excerpts, ≤500 tokens each.
-5. **Reflective memory results** if a query was issued (§7.5 #3). At most
-   3 hits, ≤300 tokens each.
-6. **Recent perception history** — the `CompressedHistory` from
+7. **Reflective memory results** if a query was issued (§7.5 #3). At
+   most 3 hits, ≤300 tokens each.
+8. **Recent perception history** — the `CompressedHistory` from
    `PerceptionCompressor` (§10.4): one baseline snapshot + per-tick
    deltas + a full current-tick delta. The compressor enforces the
    per-section token cap; the envelope passes through `rendered`
    verbatim. We never put raw perception JSON here.
-7. **Current needs table** — name, value, pressure, one-line interpretation.
-8. **Legacy snapshot** — kind, progress, one-line next-step suggestion from
-   `LegacyTracker`.
-9. **Action candidates** — the Spark candidate list as JSON.
-10. **Closing instruction** — "Reply with JSON conforming to the schema.
-    At most 3 actions. Be brief in `memo`. Stay in character."
+9. **Current needs + soul variables table** — name, value, pressure
+   (for needs) or threshold-distance (for variables), one-line
+   interpretation.
+10. **Legacy snapshot** — kind, progress, one-line next-step suggestion
+    from `LegacyTracker`.
+11. **First-step candidates** — the Spark candidate list as JSON. Hint
+    only; the LLM is free to plan beyond them but is encouraged to
+    start within them.
+12. **Closing instruction** — "Reply with JSON conforming to the
+    schema. Return a `plan` (or `null` if no action is warranted). Stay
+    in character."
 
-Soft total budget per call: ~6K input tokens, 600 output. A
-`token-count.ts` estimator (tiktoken-compatible char-based) checks each
-section against its cap and truncates verbose ones.
+Soft total budget per call: ~25K input tokens, 800 output (perception
+compression alone is allowed up to 15K — see §10.4). A `token-count.ts`
+estimator (tiktoken-compatible char-based) checks each section against
+its cap and truncates verbose ones. The envelope assembler reserves
+section budgets in this priority order if total is tight: system →
+soul → INDEX.md → current-tick delta → needs/legacy/candidates → older
+deltas → targeted excerpts → reflective hits. Lower-priority sections
+shrink first.
 
 ### 11.4 Budgets
 
@@ -1024,9 +1317,9 @@ Three layers, all configurable per resident (with global defaults):
 
 | budget        | default | behaviour on exhaust                        |
 |---------------|---------|---------------------------------------------|
-| per tick      | 6500 in / 700 out tokens | reject the call, emit noop  |
-| per minute    | 20 LLM calls            | switch to IdleBrain for the rest of the minute |
-| per game-day  | 40000 in / 6000 out tokens | switch to IdleBrain for the rest of the day |
+| per tick      | 26000 in / 800 out tokens | reject the call, emit noop |
+| per minute    | 20 LLM calls             | switch to IdleBrain for the rest of the minute |
+| per game-day  | 200000 in / 8000 out tokens | switch to IdleBrain for the rest of the day |
 
 Budgets are tracked in `budgets.ts` with a rolling-window counter. Hitting
 a minute or day budget is a salient event in the resident's perception
@@ -1036,68 +1329,92 @@ things.
 
 ## 12. Decision loop in detail
 
-Pseudocode for one tick on one runtime:
+The tick handler is small and never awaits the LLM. LLM calls are
+launched fire-and-forget; their resolution lands in a per-runtime
+mailbox that the next tick consumes.
 
 ```ts
-async function onTick(perception: Perception) {
+function onTick(perception: Perception): void {
+    // (1) Ingest perception
     perceptionHistory.push(perception);
-    const events = perception.events;
-
-    // (1) Deterministic memory writes
-    for (const event of events.filter(salient)) {
-        memoryRouter.route(event);   // appends to the right file
-    }
-
-    // (2) Update needs
-    spark.tick(perception);          // decays attention, recomputes pressures
-
-    // (3) Update legacy tracker
+    spark.updateScalars(perception);              // hp, attention decay, soul variables
     legacy.tick(perception);
 
-    // (4) Decide whether to call the LLM
-    if (!spark.shouldDecideNow()) {
-        return executePendingActions();   // may emit a queued action
+    // (2) Deterministic memory writes
+    for (const event of perception.events.filter(salience.salient)) {
+        memoryRouter.route(event);
     }
 
-    // (5) Build candidates
-    const candidates = spark.candidates(perception);
-
-    // (6) Build envelope
-    const envelope = await promptEnvelope.build({
-        soul, indexMd, perception, history: perceptionHistory.last(8),
-        needs: spark.needs, legacy, candidates,
-        memoryExcerpts: await memory.relevantTo(perception),
-    });
-
-    // (7) Inference
-    const result = await llm.complete(envelope, { soul, budgets });
-    if (!result.ok) {
-        spark.spendAttention('decision_failed');
-        return executePendingActions(); // noop on failure
+    // (3) Drain LLM mailbox from prior ticks (if any)
+    if (runtime.mode === 'deciding' && llm.hasResolved()) {
+        const result = llm.takeResolved();
+        if (result.ok) {
+            if (result.memo)             memory.appendMemo(result.memo);
+            if (result.indexPatch)       memory.rewriteIndex(result.indexPatch);
+            if (result.proposeHook)      memory.upsertHook(result.proposeHook);
+            if (result.retireHook)       memory.retireHook(result.retireHook);
+            if (result.proposeVariables) soul.appendVariables(result.proposeVariables);
+            if (result.plan)             runtime.installPlan(result.plan);  // → executing
+            else                         runtime.toIdle();
+            spark.spendAttention('llm_resolved');
+        } else if (result.cause === 'aborted') {
+            spark.spendAttention('llm_aborted');
+            // mode/plan handled by whoever called abort()
+        } else {
+            spark.spendAttention('llm_failed');
+            runtime.toIdle();
+        }
     }
 
-    // (8) Apply
-    for (const action of result.actions) {
-        gateway.submit(resident, action);
-        spark.spendAttention(action.kind);
+    // (4) Evaluate hooks
+    const firing = hookEvaluator.firingThisTick(perception, spark.state);
+    const winner = firing.maxByPriority();         // null if nothing fires
+    const current = runtime.currentActivityPriority();
+
+    if (winner && winner.priority >= current + 10) {
+        // Preemption path
+        if (runtime.mode === 'deciding' && winner.interruptInflight) {
+            runtime.abortInflight(winner.id);      // AbortController.abort()
+        }
+        if (runtime.mode === 'executing') {
+            runtime.suspendPlan(winner.id);        // captures previousIntent for envelope
+        }
+        runtime.issueLLMCall(winner);              // → deciding; off-tick
+        return;
     }
-    if (result.memo) memory.appendMemo(result.memo);
-    if (result.indexPatch) memory.rewriteIndex(result.indexPatch);
 
-    spark.spendAttention('llm_call');
+    // (5) Otherwise, progress the active plan
+    if (runtime.mode === 'executing') {
+        const action = planExecutor.step(perception, spark.state);
+        if (action) {
+            gateway.submit(resident, action);
+            spark.spendAttention(action.kind);
+        }
+    }
 
-    // (9) Lifespan check
+    // (6) Lifespan
     if (spark.attention.value <= 0) {
-        await runtime.gracefulLogout('attention_exhausted');
+        runtime.gracefulLogout('attention_exhausted');
     }
 }
 ```
 
-`executePendingActions()` exists because a single LLM call can emit a
-list of up to 3 actions; only the first is submitted immediately, the
-rest are queued and submitted on subsequent ticks (one per tick), unless
-a new decision pre-empts them. This keeps the server-side perception
-state coherent with what the LLM saw.
+Three invariants worth highlighting:
+
+- **The tick never blocks on the network.** `llm.hasResolved()` is a
+  non-blocking poll on the mailbox; `llm.issueLLMCall()` fires the
+  request and returns immediately.
+- **At most one action per tick.** Even when a plan has many steps,
+  the executor submits one action per tick. This matches the throttle
+  real players have and keeps server-side perception coherent with
+  what the LLM planned against.
+- **Interruption is single-frame.** A hook firing on tick N aborts the
+  in-flight LLM call (if any), pauses the running plan (if any), and
+  fires a new LLM call — all in the same tick. The next tick's mailbox
+  is what installs the new plan, so there is a one-tick gap where the
+  resident does nothing (`noop` from the executor, since the plan is
+  paused). 600ms of latency is below the threshold where a real
+  player would notice.
 
 ## 13. ControllerHost — connecting to many residents
 
@@ -1172,12 +1489,20 @@ seeded with the soul's optional `spawnPosition` frontmatter field.
 
 ### 13.2 Sharing inference budget across runtimes
 
-The host enforces a *global* `maxConcurrentInferences`. A runtime that
-wants to decide queues a permit; if the queue would exceed cap, the
-runtime defers to next tick (and re-tries `shouldDecideNow`). This is
-strictly fairer than per-runtime concurrency because long-lived
-high-attention residents otherwise crowd out fresh ones with tight
-budgets.
+The host enforces a *global* `maxConcurrentInferences`. Each LLM call
+requests a permit tagged with the triggering hook's priority. When the
+cap is hit, lower-priority calls wait in a priority queue (higher
+first; ties FIFO).
+
+A hook firing on runtime A while runtime A already holds a permit
+applies the §8.5.2 interruption rule against A's in-flight call. A
+hook firing on runtime A while A is *queued* but not yet running can
+simply replace the queued entry — there's no in-flight call to abort,
+and the new hook's priority is what matters.
+
+This is strictly fairer than per-runtime concurrency: a thrashing
+mentor with a noisy `loneliness` hook can't starve an achiever whose
+`hit_taken_critical` just fired.
 
 ## 14. Logging
 
@@ -1259,7 +1584,47 @@ by a lint rule (`@nrwl/no-restricted-imports` or hand-rolled).
   mentor-without-mentees until attention runs out. Both are valid; we
   do not arbitrate.
 - **Memo > 1200 chars** → parser rejects (per schema). Logged. Resident
-  acts on `actions` if valid, skips memo.
+  acts on `plan` if valid, skips memo.
+- **Hook fires on the same tick the LLM call from a prior tick
+  resolves** → drain mailbox first (step 3 of §12); the runtime is now
+  `idle` or `executing`; *then* evaluate the hook against this new
+  state. This means a just-installed plan may immediately be
+  preempted, which is fine.
+- **LLM returns `plan: null`** → runtime returns to `idle`. The hook's
+  cooldown is respected (the LLM was consulted; the answer was "do
+  nothing"); the hook will not re-fire until cooldown elapses.
+- **Two hooks fire simultaneously at the same priority** → tie-break by
+  `priority desc, hook id lexicographic`. Deterministic; the loser is
+  logged as `shadowed`.
+- **Memory hooks file is corrupt or unreadable** → load only system +
+  soul hooks; warn once on startup. Resident is degraded but
+  functional.
+- **An aborted LLM call's response arrives anyway** (network timing)
+  → discarded by the mailbox's request-id check. The AbortController
+  already accounted the call as aborted; the late response is dropped
+  without affecting state.
+- **Plan step's action is rejected by the gateway** (e.g. target moved)
+  → `onResult.failure` determines behaviour (default `abort`). On
+  `abort`, plan transitions to `idle` and `plan_exhausted` may fire on
+  next tick; on `retry`, the same step is re-attempted next tick (with
+  a small backoff counter — 3 retries then forced abort).
+- **Soul-defined variable references a non-existent event kind** →
+  validation error at soul load; controller refuses to start the
+  resident. Caught at CI for shipped souls.
+- **LLM proposes a hook with priority > 80** → parser clamps to 80 and
+  logs. Souls and memory hooks are capped to keep system hooks
+  authoritative on safety/social.
+- **Hook proposed by LLM has a malformed condition** (e.g. references
+  a variable that doesn't exist) → rejected at parse time; the
+  resident's existing hooks are unchanged.
+- **`abandonIf` predicate matches on the same tick the plan was
+  installed** → plan transitions to `idle` immediately, attention
+  spent only on the LLM call. The LLM proposed a plan with an
+  impossible precondition; we log it for tuning.
+- **Idle reflection fires while the resident has plenty of attention
+  and no needs are pressing** → the LLM may legitimately return
+  `plan: null`. That's the system working: the resident considered,
+  decided nothing was warranted, and rested.
 
 ## 17. Tests
 
@@ -1380,11 +1745,22 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 - ⬜ Soul validation in CI
 
 ### Spark
+- ⬜ Runtime mode state machine: `idle` / `executing` / `deciding`
 - ⬜ `Need` type + per-need pressure functions
 - ⬜ Attention decay curves (`gentle`/`standard`/`steep`)
-- ⬜ Attention spend table
-- ⬜ `spark.candidates()` filter + score
-- ⬜ `spark.shouldDecideNow()` cadence rule
+- ⬜ Attention spend table (incl. aborted / failed LLM costs)
+- ⬜ Soul-defined variables: DSL evaluator + tick recompute
+- ⬜ `proposeVariables` LLM hook → soul variable extension
+- ⬜ `Hook` + `HookCondition` types
+- ⬜ System hooks table (priority 30–95, incl. `idle_reflection`)
+- ⬜ Soul hooks loaded from frontmatter (priority capped at 80)
+- ⬜ Memory hooks: load/upsert/retire via `hooks.md`
+- ⬜ Hook evaluator: cooldown, fire, shadowed-log, deterministic tie-break
+- ⬜ Interruption rule (`priority ≥ current + 10`, `interruptInflight` gate)
+- ⬜ Mailbox + AbortController plumbing
+- ⬜ Plan installer + `previousIntent` capture on suspend
+- ⬜ Plan executor: advance conditions (5 kinds), `abandonIf`, `maxTicks`
+- ⬜ First-step candidate hint (`candidates.ts`) — narrowed by triggering hook
 - ⬜ `gracefulLogout('attention_exhausted')` + soul `deceased` mutation
 
 ### Legacy
@@ -1420,9 +1796,14 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 ### LLM
 - ⬜ OpenAI-compatible `LLMClient` (`/v1/chat/completions`)
 - ⬜ `response_format: json_schema` w/ fallback to `json_object`
-- ⬜ `prompt-envelope.ts` 10-section assembly + per-section caps
-- ⬜ `completion-parser.ts` zod-validated AgentAction[] + memo + indexPatch
-- ⬜ Retry policy (1 retry, 30s endpoint pause on 2 failures)
+- ⬜ AbortController per request; abort propagates `cancelled_by` to log
+- ⬜ Mailbox: request-id-keyed result drain; late-arriving abort discard
+- ⬜ `prompt-envelope.ts` 12-section assembly + per-section caps
+- ⬜ Trigger-context section sourced from firing hook's `contextHint`
+- ⬜ Previous-intent section on plan interruption (remaining steps included)
+- ⬜ `completion-parser.ts` zod-validated `Plan` + memo + indexPatch + proposeHook/retireHook/proposeVariables
+- ⬜ Retry policy (1 retry on 429/5xx; 30s endpoint pause on 2 failures)
+- ⬜ Priority-ordered global concurrency queue (`maxConcurrentInferences`)
 - ⬜ Budgets: per-tick, per-minute, per-game-day
 - ⬜ `budget_exhausted` synthetic event into perception envelope
 
@@ -1436,15 +1817,23 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 - ⬜ `package.json` controller scripts + deps
 
 ### Tests
-- ⬜ Soul loader + starter soul fixtures
-- ⬜ Attention decay/spend math
+- ⬜ Soul loader + starter soul fixtures (incl. variables + hooks frontmatter)
+- ⬜ Attention decay/spend math (incl. aborted-call cost)
 - ⬜ Salience filter cases
 - ⬜ Memory router writes
-- ⬜ Envelope assembly + caps
-- ⬜ Completion parser accept/reject
+- ⬜ Variable DSL evaluator: increment, decrement, decay, clamp
+- ⬜ Hook evaluator: cooldown, shadowing, tie-break determinism
+- ⬜ Interruption: hook at priority N+10 aborts in-flight call;
+      hook at priority N is shadowed
+- ⬜ Plan executor: each `AdvanceCondition` kind; `abandonIf`;
+      `maxTicks` exhaustion; per-step retry/abort
+- ⬜ Mailbox: late-response discard after abort
+- ⬜ Envelope assembly + caps (incl. previous-intent on interruption)
+- ⬜ Completion parser accept/reject (plan/null, proposeHook clamp at 80)
 - ⬜ Legacy tracker increments
-- ⬜ Host reconcile loop
-- ⬜ E2E with stub LLM (golden action log)
+- ⬜ Host reconcile loop + priority queue under contention
+- ⬜ E2E with stub LLM (golden action log): a plan runs to completion,
+      a hook interrupts mid-plan, the resident pivots
 - ⬜ Opt-in E2E with local ollama
 
 ### Docs
