@@ -130,6 +130,11 @@ export interface WeaponInfo {
      * Defaults are picked per-bow in the ranged strategy when missing.
      */
     projectile_id?: number;
+    /**
+     * Configured attack reach in tiles. Missing values are supplied by combat
+     * strategy defaults.
+     */
+    attack_range?: number;
 }
 
 export interface ItemMetadata {

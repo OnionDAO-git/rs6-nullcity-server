@@ -5,14 +5,10 @@ import type { Player } from '@engine/world/actor/player/player';
 import { DamageType } from '@engine/world/actor/update-flags';
 import { World } from '@engine/world/world';
 import { logger } from '@runejs/common';
+import { defensiveStyleBonus } from './combat-data';
 import type { CanActivateResult, CombatStrategy } from './combat-strategy';
-import {
-    defenseRoll,
-    magicAttackRoll,
-    magicMaxHit,
-    rollAccuracy,
-    rollDamage,
-} from './formulas';
+import { magicDefenseRoll, magicAttackRoll, magicMaxHit, rollAccuracy, rollDamage } from './formulas';
+import { applyCombatModifier, resolveCombatModifiers } from './modifiers';
 
 /**
  * Number of ticks between the cast firing and the spell impacting the target.
@@ -31,14 +27,26 @@ interface ResolvedRune {
     amount: number;
 }
 
+export function providedRuneKeys(player: Player): Set<string> {
+    const equipped = player.getEquippedItem('main_hand');
+    if (!equipped) {
+        return new Set();
+    }
+    const item = findItem(equipped.itemId);
+    const provided = item?.metadata?.provided_runes;
+    return new Set(Array.isArray(provided) ? provided.filter((key): key is string => typeof key === 'string') : []);
+}
+
+export function runeCostAfterStaffSubstitution(runes: ResolvedRune[], providedRunes: ReadonlySet<string>): ResolvedRune[] {
+    return runes.filter(rune => !providedRunes.has(rune.itemKey));
+}
+
 function resolveRunes(spell: Spell): ResolvedRune[] {
     const resolved: ResolvedRune[] = [];
     for (const rune of spell.runes) {
         const item = findItem(rune.item_key);
         if (!item) {
-            logger.warn(
-                `Spell "${spell.name}" references unknown rune item_key "${rune.item_key}".`,
-            );
+            logger.warn(`Spell "${spell.name}" references unknown rune item_key "${rune.item_key}".`);
             continue;
         }
         resolved.push({ itemKey: rune.item_key, itemId: item.gameId, amount: rune.amount });
@@ -61,6 +69,10 @@ function resolveRunes(spell: Spell): ResolvedRune[] {
 export function createPlayerMagicStrategy(player: Player, spell: Spell): CombatStrategy {
     const runes = resolveRunes(spell);
 
+    const requiredRunes = (attacker: Actor): ResolvedRune[] => {
+        return runeCostAfterStaffSubstitution(runes, providedRuneKeys(attacker as Player));
+    };
+
     return {
         kind: 'magic',
         attackRange: 10,
@@ -81,7 +93,7 @@ export function createPlayerMagicStrategy(player: Player, spell: Spell): CombatS
                 return { ok: false, reason: 'You cannot cast that spell.' };
             }
 
-            for (const rune of runes) {
+            for (const rune of requiredRunes(attacker)) {
                 if (inventory.amount(rune.itemId) < rune.amount) {
                     return {
                         ok: false,
@@ -99,7 +111,7 @@ export function createPlayerMagicStrategy(player: Player, spell: Spell): CombatS
                 return false;
             }
 
-            for (const rune of runes) {
+            for (const rune of requiredRunes(attacker)) {
                 const slot = inventory.findIndex(rune.itemId);
                 if (slot < 0) {
                     return false;
@@ -126,10 +138,7 @@ export function createPlayerMagicStrategy(player: Player, spell: Spell): CombatS
                 try {
                     // eslint-disable-next-line @typescript-eslint/no-require-imports
                     const { widgets } = require('@engine/config/config-handler');
-                    player.outgoingPackets.sendUpdateAllWidgetItems(
-                        widgets.inventory,
-                        player.inventory,
-                    );
+                    player.outgoingPackets.sendUpdateAllWidgetItems(widgets.inventory, player.inventory);
                 } catch {
                     // best-effort UI refresh; combat shouldn't fail because of it.
                 }
@@ -170,17 +179,17 @@ export function createPlayerMagicStrategy(player: Player, spell: Spell): CombatS
         },
 
         rollHit(attacker: Actor, defender: Actor): { damage: number; type: DamageType } {
-            const magicLevel = attacker.skills.getLevel('magic');
+            const attackerModifiers = resolveCombatModifiers(attacker);
+            const defenderModifiers = resolveCombatModifiers(defender);
+            const magicLevel = applyCombatModifier(attacker.skills.getLevel('magic'), attackerModifiers.magic);
             const magicBonus = attacker.bonuses?.offensive?.magic ?? 0;
 
             const atk = magicAttackRoll({ magicLevel, magicBonus });
-            // v1 simplification (see SPEC §6 + this file's spec note): magic
-            // defence is treated as straight defence-level + magic defensive
-            // bonus, ignoring the 70/30 magic-level/defence-level split.
-            const def = defenseRoll({
-                defenseLevel: defender.skills.getLevel('defence'),
-                styleBonus: 0,
-                defenseBonus: defender.bonuses?.defensive?.magic ?? 0,
+            const def = magicDefenseRoll({
+                magicLevel: applyCombatModifier(defender.skills.getLevel('magic'), defenderModifiers.magic),
+                defenseLevel: applyCombatModifier(defender.skills.getLevel('defence'), defenderModifiers.defence),
+                styleBonus: defensiveStyleBonus(defender),
+                magicDefenseBonus: defender.bonuses?.defensive?.magic ?? 0,
             });
 
             const hit = rollAccuracy(atk, def);

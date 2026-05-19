@@ -1,0 +1,64 @@
+{
+    "rs:rake": {
+        "game_id": 5341,
+        "examine": "A farming tool.",
+        "tradable": true,
+        "weight": 1.36
+    },
+    "rs:seed_dibber": {
+        "game_id": 5343,
+        "examine": "Used for planting seeds.",
+        "tradable": true,
+        "weight": 0.028
+    },
+    "rs:watering_can": {
+        "game_id": 5331,
+        "examine": "This watering can is empty.",
+        "tradable": true,
+        "weight": 0.1,
+        "variations": [
+            { "suffix": "1", "game_id": 5333 },
+            { "suffix": "2", "game_id": 5334 },
+            { "suffix": "3", "game_id": 5335 },
+            { "suffix": "4", "game_id": 5336 },
+            { "suffix": "5", "game_id": 5337 },
+            { "suffix": "6", "game_id": 5338 }
+        ]
+    },
+    "rs:compost": {
+        "game_id": 6032,
+        "examine": "A bucket of compost.",
+        "tradable": true,
+        "weight": 1
+    },
+    "rs:potato_seed": {
+        "game_id": 7548,
+        "examine": "A potato seed - plant in an allotment.",
+        "tradable": true,
+        "weight": 0
+    },
+    "rs:onion_seed": {
+        "game_id": 7550,
+        "examine": "An onion seed - plant in an allotment.",
+        "tradable": true,
+        "weight": 0
+    },
+    "rs:potatoes": {
+        "game_id": 1942,
+        "examine": "A raw potato.",
+        "tradable": true,
+        "weight": 0.5
+    },
+    "rs:onions": {
+        "game_id": 1957,
+        "examine": "A strong-smelling onion.",
+        "tradable": true,
+        "weight": 0.5
+    },
+    "rs:cabbages": {
+        "game_id": 1965,
+        "examine": "Yuck I don't like cabbage.",
+        "tradable": true,
+        "weight": 0.5
+    }
+}

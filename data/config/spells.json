@@ -10,10 +10,7 @@
         "impact_gfx": 92,
         "splash_gfx": 85,
         "cast_anim": 711,
-        "runes": [
-            { "item_key": "rs:air_rune", "amount": 1 },
-            { "item_key": "rs:mind_rune", "amount": 1 }
-        ]
+        "runes": [{ "item_key": "rs:air_rune", "amount": 1 }, { "item_key": "rs:mind_rune", "amount": 1 }]
     },
     "rs:water_strike": {
         "name": "Water Strike",
@@ -77,10 +74,7 @@
         "impact_gfx": 100,
         "splash_gfx": 85,
         "cast_anim": 711,
-        "runes": [
-            { "item_key": "rs:air_rune", "amount": 2 },
-            { "item_key": "rs:chaos_rune", "amount": 1 }
-        ]
+        "runes": [{ "item_key": "rs:air_rune", "amount": 2 }, { "item_key": "rs:chaos_rune", "amount": 1 }]
     },
     "rs:water_bolt": {
         "name": "Water Bolt",
@@ -144,10 +138,7 @@
         "impact_gfx": 108,
         "splash_gfx": 85,
         "cast_anim": 711,
-        "runes": [
-            { "item_key": "rs:air_rune", "amount": 3 },
-            { "item_key": "rs:death_rune", "amount": 1 }
-        ]
+        "runes": [{ "item_key": "rs:air_rune", "amount": 3 }, { "item_key": "rs:death_rune", "amount": 1 }]
     },
     "rs:water_blast": {
         "name": "Water Blast",
@@ -181,6 +172,87 @@
             { "item_key": "rs:earth_rune", "amount": 4 },
             { "item_key": "rs:air_rune", "amount": 3 },
             { "item_key": "rs:death_rune", "amount": 1 }
+        ]
+    },
+    "rs:fire_blast": {
+        "name": "Fire Blast",
+        "button_id": 22,
+        "widget_id": 192,
+        "level_required": 59,
+        "base_damage": 16,
+        "base_xp": 34.5,
+        "projectile_id": 113,
+        "impact_gfx": 114,
+        "splash_gfx": 85,
+        "cast_anim": 711,
+        "runes": [
+            { "item_key": "rs:fire_rune", "amount": 5 },
+            { "item_key": "rs:air_rune", "amount": 4 },
+            { "item_key": "rs:death_rune", "amount": 1 }
+        ]
+    },
+    "rs:wind_wave": {
+        "name": "Wind Wave",
+        "button_id": 24,
+        "widget_id": 192,
+        "level_required": 62,
+        "base_damage": 17,
+        "base_xp": 36,
+        "projectile_id": 115,
+        "impact_gfx": 116,
+        "splash_gfx": 85,
+        "cast_anim": 711,
+        "runes": [{ "item_key": "rs:air_rune", "amount": 5 }, { "item_key": "rs:blood_rune", "amount": 1 }]
+    },
+    "rs:water_wave": {
+        "name": "Water Wave",
+        "button_id": 26,
+        "widget_id": 192,
+        "level_required": 65,
+        "base_damage": 18,
+        "base_xp": 37.5,
+        "projectile_id": 117,
+        "impact_gfx": 118,
+        "splash_gfx": 85,
+        "cast_anim": 711,
+        "runes": [
+            { "item_key": "rs:water_rune", "amount": 7 },
+            { "item_key": "rs:air_rune", "amount": 5 },
+            { "item_key": "rs:blood_rune", "amount": 1 }
+        ]
+    },
+    "rs:earth_wave": {
+        "name": "Earth Wave",
+        "button_id": 28,
+        "widget_id": 192,
+        "level_required": 70,
+        "base_damage": 19,
+        "base_xp": 40,
+        "projectile_id": 119,
+        "impact_gfx": 120,
+        "splash_gfx": 85,
+        "cast_anim": 711,
+        "runes": [
+            { "item_key": "rs:earth_rune", "amount": 7 },
+            { "item_key": "rs:air_rune", "amount": 5 },
+            { "item_key": "rs:blood_rune", "amount": 1 }
+        ]
+    },
+    "rs:fire_wave": {
+        "name": "Fire Wave",
+        "button_id": 30,
+        "widget_id": 192,
+        "level_required": 75,
+        "base_damage": 20,
+        "base_xp": 42.5,
+        "projectile_id": 121,
+        "impact_gfx": 122,
+        "splash_gfx": 85,
+        "cast_anim": 711,
+        "runes": [
+            { "item_key": "rs:fire_rune", "amount": 7 },
+            { "item_key": "rs:air_rune", "amount": 5 },
+            { "item_key": "rs:blood_rune", "amount": 1 }
         ]
     }
 }

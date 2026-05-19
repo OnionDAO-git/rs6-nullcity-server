@@ -1,9 +1,14 @@
 import type { buttonActionHandler } from '@engine/action/pipe/button.action';
 import type { objectInteractionActionHandler } from '@engine/action/pipe/object-interaction.action';
+import { widgets } from '@engine/config/config-handler';
 import { dialogue, execute, goto } from '@engine/world/actor/dialogue';
 import type { Player } from '@engine/world/actor/player/player';
+import { Skill } from '@engine/world/actor/skills';
+import { itemIds } from '@engine/world/config/item-ids';
 import type { Coords } from '@engine/world/position';
 import { MAP_SIZE, roomBuilderButtonMap } from '@plugins/skills/construction/con-constants';
+import { roomDefinitions } from '@plugins/skills/construction/construction-data';
+import { saveHouse } from '@plugins/skills/construction/home-saver';
 import { Room, openHouse } from '@plugins/skills/construction/house';
 import { getCurrentRoom } from '@plugins/skills/construction/util';
 import { logger } from '@runejs/common';
@@ -45,6 +50,11 @@ const newRoomOriention = (player: Player): number => {
 };
 
 export const canBuildNewRoom = (player: Player): Coords | null => {
+    if (player.metadata.constructionBuildMode === false) {
+        player.sendMessage(`You need to be in building mode to build rooms.`);
+        return null;
+    }
+
     const currentRoom = getCurrentRoom(player);
 
     if (!currentRoom) {
@@ -104,6 +114,25 @@ export const canBuildNewRoom = (player: Player): Coords | null => {
     };
 };
 
+function removeCoins(player: Player, amount: number): boolean {
+    if (amount <= 0) {
+        return true;
+    }
+    const slot = player.inventory.findIndex(itemIds.coins);
+    const coins = slot >= 0 ? player.inventory.amountInStack(slot) : 0;
+    if (slot < 0 || coins < amount) {
+        player.sendMessage(`You need ${amount} coins to build that room.`);
+        return false;
+    }
+    if (coins === amount) {
+        player.inventory.remove(slot);
+    } else {
+        player.inventory.set(slot, { itemId: itemIds.coins, amount: coins - amount });
+    }
+    player.outgoingPackets.sendUpdateAllWidgetItems(widgets.inventory, player.inventory);
+    return true;
+}
+
 export const roomBuilderWidgetHandler: buttonActionHandler = async ({ player, buttonId }) => {
     const newRoomCoords = canBuildNewRoom(player);
     if (!newRoomCoords) {
@@ -112,6 +141,14 @@ export const roomBuilderWidgetHandler: buttonActionHandler = async ({ player, bu
 
     const chosenRoomType = roomBuilderButtonMap[buttonId];
     if (!chosenRoomType) {
+        return;
+    }
+    const roomDefinition = roomDefinitions[chosenRoomType];
+    if (!player.skills.hasLevel(Skill.CONSTRUCTION, roomDefinition.level)) {
+        player.sendMessage(`You need a Construction level of ${roomDefinition.level} to build a ${roomDefinition.name}.`);
+        return;
+    }
+    if (!removeCoins(player, roomDefinition.coins)) {
         return;
     }
 
@@ -123,6 +160,9 @@ export const roomBuilderWidgetHandler: buttonActionHandler = async ({ player, bu
 
     const createdRoom = new Room(chosenRoomType, newRoomOriention(player));
     playerCustomMap.chunks[newRoomCoords.level][newRoomCoords.x][newRoomCoords.y] = createdRoom;
+    if (roomDefinition.xp > 0) {
+        player.skills.addExp(Skill.CONSTRUCTION, roomDefinition.xp);
+    }
 
     player.interfaceState.closeAllSlots();
 
@@ -149,7 +189,7 @@ export const roomBuilderWidgetHandler: buttonActionHandler = async ({ player, bu
                     goto('tag_Home'),
                 ],
                 'Accept',
-                [execute(() => {})],
+                [execute(() => saveHouse(player))],
             ],
         ],
     );

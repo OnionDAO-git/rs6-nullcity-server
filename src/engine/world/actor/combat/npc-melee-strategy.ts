@@ -3,8 +3,10 @@ import type { Actor } from '@engine/world/actor/actor';
 import type { Npc } from '@engine/world/actor/npc';
 import { DamageType } from '@engine/world/actor/update-flags';
 import { animationIds } from '@engine/world/config/animation-ids';
+import { defensiveStyleBonus } from './combat-data';
 import type { CombatStrategy } from './combat-strategy';
 import { defenseRoll, meleeAttackRoll, meleeMaxHit, rollAccuracy, rollDamage } from './formulas';
+import { applyCombatModifier, resolveCombatModifiers } from './modifiers';
 
 /**
  * Build a melee strategy that mirrors how an NPC swings back at an attacker.
@@ -24,8 +26,11 @@ export function createNpcMeleeStrategy(npc: Npc): CombatStrategy {
 
     const attackStat = Math.max(1, details?.offensiveStats?.attack ?? 1);
     const strengthStat = Math.max(1, details?.offensiveStats?.strength ?? 1);
-    const attackBonus = 0;
-    const strengthBonus = 0;
+    const attackBonus = (details?.metadata?.attack_bonus as number | undefined) ?? 0;
+    const strengthBonus = (details?.metadata?.strength_bonus as number | undefined) ?? 0;
+    const attackSpeed = Math.max(1, details?.offensiveStats?.speed ?? 4);
+    const attackRange = Math.max(1, (details?.metadata?.attack_range as number | undefined) ?? 1);
+    const configuredMaxHit = details?.metadata?.max_hit as number | undefined;
 
     const attackAnim = (() => {
         const raw = npc.animations?.attack;
@@ -38,8 +43,8 @@ export function createNpcMeleeStrategy(npc: Npc): CombatStrategy {
 
     return {
         kind: 'melee',
-        attackRange: 1,
-        attackSpeedTicks: 4,
+        attackRange,
+        attackSpeedTicks: attackSpeed,
 
         canActivate(): { ok: true } | { ok: false; reason: string } {
             return { ok: true };
@@ -62,9 +67,10 @@ export function createNpcMeleeStrategy(npc: Npc): CombatStrategy {
                 styleBonus: 0,
                 attackBonus,
             });
+            const defenderModifiers = resolveCombatModifiers(defender);
             const def = defenseRoll({
-                defenseLevel: defender.skills.getLevel('defence'),
-                styleBonus: 0,
+                defenseLevel: applyCombatModifier(defender.skills.getLevel('defence'), defenderModifiers.defence),
+                styleBonus: defensiveStyleBonus(defender),
                 defenseBonus: defender.bonuses?.defensive?.crush ?? 0,
             });
 
@@ -72,11 +78,14 @@ export function createNpcMeleeStrategy(npc: Npc): CombatStrategy {
                 return { damage: 0, type: DamageType.NO_DAMAGE };
             }
 
-            const max = meleeMaxHit({
-                strengthLevel: strengthStat,
-                styleBonus: 0,
-                strengthBonus,
-            });
+            const max =
+                typeof configuredMaxHit === 'number'
+                    ? Math.max(0, configuredMaxHit)
+                    : meleeMaxHit({
+                          strengthLevel: strengthStat,
+                          styleBonus: 0,
+                          strengthBonus,
+                      });
             const damage = rollDamage(max);
             return {
                 damage,

@@ -1,7 +1,9 @@
 import { widgets } from '@engine/config/config-handler';
+import { findItem } from '@engine/config/config-handler';
 import { ActorTask } from '@engine/task/impl/actor-task';
 import type { Player } from '@engine/world/actor/player/player';
 import { Skill } from '@engine/world/actor/skills';
+import { itemIds } from '@engine/world/config/item-ids';
 import type { Smithable } from './forging-types';
 
 /**
@@ -41,9 +43,23 @@ export class ForgingTask extends ActorTask<Player> {
         }
 
         // can't continue
-        if (!this.hasMaterials()) {
+        if (!this.actor.inventory.has(itemIds.hammer)) {
+            this.actor.sendMessage('You need a hammer to work the metal with.', true);
             this.stop();
-            // TODO (Jameskmonger) send message
+            return;
+        }
+
+        if (!this.hasLevel()) {
+            const item = findItem(this.smithable.item.itemId);
+            this.actor.sendMessage(`You have to be at least level ${this.smithable.level} to smith ${item?.name || 'that item'}.`, true);
+            this.stop();
+            return;
+        }
+
+        if (!this.hasMaterials()) {
+            const ingredient = findItem(this.smithable.ingredient.itemId);
+            this.actor.sendMessage(`You don't have enough ${ingredient?.name || 'bars'}.`, true);
+            this.stop();
             return;
         }
 
@@ -69,6 +85,10 @@ export class ForgingTask extends ActorTask<Player> {
      * @returns {boolean} True if the player has the required materials, false otherwise.
      */
     private hasMaterials() {
-        return this.smithable.ingredient.amount <= this.actor.inventory.findAll(this.smithable.ingredient.itemId).length;
+        return this.smithable.ingredient.amount <= this.actor.inventory.amount(this.smithable.ingredient.itemId);
+    }
+
+    private hasLevel() {
+        return this.actor.skills.hasLevel(Skill.SMITHING, this.smithable.level);
     }
 }

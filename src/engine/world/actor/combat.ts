@@ -6,10 +6,12 @@ export interface CombatStyles {
 }
 
 export interface CombatStyle {
-    type: 'slash' | 'stab' | 'crush';
+    type: 'slash' | 'stab' | 'crush' | 'ranged';
     exp: SkillName | SkillName[];
     anim: string | string[];
     button_id: number;
+    stance?: 'accurate' | 'aggressive' | 'controlled' | 'defensive' | 'rapid' | 'longrange';
+    speed_modifier?: number;
 }
 
 export const combatStyles: CombatStyles = combatStylesImport as CombatStyles;

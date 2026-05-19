@@ -39,9 +39,11 @@ export const loadHouse = (player: Player): House | null => {
             return null;
         }
 
-        const loadedHouse = customMap as House;
         const house = new House();
-        house.copyRooms(loadedHouse.rooms);
+        const loadedHouse = customMap as Partial<House> & { chunks?: Room[][][] };
+        house.version = loadedHouse.version || 1;
+        house.buildMode = loadedHouse.buildMode ?? true;
+        house.copyRooms((loadedHouse.rooms || loadedHouse.chunks || []) as Room[][][]);
         return house;
     } catch (error) {
         logger.error(`Error loading player house for ${player.username}.`);
@@ -70,6 +72,7 @@ export const saveHouse = (player: Player): void => {
 
     const house = new House();
     house.rooms = customMap.chunks as Room[][][];
+    house.buildMode = player.metadata.constructionBuildMode ?? true;
 
     try {
         writeFileSync(filePath, JSON5.stringify(house, null, 4));

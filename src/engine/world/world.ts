@@ -116,12 +116,10 @@ export class World {
         const objectChunk = this.chunkManager.getChunkForWorldPosition(objectPosition);
 
         let customMap = false;
+        let customMapObject: LandscapeObject | null = null;
         if (isPlayer(actor) && actor.metadata.customMap) {
             customMap = true;
-            const templateMapObject = this.findCustomMapObject(actor, objectId, objectPosition);
-            if (templateMapObject) {
-                return { object: templateMapObject, cacheOriginal: true };
-            }
+            customMapObject = this.findCustomMapObject(actor, objectId, objectPosition);
         }
 
         let cacheOriginal = true;
@@ -142,7 +140,7 @@ export class World {
             tileModifications = this.globalInstance.getTileModifications(objectPosition);
         }
 
-        let landscapeObject = customMap ? null : objectChunk.getFilestoreLandscapeObject(objectId, objectPosition);
+        let landscapeObject = customMap ? customMapObject : objectChunk.getFilestoreLandscapeObject(objectId, objectPosition);
         if (!landscapeObject) {
             const tileObjects = [...tileModifications.mods.spawnedObjects];
 

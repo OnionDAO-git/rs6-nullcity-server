@@ -70,5 +70,81 @@
             "anim": "stab",
             "button_id": 5
         }
+    ],
+    "slash_sword": [
+        { "type": "slash", "exp": "attack", "anim": "slash", "button_id": 2, "stance": "accurate" },
+        { "type": "slash", "exp": "strength", "anim": "slash", "button_id": 3, "stance": "aggressive" },
+        { "type": "stab", "exp": ["attack", "strength", "defence"], "anim": "stab", "button_id": 4, "stance": "controlled" },
+        { "type": "slash", "exp": "defence", "anim": "slash", "button_id": 5, "stance": "defensive" }
+    ],
+    "2h_sword": [
+        { "type": "slash", "exp": "attack", "anim": "slash", "button_id": 2, "stance": "accurate" },
+        { "type": "slash", "exp": "strength", "anim": "slash", "button_id": 3, "stance": "aggressive" },
+        { "type": "crush", "exp": "strength", "anim": "slash", "button_id": 4, "stance": "aggressive" },
+        { "type": "slash", "exp": "defence", "anim": "slash", "button_id": 5, "stance": "defensive" }
+    ],
+    "mace": [
+        { "type": "crush", "exp": "attack", "anim": "crush", "button_id": 2, "stance": "accurate" },
+        { "type": "crush", "exp": "strength", "anim": "crush", "button_id": 3, "stance": "aggressive" },
+        { "type": "stab", "exp": ["attack", "strength", "defence"], "anim": "stab", "button_id": 4, "stance": "controlled" },
+        { "type": "crush", "exp": "defence", "anim": "crush", "button_id": 5, "stance": "defensive" }
+    ],
+    "hammer": [
+        { "type": "crush", "exp": "attack", "anim": "crush", "button_id": 2, "stance": "accurate" },
+        { "type": "crush", "exp": "strength", "anim": "crush", "button_id": 3, "stance": "aggressive" },
+        { "type": "crush", "exp": "defence", "anim": "crush", "button_id": 4, "stance": "defensive" }
+    ],
+    "pickaxe": [
+        { "type": "stab", "exp": "attack", "anim": "stab", "button_id": 2, "stance": "accurate" },
+        { "type": "stab", "exp": "strength", "anim": "stab", "button_id": 3, "stance": "aggressive" },
+        { "type": "crush", "exp": "strength", "anim": "crush", "button_id": 4, "stance": "aggressive" },
+        { "type": "stab", "exp": "defence", "anim": "stab", "button_id": 5, "stance": "defensive" }
+    ],
+    "halberd": [
+        { "type": "stab", "exp": "attack", "anim": "stab", "button_id": 2, "stance": "accurate" },
+        { "type": "slash", "exp": "strength", "anim": "slash", "button_id": 3, "stance": "aggressive" },
+        { "type": "stab", "exp": "defence", "anim": "stab", "button_id": 4, "stance": "defensive" }
+    ],
+    "spear": [
+        { "type": "stab", "exp": ["attack", "strength", "defence"], "anim": "stab", "button_id": 2, "stance": "controlled" },
+        { "type": "slash", "exp": ["attack", "strength", "defence"], "anim": "slash", "button_id": 3, "stance": "controlled" },
+        { "type": "crush", "exp": ["attack", "strength", "defence"], "anim": "crush", "button_id": 4, "stance": "controlled" },
+        { "type": "stab", "exp": "defence", "anim": "stab", "button_id": 5, "stance": "defensive" }
+    ],
+    "whip": [
+        { "type": "slash", "exp": "attack", "anim": "slash", "button_id": 2, "stance": "accurate" },
+        { "type": "slash", "exp": ["attack", "strength", "defence"], "anim": "slash", "button_id": 3, "stance": "controlled" },
+        { "type": "slash", "exp": "defence", "anim": "slash", "button_id": 4, "stance": "defensive" }
+    ],
+    "claws": [
+        { "type": "slash", "exp": "attack", "anim": "slash", "button_id": 2, "stance": "accurate" },
+        { "type": "slash", "exp": "strength", "anim": "slash", "button_id": 3, "stance": "aggressive" },
+        { "type": "stab", "exp": ["attack", "strength", "defence"], "anim": "stab", "button_id": 4, "stance": "controlled" },
+        { "type": "slash", "exp": "defence", "anim": "slash", "button_id": 5, "stance": "defensive" }
+    ],
+    "magical_staff": [
+        { "type": "crush", "exp": "attack", "anim": "crush", "button_id": 2, "stance": "accurate" },
+        { "type": "crush", "exp": "strength", "anim": "crush", "button_id": 3, "stance": "aggressive" },
+        { "type": "crush", "exp": "defence", "anim": "crush", "button_id": 4, "stance": "defensive" }
+    ],
+    "bow": [
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 2, "stance": "accurate" },
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 3, "stance": "rapid", "speed_modifier": -1 },
+        { "type": "ranged", "exp": ["ranged", "defence"], "anim": "bow", "button_id": 4, "stance": "longrange" }
+    ],
+    "crossbow": [
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 2, "stance": "accurate" },
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 3, "stance": "rapid", "speed_modifier": -1 },
+        { "type": "ranged", "exp": ["ranged", "defence"], "anim": "bow", "button_id": 4, "stance": "longrange" }
+    ],
+    "darts": [
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 2, "stance": "accurate" },
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 3, "stance": "rapid", "speed_modifier": -1 },
+        { "type": "ranged", "exp": ["ranged", "defence"], "anim": "bow", "button_id": 4, "stance": "longrange" }
+    ],
+    "gun": [
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 2, "stance": "accurate" },
+        { "type": "ranged", "exp": "ranged", "anim": "bow", "button_id": 3, "stance": "rapid", "speed_modifier": -1 },
+        { "type": "ranged", "exp": ["ranged", "defence"], "anim": "bow", "button_id": 4, "stance": "longrange" }
     ]
 }

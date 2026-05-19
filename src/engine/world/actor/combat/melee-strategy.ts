@@ -8,8 +8,10 @@ import type { SkillName } from '@engine/world/actor/skills';
 import { DamageType } from '@engine/world/actor/update-flags';
 import { isNpc } from '@engine/world/actor/util';
 import { animationIds } from '@engine/world/config/animation-ids';
+import { defensiveStyleBonus, weaponAttackRange, weaponAttackSpeed } from './combat-data';
 import type { CanActivateResult, CombatStrategy } from './combat-strategy';
 import { defenseRoll, meleeAttackRoll, meleeMaxHit, rollAccuracy, rollDamage } from './formulas';
+import { applyCombatModifier, resolveCombatModifiers } from './modifiers';
 
 /**
  * Per-weapon-style attack range (in tiles). Anything not listed defaults to 1.
@@ -117,7 +119,7 @@ function resolveCurrentStyle(player: Player): ResolvedStyle {
     return {
         weaponStyle,
         styleIndex,
-        damageType: style.type,
+        damageType: style.type === 'ranged' ? 'crush' : style.type,
         exp: style.exp,
         animId: lookupAnim(style.anim),
     };
@@ -193,8 +195,10 @@ function defenderDefenseBonus(defender: Actor, damageType: MeleeDamageType): num
  */
 export function createPlayerMeleeStrategy(player: Player): CombatStrategy {
     const equippedStyle = resolveWeaponStyle(player);
-    const attackRange = WEAPON_RANGE[equippedStyle] ?? DEFAULT_ATTACK_RANGE;
-    const attackSpeedTicks = WEAPON_SPEED[equippedStyle] ?? DEFAULT_ATTACK_SPEED_TICKS;
+    const equippedItem = player.getEquippedItem('main_hand');
+    const itemDetails = equippedItem ? findItem(equippedItem.itemId) : null;
+    const attackRange = weaponAttackRange(itemDetails, WEAPON_RANGE[equippedStyle] ?? DEFAULT_ATTACK_RANGE);
+    const attackSpeedTicks = weaponAttackSpeed(itemDetails, WEAPON_SPEED[equippedStyle] ?? DEFAULT_ATTACK_SPEED_TICKS);
 
     return {
         kind: 'melee',
@@ -221,8 +225,10 @@ export function createPlayerMeleeStrategy(player: Player): CombatStrategy {
             const style = resolveCurrentStyle(player);
             const bonuses = styleBonusesFor(style.exp);
 
-            const attackLevel = attacker.skills.getLevel('attack');
-            const strengthLevel = attacker.skills.getLevel('strength');
+            const attackerModifiers = resolveCombatModifiers(attacker);
+            const defenderModifiers = resolveCombatModifiers(defender);
+            const attackLevel = applyCombatModifier(attacker.skills.getLevel('attack'), attackerModifiers.attack);
+            const strengthLevel = applyCombatModifier(attacker.skills.getLevel('strength'), attackerModifiers.strength);
 
             const attackBonus = attacker.bonuses?.offensive?.[style.damageType] ?? 0;
             const strengthBonus = attacker.bonuses?.skill?.strength ?? 0;
@@ -233,10 +239,10 @@ export function createPlayerMeleeStrategy(player: Player): CombatStrategy {
                 attackBonus,
             });
 
-            const defenderDefenceLevel = defender.skills.getLevel('defence');
+            const defenderDefenceLevel = applyCombatModifier(defender.skills.getLevel('defence'), defenderModifiers.defence);
             const def = defenseRoll({
                 defenseLevel: Math.max(1, defenderDefenceLevel),
-                styleBonus: 0,
+                styleBonus: defensiveStyleBonus(defender),
                 defenseBonus: defenderDefenseBonus(defender, style.damageType),
             });
 

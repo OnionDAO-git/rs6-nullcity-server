@@ -8,8 +8,16 @@
     "rs:fishing_rod": {
         "game_id": 307
     },
+    "rs:fishing_bait": {
+        "game_id": 313,
+        "stackable": true
+    },
     "rs:fly_fishing_rod": {
         "game_id": 309
+    },
+    "rs:feather": {
+        "game_id": 314,
+        "stackable": true
     },
     "rs:harpoon": {
         "game_id": 311

@@ -5,29 +5,21 @@ import type { Item } from '@engine/world/items/item';
 
 export function rollBirdsNestType(): Item {
     const roll = randomBetween(0, 99);
-    let itemConfigId;
 
-    if (roll > 3) {
-        // Bird egg
-        if (roll === 0) {
-            itemConfigId = 'rs:birds_egg_red';
-        } else if (roll === 1) {
-            itemConfigId = 'rs:birds_egg_green';
-        } else {
-            itemConfigId = 'rs:birds_egg_blue';
-        }
-    } else if (roll > 34) {
-        itemConfigId = 'rs:birds_nest_ring';
-    } else {
-        itemConfigId = 'rs:birds_nest_seed';
+    if (roll === 0) {
+        return { itemId: 5076, amount: 1 }; // Red bird's egg
+    }
+    if (roll === 1) {
+        return { itemId: 5077, amount: 1 }; // Green bird's egg
+    }
+    if (roll <= 3) {
+        return { itemId: 5078, amount: 1 }; // Blue bird's egg
+    }
+    if (roll <= 34) {
+        return { itemId: 5074, amount: 1 }; // Ring nest
     }
 
-    const item = findItem(itemConfigId);
-    if (!item) {
-        throw new Error(`Could not find item config for ${itemConfigId}`);
-    }
-
-    return { itemId: item.gameId, amount: 1 };
+    return { itemId: 5070, amount: 1 }; // Seed nest
 }
 
 export function rollGemType(): Item {

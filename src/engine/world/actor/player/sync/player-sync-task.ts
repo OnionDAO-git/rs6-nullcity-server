@@ -220,7 +220,7 @@ export class PlayerSyncTask extends SyncTask<void> {
             const appearanceData = new ByteBuffer(500);
             appearanceData.put(player.appearance.gender); // Gender
             appearanceData.put(-1); // Skull Icon
-            appearanceData.put(-1); // Prayer Icon
+            appearanceData.put(player.metadata.prayerHeadIcon ?? -1); // Prayer Icon
 
             if (player.savedMetadata.npcTransformation) {
                 appearanceData.put(65535, 'SHORT');

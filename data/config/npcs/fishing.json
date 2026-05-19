@@ -1,0 +1,14 @@
+{
+    "rs:fishing_spot_lure_bait": {
+        "game_id": 309
+    },
+    "rs:fishing_spot_cage_harpoon": {
+        "game_id": 312
+    },
+    "rs:fishing_spot_net_harpoon": {
+        "game_id": 313
+    },
+    "rs:fishing_spot_net_bait": {
+        "game_id": 316
+    }
+}

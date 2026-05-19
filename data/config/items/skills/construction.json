@@ -1,0 +1,26 @@
+{
+    "rs:plank": {
+        "game_id": 960,
+        "tradable": true,
+        "examine": "A plank of wood.",
+        "weight": 0.8
+    },
+    "rs:oak_plank": {
+        "game_id": 8778,
+        "tradable": true,
+        "examine": "A plank of sturdy oak.",
+        "weight": 0.8
+    },
+    "rs:cloth": {
+        "game_id": 8790,
+        "tradable": true,
+        "examine": "A bolt of cloth.",
+        "weight": 0.8
+    },
+    "rs:saw": {
+        "game_id": 8794,
+        "tradable": true,
+        "examine": "Good for cutting wood.",
+        "weight": 0.4
+    }
+}

@@ -2,8 +2,15 @@ import type { NpcInteractionActionHook, npcInteractionActionHandler } from '@eng
 import { CombatTask } from '@engine/world/actor/combat/combat-task';
 import { createPlayerMeleeStrategy } from '@engine/world/actor/combat/melee-strategy';
 import { createPlayerRangedStrategy } from '@engine/world/actor/combat/ranged-strategy';
+import { canAttackSlayerTarget } from '@plugins/skills/slayer/slayer-level-gate';
 
 const attackNpc: npcInteractionActionHandler = ({ player, npc }) => {
+    const slayerGate = canAttackSlayerTarget(player, npc);
+    if (!slayerGate.ok) {
+        player.sendMessage(slayerGate.reason, true);
+        return;
+    }
+
     const strategy = createPlayerRangedStrategy(player) ?? createPlayerMeleeStrategy(player);
     player.enqueueBaseTask(new CombatTask(player, npc, strategy));
 };

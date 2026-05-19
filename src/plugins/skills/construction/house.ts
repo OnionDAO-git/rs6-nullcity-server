@@ -4,6 +4,7 @@ import type { ConstructedRegion } from '@engine/world/map/region';
 import { ConstructedChunk } from '@engine/world/map/region';
 import type { Position } from '@engine/world/position';
 import type { RoomType } from '@plugins/skills/construction/con-constants';
+import type { LandscapeObject } from '@runejs/filestore';
 import {
     MAP_SIZE,
     instance1,
@@ -14,6 +15,12 @@ import {
     roomTemplates,
 } from '@plugins/skills/construction/con-constants';
 import { loadHouse } from '@plugins/skills/construction/home-saver';
+
+export interface BuiltFurniture {
+    id: string;
+    object: LandscapeObject;
+    hotspotObject?: LandscapeObject;
+}
 
 export const openHouse = (player: Player): void => {
     let pohPosition: Position = instance1;
@@ -29,6 +36,7 @@ export const openHouse = (player: Player): void => {
     const playerHouse = loadHouse(player);
 
     if (playerHouse) {
+        player.metadata.constructionBuildMode = player.metadata.constructionBuildMode ?? playerHouse.buildMode;
         player.metadata.customMap = {
             renderPosition: pohPosition,
             chunks: playerHouse.rooms,
@@ -39,6 +47,7 @@ export const openHouse = (player: Player): void => {
 
     if (!player.metadata.customMap) {
         const house = new House();
+        player.metadata.constructionBuildMode = player.metadata.constructionBuildMode ?? house.buildMode;
         house.rooms[0][6][6] = new Room('garden');
 
         player.metadata.customMap = {
@@ -65,11 +74,52 @@ export const openHouse = (player: Player): void => {
         }
     }
 
+    spawnBuiltFurniture(player);
+
     player.sendMessage(`Welcome home.`);
 };
 
+export const spawnBuiltFurniture = (player: Player): void => {
+    const customMap = player.metadata.customMap;
+    if (!customMap) {
+        return;
+    }
+
+    for (const plane of customMap.chunks) {
+        for (const row of plane) {
+            for (const room of row) {
+                if (!room || !(room instanceof Room)) {
+                    continue;
+                }
+                for (const furniture of Object.values(room.builtFurniture)) {
+                    const position = furniture.object;
+                    if (furniture.hotspotObject) {
+                        player.personalInstance.hideGameObject(furniture.hotspotObject);
+                        player.outgoingPackets.removeLocationObject(
+                            furniture.hotspotObject,
+                            {
+                                x: furniture.hotspotObject.x,
+                                y: furniture.hotspotObject.y,
+                                level: furniture.hotspotObject.level,
+                            } as Position,
+                        );
+                    }
+                    player.personalInstance.spawnGameObject(furniture.object);
+                    player.outgoingPackets.setLocationObject(furniture.object, {
+                        x: position.x,
+                        y: position.y,
+                        level: position.level,
+                    } as Position);
+                }
+            }
+        }
+    }
+};
+
 export class House {
+    public version = 2;
     public rooms: (Room | null)[][][];
+    public buildMode = true;
 
     public constructor() {
         this.rooms = new Array(4);
@@ -91,9 +141,11 @@ export class House {
         for (let level = 0; level < 4; level++) {
             for (let x = 0; x < MAP_SIZE; x++) {
                 for (let y = 0; y < MAP_SIZE; y++) {
-                    const existingRoom = rooms[level][x][y] ?? null;
+                    const existingRoom = rooms?.[level]?.[x]?.[y] ?? null;
 
-                    this.rooms[level][x][y] = existingRoom ? new Room(existingRoom.type, existingRoom.orientation) : null;
+                    this.rooms[level][x][y] = existingRoom
+                        ? new Room(existingRoom.type, existingRoom.orientation, (existingRoom as Room).builtFurniture)
+                        : null;
                 }
             }
         }
@@ -102,10 +154,12 @@ export class House {
 
 export class Room extends ConstructedChunk {
     public readonly type: RoomType;
+    public builtFurniture: Record<string, BuiltFurniture>;
 
-    public constructor(type: RoomType, orientation: number = 0) {
+    public constructor(type: RoomType, orientation: number = 0, builtFurniture: Record<string, BuiltFurniture> = {}) {
         super(orientation);
         this.type = type;
+        this.builtFurniture = builtFurniture || {};
     }
 
     public getTemplatePosition(): Position {

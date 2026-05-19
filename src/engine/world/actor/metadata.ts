@@ -64,4 +64,17 @@ export type ActorMetadata = {
      * drop / teleport / hp-reset phase.
      */
     dying?: boolean;
+
+    /**
+     * Active overhead prayer icon id sent in the player appearance block.
+     */
+    prayerHeadIcon?: number;
+
+    /**
+     * Optional combat stat modifiers consumed by the combat formula pipeline.
+     *
+     * Prayer owns activation/drain state; combat only reads this hook so Prayer
+     * can provide effective Attack/Strength/Defence/Ranged/Magic multipliers.
+     */
+    combatModifiers?: unknown;
 };

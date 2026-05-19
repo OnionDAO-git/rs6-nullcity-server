@@ -99,6 +99,9 @@
         "game_id": 1381,
         "examine": "A Magical staff.",
         "weight": 2.267,
+        "metadata": {
+            "provided_runes": ["rs:air_rune"]
+        },
         "equipment_data": {
             "offensive_bonuses": {
                 "speed": 5,
@@ -124,6 +127,9 @@
         "game_id": 1383,
         "examine": "A Magical staff.",
         "weight": 2.267,
+        "metadata": {
+            "provided_runes": ["rs:water_rune"]
+        },
         "equipment_data": {
             "offensive_bonuses": {
                 "speed": 5,
@@ -149,6 +155,9 @@
         "game_id": 1385,
         "examine": "A Magical staff.",
         "weight": 2.267,
+        "metadata": {
+            "provided_runes": ["rs:earth_rune"]
+        },
         "equipment_data": {
             "offensive_bonuses": {
                 "speed": 5,
@@ -174,6 +183,9 @@
         "game_id": 1387,
         "examine": "A Magical staff.",
         "weight": 2.267,
+        "metadata": {
+            "provided_runes": ["rs:fire_rune"]
+        },
         "equipment_data": {
             "offensive_bonuses": {
                 "speed": 5,

@@ -73,20 +73,28 @@ export class MiningTask extends ActorLandscapeObjectInteractionTask<Player> {
     }
 
     public execute(): void {
-        const taskIteration = this.elapsedTicks++;
+        super.execute();
+
+        if (!this.isActive) {
+            return;
+        }
 
         // This will be null if the player is not in range of the object.
         if (!this.landscapeObject) {
             return;
         }
 
+        const taskIteration = this.elapsedTicks++;
+
         if (!this.hasLevel()) {
             this.actor.sendMessage(`You need a Mining level of ${this.ore.level} to mine this rock.`, true);
+            this.stop();
             return;
         }
 
         if (!this.hasMaterials()) {
             this.actor.sendMessage('You do not have a pickaxe for which you have the level to use.');
+            this.stop();
             return;
         }
 
@@ -94,6 +102,7 @@ export class MiningTask extends ActorLandscapeObjectInteractionTask<Player> {
         if (!this.actor.inventory.hasSpace()) {
             this.actor.sendMessage(`Your inventory is too full to hold any more ${this.targetItemName}.`, true);
             this.actor.playSound(soundIds.inventoryFull);
+            this.stop();
             return;
         }
 
@@ -160,7 +169,7 @@ export class MiningTask extends ActorLandscapeObjectInteractionTask<Player> {
      * @returns true if the player has the pickaxe, false otherwise
      */
     private hasMaterials() {
-        return this.actor.inventory.has(this.tool.itemId);
+        return this.actor.hasItemOnPerson(this.tool.itemId);
     }
 
     private getGemMiningChance(): number {
@@ -186,5 +195,11 @@ export class MiningTask extends ActorLandscapeObjectInteractionTask<Player> {
      */
     private hasLevel() {
         return this.actor.skills.hasLevel(Skill.MINING, this.ore.level);
+    }
+
+    public onStop(): void {
+        super.onStop();
+
+        this.actor.stopAnimation();
     }
 }

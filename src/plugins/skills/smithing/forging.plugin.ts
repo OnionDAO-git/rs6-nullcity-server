@@ -55,12 +55,13 @@ const mapSmithablesToFlatArray = (input: Map<string, Map<string, Smithable>>) =>
  * @param itemId
  */
 const findSmithableByItemId = (itemId: number): Smithable | null => {
-    return (
-        mapSmithablesToFlatArray(smithables).find(smithable => {
-            return smithable.item.itemId === itemId;
-        }) || null
-    );
+    return smithableByOutputId.get(itemId) || null;
 };
+
+const smithableItemIds = mapSmithableItemIdsToFlatArray(smithables);
+const smithableByOutputId = new Map<number, Smithable>(
+    mapSmithablesToFlatArray(smithables).map(smithable => [smithable.item.itemId, smithable]),
+);
 
 /**
  * Check if the player is able to forge an item.
@@ -108,7 +109,7 @@ const canForge = (player: Player, smithable: Smithable): boolean => {
  * @param smithable
  */
 const hasMaterials = (player: Player, smithable: Smithable) => {
-    return smithable.ingredient.amount <= player.inventory.findAll(smithable.ingredient.itemId).length;
+    return smithable.ingredient.amount <= player.inventory.amount(smithable.ingredient.itemId);
 };
 
 /**
@@ -188,7 +189,7 @@ export default {
         } as ItemOnObjectActionHook,
         {
             type: 'item_interaction',
-            itemIds: [...mapSmithableItemIdsToFlatArray(smithables)],
+            itemIds: smithableItemIds,
             options: ['make', 'make-5', 'make-10'],
             cancelOtherActions: true,
             handler: ({ player, itemId, option }) => {

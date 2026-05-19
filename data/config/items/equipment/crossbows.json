@@ -1,0 +1,118 @@
+{
+    "presets": {
+        "rs:crossbow_base": {
+            "tradable": true,
+            "equippable": true,
+            "equipment_data": {
+                "equipment_slot": "main_hand",
+                "equipment_type": "one_handed",
+                "weapon_info": {
+                    "style": "crossbow",
+                    "ammo_type": "bolt",
+                    "projectile_id": 27,
+                    "attack_range": 7
+                }
+            }
+        }
+    },
+
+    "rs:bronze_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9174,
+        "examine": "A bronze crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 6
+            }
+        }
+    },
+    "rs:blurite_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9176,
+        "examine": "A blurite crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 16
+            }
+        }
+    },
+    "rs:iron_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9177,
+        "examine": "An iron crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 22
+            }
+        }
+    },
+    "rs:steel_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9179,
+        "examine": "A steel crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 36
+            }
+        }
+    },
+    "rs:mithril_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9181,
+        "examine": "A mithril crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 54
+            },
+            "requirements": {
+                "skills": {
+                    "ranged": 20
+                }
+            }
+        }
+    },
+    "rs:adamant_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9183,
+        "examine": "An adamant crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 78
+            },
+            "requirements": {
+                "skills": {
+                    "ranged": 30
+                }
+            }
+        }
+    },
+    "rs:rune_crossbow": {
+        "extends": "rs:crossbow_base",
+        "game_id": 9185,
+        "examine": "A rune crossbow.",
+        "weight": 4,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 5,
+                "ranged": 90
+            },
+            "requirements": {
+                "skills": {
+                    "ranged": 40
+                }
+            }
+        }
+    }
+}

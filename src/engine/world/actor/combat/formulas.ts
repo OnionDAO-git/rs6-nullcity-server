@@ -92,6 +92,23 @@ export function defenseRoll(stats: DefenseStats): number {
     return effectiveDefense * (stats.defenseBonus + 64);
 }
 
+export interface MagicDefenseStats {
+    magicLevel: number;
+    defenseLevel: number;
+    styleBonus: number;
+    magicDefenseBonus: number;
+}
+
+/**
+ * 435-era approximation: magic defence is mostly Magic level with a smaller
+ * Defence contribution, then rolled against the target's magic defence bonus.
+ */
+export function magicDefenseRoll(stats: MagicDefenseStats): number {
+    const baseLevel = Math.floor(Math.max(1, stats.magicLevel) * 0.7 + Math.max(1, stats.defenseLevel) * 0.3);
+    const effectiveDefense = Math.max(1, baseLevel + stats.styleBonus + 8);
+    return effectiveDefense * (stats.magicDefenseBonus + 64);
+}
+
 /* ----------------------------------------------------------------------- *
  * Ranged
  * ----------------------------------------------------------------------- */

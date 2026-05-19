@@ -5,7 +5,7 @@ import { soundIds } from '@engine/world/config/sound-ids';
 import type { WorldItem } from '@engine/world/items/world-item';
 import { canLight } from './chance';
 import { FIREMAKING_LOGS } from './data';
-import { lightFire } from './light-fire';
+import { canLightFireAtCurrentPosition, lightFire } from './light-fire';
 import type { Burnable } from './types';
 
 /**
@@ -65,6 +65,10 @@ class FiremakingTask extends ActorWorldItemInteractionTask<Player> {
     public execute() {
         super.execute();
 
+        if (!this.isActive) {
+            return;
+        }
+
         /**
          * As this task extends {@link ActorWorldItemInteractionTask}, the base classes {@link ActorWorldItemInteractionTask["worldItem"]}
          * property will be null if the item isn't valid anymore or the player isn't in the right position.
@@ -73,6 +77,25 @@ class FiremakingTask extends ActorWorldItemInteractionTask<Player> {
          */
         if (!this.worldItem) {
             return;
+        }
+
+        if (this.worldItem.itemId !== this.logInfo.logItem.gameId) {
+            this.stop();
+            return;
+        }
+
+        if (this.actor.skills.firemaking.level < this.logInfo.requiredLevel) {
+            this.actor.sendMessage(`You need a Firemaking level of ${this.logInfo.requiredLevel} to light this log.`);
+            this.stop();
+            return;
+        }
+
+        if (!this.canLightFire && !this.actor.busy) {
+            if (!canLightFireAtCurrentPosition(this.actor)) {
+                this.actor.sendMessage('You cannot light a fire here.');
+                this.stop();
+                return;
+            }
         }
 
         // store the tick count before incrementing so we don't need to keep track of it in all the separate branches
@@ -113,6 +136,13 @@ class FiremakingTask extends ActorWorldItemInteractionTask<Player> {
         if (tickCount % 4 === 0) {
             this.actor.playSound(soundIds.lightingFire, 10, 0);
         }
+    }
+
+    public onStop(): void {
+        super.onStop();
+
+        this.actor.stopAnimation();
+        this.actor.busy = false;
     }
 }
 

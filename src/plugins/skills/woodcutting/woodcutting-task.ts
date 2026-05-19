@@ -50,7 +50,6 @@ class WoodcuttingTask extends ActorLandscapeObjectInteractionTask<Player> {
     }
 
     private getItemToAdd(): string | null {
-        this.actor.sendMessage(`Looking for item ${this.treeInfo.items}`);
         if (typeof this.treeInfo.items === 'string') {
             return this.treeInfo.items;
         }

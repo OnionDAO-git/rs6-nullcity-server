@@ -2,6 +2,8 @@ import { Task } from '@engine/task/task';
 import { TaskStackType } from '@engine/task/types';
 import type { Actor } from '@engine/world/actor/actor';
 import type { Player } from '@engine/world/actor/player/player';
+import { getPrayerState, hasActivePrayer } from '@engine/world/actor/prayer';
+import { Skill } from '@engine/world/actor/skills';
 import { isPlayer } from '@engine/world/actor/util';
 import { logger } from '@runejs/common';
 import type { Subscription } from 'rxjs';
@@ -137,9 +139,11 @@ export class CombatTask extends Task {
         }
 
         const { hitDelay } = this.strategy.play(attacker, defender);
-        const { damage, type } = this.strategy.rollHit(attacker, defender);
+        let { damage, type } = this.strategy.rollHit(attacker, defender);
+        damage = this.applyProtectionPrayer(attacker, defender, damage);
 
         attacker.applyHit(defender, damage, type, hitDelay);
+        this.applySmite(attacker, defender, damage);
 
         // XP awards — only routed for Player attackers.
         if (isPlayer(attacker)) {
@@ -154,5 +158,35 @@ export class CombatTask extends Task {
 
         // 5. engage retaliation on the defender
         engageRetaliation(defender, attacker);
+    }
+
+    private applyProtectionPrayer(attacker: Actor, defender: Actor, damage: number): number {
+        if (damage <= 0) {
+            return damage;
+        }
+
+        const protectedFrom =
+            (this.strategy.kind === 'melee' && hasActivePrayer(defender, 'protect_from_melee')) ||
+            (this.strategy.kind === 'ranged' && hasActivePrayer(defender, 'protect_from_missiles')) ||
+            (this.strategy.kind === 'magic' && hasActivePrayer(defender, 'protect_from_magic'));
+
+        if (!protectedFrom) {
+            return damage;
+        }
+
+        return isPlayer(attacker) ? Math.floor(damage * 0.6) : 0;
+    }
+
+    private applySmite(attacker: Actor, defender: Actor, damage: number): void {
+        if (damage <= 0 || !hasActivePrayer(attacker, 'smite') || !isPlayer(defender)) {
+            return;
+        }
+        const defenderPrayer = defender.skills.get(Skill.PRAYER);
+        const current = defender.skills.getLevel(Skill.PRAYER);
+        defenderPrayer.modifiedLevel = Math.max(0, current - Math.floor(damage / 4));
+        defender.outgoingPackets.updateSkill(Skill.PRAYER, defenderPrayer.modifiedLevel, defenderPrayer.exp);
+        if (defenderPrayer.modifiedLevel <= 0) {
+            getPrayerState(defender).deactivateAll(true);
+        }
     }
 }

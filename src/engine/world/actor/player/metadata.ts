@@ -113,4 +113,9 @@ export type PlayerMetadata = {
      * before the teleport animation finishes (it takes a few ticks).
      */
     castingStationarySpell: boolean;
+
+    /**
+     * Whether the owner is currently editing their player-owned house.
+     */
+    constructionBuildMode: boolean;
 };

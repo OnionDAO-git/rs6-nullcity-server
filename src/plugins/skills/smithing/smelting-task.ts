@@ -44,13 +44,19 @@ export class SmeltingTask extends ActorTask<Player> {
         }
 
         if (!this.hasMaterials()) {
-            this.actor.sendMessage(`You don't have enough ${barItem.name.toLowerCase()}.`, true);
+            const missingIngredient = bar.ingredients.find(item => {
+                const itemIndex = this.actor.inventory.findIndex(item);
+                return itemIndex === -1 || this.actor.inventory.amount(item.itemId) < item.amount;
+            });
+            const missingItem = missingIngredient ? findItem(missingIngredient.itemId) : null;
+            this.actor.sendMessage(`You don't have enough ${missingItem?.name.toLowerCase() || 'ore'}.`, true);
             this.stop();
             return;
         }
 
         if (!this.hasLevel()) {
             this.actor.sendMessage(`You need a smithing level of ${bar.requiredLevel} to smelt ${barItem.name.toLowerCase()}s.`, true);
+            this.stop();
             return;
         }
 
@@ -79,12 +85,7 @@ export class SmeltingTask extends ActorTask<Player> {
      */
     private hasMaterials() {
         return this.smeltable.bar.ingredients.every(item => {
-            const itemIndex = this.actor.inventory.findIndex(item);
-            if (itemIndex === -1 || this.actor.inventory.amountInStack(itemIndex) < item.amount) {
-                return false;
-            }
-
-            return true;
+            return this.actor.inventory.amount(item.itemId) >= item.amount;
         });
     }
 

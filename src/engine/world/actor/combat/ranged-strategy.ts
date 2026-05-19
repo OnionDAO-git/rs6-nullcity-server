@@ -7,8 +7,17 @@ import type { Player } from '@engine/world/actor/player/player';
 import { DamageType } from '@engine/world/actor/update-flags';
 import { isNpc, isPlayer } from '@engine/world/actor/util';
 import type { Item } from '@engine/world/items/item';
+import {
+    ammoIsCompatible,
+    defensiveStyleBonus,
+    rangedXpAwards,
+    selectedCombatStyle,
+    weaponAttackRange,
+    weaponAttackSpeed,
+} from './combat-data';
 import type { CombatStrategy } from './combat-strategy';
 import { defenseRoll, rangedAttackRoll, rangedMaxHit, rollAccuracy, rollDamage } from './formulas';
+import { applyCombatModifier, resolveCombatModifiers } from './modifiers';
 
 /**
  * Ranged weapon style families this strategy handles. We treat all four with
@@ -50,14 +59,6 @@ const DEFAULT_PROJECTILE_BY_STYLE: Record<RangedStyle, number> = {
 const ANIM_DRAW_BOW = 426;
 const ANIM_DRAW_CROSSBOW = 427;
 
-/** Ammo families that satisfy a given weapon style. */
-const AMMO_FAMILY_BY_STYLE: Record<RangedStyle, ReadonlyArray<'arrow' | 'bolt' | 'dart' | 'bullet'>> = {
-    bow: ['arrow'],
-    crossbow: ['bolt'],
-    darts: ['dart'],
-    gun: ['bullet', 'bolt'],
-};
-
 interface RangedWeaponBinding {
     style: RangedStyle;
     weaponItem: ItemDetails;
@@ -93,8 +94,7 @@ function readRangedWeapon(player: Player): RangedWeaponBinding | null {
     }
 
     const style = weaponInfo.style as RangedStyle;
-    const projectileId =
-        typeof weaponInfo.projectile_id === 'number' ? weaponInfo.projectile_id : DEFAULT_PROJECTILE_BY_STYLE[style];
+    const projectileId = typeof weaponInfo.projectile_id === 'number' ? weaponInfo.projectile_id : DEFAULT_PROJECTILE_BY_STYLE[style];
 
     return {
         style,
@@ -116,8 +116,11 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
         return null;
     }
 
-    const { style, weaponInfo, ammoSlot, projectileId } = binding;
+    const { style, weaponInfo, ammoSlot, weaponItem } = binding;
     const attackAnim = style === 'crossbow' ? ANIM_DRAW_CROSSBOW : ANIM_DRAW_BOW;
+    const selectedStyle = selectedCombatStyle(player, style);
+    const baseAttackSpeed = weaponAttackSpeed(weaponItem, ATTACK_SPEED_BY_STYLE[style]);
+    const attackSpeedTicks = Math.max(1, baseAttackSpeed + (selectedStyle?.speed_modifier ?? 0));
 
     /**
      * Read the current ammo item for this binding (re-read each tick — the
@@ -137,39 +140,32 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
         return findItem(ammoItem.itemId);
     };
 
+    const readProjectileId = (attacker: Actor): number => {
+        const ammoProjectile = readAmmoDetails(readAmmoItem(attacker))?.equipmentData?.weaponInfo?.projectile_id;
+        if (typeof ammoProjectile === 'number') {
+            return ammoProjectile;
+        }
+        const weaponProjectile = isPlayer(attacker) ? readRangedWeapon(attacker as Player)?.projectileId : binding.projectileId;
+        return weaponProjectile ?? DEFAULT_PROJECTILE_BY_STYLE[style];
+    };
+
     /**
      * Check that the ammo present in `ammoSlot` is acceptable for this weapon.
      * For darts, the ammo IS the weapon itself, so this always passes if
      * main_hand is populated (which it must be — the binding wouldn't exist
      * otherwise on this tick).
      */
-    const ammoIsCompatible = (ammoDetails: ItemDetails | null): boolean => {
+    const equippedAmmoIsCompatible = (ammoDetails: ItemDetails | null): boolean => {
         if (!ammoDetails) {
             return false;
         }
-        // Darts: the equipped weapon doubles as ammo, no compatibility check needed.
-        if (style === 'darts') {
-            return true;
-        }
-        // If the weapon declares a required ammo_type, the ammo must declare a
-        // matching one. Until ammo configs are fully populated with ammo_type
-        // metadata, we fall back to accepting any item in the quiver.
-        const required = weaponInfo.ammo_type;
-        if (!required) {
-            return true;
-        }
-        const ammoFamily = ammoDetails.equipmentData?.weaponInfo?.ammo_type;
-        if (!ammoFamily) {
-            // No metadata on ammo — accept it for v1 to avoid blocking play.
-            return AMMO_FAMILY_BY_STYLE[style].includes(required);
-        }
-        return ammoFamily === required;
+        return ammoIsCompatible(weaponInfo.ammo_type, ammoDetails.equipmentData?.weaponInfo?.ammo_type, style === 'darts');
     };
 
     return {
         kind: 'ranged',
-        attackRange: RANGE_BY_STYLE[style],
-        attackSpeedTicks: ATTACK_SPEED_BY_STYLE[style],
+        attackRange: weaponAttackRange(weaponItem, RANGE_BY_STYLE[style]),
+        attackSpeedTicks,
 
         canActivate(attacker: Actor): { ok: true } | { ok: false; reason: string } {
             // Defensive: the factory only returns a strategy when a ranged weapon
@@ -185,8 +181,8 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
             }
 
             const ammoDetails = readAmmoDetails(ammoItem);
-            if (!ammoIsCompatible(ammoDetails)) {
-                return { ok: false, reason: 'You have no ammo equipped.' };
+            if (!equippedAmmoIsCompatible(ammoDetails)) {
+                return { ok: false, reason: "You can't use that ammo with your weapon." };
             }
 
             return { ok: true };
@@ -235,14 +231,18 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
 
             // startHeight 40, endHeight 36, speed 100, delay 11 ticks — mirrors
             // the existing magic projectile defaults until per-style tuning lands.
-            player.outgoingPackets.sendProjectile(player.position, offsetX, offsetY, projectileId, 40, 36, 100, lockon, 11);
+            player.outgoingPackets.sendProjectile(player.position, offsetX, offsetY, readProjectileId(attacker), 40, 36, 100, lockon, 11);
 
             return { hitDelay: 2 };
         },
 
         rollHit(attacker: Actor, defender: Actor): { damage: number; type: DamageType } {
-            const rangedLevel = attacker.skills.getLevel('ranged');
+            const attackerModifiers = resolveCombatModifiers(attacker);
+            const defenderModifiers = resolveCombatModifiers(defender);
+            const rangedLevel = applyCombatModifier(attacker.skills.getLevel('ranged'), attackerModifiers.ranged);
             const attackBonus = attacker.bonuses?.offensive?.ranged ?? 0;
+            const liveStyle = isPlayer(attacker) ? selectedCombatStyle(attacker as Player, style) : selectedStyle;
+            const rangedStyleBonus = liveStyle?.stance === 'accurate' ? 3 : 0;
 
             // Ranged strength comes from the ammo, not the weapon. Darts roll on
             // the equipped weapon's own ranged_strength field.
@@ -252,7 +252,7 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
 
             const atk = rangedAttackRoll({
                 rangedLevel,
-                styleBonus: 0,
+                styleBonus: rangedStyleBonus,
                 attackBonus,
             });
 
@@ -271,8 +271,8 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
             }
 
             const def = defenseRoll({
-                defenseLevel: defender.skills.getLevel('defence'),
-                styleBonus: 0,
+                defenseLevel: applyCombatModifier(defender.skills.getLevel('defence'), defenderModifiers.defence),
+                styleBonus: defensiveStyleBonus(defender),
                 defenseBonus,
             });
 
@@ -282,7 +282,7 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
 
             const max = rangedMaxHit({
                 rangedLevel,
-                styleBonus: 0,
+                styleBonus: rangedStyleBonus,
                 strengthBonus,
             });
             const damage = rollDamage(max);
@@ -296,13 +296,7 @@ export function createPlayerRangedStrategy(player: Player): CombatStrategy | nul
             if (damage <= 0) {
                 return [];
             }
-            // combat-styles.json has no bow entry today (only melee styles),
-            // so we always award straight ranged + hitpoints. The defensive
-            // split is wired in when bow combat styles are added.
-            return [
-                { skill: 'ranged' as const, exp: damage * 4 },
-                { skill: 'hitpoints' as const, exp: damage * 1.33 },
-            ];
+            return rangedXpAwards(damage, selectedCombatStyle(player, style));
         },
     };
 }

@@ -1,0 +1,44 @@
+[
+    {
+        "npc": "rs:fishing_spot_net_bait",
+        "spawn_x": 3239,
+        "spawn_y": 3244,
+        "movement_radius": 0,
+        "face": "WEST"
+    },
+    {
+        "npc": "rs:fishing_spot_net_bait",
+        "spawn_x": 3241,
+        "spawn_y": 3242,
+        "movement_radius": 0,
+        "face": "WEST"
+    },
+    {
+        "npc": "rs:fishing_spot_lure_bait",
+        "spawn_x": 3104,
+        "spawn_y": 3425,
+        "movement_radius": 0,
+        "face": "SOUTH"
+    },
+    {
+        "npc": "rs:fishing_spot_lure_bait",
+        "spawn_x": 3109,
+        "spawn_y": 3432,
+        "movement_radius": 0,
+        "face": "SOUTH"
+    },
+    {
+        "npc": "rs:fishing_spot_cage_harpoon",
+        "spawn_x": 2853,
+        "spawn_y": 3423,
+        "movement_radius": 0,
+        "face": "SOUTH"
+    },
+    {
+        "npc": "rs:fishing_spot_net_harpoon",
+        "spawn_x": 2855,
+        "spawn_y": 3423,
+        "movement_radius": 0,
+        "face": "SOUTH"
+    }
+]

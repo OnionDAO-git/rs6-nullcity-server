@@ -254,8 +254,19 @@
         "weight": 0.015
     },
 
+    "rs:tiara": {
+        "game_id": 5525,
+        "tradable": true,
+        "stackable": false,
+        "examine": "A tiara.",
+        "weight": 1.0,
+        "equippable": true,
+        "equipment_data": {
+            "equipment_slot": "head"
+        }
+    },
     "rs:air_tiara": {
-        "game_id": 5523,
+        "game_id": 5527,
         "tradable": true,
         "stackable": false,
         "examine": "A tiara infused with the properties of air.",

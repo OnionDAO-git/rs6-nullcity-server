@@ -1308,13 +1308,13 @@ export class Player extends Actor {
     }
 
     private inventoryUpdated(event: ContainerUpdateEvent): void {
-        if (event.type === 'CLEAR_ALL') {
+        if (event.type === 'CLEAR_ALL' || event.type === 'SET_ALL') {
             this.outgoingPackets.sendUpdateAllWidgetItems(widgets.inventory, this.inventory);
-        } else if (event.type === 'ADD') {
-            if (event.slot !== undefined && event.item !== undefined) {
-                this.outgoingPackets.sendUpdateSingleWidgetItem(widgets.inventory, event.slot, event.item);
+        } else if (event.type === 'ADD' || event.type === 'SET' || event.type === 'UPDATE_AMOUNT' || event.type === 'REMOVE') {
+            if (event.slot !== undefined) {
+                this.outgoingPackets.sendUpdateSingleWidgetItem(widgets.inventory, event.slot, this.inventory.items[event.slot]);
             } else {
-                logger.error(`Inventory update event was missing slot or item.`, event);
+                logger.error(`Inventory update event was missing slot.`, event);
             }
         }
         this.updateCarryWeight();

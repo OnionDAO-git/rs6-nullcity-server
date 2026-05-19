@@ -27,15 +27,9 @@ const action: objectInteractionActionHandler = details => {
         return;
     }
 
-    if (!tool) {
-        return;
-    }
-
     details.player.sendMessage('You swing your pick at the rock.');
     details.player.face(details.position);
-    details.player.playAnimation(tool.animation);
 
-    //handleHarvesting(details, tool, ore, Skill.MINING);
     details.player.enqueueTask(MiningTask, [details.object, ore, tool]);
 };
 

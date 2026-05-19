@@ -5,10 +5,10 @@ import { ActorTask } from '@engine/task/impl/actor-task';
 import type { Player } from '@engine/world/actor/player/player';
 import { Skill } from '@engine/world/actor/skills';
 import { animationIds } from '@engine/world/config/animation-ids';
-import { itemIds } from '@engine/world/config/item-ids';
 import { objectIds } from '@engine/world/config/object-ids';
 import { soundIds } from '@engine/world/config/sound-ids';
 import { logger } from '@runejs/common';
+import { SPINNING_RECIPES } from './crafting-data';
 
 interface Spinnable {
     input: number | number[];
@@ -23,26 +23,11 @@ interface SpinnableButton {
     spinnable: Spinnable;
 }
 
-const ballOfWool: Spinnable = { input: itemIds.wool, output: itemIds.ballOfWool, experience: 2.5, requiredLevel: 1 };
-const bowString: Spinnable = { input: itemIds.flax, output: itemIds.bowstring, experience: 15, requiredLevel: 10 };
-const rootsCbowString: Spinnable = {
-    input: [itemIds.roots.oak, itemIds.roots.willow, itemIds.roots.maple, itemIds.roots.yew],
-    output: itemIds.crossbowString,
-    experience: 15,
-    requiredLevel: 10,
-};
-const sinewCbowString: Spinnable = {
-    input: itemIds.sinew,
-    output: itemIds.crossbowString,
-    experience: 15,
-    requiredLevel: 10,
-};
-const magicAmuletString: Spinnable = {
-    input: itemIds.roots.magic,
-    output: itemIds.magicString,
-    experience: 30,
-    requiredLevel: 19,
-};
+const ballOfWool: Spinnable = SPINNING_RECIPES.ballOfWool;
+const bowString: Spinnable = SPINNING_RECIPES.bowString;
+const rootsCbowString: Spinnable = SPINNING_RECIPES.rootsCbowString;
+const sinewCbowString: Spinnable = SPINNING_RECIPES.sinewCbowString;
+const magicAmuletString: Spinnable = SPINNING_RECIPES.magicAmuletString;
 const widgetButtonIds: Map<number, SpinnableButton> = new Map<number, SpinnableButton>([
     [100, { shouldTakeInput: false, count: 1, spinnable: ballOfWool }],
     [99, { shouldTakeInput: false, count: 5, spinnable: ballOfWool }],
@@ -96,16 +81,6 @@ class SpinProductTask extends ActorTask<Player> {
      */
     private spinnable: Spinnable;
 
-    /**
-     * The currently being spun input.
-     */
-    private currentItem: number;
-
-    /**
-     * The index of the current input being spun.
-     */
-    private currentItemIndex = 0;
-
     constructor(player: Player, spinnable: Spinnable, count: number) {
         super(player);
         this.spinnable = spinnable;
@@ -118,39 +93,18 @@ class SpinProductTask extends ActorTask<Player> {
             return;
         }
 
-        // As an multiple items can be used for one of the recipes, check if its an array
-        let isArray = false;
-        if (Array.isArray(this.spinnable.input)) {
-            isArray = true;
-            this.currentItem = this.spinnable.input[0];
-        } else {
-            this.currentItem = this.spinnable.input;
-        }
-
-        // Check if out of input material
-        if (!this.actor.hasItemInInventory(this.currentItem)) {
-            let cancel = false;
-            if (isArray) {
-                if (this.currentItemIndex < (<number[]>this.spinnable.input).length) {
-                    this.currentItemIndex++;
-                    this.currentItem = (<number[]>this.spinnable.input)[this.currentItemIndex];
-                } else {
-                    cancel = true;
-                }
-            } else {
-                cancel = true;
-            }
-            if (cancel) {
-                const itemName = findItem(this.currentItem)?.name || '';
-                this.actor.sendMessage(`You don't have any ${itemName.toLowerCase()}.`);
-                this.stop();
-                return;
-            }
+        const currentItem = this.findAvailableInput();
+        if (!currentItem) {
+            const firstInput = Array.isArray(this.spinnable.input) ? this.spinnable.input[0] : this.spinnable.input;
+            const itemName = findItem(firstInput)?.name || '';
+            this.actor.sendMessage(`You don't have any ${itemName.toLowerCase()}.`);
+            this.stop();
+            return;
         }
 
         // Spinning takes 3 ticks for each item
         if (this.elapsedTicks % 3 === 0) {
-            this.actor.removeFirstItem(this.currentItem);
+            this.actor.removeFirstItem(currentItem);
             this.actor.giveItem(this.spinnable.output);
             this.actor.skills.addExp(Skill.CRAFTING, this.spinnable.experience);
             this.created++;
@@ -163,6 +117,11 @@ class SpinProductTask extends ActorTask<Player> {
         }
 
         this.elapsedTicks++;
+    }
+
+    private findAvailableInput(): number | null {
+        const inputs = Array.isArray(this.spinnable.input) ? this.spinnable.input : [this.spinnable.input];
+        return inputs.find(input => this.actor.hasItemInInventory(input)) || null;
     }
 }
 

@@ -1,143 +1,73 @@
 {
-    "rs:herblore_attack_potion": {
-        "game_id": 221
+    "presets": {
+        "rs:herblore_secondary": {
+            "tradable": true,
+            "stackable": false,
+            "weight": 0.01
+        },
+        "rs:unfinished_potion": {
+            "tradable": true,
+            "weight": 0.035,
+            "examine": "An unfinished potion."
+        },
+        "rs:herblore_potion": {
+            "tradable": true,
+            "weight": 0.035,
+            "examine": "A 3 dose potion."
+        }
     },
-    "rs:herblore_anti_poison_potion": {
-        "game_id": 235
-    },
-    "rs:herblore_relicyms_balm": {
-        "game_id": 1534
-    },
-    "rs:herblore_strength_potion": {
-        "game_id": 225
-    },
-    "rs:herblore_serum_207": {
-        "game_id": 592
-    },
-    "rs:herblore_stat_restore_potion": {
-        "game_id": 223
-    },
-    "rs:guthix_balance_potion": {
-        "game_id": 592
-    },
-    "rs:herblore_energy_potion": {
-        "game_id": 1975
-    },
-    "rs:herblore_defence_potion": {
-        "game_id": 239
-    },
-    "rs:herblore_agility_potion": {
-        "game_id": 2152
-    },
-    "rs:herblore_combat_potion": {
-        "game_id": 9736
-    },
-    "rs:herblore_prayer_restore_potion": {
-        "game_id": 231
-    },
-    "rs:herblore_super_attack_potion": {
-        "game_id": 221
-    },
-    "rs:herblore_super_anti_poison_potion": {
-        "game_id": 235
-    },
-    "rs:herblore_fishing_potion": {
-        "game_id": 231
-    },
-    "rs:herblore_super_energy_potion": {
-        "game_id": 2970
-    },
-    "rs:herblore_hunting_potion": {
-        "game_id": 10109
-    },
-    "rs:herblore_super_strength_potion": {
-        "game_id": 225
-    },
-    "rs:herblore_magic_essence_potion": {
-        "game_id": 9016
-    },
-    "rs:herblore_weapon_poison": {
-        "game_id": 243
-    },
-    "rs:herblore_super_restore_poison": {
-        "game_id": 223
-    },
-    "rs:herblore_super_defence_potion": {
-        "game_id": 239
-    },
-    "rs:herblore_antidote_plus": {
-        "game_id": 6049
-    },
-    "rs:herblore_anti_firebreath_potion": {
-        "game_id": 243
-    },
-    "rs:herblore_ranging_potion": {
-        "game_id": 245
-    },
-    "rs:herblore_weapon_poison_plus": {
-        "game_id": 6016
-    },
-    "rs:herblore_magic_potion": {
-        "game_id": 3138
-    },
-    "rs:herblore_zamorak_brew": {
-        "game_id": 247
-    },
-    "rs:herblore_antidote_plus_plus": {
-        "game_id": 6051
-    },
-    "rs:herblore_saradomin_brew": {
-        "game_id": 6693
-    },
-    "rs:herblore_weapon_poison_plus_plus": {
-        "game_id": 6018
-    },
-    "rs:guam_leaf": {
-        "game_id": 199
-    },
-    "rs:rogues_purse": {
-        "game_id": 1534
-    },
-    "rs:snake_weed": {
-        "game_id": 1526
-    },
-    "rs:marrentill": {
-        "game_id": 251
-    },
-    "rs:tarromin": {
-        "game_id": 253
-    },
-    "rs:harralander": {
-        "game_id": 255
-    },
-    "rs:ranarr_weed": {
-        "game_id": 257
-    },
-    "rs:toadflax": {
-        "game_id": 2998
-    },
-    "rs:irit_leaf": {
-        "game_id": 259
-    },
-    "rs:avantoe": {
-        "game_id": 261
-    },
-    "rs:kwuarm": {
-        "game_id": 263
-    },
-    "rs:snapdragon": {
-        "game_id": 3000
-    },
-    "rs:cadantine": {
-        "game_id": 265
-    },
-    "rs:lantadyme": {
-        "game_id": 2481
-    },
-    "rs:dwarf_weed": {
-        "game_id": 267
-    },
-    "rs:torstol": {
-        "game_id": 269
-    }
+    "rs:guam_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 91 },
+    "rs:marrentill_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 93 },
+    "rs:tarromin_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 95 },
+    "rs:harralander_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 97 },
+    "rs:ranarr_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 99 },
+    "rs:irit_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 101 },
+    "rs:avantoe_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 103 },
+    "rs:kwuarm_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 105 },
+    "rs:cadantine_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 107 },
+    "rs:dwarf_weed_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 109 },
+    "rs:toadflax_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 3002 },
+    "rs:lantadyme_potion_unf": { "extends": "rs:unfinished_potion", "game_id": 2483 },
+
+    "rs:unicorn_horn": { "extends": "rs:herblore_secondary", "game_id": 237, "examine": "A unicorn horn." },
+    "rs:unicorn_horn_dust": { "extends": "rs:herblore_secondary", "game_id": 235, "examine": "Finely ground unicorn horn." },
+    "rs:limpwurt_root": { "extends": "rs:herblore_secondary", "game_id": 225, "examine": "The root of a limpwurt plant." },
+    "rs:red_spiders_eggs": { "extends": "rs:herblore_secondary", "game_id": 223, "examine": "Ew." },
+    "rs:chocolate_bar": { "extends": "rs:herblore_secondary", "game_id": 1973, "examine": "Mmm... this looks tasty." },
+    "rs:chocolate_dust": { "extends": "rs:herblore_secondary", "game_id": 1975, "examine": "A pot of finely ground chocolate." },
+    "rs:white_berries": { "extends": "rs:herblore_secondary", "game_id": 239, "examine": "Sour berries." },
+    "rs:snape_grass": { "extends": "rs:herblore_secondary", "game_id": 231, "examine": "Strange spiky grass." },
+    "rs:potato_cactus": { "extends": "rs:herblore_secondary", "game_id": 3138, "examine": "A cactus shaped like a potato." },
+    "rs:birds_nest": { "extends": "rs:herblore_secondary", "game_id": 5075, "examine": "A bird's nest." },
+    "rs:crushed_nest": { "extends": "rs:herblore_secondary", "game_id": 6693, "examine": "A crushed bird's nest." },
+
+    "rs:herblore_attack_potion": { "extends": "rs:herblore_potion", "game_id": 121 },
+    "rs:herblore_anti_poison_potion": { "extends": "rs:herblore_potion", "game_id": 175 },
+    "rs:herblore_strength_potion": { "extends": "rs:herblore_potion", "game_id": 115 },
+    "rs:herblore_stat_restore_potion": { "extends": "rs:herblore_potion", "game_id": 127 },
+    "rs:guthix_balance_potion": { "extends": "rs:herblore_potion", "game_id": 7662 },
+    "rs:herblore_energy_potion": { "extends": "rs:herblore_potion", "game_id": 3010 },
+    "rs:herblore_defence_potion": { "extends": "rs:herblore_potion", "game_id": 133 },
+    "rs:herblore_agility_potion": { "extends": "rs:herblore_potion", "game_id": 3034 },
+    "rs:herblore_combat_potion": { "extends": "rs:herblore_potion", "game_id": 9741 },
+    "rs:herblore_prayer_restore_potion": { "extends": "rs:herblore_potion", "game_id": 139 },
+    "rs:herblore_super_attack_potion": { "extends": "rs:herblore_potion", "game_id": 145 },
+    "rs:herblore_super_anti_poison_potion": { "extends": "rs:herblore_potion", "game_id": 181 },
+    "rs:herblore_fishing_potion": { "extends": "rs:herblore_potion", "game_id": 151 },
+    "rs:herblore_super_energy_potion": { "extends": "rs:herblore_potion", "game_id": 3018 },
+    "rs:herblore_hunting_potion": { "extends": "rs:herblore_potion", "game_id": 10000 },
+    "rs:herblore_super_strength_potion": { "extends": "rs:herblore_potion", "game_id": 157 },
+    "rs:herblore_magic_essence_potion": { "extends": "rs:herblore_potion", "game_id": 9021 },
+    "rs:herblore_weapon_poison": { "extends": "rs:herblore_potion", "game_id": 187 },
+    "rs:herblore_super_restore_poison": { "extends": "rs:herblore_potion", "game_id": 3026 },
+    "rs:herblore_super_defence_potion": { "extends": "rs:herblore_potion", "game_id": 163 },
+    "rs:herblore_antidote_plus": { "extends": "rs:herblore_potion", "game_id": 5945 },
+    "rs:herblore_anti_firebreath_potion": { "extends": "rs:herblore_potion", "game_id": 2454 },
+    "rs:herblore_ranging_potion": { "extends": "rs:herblore_potion", "game_id": 169 },
+    "rs:herblore_weapon_poison_plus": { "extends": "rs:herblore_potion", "game_id": 5940 },
+    "rs:herblore_magic_potion": { "extends": "rs:herblore_potion", "game_id": 3042 },
+    "rs:herblore_zamorak_brew": { "extends": "rs:herblore_potion", "game_id": 189 },
+    "rs:herblore_antidote_plus_plus": { "extends": "rs:herblore_potion", "game_id": 5954 },
+    "rs:herblore_saradomin_brew": { "extends": "rs:herblore_potion", "game_id": 6687 },
+    "rs:herblore_weapon_poison_plus_plus": { "extends": "rs:herblore_potion", "game_id": 5940 }
 }
