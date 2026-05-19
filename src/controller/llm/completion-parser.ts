@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { type HookDefinition, clampHookPriority } from '../spark/hooks';
 import { type Plan, planSchema } from '../spark/plan';
+import { type NervousRule, clampNervousRulePriority } from '../nervous-system/rules';
 import type { AgentAction } from '../transport/message-codecs';
 import { agentActionSchema, hookConditionSchema } from '../transport/message-codecs';
 
@@ -34,6 +35,8 @@ export interface ParsedCompletion {
     indexPatch?: IndexPatch;
     proposeHook?: HookDefinition[];
     retireHook?: string[];
+    proposeNervousRule?: NervousRule[];
+    retireNervousRule?: string[];
     proposeVariables?: ProposedVariable[];
     error?: string;
 }
@@ -58,6 +61,18 @@ const hookSchema = z.object({
     source: z.enum(['system', 'soul', 'memory']).optional(),
 });
 
+const nervousRuleSchema = z.object({
+    id: z.string().min(1).max(80),
+    priority: z.number().int(),
+    cooldownTicks: z.number().int().nonnegative().optional(),
+    condition: hookConditionSchema,
+    action: agentActionSchema,
+    interruptThinking: z.boolean().optional(),
+    suppressThinking: z.boolean().optional(),
+    contextHint: z.string().max(500).optional(),
+    source: z.enum(['system', 'soul', 'memory']).optional(),
+});
+
 const variableSchema = z.object({
     id: z.string().min(1).max(80),
     initial: z.number().optional(),
@@ -77,6 +92,8 @@ export const completionSchema = z.object({
     indexPatch: z.object({ append: z.array(z.string().min(1).max(300)).max(12).optional() }).optional(),
     proposeHook: z.union([hookSchema, z.array(hookSchema).max(8)]).optional(),
     retireHook: z.union([z.string().min(1).max(80), z.array(z.string().min(1).max(80)).max(8)]).optional(),
+    proposeNervousRule: z.union([nervousRuleSchema, z.array(nervousRuleSchema).max(8)]).optional(),
+    retireNervousRule: z.union([z.string().min(1).max(80), z.array(z.string().min(1).max(80)).max(8)]).optional(),
     proposeVariables: z.array(variableSchema).max(8).optional(),
 });
 
@@ -98,8 +115,18 @@ export function parseCompletion(text: string): ParsedCompletion {
 
         const data = parsed.data;
         const hooks = data.proposeHook ? (Array.isArray(data.proposeHook) ? data.proposeHook : [data.proposeHook]) : undefined;
+        const nervousRules = data.proposeNervousRule
+            ? Array.isArray(data.proposeNervousRule)
+                ? data.proposeNervousRule
+                : [data.proposeNervousRule]
+            : undefined;
         const memos = data.memo ? (Array.isArray(data.memo) ? data.memo : [data.memo]) : undefined;
         const retireHook = data.retireHook ? (Array.isArray(data.retireHook) ? data.retireHook : [data.retireHook]) : undefined;
+        const retireNervousRule = data.retireNervousRule
+            ? Array.isArray(data.retireNervousRule)
+                ? data.retireNervousRule
+                : [data.retireNervousRule]
+            : undefined;
         return {
             ok: true,
             actions: data.actions,
@@ -109,6 +136,8 @@ export function parseCompletion(text: string): ParsedCompletion {
             indexPatch: data.indexPatch,
             proposeHook: hooks?.map(hook => clampHookPriority({ ...hook, source: 'memory' } as HookDefinition, 80)),
             retireHook,
+            proposeNervousRule: nervousRules?.map(rule => clampNervousRulePriority({ ...rule, source: 'memory' } as NervousRule, 100)),
+            retireNervousRule,
             proposeVariables: data.proposeVariables,
         };
     } catch (error) {

@@ -6,6 +6,7 @@ import { buildPromptEnvelope } from '../llm/prompt-envelope';
 import { readHooksMd, retireHooksMd, upsertHooksMd } from '../memory/hooks-md';
 import type { MemoryStore } from '../memory/memory-store';
 import { type RuntimeState, markDeceased } from '../memory/runtime-state';
+import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
 import type { Soul } from '../soul/soul-schema';
 import type { AgentAction, Perception, PerceptionEvent } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
@@ -156,10 +157,18 @@ export class Spark {
         if (parsed.retireHook?.length) {
             retireHooksMd(memoryDir, parsed.retireHook);
         }
+        if (parsed.retireNervousRule?.length) {
+            retireNervousRulesMd(memoryDir, parsed.retireNervousRule);
+        }
         if (parsed.proposeHook?.length || parsed.proposeVariables?.length) {
             upsertHooksMd(memoryDir, {
                 hooks: parsed.proposeHook,
                 variables: parsed.proposeVariables,
+            });
+        }
+        if (parsed.proposeNervousRule?.length) {
+            upsertNervousRulesMd(memoryDir, {
+                rules: parsed.proposeNervousRule,
             });
         }
 

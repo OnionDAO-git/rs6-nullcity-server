@@ -103,6 +103,18 @@ function outputContract(): unknown {
         indexPatch: { append: ['short INDEX.md bullet'] },
         proposeHook: [{ id: 'hook-id', priority: 40, condition: { kind: 'event_kind', value: 'chat' }, cooldownTicks: 10 }],
         retireHook: ['hook-id'],
+        proposeNervousRule: [
+            {
+                id: 'eat-when-hurt',
+                priority: 90,
+                condition: { kind: 'perception_path_lte', value: { path: 'self.hpFraction', value: 0.35 } },
+                action: { kind: 'eat', slot: 0 },
+                cooldownTicks: 2,
+                interruptThinking: true,
+                suppressThinking: true,
+            },
+        ],
+        retireNervousRule: ['eat-when-hurt'],
         proposeVariables: [{ id: 'wariness', initial: 0, expression: 'wariness', min: 0, max: 100 }],
     };
 }

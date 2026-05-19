@@ -1,7 +1,7 @@
 import { parseCompletion } from './completion-parser';
 
 describe('parseCompletion', () => {
-    it('accepts plans, memos, hooks, and variables', () => {
+    it('accepts plans, memos, hooks, nervous rules, and variables', () => {
         const parsed = parseCompletion(
             JSON.stringify({
                 plan: {
@@ -10,6 +10,13 @@ describe('parseCompletion', () => {
                 },
                 memo: { path: 'events/2026-05-19.md', text: 'Met a traveler.' },
                 proposeHook: { id: 'watch-chat', priority: 500, condition: { kind: 'event_kind', value: 'chat' } },
+                proposeNervousRule: {
+                    id: 'eat-on-hit',
+                    priority: 500,
+                    condition: { kind: 'event_kind', value: 'hit' },
+                    action: { kind: 'eat', slot: 3 },
+                    suppressThinking: true,
+                },
                 proposeVariables: [{ id: 'wariness', initial: 1, min: 0, max: 10 }],
             }),
         );
@@ -18,6 +25,8 @@ describe('parseCompletion', () => {
         expect(parsed.plan?.id).toBe('reply');
         expect(parsed.memo?.[0]?.path).toBe('events/2026-05-19.md');
         expect(parsed.proposeHook?.[0]?.priority).toBe(80);
+        expect(parsed.proposeNervousRule?.[0]?.priority).toBe(100);
+        expect(parsed.proposeNervousRule?.[0]?.action).toEqual({ kind: 'eat', slot: 3 });
         expect(parsed.proposeVariables?.[0]?.id).toBe('wariness');
     });
 

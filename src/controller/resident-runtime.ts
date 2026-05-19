@@ -1,14 +1,16 @@
 import type { LlmClient } from './llm/llm-client';
+import { type ResidentBody, createGatewayBody } from './body';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
 import type { MemoryStore } from './memory/memory-store';
 import { type RuntimeState, RuntimeStateStore } from './memory/runtime-state';
+import { NervousSystem } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import type { Soul } from './soul/soul-schema';
 import { initialAttention } from './spark/attention';
-import { Spark } from './spark/spark';
+import { type ThinkingModule, SparkThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import type { Perception, PerceptionEvent } from './transport/message-codecs';
 
@@ -20,12 +22,16 @@ export interface ResidentRuntimeOptions {
     llm: LlmClient;
     actionLog: ActionLog;
     inferenceLog: InferenceLog;
+    thinking?: ThinkingModule;
+    body?: ResidentBody;
 }
 
 export class ResidentRuntime {
     readonly name: string;
     private readonly state: RuntimeState;
-    private readonly spark: Spark;
+    private readonly thinking: ThinkingModule;
+    private readonly nervousSystem: NervousSystem;
+    private readonly body: ResidentBody;
     private readonly history = new PerceptionHistory();
     private readonly memoryRouter = new MemoryRouter();
     private readonly compressor = new PerceptionCompressor();
@@ -38,14 +44,41 @@ export class ResidentRuntime {
             initialAttention(options.soul.frontmatter.attentionProfile),
             options.soul.frontmatter.legacy?.kind || options.soul.frontmatter.archetype,
         );
-        this.spark = new Spark(options.soul, this.state, options.memory, options.llm);
+        this.thinking =
+            options.thinking ||
+            new SparkThinkingModule({
+                soul: options.soul,
+                state: this.state,
+                memory: options.memory,
+                llm: options.llm,
+            });
+        this.nervousSystem = new NervousSystem({ soul: options.soul, state: this.state, memory: options.memory });
+        this.body = options.body || createGatewayBody(this.name, options.gateway, options.actionLog);
     }
 
     async onPerception(perception: Perception): Promise<void> {
         this.history.push(perception);
+        this.body.observePerception(perception);
         const compressed = this.compressor.compress(perception);
+        const reaction = this.nervousSystem.react(perception);
+        if (reaction) {
+            if (this.deciding && reaction.interruptThinking) {
+                this.thinking.stop(`nervous:${reaction.rule.id}`);
+            }
+            await this.body.submit(reaction.action, {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'nervous-system',
+                ruleId: reaction.rule.id,
+            });
+            this.options.stateStore.save(this.state);
+            if (reaction.suppressThinking) {
+                return;
+            }
+        }
+
         if (this.deciding) {
-            if (this.spark.considerInterrupt(perception)) {
+            if (this.thinking.considerInterrupt(perception)) {
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'urgent_interrupt',
@@ -57,7 +90,7 @@ export class ResidentRuntime {
 
         this.deciding = true;
         try {
-            const result = await this.spark.tick({ ...perception, compressed: compressed.text });
+            const result = await this.thinking.think({ ...perception, compressed: compressed.text });
             for (const event of result.syntheticEvents || []) {
                 this.history.push(event);
             }
@@ -72,12 +105,10 @@ export class ResidentRuntime {
             });
 
             for (const action of result.actions) {
-                const actionResult = await this.options.gateway.submitAction(this.name, action);
-                this.options.actionLog.append(this.name, {
+                await this.body.submit(action, {
                     tick: this.state.tick,
-                    action,
-                    result: actionResult,
                     attention_after: this.state.attention,
+                    source: 'thinking',
                 });
             }
         } finally {
@@ -88,6 +119,7 @@ export class ResidentRuntime {
 
     onEvent(event: PerceptionEvent): void {
         this.history.push(event);
+        this.body.observeEvent(event);
         const routed = this.memoryRouter.routeEvent(this.name, event);
         if (routed) {
             this.options.memory.write(this.name, routed.path, routed.content);
@@ -95,7 +127,7 @@ export class ResidentRuntime {
     }
 
     stop(cause = 'runtime_stopped'): void {
-        this.spark.abortInflight(cause);
+        this.thinking.stop(cause);
         this.options.stateStore.save(this.state);
     }
 }

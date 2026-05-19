@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import type { AgentAction } from '../transport/message-codecs';
+import { agentActionSchema } from '../transport/message-codecs';
 
 export type SoulArchetype = 'mentor' | 'achiever' | 'endurer';
 export type DecayCurve = 'gentle' | 'standard' | 'steep';
@@ -27,6 +29,7 @@ export interface SoulFrontmatter {
     };
     variables?: SoulVariableDefinition[];
     hooks?: SoulHookDefinition[];
+    nervousSystem?: SoulNervousRuleDefinition[];
     startingBeliefs?: string[];
     spawnPosition?: unknown;
 }
@@ -63,6 +66,21 @@ export interface SoulHookDefinition {
     interruptInflight?: boolean;
 }
 
+export interface SoulNervousRuleDefinition {
+    id: string;
+    priority: number;
+    cooldownTicks?: number;
+    condition: {
+        kind: string;
+        value?: unknown;
+        [key: string]: unknown;
+    };
+    action: AgentAction;
+    interruptThinking?: boolean;
+    suppressThinking?: boolean;
+    contextHint?: string;
+}
+
 const soulArchetypeSchema = z.enum(['mentor', 'achiever', 'endurer']);
 const decayCurveSchema = z.enum(['gentle', 'standard', 'steep']);
 const variableOperationSchema = z.object({
@@ -83,6 +101,16 @@ const soulHookSchema = z.object({
     condition: z.object({ kind: z.string().min(1) }).passthrough(),
     contextHint: z.string().optional(),
     interruptInflight: z.boolean().optional(),
+});
+const soulNervousRuleSchema = z.object({
+    id: z.string().min(1),
+    priority: z.number().int(),
+    cooldownTicks: z.number().int().nonnegative().optional(),
+    condition: z.object({ kind: z.string().min(1) }).passthrough(),
+    action: agentActionSchema,
+    interruptThinking: z.boolean().optional(),
+    suppressThinking: z.boolean().optional(),
+    contextHint: z.string().optional(),
 });
 
 export const soulFrontmatterSchema = z.object({
@@ -117,6 +145,7 @@ export const soulFrontmatterSchema = z.object({
         .optional(),
     variables: z.array(soulVariableSchema).optional(),
     hooks: z.array(soulHookSchema).optional(),
+    nervousSystem: z.array(soulNervousRuleSchema).optional(),
     startingBeliefs: z.array(z.string()).optional(),
     spawnPosition: z.unknown().optional(),
 });
