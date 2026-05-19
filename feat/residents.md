@@ -16,8 +16,8 @@ We want a third actor type, `Resident`, that:
    combat, dialogue, quests, pathing, region updates) so content authored
    against `Player` Just Works for it. No parallel implementation of those
    systems.
-2. Has **no game client and no socket** — all outbound RS protocol packets are
-   dropped on the floor.
+2. Has **no game client and no real network socket** — it is constructed with a
+   `NullSocket`, and all outbound RS protocol packets are dropped on the floor.
 3. Has a clean **brain ↔ body** boundary so the controller (LLM-with-tools, a
    scripted FSM, a behaviour tree, a human at a debugger) is never coupled to
    internal player methods like `pathfinding.walkTo(...)`.
@@ -56,8 +56,9 @@ the socket. This spec is the proper fix.
 
 Out of scope for v1: MCP `Resource` subscriptions (only tools in v1),
 authentication of external controllers (loopback only — gated behind a config
-flag), trading between residents, multi-controller arbitration for one
-resident (one controller holds `control` at a time — see §10.2).
+flag), multi-controller arbitration for one resident (one controller holds
+`control` at a time — see §10.2). Trading is included in v1 as a server-side
+engine feature in §17; the real-player trade widget UI may land separately.
 
 ## 3. Architecture
 
@@ -77,10 +78,10 @@ External controller (LLM, FSM, viewer)
 ┌────────────────────────────────────────────────────────────────┐
 │  src/server/agent/resident-session.ts                           │
 │   - Owns the link between a transport and a Resident actor      │
-│   - On tick (subscribed to world.tickComplete):                 │
-│       1. perception = PerceptionBuilder.build(resident)         │
-│       2. broadcast perception to all attached transports        │
-│       3. drain action queue → ActionAdapter.apply(resident, a)  │
+│   - On resident tick / world.tickComplete boundaries:           │
+│       1. start of Resident.tick(): drain accepted actions       │
+│       2. world update runs                                      │
+│       3. tickComplete: build+broadcast perception/results       │
 │   - Records every action+perception into the action log         │
 └──────────────┬─────────────────────────────────────────────────┘
                │
@@ -148,20 +149,25 @@ feat/residents.md                   # this file
 
 ## 5. Files to modify
 
-- `src/engine/world/actor/player/player.ts` — make `_socket`, `_inCipher`,
-  `_outCipher` accept `null`. Guard `_lastAddress` derivation
-  (`player.ts:316`). Skip welcome-screen and character-design widget opens
-  when the actor is a `Resident` (or, cleaner: factor the
-  "client-presentation init" out of `init()` into a separate overridable
-  method so `Resident.init()` can no-op it). Do NOT touch the rest of `init()` —
-  inventory, equipment, skills, action pipeline must still run.
-- `src/engine/net/outbound-packet-handler.ts` — `socket` becomes
-  `Socket | null`; `flushQueue()` becomes a no-op when null. All queueing logic
-  stays so any plugin code that reads `outgoingPackets` doesn't crash.
+- `src/engine/world/actor/player/player.ts` — keep the socket non-null for
+  type safety and construct Residents with a `NullSocket`. Guard `_lastAddress`
+  derivation against the `NullSocket` address stub. Split `init()` into
+  `initWorldState()`, `initClientPresentation()`, and `initContentState()`.
+  `Player.init()` calls all three; `Resident.init()` calls world + content only.
+  `player_init` must fire exactly once.
+- `src/engine/net/outbound-packet-handler.ts` — keep packet builders running
+  for Residents and no-op only at the socket write boundary. If the handler's
+  queues need clearing from a no-op subclass, expose a `protected clearQueues()`
+  helper or make the relevant queues `protected`; do not rely on private-field
+  access from `NoopOutboundPacketHandler`.
 - `src/engine/world/world.ts` — `generateFakePlayers()` (`world.ts:460`) is
   rewritten on top of `Resident` + `ScriptedBrain` and renamed
   `spawnFakeResidents()`. The `-fakePlayers` CLI flag stays as an alias.
-- `src/server/game/game-server.ts` — when `serverConfig.agentGatewayEnabled`,
+- `src/engine/world/world.ts` — ensure `deregisterPlayer()` writes
+  `playerList[player.worldIndex] = null` rather than leaving `undefined` holes,
+  because `registerPlayer()` reuses only `null` slots. Add a slot-reuse test
+  that runs at least 1,000 resident connect/disconnect cycles.
+- `src/server/game/game-server.ts` — when `serverConfig.agentGateway.enabled`,
   start `AgentGateway` after `activateGameWorld()`.
 - `src/engine/world/actor/util.ts` — add `isResident(actor): actor is Resident`
   using a runtime brand on `Resident`, so plugins that want to distinguish
@@ -207,20 +213,23 @@ public async init(): Promise<void> {
     // Run base actor init: registers in chunk, marks active, etc.
     // Skip the Player-specific client UI init (welcome screen, char design,
     // command list). The Resident has no UI.
-    await this.initActorOnly();
+    await this.initWorldState();
 
-    // Action pipeline + player_init hook still fire so quest/region content
-    // works the same. Plugins that try to call this.outgoingPackets.* on a
-    // Resident receive a no-op handler — they don't need to special-case.
-    await this.actionPipeline.call('player_init', { player: this });
+    // Content hooks still fire so quest/region content works the same. Plugins
+    // that try to call this.outgoingPackets.* on a Resident receive a no-op
+    // handler — they don't need to special-case.
+    await this.initContentState();
 }
 ```
 
-`initActorOnly()` is a new protected method on `Player` extracted out of the
-existing `init()` body. It contains the chunk registration, inventory load,
-equipment load, bonus recalc, action pipeline registration, and the `_loginDate`
-/ `_lastAddress` assignment. The current `init()` keeps its current behaviour
-by calling `initActorOnly()` then doing the client-only widgets.
+`initWorldState()` contains chunk/quadtree registration, world-list state,
+login metadata, and save rehydration prerequisites. `initClientPresentation()`
+contains welcome screens, character-design widgets, command lists, and other
+socket-facing UI. `initContentState()` contains inventory/equipment rehydration,
+bonus recalculation, subscriptions, spawned-world-item setup, and the
+`player_init` action-pipeline hook. The current `Player.init()` keeps its
+behaviour by calling world → client presentation → content. `Resident.init()`
+calls world → content.
 
 ## 7. Perception model
 
@@ -261,10 +270,13 @@ type ObjectRef = { objectId: number; position: Pos; orientation: number };
 type PerceptionEvent =
     | { kind: 'hit_taken';   from: ActorRef; damage: number; type: DamageType }
     | { kind: 'hit_dealt';   to: ActorRef;   damage: number; type: DamageType }
-    | { kind: 'chat';        from: ActorRef; text: string }
+    | { kind: 'chat';        from: ActorRef; text: string; to?: ActorRef | 'public' }
     | { kind: 'item_received'; item: ItemRef }
     | { kind: 'item_lost';     item: ItemRef }
     | { kind: 'died';        attacker: ActorRef | null }
+    | { kind: 'dialogue_opened'; npc: ActorRef; prompt?: string; options?: string[] }
+    | { kind: 'dialogue_updated'; prompt?: string; options?: string[] }
+    | { kind: 'dialogue_closed' }
     | { kind: 'arrived'; }   // walking queue drained
     | { kind: 'level_up';    skill: SkillName; level: number };
 ```
@@ -279,6 +291,19 @@ where available (e.g. `this.playerEvents` already emits `'exp'`; combat
 already emits via `applyHit`), and add new `playerEvents.emit('chat', ...)`
 calls in the chatbox plugin. Hooks land in this spec's §5; this is the most
 disruptive change to existing files and should be minimised.
+
+Each event kind must have an explicit capture point and one test proving it
+appears in the next perception exactly once:
+
+| event kind | capture point |
+|------------|---------------|
+| `hit_taken` / `hit_dealt` | combat hit application before/after `updateFlags.addDamage` |
+| `chat` | inbound public/private chat packet handling and resident `say` / `whisper` actions |
+| `item_received` / `item_lost` | inventory mutation helpers used by pickups, drops, trades, and plugin rewards |
+| `dialogue_*` | dialogue open/update/close helpers, before packet emission |
+| `arrived` | walking queue transition from non-empty to empty |
+| `level_up` | existing XP/level-up path on `playerEvents` |
+| `died` | `handleDeath()` before respawn state is applied |
 
 `PerceptionBuilder.build(resident)` is pure: same inputs → same output, no
 side effects. This is what makes the action log replayable.
@@ -302,7 +327,9 @@ export type AgentAction =
     | { kind: 'eat';        slot: number }
     | { kind: 'say';        text: string }              // public chat
     | { kind: 'whisper';    to: string; text: string }  // private message
-    | { kind: 'logout';     }                            // disconnects the resident
+    | { kind: 'dialogue_continue' }
+    | { kind: 'dialogue_choice'; optionIndex: number }
+    | { kind: 'logout';     cause?: string }             // disconnects the resident
     | { kind: 'noop'        };
 ```
 
@@ -335,12 +362,18 @@ Each branch translates the typed action into one or more engine calls:
 - `attack` is shorthand for `interact` with option `'attack'`.
 - `say` → `resident.playerEvents.emit('chat', text)` plus the existing public
   chat update flag (so nearby real players see it).
+- `dialogue_continue` / `dialogue_choice` advance the currently-open dialogue
+  state, if any. Without an open dialogue they return
+  `{ ok: false, reason: 'no_active_dialogue' }`.
 
 The adapter never blocks. If an action can't be applied this tick (e.g. target
 out of range), the result records the reason; the brain decides whether to
-retry. We do **not** auto-walk-to-then-do; combos like "walk to NPC and attack"
-are expressed by the brain emitting `move_to` then `attack` across multiple
-ticks. (This keeps the controller in charge and makes the log readable.)
+retry. `interact` intentionally reuses the engine action-pipeline path, so
+plugins with existing `walkTo` behavior may enqueue their normal walk-to task.
+The adapter rejects invalid or missing targets; plugin-level range behavior is
+not bypassed or reimplemented. If a future controller needs strict manual
+walk-then-act semantics, add a separate validate-only/direct-hook action
+instead of weakening the inbound-packet parity path.
 
 ### 8.3 `availableActions` advertisement
 
@@ -385,6 +418,11 @@ decision while the next decision is in flight. This adds one tick of latency
 (~600ms) which is acceptable for the use case. If a decision doesn't arrive
 before the next tick, the resident applies `noop`.
 
+Precise ordering: actions accepted after tick N's `tickComplete` are eligible
+at the start of tick N+1's `Resident.tick()`. Action results produced during
+tick N+1 are emitted with the perception built at tick N+1's `tickComplete`.
+This keeps every result tied to the world state that actually observed it.
+
 Built-in brains:
 
 - `ScriptedBrain` — takes a callback `(p) => AgentAction[]`. Used for tests and
@@ -424,11 +462,15 @@ All messages are JSON, validated with `zod` schemas in
 
 Controller → server:
 - `auth`              — `{ token }`  (no-op in v1 if localhost)
+- `controller_hello`  — `{ controllerId, version, capabilities[] }` optional
+                        handshake used for ownership logging and feature
+                        negotiation. It does not grant control by itself.
 - `list_residents`    — `{ filter?: 'online' | 'offline' | 'all' }` returns
                         all residents on disk plus their `online: boolean`
                         and (if online) the controlling client id
 - `create_resident`   — `{ name, spawnPosition?, initialInventory?, initialEquipment? }`
-                        creates a new save file and immediately connects to it.
+                        creates a new offline save file and returns a summary.
+                        Call `connect_resident` next to place it in the world.
                         Errors with `ENAME_TAKEN` if a save already exists.
 - `connect_resident`  — `{ name, observe: true, control: true,
                             onDisconnect?: 'logout' | 'idle' }`
@@ -452,9 +494,9 @@ Controller → server:
 
 Server → controller:
 - `perception`      — `{ resident_id, perception: Perception }`  (pushed each tick to attached observers)
-- `action_result`   — `{ resident_id, request_id, result: ActionResult }`
+- `action_result`   — `{ resident_id, request_id, result: ActionResult, cause?: string }`
 - `event`           — `{ resident_id, event: PerceptionEvent }` (optional fast-path, also included in next perception)
-- `error`           — `{ request_id?, code, message }`
+- `error`           — `{ request_id?, code, message, cause?: string }`
 
 Multiple controllers can attach to one resident as **observers**, but only one
 controller at a time can hold `control`. The session tracks the controlling
@@ -482,10 +524,11 @@ A typical LLM session: `list_residents` → `connect_resident` →
 `observe_resident` → loop(`submit_action` / `wait_for_event`) →
 `disconnect_resident`.
 
-The MCP server runs over stdio by default (so it can be invoked as a child
-process from any MCP-capable controller) and optionally HTTP for remote
-controllers. It is a thin adapter — no game logic. v1 ships MCP behind the
-same auth gate as the WS port.
+The stdio MCP server is a separate proxy process by default: it connects to
+the WS/HTTP agent gateway and exposes MCP tools to local LLM clients. The
+optional in-process HTTP MCP endpoint may share `ResidentSession` directly.
+Both variants are thin adapters — no game logic. v1 ships MCP behind the same
+auth gate as the WS port.
 
 ### 10.5 Gateway port and config
 
@@ -521,7 +564,7 @@ create_resident (WS) ──▶ ResidentRegistry.create(name)
                           │  - writes initial save to data/residents/<name>.json
                           │    using the same shape as PlayerSave
                           ▼
-                  (falls through to connect flow)
+                  Resident is offline until connect_resident is called.
 ```
 
 ### 11.2 Connect (== login)
@@ -602,7 +645,8 @@ disconnect_resident (WS) ──▶ ResidentSession.logout()
   the existing update / sync / quadtree code treats them identically. A
   `World.residentSlotCap` (default 256 of `MAX_PLAYERS = 1600`) caps how
   many of the 1600 slots residents can hold; once hit, new
-  `connect_resident` calls get `EWORLD_FULL` and queue up.
+  `connect_resident` calls get `EWORLD_FULL`. No gateway-side queue ships in
+  v1; the controller may retry later.
 - **Persistence is the source of truth.** If the server crashes mid-session,
   on restart the resident is offline and the next `connect_resident` loads
   the last autosave. There is no in-memory "live but disconnected" state
@@ -708,11 +752,27 @@ Under `src/engine/world/actor/resident/*.test.ts` and `src/server/agent/*.test.t
   perception, submit `move_to`, observe position change in the next
   perception.
 - `scripted-brain.test.ts` — a goblin-killer brain kills a goblin in ≤N ticks.
+- `slot-reuse.test.ts` — 1,000 resident connect/disconnect cycles leave
+  `playerSlotsRemaining()` unchanged.
+- `resident-save-isolation.test.ts` — resident saves live only under
+  `data/residents/` and cannot collide with real player saves.
+- `resident-init.test.ts` — `player_init` fires exactly once and client
+  presentation packets/widgets are skipped for Residents.
+- `action-queue.test.ts` — queue depth is bounded, FIFO, and late actions apply
+  no earlier than the next `Resident.tick()`.
+- `protocol-validation.test.ts` — malformed WS frames and off-union actions are
+  rejected by zod without mutating world state.
+- `disconnect-policy.test.ts` — controller reconnect works under both
+  `onDisconnect: 'logout'` and `'idle'`.
+- If trading remains in v1: trade tests cover R↔R, R↔P, P↔P happy paths,
+  decline, death/logout cancellation, inventory-full rollback, save failure
+  rollback, and simultaneous accept-stage-2 race.
 
 ## 15. Rollout
 
-1. **Extract `Player.initActorOnly()`** + make `OutboundPacketHandler.socket`
-   optional. No behaviour change for real players. Land + verify.
+1. **Extract `Player.initWorldState()` / `initClientPresentation()` /
+   `initContentState()`** and keep real-player behaviour unchanged. Land +
+   verify `player_init` fires exactly once for both Players and Residents.
 2. **Land `NullSocket` + `NoopOutboundPacketHandler` + `Resident`** with no
    brain wiring. Replace `generateFakePlayers()` with `spawnFakeResidents()`
    that just spawns 10 idle residents around Lumbridge. Verify a real player
@@ -865,10 +925,11 @@ commit validation) is uniform.
 
 `playerOptions` (`player.ts:58`) currently has only "Yeet" and "Follow".
 Add `'Trade'` (index 2, placement `'TOP'`). The existing
-`player-interaction.packet` already routes by index into a
-`player_interaction` action with the option string, so once the option
-exists a new `plugins/player/trade-request.plugin.ts` can hook
-`player_interaction "trade"` and call `TradeEngine.beginRequest`.
+`player-interaction.packet` currently routes only the existing player-option
+opcodes to indexes 0 and 1, so this step also adds the client opcode mapping
+for option index 2. Once the option and opcode route exist, a new
+`plugins/player/trade-request.plugin.ts` can hook `player_interaction "trade"`
+and call `TradeEngine.beginRequest`.
 
 Residents being right-clicked just work — they live in the same
 `world.playerList` and the inbound packet doesn't care that the target
@@ -959,12 +1020,14 @@ active.
 
 ### 17.10 Persistence note
 
-Trade *session state* is not persisted — server restart loses any
-in-flight trade. Inventory writes happen only on successful commit and
-go through normal `Inventory` mutations, so the resident autosave timer
-(§11.4) captures the result on the next save tick. A successful trade
-that occurs in the last 10 minutes before a crash survives because the
-mutated inventory is what gets saved, not the session.
+Trade *session state* is not persisted — server restart loses any in-flight
+trade. Inventory writes happen only on successful commit and go through normal
+`Inventory` mutations. On commit, compute both post-trade inventories first,
+apply both mutations, synchronously save both participants, then emit
+`trade_completed`. If either save fails, roll both inventories back to the
+pre-trade snapshots, save the rollback state, and emit `trade_cancelled`. This
+is stricter than the normal resident autosave cadence because an atomic swap
+must not be lost by a crash in the next 10 minutes.
 
 ### 17.11 New file paths summary
 
@@ -991,12 +1054,13 @@ code is modified.
 Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 
 ### Headless transport
-- ⬜ `Player.initActorOnly()` extraction
-- ⬜ `OutboundPacketHandler.socket` nullable
+- ⬜ `Player.initWorldState()` / `initClientPresentation()` / `initContentState()` extraction
+- ⬜ Packet builders still run; no-op only at socket write boundary
 - ⬜ `NullSocket`
 - ⬜ `NoopOutboundPacketHandler`
 - ⬜ `Resident` class + `isResident` type guard
 - ⬜ `World.spawnFakeResidents()` replaces `generateFakePlayers()`
+- ⬜ `World.deregisterPlayer()` writes `null` slots; slot-reuse test
 
 ### Perception + actions
 - ⬜ `PerceptionBuilder` + types
@@ -1046,6 +1110,7 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 - ⬜ `TradeEngine` registry + `beginRequest` / `activeSessionFor` / `endSessionsFor`
 - ⬜ `emitToParticipant` actor-agnostic emitter
 - ⬜ `Trade` option added to `playerOptions` (`player.ts:58`)
+- ⬜ Player-interaction packet opcode mapping for option index 2
 - ⬜ `plugins/player/trade-request.plugin.ts` (`player_interaction "trade"`)
 - ⬜ New `AgentAction` variants (request / offer / remove / accept_1 / accept_2 / decline)
 - ⬜ New `PerceptionEvent` variants + `Perception.resident.activeTrade`
@@ -1053,6 +1118,7 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 - ⬜ `Player.logout()` + `Actor.handleDeath()` call `endSessionsFor`
 - ⬜ Untradeable items + stack-overflow validation at offer time
 - ⬜ Commit validation: inventory-room check + atomic swap
+- ⬜ Successful commit synchronously saves both participants; save failure rollback
 - ⬜ Tests: R↔R, R↔P, P↔P happy paths; decline; death; logout;
       inventory-full at commit; race on simultaneous accept_2
 

@@ -67,11 +67,14 @@ endpoint, and reads/writes per-resident soul and memory files on disk.
   Configurable per resident if a soul wants a stronger model.
 - **Bounded cost.** Token budgets per tick, per resident, per minute, and per
   day are enforced at the controller. Hitting a budget makes the resident
-  fall back to a deterministic IdleBrain for the remainder of the window
-  rather than queueing inference.
+  enter a local `noInferenceUntil` mode for the remainder of the window
+  rather than queueing inference. Existing plans may continue; new LLM calls
+  are rejected until the window resets.
 - **Auditable.** Every prompt + completion + parsed action set is written to
-  a per-resident JSONL log. Memory mutations are commits to the per-resident
-  memory directory and can be diffed.
+  a per-resident JSONL log when envelope logging is enabled; completion,
+  parse result, token counts, selected plan, and action results are always
+  logged. Memory mutations are commits to the per-resident memory directory
+  and can be diffed.
 
 Out of scope for v1: training/fine-tuning, multi-model orchestration beyond
 one model per tick, image perceptions, voice, attention income mechanics
@@ -172,9 +175,10 @@ src/controller/                              # new entry point
             res-mossy.md                     # example: endurer archetype
     memory/
         memory-store.ts                      # facade over qmd + filesystem
+        runtime-state.ts                     # persisted attention, legacy, budget windows
         memory-router.ts                     # event → which file does it go in
         memory-summariser.ts                 # periodic compaction
-        hooks-md.ts                          # read/write data/memory/<resident>/hooks.md (LLM-proposed hooks)
+        hooks-md.ts                          # read/write data/memory/<resident>/hooks.md (LLM-proposed hooks + variables)
         templates/
             geography.md                     # template for places memory
             social.md                        # template for actor memory
@@ -216,6 +220,7 @@ data/                                        # controller-owned, per-deploy
             monsters/<npc-key>.md            # one file per known monster
             events/<YYYY-MM-DD>.md           # daily episodic log
             hooks.md                         # LLM-proposed memory hooks (§8.5)
+            runtime-state.json               # controller-owned mutable lifecycle state
             INDEX.md                         # hand-written + auto-maintained
     logs/
         <resident-name>/
@@ -344,10 +349,17 @@ Markdown + qmd wins on four points specific to this project:
 3. **One tool, three search modes.** [qmd](https://github.com/tobi/qmd)
    already gives us BM25 + vector + LLM-reranked hybrid query over a
    collection of markdown files. We don't have to write retrieval — we
-   write a wrapper that issues `qmd query --collection <resident-id>` and
+   write a wrapper that issues `qmd query --collection <resident-slug>` and
    parses the JSON output.
 4. **Cheap.** qmd's SQLite index is a single file. Per-resident collections
    are cheap to add/drop. No service to run, no port to manage.
+
+The qmd wrapper is a contract boundary, not a pile of shell calls. It pins a
+supported qmd version in docs/tests, derives a filesystem-safe collection slug
+from the resident id (for example `res:pip` → `res-pip`), keeps the raw
+resident id in markdown frontmatter, and validates the JSON shape returned by
+`qmd get` and `qmd query`. Acceptance tests create a temporary collection and
+exercise `collection add`, `get`, `query --format json`, and `embed`.
 
 ### 7.2 Directory layout per resident
 
@@ -603,17 +615,21 @@ fire.
 | curve     | decay(t in ticks)                                |
 |-----------|--------------------------------------------------|
 | gentle    | `1 + floor(t / 10000)`                           |
-| standard  | `1 + floor(t / 5000) + floor(t / 20000) * 2`     |
-| steep     | `2 + floor(t / 2500) * 2`                        |
+| standard  | `2 + floor(t / 5000) + floor(t / 20000) * 2`     |
+| steep     | `4 + floor(t / 2500) * 2`                        |
 
 `t` is the resident's age in ticks (monotonic across sessions, taken from
 `agentMetadata.ticksLived` in the server save — `residents.md §11.4`). All
 three curves are accelerating: older residents pay more per tick to exist.
 Numbers are tuned so that:
 
-- A `gentle / 5000` resident, idle, lives ~14 game-hours.
+- A `gentle / 5000` resident, idle, lives ~12 game-hours.
 - A `standard / 5000` resident, idle, lives ~6 game-hours.
 - A `steep / 3000` resident, idle, lives ~2 game-hours.
+
+These estimates assume the server's current 600ms tick and the controller's
+24h game-day shorthand of 10000 ticks. Actions, LLM calls, and reconnect churn
+shorten the actual lifetime.
 
 Actions and LLM events both spend attention. The spend table (in
 `attention.ts`):
@@ -650,13 +666,40 @@ When `attention.value` hits 0 or below, the runtime:
    the resident's last act (no LLM call — a deterministic template).
 3. Emits `submit_action { kind: 'logout' }` with `cause:
    'attention_exhausted'` (see §5).
-4. Marks the resident's soul file with a `deceased: { date, tick, cause }`
-   key in frontmatter (the only soul mutation we allow, written once).
+4. Writes `deceased: { date, tick, cause }` to
+   `runtime-state.json`. Soul files remain read-only after load.
 5. Detaches from the gateway.
 
 The save file (server-side, `data/residents/<name>.json`) is preserved.
 Future mechanics may resurrect; v1 leaves the file alone and considers the
 resident dead.
+
+#### 8.3.1 Runtime-state persistence
+
+Attention is controller-owned state and must survive controller restarts.
+Each resident has `data/memory/<resident>/runtime-state.json`:
+
+```ts
+interface RuntimeState {
+    attentionRemaining: number;
+    lastSeenTicksLived: number;
+    legacyProgress: number;
+    mentorDedupeIds?: string[];
+    deceased?: { date: string; tick: number; cause: string };
+    budgetWindows: {
+        minute: BudgetWindowState;
+        gameDay: BudgetWindowState;
+    };
+}
+```
+
+On reconnect, the runtime loads this file before evaluating hooks. It then
+reads `agentMetadata.ticksLived` from the server save and subtracts passive
+decay for `ticksLived - lastSeenTicksLived`; action and LLM spends are already
+accounted in `attentionRemaining`. The runtime writes this file after each
+LLM result, each attention-spending action result, legacy progress changes,
+budget-window changes, and graceful logout. Acceptance: killing and restarting
+the controller never increases attention and never resets mentor dedupe state.
 
 ### 8.4 Resident variables
 
@@ -688,8 +731,11 @@ variables:
 Variables are recomputed each tick by `spark/variables.ts`, a small DSL
 evaluator. They surface in the prompt envelope as a table alongside
 needs. The LLM may also propose new variables via a `proposeVariables`
-field on its response (validated, scoped to the resident, no shadowing
-of system variables).
+field on its response. Proposed variables are validated, scoped to the
+resident, forbidden from shadowing system or soul variables, and persisted
+as memory-owned definitions in `data/memory/<resident>/hooks.md` rather
+than appended to the soul. Souls remain authored source material; learned
+trigger surfaces live in memory.
 
 Variables are the substrate of soul-specific hooks: a mentor watches
 `loneliness`; an achiever watches a custom `progress_stall_ticks`; an
@@ -777,10 +823,16 @@ traversing it."
 
 Each tick, for each hook:
 1. If cooldown is still active → ignore.
-2. If priority ≤ current activity priority → ignore (logged as
-   *shadowed* so we can tune later).
-3. Else → fire: set the cooldown timer, schedule an LLM call tagged
-   with this hook's priority and contextHint.
+2. Compute `interruptMargin`: `0` when the runtime is idle, `10` when a
+   plan or LLM call is active.
+3. If `priority < currentActivityPriority + interruptMargin` → ignore
+   (logged as *shadowed* so we can tune later).
+4. Else → eligible. The highest-priority eligible hook wins and schedules
+   an LLM call tagged with this hook's priority and contextHint.
+
+Cooldown is set only for the winning eligible hook after the LLM call is
+admitted to the runtime or global inference queue. Shadowed, budget-rejected,
+or replaced queued hooks do not consume cooldown.
 
 `idle_reflection` only fires while no other hook has fired in its
 cooldown window — it is the "occasional check-in" path. Without it,
@@ -798,7 +850,7 @@ The runtime tracks the **current activity priority**:
 - `executing` → the priority of the hook whose plan is running
 - `deciding` → the priority of the hook whose LLM call is in flight
 
-A firing hook with `priority ≥ current + 10` AND (in `deciding` mode)
+A firing hook that passed the §8.5.1 margin check AND (in `deciding` mode)
 `interruptInflight === true` interrupts:
 
 - In `deciding`: abort the in-flight fetch via AbortController, charge
@@ -811,10 +863,9 @@ A firing hook with `priority ≥ current + 10` AND (in `deciding` mode)
   decide whether to resume (return the remaining steps as the new
   plan) or pivot.
 
-The `+10` buffer prevents thrash. A hook firing repeatedly at the same
-priority as the current activity cannot pre-empt itself; a hook at
-priority 90 can pre-empt a plan at priority 80 but not one already at
-priority 90.
+The active-mode margin prevents thrash. A hook firing repeatedly at the same
+priority as the current activity cannot pre-empt itself; a hook at priority 90
+can pre-empt a plan at priority 80 but not one already at priority 90.
 
 ### 8.6 Plans — the long-running output of an LLM call
 
@@ -836,6 +887,7 @@ export interface PlanStep {
     action: AgentAction;
     advanceWhen: AdvanceCondition;
     onResult?: { success?: 'next'|'abort'; failure?: 'next'|'abort'|'retry' };
+    repeat?: boolean;           // default false; true for deliberate repeated actions
 }
 
 type AdvanceCondition =
@@ -852,8 +904,12 @@ Each tick in `executing` mode, `spark/plan-executor.ts`:
    + scalar state.
 2. If true: pop the step. If steps remain, submit the next step's
    action; else transition to `idle`.
-3. If false: leave the head step in place. Submit its action if not
-   already in flight server-side; otherwise no-op for this tick.
+3. If false: leave the head step in place. Each step has local state
+   `not_started | submitted | complete` plus the last `requestId`. Submit
+   the action only when `not_started`, or when `repeat: true`, or when
+   `onResult.failure === 'retry'` after a rejected result. Accepted
+   long-running actions like `move_to` are not resubmitted every tick while
+   waiting for `arrived`.
 4. Evaluate `abandonIf`. If any predicate is true, transition to `idle`
    and log `plan_abandoned`.
 5. Decrement `maxTicks`. If zero, transition to `idle` and log
@@ -907,17 +963,18 @@ Parameters: an *achievement spec*, one of:
 - `{ kind: 'reach_place', placeSlug: string }`
 
 Progress is 0 until the achievement fires (one of the relevant
-PerceptionEvents lands), then 1. Achievement is terminal — soul's
-`legacy.complete` is set in the soul's deceased line on completion, and
-attention immediately drops to 0 (the resident's reason for being is
-fulfilled; they log out content). This is intentional and stark.
+PerceptionEvents lands), then 1. Achievement is terminal — `runtime-state.json`
+records `deceased.cause = 'legacy_complete'`, and attention immediately drops
+to 0 (the resident's reason for being is fulfilled; they log out content).
+This is intentional and stark.
 
 ### 9.3 Endurer
 
-Parameters: `targetTicksLived: number` (default: 50000 ≈ 8 game-hours).
+Parameters: `targetTicksLived: number` (default: 50000 ≈ 8 real-time hours at
+600ms/tick, or 5 controller game-days using the 10000-tick shorthand).
 
 Progress = `min(1, ticksLived / targetTicksLived)`. Hits 1 → resident has
-"endured" and the soul gets the deceased line with `cause: 'endured'`. As
+"endured" and `runtime-state.json` records `deceased.cause = 'endured'`. As
 with achievers, attention drops to 0 — the legacy is complete.
 
 ### 9.4 LegacyTracker
@@ -943,6 +1000,12 @@ items in inventory, HP delta, position delta) and these diffs are what
 get fed to the router (§7.7) and the salience filter (§10.2). The raw
 perceptions are never written to memory; only the *interesting deltas*
 plus the perception events.
+
+The controller may also append synthetic `ControllerEvent`s to this history:
+`action_result` from gateway replies, `budget_exhausted`, LLM failure/abort
+summaries, and controller reconnect markers. These are rendered in prompt
+history and logs, but they are not part of the server-owned `PerceptionEvent`
+union in `residents.md`.
 
 ### 10.2 Salience
 
@@ -1318,14 +1381,16 @@ Three layers, all configurable per resident (with global defaults):
 | budget        | default | behaviour on exhaust                        |
 |---------------|---------|---------------------------------------------|
 | per tick      | 26000 in / 800 out tokens | reject the call, emit noop |
-| per minute    | 20 LLM calls             | switch to IdleBrain for the rest of the minute |
-| per game-day  | 200000 in / 8000 out tokens | switch to IdleBrain for the rest of the day |
+| per minute    | 20 LLM calls             | enter `noInferenceUntil` for the rest of the minute |
+| per game-day  | 200000 in / 8000 out tokens | enter `noInferenceUntil` for the rest of the day |
 
 Budgets are tracked in `budgets.ts` with a rolling-window counter. Hitting
-a minute or day budget is a salient event in the resident's perception
-history (kind `'budget_exhausted'`, surfaced in the next envelope) so the
-resident "feels" it — which gives Spark/LLM a chance to do less expensive
-things.
+a minute or day budget adds a controller-side synthetic event
+`{ kind: 'budget_exhausted', window }` to the compressed history rendered in
+the next envelope. This is not a server `PerceptionEvent`; it is a
+`ControllerEvent` merged by the controller so the resident "feels" it. Hooks
+rejected only because of budget do not consume cooldown, attention, or global
+queue slots.
 
 ## 12. Decision loop in detail
 
@@ -1353,7 +1418,7 @@ function onTick(perception: Perception): void {
             if (result.indexPatch)       memory.rewriteIndex(result.indexPatch);
             if (result.proposeHook)      memory.upsertHook(result.proposeHook);
             if (result.retireHook)       memory.retireHook(result.retireHook);
-            if (result.proposeVariables) soul.appendVariables(result.proposeVariables);
+            if (result.proposeVariables) memory.upsertVariables(result.proposeVariables);
             if (result.plan)             runtime.installPlan(result.plan);  // → executing
             else                         runtime.toIdle();
             spark.spendAttention('llm_resolved');
@@ -1371,7 +1436,7 @@ function onTick(perception: Perception): void {
     const winner = firing.maxByPriority();         // null if nothing fires
     const current = runtime.currentActivityPriority();
 
-    if (winner && winner.priority >= current + 10) {
+    if (winner) {
         // Preemption path
         if (runtime.mode === 'deciding' && winner.interruptInflight) {
             runtime.abortInflight(winner.id);      // AbortController.abort()
@@ -1527,8 +1592,9 @@ New top-level CLI entry in the same `package.json`:
 ```json
 {
   "scripts": {
-    "controller": "tsx src/controller/index.ts",
-    "controller:once": "tsx src/controller/index.ts --once"
+    "controller": "npm run build && node dist/controller/index.js",
+    "controller:once": "npm run build && node dist/controller/index.js --once",
+    "controller:dev": "ts-node -r tsconfig-paths/register src/controller/index.ts"
   }
 }
 ```
@@ -1541,11 +1607,13 @@ New deps (controller-only — none of these touch the server runtime):
 - `gray-matter` — soul frontmatter parser
 - `p-queue` — concurrency control
 - `dotenv` — env var loading
+- `execa` — qmd subprocess wrapper
 - (assumed installed system-wide) `qmd` binary, invoked via `execa`
 
 The controller is a Node process. It does not load any server engine
 code. Importing from `src/engine/...` or `src/server/...` is forbidden
-by a lint rule (`@nrwl/no-restricted-imports` or hand-rolled).
+by a repo-appropriate check, e.g. a small `scripts/check-controller-imports.ts`
+run from `npm run lint` alongside Biome.
 
 ## 16. Edge cases
 
@@ -1562,8 +1630,8 @@ by a lint rule (`@nrwl/no-restricted-imports` or hand-rolled).
   Logged.
 - **LLM emits an action against an actor that has since left perception
   range** → server returns `ok: false, reason: 'target_out_of_range'`.
-  The next perception envelope includes this as an `action_result` and
-  the LLM can adapt.
+  The controller records this as a synthetic `ControllerEvent` rendered in
+  the next perception-history section, and the LLM can adapt.
 - **Two attention-exhaustion writes race** (e.g. timing of decay vs.
   spend) → the runtime's `gracefulLogout` is guarded by a single boolean;
   second call no-ops.
@@ -1634,6 +1702,8 @@ Under `src/controller/**/*.test.ts`:
   parsed, archetype/legacy resolved.
 - `attention.test.ts` — decay curves match the table; spend table sums
   correctly; lifespan estimates fall within ±10% of doc figures.
+- `runtime-state.test.ts` — controller restart reloads attention, subtracts
+  passive decay from `ticksLived`, and preserves legacy dedupe state.
 - `salience.test.ts` — fixture perception events → expected salience
   decisions.
 - `memory-router.test.ts` — given a fixture chat/hit/item event sequence,
@@ -1646,6 +1716,8 @@ Under `src/controller/**/*.test.ts`:
   defined operational conditions, doesn't increment otherwise.
 - `controller-host.test.ts` — reconcile loop converges on a fixture
   desired set against a fake gateway.
+- `qmd-wrapper.test.ts` — temp collection covers collection slugging,
+  `collection add`, `get`, `query --format json`, and `embed` JSON contracts.
 - `e2e-script.test.ts` (slow) — boots the server with `-fakeResidents 0`,
   launches the controller against one starter soul backed by a stub LLM
   that returns canned completions, asserts the resident walks the
@@ -1672,7 +1744,7 @@ opt-in flag) exercises a real local ollama for smoke.
 7. **Land the summariser + INDEX.md regeneration.**
 8. **Wire a real local model (ollama qwen2.5:14b)** and run the
    3-resident smoke for 30 game-minutes. Tune attention numbers.
-9. **Land budgets + IdleBrain fallback.**
+9. **Land budgets + local `noInferenceUntil` fallback.**
 10. **Land tests + CI.**
 11. **FEATURES.md** — Controller section, marked.
 
@@ -1750,18 +1822,19 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 - ⬜ Attention decay curves (`gentle`/`standard`/`steep`)
 - ⬜ Attention spend table (incl. aborted / failed LLM costs)
 - ⬜ Soul-defined variables: DSL evaluator + tick recompute
-- ⬜ `proposeVariables` LLM hook → soul variable extension
+- ⬜ `proposeVariables` LLM hook → memory-owned variable extension
 - ⬜ `Hook` + `HookCondition` types
 - ⬜ System hooks table (priority 30–95, incl. `idle_reflection`)
 - ⬜ Soul hooks loaded from frontmatter (priority capped at 80)
 - ⬜ Memory hooks: load/upsert/retire via `hooks.md`
 - ⬜ Hook evaluator: cooldown, fire, shadowed-log, deterministic tie-break
-- ⬜ Interruption rule (`priority ≥ current + 10`, `interruptInflight` gate)
+- ⬜ Interruption margin rule (`0` while idle, `+10` while active) + `interruptInflight` gate
 - ⬜ Mailbox + AbortController plumbing
 - ⬜ Plan installer + `previousIntent` capture on suspend
 - ⬜ Plan executor: advance conditions (5 kinds), `abandonIf`, `maxTicks`
+- ⬜ Plan-step state (`not_started` / `submitted` / `complete`) prevents repeated long-running actions
 - ⬜ First-step candidate hint (`candidates.ts`) — narrowed by triggering hook
-- ⬜ `gracefulLogout('attention_exhausted')` + soul `deceased` mutation
+- ⬜ `gracefulLogout('attention_exhausted')` + `runtime-state.json` deceased marker
 
 ### Legacy
 - ⬜ `LegacyTracker` for each of 3 archetypes
@@ -1772,9 +1845,11 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 
 ### Memory
 - ⬜ Per-resident directory bootstrap from templates
+- ⬜ `runtime-state.json`: attention, legacy progress, deceased state, budget windows
 - ⬜ `memory-router.ts` salient-event → file routing
 - ⬜ `memory-store.ts` path-traversal guarded writes
 - ⬜ `INDEX.md` always-included envelope path
+- ⬜ qmd wrapper contract: version pin, resident slug, JSON-shape validation
 - ⬜ qmd `collection add` on first connect
 - ⬜ Targeted memory excerpt (new actor / monster / place)
 - ⬜ Reflective `qmd query` gated by need pressure
@@ -1806,6 +1881,7 @@ Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 - ⬜ Priority-ordered global concurrency queue (`maxConcurrentInferences`)
 - ⬜ Budgets: per-tick, per-minute, per-game-day
 - ⬜ `budget_exhausted` synthetic event into perception envelope
+- ⬜ `noInferenceUntil`: budget-rejected hooks consume no cooldown/attention/queue slot
 
 ### Logging
 - ⬜ `actions/<date>.jsonl` per resident
