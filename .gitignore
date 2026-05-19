@@ -3,6 +3,10 @@ node_modules
 /dist
 /data/dump
 /data/houses
+/data/residents/*.json
+/data/agent-logs
+/data/controller/logs
+/data/controller/memory
 /data/saves/*.json
 /config/server-config.json
 server-config.yaml

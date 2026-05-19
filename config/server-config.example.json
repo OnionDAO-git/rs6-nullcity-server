@@ -21,5 +21,20 @@
     "checkCredentials": true,
     "tutorialEnabled": false,
     "adminDropsEnabled": true,
-    "bypassTeleportRequirements": false
+    "bypassTeleportRequirements": false,
+    "agentGateway": {
+        "enabled": false,
+        "host": "127.0.0.1",
+        "port": 43595,
+        "authToken": null,
+        "allowDelete": false,
+        "logFullPerceptions": false,
+        "autosaveTicks": 1000,
+        "mcp": {
+            "enabled": false,
+            "path": "/agent/mcp",
+            "actionTimeoutMs": 3000,
+            "eventTimeoutMs": 30000
+        }
+    }
 }

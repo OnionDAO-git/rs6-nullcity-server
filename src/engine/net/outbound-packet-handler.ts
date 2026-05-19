@@ -21,10 +21,10 @@ import { serverConfig } from '@server/game/game-server';
 export class OutboundPacketHandler {
     private static privateMessageCounter: number = Math.floor(Math.random() * 100000000);
 
-    private readonly player: Player;
-    private readonly socket: Socket;
-    private updatingQueue: Buffer[];
-    private packetQueue: Buffer[];
+    protected readonly player: Player;
+    protected readonly socket: Socket;
+    protected updatingQueue: Buffer[];
+    protected packetQueue: Buffer[];
 
     public constructor(player: Player) {
         this.updatingQueue = [];
@@ -569,8 +569,7 @@ export class OutboundPacketHandler {
     }
 
     public logout(): void {
-        this.packetQueue = [];
-        this.updatingQueue = [];
+        this.clearQueues();
 
         this.socket.write(new Packet(181).toBuffer(this.player.outCipher));
     }
@@ -724,8 +723,7 @@ export class OutboundPacketHandler {
             this.socket.write(buffer);
         }
 
-        this.updatingQueue = [];
-        this.packetQueue = [];
+        this.clearQueues();
     }
 
     public queue(packet: Packet, updateTask: boolean = false): void {
@@ -737,6 +735,11 @@ export class OutboundPacketHandler {
 
         const packetBuffer = packet.toBuffer(this.player.outCipher);
         queue.push(packetBuffer);
+    }
+
+    protected clearQueues(): void {
+        this.updatingQueue = [];
+        this.packetQueue = [];
     }
 
     private putCameraPosition(packet: Packet, position: Position, height: number, speed: number, acceleration: number): void {

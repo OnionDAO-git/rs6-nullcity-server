@@ -114,6 +114,10 @@ export abstract class Actor {
         return target.skills.hitpoints.level > 0;
     }
 
+    public get isActive(): boolean {
+        return this.active;
+    }
+
     /**
      * Instantiate a task with the Actor instance and a set of arguments.
      *

@@ -1,12 +1,37 @@
 import { Task } from '@engine/task/task';
 import type { Actor } from '@engine/world/actor/actor';
 import type { Npc } from '@engine/world/actor/npc';
+import type { Player } from '@engine/world/actor/player/player';
+import type { ActorRef } from '@engine/world/actor/resident/action/agent-action';
 import { Skill } from '@engine/world/actor/skills';
 import type { DamageType } from '@engine/world/actor/update-flags';
-import { isNpc, isPlayer } from '@engine/world/actor/util';
+import { isNpc, isPlayer, isResident } from '@engine/world/actor/util';
 import { animationIds } from '@engine/world/config/animation-ids';
 import { logger } from '@runejs/common';
 import { handleDeath } from './death';
+
+const actorRef = (actor: Actor): ActorRef => {
+    if (isPlayer(actor)) {
+        const player = actor as Player;
+        return {
+            id: isResident(player) ? player.residentId : `player:${player.username.toLowerCase()}`,
+            kind: isResident(player) ? 'resident' : 'player',
+            name: player.username,
+            position: { x: player.position.x, y: player.position.y, level: player.position.level },
+            hpFraction: player.skills.hitpoints.level / Math.max(1, player.skills.getMaxLevel('hitpoints')),
+        };
+    }
+
+    const npc = actor as Npc;
+    return {
+        id: `npc:${npc.worldIndex}`,
+        kind: 'npc',
+        key: npc.key,
+        name: npc.name,
+        position: { x: npc.position.x, y: npc.position.y, level: npc.position.level },
+        hpFraction: npc.skills.hitpoints.level / Math.max(1, npc.skills.getMaxLevel('hitpoints')),
+    };
+};
 
 /**
  * A one-shot task that lands a hit on a defender after `delay` ticks.
@@ -69,6 +94,12 @@ export class HitsplatTask extends Task {
         }
 
         target.updateFlags.addDamage(this.damage, this.type, result.remaining, maxHp);
+        if (isResident(target)) {
+            target.emitPerceptionEvent({ kind: 'hit_taken', from: actorRef(this.attacker), damage: this.damage, type: this.type });
+        }
+        if (isResident(this.attacker)) {
+            this.attacker.emitPerceptionEvent({ kind: 'hit_dealt', to: actorRef(target), damage: this.damage, type: this.type });
+        }
 
         // Defender block animation
         if (isNpc(target)) {

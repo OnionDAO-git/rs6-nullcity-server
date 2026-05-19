@@ -1,0 +1,3 @@
+export const TRADE_REQUEST_RANGE = 1;
+export const TRADE_MAX_OFFER_SLOTS = 28;
+export const TRADE_MAX_ITEM_AMOUNT = 2147483647;

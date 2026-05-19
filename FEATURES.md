@@ -26,6 +26,22 @@
 ## Game World
 
 * Private & group Player Instances :heavy_check_mark:
+* Residents / autonomous headless players :yellow_square:
+    * Player-compatible actor subclass with null socket transport :heavy_check_mark:
+    * Tick-bound perception snapshots and typed action adapter :heavy_check_mark:
+    * Agent gateway with WebSocket control and SSE observation :heavy_check_mark:
+    * External TypeScript controller scaffold :yellow_square:
+    * MCP facade :heavy_check_mark:
+* Player-to-player trade :yellow_square:
+    * Resident/server trade session engine :heavy_check_mark:
+    * Resident action/perception trade flow :heavy_check_mark:
+    * Real-player trade UI packets :yellow_square:
+    * Save-failure rollback and broad integration coverage :x:
+* NullCity controller :yellow_square:
+    * Soul and memory directories :heavy_check_mark:
+    * Spark hooks, plans, attention, budgets, and prompt envelope :yellow_square:
+    * Priority-limited LLM inference queue :heavy_check_mark:
+    * qmd-backed retrieval :yellow_square:
 * Personal player instance objects and world items :heavy_check_mark:
 * Bank :heavy_check_mark:
     * Withdraw/Deposit 1,5,10,All :heavy_check_mark:

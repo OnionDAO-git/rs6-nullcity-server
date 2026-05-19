@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { PlayerQuest } from '@engine/config/quest-config';
 import { hasValueNotNull } from '@engine/util/data';
@@ -72,6 +72,33 @@ export interface PlayerSave {
     ignoreList: string[];
 }
 
+export interface ResidentAgentMetadata {
+    createdAt?: string;
+    lastAttachedAt?: string;
+    lastDetachedAt?: string;
+    lastControllerId?: string;
+    [key: string]: unknown;
+}
+
+export interface ResidentSave extends PlayerSave {
+    agentMetadata: ResidentAgentMetadata;
+}
+
+export interface PlayerSaveOptions {
+    saveDir?: string;
+}
+
+const saveFilePath = (username: string, options?: PlayerSaveOptions): string => {
+    const fileName = username.toLowerCase() + '.json';
+    return join(options?.saveDir || 'data/saves', fileName);
+};
+
+export type PlayerSaveLoadResult =
+    | { status: 'ok'; save: PlayerSave }
+    | { status: 'missing' }
+    | { status: 'empty' }
+    | { status: 'corrupt'; backupPath: string; error: unknown };
+
 export const defaultAppearance = (): Appearance => {
     return {
         gender: 0,
@@ -109,11 +136,10 @@ export const validateSettings = (player: Player): void => {
     }
 };
 
-export function savePlayerData(player: Player): boolean {
-    const fileName = player.username.toLowerCase() + '.json';
-    const filePath = join('data/saves', fileName);
+export function savePlayerData(player: Player, options?: PlayerSaveOptions): boolean {
+    const filePath = saveFilePath(player.username, options);
 
-    const playerSave: PlayerSave = {
+    const playerSave: PlayerSave | ResidentSave = {
         username: player.username,
         passwordHash: player.passwordHash,
         position: {
@@ -141,8 +167,13 @@ export function savePlayerData(player: Player): boolean {
         friendsList: player.friendsList,
         ignoreList: player.ignoreList,
     };
+    const agentMetadata = (player as Player & { agentMetadata?: ResidentAgentMetadata }).agentMetadata;
+    if (agentMetadata) {
+        (playerSave as ResidentSave).agentMetadata = agentMetadata;
+    }
 
     try {
+        mkdirSync(options?.saveDir || 'data/saves', { recursive: true });
         writeFileSync(filePath, JSON.stringify(playerSave, null, 4));
         return true;
     } catch (error) {
@@ -151,24 +182,21 @@ export function savePlayerData(player: Player): boolean {
     }
 }
 
-export function playerExists(username: string): boolean {
-    const fileName = username.toLowerCase() + '.json';
-    const filePath = join('data/saves', fileName);
-    return existsSync(filePath);
+export function playerExists(username: string, options?: PlayerSaveOptions): boolean {
+    return existsSync(saveFilePath(username, options));
 }
 
-export function loadPlayerSave(username: string): PlayerSave | null {
-    const fileName = username.toLowerCase() + '.json';
-    const filePath = join('data/saves', fileName);
+export function loadPlayerSaveResult(username: string, options?: PlayerSaveOptions): PlayerSaveLoadResult {
+    const filePath = saveFilePath(username, options);
 
     if (!existsSync(filePath)) {
-        return null;
+        return { status: 'missing' };
     }
 
     const fileData = readFileSync(filePath, 'utf8');
 
     if (!fileData) {
-        return null;
+        return { status: 'empty' };
     }
 
     try {
@@ -176,9 +204,21 @@ export function loadPlayerSave(username: string): PlayerSave | null {
         if (playerSave?.position?.level > 3) {
             playerSave.position.level = 0;
         }
-        return playerSave;
+        return { status: 'ok', save: playerSave };
     } catch (error) {
-        logger.error(`Malformed player save data for ${username}.`);
-        return null;
+        const backupPath = `${filePath}.bak`;
+        try {
+            renameSync(filePath, backupPath);
+        } catch (backupError) {
+            logger.error(`ESAVE_CORRUPT: malformed player save data for ${username}; failed to quarantine save.`);
+            return { status: 'corrupt', backupPath, error: backupError };
+        }
+        logger.error(`ESAVE_CORRUPT: malformed player save data for ${username}; quarantined to ${backupPath}.`);
+        return { status: 'corrupt', backupPath, error };
     }
+}
+
+export function loadPlayerSave(username: string, options?: PlayerSaveOptions): PlayerSave | null {
+    const result = loadPlayerSaveResult(username, options);
+    return result.status === 'ok' ? result.save : null;
 }

@@ -15,7 +15,9 @@ import { TaskScheduler } from '@engine/task/task-scheduler';
 import { activeWorld } from '@engine/world';
 import type { Actor } from '@engine/world/actor/actor';
 import { Npc } from '@engine/world/actor/npc';
-import { Player } from '@engine/world/actor/player/player';
+import type { Player } from '@engine/world/actor/player/player';
+import { Resident } from '@engine/world/actor/resident/resident';
+import { ScriptedBrain } from '@engine/world/actor/resident/brain/scripted-brain';
 import { ExamineCache } from '@engine/world/config/examine-data';
 import { parseScenerySpawns } from '@engine/world/config/scenery-spawns';
 import { TravelLocations } from '@engine/world/config/travel-locations';
@@ -42,7 +44,7 @@ export class World {
     public static readonly MAX_NPCS = 30000;
     public static readonly TICK_LENGTH = 600;
 
-    public readonly playerList: Player[] = new Array(World.MAX_PLAYERS).fill(null);
+    public readonly playerList: Array<Player | null> = new Array(World.MAX_PLAYERS).fill(null);
     public readonly npcList: Npc[] = new Array(World.MAX_NPCS).fill(null);
     public readonly chunkManager: ChunkManager = new ChunkManager();
     public readonly examine: ExamineCache = new ExamineCache();
@@ -52,6 +54,7 @@ export class World {
     public readonly npcTree: Quadtree<QuadtreeKey>;
     public readonly globalInstance = new WorldInstance(v4());
     public readonly tickComplete: Subject<void> = new Subject<void>();
+    public tickCount: number = 0;
     private readonly scheduler = new TaskScheduler();
 
     private readonly debugCycleDuration: boolean = process.argv.indexOf('-tickTime') !== -1;
@@ -457,19 +460,18 @@ export class World {
         this.worldTick();
     }
 
-    public generateFakePlayers(): void {
-        const x: number = 3222;
-        const y: number = 3222;
+    public async spawnFakeResidents(count: number = 1000, origin: Position = new Position(3222, 3222, 0)): Promise<Resident[]> {
         let xOffset: number = 0;
         let yOffset: number = 0;
+        const residents: Resident[] = [];
 
-        const spawnChunk = this.chunkManager.getChunkForWorldPosition(new Position(x, y, 0));
+        const spawnChunk = this.chunkManager.getChunkForWorldPosition(origin);
 
-        for (let i = 0; i < 1000; i++) {
-            // TODO (Jameskmonger) we should be able to create a player without a connection, and without passing nulls in
-            const player = new Player(null as any, null as any, null as any, i, `test${i}`, 'abs', true);
-            this.registerPlayer(player);
-            player.interfaceState.closeAllSlots();
+        for (let i = 0; i < count; i++) {
+            const resident = new Resident(`test${i}`, new ScriptedBrain(() => [{ kind: 'noop' }]), { clientUuid: i, password: 'abs' });
+            this.registerPlayer(resident);
+            await resident.init();
+            resident.interfaceState.closeAllSlots();
 
             xOffset++;
 
@@ -478,16 +480,23 @@ export class World {
                 yOffset--;
             }
 
-            player.position = new Position(x + xOffset, y + yOffset, 0);
-            const newChunk = this.chunkManager.getChunkForWorldPosition(player.position);
+            resident.position = new Position(origin.x + xOffset, origin.y + yOffset, origin.level);
+            const newChunk = this.chunkManager.getChunkForWorldPosition(resident.position);
 
             if (!spawnChunk.equals(newChunk)) {
-                spawnChunk.removePlayer(player);
-                newChunk.addPlayer(player);
+                spawnChunk.removePlayer(resident);
+                newChunk.addPlayer(resident);
             }
 
-            player.initiateRandomMovement();
+            resident.initiateRandomMovement();
+            residents.push(resident);
         }
+
+        return residents;
+    }
+
+    public async generateFakePlayers(): Promise<void> {
+        await this.spawnFakeResidents();
     }
 
     public async worldTick(): Promise<void> {
@@ -517,6 +526,7 @@ export class World {
             logger.info(`World tick completed in ${duration} ms, next tick in ${delay} ms.`);
         }
 
+        this.tickCount++;
         setTimeout(async () => this.worldTick(), delay);
         this.tickComplete.next();
         return Promise.resolve();
@@ -544,13 +554,13 @@ export class World {
 
     public findPlayer(playerUsername: string): Player | null {
         playerUsername = playerUsername.toLowerCase();
-        return this.playerList?.find(p => Boolean(p) && p.username.toLowerCase() === playerUsername) || null;
+        return this.playerList?.find((p): p is Player => p !== null && p.username.toLowerCase() === playerUsername) || null;
     }
 
     public playerOnline(player: Player | string): boolean {
         if (typeof player === 'string') {
             player = player.toLowerCase();
-            return this.playerList.findIndex(p => Boolean(p) && p.username.toLowerCase() === player) !== -1;
+            return this.playerList.findIndex((p): p is Player => p !== null && p.username.toLowerCase() === player) !== -1;
         } else {
             const foundPlayer = this.playerList[player.worldIndex];
             if (!foundPlayer) {
@@ -588,7 +598,7 @@ export class World {
      * @param player The player to remove from the world list.
      */
     public deregisterPlayer(player: Player): void {
-        delete this.playerList[player.worldIndex];
+        this.playerList[player.worldIndex] = null;
     }
 
     public npcExists(npc: Npc): boolean {

@@ -530,6 +530,11 @@ optional in-process HTTP MCP endpoint may share `ResidentSession` directly.
 Both variants are thin adapters — no game logic. v1 ships MCP behind the same
 auth gate as the WS port.
 
+Current support seam: `ResidentMcpFacade` defines the v1 MCP tool set and
+dispatches validated tool arguments into an injected resident-agent client.
+This makes the tool contract testable without real stdio; the stdio proxy can
+wrap this facade and implement the client with the existing WS/HTTP gateway.
+
 ### 10.5 Gateway port and config
 
 A new section in `GameServerConfig`:
@@ -539,7 +544,13 @@ A new section in `GameServerConfig`:
     "enabled": true,
     "host": "127.0.0.1",   // localhost-only by default
     "port": 43594,
-    "authToken": null      // when null, only localhost connections accepted
+    "authToken": null,     // when null, only localhost connections accepted
+    "mcp": {
+        "enabled": false,
+        "path": "/agent/mcp",
+        "actionTimeoutMs": 3000,
+        "eventTimeoutMs": 30000
+    }
 }
 ```
 
@@ -1054,75 +1065,74 @@ code is modified.
 Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 
 ### Headless transport
-- ⬜ `Player.initWorldState()` / `initClientPresentation()` / `initContentState()` extraction
-- ⬜ Packet builders still run; no-op only at socket write boundary
-- ⬜ `NullSocket`
-- ⬜ `NoopOutboundPacketHandler`
-- ⬜ `Resident` class + `isResident` type guard
-- ⬜ `World.spawnFakeResidents()` replaces `generateFakePlayers()`
-- ⬜ `World.deregisterPlayer()` writes `null` slots; slot-reuse test
+- ✅ `Player.initWorldState()` / `initClientPresentation()` / `initContentState()` extraction
+- ✅ Packet builders still run; no-op only at socket write boundary
+- ✅ `NullSocket`
+- ✅ `NoopOutboundPacketHandler`
+- ✅ `Resident` class + `isResident` type guard
+- ✅ `World.spawnFakeResidents()` replaces `generateFakePlayers()`
+- ✅ `World.deregisterPlayer()` writes `null` slots; slot-reuse test
 
 ### Perception + actions
-- ⬜ `PerceptionBuilder` + types
-- ⬜ Event capture hooks (chat, hit, item, level-up, arrived, died)
-- ⬜ `AgentAction` union + zod schemas
-- ⬜ `ActionAdapter` per-variant implementation
-- ⬜ `availableActions` candidate list
+- ✅ `PerceptionBuilder` + types
+- ✅ Event capture hooks (chat/self, hit, item, arrived, trade, level-up, died)
+- ✅ `AgentAction` union + zod schemas
+- 🟡 `ActionAdapter` per-variant implementation (`use_item_on` + NPC `cast_spell` covered; richer spell/player/widget variants still pending)
+- ✅ `availableActions` candidate list
 
 ### Brain
-- ⬜ `Brain` interface
-- ⬜ `ScriptedBrain` + goblin-killer fixture
-- ⬜ `RemoteBrain`
-- ⬜ Prev-tick latency model + timeout → noop fallback
+- ✅ `Brain` interface
+- 🟡 `ScriptedBrain` + goblin-killer fixture
+- ✅ `RemoteBrain`
+- ✅ Prev-tick latency model + timeout → noop fallback
 
 ### Persistence
-- ⬜ Parameterise `savePlayerData`/`loadPlayerSave`/`playerExists` with `{ saveDir }`
-- ⬜ `ResidentSave` shape + `agentMetadata` extension
-- ⬜ `data/residents/` directory + `.gitignore`
-- ⬜ `res:` name prefix + validation regex (both for residents and a
-      blocklist for new player accounts)
-- ⬜ `ResidentRegistry.create / connect / disconnect / delete`
-- ⬜ Autosave timer (every `autosaveTicks` ticks)
-- ⬜ Save-on-shutdown verified via existing `world.kickAllPlayers()` path
-- ⬜ `IdleBrain` (eat-at-low-hp, otherwise stand still)
-- ⬜ `onDisconnect: 'logout' | 'idle'` policy plumbed end-to-end
+- ✅ Parameterise `savePlayerData`/`loadPlayerSave`/`playerExists` with `{ saveDir }`
+- ✅ `ResidentSave` shape + `agentMetadata` extension
+- ✅ `data/residents/` directory + `.gitignore`
+- ✅ `res:` name prefix + validation regex (resident-side strict lowercase namespace + real-player save collision blocklist)
+- ✅ `ResidentRegistry.create / connect / disconnect / delete`
+- ✅ Autosave timer (every `autosaveTicks` ticks)
+- ✅ Save-on-shutdown verified via existing `world.kickAllPlayers()` path
+- ✅ `IdleBrain` (eat-at-low-hp, otherwise stand still)
+- ✅ `onDisconnect: 'logout' | 'idle'` policy plumbed end-to-end
 - ⬜ Crash-recovery test: kill -9 the server, restart, reconnect, state intact
-- ⬜ Save-corruption test: malformed JSON → `ESAVE_CORRUPT` + `.bak` written
+- ✅ Save-corruption test: malformed JSON rejected with `ESAVE_CORRUPT` and quarantined to `.bak`
 
 ### Gateway
-- ⬜ `AgentGatewayConfig` in `GameServerConfig`
-- ⬜ HTTP+WS server bootstrap (`ws` dep)
-- ⬜ `ResidentSession` + per-resident broadcast
-- ⬜ Message schemas (zod) + frame parser
-- ⬜ `create_resident` / `connect_resident` / `disconnect_resident` /
+- ✅ `AgentGatewayConfig` in `GameServerConfig`
+- ✅ HTTP+WS server bootstrap (`ws` dep)
+- ✅ `ResidentSession` + per-resident broadcast
+- ✅ Message schemas (zod) + frame parser
+- ✅ `create_resident` / `connect_resident` / `disconnect_resident` /
       `delete_resident` / `list_residents` handlers
-- ⬜ Control vs observe role tracking + `ECONTROL_HELD`
-- ⬜ SSE spectator endpoint
-- ⬜ MCP façade (opt-in dep) + tools
+- ✅ Control vs observe role tracking + `ECONTROL_HELD`
+- ✅ SSE spectator endpoint
+- ✅ MCP façade (opt-in dep) + tools
 
 ### Logging
-- ⬜ Per-resident JSONL action log
-- ⬜ Daily rotation
-- ⬜ `logFullPerceptions` gate
+- ✅ Per-resident JSONL action log
+- ✅ Daily rotation
+- ✅ `logFullPerceptions` gate
 
 ### Trading
-- ⬜ `TradeSession` state machine
-- ⬜ `TradeEngine` registry + `beginRequest` / `activeSessionFor` / `endSessionsFor`
-- ⬜ `emitToParticipant` actor-agnostic emitter
-- ⬜ `Trade` option added to `playerOptions` (`player.ts:58`)
+- ✅ `TradeSession` state machine
+- ✅ `TradeEngine` registry + `beginRequest` / `activeSessionFor` / `endSessionsFor`
+- ✅ `emitToParticipant` actor-agnostic emitter
+- ✅ `Trade` option added to `playerOptions` (`player.ts:58`)
 - ⬜ Player-interaction packet opcode mapping for option index 2
-- ⬜ `plugins/player/trade-request.plugin.ts` (`player_interaction "trade"`)
-- ⬜ New `AgentAction` variants (request / offer / remove / accept_1 / accept_2 / decline)
-- ⬜ New `PerceptionEvent` variants + `Perception.resident.activeTrade`
-- ⬜ `TradeWidgetPackets` real-player UI packets
-- ⬜ `Player.logout()` + `Actor.handleDeath()` call `endSessionsFor`
-- ⬜ Untradeable items + stack-overflow validation at offer time
-- ⬜ Commit validation: inventory-room check + atomic swap
-- ⬜ Successful commit synchronously saves both participants; save failure rollback
-- ⬜ Tests: R↔R, R↔P, P↔P happy paths; decline; death; logout;
+- ✅ `plugins/player/trade-request.plugin.ts` (`player_interaction "trade"`)
+- ✅ New `AgentAction` variants (request / offer / remove / accept_1 / accept_2 / decline)
+- ✅ New `PerceptionEvent` variants + `Perception.resident.activeTrade`
+- 🟡 `TradeWidgetPackets` real-player UI packets
+- ✅ `Player.logout()` + `Actor.handleDeath()` call `endSessionsFor`
+- ✅ Untradeable items + stack-overflow validation at offer time
+- ✅ Commit validation: inventory-room check + atomic swap/rollback
+- ✅ Successful commit synchronously saves both participants; save failure rollback
+- 🟡 Tests: focused save-failure rollback covered; R↔R, R↔P, P↔P happy paths; decline; death; logout;
       inventory-full at commit; race on simultaneous accept_2
 
 ### Docs + flags
-- ⬜ `-fakeResidents` CLI flag wired
-- ⬜ FEATURES.md Residents section
-- ⬜ FEATURES.md P2P Trade marked (real-player UI side)
+- ✅ `-fakeResidents` CLI flag wired
+- ✅ FEATURES.md Residents section
+- ✅ FEATURES.md P2P Trade marked (real-player UI side)

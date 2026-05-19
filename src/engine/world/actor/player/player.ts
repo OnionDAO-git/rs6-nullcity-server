@@ -27,7 +27,15 @@ import { daysSinceLastLogin } from '@engine/util/time';
 import { getVarbitMorphIndex } from '@engine/util/varbits';
 import { activeWorld } from '@engine/world';
 import type { Appearance, PlayerSettings } from '@engine/world/actor/player/player-data';
-import { defaultAppearance, defaultSettings, loadPlayerSave, playerExists, savePlayerData } from '@engine/world/actor/player/player-data';
+import {
+    type PlayerSaveOptions,
+    defaultAppearance,
+    defaultSettings,
+    loadPlayerSave,
+    playerExists,
+    savePlayerData,
+} from '@engine/world/actor/player/player-data';
+import { TradeEngine } from '@engine/world/actor/trade/trade-engine';
 import { animationIds } from '@engine/world/config/animation-ids';
 import { itemIds } from '@engine/world/config/item-ids';
 import type { PlayerWidget } from '@engine/world/config/widget';
@@ -66,6 +74,11 @@ export const playerOptions: { option: string; index: number; placement: 'TOP' | 
         option: 'Follow',
         index: 0,
         placement: 'BOTTOM',
+    },
+    {
+        option: 'Trade',
+        index: 2,
+        placement: 'TOP',
     },
 ];
 
@@ -144,10 +157,10 @@ export class Player extends Actor {
      */
     public readonly metadata: Actor['metadata'] & Partial<PlayerMetadata> = {};
 
-    private readonly _socket: Socket;
-    private readonly _inCipher: Isaac;
-    private readonly _outCipher: Isaac;
-    private readonly _outgoingPackets: OutboundPacketHandler;
+    protected readonly _socket: Socket;
+    protected readonly _inCipher: Isaac;
+    protected readonly _outCipher: Isaac;
+    protected readonly _outgoingPackets: OutboundPacketHandler;
     private readonly _equipment: ItemContainer;
     private _rights: Rights;
     private _loginDate: Date;
@@ -180,7 +193,7 @@ export class Player extends Actor {
         this.passwordHash = password;
         this._rights = Rights.ADMIN;
         this.isLowDetail = isLowDetail;
-        this._outgoingPackets = new OutboundPacketHandler(this);
+        this._outgoingPackets = this.createOutboundPacketHandler();
         this.playerUpdateTask = new PlayerSyncTask(this);
         this.npcUpdateTask = new NpcSyncTask(this);
         this.trackedPlayers = [];
@@ -198,6 +211,19 @@ export class Player extends Actor {
     }
 
     public async init(): Promise<void> {
+        const playerChunk = this.initWorldState();
+        await this.initClientPresentation();
+        await this.initContentState(playerChunk);
+
+        this.outgoingPackets.flushQueue();
+        logger.info(`${this.username}:${this.worldIndex} has logged in.`);
+    }
+
+    protected createOutboundPacketHandler(): OutboundPacketHandler {
+        return new OutboundPacketHandler(this);
+    }
+
+    protected initWorldState(): Chunk {
         super.init();
 
         this.updateFlags.mapRegionUpdateRequired = true;
@@ -206,18 +232,15 @@ export class Player extends Actor {
         const playerChunk = activeWorld.chunkManager.getChunkForWorldPosition(this.position);
         playerChunk.addPlayer(this);
 
+        this._loginDate = new Date();
+        this._lastAddress = (this._socket?.address() as AddressInfo)?.address || '127.0.0.1';
+
+        return playerChunk;
+    }
+
+    protected async initClientPresentation(): Promise<void> {
         this.outgoingPackets.updateCurrentMapChunk();
         this.outgoingPackets.chatboxMessage('Welcome to RuneJS.');
-
-        this.skills.values.forEach((skill, index) => this.outgoingPackets.updateSkill(index, this.skills.getLevel(index), skill.exp));
-
-        this.outgoingPackets.sendUpdateAllWidgetItems(widgets.inventory, this.inventory);
-        this.outgoingPackets.sendUpdateAllWidgetItems(widgets.equipment, this.equipment);
-        for (const item of this.equipment.items) {
-            if (item) {
-                await this.actionPipeline.call('equipment_change', this, item.itemId, 'EQUIP');
-            }
-        }
 
         if (this.firstTimePlayer) {
             if (!serverConfig.tutorialEnabled) {
@@ -287,6 +310,23 @@ export class Player extends Actor {
             this.outgoingPackets.updatePlayerOption(playerOption.option, playerOption.index, playerOption.placement);
         }
 
+        if (this.rights === Rights.ADMIN) {
+            this.sendCommandList(actionHookMap.player_command as PlayerCommandActionHook[]);
+        }
+        this.outgoingPackets.resetAllClientConfigs();
+    }
+
+    protected async initContentState(playerChunk: Chunk): Promise<void> {
+        this.skills.values.forEach((skill, index) => this.outgoingPackets.updateSkill(index, this.skills.getLevel(index), skill.exp));
+
+        this.outgoingPackets.sendUpdateAllWidgetItems(widgets.inventory, this.inventory);
+        this.outgoingPackets.sendUpdateAllWidgetItems(widgets.equipment, this.equipment);
+        for (const item of this.equipment.items) {
+            if (item) {
+                await this.actionPipeline.call('equipment_change', this, item.itemId, 'EQUIP');
+            }
+        }
+
         this.updateBonuses();
         this.updateCarryWeight(true);
         this.updateQuestTab();
@@ -313,14 +353,6 @@ export class Player extends Actor {
             }
         });
 
-        this._loginDate = new Date();
-        this._lastAddress = (this._socket?.address() as AddressInfo)?.address || '127.0.0.1';
-
-        if (this.rights === Rights.ADMIN) {
-            this.sendCommandList(actionHookMap.player_command as PlayerCommandActionHook[]);
-        }
-        this.outgoingPackets.resetAllClientConfigs();
-
         await this.actionPipeline.call('player_init', { player: this });
 
         activeWorld.spawnWorldItems(this);
@@ -328,15 +360,14 @@ export class Player extends Actor {
         if (!this.metadata.customMap) {
             this.chunkChanged(playerChunk);
         }
-
-        this.outgoingPackets.flushQueue();
-        logger.info(`${this.username}:${this.worldIndex} has logged in.`);
     }
 
     public logout(): void {
         if (!this.active) {
             return;
         }
+
+        TradeEngine.endSessionsFor(this, 'logout');
 
         if (this.position.level > 3) {
             this.position.level = 0;
@@ -365,8 +396,8 @@ export class Player extends Actor {
         logger.info(`${this.username} has logged out.`);
     }
 
-    public save(): void {
-        savePlayerData(this);
+    public save(): boolean {
+        return savePlayerData(this, this.saveOptions());
     }
 
     public privateMessageReceived(fromPlayer: Player, messageBytes: number[]): void {
@@ -445,6 +476,8 @@ export class Player extends Actor {
         }
         this.metadata.dying = true;
 
+        TradeEngine.endSessionsFor(this, 'death');
+
         // NOTE: Disengaging attackers (NPCs/players currently targeting this
         // player) is handled centrally by `combat/death.ts:disengageAttackers`,
         // which is invoked from `handleDeath(target, attacker)` in that module
@@ -520,9 +553,7 @@ export class Player extends Actor {
                 value.modifiedLevel = undefined;
             }
         }
-        this.skills.values.forEach((skill, index) =>
-            this.outgoingPackets.updateSkill(index, this.skills.getLevel(index), skill.exp),
-        );
+        this.skills.values.forEach((skill, index) => this.outgoingPackets.updateSkill(index, this.skills.getLevel(index), skill.exp));
 
         // Teleport to Lumbridge spawn.
         this.teleport(new Position(3222, 3219, 0));
@@ -1421,8 +1452,12 @@ export class Player extends Actor {
         }
     }
 
+    protected saveOptions(): PlayerSaveOptions | undefined {
+        return undefined;
+    }
+
     private loadSaveData(): void {
-        const playerSave = loadPlayerSave(this.username);
+        const playerSave = loadPlayerSave(this.username, this.saveOptions());
         const firstTimePlayer = playerSave === null;
         this.firstTimePlayer = firstTimePlayer;
 

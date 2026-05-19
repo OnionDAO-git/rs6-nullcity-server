@@ -17,6 +17,9 @@
         "update": "npm run start:update",
         "infra": "npm run start:infra",
         "standalone": "npm run start:standalone",
+        "controller": "npm run build && node dist/controller/index.js",
+        "controller:once": "npm run build && node dist/controller/index.js --once",
+        "controller:dev": "ts-node -r tsconfig-paths/register src/controller/index.ts",
         "build": "rimraf dist && swc ./src -d dist --strip-leading-paths",
         "build:watch": "swc ./src -d dist -w --strip-leading-paths",
         "lint": "biome lint",
@@ -34,13 +37,7 @@
         "type": "git",
         "url": "git+ssh://git@github.com/runejs/server.git"
     },
-    "keywords": [
-        "runejs",
-        "runescape",
-        "typescript",
-        "game server",
-        "game engine"
-    ],
+    "keywords": ["runejs", "runescape", "typescript", "game server", "game engine"],
     "author": "Tynarus",
     "license": "GPL-3.0",
     "bugs": {
@@ -48,10 +45,12 @@
     },
     "homepage": "https://github.com/runejs/server#readme",
     "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.29.0",
         "@runejs/common": "2.0.2-beta.3",
         "@runejs/filestore": "0.17.0",
         "@runejs/login-server": "2.1.0",
         "@runejs/update-server": "1.4.0",
+        "execa": "^9.6.1",
         "js-yaml": "^4.1.0",
         "json5": "^2.2.3",
         "lodash": "^4.17.21",
@@ -59,7 +58,9 @@
         "rxjs": "^7.8.1",
         "source-map-support": "^0.5.21",
         "tslib": "^2.8.1",
-        "uuid": "^11.0.5"
+        "uuid": "^11.0.5",
+        "ws": "^8.18.0",
+        "zod": "^3.25.76"
     },
     "devDependencies": {
         "@biomejs/biome": "1.9.4",
@@ -70,6 +71,7 @@
         "@types/lodash": "^4.17.14",
         "@types/node": "^22.10.8",
         "@types/uuid": "^10.0.0",
+        "@types/ws": "^8.5.13",
         "chokidar": "^5.0.0",
         "concurrently": "^9.1.2",
         "jest": "^29.7.0",

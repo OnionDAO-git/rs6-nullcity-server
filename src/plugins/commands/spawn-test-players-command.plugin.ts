@@ -1,6 +1,5 @@
 import type { commandActionHandler } from '@engine/action/pipe/player-command.action';
 import { activeWorld } from '@engine/world';
-import { Player } from '@engine/world/actor/player/player';
 import { Position } from '@engine/world/position';
 import { World } from '@engine/world/world';
 
@@ -14,10 +13,6 @@ const handler: commandActionHandler = ({ player, args }) => {
 
     const x: number = player.position.x;
     const y: number = player.position.y;
-    let xOffset: number = 0;
-    let yOffset: number = 0;
-
-    const spawnChunk = activeWorld.chunkManager.getChunkForWorldPosition(new Position(x, y, 0));
 
     const worldSlotsRemaining = activeWorld.playerSlotsRemaining() - 1;
     if (worldSlotsRemaining <= 0) {
@@ -31,31 +26,7 @@ const handler: commandActionHandler = ({ player, args }) => {
         player.sendMessage(`Warning: There was only room for ${playerSpawnCount}/${playerCount} player spawns.`);
     }
 
-    // TODO (JameskmongeR) what's the difference between this and `generateFakePlayers`
-
-    for (let i = 0; i < playerSpawnCount; i++) {
-        // TODO (Jameskmonger) we should be able to create a player without a connection, and without passing nulls in
-        const testPlayer = new Player(null as any, null as any, null as any, i, `test${i}`, 'abs', true);
-        activeWorld.registerPlayer(testPlayer);
-        testPlayer.interfaceState.closeAllSlots();
-
-        xOffset++;
-
-        if (xOffset > 20) {
-            xOffset = 0;
-            yOffset--;
-        }
-
-        testPlayer.position = new Position(x + xOffset, y + yOffset, 0);
-        const newChunk = activeWorld.chunkManager.getChunkForWorldPosition(testPlayer.position);
-
-        if (!spawnChunk.equals(newChunk)) {
-            spawnChunk.removePlayer(testPlayer);
-            newChunk.addPlayer(testPlayer);
-        }
-
-        testPlayer.initiateRandomMovement();
-    }
+    activeWorld.spawnFakeResidents(playerSpawnCount, new Position(x, y, 0)).catch(error => player.sendMessage(error?.message || String(error)));
 };
 
 export default {

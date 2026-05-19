@@ -1803,116 +1803,116 @@ is never blocked.
 Update as we go. ✅ done · 🟡 in progress · ⬜ not started.
 
 ### Host + transport
-- ⬜ `nullcity-controller` entrypoint + `controller.yml` loader
-- ⬜ `GatewayClient` WS implementation matching residents.md §10.2
-- ⬜ `controller_hello` handshake schema in server messages
-- ⬜ `ControllerHost.reconcile()` loop + 10s timer
-- ⬜ Reconnect/backoff
-- ⬜ Global `maxConcurrentInferences` queue
+- ✅ `nullcity-controller` entrypoint + `controller.yml` loader
+- ✅ `GatewayClient` WS implementation matching residents.md §10.2
+- ✅ `controller_hello` handshake schema in server messages
+- ✅ `ControllerHost.reconcile()` loop + 10s timer
+- ✅ Reconnect/backoff
+- ✅ Global `maxConcurrentInferences` queue
 
 ### Soul
-- ⬜ `soul-schema.ts` zod schema
-- ⬜ `soul-loader.ts` with gray-matter
-- ⬜ 3 starter souls (mentor / achiever / endurer)
+- ✅ `soul-schema.ts` zod schema
+- ✅ `soul-loader.ts` with gray-matter
+- ✅ 3 starter souls (mentor / achiever / endurer)
 - ⬜ Soul validation in CI
 
 ### Spark
-- ⬜ Runtime mode state machine: `idle` / `executing` / `deciding`
-- ⬜ `Need` type + per-need pressure functions
-- ⬜ Attention decay curves (`gentle`/`standard`/`steep`)
-- ⬜ Attention spend table (incl. aborted / failed LLM costs)
-- ⬜ Soul-defined variables: DSL evaluator + tick recompute
-- ⬜ `proposeVariables` LLM hook → memory-owned variable extension
-- ⬜ `Hook` + `HookCondition` types
-- ⬜ System hooks table (priority 30–95, incl. `idle_reflection`)
-- ⬜ Soul hooks loaded from frontmatter (priority capped at 80)
-- ⬜ Memory hooks: load/upsert/retire via `hooks.md`
-- ⬜ Hook evaluator: cooldown, fire, shadowed-log, deterministic tie-break
-- ⬜ Interruption margin rule (`0` while idle, `+10` while active) + `interruptInflight` gate
-- ⬜ Mailbox + AbortController plumbing
-- ⬜ Plan installer + `previousIntent` capture on suspend
-- ⬜ Plan executor: advance conditions (5 kinds), `abandonIf`, `maxTicks`
-- ⬜ Plan-step state (`not_started` / `submitted` / `complete`) prevents repeated long-running actions
-- ⬜ First-step candidate hint (`candidates.ts`) — narrowed by triggering hook
-- ⬜ `gracefulLogout('attention_exhausted')` + `runtime-state.json` deceased marker
+- ✅ Runtime mode state machine: `idle` / `executing` / `deciding`
+- ✅ `Need` type + per-need pressure functions
+- ✅ Attention decay curves (`gentle`/`standard`/`steep`)
+- ✅ Attention spend table (incl. aborted / failed LLM costs)
+- ✅ Soul-defined variables: DSL evaluator + tick recompute
+- ✅ `proposeVariables` LLM hook → memory-owned variable extension
+- ✅ `Hook` + `HookCondition` types
+- ✅ System hooks table (priority 30–95, incl. `idle_reflection`)
+- ✅ Soul hooks loaded from frontmatter (priority capped at 80)
+- ✅ Memory hooks: load/upsert/retire via `hooks.md`
+- ✅ Hook evaluator: cooldown, fire, shadowed-log, deterministic tie-break
+- ✅ Interruption margin rule (`0` while idle, `+10` while active) + `interruptInflight` gate
+- ✅ Mailbox + AbortController plumbing
+- ✅ Plan installer + `previousIntent` capture on suspend
+- ✅ Plan executor: advance conditions (5 kinds), `abandonIf`, `maxTicks`
+- ✅ Plan-step state (`not_started` / `submitted` / `complete`) prevents repeated long-running actions
+- ✅ First-step candidate hint (`candidates.ts`) — narrowed by triggering hook
+- ✅ `gracefulLogout('attention_exhausted')` + `runtime-state.json` deceased marker
 
 ### Legacy
-- ⬜ `LegacyTracker` for each of 3 archetypes
-- ⬜ Mentor: operational teach-detection
-- ⬜ Achiever: 4 achievement-spec kinds
-- ⬜ Endurer: ticksLived progress
-- ⬜ Legacy-complete → attention to 0
+- ✅ `LegacyTracker` for each of 3 archetypes
+- ✅ Mentor: operational teach-detection
+- ✅ Achiever: 4 achievement-spec kinds
+- ✅ Endurer: ticksLived progress
+- ✅ Legacy-complete → attention to 0
 
 ### Memory
-- ⬜ Per-resident directory bootstrap from templates
-- ⬜ `runtime-state.json`: attention, legacy progress, deceased state, budget windows
-- ⬜ `memory-router.ts` salient-event → file routing
-- ⬜ `memory-store.ts` path-traversal guarded writes
-- ⬜ `INDEX.md` always-included envelope path
-- ⬜ qmd wrapper contract: version pin, resident slug, JSON-shape validation
-- ⬜ qmd `collection add` on first connect
-- ⬜ Targeted memory excerpt (new actor / monster / place)
-- ⬜ Reflective `qmd query` gated by need pressure
+- ✅ Per-resident directory bootstrap from templates
+- ✅ `runtime-state.json`: attention, legacy progress, deceased state, budget windows
+- ✅ `memory-router.ts` salient-event → file routing
+- ✅ `memory-store.ts` path-traversal guarded writes
+- ✅ `INDEX.md` always-included envelope path
+- 🟡 qmd wrapper contract: version pin, resident slug, JSON-shape validation
+- ✅ qmd `collection add` on first connect
+- ✅ Targeted memory excerpt (new actor / monster / place)
+- 🟡 Reflective `qmd query` gated by need pressure
 - ⬜ `memory-summariser.ts` daily compaction + `qmd embed` reindex
-- ⬜ LLM `memo` write path
+- ✅ LLM `memo` write path
 
 ### Perception
-- ⬜ Per-runtime perception ring buffer (K=128)
-- ⬜ `perception-diff.ts` pure pairwise delta (positions, inventory, equipment, skills, nearby)
-- ⬜ `perception-compressor.ts` baseline + deltas + idle coalescing
-- ⬜ Hot-event escalation (re-expand current tick on hit/chat/died/trade-request)
-- ⬜ Token-cap enforcement w/ oldest-first drop + baseline advance
+- ✅ Per-runtime perception ring buffer (K=128)
+- ✅ `perception-diff.ts` pure pairwise delta (positions, inventory, equipment, skills, nearby)
+- ✅ `perception-compressor.ts` baseline + deltas + idle coalescing
+- ✅ Hot-event escalation (re-expand current tick on hit/chat/died/trade-request)
+- 🟡 Token-cap enforcement w/ oldest-first drop + baseline advance
 - ⬜ Optional `extraTokens` window extension hook
 - ⬜ Golden-string tests for compressor render output
-- ⬜ `salience.ts` deterministic filter (memory writes — separate from compression)
-- ⬜ Diff-based "new actor / new chunk" detection (drives targeted memory retrieval)
+- 🟡 `salience.ts` deterministic filter (memory writes — separate from compression)
+- 🟡 Diff-based "new actor / new chunk" detection (drives targeted memory retrieval)
 - ⬜ Optional full-perception JSONL log
 
 ### LLM
-- ⬜ OpenAI-compatible `LLMClient` (`/v1/chat/completions`)
-- ⬜ `response_format: json_schema` w/ fallback to `json_object`
-- ⬜ AbortController per request; abort propagates `cancelled_by` to log
-- ⬜ Mailbox: request-id-keyed result drain; late-arriving abort discard
-- ⬜ `prompt-envelope.ts` 12-section assembly + per-section caps
-- ⬜ Trigger-context section sourced from firing hook's `contextHint`
-- ⬜ Previous-intent section on plan interruption (remaining steps included)
-- ⬜ `completion-parser.ts` zod-validated `Plan` + memo + indexPatch + proposeHook/retireHook/proposeVariables
-- ⬜ Retry policy (1 retry on 429/5xx; 30s endpoint pause on 2 failures)
-- ⬜ Priority-ordered global concurrency queue (`maxConcurrentInferences`)
-- ⬜ Budgets: per-tick, per-minute, per-game-day
-- ⬜ `budget_exhausted` synthetic event into perception envelope
-- ⬜ `noInferenceUntil`: budget-rejected hooks consume no cooldown/attention/queue slot
+- ✅ OpenAI-compatible `LLMClient` (`/v1/chat/completions`)
+- ✅ `response_format: json_schema` w/ fallback to `json_object`
+- ✅ AbortController per request; abort propagates `cancelled_by` to log
+- ✅ Mailbox: request-id-keyed result drain; late-arriving abort discard
+- ✅ `prompt-envelope.ts` 12-section assembly + per-section caps
+- ✅ Trigger-context section sourced from firing hook's `contextHint`
+- ✅ Previous-intent section on plan interruption (remaining steps included)
+- ✅ `completion-parser.ts` zod-validated `Plan` + memo + indexPatch + proposeHook/retireHook/proposeVariables
+- ✅ Retry policy (1 retry on 429/5xx; 30s endpoint pause on 2 failures)
+- ✅ Priority-ordered global concurrency queue (`maxConcurrentInferences`)
+- ✅ Budgets: per-tick, per-minute, per-game-day
+- ✅ `budget_exhausted` synthetic event into perception envelope
+- ✅ `noInferenceUntil`: budget-rejected hooks consume no cooldown/attention/queue slot
 
 ### Logging
-- ⬜ `actions/<date>.jsonl` per resident
-- ⬜ `inference/<date>.jsonl` per resident
-- ⬜ `--log-envelope` debug flag
+- ✅ `actions/<date>.jsonl` per resident
+- ✅ `inference/<date>.jsonl` per resident
+- ✅ `--log-envelope` debug flag
 
 ### Server-side touch-ups
-- ⬜ `controller_hello` message + `cause` field on `action_result`/`error`
-- ⬜ `package.json` controller scripts + deps
+- ✅ `controller_hello` message + `cause` field on `action_result`/`error`
+- ✅ `package.json` controller scripts + deps
 
 ### Tests
 - ⬜ Soul loader + starter soul fixtures (incl. variables + hooks frontmatter)
 - ⬜ Attention decay/spend math (incl. aborted-call cost)
 - ⬜ Salience filter cases
 - ⬜ Memory router writes
-- ⬜ Variable DSL evaluator: increment, decrement, decay, clamp
-- ⬜ Hook evaluator: cooldown, shadowing, tie-break determinism
-- ⬜ Interruption: hook at priority N+10 aborts in-flight call;
+- ✅ Variable DSL evaluator: increment, decrement, decay, clamp
+- ✅ Hook evaluator: cooldown, shadowing, tie-break determinism
+- ✅ Interruption: hook at priority N+10 aborts in-flight call;
       hook at priority N is shadowed
-- ⬜ Plan executor: each `AdvanceCondition` kind; `abandonIf`;
+- ✅ Plan executor: each `AdvanceCondition` kind; `abandonIf`;
       `maxTicks` exhaustion; per-step retry/abort
-- ⬜ Mailbox: late-response discard after abort
-- ⬜ Envelope assembly + caps (incl. previous-intent on interruption)
-- ⬜ Completion parser accept/reject (plan/null, proposeHook clamp at 80)
-- ⬜ Legacy tracker increments
-- ⬜ Host reconcile loop + priority queue under contention
+- ✅ Mailbox: late-response discard after abort
+- ✅ Envelope assembly + caps (incl. previous-intent on interruption)
+- ✅ Completion parser accept/reject (plan/null, proposeHook clamp at 80)
+- ✅ Legacy tracker increments
+- ✅ Host reconcile loop + priority queue under contention (host reconcile and LLM queue covered)
 - ⬜ E2E with stub LLM (golden action log): a plan runs to completion,
       a hook interrupts mid-plan, the resident pivots
 - ⬜ Opt-in E2E with local ollama
 
 ### Docs
-- ⬜ FEATURES.md Controller section
-- ⬜ `data/souls/README.md` authoring guide
-- ⬜ `data/memory/README.md` operator's guide to inspecting residents
+- ✅ FEATURES.md Controller section
+- ✅ `data/souls/README.md` authoring guide
+- ✅ `data/memory/README.md` operator's guide to inspecting residents

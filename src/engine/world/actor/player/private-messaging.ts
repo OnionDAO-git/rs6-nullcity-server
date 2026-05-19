@@ -1,6 +1,8 @@
 import { activeWorld } from '@engine/world';
 import type { Player } from '@engine/world/actor/player/player';
 
+const isOnlinePlayer = (player: Player | null): player is Player => player !== null;
+
 export enum PrivateChatMode {
     PUBLIC = 0,
     FRIENDS = 1,
@@ -33,7 +35,9 @@ export class PrivateMessaging {
     public static updateFriendsList(player: Player): void {
         const friends = player.friendsList;
         if (friends && friends.length !== 0) {
-            const onlineFriends = activeWorld.playerList.filter(p => p && friends.indexOf(p.username.toLowerCase()) !== -1);
+            const onlineFriends = activeWorld.playerList.filter(
+                (p): p is Player => isOnlinePlayer(p) && friends.indexOf(p.username.toLowerCase()) !== -1,
+            );
 
             friends.forEach(friendName => {
                 const friend = onlineFriends.find(p => p.username.toLowerCase() === friendName);
@@ -65,7 +69,9 @@ export class PrivateMessaging {
         const playerFriendsList = player.friendsList || [];
 
         if (playerPrivateChatMode !== PrivateChatMode.OFF || updating) {
-            const otherPlayers = activeWorld.playerList.filter(p => p && p.friendsList.indexOf(playerName) !== -1);
+            const otherPlayers = activeWorld.playerList.filter(
+                (p): p is Player => isOnlinePlayer(p) && p.friendsList.indexOf(playerName) !== -1,
+            );
             if (otherPlayers && otherPlayers.length !== 0) {
                 otherPlayers.forEach(otherPlayer => {
                     let worldId = playerPrivateChatMode === PrivateChatMode.OFF ? 0 : 1;

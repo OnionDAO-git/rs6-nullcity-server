@@ -15,4 +15,19 @@ export interface GameServerConfig {
     tutorialEnabled: boolean;
     adminDropsEnabled: boolean;
     bypassTeleportRequirements?: boolean;
+    agentGateway?: {
+        enabled: boolean;
+        host?: string;
+        port?: number;
+        authToken?: string | null;
+        allowDelete?: boolean;
+        logFullPerceptions?: boolean;
+        autosaveTicks?: number;
+        mcp?: {
+            enabled?: boolean;
+            path?: string;
+            actionTimeoutMs?: number;
+            eventTimeoutMs?: number;
+        };
+    };
 }

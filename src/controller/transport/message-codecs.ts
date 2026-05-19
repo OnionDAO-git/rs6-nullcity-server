@@ -1,0 +1,210 @@
+import { z } from 'zod';
+
+export type ResidentFilter = 'online' | 'offline' | 'all';
+export type DisconnectPolicy = 'logout' | 'idle';
+
+export interface GatewayEnvelope<TType extends string = string, TPayload = unknown> {
+    type: TType;
+    request_id?: string;
+    payload?: TPayload;
+}
+
+export interface ControllerHelloPayload {
+    controllerId: string;
+    version: string;
+    capabilities: string[];
+}
+
+export interface AuthPayload {
+    token: string;
+}
+
+export interface ResidentSummary {
+    name: string;
+    online: boolean;
+    controllerId?: string;
+    controllingClientId?: string;
+}
+
+export type AgentAction =
+    | { kind: 'noop'; cause?: string }
+    | { kind: 'logout'; cause?: string }
+    | ({ kind: string; cause?: string } & Record<string, unknown>);
+
+export interface ActionResult {
+    ok: boolean;
+    cause?: string;
+    [key: string]: unknown;
+}
+
+export interface Perception {
+    tick?: number;
+    [key: string]: unknown;
+}
+
+export interface PerceptionEvent {
+    kind?: string;
+    [key: string]: unknown;
+}
+
+export interface CreateResidentPayload {
+    name: string;
+    spawnPosition?: unknown;
+    initialInventory?: unknown;
+    initialEquipment?: unknown;
+}
+
+export interface ConnectResidentPayload {
+    name: string;
+    observe: boolean;
+    control: boolean;
+    onDisconnect?: DisconnectPolicy;
+}
+
+export interface SubmitActionPayload {
+    name: string;
+    action: AgentAction;
+}
+
+export interface ResidentNamePayload {
+    name: string;
+}
+
+export type ClientMessage =
+    | GatewayEnvelope<'auth', AuthPayload>
+    | GatewayEnvelope<'controller_hello', ControllerHelloPayload>
+    | GatewayEnvelope<'list_residents', { filter?: ResidentFilter }>
+    | GatewayEnvelope<'create_resident', CreateResidentPayload>
+    | GatewayEnvelope<'connect_resident', ConnectResidentPayload>
+    | GatewayEnvelope<'attach', ConnectResidentPayload>
+    | GatewayEnvelope<'submit_action', SubmitActionPayload>
+    | GatewayEnvelope<'detach', ResidentNamePayload>
+    | GatewayEnvelope<'disconnect_resident', ResidentNamePayload>
+    | GatewayEnvelope<'delete_resident', ResidentNamePayload>;
+
+export type ServerMessage =
+    | GatewayEnvelope<'residents', { residents: ResidentSummary[] }>
+    | GatewayEnvelope<'resident', { resident: ResidentSummary }>
+    | GatewayEnvelope<'attached', { resident: ResidentSummary }>
+    | GatewayEnvelope<'detached', ResidentNamePayload>
+    | GatewayEnvelope<'disconnected', ResidentNamePayload & { cause?: string }>
+    | GatewayEnvelope<'deleted', ResidentNamePayload>
+    | GatewayEnvelope<'perception', { resident_id: string; perception: Perception }>
+    | GatewayEnvelope<'action_result', { resident_id: string; request_id?: string; result: ActionResult; cause?: string }>
+    | GatewayEnvelope<'event', { resident_id: string; event: PerceptionEvent }>
+    | GatewayEnvelope<'error', { request_id?: string; code: string; message: string; cause?: string }>
+    | GatewayEnvelope<string, unknown>;
+
+export const hookConditionSchema = z.object({ kind: z.string().min(1) }).passthrough();
+
+const posSchema = z.object({
+    x: z.number(),
+    y: z.number(),
+    level: z.number().optional(),
+});
+
+const actorRefSchema = z.object({
+    id: z.string(),
+    kind: z.enum(['player', 'npc', 'resident']),
+    key: z.string().optional(),
+    name: z.string().optional(),
+    position: posSchema.required(),
+    hpFraction: z.number().optional(),
+});
+
+const itemRefSchema = z.object({
+    itemId: z.number().int(),
+    key: z.string().optional(),
+    amount: z.number().int().positive(),
+    noted: z.boolean().optional(),
+});
+
+const worldItemRefSchema = itemRefSchema.extend({
+    position: posSchema.required(),
+    ownerId: z.string().optional(),
+});
+
+const objectRefSchema = z.object({
+    objectId: z.number().int(),
+    position: posSchema.required(),
+    orientation: z.number().optional(),
+});
+
+export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('noop'), cause: z.string().optional() }),
+    z.object({ kind: z.literal('logout'), cause: z.string().optional() }),
+    z.object({ kind: z.literal('move_to'), target: posSchema }),
+    z.object({ kind: z.literal('face'), target: z.union([actorRefSchema, posSchema]) }),
+    z.object({ kind: z.literal('interact'), target: z.union([actorRefSchema, objectRefSchema, worldItemRefSchema]), option: z.string() }),
+    z.object({
+        kind: z.literal('use_item_on'),
+        itemSlot: z.number().int().nonnegative(),
+        target: z.union([actorRefSchema, objectRefSchema, worldItemRefSchema]),
+    }),
+    z.object({ kind: z.literal('attack'), target: actorRefSchema }),
+    z.object({ kind: z.literal('cast_spell'), spellKey: z.string(), target: actorRefSchema.optional() }),
+    z.object({ kind: z.literal('equip'), slot: z.number().int().nonnegative() }),
+    z.object({
+        kind: z.literal('unequip'),
+        equipmentSlot: z.enum(['head', 'back', 'neck', 'main_hand', 'off_hand', 'torso', 'legs', 'hands', 'feet', 'ring', 'quiver', '2h']),
+    }),
+    z.object({ kind: z.literal('drop'), slot: z.number().int().nonnegative() }),
+    z.object({ kind: z.literal('eat'), slot: z.number().int().nonnegative() }),
+    z.object({ kind: z.literal('say'), text: z.string().min(1).max(240) }),
+    z.object({ kind: z.literal('whisper'), to: z.string().min(1), text: z.string().min(1).max(240) }),
+    z.object({ kind: z.literal('dialogue_continue') }),
+    z.object({ kind: z.literal('dialogue_choice'), optionIndex: z.number().int().nonnegative() }),
+    z.object({ kind: z.literal('trade_request'), target: actorRefSchema }),
+    z.object({ kind: z.literal('trade_offer_item'), inventorySlot: z.number().int().nonnegative(), amount: z.number().int().positive() }),
+    z.object({ kind: z.literal('trade_remove_item'), offerSlot: z.number().int().nonnegative(), amount: z.number().int().positive() }),
+    z.object({ kind: z.literal('trade_accept_stage_1') }),
+    z.object({ kind: z.literal('trade_accept_stage_2') }),
+    z.object({ kind: z.literal('trade_decline') }),
+]) as z.ZodType<AgentAction>;
+
+export const gatewayEnvelopeSchema = z.object({
+    type: z.string().min(1),
+    request_id: z.string().optional(),
+    payload: z.unknown().optional(),
+});
+
+export function encodeMessage(message: GatewayEnvelope<string, unknown>): string {
+    return JSON.stringify(message);
+}
+
+export function decodeMessage(raw: string | Buffer | ArrayBuffer | Buffer[]): ServerMessage {
+    const text = Array.isArray(raw) ? Buffer.concat(raw).toString('utf8') : Buffer.from(raw as Buffer).toString('utf8');
+    const parsed = JSON.parse(text) as unknown;
+    const envelope = gatewayEnvelopeSchema.safeParse(parsed);
+    if (!envelope.success) {
+        throw new Error(`Gateway message schema error: ${envelope.error.issues.map(issue => issue.message).join('; ')}`);
+    }
+
+    return envelope.data as unknown as ServerMessage;
+}
+
+export function makeRequest<TType extends string, TPayload>(
+    type: TType,
+    requestId: string,
+    payload?: TPayload,
+): GatewayEnvelope<TType, TPayload> {
+    return payload === undefined ? { type, request_id: requestId } : { type, request_id: requestId, payload };
+}
+
+export function readError(message: ServerMessage): { request_id?: string; code: string; message: string; cause?: string } | undefined {
+    if (message.type !== 'error' || !isRecord(message.payload)) {
+        return undefined;
+    }
+
+    const payload = message.payload;
+    return {
+        request_id: typeof payload.request_id === 'string' ? payload.request_id : message.request_id,
+        code: typeof payload.code === 'string' ? payload.code : 'EUNKNOWN',
+        message: typeof payload.message === 'string' ? payload.message : 'Unknown gateway error',
+        cause: typeof payload.cause === 'string' ? payload.cause : undefined,
+    };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

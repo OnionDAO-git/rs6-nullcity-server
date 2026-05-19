@@ -280,6 +280,11 @@ export class Skills extends SkillShortcuts {
             this.setLevel(skill, finalLevel);
 
             if (isPlayer(this.actor)) {
+                const skillId = this.getSkillId(skill);
+                this.actor.playerEvents.emit('level_up', {
+                    skill: skillDetails[skillId]?.name?.toLowerCase() || Skill[skillId]?.toLowerCase() || String(skill),
+                    level: finalLevel,
+                });
                 const achievementDetails = skillDetails[this.getSkillId(skill)];
                 if (!achievementDetails) {
                     return;
