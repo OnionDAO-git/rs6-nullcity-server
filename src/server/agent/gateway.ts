@@ -1,11 +1,14 @@
 import http from 'http';
-import type { Perception } from '@engine/world/actor/resident/perception/perception-types';
+import { activeWorld } from '@engine/world';
+import type { Player } from '@engine/world/actor/player/player';
 import type { Resident } from '@engine/world/actor/resident/resident';
+import { PerceptionBuilder } from '@engine/world/actor/resident/perception/perception-builder';
+import { isResident } from '@engine/world/actor/util';
 import { logger } from '@runejs/common';
 import type { AgentGatewayConfig } from './config';
 import { defaultAgentGatewayConfig } from './config';
 import { ActionLog } from './protocol/action-log';
-import { type ClientMessage, frame, parseClientMessage } from './protocol/messages';
+import { type ClientMessage, type ObservableSubjectSummary, type SpectatorMode, type SpectatorSubject, frame, parseClientMessage } from './protocol/messages';
 import { ResidentRegistry } from './resident-registry';
 import { type ResidentObserver, ResidentSession } from './resident-session';
 import { ResidentMcpFacade } from './transports/mcp-transport';
@@ -17,11 +20,22 @@ type WebSocketLike = {
     readyState?: number;
 };
 
+interface SpectatorSessionState {
+    id: string;
+    subject: SpectatorSubject;
+    mode: SpectatorMode;
+    send(message: object): void;
+    subscription: { unsubscribe(): void };
+    lastRegionId?: number;
+}
+
 export class AgentGateway {
     private readonly config: AgentGatewayConfig;
     private readonly registry = new ResidentRegistry();
     private readonly sessions = new Map<string, ResidentSession>();
+    private readonly spectatorSessions = new Map<string, SpectatorSessionState>();
     private readonly actionLog = new ActionLog();
+    private readonly spectatorPerception = new PerceptionBuilder();
     private readonly mcpFacade?: ResidentMcpFacade;
     private server: http.Server | null = null;
     private wsServer: any = null;
@@ -68,6 +82,9 @@ export class AgentGateway {
     }
 
     public stop(): void {
+        for (const sessionId of [...this.spectatorSessions.keys()]) {
+            this.closeSpectatorSession(sessionId, 'gateway_stop', false);
+        }
         this.wsServer?.close();
         this.server?.close();
     }
@@ -80,6 +97,7 @@ export class AgentGateway {
 
         const clientId = `client:${Date.now()}:${Math.random().toString(16).slice(2)}`;
         let controllerId = clientId;
+        const clientSpectatorSessions = new Set<string>();
 
         const send = (message: object) => {
             socket.send(JSON.stringify(message));
@@ -116,7 +134,7 @@ export class AgentGateway {
                     return;
                 }
 
-                await this.handleMessage(message, controllerId, observer, send);
+                await this.handleMessage(message, controllerId, observer, send, clientSpectatorSessions);
             } catch (error) {
                 send(
                     frame(
@@ -134,6 +152,11 @@ export class AgentGateway {
         });
 
         socket.on('close', () => {
+            for (const sessionId of clientSpectatorSessions) {
+                if (this.spectatorSessions.has(sessionId)) {
+                    this.closeSpectatorSession(sessionId, 'client_disconnect', false);
+                }
+            }
             for (const session of this.sessions.values()) {
                 session.detach(clientId);
             }
@@ -150,6 +173,7 @@ export class AgentGateway {
         controllerId: string,
         observer: ResidentObserver,
         send: (message: object) => void,
+        clientSpectatorSessions: Set<string>,
     ): Promise<void> {
         switch (message.kind) {
             case 'auth':
@@ -163,6 +187,24 @@ export class AgentGateway {
                     residents = residents.filter(resident => !resident.online);
                 }
                 send(frame('resident_list', { residents }, message.id));
+                return;
+            }
+            case 'list_observable_subjects': {
+                send(frame('observable_subject_list', { subjects: this.listObservableSubjects(message.payload) }, message.id));
+                return;
+            }
+            case 'observe_subject': {
+                const sessionId = this.openSpectatorSession(message.payload.subject, message.payload.mode || 'follow', send, message.id);
+                clientSpectatorSessions.add(sessionId);
+                return;
+            }
+            case 'unobserve_subject': {
+                if (!clientSpectatorSessions.has(message.payload.sessionId)) {
+                    throw new Error('ENO_SUCH_SESSION');
+                }
+                this.closeSpectatorSession(message.payload.sessionId, 'client_unobserve');
+                clientSpectatorSessions.delete(message.payload.sessionId);
+                send(frame('ok', { ok: true }, message.id));
                 return;
             }
             case 'create_resident': {
@@ -228,6 +270,152 @@ export class AgentGateway {
             default:
                 throw new Error('EUNKNOWN_MESSAGE');
         }
+    }
+
+    private listObservableSubjects(options: { includeResidents?: boolean; includePlayers?: boolean }): ObservableSubjectSummary[] {
+        const includeResidents = options.includeResidents !== false;
+        const includePlayers = options.includePlayers !== false;
+        const subjects = new Map<string, ObservableSubjectSummary>();
+
+        if (includeResidents) {
+            for (const resident of this.registry.list().filter(resident => resident.online)) {
+                subjects.set(`resident:${resident.name}`, {
+                    subject: { kind: 'resident', name: resident.name },
+                    online: true,
+                });
+            }
+        }
+
+        for (const player of activeWorld?.playerList || []) {
+            if (!player?.isActive) {
+                continue;
+            }
+
+            if (includeResidents && isResident(player)) {
+                subjects.set(`resident:${player.username.toLowerCase()}`, {
+                    subject: { kind: 'resident', name: player.username },
+                    online: true,
+                    position: this.positionSummary(player),
+                });
+            } else if (includePlayers && !isResident(player)) {
+                subjects.set(`player:${player.username.toLowerCase()}`, {
+                    subject: { kind: 'player', username: player.username },
+                    online: true,
+                    position: this.positionSummary(player),
+                });
+            }
+        }
+
+        return [...subjects.values()].sort((a, b) => this.subjectKey(a.subject).localeCompare(this.subjectKey(b.subject)));
+    }
+
+    private openSpectatorSession(
+        subject: SpectatorSubject,
+        mode: SpectatorMode,
+        send: (message: object) => void,
+        requestId?: string | number,
+    ): string {
+        const player = this.resolveSpectatorSubject(subject);
+        if (!player) {
+            throw new Error('ENO_SUCH_SUBJECT');
+        }
+
+        const sessionId = `spectator:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const session: SpectatorSessionState = {
+            id: sessionId,
+            subject,
+            mode,
+            send,
+            lastRegionId: this.regionIdFor(player),
+            subscription: activeWorld.tickComplete.subscribe(() => this.publishSpectatorSession(sessionId)),
+        };
+        this.spectatorSessions.set(sessionId, session);
+
+        const perception = this.spectatorPerception.buildForPlayer(player);
+        send(
+            frame(
+                'spectator_connected',
+                {
+                    sessionId,
+                    subject,
+                    initialState: {
+                        mode,
+                        regionId: session.lastRegionId,
+                        position: this.positionSummary(player),
+                        perception,
+                    },
+                },
+                requestId,
+            ),
+        );
+        return sessionId;
+    }
+
+    private publishSpectatorSession(sessionId: string): void {
+        const session = this.spectatorSessions.get(sessionId);
+        if (!session) {
+            return;
+        }
+
+        const player = this.resolveSpectatorSubject(session.subject);
+        if (!player) {
+            this.closeSpectatorSession(sessionId, 'subject_unavailable');
+            return;
+        }
+
+        const regionId = this.regionIdFor(player);
+        const perception = this.spectatorPerception.buildForPlayer(player);
+        if (regionId !== undefined && regionId !== session.lastRegionId) {
+            session.lastRegionId = regionId;
+            session.send(
+                frame('spectator_rebuild', {
+                    sessionId,
+                    payload: {
+                        subject: session.subject,
+                        mode: session.mode,
+                        regionId,
+                        position: this.positionSummary(player),
+                        perception,
+                    },
+                }),
+            );
+        }
+        session.send(frame('spectator_perception', { sessionId, perception }));
+    }
+
+    private closeSpectatorSession(sessionId: string, cause?: string, notify = true): void {
+        const session = this.spectatorSessions.get(sessionId);
+        if (!session) {
+            throw new Error('ENO_SUCH_SESSION');
+        }
+
+        session.subscription.unsubscribe();
+        this.spectatorSessions.delete(sessionId);
+        if (notify) {
+            session.send(frame('spectator_disconnected', { sessionId, cause }));
+        }
+    }
+
+    private resolveSpectatorSubject(subject: SpectatorSubject): Player | null {
+        if (subject.kind === 'resident') {
+            const resident = this.registry.get(subject.name) || activeWorld?.findActivePlayerByUsername(subject.name);
+            return resident && isResident(resident) && resident.isActive ? resident : null;
+        }
+
+        const player = activeWorld?.findActivePlayerByUsername(subject.username);
+        return player && !isResident(player) && player.isActive ? player : null;
+    }
+
+    private regionIdFor(player: Player): number | undefined {
+        return activeWorld?.chunkManager.getRegionIdForWorldPosition(player.position);
+    }
+
+    private positionSummary(player: Player): { x: number; y: number; level: number } {
+        return { x: player.position.x, y: player.position.y, level: player.position.level };
+    }
+
+    private subjectKey(subject: SpectatorSubject): string {
+        return subject.kind === 'resident' ? `resident:${subject.name}` : `player:${subject.username}`;
     }
 
     private sessionFor(resident: Resident): ResidentSession {

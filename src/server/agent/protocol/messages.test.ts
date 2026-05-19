@@ -43,4 +43,60 @@ describe('agent protocol messages', () => {
             ),
         ).toThrow();
     });
+
+    it('parses observable subject list requests', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'subjects-1',
+                kind: 'list_observable_subjects',
+                payload: {
+                    includeResidents: false,
+                    includePlayers: true,
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('list_observable_subjects');
+        if (message.kind !== 'list_observable_subjects') {
+            throw new Error('Expected list_observable_subjects');
+        }
+        expect(message.payload.includeResidents).toBe(false);
+        expect(message.payload.includePlayers).toBe(true);
+    });
+
+    it('parses player spectator session requests', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'observe-1',
+                kind: 'observe_subject',
+                payload: {
+                    subject: { kind: 'player', username: 'alice' },
+                    mode: 'free-camera',
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('observe_subject');
+        if (message.kind !== 'observe_subject') {
+            throw new Error('Expected observe_subject');
+        }
+        expect(message.payload.subject).toEqual({ kind: 'player', username: 'alice' });
+        expect(message.payload.mode).toBe('free-camera');
+    });
+
+    it('rejects malformed spectator subjects', () => {
+        expect(() =>
+            parseClientMessage(
+                JSON.stringify({
+                    v: 1,
+                    kind: 'observe_subject',
+                    payload: {
+                        subject: { kind: 'player', name: 'alice' },
+                    },
+                }),
+            ),
+        ).toThrow();
+    });
 });

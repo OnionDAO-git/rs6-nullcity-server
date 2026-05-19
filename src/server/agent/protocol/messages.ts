@@ -6,6 +6,8 @@ export const AGENT_PROTOCOL_VERSION = 1;
 
 export type ResidentFilter = 'online' | 'offline' | 'all';
 export type DisconnectPolicy = 'logout' | 'idle';
+export type SpectatorMode = 'follow' | 'free-camera' | 'picture-in-picture';
+export type SpectatorSubject = { kind: 'resident'; name: string } | { kind: 'player'; username: string };
 
 export interface AgentFrame<TKind extends string = string, TPayload = unknown> {
     v: 1;
@@ -21,10 +23,19 @@ export interface ResidentSummary {
     controlHeld?: boolean;
 }
 
+export interface ObservableSubjectSummary {
+    subject: SpectatorSubject;
+    online: boolean;
+    position?: { x: number; y: number; level: number };
+}
+
 export type ClientMessage =
     | AgentFrame<'auth', { token?: string }>
     | AgentFrame<'controller_hello', { controllerId: string; version: string; capabilities?: string[] }>
     | AgentFrame<'list_residents', { filter?: ResidentFilter }>
+    | AgentFrame<'list_observable_subjects', { includeResidents?: boolean; includePlayers?: boolean }>
+    | AgentFrame<'observe_subject', { subject: SpectatorSubject; mode?: SpectatorMode }>
+    | AgentFrame<'unobserve_subject', { sessionId: string }>
     | AgentFrame<
           'create_resident',
           {
@@ -43,9 +54,15 @@ export type ClientMessage =
 
 export type ServerMessage =
     | AgentFrame<'resident_list', { residents: ResidentSummary[] }>
+    | AgentFrame<'observable_subject_list', { subjects: ObservableSubjectSummary[] }>
     | AgentFrame<'resident_created', { resident: ResidentSummary }>
     | AgentFrame<'resident_connected', { resident: ResidentSummary; perception: Perception | null }>
     | AgentFrame<'resident_disconnected', { name: string; cause?: string }>
+    | AgentFrame<'spectator_connected', { sessionId: string; subject: SpectatorSubject; initialState: unknown }>
+    | AgentFrame<'spectator_rebuild', { sessionId: string; payload: unknown }>
+    | AgentFrame<'spectator_packet', { sessionId: string; opcode: number; payload: unknown }>
+    | AgentFrame<'spectator_perception', { sessionId: string; perception: Perception }>
+    | AgentFrame<'spectator_disconnected', { sessionId: string; cause?: string }>
     | AgentFrame<'perception', { resident_id: string; perception: Perception }>
     | AgentFrame<'action_result', { resident_id: string; request_id?: string | number; result: ActionResult; cause?: string }>
     | AgentFrame<'event', { resident_id: string; event: unknown }>
@@ -55,7 +72,12 @@ export type ServerMessage =
 const requestIdSchema = z.union([z.string(), z.number()]).optional();
 const residentFilterSchema = z.enum(['online', 'offline', 'all']).optional();
 const disconnectPolicySchema = z.enum(['logout', 'idle']).optional();
+const spectatorModeSchema = z.enum(['follow', 'free-camera', 'picture-in-picture']).optional();
 const positionSchema = z.object({ x: z.number().int(), y: z.number().int(), level: z.number().int().optional() });
+const spectatorSubjectSchema = z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('resident'), name: z.string().min(1) }),
+    z.object({ kind: z.literal('player'), username: z.string().min(1) }),
+]);
 
 const clientPayloadSchemas = {
     auth: z.object({ token: z.string().optional() }),
@@ -65,6 +87,9 @@ const clientPayloadSchemas = {
         capabilities: z.array(z.string()).optional(),
     }),
     list_residents: z.object({ filter: residentFilterSchema }).default({}),
+    list_observable_subjects: z.object({ includeResidents: z.boolean().optional(), includePlayers: z.boolean().optional() }).default({}),
+    observe_subject: z.object({ subject: spectatorSubjectSchema, mode: spectatorModeSchema }),
+    unobserve_subject: z.object({ sessionId: z.string().min(1) }),
     create_resident: z.object({
         name: z.string().min(1),
         spawnPosition: positionSchema.optional(),
