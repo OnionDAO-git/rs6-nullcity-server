@@ -28,6 +28,7 @@ import { getVarbitMorphIndex } from '@engine/util/varbits';
 import { activeWorld } from '@engine/world';
 import type { Appearance, PlayerSettings } from '@engine/world/actor/player/player-data';
 import { defaultAppearance, defaultSettings, loadPlayerSave, playerExists, savePlayerData } from '@engine/world/actor/player/player-data';
+import { animationIds } from '@engine/world/config/animation-ids';
 import { itemIds } from '@engine/world/config/item-ids';
 import type { PlayerWidget } from '@engine/world/config/widget';
 import { widgetScripts } from '@engine/world/config/widget';
@@ -424,6 +425,77 @@ export class Player extends Actor {
     public onNpcKill(npc: Npc) {
         console.log('killed npc');
     }
+
+    /**
+     * Handle this player dying in combat.
+     *
+     * Stops scheduler tasks, plays the death animation for 3 ticks, drops all
+     * carried items (inventory + equipment) as a world item owned by `attacker`,
+     * resets HP and stat-drained levels, teleports to Lumbridge spawn, and
+     * shows the canonical death chatbox message.
+     */
+    public handleDeath(attacker: Actor): void {
+        // Cancel any in-flight actions / tasks via the legacy signal.
+        try {
+            this.actionsCancelled.next('death' as never);
+        } catch {
+            /* ignore */
+        }
+        this.walkingQueue.clear();
+        this.metadata.combatTarget = undefined;
+
+        // Death animation for ~3 ticks.
+        this.playAnimation({ id: animationIds.death, delay: 0 });
+
+        const deathPosition = this.position.copy();
+        const deathInstance = activeWorld.globalInstance;
+        const dropOwner: Player | undefined = attacker && attacker.type === 'player' ? (attacker as Player) : undefined;
+
+        // Drop inventory + worn equipment.
+        const droppedItems: Item[] = [];
+        for (const item of this.inventory.items) {
+            if (item) {
+                droppedItems.push(item);
+            }
+        }
+        for (const item of this.equipment.items) {
+            if (item) {
+                droppedItems.push(item);
+            }
+        }
+
+        for (const item of droppedItems) {
+            deathInstance.spawnWorldItem({ itemId: item.itemId, amount: item.amount }, deathPosition, {
+                owner: dropOwner,
+                expires: 300,
+            });
+        }
+
+        this.inventory.clear();
+        this.equipment.clear();
+        this.updateBonuses();
+        this.equipmentChanged();
+        this.outgoingPackets.sendUpdateAllWidgetItems(widgets.inventory, this.inventory);
+        this.outgoingPackets.sendUpdateAllWidgetItems(widgets.equipment, this.equipment);
+
+        // Reset HP to max, clear stat drains.
+        const maxHp = this.skills.getMaxLevel('hitpoints');
+        this.skills.setHitpoints(maxHp);
+        for (const value of this.skills.values) {
+            if (value) {
+                value.modifiedLevel = undefined;
+            }
+        }
+        this.skills.values.forEach((skill, index) =>
+            this.outgoingPackets.updateSkill(index, this.skills.getLevel(index), skill.exp),
+        );
+
+        // Teleport to Lumbridge spawn.
+        this.teleport(new Position(3222, 3219, 0));
+
+        this.outgoingPackets.chatboxMessage('Oh dear, you are dead!');
+    }
+
     /**
      * Should be fired whenever the player's chunk changes. This will fire off chunk updates for all chunks not
      * already tracked by the player - all the new chunks that are coming into view.

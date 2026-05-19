@@ -1,41 +1,160 @@
 {
+    "presets": {
+        "rs:bolt_base": {
+            "tradable": true,
+            "equippable": true,
+            "equipment_data": {
+                "equipment_slot": "quiver",
+                "weapon_info": {
+                    "style": "crossbow",
+                    "ammo_type": "bolt",
+                    "projectile_id": 27
+                }
+            }
+        }
+    },
+
     "rs:bronze_bolt": {
-        "game_id": 877
+        "extends": "rs:bolt_base",
+        "game_id": 877,
+        "examine": "Bronze crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 10
+            }
+        }
     },
     "rs:opal_bolt": {
-        "game_id": 879
+        "extends": "rs:bolt_base",
+        "game_id": 879,
+        "examine": "Opal-tipped bronze crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 14
+            }
+        }
     },
     "rs:blurite_bolt": {
-        "game_id": 9139
+        "extends": "rs:bolt_base",
+        "game_id": 9139,
+        "examine": "Blurite crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 13
+            }
+        }
     },
     "rs:jade_bolt": {
-        "game_id": 9237
+        "extends": "rs:bolt_base",
+        "game_id": 9237,
+        "examine": "Jade-tipped iron crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 26
+            }
+        }
     },
     "rs:iron_bolt": {
-        "game_id": 9140
+        "extends": "rs:bolt_base",
+        "game_id": 9140,
+        "examine": "Iron crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 26
+            }
+        }
     },
     "rs:silver_bolt": {
-        "game_id": 9145
+        "extends": "rs:bolt_base",
+        "game_id": 9145,
+        "examine": "Silver crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 24
+            }
+        }
     },
     "rs:steel_bolt": {
-        "game_id": 9141
+        "extends": "rs:bolt_base",
+        "game_id": 9141,
+        "examine": "Steel crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 46
+            }
+        }
     },
     "rs:mithril_bolt": {
-        "game_id": 9142
+        "extends": "rs:bolt_base",
+        "game_id": 9142,
+        "examine": "Mithril crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 64
+            }
+        }
     },
     "rs:sapphire_bolt": {
-        "game_id": 9337
+        "extends": "rs:bolt_base",
+        "game_id": 9337,
+        "examine": "Sapphire-tipped mithril crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 64
+            }
+        }
     },
     "rs:emerald_bolt": {
-        "game_id": 9338
+        "extends": "rs:bolt_base",
+        "game_id": 9338,
+        "examine": "Emerald-tipped mithril crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 64
+            }
+        }
     },
     "rs:adamant_bolt": {
-        "game_id": 9143
+        "extends": "rs:bolt_base",
+        "game_id": 9143,
+        "examine": "Adamant crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 82
+            }
+        }
     },
     "rs:runite_bolt": {
-        "game_id": 9144
+        "extends": "rs:bolt_base",
+        "game_id": 9144,
+        "examine": "Runite crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 105
+            }
+        }
     },
     "rs:onyx_bolt": {
-        "game_id": 9342
+        "extends": "rs:bolt_base",
+        "game_id": 9342,
+        "examine": "Onyx-tipped runite crossbow bolts.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 120
+            }
+        }
     }
 }

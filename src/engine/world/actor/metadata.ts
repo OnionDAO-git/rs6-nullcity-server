@@ -44,4 +44,14 @@ export type ActorMetadata = {
      * Set to true if the actor is currently teleporting.
      */
     teleporting: boolean;
+
+    /**
+     * The actor currently engaged in combat by this actor.
+     *
+     * Set by `CombatTask`'s constructor and cleared by its `onStop`. Plugins
+     * should NOT mutate this directly — it is the lifecycle marker the
+     * retaliation / aggression scanners use to decide whether an actor is
+     * already busy fighting.
+     */
+    combatTarget: Actor | undefined;
 };

@@ -1,44 +1,37 @@
-import type { TaskExecutor } from '@engine/action/hook/task';
 import type { MagicOnNPCAction, MagicOnNPCActionHook } from '@engine/action/pipe/magic-on-npc.action';
-import type { Player } from '@engine/world/actor/player/player';
-import { logger } from '@runejs/common';
+import { CombatTask } from '@engine/world/actor/combat/combat-task';
+import { createPlayerMagicStrategy } from '@engine/world/actor/combat/magic-strategy';
+import { findSpellByButton } from '@engine/world/actor/magic';
 
-const buttonIds: number[] = [
-    0, // Home Teleport
-];
+/**
+ * Standard-spellbook attack widget id. All currently-defined attack spells
+ * live under this widget; we filter spell lookups against the widget id too
+ * so this plugin can coexist with future ancient/lunar entries on different
+ * widgets without renumbering.
+ */
+const STANDARD_SPELLBOOK_WIDGET_ID = 192;
 
-function attack_target(player: Player, elapsedTicks: number): boolean {
-    logger.info('attacking?');
-    return true;
-}
+const hook: MagicOnNPCActionHook = {
+    type: 'magic_on_npc',
+    widgetIds: [STANDARD_SPELLBOOK_WIDGET_ID],
+    // Don't restrict buttonIds here — `findSpellByButton` decides whether the
+    // button corresponds to a known attack spell, and falls through with a
+    // chatbox message otherwise.
+    handler: ({ npc, player, widgetId, buttonId }: MagicOnNPCAction) => {
+        const spell = findSpellByButton(widgetId, buttonId);
+        if (!spell) {
+            player.outgoingPackets.chatboxMessage(
+                `Unknown spell (widget ${widgetId} button ${buttonId}).`,
+            );
+            return;
+        }
 
-const spells = ['Wind Strike', 'Confuse', 'Water Strike', 'unknown?', 'Earth Strike'];
-export const activate = (task: TaskExecutor<MagicOnNPCAction>, elapsedTicks: number = 0) => {
-    const { npc, player, widgetId, buttonId } = task.actionData;
-
-    const attackerX = player.position.x;
-    const attackerY = player.position.y;
-    const victimX = npc.position.x;
-    const victimY = npc.position.y;
-    const offsetX = victimY - attackerY;
-    const offsetY = victimX - attackerX;
-
-    player.walkingQueue.clear();
-
-    //npc world index would be -1 for players
-    player.outgoingPackets.sendProjectile(player.position, offsetX, offsetY, 250, 40, 36, 100, npc.worldIndex + 1, 1);
-    console.info(`${player.username} smites ${npc.name} with ${spells[buttonId]}`);
+        const strategy = createPlayerMagicStrategy(player, spell);
+        player.enqueueBaseTask(new CombatTask(player, npc, strategy));
+    },
 };
 
 export default {
-    pluginId: 'rs:magic',
-    hooks: {
-        type: 'magic_on_npc',
-        widgetId: 192,
-        buttonIds: buttonIds,
-        task: {
-            activate,
-            interval: 0,
-        },
-    } as MagicOnNPCActionHook,
+    pluginId: 'rs:magic_attack',
+    hooks: [hook],
 };

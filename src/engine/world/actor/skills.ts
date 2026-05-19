@@ -194,6 +194,35 @@ export class Skills extends SkillShortcuts {
         this.setLevel(Skill.HITPOINTS, hitpoints);
     }
 
+    /**
+     * Apply `amount` damage to the actor's current hitpoints, clamped at 0.
+     *
+     * @returns `{ dead, remaining }` — `dead` is true when the new HP is 0,
+     *   `remaining` is the new HP value.
+     */
+    public damage(amount: number): { dead: boolean; remaining: number } {
+        const current = this.hitpoints.level;
+        const newHp = Math.max(0, current - Math.max(0, amount));
+        this.setLevel(Skill.HITPOINTS, newHp);
+        return { dead: newHp === 0, remaining: newHp };
+    }
+
+    /**
+     * Returns the natural (un-modified) level for a skill, computed from
+     * accumulated experience. Use this when you need the cap (e.g. resetting
+     * HP to max after death) regardless of buffs/debuffs.
+     */
+    public getMaxLevel(skill: number | SkillName): number {
+        const skillValue = this.get(skill);
+        if (skill === 'hitpoints' || skill === Skill.HITPOINTS) {
+            // HP starts at 10 in `defaultValues()`; if exp hasn't been earned,
+            // fall back to the stored level.
+            const levelForExp = this.getLevelForExp(skillValue.exp);
+            return Math.max(skillValue.level, levelForExp);
+        }
+        return Math.max(1, this.getLevelForExp(skillValue.exp));
+    }
+
     public getTotalLevel(): number {
         return this._values.map(skillValue => skillValue.level).reduce((accumulator, currentValue) => accumulator + currentValue);
     }

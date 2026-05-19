@@ -64,10 +64,10 @@
 
 ### Skills
 
-* Combat :yellow_square:
-    * Melee :yellow_square:
-    * Ranged :x:
-    * Magic :x:
+* Combat :heavy_check_mark:
+    * Melee :heavy_check_mark:
+    * Ranged :heavy_check_mark:
+    * Magic :heavy_check_mark:
 * Prayer :x:
 * Cooking :x:
 * Fletching :x:

@@ -13,10 +13,11 @@ import { Position } from '@engine/world/position';
 import { logger } from '@runejs/common';
 import { Subject } from 'rxjs';
 import { filter, take } from 'rxjs/operators';
+import { HitsplatTask } from './combat/hitsplat-task';
 import type { ActorMetadata } from './metadata';
 import { Pathfinding } from './pathfinding';
 import { Skills } from './skills';
-import type { Animation, Graphic } from './update-flags';
+import type { Animation, DamageType, Graphic } from './update-flags';
 import { UpdateFlags } from './update-flags';
 import { isNpc } from './util';
 import { WalkingQueue } from './walking-queue';
@@ -86,6 +87,32 @@ export abstract class Actor {
     }
 
     public abstract equals(actor: Actor): boolean;
+
+    /**
+     * Apply a hit against `defender`. Schedules a {@link HitsplatTask} on the
+     * defender that fires after `hitDelay` ticks — `0` means same-tick (melee),
+     * `>0` models projectile travel (ranged / magic).
+     *
+     * No-op if the defender is already dead.
+     */
+    public applyHit(defender: Actor, damage: number, type: DamageType, hitDelay: number): void {
+        if (!defender || defender.skills.hitpoints.level <= 0) {
+            return;
+        }
+        defender.enqueueBaseTask(new HitsplatTask(defender, damage, type, this, hitDelay));
+    }
+
+    /**
+     * Is this actor currently engaged in combat? Returns true while a
+     * {@link CombatTask} has set `metadata.combatTarget` to a live actor.
+     */
+    public get inCombat(): boolean {
+        const target = this.metadata.combatTarget;
+        if (!target) {
+            return false;
+        }
+        return target.skills.hitpoints.level > 0;
+    }
 
     /**
      * Instantiate a task with the Actor instance and a set of arguments.

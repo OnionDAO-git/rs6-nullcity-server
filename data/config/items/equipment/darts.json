@@ -1,20 +1,96 @@
 {
+    "presets": {
+        "rs:dart_base": {
+            "tradable": true,
+            "equippable": true,
+            "equipment_data": {
+                "equipment_slot": "main_hand",
+                "equipment_type": "one_handed",
+                "weapon_info": {
+                    "style": "darts",
+                    "ammo_type": "dart",
+                    "projectile_id": 220
+                }
+            }
+        }
+    },
+
     "rs:bronze_dart": {
-        "game_id": 806
+        "extends": "rs:dart_base",
+        "game_id": 806,
+        "examine": "A bronze dart.",
+        "weight": 0.013,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 3,
+                "ranged": 1,
+                "ranged_strength": 1
+            }
+        }
     },
     "rs:iron_dart": {
-        "game_id": 807
+        "extends": "rs:dart_base",
+        "game_id": 807,
+        "examine": "An iron dart.",
+        "weight": 0.013,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 3,
+                "ranged": 3,
+                "ranged_strength": 3
+            }
+        }
     },
     "rs:steel_dart": {
-        "game_id": 808
+        "extends": "rs:dart_base",
+        "game_id": 808,
+        "examine": "A steel dart.",
+        "weight": 0.013,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 3,
+                "ranged": 4,
+                "ranged_strength": 4
+            }
+        }
     },
     "rs:mithril_dart": {
-        "game_id": 809
+        "extends": "rs:dart_base",
+        "game_id": 809,
+        "examine": "A mithril dart.",
+        "weight": 0.013,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 3,
+                "ranged": 7,
+                "ranged_strength": 7
+            }
+        }
     },
     "rs:adamant_dart": {
-        "game_id": 810
+        "extends": "rs:dart_base",
+        "game_id": 810,
+        "examine": "An adamant dart.",
+        "weight": 0.013,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 3,
+                "ranged": 10,
+                "ranged_strength": 10
+            }
+        }
     },
     "rs:rune_dart": {
-        "game_id": 811
+        "extends": "rs:dart_base",
+        "game_id": 811,
+        "examine": "A rune dart.",
+        "weight": 0.013,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "speed": 3,
+                "ranged": 14,
+                "ranged_strength": 14
+            }
+        }
     }
 }

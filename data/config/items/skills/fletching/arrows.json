@@ -1,26 +1,131 @@
 {
+    "presets": {
+        "rs:arrow_base": {
+            "tradable": true,
+            "equippable": true,
+            "equipment_data": {
+                "equipment_slot": "quiver",
+                "weapon_info": {
+                    "style": "bow",
+                    "ammo_type": "arrow"
+                }
+            }
+        }
+    },
+
     "rs:arrow_shaft": {
         "game_id": 52
     },
     "rs:bronze_arrow": {
-        "game_id": 882
+        "extends": "rs:arrow_base",
+        "game_id": 882,
+        "examine": "A bronze arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 7
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 10
+            }
+        }
     },
     "rs:iron_arrow": {
-        "game_id": 884
+        "extends": "rs:arrow_base",
+        "game_id": 884,
+        "examine": "An iron arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 10
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 9
+            }
+        }
     },
     "rs:steel_arrow": {
-        "game_id": 886
+        "extends": "rs:arrow_base",
+        "game_id": 886,
+        "examine": "A steel arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 16
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 11
+            }
+        }
     },
     "rs:mithril_arrow": {
-        "game_id": 888
+        "extends": "rs:arrow_base",
+        "game_id": 888,
+        "examine": "A mithril arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 22
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 12
+            }
+        }
     },
     "rs:broad_arrow": {
-        "game_id": 4150
+        "extends": "rs:arrow_base",
+        "game_id": 4150,
+        "examine": "A broad-tipped arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 25
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 11
+            }
+        }
     },
     "rs:adamant_arrow": {
-        "game_id": 890
+        "extends": "rs:arrow_base",
+        "game_id": 890,
+        "examine": "An adamant arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 31
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 13
+            }
+        }
     },
     "rs:rune_arrow": {
-        "game_id": 892
+        "extends": "rs:arrow_base",
+        "game_id": 892,
+        "examine": "A rune arrow.",
+        "weight": 0,
+        "equipment_data": {
+            "offensive_bonuses": {
+                "ranged_strength": 49
+            },
+            "weapon_info": {
+                "style": "bow",
+                "ammo_type": "arrow",
+                "projectile_id": 15
+            }
+        }
     }
 }

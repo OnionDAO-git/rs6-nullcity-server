@@ -92,6 +92,14 @@ export interface OffensiveBonuses {
     crush?: number;
     magic?: number;
     ranged?: number;
+    /**
+     * Ranged strength bonus contributed by ammo (arrows / bolts / darts).
+     * Drives the max-hit roll for ranged combat; absent on non-ammo items.
+     *
+     * JSON key is `ranged_strength` and is preserved verbatim by
+     * {@link translateItemConfig} (offensive_bonuses is a direct passthrough).
+     */
+    ranged_strength?: number;
 }
 
 export interface DefensiveBonuses {
@@ -109,6 +117,19 @@ export interface SkillBonuses {
 export interface WeaponInfo {
     style: WeaponStyle;
     playerAnimations: any;
+    /**
+     * For ranged weapons: which ammo family the weapon consumes from the quiver.
+     * Bows -> 'arrow', crossbows -> 'bolt', dart weapons consume the weapon itself.
+     *
+     * JSON key is `ammo_type`; weapon_info is passthrough so we preserve the
+     * underscore form here for read-side compatibility.
+     */
+    ammo_type?: 'arrow' | 'bolt' | 'dart' | 'bullet';
+    /**
+     * For ranged weapons: the projectile graphic id sent to the client when firing.
+     * Defaults are picked per-bow in the ranged strategy when missing.
+     */
+    projectile_id?: number;
 }
 
 export interface ItemMetadata {
