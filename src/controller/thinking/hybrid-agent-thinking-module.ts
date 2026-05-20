@@ -75,6 +75,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return this.result([combat.action], combat.cause, 0, false);
         }
 
+        const dialogue = this.dialogueReaction(perception as HybridPerception);
+        if (dialogue) {
+            return this.result([dialogue.action], dialogue.cause, 0, false);
+        }
+
         if ((perception as HybridPerception).resident?.busy) {
             return { actions: [], cause: 'resident_busy', nooped: true };
         }
@@ -420,6 +425,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        const talk = talkIntent(command);
+        if (talk) {
+            const target = findActorByName(perception.nearby?.npcs || [], talk);
+            return {
+                action: target ? npcTalkAction(perception, target, 'direct_chat_talk') : { kind: 'say', text: `I do not see ${cleanTarget(talk)} from here.` },
+                cause: 'direct_chat_talk',
+            };
+        }
+
         const attack = attackIntent(command);
         if (attack) {
             const target = findActorByName([...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])], attack);
@@ -502,6 +516,25 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         this.rememberBodyAction(action);
         return { action, cause: action.cause || 'combat_reaction' };
+    }
+
+    private dialogueReaction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const event = latestDialogueEvent(perception);
+        if (!event) {
+            return undefined;
+        }
+
+        const options = Array.isArray(event.options) ? event.options : [];
+        const action: AgentAction =
+            options.length > 0
+                ? { kind: 'dialogue_choice', optionIndex: 0, cause: 'dialogue_choice_first' }
+                : { kind: 'dialogue_continue', cause: 'dialogue_continue' };
+        if (this.isRepeatedAction(action)) {
+            return undefined;
+        }
+
+        this.rememberBodyAction(action);
+        return { action, cause: action.cause || 'dialogue_reaction' };
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
@@ -809,6 +842,11 @@ function explorationAction(perception: HybridPerception, anchor?: Pos): AgentAct
         return undefined;
     }
 
+    const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (npc) {
+        return npcTalkAction(perception, npc, 'explore_talk_to_npc');
+    }
+
     const object = (perception.nearby?.objects || [])
         .filter(candidate => !FIRE_OBJECT_IDS.has(candidate.objectId) && !LEVEL_ONE_TREE_IDS.has(candidate.objectId))
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -817,14 +855,6 @@ function explorationAction(perception: HybridPerception, anchor?: Pos): AgentAct
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
         return { kind: 'say', text: `I am checking the landmark at ${object.position.x},${object.position.y}.`, cause: 'explore_visible_object' };
-    }
-
-    const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (npc) {
-        if (distance(here, npc.position) > 2) {
-            return { kind: 'move_to', target: npc.position, range: 2, cause: 'explore_visible_actor' };
-        }
-        return { kind: 'say', text: `I see ${actorName(npc)} nearby at ${npc.position.x},${npc.position.y}.`, cause: 'explore_visible_actor' };
     }
 
     const item = (perception.nearby?.worldItems || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -848,6 +878,15 @@ function explorationPatrolTarget(here: Pos, anchor?: Pos): Pos {
     const dx = here.x >= center.x ? -4 : 4;
     const dy = here.y >= center.y ? 4 : -4;
     return { x: center.x + dx, y: center.y + dy, level: center.level };
+}
+
+function npcTalkAction(perception: HybridPerception, target: Actor, cause: string): AgentAction {
+    const here = perception.resident?.position;
+    if (here && distance(here, target.position) > 2) {
+        return { kind: 'move_to', target: target.position, range: 1, cause };
+    }
+
+    return { kind: 'interact', target, option: 'talk-to', cause };
 }
 
 function latestAddressedChat(perception: HybridPerception, commandPrefix: string, lastKey: string | undefined):
@@ -945,6 +984,11 @@ function dropIntent(command: string): { query?: string } | undefined {
     return query ? { query } : {};
 }
 
+function talkIntent(command: string): string | undefined {
+    const match = command.match(/^(talk to|talk|speak to|speak with)\s+(.+)/);
+    return match ? cleanTarget(match[2]) : undefined;
+}
+
 function isExploreIntent(command: string, fullText: string): boolean {
     return /^(explore|scout|patrol|survey|wander)\b/.test(command) || /\b(explore|scout|patrol|survey)\b/.test(fullText);
 }
@@ -961,6 +1005,19 @@ function latestCombatAttacker(perception: HybridPerception): Actor | undefined {
         const attacker = actorLike(event.from);
         if (attacker) {
             return attacker;
+        }
+    }
+
+    return undefined;
+}
+
+function latestDialogueEvent(perception: HybridPerception): { options?: unknown[] } | undefined {
+    for (const event of [...(perception.events || [])].reverse()) {
+        if (event.kind === 'dialogue_opened' || event.kind === 'dialogue_updated') {
+            return event as { options?: unknown[] };
+        }
+        if (event.kind === 'dialogue_closed') {
+            return undefined;
         }
     }
 

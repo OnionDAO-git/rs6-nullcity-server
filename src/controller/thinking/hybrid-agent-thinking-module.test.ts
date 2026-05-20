@@ -654,6 +654,110 @@ describe('HybridAgentThinkingModule', () => {
         expect(drop.cause).toBe('direct_chat_drop');
     });
 
+    it('runs direct NPC talk commands without inference', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [chatFromCodex('agent talk to Hans', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: hans, option: 'talk-to', cause: 'direct_chat_talk' }]);
+        expect(result.cause).toBe('direct_chat_talk');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('approaches NPC talk targets that are not close enough yet', async () => {
+        const hans = npc('Hans', 3225, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [chatFromCodex('agent talk to Hans', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: hans.position, range: 1, cause: 'direct_chat_talk' }]);
+        expect(result.cause).toBe('direct_chat_talk');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('continues simple dialogue without waiting for inference', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [{ kind: 'dialogue_opened', npc: hans, prompt: 'Hello there.' }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'dialogue_continue', cause: 'dialogue_continue' }]);
+        expect(result.cause).toBe('dialogue_continue');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('selects the first dialogue option without waiting for inference', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [{ kind: 'dialogue_updated', prompt: 'Choose an option', options: ['Who are you?', 'Never mind.'] }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'dialogue_choice', optionIndex: 0, cause: 'dialogue_choice_first' }]);
+        expect(result.cause).toBe('dialogue_choice_first');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('uses local exploration fallback to talk to a nearby NPC when scouting', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout the nearby Lumbridge area and talk to useful people.',
+                steps: ['walk to nearby people', 'talk to an NPC', 'report anything useful'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: hans, option: 'talk-to', cause: 'explore_talk_to_npc' }]);
+        expect(result.cause).toBe('exploration_fallback');
+    });
+
     it('starts a local exploration workflow from direct chat without inference', async () => {
         const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([]);
