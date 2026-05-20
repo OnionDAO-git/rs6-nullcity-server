@@ -693,6 +693,72 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('starts prayer training by approaching a visible safe bone source without inference', async () => {
+        const goblin = npc('Goblin', 3224, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [goblin],
+                events: [chatFromCodex('agent train prayer', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: goblin.position, range: 1, cause: 'prayer_approach_safe_bone_source' }]);
+        expect(result.cause).toBe('direct_chat_train_prayer');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('attacks an adjacent safe bone source when a prayer goal has no bones yet', async () => {
+        const rat = npc('Rat', 3219, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-prayer',
+                description: 'Pick up bones and bury them to train Prayer after safe combat.',
+                steps: ['find a safe rat or goblin', 'attack it', 'pick up bones', 'bury bones'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                npcs: [rat],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'prayer_attack_safe_bone_source' }]);
+        expect(result.cause).toBe('prayer_attack_safe_bone_source');
+    });
+
+    it('seeks a nearby Lumbridge bone source for prayer training instead of attacking named non-training NPCs', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [chatFromCodex('agent train prayer', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 6, cause: 'prayer_seek_safe_bone_source' }]);
+        expect(result.cause).toBe('direct_chat_train_prayer');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('uses prayer muscle memory when the active goal asks to bury bones', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
