@@ -101,20 +101,23 @@ Agents should update the status marker and add a one-line note under the task wh
 
 **Purpose:** Prove whether modules actually help the resident play RuneScape instead of relying on vibes.
 
-- `[ ]` **C1: Define benchmark artifact schema.**
+- `[x]` **C1: Define benchmark artifact schema.**
   - Files: `src/controller/benchmarks/benchmark-artifact.ts`, `src/controller/benchmarks/benchmark-artifact.test.ts`
   - Deliverable: JSON artifact includes run id, module id/version, task id/version, resident, model profile, commits, start/end times, pass/fail, score, metrics, and failure reason.
   - Verification: schema tests reject missing module identity and invalid statuses.
+  - Verified 2026-05-20 on `codex/body-waiter-coordinator` with focused benchmark tests, format check, typecheck, and `git diff --check`.
 
-- `[ ]` **C2: Add disposable benchmark resident runner.**
+- `[x]` **C2: Add disposable benchmark resident runner.**
   - Files: `src/controller/benchmarks/benchmark-runner.ts`, `src/controller/benchmarks/benchmark-runner.test.ts`
   - Deliverable: create/connect a disposable resident, run a bounded task, collect action/inference/perception evidence, then cleanly stop.
   - Verification: mocked gateway test proves lifecycle and cleanup.
+  - Verified 2026-05-20 on `codex/body-waiter-coordinator` with mocked gateway lifecycle and timeout cleanup tests.
 
-- `[ ]` **C3: Implement `make-fire-5m` verifier.**
+- `[x]` **C3: Implement `make-fire-5m` verifier.**
   - Files: `src/controller/benchmarks/tasks/make-fire-5m.ts`, `src/controller/benchmarks/tasks/make-fire-5m.test.ts`
   - Deliverable: pass when logs are consumed and a fire appears or firemaking success event is observed within the time budget.
   - Verification: fixture tests for pass, timeout, wrong action, and unsafe loop.
+  - Verified 2026-05-20 on `codex/body-waiter-coordinator` with fixture tests for pass, timeout, wrong action, and unsafe repeated action loops.
 
 - `[ ]` **C4: Implement starter benchmark suite.**
   - Tasks: `woodcutting-firemaking-10m`, `starter-fishing-5m`, `combat-prayer-10m`, `explore-report-5m`, `follow-and-chat-5m`
@@ -130,10 +133,11 @@ Agents should update the status marker and add a one-line note under the task wh
 
 **Purpose:** Let humans see whether the agent is alive, what it wants, what module is driving it, and why it failed.
 
-- `[ ]` **D1: Expose module stack in dashboard data.**
+- `[x]` **D1: Expose module stack in dashboard data.**
   - Files: dashboard API/client files, controller log readers
   - Deliverable: resident observer view shows selected module id/version/config and active facets.
   - Verification: dashboard test or local browser screenshot at `/observe/resident/res%3Aagent`.
+  - Verified 2026-05-20 in `rs6-nullcity-residents-dashboard` with runtime read-model and activity snapshot tests plus dashboard typecheck/build.
 
 - `[ ]` **D2: Add current goal and last thought/action panel.**
   - Files: dashboard resident observe route/components
@@ -257,9 +261,10 @@ Agents should update the status marker and add a one-line note under the task wh
 
 ## Immediate Recommended Next Slice
 
-- `[ ]` Build Workstream C1-C3 and D1 together.
+- `[x]` Build Workstream C1-C3 and D1 together.
   - Why: benchmarks plus dashboard module visibility create the shortest feedback loop.
   - Expected outcome: a human can watch `res:agent`, see `onion.runescape.standard`, run `make-fire-5m`, and inspect a pass/fail artifact.
+  - Completed 2026-05-20 across server and dashboard repos. Remaining follow-up: wire C5 CLI and D3 benchmark artifact pages so humans can run and inspect artifacts from the dashboard.
 
 ## Agent Update Protocol
 
