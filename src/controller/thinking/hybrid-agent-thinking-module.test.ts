@@ -513,6 +513,51 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('returns to the visibility anchor on direct home commands without inference', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent return home', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3200, y: 3200, level: 0 }, range: 2, cause: 'direct_chat_return_home' }]);
+        expect(result.cause).toBe('direct_chat_return_home');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('clears the active goal on direct stop commands without inference', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Practice firemaking.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent stop', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I will pause here and wait for a new goal.' }]);
+        expect(result.cause).toBe('direct_chat_stop');
+        expect(state.cognition?.activeGoal).toBeUndefined();
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('retaliates against NPC attackers without waiting for inference', async () => {
         const goblin = npc('Goblin', 3219, 3201);
         const llm = scriptedLlm([]);

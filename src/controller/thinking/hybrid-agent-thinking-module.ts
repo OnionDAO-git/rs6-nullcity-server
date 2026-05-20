@@ -422,6 +422,36 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        if (isReturnHomeIntent(command, chat.normalizedText)) {
+            const anchor = this.visibilityAnchor();
+            if (!anchor) {
+                return {
+                    action: { kind: 'say', text: 'I do not have a home anchor set yet.' },
+                    cause: 'direct_chat_return_home',
+                };
+            }
+
+            if (here && distance(here, anchor) <= (this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS)) {
+                return {
+                    action: { kind: 'say', text: this.statusSpeech(perception, 'I am already near home') },
+                    cause: 'direct_chat_return_home',
+                };
+            }
+
+            return {
+                action: { kind: 'move_to', target: anchor, range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS, cause: 'direct_chat_return_home' },
+                cause: 'direct_chat_return_home',
+            };
+        }
+
+        if (isStopIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = undefined;
+            return {
+                action: { kind: 'say', text: 'I will pause here and wait for a new goal.' },
+                cause: 'direct_chat_stop',
+            };
+        }
+
         if (isStatusIntent(command, chat.normalizedText)) {
             return {
                 action: { kind: 'say', text: this.statusSpeech(perception, 'I am online') },
@@ -1225,6 +1255,14 @@ function addressedCommand(text: string, commandPrefix: string): string {
 
 function isFollowIntent(command: string, fullText: string): boolean {
     return /^(follow me|follow|come here|come to me|keep up|guard me|guard)\b/.test(command) || /\b(follow me|come here|come to me)\b/.test(fullText);
+}
+
+function isReturnHomeIntent(command: string, fullText: string): boolean {
+    return /^(return home|go home|home|return to start|go to start|back to anchor)\b/.test(command) || /\b(return home|go home|return to start|go to start|back to anchor)\b/.test(fullText);
+}
+
+function isStopIntent(command: string, fullText: string): boolean {
+    return /^(stop|pause|wait|hold position|cancel goal|clear goal)\b/.test(command) || /\b(cancel goal|clear goal|hold position)\b/.test(fullText);
 }
 
 function isStatusIntent(command: string, fullText: string): boolean {
