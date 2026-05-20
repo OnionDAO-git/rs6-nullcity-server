@@ -12,6 +12,11 @@ spawnPosition:
   x: 3225
   y: 3230
   level: 0
+initialInventory:
+  - itemId: 590   # tinderbox
+  - itemId: 1351  # bronze axe
+  - itemId: 315   # shrimp
+  - itemId: 315   # shrimp
 legacy:
   kind: endurer
   parameters:

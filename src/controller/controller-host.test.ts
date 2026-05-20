@@ -42,7 +42,12 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.start();
 
         expect(gateway.hello).toHaveBeenCalledTimes(1);
-        expect(gateway.createResident).toHaveBeenCalledWith({ name: 'res:pip', spawnPosition: undefined });
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: 'res:pip',
+            spawnPosition: undefined,
+            initialInventory: undefined,
+            initialEquipment: undefined,
+        });
         expect(gateway.connectResident).toHaveBeenCalledWith({ name: 'res:pip', observe: true, control: true, onDisconnect: 'idle' });
         expect(runtimeCount(host)).toBe(1);
 
@@ -99,6 +104,33 @@ describe('ControllerHost reconcile lifecycle', () => {
         gateway.emit('event', 'resident:res:pip', { kind: 'level_up', skill: 'attack', level: 2 });
 
         expect(deps.memory?.write).toHaveBeenCalledWith('res:pip', 'skills.md', expect.stringContaining('"level":2'));
+
+        await host.stop();
+    });
+
+    it('passes starter items from the soul when creating a resident', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            load: jest.fn((name: string) => ({
+                ...soul(name),
+                frontmatter: {
+                    ...soul(name).frontmatter,
+                    spawnPosition: { x: 3225, y: 3230, level: 0 },
+                    initialInventory: [{ itemId: 590 }, { itemId: 1351 }, null],
+                },
+            })),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const host = new ControllerHost(config(), deps);
+
+        await host.start();
+
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: 'res:pip',
+            spawnPosition: { x: 3225, y: 3230, level: 0 },
+            initialInventory: [{ itemId: 590 }, { itemId: 1351 }, null],
+            initialEquipment: undefined,
+        });
 
         await host.stop();
     });

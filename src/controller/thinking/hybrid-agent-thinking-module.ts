@@ -48,6 +48,7 @@ const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const TINDERBOX_ITEM_IDS = new Set([590]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
+const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
 const LEVEL_ONE_TREE_IDS = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
@@ -262,6 +263,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (fireAction) {
                 return { action: fireAction, cause: 'firemaking_fallback' };
             }
+            const woodcutting = actions.length === 0 ? levelOneWoodcuttingAction(perception) : undefined;
+            if (woodcutting) {
+                return { action: woodcutting, cause: 'firemaking_gather_logs' };
+            }
         }
 
         if (!/ordinary|tree|chop|wood|logs/i.test(goalText)) {
@@ -358,6 +363,31 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return {
                 action: { kind: 'say', text: this.statusSpeech(perception, 'I am online') },
                 cause: 'direct_chat_status',
+            };
+        }
+
+        if (isFiremakingIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
+            return {
+                action:
+                    firemakingAction(perception) ||
+                    levelOneWoodcuttingAction(perception) || {
+                        kind: 'say',
+                        text: this.statusSpeech(perception, 'I will gather logs, then use the tinderbox to light them'),
+                    },
+                cause: 'direct_chat_make_fire',
+            };
+        }
+
+        if (isWoodcuttingIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = woodcuttingGoal(this.options.state.tick);
+            return {
+                action:
+                    levelOneWoodcuttingAction(perception) || {
+                        kind: 'say',
+                        text: this.statusSpeech(perception, 'I will look for an ordinary tree or dead tree to chop'),
+                    },
+                cause: 'direct_chat_chop_wood',
             };
         }
 
@@ -546,6 +576,10 @@ function parseBrainCompletion(text: string): { goal?: z.infer<typeof brainGoalSc
 }
 
 function firemakingAction(perception: HybridPerception): AgentAction | undefined {
+    if (hasNearbyFire(perception)) {
+        return undefined;
+    }
+
     const inventory = perception.resident?.inventory || [];
     const tinderboxSlot = findSlot(inventory, isTinderbox);
     const logSlot = findSlot(inventory, isFiremakingLog);
@@ -554,6 +588,37 @@ function firemakingAction(perception: HybridPerception): AgentAction | undefined
     }
 
     return undefined;
+}
+
+function hasNearbyFire(perception: HybridPerception): boolean {
+    const here = perception.resident?.position;
+    if (!here) {
+        return false;
+    }
+
+    return (perception.nearby?.objects || []).some(object => FIRE_OBJECT_IDS.has(object.objectId) && distance(here, object.position) <= 1);
+}
+
+function firemakingGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'make-fire',
+        description: 'Gather ordinary logs and light a fire with the tinderbox.',
+        steps: ['Find a level-1 ordinary Tree or Dead tree', 'Chop it for logs', 'Use tinderbox on logs', 'Say what happened'],
+        success: 'A fire appears nearby and I can still report my location.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
+function woodcuttingGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'chop-level-one-tree',
+        description: 'Practice woodcutting on ordinary level-1 trees and gather logs.',
+        steps: ['Find a visible ordinary Tree or Dead tree', 'Move beside it', 'Use chop down', 'Repeat while staying findable'],
+        success: 'Logs are collected or a tree-chopping attempt is underway.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
 }
 
 function levelOneWoodcuttingAction(perception: HybridPerception): AgentAction | undefined {
@@ -664,6 +729,14 @@ function isStatusIntent(command: string, fullText: string): boolean {
         /^(status|where are you|what are you doing|what are you up to|are you working|say something|hello|hi|hey)\b/.test(command) ||
         /\b(what are you doing|what are you up to|are you working|status|say something|hello|hi|hey)\b/.test(fullText)
     );
+}
+
+function isFiremakingIntent(command: string, fullText: string): boolean {
+    return /^(make a fire|light a fire|start a fire|burn logs|firemaking)\b/.test(command) || /\b(make a fire|light a fire|start a fire|firemaking)\b/.test(fullText);
+}
+
+function isWoodcuttingIntent(command: string, fullText: string): boolean {
+    return /^(chop wood|cut wood|chop a tree|cut a tree|woodcutting|gather logs)\b/.test(command) || /\b(chop wood|cut wood|woodcutting|gather logs)\b/.test(fullText);
 }
 
 function actorLike(value: unknown): Actor | undefined {

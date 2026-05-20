@@ -142,6 +142,72 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('firemaking_fallback');
     });
 
+    it('gathers logs for a fire goal even when the Brain only says to light a fire', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'light-fire',
+                description: 'Light a fire nearby.',
+                steps: ['Make the area warmer'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                objects: [normalTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: normalTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('firemaking_gather_logs');
+    });
+
+    it('does not re-light stale logs when a fresh fire is already visible nearby', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const fire = { objectId: 2732, position: { x: 3225, y: 3230, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather logs and light a fire with the tinderbox.',
+                steps: ['use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                    ],
+                },
+                objects: [fire, normalTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: normalTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('firemaking_gather_logs');
+    });
+
     it('redirects low-level woodcutting goals from higher-level trees to ordinary trees', async () => {
         const willow = { objectId: 1308, position: { x: 3234, y: 3238, level: 0 }, orientation: 3 };
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
@@ -409,6 +475,28 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3222, y: 3213, level: 0 }, range: 2, cause: 'direct_chat_follow' }]);
         expect(result.cause).toBe('direct_chat_follow');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('starts a firemaking workflow from direct chat without waiting for inference', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                objects: [normalTree],
+                events: [chatFromCodex('agent make a fire', 3224, 3230)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: normalTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('direct_chat_make_fire');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

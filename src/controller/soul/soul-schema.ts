@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { InitialContainerItem } from '../transport/message-codecs';
 import type { AgentAction } from '../transport/message-codecs';
 import { agentActionSchema } from '../transport/message-codecs';
 
@@ -33,6 +34,8 @@ export interface SoulFrontmatter {
     behavior?: SoulBehaviorDefinition;
     startingBeliefs?: string[];
     spawnPosition?: unknown;
+    initialInventory?: InitialContainerItem[];
+    initialEquipment?: InitialContainerItem[];
 }
 
 export interface Soul {
@@ -154,6 +157,12 @@ const inferenceProfileSchema = z.object({
     temperature: z.number().min(0).max(2).optional(),
     thinking: z.boolean().optional(),
 });
+const initialContainerItemSchema = z.union([
+    z.number().int(),
+    z.string().min(1),
+    z.object({ itemId: z.number().int(), amount: z.number().int().positive().optional() }),
+    z.null(),
+]);
 const basicAgentBehaviorSchema = z.object({
     kind: z.literal('basic-agent'),
     followPlayer: z.string().min(1).optional(),
@@ -213,6 +222,8 @@ export const soulFrontmatterSchema = z.object({
     behavior: soulBehaviorSchema.optional(),
     startingBeliefs: z.array(z.string()).optional(),
     spawnPosition: z.unknown().optional(),
+    initialInventory: z.array(initialContainerItemSchema).max(28).optional(),
+    initialEquipment: z.array(initialContainerItemSchema).max(14).optional(),
 });
 
 export function validateSoulFrontmatter(value: unknown, sourcePath: string): SoulFrontmatter {

@@ -117,6 +117,51 @@ describe('ResidentRuntime modules', () => {
         );
         expect(stateStore.save).toHaveBeenCalledWith(state);
     });
+
+    it('uses built-in nervous survival to eat visible food at low health without inference', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-nervous-food-test-'));
+        const state = stateFor('res:pip');
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception({
+            tick: 10,
+            resident: {
+                hp: { current: 3, max: 10 },
+                inventory: [
+                    { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    { itemId: 315, key: 'rs:shrimp', amount: 1 },
+                ],
+            },
+            events: [],
+        });
+
+        expect(thinking.think).not.toHaveBeenCalled();
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'eat', slot: 1, cause: 'nervous:eat-when-low-health' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'eat-when-low-health' }),
+        );
+    });
 });
 
 function stateFor(resident: string): RuntimeState {

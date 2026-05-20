@@ -132,6 +132,8 @@ export class ControllerHost {
         await this.gateway.createResident({
             name,
             spawnPosition: soul.frontmatter.spawnPosition,
+            initialInventory: soul.frontmatter.initialInventory,
+            initialEquipment: soul.frontmatter.initialEquipment,
         });
         await this.connectWithSoul(soul);
     }
