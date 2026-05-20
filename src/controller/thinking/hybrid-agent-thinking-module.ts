@@ -21,6 +21,13 @@ export interface HybridAgentThinkingModuleOptions {
 type Pos = { x: number; y: number; level: number };
 type Item = { itemId: number; key?: string; amount: number };
 type Actor = { id: string; kind: 'player' | 'npc' | 'resident'; name?: string; key?: string; position: Pos; hpFraction?: number };
+type ActiveTrade = {
+    partner?: Actor;
+    ours?: Item[];
+    theirs?: Item[];
+    ourStage?: string;
+    theirStage?: string;
+};
 type HybridPerception = {
     tick?: number;
     resident?: {
@@ -30,6 +37,7 @@ type HybridPerception = {
         combatTarget?: Actor | null;
         busy?: boolean;
         inventory?: Array<Item | null>;
+        activeTrade?: ActiveTrade;
     };
     nearby?: {
         players?: Actor[];
@@ -56,6 +64,7 @@ const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const TINDERBOX_ITEM_IDS = new Set([590]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
+const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 const BONE_ITEM_IDS = new Set([526, 528, 530, 532, 534, 536, 2859, 3123, 3125, 3179, 3180, 3181, 3182, 3183, 3185, 3186, 4812, 4813, 4814, 6729, 6812]);
 const BONE_KEY_PATTERN = /^rs:(bones|bones_.+|.+_bones)$/i;
 const SAFE_BONE_SOURCE_PATTERN = /\b(chicken|cow|goblin|rat|giant rat|spider|man|woman)\b/i;
@@ -89,6 +98,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const dialogue = this.dialogueReaction(perception as HybridPerception);
         if (dialogue) {
             return this.result([dialogue.action], dialogue.cause, 0, false);
+        }
+
+        const trade = this.tradeReaction(perception as HybridPerception);
+        if (trade) {
+            return this.result([trade.action], trade.cause, 0, false);
         }
 
         if ((perception as HybridPerception).resident?.busy) {
@@ -491,6 +505,35 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        if (isTradeIntent(command, chat.normalizedText)) {
+            return {
+                action: tradeRequestOrApproach(perception, chat.from, 'direct_chat_trade') || {
+                    kind: 'say',
+                    text: 'I need to see you nearby before I can trade.',
+                },
+                cause: 'direct_chat_trade',
+            };
+        }
+
+        const tradeOffer = tradeOfferIntent(command);
+        if (tradeOffer) {
+            const slot = safeTradeOfferSlot(perception.resident?.inventory || [], tradeOffer);
+            return {
+                action:
+                    slot === undefined
+                        ? { kind: 'say', text: tradeOffer ? `I do not have a spare ${tradeOffer} to offer.` : 'I do not have a safe spare item to offer.' }
+                        : { kind: 'trade_offer_item', inventorySlot: slot, amount: 1, cause: 'direct_chat_trade_offer' },
+                cause: 'direct_chat_trade_offer',
+            };
+        }
+
+        if (isTradeAcceptIntent(command, chat.normalizedText)) {
+            return {
+                action: tradeAcceptAction(perception.resident?.activeTrade) || { kind: 'say', text: 'I do not have a trade ready to accept yet.' },
+                cause: 'direct_chat_trade_accept',
+            };
+        }
+
         if (isExploreIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = explorationGoal(this.options.state.tick);
             return {
@@ -576,6 +619,34 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         this.rememberBodyAction(action);
         return { action, cause: action.cause || 'dialogue_reaction' };
+    }
+
+    private tradeReaction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const request = latestTradeRequest(perception);
+        if (request && this.isTrustedTradePartner(request)) {
+            const action = tradeRequestOrApproach(perception, request, 'trade_reciprocate_trusted_request');
+            if (action && !this.isRepeatedAction(action)) {
+                this.rememberBodyAction(action);
+                return { action, cause: action.cause || 'trade_reciprocate_trusted_request' };
+            }
+        }
+
+        const trade = perception.resident?.activeTrade;
+        if (!trade || (trade.partner && !this.isTrustedTradePartner(trade.partner))) {
+            return undefined;
+        }
+
+        const offerSlot = (trade.ours?.length || 0) === 0 ? safeTradeOfferSlot(perception.resident?.inventory || []) : undefined;
+        const action =
+            offerSlot !== undefined
+                ? { kind: 'trade_offer_item', inventorySlot: offerSlot, amount: 1, cause: 'trade_offer_safe_item' }
+                : tradeAcceptAction(trade);
+        if (!action || this.isRepeatedAction(action)) {
+            return undefined;
+        }
+
+        this.rememberBodyAction(action);
+        return { action, cause: action.cause || 'trade_reaction' };
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
@@ -709,6 +780,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private commandPrefix(): string {
         return normalizeText(this.behavior().commandPrefix || displayName(this.options.soul.frontmatter.name));
+    }
+
+    private isTrustedTradePartner(actor: Actor): boolean {
+        const trusted = this.behavior().followPlayer;
+        return Boolean(trusted && actorMatchesName(actor, trusted));
     }
 
     private ensureCognition(): void {
@@ -1124,6 +1200,22 @@ function isRetreatIntent(command: string, fullText: string): boolean {
     return /^(run away|flee|retreat|escape)\b/.test(command) || /\b(run away|flee|retreat|escape)\b/.test(fullText);
 }
 
+function isTradeIntent(command: string, fullText: string): boolean {
+    return /^(trade|trade me|start trade|request trade)\b/.test(command) || /\b(trade me|start trade|request trade)\b/.test(fullText);
+}
+
+function tradeOfferIntent(command: string): string | undefined {
+    const match = command.match(/^offer(?:\s+(.+))?/);
+    if (!match) {
+        return undefined;
+    }
+    return match[1] ? cleanTarget(match[1]) : '';
+}
+
+function isTradeAcceptIntent(command: string, fullText: string): boolean {
+    return /^(accept trade|accept)\b/.test(command) || /\baccept trade\b/.test(fullText);
+}
+
 function latestCombatAttacker(perception: HybridPerception): Actor | undefined {
     for (const event of [...(perception.events || [])].reverse()) {
         if (!['hit_taken', 'hit', 'attacked'].includes(String(event.kind || ''))) {
@@ -1132,6 +1224,20 @@ function latestCombatAttacker(perception: HybridPerception): Actor | undefined {
         const attacker = actorLike(event.from);
         if (attacker) {
             return attacker;
+        }
+    }
+
+    return undefined;
+}
+
+function latestTradeRequest(perception: HybridPerception): Actor | undefined {
+    for (const event of [...(perception.events || [])].reverse()) {
+        if (event.kind !== 'trade_requested') {
+            continue;
+        }
+        const from = actorLike(event.from);
+        if (from?.kind === 'player' || from?.kind === 'resident') {
+            return from;
         }
     }
 
@@ -1153,10 +1259,13 @@ function latestDialogueEvent(perception: HybridPerception): { options?: unknown[
 
 function findActorByName(actors: Actor[], query: string): Actor | undefined {
     const wanted = normalizeText(cleanTarget(query));
-    return actors.find(actor => {
-        const names = [actor.name, actor.key, actor.id].filter((value): value is string => Boolean(value)).map(normalizeText);
-        return names.some(name => name.includes(wanted) || wanted.includes(name));
-    });
+    return actors.find(actor => actorMatchesName(actor, wanted));
+}
+
+function actorMatchesName(actor: Actor, query: string): boolean {
+    const wanted = normalizeText(cleanTarget(query));
+    const names = [actor.name, actor.key, actor.id].filter((value): value is string => Boolean(value)).map(normalizeText);
+    return names.some(name => name.includes(wanted) || wanted.includes(name));
 }
 
 function isLowHealth(perception: HybridPerception): boolean {
@@ -1167,6 +1276,46 @@ function isLowHealth(perception: HybridPerception): boolean {
 
 function firstFoodSlot(inventory: Array<Item | null>): number | undefined {
     return findSlot(inventory, item => FOOD_KEY_PATTERN.test(item.key || ''));
+}
+
+function safeTradeOfferSlot(inventory: Array<Item | null>, query?: string): number | undefined {
+    if (query) {
+        return findSlot(inventory, item => !isEssentialTool(item) && itemMatchesQuery(item, query));
+    }
+
+    return (
+        findSlot(inventory, item => !isEssentialTool(item) && (isFiremakingLog(item) || isBones(item))) ??
+        findSlot(inventory, item => !isEssentialTool(item) && FOOD_KEY_PATTERN.test(item.key || '')) ??
+        findSlot(inventory, item => !isEssentialTool(item))
+    );
+}
+
+function isEssentialTool(item: Item): boolean {
+    return isTinderbox(item) || ESSENTIAL_TOOL_KEY_PATTERN.test(item.key || '');
+}
+
+function tradeRequestOrApproach(perception: HybridPerception, target: Actor | undefined, cause: string): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!target || target.kind === 'npc') {
+        return undefined;
+    }
+    if (here && distance(here, target.position) > 1) {
+        return { kind: 'move_to', target: target.position, range: 1, cause };
+    }
+    return { kind: 'trade_request', target, cause };
+}
+
+function tradeAcceptAction(trade: ActiveTrade | undefined): AgentAction | undefined {
+    if (!trade || !trade.ours?.length) {
+        return undefined;
+    }
+    if (trade.ourStage === 'accepted_1' && (trade.theirStage === 'accepted_1' || trade.theirStage === 'accepted_2')) {
+        return { kind: 'trade_accept_stage_2', cause: 'trade_accept_stage_2' };
+    }
+    if (!trade.ourStage || trade.ourStage === 'editing') {
+        return { kind: 'trade_accept_stage_1', cause: 'trade_accept_stage_1' };
+    }
+    return undefined;
 }
 
 function findWorldItem(items: Array<Item & { position: Pos; ownerId?: string }>, query: string): (Item & { position: Pos; ownerId?: string }) | undefined {

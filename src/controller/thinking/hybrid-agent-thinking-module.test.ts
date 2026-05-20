@@ -612,6 +612,144 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('runs direct trade commands with the speaking player without inference', async () => {
+        const codex = player('codex', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+                events: [chatFromCodex('agent trade me', 3219, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'trade_request', target: codex, cause: 'direct_chat_trade' }]);
+        expect(result.cause).toBe('direct_chat_trade');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('approaches the speaking player before sending a direct trade request when too far away', async () => {
+        const codex = player('codex', 3225, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+                events: [chatFromCodex('agent trade me', 3225, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: codex.position, range: 1, cause: 'direct_chat_trade' }]);
+        expect(result.cause).toBe('direct_chat_trade');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('reciprocates trusted trade requests without inference', async () => {
+        const codex = player('codex', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+                events: [{ kind: 'trade_requested', from: codex }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'trade_request', target: codex, cause: 'trade_reciprocate_trusted_request' }]);
+        expect(result.cause).toBe('trade_reciprocate_trusted_request');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('offers one safe non-tool item when a trusted trade opens', async () => {
+        const codex = player('codex', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                        { itemId: 315, key: 'rs:shrimps', amount: 1 },
+                    ],
+                    activeTrade: {
+                        partner: codex,
+                        ours: [],
+                        theirs: [],
+                        ourStage: 'editing',
+                        theirStage: 'editing',
+                    },
+                },
+                players: [codex],
+                events: [{ kind: 'trade_opened', partner: codex, sessionId: 'trade-1' }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'trade_offer_item', inventorySlot: 2, amount: 1, cause: 'trade_offer_safe_item' }]);
+        expect(result.cause).toBe('trade_offer_safe_item');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('advances a trusted trade through accept stages when its offer is ready', async () => {
+        const codex = player('codex', 3219, 3201);
+        const stageOneAgent = hybridAgent(scriptedLlm([]), runtimeState());
+        const stageOne = await stageOneAgent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    activeTrade: {
+                        partner: codex,
+                        ours: [{ itemId: 1511, key: 'rs:logs', amount: 1 }],
+                        theirs: [],
+                        ourStage: 'editing',
+                        theirStage: 'editing',
+                    },
+                },
+                players: [codex],
+                events: [{ kind: 'trade_offer_updated' }],
+            }),
+        );
+
+        expect(stageOne.actions).toEqual([{ kind: 'trade_accept_stage_1', cause: 'trade_accept_stage_1' }]);
+        expect(stageOne.cause).toBe('trade_accept_stage_1');
+
+        const stageTwoAgent = hybridAgent(scriptedLlm([]), runtimeState());
+        const stageTwo = await stageTwoAgent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    activeTrade: {
+                        partner: codex,
+                        ours: [{ itemId: 1511, key: 'rs:logs', amount: 1 }],
+                        theirs: [],
+                        ourStage: 'accepted_1',
+                        theirStage: 'accepted_1',
+                    },
+                },
+                players: [codex],
+                events: [{ kind: 'trade_offer_updated' }],
+            }),
+        );
+
+        expect(stageTwo.actions).toEqual([{ kind: 'trade_accept_stage_2', cause: 'trade_accept_stage_2' }]);
+        expect(stageTwo.cause).toBe('trade_accept_stage_2');
+    });
+
     it('answers direct look commands with actionable surroundings without inference', async () => {
         const hans = npc('Hans', 3219, 3201);
         const llm = scriptedLlm([]);
