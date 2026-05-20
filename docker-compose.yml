@@ -9,6 +9,7 @@ services:
       - ./config:/usr/src/app/config
     ports:
       - "43594:43594"
+      - "127.0.0.1:43595:43595"
 
 networks:
   default:

@@ -1,0 +1,24 @@
+{
+    "gateway": {
+        "url": "ws://127.0.0.1:43595/agent",
+        "controllerId": "nullcity-simulation",
+        "requestTimeoutMs": 10000
+    },
+    "residents": {
+        "prefix": "res:sim",
+        "count": 3,
+        "spawnPosition": { "x": 3222, "y": 3222, "level": 0 }
+    },
+    "runtime": {
+        "durationMs": 300000,
+        "actionIntervalTicks": 4,
+        "autoBirth": true,
+        "disconnectOnStop": true,
+        "logFullPerceptions": false
+    },
+    "paths": {
+        "stateDir": "data/simulation",
+        "logDir": "data/logs/simulation"
+    },
+    "goals": ["wander", "collect_items", "talk_to_npcs", "socialize", "work_loop", "survive"]
+}

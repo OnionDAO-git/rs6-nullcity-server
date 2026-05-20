@@ -33,8 +33,10 @@ export class ResidentRegistry {
                 }
             }
         }
-        for (const name of this.online.keys()) {
-            names.add(name);
+        for (const name of [...this.online.keys()]) {
+            if (this.activeResident(name)) {
+                names.add(name);
+            }
         }
 
         return [...names].sort().map(name => this.summary(name));
@@ -54,17 +56,19 @@ export class ResidentRegistry {
         return this.summary(name);
     }
 
-    public async connect(name: string, controllerId: string, onDisconnect: DisconnectPolicy = 'logout'): Promise<Resident> {
+    public async connect(name: string, controllerId: string | null, onDisconnect: DisconnectPolicy = 'logout'): Promise<Resident> {
         name = this.assertValidName(name);
-        const existing = this.online.get(name);
+        const existing = this.activeResident(name);
         if (existing) {
-            const controller = this.controllers.get(name);
-            if (controller && controller.controllerId !== controllerId) {
-                throw new Error('ECONTROL_HELD');
+            if (controllerId) {
+                const controller = this.controllers.get(name);
+                if (controller && controller.controllerId !== controllerId) {
+                    throw new Error('ECONTROL_HELD');
+                }
+                this.controllers.set(name, { controllerId, onDisconnect });
+                existing.markControllerAttached(controllerId);
+                existing.save();
             }
-            this.controllers.set(name, { controllerId, onDisconnect });
-            existing.markControllerAttached(controllerId);
-            existing.save();
             return existing;
         }
 
@@ -85,16 +89,19 @@ export class ResidentRegistry {
         }
         await resident.init();
         this.online.set(name, resident);
-        this.controllers.set(name, { controllerId, onDisconnect });
-        resident.markControllerAttached(controllerId);
+        if (controllerId) {
+            this.controllers.set(name, { controllerId, onDisconnect });
+            resident.markControllerAttached(controllerId);
+        }
         resident.save();
         return resident;
     }
 
     public disconnect(name: string, cause?: string): void {
         name = normalizeResidentName(name);
-        const resident = this.online.get(name);
+        const resident = this.activeResident(name);
         if (!resident) {
+            this.controllers.delete(name);
             return;
         }
         resident.markControllerDetached();
@@ -113,18 +120,24 @@ export class ResidentRegistry {
     }
 
     public get(name: string): Resident | null {
-        return this.online.get(normalizeResidentName(name)) || null;
+        return this.activeResident(name);
     }
 
     public controllerFor(name: string): string | undefined {
-        return this.controllers.get(normalizeResidentName(name))?.controllerId;
+        name = normalizeResidentName(name);
+        if (!this.activeResident(name)) {
+            this.controllers.delete(name);
+            return undefined;
+        }
+        return this.controllers.get(name)?.controllerId;
     }
 
     public releaseController(controllerId: string): string[] {
         const disconnected: string[] = [];
-        for (const [name, controller] of this.controllers.entries()) {
+        for (const [name, controller] of [...this.controllers.entries()]) {
             if (controller.controllerId === controllerId) {
-                if (controller.onDisconnect === 'logout') {
+                const resident = this.activeResident(name);
+                if (resident && controller.onDisconnect === 'logout') {
                     this.disconnect(name, 'controller_disconnect');
                 } else {
                     this.controllers.delete(name);
@@ -137,13 +150,31 @@ export class ResidentRegistry {
 
     public summary(name: string): ResidentSummary {
         name = normalizeResidentName(name);
-        const controller = this.controllers.get(name);
+        const resident = this.activeResident(name);
+        if (!resident) {
+            this.controllers.delete(name);
+        }
+        const controller = resident ? this.controllers.get(name) : undefined;
         return {
             name,
-            online: this.online.has(name),
+            online: Boolean(resident),
             controllerId: controller?.controllerId,
             controlHeld: Boolean(controller),
         };
+    }
+
+    private activeResident(name: string): Resident | null {
+        name = normalizeResidentName(name);
+        const resident = this.online.get(name);
+        if (!resident) {
+            return null;
+        }
+        if (resident.isActive) {
+            return resident;
+        }
+        this.online.delete(name);
+        this.controllers.delete(name);
+        return null;
     }
 
     private assertValidName(name: string): string {

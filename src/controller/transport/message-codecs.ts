@@ -3,9 +3,12 @@ import { z } from 'zod';
 export type ResidentFilter = 'online' | 'offline' | 'all';
 export type DisconnectPolicy = 'logout' | 'idle';
 
+export const AGENT_PROTOCOL_VERSION = 1;
+
 export interface GatewayEnvelope<TType extends string = string, TPayload = unknown> {
-    type: TType;
-    request_id?: string;
+    v: typeof AGENT_PROTOCOL_VERSION;
+    id?: string;
+    kind: TType;
     payload?: TPayload;
 }
 
@@ -83,15 +86,14 @@ export type ClientMessage =
     | GatewayEnvelope<'delete_resident', ResidentNamePayload>;
 
 export type ServerMessage =
-    | GatewayEnvelope<'residents', { residents: ResidentSummary[] }>
-    | GatewayEnvelope<'resident', { resident: ResidentSummary }>
-    | GatewayEnvelope<'attached', { resident: ResidentSummary }>
-    | GatewayEnvelope<'detached', ResidentNamePayload>
-    | GatewayEnvelope<'disconnected', ResidentNamePayload & { cause?: string }>
-    | GatewayEnvelope<'deleted', ResidentNamePayload>
+    | GatewayEnvelope<'resident_list', { residents: ResidentSummary[] }>
+    | GatewayEnvelope<'resident_created', { resident: ResidentSummary }>
+    | GatewayEnvelope<'resident_connected', { resident: ResidentSummary; perception: Perception | null }>
+    | GatewayEnvelope<'resident_disconnected', ResidentNamePayload & { cause?: string }>
     | GatewayEnvelope<'perception', { resident_id: string; perception: Perception }>
     | GatewayEnvelope<'action_result', { resident_id: string; request_id?: string; result: ActionResult; cause?: string }>
     | GatewayEnvelope<'event', { resident_id: string; event: PerceptionEvent }>
+    | GatewayEnvelope<'ok', { ok: true }>
     | GatewayEnvelope<'error', { request_id?: string; code: string; message: string; cause?: string }>
     | GatewayEnvelope<string, unknown>;
 
@@ -163,8 +165,9 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
 ]) as z.ZodType<AgentAction>;
 
 export const gatewayEnvelopeSchema = z.object({
-    type: z.string().min(1),
-    request_id: z.string().optional(),
+    v: z.literal(AGENT_PROTOCOL_VERSION),
+    id: z.string().optional(),
+    kind: z.string().min(1),
     payload: z.unknown().optional(),
 });
 
@@ -184,21 +187,21 @@ export function decodeMessage(raw: string | Buffer | ArrayBuffer | Buffer[]): Se
 }
 
 export function makeRequest<TType extends string, TPayload>(
-    type: TType,
+    kind: TType,
     requestId: string,
     payload?: TPayload,
 ): GatewayEnvelope<TType, TPayload> {
-    return payload === undefined ? { type, request_id: requestId } : { type, request_id: requestId, payload };
+    return payload === undefined ? { v: AGENT_PROTOCOL_VERSION, kind, id: requestId } : { v: AGENT_PROTOCOL_VERSION, kind, id: requestId, payload };
 }
 
 export function readError(message: ServerMessage): { request_id?: string; code: string; message: string; cause?: string } | undefined {
-    if (message.type !== 'error' || !isRecord(message.payload)) {
+    if (message.kind !== 'error' || !isRecord(message.payload)) {
         return undefined;
     }
 
     const payload = message.payload;
     return {
-        request_id: typeof payload.request_id === 'string' ? payload.request_id : message.request_id,
+        request_id: typeof payload.request_id === 'string' ? payload.request_id : message.id,
         code: typeof payload.code === 'string' ? payload.code : 'EUNKNOWN',
         message: typeof payload.message === 'string' ? payload.message : 'Unknown gateway error',
         cause: typeof payload.cause === 'string' ? payload.cause : undefined,

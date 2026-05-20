@@ -8,6 +8,17 @@ export type ResidentFilter = 'online' | 'offline' | 'all';
 export type DisconnectPolicy = 'logout' | 'idle';
 export type SpectatorMode = 'follow' | 'free-camera' | 'picture-in-picture';
 export type SpectatorSubject = { kind: 'resident'; name: string } | { kind: 'player'; username: string };
+export type SpectatorPacketType = 'FIXED' | 'DYNAMIC_SMALL' | 'DYNAMIC_LARGE';
+
+export interface SpectatorRsPacketFrame {
+    opcode: number;
+    type: SpectatorPacketType;
+    updateTask: boolean;
+    payloadLength: number;
+    payloadBase64: string;
+    frameLength: number;
+    frameBase64: string;
+}
 
 export interface AgentFrame<TKind extends string = string, TPayload = unknown> {
     v: 1;
@@ -60,8 +71,8 @@ export type ServerMessage =
     | AgentFrame<'resident_disconnected', { name: string; cause?: string }>
     | AgentFrame<'spectator_connected', { sessionId: string; subject: SpectatorSubject; initialState: unknown }>
     | AgentFrame<'spectator_rebuild', { sessionId: string; payload: unknown }>
-    | AgentFrame<'spectator_packet', { sessionId: string; opcode: number; payload: unknown }>
-    | AgentFrame<'spectator_perception', { sessionId: string; perception: Perception }>
+    | AgentFrame<'spectator_packet', { sessionId: string; opcode: number; payload: SpectatorRsPacketFrame }>
+    | AgentFrame<'spectator_perception', { sessionId: string; perception: Perception; position?: { x: number; y: number; level: number }; regionId?: number }>
     | AgentFrame<'spectator_disconnected', { sessionId: string; cause?: string }>
     | AgentFrame<'perception', { resident_id: string; perception: Perception }>
     | AgentFrame<'action_result', { resident_id: string; request_id?: string | number; result: ActionResult; cause?: string }>

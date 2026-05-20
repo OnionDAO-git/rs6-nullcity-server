@@ -1,6 +1,6 @@
 {
     "verbose": true,
-    "ignore": ["src/plugins/"],
+    "ignore": ["src/plugins/", "data/**", "dist/**", "coverage/**"],
     "watch": ["src/"],
     "ext": "ts, js"
 }

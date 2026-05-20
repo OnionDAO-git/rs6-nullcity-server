@@ -27,6 +27,6 @@
         "types": ["jest", "node"],
         "lib": ["esnext", "dom", "dom.iterable", "scripthost"]
     },
-    "include": ["src/**/*.js", "src/**/*.ts", "tests/**/*.js", "tests/**/*.ts"],
+    "include": ["src/**/*.js", "src/**/*.ts", "simulation/**/*.js", "simulation/**/*.ts", "tests/**/*.js", "tests/**/*.ts"],
     "exclude": ["node_modules"]
 }

@@ -15,16 +15,28 @@ import { ByteBuffer, logger } from '@runejs/common';
 import type { LandscapeObject } from '@runejs/filestore';
 import { serverConfig } from '@server/game/game-server';
 
+export interface OutboundRsPacketFrame {
+    opcode: number;
+    type: PacketType;
+    updateTask: boolean;
+    payloadLength: number;
+    payloadBase64: string;
+    frameLength: number;
+    frameBase64: string;
+}
+
 /**
  * A helper class for sending various network packets back to the game client.
  */
 export class OutboundPacketHandler {
     private static privateMessageCounter: number = Math.floor(Math.random() * 100000000);
+    private static readonly spectatorHistoryLimit = 750;
 
     protected readonly player: Player;
     protected readonly socket: Socket;
     protected updatingQueue: Buffer[];
     protected packetQueue: Buffer[];
+    private readonly spectatorPacketHistory: OutboundRsPacketFrame[] = [];
 
     public constructor(player: Player) {
         this.updatingQueue = [];
@@ -571,7 +583,10 @@ export class OutboundPacketHandler {
     public logout(): void {
         this.clearQueues();
 
-        this.socket.write(new Packet(181).toBuffer(this.player.outCipher));
+        const packet = new Packet(181);
+        const packetBuffer = packet.toBuffer(this.player.outCipher);
+        this.emitPacketFrame(packet, packetBuffer, false);
+        this.socket.write(packetBuffer);
     }
 
     public chatboxMessage(message: string): void {
@@ -679,6 +694,17 @@ export class OutboundPacketHandler {
 
     public updateCurrentMapChunk(): void {
         const packet = new Packet(166, PacketType.DYNAMIC_LARGE);
+        this.writeCurrentMapChunkPayload(packet);
+        this.queue(packet);
+    }
+
+    public captureCurrentMapChunkFrame(): OutboundRsPacketFrame {
+        const packet = new Packet(166, PacketType.DYNAMIC_LARGE);
+        this.writeCurrentMapChunkPayload(packet);
+        return this.createPacketFrame(packet, false);
+    }
+
+    private writeCurrentMapChunkPayload(packet: Packet): void {
         packet.put(this.player.position.chunkLocalY, 'short');
         packet.put(this.player.position.chunkX + 6, 'short', 'le');
         packet.put(this.player.position.chunkLocalX, 'short');
@@ -700,8 +726,6 @@ export class OutboundPacketHandler {
                 }
             }
         }
-
-        this.queue(packet);
     }
 
     public updatePlayerOption(option: string, index: number = 0, placement: 'TOP' | 'BOTTOM' = 'BOTTOM'): void {
@@ -734,7 +758,12 @@ export class OutboundPacketHandler {
         const queue = updateTask ? this.updatingQueue : this.packetQueue;
 
         const packetBuffer = packet.toBuffer(this.player.outCipher);
+        this.emitPacketFrame(packet, packetBuffer, updateTask);
         queue.push(packetBuffer);
+    }
+
+    public getSpectatorPacketHistory(): OutboundRsPacketFrame[] {
+        return [...this.spectatorPacketHistory];
     }
 
     protected clearQueues(): void {
@@ -770,6 +799,27 @@ export class OutboundPacketHandler {
         const buffer = new ByteBuffer(size);
         packet.copy(buffer, 0, 0, size);
         return Buffer.from(buffer);
+    }
+
+    private emitPacketFrame(packet: Packet, packetBuffer: Buffer, updateTask: boolean): void {
+        const frame = this.createPacketFrame(packet, updateTask, packetBuffer);
+        this.spectatorPacketHistory.push(frame);
+        if (this.spectatorPacketHistory.length > OutboundPacketHandler.spectatorHistoryLimit) {
+            this.spectatorPacketHistory.splice(0, this.spectatorPacketHistory.length - OutboundPacketHandler.spectatorHistoryLimit);
+        }
+        this.player.playerEvents.emit('rs_packet_frame', frame);
+    }
+
+    private createPacketFrame(packet: Packet, updateTask: boolean, packetBuffer?: Buffer): OutboundRsPacketFrame {
+        return {
+            opcode: packet.packetId,
+            type: packet.type,
+            updateTask,
+            payloadLength: packet.writerIndex,
+            payloadBase64: this.strip(packet).toString('base64'),
+            frameLength: packetBuffer?.length ?? 0,
+            frameBase64: packetBuffer?.toString('base64') ?? '',
+        } satisfies OutboundRsPacketFrame;
     }
 
     private segment(container: ItemContainer, start: number): { bitset: number; buffer: Buffer } {

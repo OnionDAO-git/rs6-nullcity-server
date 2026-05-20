@@ -1,4 +1,5 @@
 import http from 'http';
+import type { OutboundRsPacketFrame } from '@engine/net/outbound-packet-handler';
 import { activeWorld } from '@engine/world';
 import type { Player } from '@engine/world/actor/player/player';
 import type { Resident } from '@engine/world/actor/resident/resident';
@@ -213,7 +214,8 @@ export class AgentGateway {
                 return;
             }
             case 'connect_resident': {
-                const resident = await this.registry.connect(message.payload.name, controllerId, message.payload.onDisconnect);
+                const controlsResident = message.payload.control !== false;
+                const resident = await this.registry.connect(message.payload.name, controlsResident ? controllerId : null, message.payload.onDisconnect);
                 const session = this.sessionFor(resident);
                 if (message.payload.observe !== false) {
                     session.attach(observer);
@@ -279,9 +281,14 @@ export class AgentGateway {
 
         if (includeResidents) {
             for (const resident of this.registry.list().filter(resident => resident.online)) {
+                const player = this.resolveSpectatorSubject({ kind: 'resident', name: resident.name });
+                if (!player) {
+                    continue;
+                }
                 subjects.set(`resident:${resident.name}`, {
                     subject: { kind: 'resident', name: resident.name },
                     online: true,
+                    position: this.positionSummary(player),
                 });
             }
         }
@@ -321,13 +328,27 @@ export class AgentGateway {
         }
 
         const sessionId = `spectator:${Date.now()}:${Math.random().toString(16).slice(2)}`;
+        const tickSubscription = activeWorld.tickComplete.subscribe(() => this.publishSpectatorSession(sessionId));
+        const onPacketFrame = (packetFrame: OutboundRsPacketFrame) => {
+            const currentSession = this.spectatorSessions.get(sessionId);
+            if (!currentSession) {
+                return;
+            }
+            currentSession.send(frame('spectator_packet', { sessionId, opcode: packetFrame.opcode, payload: packetFrame }));
+        };
+        player.playerEvents.on('rs_packet_frame', onPacketFrame);
         const session: SpectatorSessionState = {
             id: sessionId,
             subject,
             mode,
             send,
             lastRegionId: this.regionIdFor(player),
-            subscription: activeWorld.tickComplete.subscribe(() => this.publishSpectatorSession(sessionId)),
+            subscription: {
+                unsubscribe: () => {
+                    tickSubscription.unsubscribe();
+                    player.playerEvents.off('rs_packet_frame', onPacketFrame);
+                },
+            },
         };
         this.spectatorSessions.set(sessionId, session);
 
@@ -348,6 +369,11 @@ export class AgentGateway {
                 requestId,
             ),
         );
+        const mapBootstrapFrame = player.outgoingPackets.captureCurrentMapChunkFrame();
+        send(frame('spectator_packet', { sessionId, opcode: mapBootstrapFrame.opcode, payload: mapBootstrapFrame }));
+        for (const packetFrame of player.outgoingPackets.getSpectatorPacketHistory()) {
+            send(frame('spectator_packet', { sessionId, opcode: packetFrame.opcode, payload: packetFrame }));
+        }
         return sessionId;
     }
 
@@ -380,7 +406,12 @@ export class AgentGateway {
                 }),
             );
         }
-        session.send(frame('spectator_perception', { sessionId, perception }));
+        session.send(frame('spectator_perception', {
+            sessionId,
+            perception,
+            position: this.positionSummary(player),
+            regionId,
+        }));
     }
 
     private closeSpectatorSession(sessionId: string, cause?: string, notify = true): void {
@@ -398,8 +429,12 @@ export class AgentGateway {
 
     private resolveSpectatorSubject(subject: SpectatorSubject): Player | null {
         if (subject.kind === 'resident') {
-            const resident = this.registry.get(subject.name) || activeWorld?.findActivePlayerByUsername(subject.name);
-            return resident && isResident(resident) && resident.isActive ? resident : null;
+            const resident = this.registry.get(subject.name);
+            if (resident && isResident(resident) && resident.isActive) {
+                return resident;
+            }
+            const player = activeWorld?.findActivePlayerByUsername(subject.name);
+            return player && isResident(player) && player.isActive ? player : null;
         }
 
         const player = activeWorld?.findActivePlayerByUsername(subject.username);
@@ -491,9 +526,21 @@ export class AgentGateway {
     private authorized(request: http.IncomingMessage): boolean {
         if (!this.config.authToken) {
             const address = request.socket.remoteAddress || '';
-            return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+            return isLocalPeerAddress(address);
         }
 
         return request.headers.authorization === `Bearer ${this.config.authToken}`;
     }
+}
+
+function isLocalPeerAddress(address: string): boolean {
+    const normalized = address.replace(/^::ffff:/, '');
+    if (normalized === '127.0.0.1' || normalized === '::1') {
+        return true;
+    }
+    if (/^10\./.test(normalized) || /^192\.168\./.test(normalized)) {
+        return true;
+    }
+    const match = normalized.match(/^172\.(\d+)\./);
+    return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
 }

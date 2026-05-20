@@ -126,7 +126,9 @@ export class GatewayClient extends EventEmitter {
 
     private async openSocket(): Promise<void> {
         await new Promise<void>((resolve, reject) => {
-            const socket = new WebSocket(this.options.url);
+            const socket = new WebSocket(this.options.url, {
+                headers: this.options.authToken ? { Authorization: `Bearer ${this.options.authToken}` } : undefined,
+            });
             this.socket = socket;
 
             socket.once('open', () => {
@@ -169,32 +171,32 @@ export class GatewayClient extends EventEmitter {
             const message = decodeMessage(raw as Buffer);
             const error = readError(message);
             if (error) {
-                this.resolveError(error.request_id || message.request_id, error);
+                this.resolveError(error.request_id || message.id, error);
                 return;
             }
 
-            if (message.type === 'perception' && isRecord(message.payload)) {
+            if (message.kind === 'perception' && isRecord(message.payload)) {
                 this.emit('perception', String(message.payload.resident_id), (message.payload.perception || {}) as Perception);
                 return;
             }
 
-            if (message.type === 'event' && isRecord(message.payload)) {
+            if (message.kind === 'event' && isRecord(message.payload)) {
                 this.emit('event', String(message.payload.resident_id), (message.payload.event || {}) as PerceptionEvent);
                 return;
             }
 
-            if (message.type === 'action_result' && isRecord(message.payload)) {
+            if (message.kind === 'action_result' && isRecord(message.payload)) {
                 this.emit(
                     'actionResult',
                     String(message.payload.resident_id),
-                    typeof message.payload.request_id === 'string' ? message.payload.request_id : message.request_id,
+                    typeof message.payload.request_id === 'string' ? message.payload.request_id : message.id,
                     (message.payload.result || { ok: true }) as ActionResult,
                     typeof message.payload.cause === 'string' ? message.payload.cause : undefined,
                 );
             }
 
-            if (message.request_id) {
-                this.resolveRequest(message.request_id, message);
+            if (message.id) {
+                this.resolveRequest(message.id, message);
             }
         } catch (error) {
             this.emit('error', error instanceof Error ? error : new Error(String(error)));
