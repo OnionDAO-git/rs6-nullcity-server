@@ -111,6 +111,27 @@ describe('ResidentRegistry', () => {
         expect(registry.list()).toEqual([{ name: 'res:valid', online: false, controllerId: undefined, controlHeld: false }]);
     });
 
+    it('prunes inactive residents before reporting online or controller state', () => {
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+        const internals = registry as unknown as {
+            online: Map<string, Resident>;
+            controllers: Map<string, { controllerId: string; onDisconnect: 'idle' }>;
+        };
+        internals.online.set('res:stale', { isActive: false } as Resident);
+        internals.controllers.set('res:stale', { controllerId: 'controller:test', onDisconnect: 'idle' });
+
+        expect(registry.summary('res:stale')).toEqual({
+            name: 'res:stale',
+            online: false,
+            controllerId: undefined,
+            controlHeld: false,
+        });
+        expect(registry.get('res:stale')).toBeNull();
+        expect(registry.controllerFor('res:stale')).toBeUndefined();
+        expect(internals.online.has('res:stale')).toBe(false);
+        expect(internals.controllers.has('res:stale')).toBe(false);
+    });
+
     it('does not connect residents with malformed save data', async () => {
         const savePath = join(saveDir, 'res:corrupt.json');
         writeFileSync(savePath, '{');

@@ -79,7 +79,7 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
     const config: ControllerConfig = {
         residents: readStringArray(source.residents),
         gateway: {
-            url: readString(readPath(source, ['gateway', 'url']), 'ws://127.0.0.1:43594/agent'),
+            url: readString(readPath(source, ['gateway', 'url']), 'ws://127.0.0.1:43595'),
             authToken: readOptionalString(readPath(source, ['gateway', 'authToken'])),
             controllerId: readString(readPath(source, ['gateway', 'controllerId']), 'nullcity-controller'),
         },

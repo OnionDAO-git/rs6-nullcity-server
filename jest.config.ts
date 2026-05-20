@@ -29,7 +29,7 @@ export default {
     // coveragePathIgnorePatterns: [
     //   "\\\\node_modules\\\\"
     // ],
-    roots: ['<rootDir>/src'],
+    roots: ['<rootDir>/src', '<rootDir>/simulation'],
 
     moduleNameMapper: {
         '@engine/(.*)': '<rootDir>/src/engine/$1',

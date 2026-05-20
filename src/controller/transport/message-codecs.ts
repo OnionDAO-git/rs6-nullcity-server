@@ -2,13 +2,13 @@ import { z } from 'zod';
 
 export type ResidentFilter = 'online' | 'offline' | 'all';
 export type DisconnectPolicy = 'logout' | 'idle';
-const AGENT_PROTOCOL_VERSION = 1;
+export const AGENT_PROTOCOL_VERSION = 1;
 
 export interface GatewayEnvelope<TType extends string = string, TPayload = unknown> {
     v: typeof AGENT_PROTOCOL_VERSION;
     id?: string | number;
     kind: TType;
-    payload: TPayload;
+    payload?: TPayload;
 }
 
 export interface ControllerHelloPayload {
@@ -171,7 +171,7 @@ export const gatewayEnvelopeSchema = z.object({
     v: z.literal(AGENT_PROTOCOL_VERSION),
     id: z.union([z.string(), z.number()]).optional(),
     kind: z.string().min(1),
-    payload: z.unknown(),
+    payload: z.unknown().optional(),
 });
 
 export function encodeMessage(message: GatewayEnvelope<string, unknown>): string {
@@ -190,16 +190,11 @@ export function decodeMessage(raw: string | Buffer | ArrayBuffer | Buffer[]): Se
 }
 
 export function makeRequest<TType extends string, TPayload>(
-    type: TType,
+    kind: TType,
     requestId: string,
     payload?: TPayload,
 ): GatewayEnvelope<TType, TPayload> {
-    return {
-        v: AGENT_PROTOCOL_VERSION,
-        id: requestId,
-        kind: type,
-        payload: (payload === undefined ? {} : payload) as TPayload,
-    };
+    return payload === undefined ? { v: AGENT_PROTOCOL_VERSION, kind, id: requestId } : { v: AGENT_PROTOCOL_VERSION, kind, id: requestId, payload };
 }
 
 export function readError(message: ServerMessage): { request_id?: string; code: string; message: string; cause?: string } | undefined {

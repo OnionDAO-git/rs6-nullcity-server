@@ -151,10 +151,13 @@ export const findNpc = (inputKey: number | string): NpcDetails => {
         throw new Error('No NPC was provided to findNpc.');
     }
 
+    const lookupKey = typeof inputKey === 'string' && /^\d+$/.test(inputKey) ? Number(inputKey) : inputKey;
+    let npcKey: string | number = lookupKey;
+
     // Pathway for finding an NPC by its game id
-    if (typeof inputKey === 'number') {
-        const gameId = inputKey;
-        const npcKey = npcIdMap[gameId];
+    if (typeof lookupKey === 'number') {
+        const gameId = lookupKey;
+        npcKey = npcIdMap[gameId];
 
         // If we can't find a config in the project for this NPC - we fallback
         // to the cache which is the basic info loaded by `fileserver`.
@@ -170,10 +173,10 @@ export const findNpc = (inputKey: number | string): NpcDetails => {
     }
 
     // Otherwise we got a string identifier for the npcs
-    let npc = npcMap[inputKey];
+    let npc = npcMap[npcKey];
     if (!npc) {
         // Try fetching variation with suffix 0
-        npc = npcMap[`${npc}:0`];
+        npc = npcMap[`${npcKey}:0`];
     }
 
     if (!npc) {

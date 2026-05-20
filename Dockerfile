@@ -11,8 +11,9 @@ RUN npm ci
 COPY src ./src
 COPY tsconfig.json ./
 COPY .swcrc ./
+COPY nodemon.json ./
 
 RUN npm run build
 
-EXPOSE 43594
+EXPOSE 43594 43595
 CMD [ "npm", "run", "start:standalone" ]

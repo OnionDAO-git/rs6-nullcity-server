@@ -126,7 +126,9 @@ export class GatewayClient extends EventEmitter {
 
     private async openSocket(): Promise<void> {
         await new Promise<void>((resolve, reject) => {
-            const socket = new WebSocket(this.options.url);
+            const socket = new WebSocket(this.options.url, {
+                headers: this.options.authToken ? { Authorization: `Bearer ${this.options.authToken}` } : undefined,
+            });
             this.socket = socket;
 
             socket.once('open', () => {

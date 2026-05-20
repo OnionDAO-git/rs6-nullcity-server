@@ -27,7 +27,7 @@ The game server currently runs a build of RuneScape from October 30th-31st, 2006
 3. Build the docker image with `docker-compose build`
 4. Run the game server with `docker-compose up`
 
-The game server will spin up and be accessible via port 43594.
+The game server will spin up and be accessible via port 43594. The resident dashboard also needs the AgentGateway on port 43595; keep `agentGateway.enabled` set to `true` in `config/server-config.json` when using the dashboard.
 
 ## Game Client
 
