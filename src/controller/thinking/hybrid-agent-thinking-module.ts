@@ -3,7 +3,7 @@ import { objectIds } from '@engine/world/config/object-ids';
 import { parseCompletion } from '../llm/completion-parser';
 import type { LlmClient } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
-import type { ActiveGoalState, RuntimeState } from '../memory/runtime-state';
+import type { ActiveGoalState, ActiveMoveState, RuntimeState } from '../memory/runtime-state';
 import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
 import type { AgentAction, Perception } from '../transport/message-codecs';
@@ -20,6 +20,7 @@ export interface HybridAgentThinkingModuleOptions {
 
 type Pos = { x: number; y: number; level: number };
 type Item = { itemId: number; key?: string; amount: number };
+type WorldItem = Item & { position: Pos; ownerId?: string };
 type Actor = { id: string; kind: 'player' | 'npc' | 'resident'; name?: string; key?: string; position: Pos; hpFraction?: number };
 type ActiveTrade = {
     partner?: Actor;
@@ -31,6 +32,7 @@ type ActiveTrade = {
 type HybridPerception = {
     tick?: number;
     resident?: {
+        id?: string;
         position?: Pos;
         hp?: { current?: number; max?: number };
         inCombat?: boolean;
@@ -42,7 +44,7 @@ type HybridPerception = {
     nearby?: {
         players?: Actor[];
         npcs?: Actor[];
-        worldItems?: Array<Item & { position: Pos; ownerId?: string }>;
+        worldItems?: WorldItem[];
         objects?: Array<{ objectId: number; position: Pos; orientation?: number }>;
     };
     events?: Array<Record<string, unknown>>;
@@ -61,7 +63,17 @@ const PRAYER_TRAINING_WAYPOINTS: Pos[] = [
     { x: 3249, y: 3238, level: 0 },
 ];
 const REPEAT_ACTION_BACKOFF_TICKS = 30;
+const MOVE_COMMIT_TICKS = 24;
+const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
+const ROUTINE_LOOP_BREAK_ACTIONS = 3;
+const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
+const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
+const MAX_INVENTORY_SLOTS = 28;
+const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
+const COMBAT_LOOT_MAX_DISTANCE = 6;
+const PICKUP_TARGET_COOLDOWN_TICKS = 120;
 const TINDERBOX_ITEM_IDS = new Set([590]);
+const COIN_ITEM_IDS = new Set([995]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
@@ -78,6 +90,21 @@ const LEVEL_ONE_TREE_IDS = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
 ]);
+const OPENABLE_OBSTACLE_IDS = new Set([
+    1530,
+    11707,
+    1533,
+    1516,
+    1519,
+    1536,
+    11993,
+    13001,
+    1551,
+    1553,
+    12986,
+    12987,
+]);
+const STUCK_OBSTACLE_RANGE = 2;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
@@ -158,8 +185,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         this.cognition().lastBrainTick = this.options.state.tick;
 
         if (parsed.goal) {
+            const cognition = this.cognition();
+            const nextGoalId = parsed.goal.id || goalId(parsed.goal.description);
+            if (cognition.activeGoal?.id && cognition.activeGoal.id !== nextGoalId) {
+                this.clearGoalMomentum();
+            }
             this.cognition().activeGoal = {
-                id: parsed.goal.id || goalId(parsed.goal.description),
+                id: nextGoalId,
                 description: parsed.goal.description,
                 steps: parsed.goal.steps,
                 success: parsed.goal.success,
@@ -206,14 +238,23 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         let cause = parsed.ok ? parsed.cause || 'body_step' : parsed.cause || 'body_parse_failed';
         const routine = this.goalRoutineOverride(actions, perception as HybridPerception);
         if (routine) {
-            actions = [routine.action];
-            cause = routine.cause;
+            const loopBreak = this.routineLoopBreakAction(routine.action, routine.cause, perception as HybridPerception, visibility.anchor);
+            actions = [loopBreak?.action || routine.action];
+            cause = loopBreak?.cause || routine.cause;
         }
         const approach = this.approachDistantInteraction(actions, perception as HybridPerception);
         if (approach) {
             actions = [approach.action];
             cause = approach.cause;
         }
+        const stabilizeMove = () => {
+            const stableMove = this.stabilizedMoveAction(actions[0], perception as HybridPerception, visibility.anchor);
+            if (stableMove) {
+                actions = [stableMove.action];
+                cause = stableMove.cause;
+            }
+        };
+        stabilizeMove();
 
         const modelSuggestedAction = actions.length > 0;
         actions = this.suppressRepeatedActions(actions);
@@ -222,6 +263,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (fallback) {
                 actions = [fallback.action];
                 cause = fallback.cause;
+                stabilizeMove();
             }
         }
         if (actions.length === 0 && modelSuggestedAction) {
@@ -229,6 +271,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (fallback) {
                 actions = [fallback.action];
                 cause = fallback.cause;
+                stabilizeMove();
             }
         }
         if (actions.some(action => action.cause === 'return_to_visibility_anchor' || isMoveTo(action, visibility.anchor))) {
@@ -276,7 +319,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: prayerAction, cause: prayerAction.cause || 'prayer_bury_bones' };
         }
 
-        const combatAction = goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view) : undefined;
+        const combatAction = goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view, this.pickupCooldowns(), this.options.state.tick) : undefined;
         if (combatAction) {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }
@@ -288,9 +331,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: fireAction, cause: 'firemaking_fallback' };
         }
 
-        const exploreAction = goal && isExplorationGoal(goal) ? explorationAction(view, visibility.anchor) : undefined;
+        const exploreAction = goal && isExplorationGoal(goal)
+            ? explorationAction(view, visibility.anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick)
+            : undefined;
         if (exploreAction) {
-            return { action: exploreAction, cause: 'exploration_fallback' };
+            return { action: exploreAction, cause: exploreAction.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback' };
         }
 
         const follow = this.followAction(view);
@@ -315,7 +360,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const goalText = `${goal.description} ${(goal.steps || []).join(' ')}`;
-        if (/prayer|bone|bones|bury/i.test(goalText)) {
+        if (isPrayerTrainingGoal(goal)) {
             const prayerAction = prayerTrainingAction(perception);
             if (prayerAction) {
                 return { action: prayerAction, cause: prayerAction.cause || 'prayer_training' };
@@ -323,9 +368,36 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isCombatTrainingGoal(goal)) {
-            const combatAction = combatTrainingAction(perception);
+            const combatAction = combatTrainingAction(perception, this.pickupCooldowns(), this.options.state.tick);
             if (combatAction) {
                 return { action: combatAction, cause: combatAction.cause || 'combat_training' };
+            }
+        }
+
+        const opportunity = opportunisticPickupAction(
+            perception,
+            this.options.state.resident,
+            ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE,
+            this.pickupCooldowns(),
+            this.options.state.tick,
+        );
+        if (opportunity) {
+            return { action: opportunity, cause: 'opportunistic_pickup' };
+        }
+
+        if (isExplorationGoal(goal)) {
+            const explorationAction = this.repeatedExplorationReportOverride(actions, perception);
+            if (explorationAction) {
+                return { action: explorationAction, cause: 'exploration_fallback' };
+            }
+        }
+
+        if (isWoodcuttingTrainingGoal(goal) && !isFiremakingGoal(goal)) {
+            const fireAction = firemakingAction(perception);
+            if (fireAction) {
+                this.clearGoalMomentum();
+                this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
+                return { action: actionWithCause(fireAction, 'woodcutting_chain_firemaking'), cause: 'woodcutting_chain_firemaking' };
             }
         }
 
@@ -346,6 +418,84 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const woodcutting = levelOneWoodcuttingAction(perception);
         return woodcutting ? { action: woodcutting, cause: woodcutting.cause || 'woodcutting_level1_routine' } : undefined;
+    }
+
+    private repeatedExplorationReportOverride(actions: AgentAction[], perception: HybridPerception): AgentAction | undefined {
+        const action = actions[0];
+        if (action?.kind !== 'say') {
+            return undefined;
+        }
+
+        const cognition = this.cognition();
+        const lastReport = cognition.lastExplorationReportTick;
+        if (lastReport === undefined || this.options.state.tick - lastReport >= EXPLORATION_REPORT_COOLDOWN_TICKS) {
+            cognition.lastExplorationReportTick = this.options.state.tick;
+            return undefined;
+        }
+
+        return explorationAction(perception, this.visibilityAnchor(), this.options.state.resident, this.pickupCooldowns(), this.options.state.tick);
+    }
+
+    private stabilizedMoveAction(
+        action: AgentAction | undefined,
+        perception: HybridPerception,
+        anchor?: Pos,
+    ): { action: AgentAction; cause: string } | undefined {
+        const here = perception.resident?.position;
+        if (!here) {
+            return undefined;
+        }
+
+        const cognition = this.cognition();
+        const active = cognition.activeMove;
+        if (active) {
+            if (distance(here, active.target) <= (active.range ?? 0)) {
+                cognition.activeMove = undefined;
+            } else {
+                const currentPositionKey = positionKey(here);
+                const stationaryCount = active.lastPositionKey === currentPositionKey ? (active.stationaryCount || 0) + 1 : 0;
+                const updated = {
+                    ...active,
+                    lastTick: this.options.state.tick,
+                    lastPositionKey: currentPositionKey,
+                    stationaryCount,
+                };
+                cognition.activeMove = updated;
+
+                if (stationaryCount >= MOVE_STUCK_STATIONARY_OBSERVATIONS) {
+                    const obstacle = stuckOpenObstacleAction(perception, here, updated);
+                    if (obstacle) {
+                        cognition.activeMove = undefined;
+                        return { action: obstacle, cause: 'stuck_open_obstacle' };
+                    }
+
+                    const recovery = {
+                        kind: 'move_to',
+                        target: explorationPatrolTarget(here, anchor),
+                        range: 1,
+                        cause: 'stuck_move_recovery',
+                    };
+                    this.rememberActiveMove(recovery, here);
+                    return { action: recovery, cause: 'stuck_move_recovery' };
+                }
+
+                if (action?.kind === 'move_to' && !sameMoveIntent(action, updated) && this.options.state.tick - updated.startedAtTick < MOVE_COMMIT_TICKS) {
+                    return { action: moveIntentAction(updated, 'continue_move'), cause: 'continue_move' };
+                }
+
+                if (action?.kind === 'move_to' && sameMoveIntent(action, updated)) {
+                    return undefined;
+                }
+            }
+        }
+
+        if (action?.kind === 'move_to') {
+            this.rememberActiveMove(action, here);
+        } else if (action) {
+            cognition.activeMove = undefined;
+        }
+
+        return undefined;
     }
 
     private approachDistantInteraction(actions: AgentAction[], perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
@@ -378,6 +528,46 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         this.rememberBodyAction(fallback.action);
         return fallback;
+    }
+
+    private routineLoopBreakAction(
+        action: AgentAction,
+        cause: string,
+        perception: HybridPerception,
+        anchor?: Pos,
+    ): { action: AgentAction; cause: string } | undefined {
+        if (!isLocalRoutineCause(cause, action)) {
+            return undefined;
+        }
+
+        const here = perception.resident?.position;
+        if (!here) {
+            return undefined;
+        }
+
+        const cognition = this.cognition();
+        const key = `${routineLoopFamily(cause, action)}|${positionKey(here)}`;
+        cognition.routineLoopCount = cognition.routineLoopKey === key ? (cognition.routineLoopCount || 0) + 1 : 1;
+        cognition.routineLoopKey = key;
+
+        const lastBreakTick = cognition.lastRoutineLoopBreakTick || 0;
+        if (
+            cognition.routineLoopCount < ROUTINE_LOOP_BREAK_ACTIONS ||
+            (lastBreakTick > 0 && this.options.state.tick - lastBreakTick < ROUTINE_LOOP_BREAK_COOLDOWN_TICKS)
+        ) {
+            return undefined;
+        }
+
+        cognition.routineLoopCount = 0;
+        cognition.routineLoopKey = undefined;
+        cognition.lastRoutineLoopBreakTick = this.options.state.tick;
+        cognition.activeGoal = explorationGoal(this.options.state.tick);
+
+        const explore = explorationAction(perception, anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick);
+        return {
+            action: explore ? actionWithCause(explore, 'routine_loop_break') : { kind: 'say', text: 'I have worked this spot for a while. I am going to scout nearby.', cause: 'routine_loop_break' },
+            cause: 'routine_loop_break',
+        };
     }
 
     private followAction(perception: HybridPerception): AgentAction | undefined {
@@ -592,7 +782,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (isExploreIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = explorationGoal(this.options.state.tick);
             return {
-                action: explorationAction(perception, this.visibilityAnchor()) || {
+                action: explorationAction(perception, this.visibilityAnchor(), this.options.state.resident, this.pickupCooldowns(), this.options.state.tick) || {
                     kind: 'say',
                     text: this.statusSpeech(perception, 'I will scout nearby and stay findable'),
                 },
@@ -687,8 +877,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const trade = perception.resident?.activeTrade;
-        if (!trade || (trade.partner && !this.isTrustedTradePartner(trade.partner))) {
+        if (!trade) {
             return undefined;
+        }
+
+        if (trade.partner && !this.isTrustedTradePartner(trade.partner)) {
+            const action: AgentAction = { kind: 'trade_decline', cause: 'trade_decline_untrusted_partner' };
+            if (this.isRepeatedAction(action)) {
+                return undefined;
+            }
+            this.rememberBodyAction(action);
+            return { action, cause: 'trade_decline_untrusted_partner' };
         }
 
         const offerSlot = (trade.ours?.length || 0) === 0 ? safeTradeOfferSlot(perception.resident?.inventory || []) : undefined;
@@ -717,13 +916,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         this.cognition().lastPresenceBeaconTick = this.options.state.tick;
         this.cognition().lastGoalShareTick = this.options.state.tick;
-        return { kind: 'say', text: this.statusSpeech(perception, 'I am online') };
+        return { kind: 'say', text: this.statusSpeech(perception, 'I am online', true) };
     }
 
-    private statusSpeech(perception: HybridPerception, prefix: string): string {
+    private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false): string {
         const here = perception.resident?.position;
-        const goal = this.activeGoal()?.description || 'staying findable and looking for useful actions';
-        return cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}`) || prefix;
+        const next = includeNextStep ? nextStepSuggestion(perception, this.options.state.resident) : undefined;
+        const goal = summarizeGoalForSpeech(this.activeGoal()?.description || 'staying findable and looking for useful actions', Boolean(next));
+        return cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}`) || prefix;
     }
 
     private visibilityStatus(perception: Perception): { anchor?: Pos; returnDue: boolean } {
@@ -775,6 +975,28 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const cognition = this.cognition();
         cognition.lastBodyActionKey = key;
         cognition.lastBodyActionTick = this.options.state.tick;
+        this.rememberPickupAttempt(action);
+    }
+
+    private rememberActiveMove(action: AgentAction, here: Pos): void {
+        if (action.kind !== 'move_to') {
+            return;
+        }
+
+        const target = positionLike(action.target);
+        if (!target) {
+            return;
+        }
+
+        this.cognition().activeMove = {
+            target,
+            range: typeof action.range === 'number' ? action.range : 0,
+            cause: typeof action.cause === 'string' ? action.cause : undefined,
+            startedAtTick: this.options.state.tick,
+            lastTick: this.options.state.tick,
+            lastPositionKey: positionKey(here),
+            stationaryCount: 0,
+        };
     }
 
     private shouldRunBrain(): boolean {
@@ -842,6 +1064,27 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return Boolean(trusted && actorMatchesName(actor, trusted));
     }
 
+    private rememberPickupAttempt(action: AgentAction): void {
+        const item = pickupActionWorldItem(action);
+        if (!item) {
+            return;
+        }
+
+        const cooldowns = this.pickupCooldowns();
+        cooldowns[pickupItemKey(item)] = this.options.state.tick;
+        for (const [key, tick] of Object.entries(cooldowns)) {
+            if (this.options.state.tick - tick > PICKUP_TARGET_COOLDOWN_TICKS) {
+                delete cooldowns[key];
+            }
+        }
+    }
+
+    private pickupCooldowns(): Record<string, number> {
+        const cognition = this.cognition();
+        cognition.pickupCooldowns ||= {};
+        return cognition.pickupCooldowns;
+    }
+
     private ensureCognition(): void {
         this.options.state.cognition ||= {};
     }
@@ -849,6 +1092,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private cognition() {
         this.ensureCognition();
         return this.options.state.cognition!;
+    }
+
+    private clearGoalMomentum(): void {
+        const cognition = this.cognition();
+        cognition.activeMove = undefined;
+        cognition.lastBodyActionKey = undefined;
+        cognition.lastBodyActionTick = undefined;
+        cognition.routineLoopKey = undefined;
+        cognition.routineLoopCount = 0;
     }
 
     private advanceTick(perception: Perception): void {
@@ -1054,7 +1306,7 @@ function prayerTrainingAction(perception: HybridPerception): AgentAction | undef
     return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
 }
 
-function combatTrainingAction(perception: HybridPerception): AgentAction | undefined {
+function combatTrainingAction(perception: HybridPerception, pickupCooldowns?: Record<string, number>, currentTick?: number): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
@@ -1065,6 +1317,13 @@ function combatTrainingAction(perception: HybridPerception): AgentAction | undef
         return foodSlot === undefined
             ? { kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' }
             : { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_training' };
+    }
+
+    if (!perception.resident?.inCombat) {
+        const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick);
+        if (loot) {
+            return loot;
+        }
     }
 
     const target = safeCombatTarget(perception);
@@ -1080,6 +1339,16 @@ function combatTrainingAction(perception: HybridPerception): AgentAction | undef
     }
 
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
+}
+
+function combatLootOrPrayerAction(perception: HybridPerception, pickupCooldowns?: Record<string, number>, currentTick?: number): AgentAction | undefined {
+    const bonesSlot = findSlot(perception.resident?.inventory || [], isBones);
+    if (bonesSlot !== undefined) {
+        return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'combat_bury_looted_bones' };
+    }
+
+    const pickup = opportunisticPickupAction(perception, undefined, COMBAT_LOOT_MAX_DISTANCE, pickupCooldowns, currentTick);
+    return pickup ? actionWithCause(pickup, 'combat_loot_pickup') : undefined;
 }
 
 function nearestPrayerTrainingWaypoint(here: Pos): Pos {
@@ -1153,6 +1422,13 @@ function combatTargetPriority(actor: Actor): number {
     return 2;
 }
 
+function isPrayerTrainingGoal(goal: ActiveGoalState): boolean {
+    if (/^train-combat|^combat/i.test(goal.id)) {
+        return false;
+    }
+    return /prayer|bone|bones|bury/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
 function isExplorationGoal(goal: ActiveGoalState): boolean {
     return /explore|scout|survey|look around|nearby|landmark|area/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
@@ -1161,10 +1437,29 @@ function isCombatTrainingGoal(goal: ActiveGoalState): boolean {
     return /combat|fight|fighting|attack|melee/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
-function explorationAction(perception: HybridPerception, anchor?: Pos): AgentAction | undefined {
+function isWoodcuttingTrainingGoal(goal: ActiveGoalState): boolean {
+    return /woodcut|chop|tree|gather logs/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+function isFiremakingGoal(goal: ActiveGoalState): boolean {
+    return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+function explorationAction(
+    perception: HybridPerception,
+    anchor?: Pos,
+    residentId?: string,
+    pickupCooldowns?: Record<string, number>,
+    currentTick?: number,
+): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
+    }
+
+    const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick);
+    if (pickup) {
+        return pickup;
     }
 
     const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -1198,11 +1493,183 @@ function explorationAction(perception: HybridPerception, anchor?: Pos): AgentAct
     return { kind: 'say', text: `I am scouting near ${here.x},${here.y} and staying findable.`, cause: 'explore_patrol' };
 }
 
+function opportunisticPickupAction(
+    perception: HybridPerception,
+    residentId?: string,
+    maxDistance?: number,
+    pickupCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
+        return undefined;
+    }
+
+    const item = (perception.nearby?.worldItems || [])
+        .filter(candidate => {
+            if (
+                !isUsefulGroundItem(candidate) ||
+                isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
+                isPickupOnCooldown(candidate, pickupCooldowns, currentTick)
+            ) {
+                return false;
+            }
+            return maxDistance === undefined || distance(here, candidate.position) <= maxDistance;
+        })
+        .sort((a, b) => {
+            const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
+    if (!item) {
+        return undefined;
+    }
+
+    if (distance(here, item.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: item.position, range: INTERACTION_APPROACH_RADIUS, cause: 'opportunistic_pickup' };
+    }
+
+    return { kind: 'interact', target: item, option: 'pick-up', cause: 'opportunistic_pickup' };
+}
+
+function inventoryHasFreeSlot(inventory: Array<Item | null>): boolean {
+    return inventory.length < MAX_INVENTORY_SLOTS || inventory.some(item => item === null);
+}
+
+function isUsefulGroundItem(item: Item): boolean {
+    return COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '') || isFiremakingLog(item) || isBones(item) || FOOD_KEY_PATTERN.test(item.key || '');
+}
+
+function usefulGroundItemPriority(item: Item): number {
+    if (COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '')) {
+        return 0;
+    }
+    if (FOOD_KEY_PATTERN.test(item.key || '')) {
+        return 1;
+    }
+    if (isFiremakingLog(item)) {
+        return 2;
+    }
+    if (isBones(item)) {
+        return 3;
+    }
+    return 4;
+}
+
+function isOwnedByAnotherActor(item: WorldItem, residentId?: string, perceptionResidentId?: string): boolean {
+    if (!item.ownerId) {
+        return false;
+    }
+
+    const owner = normalizeActorId(item.ownerId);
+    const residentIds = [residentId, perceptionResidentId].filter((id): id is string => Boolean(id)).map(normalizeActorId);
+    return !residentIds.includes(owner);
+}
+
+function isPickupOnCooldown(item: WorldItem, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
+    const last = cooldowns?.[pickupItemKey(item)];
+    return last !== undefined && currentTick - last < PICKUP_TARGET_COOLDOWN_TICKS;
+}
+
+function pickupItemKey(item: WorldItem): string {
+    return `${item.itemId}:${item.key || ''}:${positionKey(item.position)}`;
+}
+
+function pickupActionWorldItem(action: AgentAction): WorldItem | undefined {
+    const candidate = action as { option?: unknown; target?: unknown };
+    if (action.kind !== 'interact' || !/pick[- ]?up/i.test(String(candidate.option || ''))) {
+        return undefined;
+    }
+
+    return worldItemLike(candidate.target);
+}
+
+function worldItemLike(value: unknown): WorldItem | undefined {
+    if (!isRecord(value) || typeof value.itemId !== 'number' || typeof value.amount !== 'number') {
+        return undefined;
+    }
+
+    const position = positionLike(value.position);
+    if (!position) {
+        return undefined;
+    }
+
+    return {
+        itemId: value.itemId,
+        key: typeof value.key === 'string' ? value.key : undefined,
+        amount: value.amount,
+        position,
+        ownerId: typeof value.ownerId === 'string' ? value.ownerId : undefined,
+    };
+}
+
+function normalizeActorId(id: string): string {
+    return id.toLowerCase().replace(/^player:/, '').replace(/^resident:/, '');
+}
+
 function explorationPatrolTarget(here: Pos, anchor?: Pos): Pos {
     const center = anchor && distance(here, anchor) <= DEFAULT_RETURN_TO_ANCHOR_RADIUS ? anchor : here;
     const dx = here.x >= center.x ? -4 : 4;
     const dy = here.y >= center.y ? 4 : -4;
     return { x: center.x + dx, y: center.y + dy, level: center.level };
+}
+
+function stuckOpenObstacleAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {
+    const obstacle = (perception.nearby?.objects || [])
+        .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId) && distance(here, object.position) <= STUCK_OBSTACLE_RANGE)
+        .sort((a, b) => {
+            const nearest = distance(here, a.position) - distance(here, b.position);
+            return nearest !== 0 ? nearest : distance(active.target, a.position) - distance(active.target, b.position);
+        })[0];
+
+    return obstacle ? { kind: 'interact', target: obstacle, option: 'open', cause: 'stuck_open_obstacle' } : undefined;
+}
+
+function nextStepSuggestion(perception: HybridPerception, residentId?: string): string | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const item = (perception.nearby?.worldItems || [])
+        .filter(candidate => isUsefulGroundItem(candidate) && !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id))
+        .sort((a, b) => {
+            const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
+    if (item) {
+        return `pick up ${itemLabel(item)} at ${item.position.x},${item.position.y}.`;
+    }
+
+    const safeTarget = safeCombatTarget(perception);
+    if (safeTarget) {
+        return `fight the safe ${actorName(safeTarget)} at ${safeTarget.position.x},${safeTarget.position.y}.`;
+    }
+
+    const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (npc) {
+        return `talk to ${actorName(npc)} at ${npc.position.x},${npc.position.y}.`;
+    }
+
+    const tree = (perception.nearby?.objects || [])
+        .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (tree) {
+        return `chop the tree at ${tree.position.x},${tree.position.y}.`;
+    }
+
+    const obstacle = (perception.nearby?.objects || [])
+        .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (obstacle) {
+        return `open the door or gate at ${obstacle.position.x},${obstacle.position.y}.`;
+    }
+
+    const player = (perception.nearby?.players || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (player) {
+        return `stay near ${actorName(player)} and answer commands.`;
+    }
+
+    return undefined;
 }
 
 function npcTalkAction(perception: HybridPerception, target: Actor, cause: string): AgentAction {
@@ -1212,6 +1679,44 @@ function npcTalkAction(perception: HybridPerception, target: Actor, cause: strin
     }
 
     return { kind: 'interact', target, option: 'talk-to', cause };
+}
+
+function isLocalRoutineCause(cause: string, action: AgentAction): boolean {
+    return /woodcutting_level1_routine|firemaking_fallback|firemaking_gather_logs/i.test(`${cause} ${action.cause || ''}`);
+}
+
+function routineLoopFamily(cause: string, action: AgentAction): string {
+    if (/woodcutting|firemaking/i.test(`${cause} ${action.cause || ''}`)) {
+        return 'woodcutting-firemaking';
+    }
+    return cause;
+}
+
+function actionWithCause(action: AgentAction, cause: string): AgentAction {
+    return { ...action, cause };
+}
+
+function sameMoveIntent(action: AgentAction, active: ActiveMoveState): boolean {
+    if (action.kind !== 'move_to') {
+        return false;
+    }
+
+    const target = positionLike(action.target);
+    const range = typeof action.range === 'number' ? action.range : 0;
+    return Boolean(target && positionsEqual(target, active.target) && range === (active.range ?? 0));
+}
+
+function moveIntentAction(active: ActiveMoveState, cause: string): AgentAction {
+    return {
+        kind: 'move_to',
+        target: active.target,
+        range: active.range ?? 0,
+        cause,
+    };
+}
+
+function positionKey(position: Pos): string {
+    return `${position.x},${position.y},${position.level}`;
 }
 
 function latestAddressedChat(perception: HybridPerception, commandPrefix: string, lastKey: string | undefined):
@@ -1463,7 +1968,7 @@ function tradeAcceptAction(trade: ActiveTrade | undefined): AgentAction | undefi
     return undefined;
 }
 
-function findWorldItem(items: Array<Item & { position: Pos; ownerId?: string }>, query: string): (Item & { position: Pos; ownerId?: string }) | undefined {
+function findWorldItem(items: WorldItem[], query: string): WorldItem | undefined {
     return items.find(item => itemMatchesQuery(item, query));
 }
 
@@ -1568,8 +2073,17 @@ function actorLike(value: unknown): Actor | undefined {
 }
 
 function cleanSpeech(text: string | undefined): string | undefined {
-    const clean = text?.trim().replace(/\s+/g, ' ').slice(0, 160);
+    const clean = text?.trim().replace(/\s+/g, ' ').slice(0, 220);
     return clean || undefined;
+}
+
+function summarizeGoalForSpeech(text: string, reserveSpaceForNextStep: boolean): string {
+    const clean = text.trim().replace(/\s+/g, ' ').replace(/[.!?]+$/g, '');
+    const max = reserveSpaceForNextStep ? 96 : 160;
+    if (clean.length <= max) {
+        return clean;
+    }
+    return `${clean.slice(0, max - 3).trimEnd().replace(/[,:;.!?]+$/g, '')}...`;
 }
 
 function goalId(description: string): string {

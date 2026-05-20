@@ -33,6 +33,7 @@ export interface RuntimeState {
 
 export interface CognitiveState {
     activeGoal?: ActiveGoalState;
+    activeMove?: ActiveMoveState;
     lastBrainTick?: number;
     lastBodyTick?: number;
     lastGoalShareTick?: number;
@@ -41,6 +42,21 @@ export interface CognitiveState {
     lastBodyActionTick?: number;
     lastDirectChatKey?: string;
     lastPresenceBeaconTick?: number;
+    routineLoopKey?: string;
+    routineLoopCount?: number;
+    lastRoutineLoopBreakTick?: number;
+    lastExplorationReportTick?: number;
+    pickupCooldowns?: Record<string, number>;
+}
+
+export interface ActiveMoveState {
+    target: { x: number; y: number; level: number };
+    range?: number;
+    cause?: string;
+    startedAtTick: number;
+    lastTick: number;
+    lastPositionKey?: string;
+    stationaryCount?: number;
 }
 
 export interface ActiveGoalState {

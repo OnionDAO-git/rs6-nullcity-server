@@ -1,6 +1,7 @@
 import type { ActiveGoalState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
+import { bodyPlaybookPrompt, brainPlaybookPrompt } from './runebench-playbook';
 
 export interface BrainPromptInput {
     soul: Soul;
@@ -32,6 +33,8 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         '- Survivor: keep food available, eat when hurt, avoid risky combat without food.',
         '- Local explorer: describe useful nearby NPCs, items, objects, and return near the visibility anchor so Codex can find you.',
         '- Basic combat: only fight safe low-level NPCs when healthy or when attacked; eat or retreat when hurt.',
+        '',
+        brainPlaybookPrompt(),
         'Return JSON only with this shape:',
         '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars"}',
         '',
@@ -52,6 +55,8 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         'Allowed action examples: {"kind":"move_to","target":{"x":3222,"y":3219,"level":0}}, {"kind":"say","text":"..."}, {"kind":"interact","target":...,"option":"talk-to"}, {"kind":"use_item_on_item","itemSlot":0,"targetSlot":1}, {"kind":"item_action","slot":2,"option":"bury"}, {"kind":"attack","target":...}.',
         'When interacting with an object, use one of the option names shown in available actions, such as "chop down".',
         'If addressed in chat, answer or act. If the goal involves an item/tool and matching inventory slots are visible, use them.',
+        '',
+        bodyPlaybookPrompt(),
         input.visibility.returnDue && input.visibility.anchor
             ? `Visibility rule: Agent is due to return near ${JSON.stringify(input.visibility.anchor)} so Codex can find him. Prefer moving there unless a chat command or survival need is more important.`
             : 'Visibility rule: stay findable and mention useful intentions in public chat sometimes.',
