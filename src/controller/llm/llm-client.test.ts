@@ -65,6 +65,47 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(fallbackBody.response_format).toEqual({ type: 'json_object' });
     });
 
+    it('uses reasoning content when reasoning models leave message content empty', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    model: 'test-model',
+                    choices: [
+                        {
+                            message: {
+                                content: '',
+                                reasoning_content: '{"actions":[{"kind":"noop"}]}',
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 3, completion_tokens: 5 },
+                }),
+                { status: 200 },
+            ),
+        );
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        const response = await client.complete({ endpoint: 'default', prompt: 'decide' });
+
+        expect(response).toMatchObject({
+            text: '{"actions":[{"kind":"noop"}]}',
+            nooped: false,
+        });
+    });
+
+    it('passes explicit thinking controls through to OpenAI-compatible providers', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('thoughtful'));
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.reasoning).toEqual({ enabled: true });
+        expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+    });
+
     it('admits queued requests by priority when concurrency is exhausted', async () => {
         let releaseFirst: (() => void) | undefined;
         const firstResponse = new Promise<Response>(resolve => {

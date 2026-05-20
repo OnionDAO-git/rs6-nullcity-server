@@ -8,6 +8,17 @@ jest.mock('chokidar', () => ({
     watch: jest.fn(),
 }));
 
+jest.mock('@engine/world', () => ({
+    activeWorld: {
+        playerTree: {
+            push: jest.fn(),
+            remove: jest.fn(),
+        },
+        playerSlotsRemaining: jest.fn(() => 2000),
+        registerPlayer: jest.fn(() => true),
+    },
+}));
+
 describe('ResidentRegistry', () => {
     let saveDir: string;
     let playerSaveDir: string;
@@ -51,6 +62,43 @@ describe('ResidentRegistry', () => {
         const registry = new ResidentRegistry(saveDir, playerSaveDir);
 
         expect(() => registry.create('res:taken')).toThrow('ERESERVED_NAME');
+    });
+
+    it('applies initial inventory and equipment before saving new residents', () => {
+        let savedInventory: unknown[] | undefined;
+        let savedEquipment: unknown[] | undefined;
+        jest.spyOn(Resident.prototype, 'save').mockImplementation(function save(this: Resident) {
+            savedInventory = this.inventory.items.map(item => (item ? { ...item } : null));
+            savedEquipment = this.equipment.items.map(item => (item ? { ...item } : null));
+            return true;
+        });
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(
+            registry.create('res:firepal', undefined, {
+                initialInventory: [{ itemId: 590, amount: 1 }, 1511, null, { itemId: 1511, amount: 3 }],
+                initialEquipment: [{ itemId: 1, amount: 1 }],
+            }),
+        ).toEqual({ name: 'res:firepal', online: false, controllerId: undefined, controlHeld: false });
+
+        expect(savedInventory?.slice(0, 5)).toEqual([
+            { itemId: 590, amount: 1 },
+            { itemId: 1511, amount: 1 },
+            null,
+            { itemId: 1511, amount: 3 },
+            null,
+        ]);
+        expect(savedEquipment?.slice(0, 2)).toEqual([{ itemId: 1, amount: 1 }, null]);
+    });
+
+    it('rejects oversized initial containers', () => {
+        jest.spyOn(Resident.prototype, 'save').mockReturnValue(true);
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(() => registry.create('res:stuffed', undefined, { initialInventory: new Array(29).fill(null) })).toThrow(
+            'EINITIAL_INVENTORY_TOO_LARGE',
+        );
+        expect(Resident.prototype.save).not.toHaveBeenCalled();
     });
 
     it('ignores non-resident files when listing resident saves', () => {

@@ -9,6 +9,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
 import type { DisconnectPolicy, ResidentFilter, ResidentSummary } from '../protocol/messages';
+import type { InitialContainerItem } from '../resident-registry';
 import type { ResidentRegistry } from '../resident-registry';
 import type { ResidentSession } from '../resident-session';
 
@@ -69,8 +70,13 @@ export class ResidentMcpFacade {
         return residents;
     }
 
-    public createResident(name: string, spawnPosition?: { x: number; y: number; level?: number }): ResidentSummary {
-        return this.deps.registry.create(name, spawnPosition);
+    public createResident(
+        name: string,
+        spawnPosition?: { x: number; y: number; level?: number },
+        initialInventory?: InitialContainerItem[],
+        initialEquipment?: InitialContainerItem[],
+    ): ResidentSummary {
+        return this.deps.registry.create(name, spawnPosition, { initialInventory, initialEquipment });
     }
 
     public async connectResident(name: string, onDisconnect: DisconnectPolicy = 'idle'): Promise<ConnectResidentResult> {
@@ -146,9 +152,12 @@ export class ResidentMcpFacade {
                 inputSchema: {
                     name: z.string().min(1),
                     spawnPosition: positionSchema.optional(),
+                    initialInventory: z.array(initialContainerItemSchema).optional(),
+                    initialEquipment: z.array(initialContainerItemSchema).optional(),
                 },
             },
-            async ({ name, spawnPosition }) => toToolResult({ resident: this.createResident(name, spawnPosition) }),
+            async ({ name, spawnPosition, initialInventory, initialEquipment }) =>
+                toToolResult({ resident: this.createResident(name, spawnPosition, initialInventory, initialEquipment) }),
         );
 
         server.registerTool(
@@ -256,6 +265,13 @@ const positionSchema = z.object({
     y: z.number().int(),
     level: z.number().int().optional(),
 });
+
+const initialContainerItemSchema = z.union([
+    z.number().int().positive(),
+    z.string().min(1),
+    z.object({ itemId: z.number().int().positive(), amount: z.number().int().positive().optional() }),
+    z.null(),
+]);
 
 function toToolResult(value: unknown): CallToolResult {
     return {

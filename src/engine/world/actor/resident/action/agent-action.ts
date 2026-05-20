@@ -37,10 +37,11 @@ export interface ObjectRef {
 }
 
 export type AgentAction =
-    | { kind: 'move_to'; target: Pos }
+    | { kind: 'move_to'; target: Pos; range?: number }
     | { kind: 'face'; target: ActorRef | Pos }
     | { kind: 'interact'; target: ActorRef | ObjectRef | WorldItemRef; option: string }
     | { kind: 'use_item_on'; itemSlot: number; target: ActorRef | ObjectRef | WorldItemRef }
+    | { kind: 'use_item_on_item'; itemSlot: number; targetSlot: number }
     | { kind: 'attack'; target: ActorRef }
     | { kind: 'cast_spell'; spellKey: string; target?: ActorRef }
     | { kind: 'equip'; slot: number }
@@ -65,6 +66,7 @@ export type ActionResult = { ok: true; cause?: string } | { ok: false; reason: s
 export type AgentActionShape =
     | { kind: 'move_to' }
     | { kind: 'interact'; target: ActorRef | ObjectRef | WorldItemRef; options: string[] }
+    | { kind: 'use_item_on_item'; slots: number[] }
     | { kind: 'attack'; target: ActorRef }
     | { kind: 'equip'; slots: number[] }
     | { kind: 'drop'; slots: number[] }
@@ -154,10 +156,11 @@ const equipmentSlotSchema = z.enum([
 ]);
 
 export const AgentActionSchema = z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('move_to'), target: PosSchema }),
+    z.object({ kind: z.literal('move_to'), target: PosSchema, range: z.number().int().min(0).max(32).optional() }),
     z.object({ kind: z.literal('face'), target: z.union([ActorRefSchema, PosSchema]) }),
     z.object({ kind: z.literal('interact'), target: targetSchema, option: z.string().min(1) }),
     z.object({ kind: z.literal('use_item_on'), itemSlot: z.number().int().nonnegative(), target: targetSchema }),
+    z.object({ kind: z.literal('use_item_on_item'), itemSlot: z.number().int().nonnegative(), targetSlot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('attack'), target: ActorRefSchema }),
     z.object({ kind: z.literal('cast_spell'), spellKey: z.string().min(1), target: ActorRefSchema.optional() }),
     z.object({ kind: z.literal('equip'), slot: z.number().int().nonnegative() }),

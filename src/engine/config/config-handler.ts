@@ -200,7 +200,7 @@ export const findNpc = (inputKey: number | string): NpcDetails => {
 
 export const findObject = (objectId: number): ObjectConfig | null => {
     if (!objectMap[objectId]) {
-        const object = filestore.objectStore.getObject(objectId);
+        const object = filestore.configStore.objectStore.getObject(objectId);
         if (!object) {
             return null;
         }

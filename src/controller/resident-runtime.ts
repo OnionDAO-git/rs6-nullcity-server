@@ -10,9 +10,11 @@ import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import type { Soul } from './soul/soul-schema';
 import { initialAttention } from './spark/attention';
-import { type ThinkingModule, SparkThinkingModule } from './thinking';
+import { type ThinkingModule, createThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import type { Perception, PerceptionEvent } from './transport/message-codecs';
+
+const MAX_PENDING_EVENTS = 50;
 
 export interface ResidentRuntimeOptions {
     soul: Soul;
@@ -35,6 +37,7 @@ export class ResidentRuntime {
     private readonly history = new PerceptionHistory();
     private readonly memoryRouter = new MemoryRouter();
     private readonly compressor = new PerceptionCompressor();
+    private readonly pendingEvents: PerceptionEvent[] = [];
     private deciding = false;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
@@ -46,7 +49,7 @@ export class ResidentRuntime {
         );
         this.thinking =
             options.thinking ||
-            new SparkThinkingModule({
+            createThinkingModule({
                 soul: options.soul,
                 state: this.state,
                 memory: options.memory,
@@ -59,7 +62,6 @@ export class ResidentRuntime {
     async onPerception(perception: Perception): Promise<void> {
         this.history.push(perception);
         this.body.observePerception(perception);
-        const compressed = this.compressor.compress(perception);
         const reaction = this.nervousSystem.react(perception);
         if (reaction) {
             if (this.deciding && reaction.interruptThinking) {
@@ -78,6 +80,7 @@ export class ResidentRuntime {
         }
 
         if (this.deciding) {
+            const compressed = this.compressor.compress(perception);
             if (this.thinking.considerInterrupt(perception)) {
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
@@ -88,9 +91,11 @@ export class ResidentRuntime {
             return;
         }
 
+        const decisionPerception = this.withPendingEvents(perception);
+        const compressed = this.compressor.compress(decisionPerception);
         this.deciding = true;
         try {
-            const result = await this.thinking.think({ ...perception, compressed: compressed.text });
+            const result = await this.thinking.think({ ...decisionPerception, compressed: compressed.text });
             for (const event of result.syntheticEvents || []) {
                 this.history.push(event);
             }
@@ -120,10 +125,24 @@ export class ResidentRuntime {
     onEvent(event: PerceptionEvent): void {
         this.history.push(event);
         this.body.observeEvent(event);
+        this.pendingEvents.push(event);
+        if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
+            this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
+        }
         const routed = this.memoryRouter.routeEvent(this.name, event);
         if (routed) {
             this.options.memory.write(this.name, routed.path, routed.content);
         }
+    }
+
+    private withPendingEvents(perception: Perception): Perception {
+        if (this.pendingEvents.length === 0) {
+            return perception;
+        }
+
+        const pending = this.pendingEvents.splice(0);
+        const events = Array.isArray(perception.events) ? (perception.events as PerceptionEvent[]) : [];
+        return { ...perception, events: [...events, ...pending] };
     }
 
     stop(cause = 'runtime_stopped'): void {

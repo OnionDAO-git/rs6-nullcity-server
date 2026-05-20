@@ -8,7 +8,7 @@ import type { Resident } from '@engine/world/actor/resident/resident';
 import { TradeEngine } from '@engine/world/actor/trade/trade-engine';
 import type { WorldItem } from '@engine/world/items/world-item';
 import { Position } from '@engine/world/position';
-import type { LandscapeObject } from '@runejs/filestore';
+import type { LandscapeObject, ObjectConfig } from '@runejs/filestore';
 import { filestore } from '@server/game/game-server';
 import {
     type ActionResult,
@@ -28,7 +28,7 @@ export class ActionAdapter {
             case 'noop':
                 return { ok: true };
             case 'move_to':
-                return this.moveTo(resident, action.target);
+                return this.moveTo(resident, action.target, action.range);
             case 'face':
                 return this.face(resident, action.target);
             case 'interact':
@@ -46,6 +46,7 @@ export class ActionAdapter {
             case 'say':
                 resident.emitPerceptionEvent({ kind: 'chat', from: resident.toActorRef(), text: action.text, to: 'public' });
                 resident.playerEvents.emit('chat', action.text);
+                this.echoSpeechToNearbyPlayers(resident, action.text);
                 return { ok: true };
             case 'whisper':
                 resident.playerEvents.emit('chat', action.text);
@@ -58,6 +59,8 @@ export class ActionAdapter {
                 return { ok: true };
             case 'use_item_on':
                 return this.useItemOn(resident, action.itemSlot, action.target);
+            case 'use_item_on_item':
+                return this.useItemOnItem(resident, action.itemSlot, action.targetSlot);
             case 'cast_spell':
                 return this.castSpell(resident, action.spellKey, action.target);
             case 'trade_request':
@@ -80,13 +83,124 @@ export class ActionAdapter {
         }
     }
 
-    private moveTo(resident: Resident, target: Pos): ActionResult {
+    private moveTo(resident: Resident, target: Pos, range = 0): ActionResult {
         const targetPosition = new Position(target.x, target.y, target.level ?? resident.position.level);
-        resident.pathfinding.walkTo(targetPosition, {
-            pathingSearchRadius: Math.max(2, Math.floor(resident.position.distanceBetween(targetPosition)) + 2),
-            ignoreDestination: true,
+        const normalizedRange = Math.max(0, Math.floor(range || 0));
+        if (tileDistance(resident.position, targetPosition) <= normalizedRange) {
+            return { ok: true };
+        }
+
+        for (const destination of this.directMoveDestinations(resident, targetPosition, normalizedRange)) {
+            if (sameTile(resident.position, destination)) {
+                return { ok: true };
+            }
+            if (this.queueMove(resident, destination)) {
+                return { ok: true };
+            }
+        }
+
+        for (const destination of this.localMoveCandidates(resident, targetPosition, normalizedRange)) {
+            if (this.queueMove(resident, destination)) {
+                return { ok: true };
+            }
+        }
+
+        return { ok: false, reason: 'no_path' };
+    }
+
+    private directMoveDestinations(resident: Resident, targetPosition: Position, range: number): Position[] {
+        if (range <= 0) {
+            return [targetPosition];
+        }
+
+        const destinations: Position[] = [];
+        for (let x = targetPosition.x - range; x <= targetPosition.x + range; x += 1) {
+            for (let y = targetPosition.y - range; y <= targetPosition.y + range; y += 1) {
+                const destination = new Position(x, y, targetPosition.level);
+                if (sameTile(destination, targetPosition) || tileDistance(destination, targetPosition) > range) {
+                    continue;
+                }
+                destinations.push(destination);
+            }
+        }
+
+        return destinations.sort(
+            (a, b) =>
+                tileDistance(resident.position, a) - tileDistance(resident.position, b) ||
+                tileDistance(a, targetPosition) - tileDistance(b, targetPosition),
+        );
+    }
+
+    private localMoveCandidates(resident: Resident, targetPosition: Position, range: number): Position[] {
+        const here = resident.position;
+        const stepX = Math.sign(targetPosition.x - here.x);
+        const stepY = Math.sign(targetPosition.y - here.y);
+        const preferred = [
+            stepX !== 0 || stepY !== 0 ? new Position(here.x + stepX, here.y + stepY, here.level) : null,
+            stepX !== 0 ? new Position(here.x + stepX, here.y, here.level) : null,
+            stepY !== 0 ? new Position(here.x, here.y + stepY, here.level) : null,
+        ].filter((candidate): candidate is Position => {
+            if (!candidate) {
+                return false;
+            }
+            return !sameTile(candidate, here);
         });
-        return { ok: true };
+        const fallback: Position[] = [];
+        for (let x = here.x - 1; x <= here.x + 1; x += 1) {
+            for (let y = here.y - 1; y <= here.y + 1; y += 1) {
+                const candidate = new Position(x, y, here.level);
+                if (!sameTile(candidate, here)) {
+                    fallback.push(candidate);
+                }
+            }
+        }
+        fallback.sort(
+            (a, b) =>
+                approachScore(a, targetPosition, range) - approachScore(b, targetPosition, range) ||
+                tileDistance(a, targetPosition) - tileDistance(b, targetPosition),
+        );
+
+        const seen = new Set<string>();
+        return [...preferred, ...fallback].filter(candidate => {
+            const key = `${candidate.x},${candidate.y},${candidate.level}`;
+            if (seen.has(key)) {
+                return false;
+            }
+            seen.add(key);
+            return true;
+        });
+    }
+
+    private queueMove(resident: Resident, destination: Position): boolean {
+        const distance = tileDistance(resident.position, destination);
+        if (!Number.isFinite(distance)) {
+            return false;
+        }
+
+        resident.walkingQueue.clear();
+        resident.walkingQueue.valid = false;
+        resident.pathfinding.walkTo(destination, {
+            pathingSearchRadius: Math.max(2, distance + 2),
+            ignoreDestination: false,
+        });
+        if (!resident.walkingQueue.valid || !resident.walkingQueue.moving()) {
+            resident.walkingQueue.clear();
+            resident.walkingQueue.valid = false;
+            return false;
+        }
+        return true;
+    }
+
+    private echoSpeechToNearbyPlayers(resident: Resident, text: string): void {
+        for (const player of activeWorld?.playerList || []) {
+            if (!player || player === resident || !player.isActive || typeof player.sendMessage !== 'function') {
+                continue;
+            }
+            if (!isNearby(resident.position, player.position, 15)) {
+                continue;
+            }
+            void player.sendMessage(`${resident.username}: ${text}`);
+        }
     }
 
     private face(resident: Resident, target: ActorRef | Pos): ActionResult {
@@ -134,7 +248,7 @@ export class ActionAdapter {
                 found.object,
                 config,
                 position,
-                option.toLowerCase(),
+                resolveObjectOption(option, config),
                 found.cacheOriginal,
             );
             return { ok: true };
@@ -261,6 +375,34 @@ export class ActionAdapter {
         return { ok: false, reason: 'target_not_found' };
     }
 
+    private useItemOnItem(resident: Resident, itemSlot: number, targetSlot: number): ActionResult {
+        if (itemSlot === targetSlot) {
+            return { ok: false, reason: 'same_inventory_slot' };
+        }
+
+        const item = resident.inventory.items[itemSlot];
+        const targetItem = resident.inventory.items[targetSlot];
+        if (!item || !targetItem) {
+            return { ok: false, reason: 'empty_inventory_slot' };
+        }
+
+        if (!findItem(item.itemId) || !findItem(targetItem.itemId)) {
+            return { ok: false, reason: 'item_config_not_found' };
+        }
+
+        resident.actionPipeline.call(
+            'item_on_item',
+            resident,
+            item,
+            itemSlot,
+            widgets.inventory.widgetId,
+            targetItem,
+            targetSlot,
+            widgets.inventory.widgetId,
+        );
+        return { ok: true };
+    }
+
     private castSpell(resident: Resident, spellKey: string, target?: ActorRef): ActionResult {
         const spell = findSpellByKey(spellKey);
         if (!spell) {
@@ -346,4 +488,39 @@ export class ActionAdapter {
         }
         return null;
     }
+}
+
+function isNearby(
+    a: { x: number; y: number; level?: number },
+    b: { x: number; y: number; level?: number },
+    maxDistance: number,
+): boolean {
+    return (a.level ?? 0) === (b.level ?? 0) && Math.abs(a.x - b.x) <= maxDistance && Math.abs(a.y - b.y) <= maxDistance;
+}
+
+function sameTile(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }): boolean {
+    return a.x === b.x && a.y === b.y && (a.level ?? 0) === (b.level ?? 0);
+}
+
+function tileDistance(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }): number {
+    if ((a.level ?? 0) !== (b.level ?? 0)) {
+        return Number.POSITIVE_INFINITY;
+    }
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
+function approachScore(candidate: { x: number; y: number; level?: number }, target: { x: number; y: number; level?: number }, range: number): number {
+    return Math.max(0, tileDistance(candidate, target) - range);
+}
+
+function resolveObjectOption(option: string, config: ObjectConfig): string {
+    const normalized = option.toLowerCase();
+    const actionMatch = /^(?:action|option)[-_ ]?(\d+)$/.exec(normalized);
+    if (!actionMatch) {
+        return normalized;
+    }
+
+    const optionIndex = Number(actionMatch[1]) - 1;
+    const configuredOption = config.options?.[optionIndex];
+    return configuredOption ? configuredOption.toLowerCase() : normalized;
 }

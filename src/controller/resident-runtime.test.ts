@@ -14,6 +14,58 @@ import type { ThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 
 describe('ResidentRuntime modules', () => {
+    it('carries events received while thinking into the next decision', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-events-test-'));
+        const state = stateFor('res:pip');
+        let finishFirstThink!: () => void;
+        const firstThinkDone = new Promise<void>(resolve => {
+            finishFirstThink = resolve;
+        });
+        const thinking: ThinkingModule = {
+            think: jest.fn(async perception => {
+                if ((thinking.think as jest.Mock).mock.calls.length === 1) {
+                    await firstThinkDone;
+                }
+                return { actions: [], nooped: true };
+            }),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+        const chat = {
+            kind: 'chat',
+            from: { id: 'player:codex', kind: 'player', name: 'codex', position: { x: 3217, y: 3201, level: 0 } },
+            text: 'What are you doing agent?',
+            to: 'public',
+        };
+
+        const firstTick = runtime.onPerception({ tick: 1, events: [] });
+        runtime.onEvent(chat);
+        await runtime.onPerception({ tick: 2, events: [] });
+        finishFirstThink();
+        await firstTick;
+        await runtime.onPerception({ tick: 3, events: [] });
+
+        expect(thinking.think).toHaveBeenCalledTimes(2);
+        expect(thinking.think).toHaveBeenLastCalledWith(expect.objectContaining({ events: [chat] }));
+        expect(body.observeEvent).toHaveBeenCalledWith(chat);
+    });
+
     it('runs nervous system rules before thinking and submits without LLM inference', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-nervous-test-'));
         upsertNervousRulesMd(memoryDir, {

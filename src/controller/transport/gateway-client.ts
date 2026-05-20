@@ -169,32 +169,33 @@ export class GatewayClient extends EventEmitter {
             const message = decodeMessage(raw as Buffer);
             const error = readError(message);
             if (error) {
-                this.resolveError(error.request_id || message.request_id, error);
+                this.resolveError(error.request_id || stringifyRequestId(message.id), error);
                 return;
             }
 
-            if (message.type === 'perception' && isRecord(message.payload)) {
+            if (message.kind === 'perception' && isRecord(message.payload)) {
                 this.emit('perception', String(message.payload.resident_id), (message.payload.perception || {}) as Perception);
                 return;
             }
 
-            if (message.type === 'event' && isRecord(message.payload)) {
+            if (message.kind === 'event' && isRecord(message.payload)) {
                 this.emit('event', String(message.payload.resident_id), (message.payload.event || {}) as PerceptionEvent);
                 return;
             }
 
-            if (message.type === 'action_result' && isRecord(message.payload)) {
+            if (message.kind === 'action_result' && isRecord(message.payload)) {
                 this.emit(
                     'actionResult',
                     String(message.payload.resident_id),
-                    typeof message.payload.request_id === 'string' ? message.payload.request_id : message.request_id,
+                    stringifyRequestId(message.payload.request_id) || stringifyRequestId(message.id),
                     (message.payload.result || { ok: true }) as ActionResult,
                     typeof message.payload.cause === 'string' ? message.payload.cause : undefined,
                 );
             }
 
-            if (message.request_id) {
-                this.resolveRequest(message.request_id, message);
+            const requestId = stringifyRequestId(message.id);
+            if (requestId) {
+                this.resolveRequest(requestId, message);
             }
         } catch (error) {
             this.emit('error', error instanceof Error ? error : new Error(String(error)));
@@ -258,4 +259,8 @@ function readPayload(value: unknown): Record<string, unknown> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringifyRequestId(value: unknown): string | undefined {
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
 }

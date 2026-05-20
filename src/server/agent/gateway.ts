@@ -208,7 +208,10 @@ export class AgentGateway {
                 return;
             }
             case 'create_resident': {
-                const resident = this.registry.create(message.payload.name, message.payload.spawnPosition);
+                const resident = this.registry.create(message.payload.name, message.payload.spawnPosition, {
+                    initialInventory: message.payload.initialInventory,
+                    initialEquipment: message.payload.initialEquipment,
+                });
                 send(frame('resident_created', { resident }, message.id));
                 return;
             }

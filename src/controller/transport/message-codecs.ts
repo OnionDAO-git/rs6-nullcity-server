@@ -2,11 +2,13 @@ import { z } from 'zod';
 
 export type ResidentFilter = 'online' | 'offline' | 'all';
 export type DisconnectPolicy = 'logout' | 'idle';
+const AGENT_PROTOCOL_VERSION = 1;
 
 export interface GatewayEnvelope<TType extends string = string, TPayload = unknown> {
-    type: TType;
-    request_id?: string;
-    payload?: TPayload;
+    v: typeof AGENT_PROTOCOL_VERSION;
+    id?: string | number;
+    kind: TType;
+    payload: TPayload;
 }
 
 export interface ControllerHelloPayload {
@@ -47,11 +49,13 @@ export interface PerceptionEvent {
     [key: string]: unknown;
 }
 
+export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+
 export interface CreateResidentPayload {
     name: string;
     spawnPosition?: unknown;
-    initialInventory?: unknown;
-    initialEquipment?: unknown;
+    initialInventory?: InitialContainerItem[];
+    initialEquipment?: InitialContainerItem[];
 }
 
 export interface ConnectResidentPayload {
@@ -83,16 +87,15 @@ export type ClientMessage =
     | GatewayEnvelope<'delete_resident', ResidentNamePayload>;
 
 export type ServerMessage =
-    | GatewayEnvelope<'residents', { residents: ResidentSummary[] }>
-    | GatewayEnvelope<'resident', { resident: ResidentSummary }>
-    | GatewayEnvelope<'attached', { resident: ResidentSummary }>
-    | GatewayEnvelope<'detached', ResidentNamePayload>
-    | GatewayEnvelope<'disconnected', ResidentNamePayload & { cause?: string }>
-    | GatewayEnvelope<'deleted', ResidentNamePayload>
+    | GatewayEnvelope<'resident_list', { residents: ResidentSummary[] }>
+    | GatewayEnvelope<'resident_created', { resident: ResidentSummary }>
+    | GatewayEnvelope<'resident_connected', { resident: ResidentSummary; perception?: Perception | null }>
+    | GatewayEnvelope<'resident_disconnected', ResidentNamePayload & { cause?: string }>
     | GatewayEnvelope<'perception', { resident_id: string; perception: Perception }>
-    | GatewayEnvelope<'action_result', { resident_id: string; request_id?: string; result: ActionResult; cause?: string }>
+    | GatewayEnvelope<'action_result', { resident_id: string; request_id?: string | number; result: ActionResult; cause?: string }>
     | GatewayEnvelope<'event', { resident_id: string; event: PerceptionEvent }>
-    | GatewayEnvelope<'error', { request_id?: string; code: string; message: string; cause?: string }>
+    | GatewayEnvelope<'ok', { ok: true }>
+    | GatewayEnvelope<'error', { request_id?: string | number; code: string; message: string; cause?: string }>
     | GatewayEnvelope<string, unknown>;
 
 export const hookConditionSchema = z.object({ kind: z.string().min(1) }).passthrough();
@@ -133,7 +136,7 @@ const objectRefSchema = z.object({
 export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('noop'), cause: z.string().optional() }),
     z.object({ kind: z.literal('logout'), cause: z.string().optional() }),
-    z.object({ kind: z.literal('move_to'), target: posSchema }),
+    z.object({ kind: z.literal('move_to'), target: posSchema, range: z.number().int().min(0).max(32).optional() }),
     z.object({ kind: z.literal('face'), target: z.union([actorRefSchema, posSchema]) }),
     z.object({ kind: z.literal('interact'), target: z.union([actorRefSchema, objectRefSchema, worldItemRefSchema]), option: z.string() }),
     z.object({
@@ -141,6 +144,7 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
         itemSlot: z.number().int().nonnegative(),
         target: z.union([actorRefSchema, objectRefSchema, worldItemRefSchema]),
     }),
+    z.object({ kind: z.literal('use_item_on_item'), itemSlot: z.number().int().nonnegative(), targetSlot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('attack'), target: actorRefSchema }),
     z.object({ kind: z.literal('cast_spell'), spellKey: z.string(), target: actorRefSchema.optional() }),
     z.object({ kind: z.literal('equip'), slot: z.number().int().nonnegative() }),
@@ -163,9 +167,10 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
 ]) as z.ZodType<AgentAction>;
 
 export const gatewayEnvelopeSchema = z.object({
-    type: z.string().min(1),
-    request_id: z.string().optional(),
-    payload: z.unknown().optional(),
+    v: z.literal(AGENT_PROTOCOL_VERSION),
+    id: z.union([z.string(), z.number()]).optional(),
+    kind: z.string().min(1),
+    payload: z.unknown(),
 });
 
 export function encodeMessage(message: GatewayEnvelope<string, unknown>): string {
@@ -188,17 +193,23 @@ export function makeRequest<TType extends string, TPayload>(
     requestId: string,
     payload?: TPayload,
 ): GatewayEnvelope<TType, TPayload> {
-    return payload === undefined ? { type, request_id: requestId } : { type, request_id: requestId, payload };
+    return {
+        v: AGENT_PROTOCOL_VERSION,
+        id: requestId,
+        kind: type,
+        payload: (payload === undefined ? {} : payload) as TPayload,
+    };
 }
 
 export function readError(message: ServerMessage): { request_id?: string; code: string; message: string; cause?: string } | undefined {
-    if (message.type !== 'error' || !isRecord(message.payload)) {
+    if (message.kind !== 'error' || !isRecord(message.payload)) {
         return undefined;
     }
 
     const payload = message.payload;
+    const requestId = typeof payload.request_id === 'string' || typeof payload.request_id === 'number' ? payload.request_id : message.id;
     return {
-        request_id: typeof payload.request_id === 'string' ? payload.request_id : message.request_id,
+        request_id: requestId === undefined ? undefined : String(requestId),
         code: typeof payload.code === 'string' ? payload.code : 'EUNKNOWN',
         message: typeof payload.message === 'string' ? payload.message : 'Unknown gateway error',
         cause: typeof payload.cause === 'string' ? payload.cause : undefined,

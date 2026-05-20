@@ -4,6 +4,8 @@ import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import { Spark, type SparkTickResult } from '../spark/spark';
+import { BasicAgentThinkingModule } from './basic-agent-thinking-module';
+import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 
 export type ThoughtResult = SparkTickResult;
 
@@ -18,6 +20,17 @@ export interface SparkThinkingModuleOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+}
+
+export function createThinkingModule(options: SparkThinkingModuleOptions): ThinkingModule {
+    if (options.soul.frontmatter.behavior?.kind === 'basic-agent') {
+        return new BasicAgentThinkingModule({ soul: options.soul, state: options.state });
+    }
+    if (options.soul.frontmatter.behavior?.kind === 'hybrid-agent') {
+        return new HybridAgentThinkingModule(options);
+    }
+
+    return new SparkThinkingModule(options);
 }
 
 export class SparkThinkingModule implements ThinkingModule {

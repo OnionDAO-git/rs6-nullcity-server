@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
+import { findItem } from '@engine/config/config-handler';
 import { activeWorld } from '@engine/world';
 import { loadPlayerSaveResult, playerExists } from '@engine/world/actor/player/player-data';
 import { IdleBrain } from '@engine/world/actor/resident/brain/idle-brain';
 import { RESIDENT_SAVE_DIR, Resident } from '@engine/world/actor/resident/resident';
+import type { Item } from '@engine/world/items/item';
 import { Position } from '@engine/world/position';
 import type { DisconnectPolicy, ResidentSummary } from './protocol/messages';
 
@@ -12,6 +14,13 @@ export const RESIDENT_NAME_PATTERN = /^res:[a-z0-9_]{1,20}$/;
 export const normalizeResidentName = (name: string): string => name.toLowerCase();
 
 export const isValidResidentName = (name: string): boolean => RESIDENT_NAME_PATTERN.test(name);
+
+export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null | undefined;
+
+export interface ResidentCreateOptions {
+    initialInventory?: InitialContainerItem[];
+    initialEquipment?: InitialContainerItem[];
+}
 
 export class ResidentRegistry {
     private readonly online = new Map<string, Resident>();
@@ -40,7 +49,7 @@ export class ResidentRegistry {
         return [...names].sort().map(name => this.summary(name));
     }
 
-    public create(name: string, spawnPosition?: { x: number; y: number; level?: number }): ResidentSummary {
+    public create(name: string, spawnPosition?: { x: number; y: number; level?: number }, options: ResidentCreateOptions = {}): ResidentSummary {
         name = this.assertValidName(name);
         if (playerExists(name, { saveDir: this.saveDir })) {
             throw new Error('ENAME_TAKEN');
@@ -50,6 +59,8 @@ export class ResidentRegistry {
         if (spawnPosition) {
             resident.position = new Position(spawnPosition.x, spawnPosition.y, spawnPosition.level);
         }
+        this.applyInitialItems(resident.inventory, 28, options.initialInventory, 'inventory');
+        this.applyInitialItems(resident.equipment, 14, options.initialEquipment, 'equipment');
         resident.save();
         return this.summary(name);
     }
@@ -155,5 +166,58 @@ export class ResidentRegistry {
             throw new Error('ERESERVED_NAME');
         }
         return normalized;
+    }
+
+    private applyInitialItems(
+        container: { setAll(items: Array<Item | null>, fireEvent?: boolean): void },
+        size: number,
+        items: InitialContainerItem[] | undefined,
+        label: string,
+    ): void {
+        if (!items) {
+            return;
+        }
+        if (items.length > size) {
+            throw new Error(`EINITIAL_${label.toUpperCase()}_TOO_LARGE`);
+        }
+
+        container.setAll(
+            Array.from({ length: size }, (_unused, slot) => this.normalizeInitialItem(items[slot], `${label}[${slot}]`)),
+            false,
+        );
+    }
+
+    private normalizeInitialItem(item: InitialContainerItem, label: string): Item | null {
+        if (item === null || item === undefined) {
+            return null;
+        }
+
+        if (typeof item === 'number') {
+            return { itemId: this.requirePositiveInt(item, `${label}.itemId`), amount: 1 };
+        }
+
+        if (typeof item === 'string') {
+            const itemDetails = findItem(item);
+            if (!itemDetails) {
+                throw new Error(`EUNKNOWN_INITIAL_ITEM:${label}`);
+            }
+            return { itemId: itemDetails.gameId, amount: 1 };
+        }
+
+        if (typeof item === 'object') {
+            return {
+                itemId: this.requirePositiveInt(item.itemId, `${label}.itemId`),
+                amount: this.requirePositiveInt(item.amount ?? 1, `${label}.amount`),
+            };
+        }
+
+        throw new Error(`EBAD_INITIAL_ITEM:${label}`);
+    }
+
+    private requirePositiveInt(value: unknown, label: string): number {
+        if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+            throw new Error(`EBAD_INITIAL_ITEM:${label}`);
+        }
+        return value;
     }
 }

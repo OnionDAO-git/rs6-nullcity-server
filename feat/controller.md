@@ -140,6 +140,23 @@ thinking". Urgent hooks (taking damage, being addressed, trade
 requests) can **interrupt** an in-flight LLM call via AbortController
 and trigger a new one. This is the central design of Spark — see §8.
 
+For the first playable autonomous resident, the controller may run a simpler
+`hybrid-agent` loop on top of the same resident/body boundary:
+
+- **Nervous system:** deterministic rules run before inference and may suppress
+  thinking entirely. Use this for survival, urgent chat interrupts, low-health
+  food, retreat rules, and other reflexes.
+- **Brain:** slower strategic inference, with model thinking enabled when the
+  provider supports it. Brain chooses a current ambition/goal, can explain the
+  goal in chat, and may write memory or propose new nervous-system rules.
+- **Body:** faster action inference, normally with model thinking disabled.
+  Body sees the active Brain goal plus current perception and emits at most one
+  typed `AgentAction` for the current moment.
+
+This split preserves the v1 rule from `residents.md`: controller intelligence
+does not call `Player` internals. Brain and Body only see `Perception`, and
+Body still submits actions through the public `AgentAction` vocabulary.
+
 Inference is parallelised across residents on the controller side. Each
 runtime owns at most one in-flight request; the host pools concurrent
 requests with a configurable cap (`maxConcurrentInferences`, default 8),
@@ -172,7 +189,7 @@ src/controller/                              # new entry point
         starter-souls/
             res-pip.md                       # example: mentor archetype
             res-thrand.md                    # example: achiever archetype
-            res-mossy.md                     # example: endurer archetype
+            res-agent.md                     # example: endurer archetype
     memory/
         memory-store.ts                      # facade over qmd + filesystem
         runtime-state.ts                     # persisted attention, legacy, budget windows
@@ -1512,7 +1529,7 @@ gateway-event-disconnect. The `desired` set comes from a single
 residents:
   - res:pip
   - res:thrand
-  - res:mossy
+  - res:agent
 gateway:
   url: ws://127.0.0.1:43594/agent
   authToken: ${AGENT_TOKEN}

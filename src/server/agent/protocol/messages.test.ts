@@ -25,6 +25,30 @@ describe('agent protocol messages', () => {
         expect(message.payload.action.kind).toBe('trade_offer_item');
     });
 
+    it('parses inventory item-on-item action frames', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'fire-1',
+                kind: 'submit_action',
+                payload: {
+                    name: 'res:agent',
+                    action: {
+                        kind: 'use_item_on_item',
+                        itemSlot: 0,
+                        targetSlot: 1,
+                    },
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('submit_action');
+        if (message.kind !== 'submit_action') {
+            throw new Error('Expected submit_action');
+        }
+        expect(message.payload.action).toEqual({ kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1 });
+    });
+
     it('rejects malformed action frames', () => {
         expect(() =>
             parseClientMessage(
@@ -42,6 +66,27 @@ describe('agent protocol messages', () => {
                 }),
             ),
         ).toThrow();
+    });
+
+    it('parses resident creation with starter inventory', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'create-firepal',
+                kind: 'create_resident',
+                payload: {
+                    name: 'res:firepal',
+                    spawnPosition: { x: 3222, y: 3202, level: 0 },
+                    initialInventory: [{ itemId: 590, amount: 1 }, 1511, null],
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('create_resident');
+        if (message.kind !== 'create_resident') {
+            throw new Error('Expected create_resident');
+        }
+        expect(message.payload.initialInventory).toEqual([{ itemId: 590, amount: 1 }, 1511, null]);
     });
 
     it('parses observable subject list requests', () => {

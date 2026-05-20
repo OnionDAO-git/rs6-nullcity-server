@@ -54,7 +54,8 @@ describe('ControllerHost reconcile lifecycle', () => {
         await flushPromises();
 
         expect(gateway.hello).toHaveBeenCalledTimes(2);
-        expect(gateway.attach).toHaveBeenCalledWith({ name: 'res:pip', observe: true, control: true, onDisconnect: 'idle' });
+        expect(gateway.connectResident).toHaveBeenLastCalledWith({ name: 'res:pip', observe: true, control: true, onDisconnect: 'idle' });
+        expect(gateway.attach).not.toHaveBeenCalled();
         expect(runtimeCount(host)).toBe(1);
 
         await host.stop();

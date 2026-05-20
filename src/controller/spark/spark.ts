@@ -108,11 +108,12 @@ export class Spark {
         this.mode = { mode: 'deciding', changedAt: new Date(), cause: winner.cause };
 
         const memories = this.memory.retrieve(this.soul.frontmatter.name, winner.cause);
+        const candidates = generateFirstStepCandidates(perception);
         const envelope = buildPromptEnvelope({
             soul: this.soul,
             perception,
             memories,
-            candidates: generateFirstStepCandidates(perception),
+            candidates,
             triggerContext: winner.contextHint,
             previousIntent: this.state.previousIntent as PlanIntent | undefined,
             variables: this.state.variables,
@@ -172,12 +173,12 @@ export class Spark {
             });
         }
 
-        let actions = parsed.actions;
+        let actions = replaceNoopWithCandidate(parsed.actions, candidates);
         if (parsed.plan) {
             this.activePlan = installPlan(parsed.plan, this.state.tick, this.state.previousIntent as PlanIntent | undefined);
             this.mode = { mode: 'executing', changedAt: new Date(), cause: parsed.cause };
             const next = this.planExecutor.tick(this.activePlan, { tick: this.state.tick, perception });
-            actions = next.action ? [next.action] : [];
+            actions = next.action ? replaceNoopWithCandidate([next.action], candidates) : [];
         }
 
         for (const action of actions) {
@@ -260,4 +261,13 @@ export class Spark {
             max: variable.tick?.find(operation => operation.op === 'clamp')?.max,
         }));
     }
+}
+
+function replaceNoopWithCandidate(actions: AgentAction[], candidates: AgentAction[]): AgentAction[] {
+    const firstCandidate = candidates.find(candidate => candidate.kind !== 'noop');
+    if (!firstCandidate || actions.length !== 1 || actions[0].kind !== 'noop') {
+        return actions;
+    }
+
+    return [firstCandidate];
 }

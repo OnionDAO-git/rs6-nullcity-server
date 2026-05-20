@@ -117,8 +117,11 @@ export class ControllerHost {
             } else if (!summary.online) {
                 this.stopRuntime(name, 'resident_offline');
                 await this.connect(name);
-            } else if (!this.runtimes.has(name) || this.isControlledByOtherController(summary)) {
+            } else if (!this.isControlledByThisController(summary)) {
                 this.stopRuntime(name, 'gateway_control_changed');
+                await this.connect(name);
+            } else if (!this.runtimes.has(name)) {
+                this.stopRuntime(name, 'runtime_missing');
                 await this.attachExisting(name);
             }
         }
@@ -206,9 +209,9 @@ export class ControllerHost {
         }
     }
 
-    private isControlledByOtherController(summary: { controllerId?: string; controllingClientId?: string }): boolean {
+    private isControlledByThisController(summary: { controllerId?: string; controllingClientId?: string }): boolean {
         const owner = summary.controllerId || summary.controllingClientId;
-        return Boolean(owner && owner !== this.config.gateway.controllerId);
+        return owner === this.config.gateway.controllerId;
     }
 
     private runtimeName(residentId: string): string {

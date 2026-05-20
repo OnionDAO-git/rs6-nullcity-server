@@ -12,6 +12,7 @@ import type { Item } from '@engine/world/items/item';
 import type { WorldItem } from '@engine/world/items/world-item';
 import { Position } from '@engine/world/position';
 import type { LandscapeObject } from '@runejs/filestore';
+import { filestore } from '@server/game/game-server';
 import type { Perception } from './perception-types';
 
 export interface PerceptionBuilderOptions {
@@ -202,7 +203,8 @@ export class PerceptionBuilder {
             ...players.map(target => ({ kind: 'interact' as const, target, options: ['follow', 'trade'] })),
             { kind: 'trade_request', targets: players },
             ...worldItems.map(target => ({ kind: 'interact' as const, target, options: ['pick-up'] })),
-            ...objects.map(target => ({ kind: 'interact' as const, target, options: ['action-1'] })),
+            ...objects.map(target => ({ kind: 'interact' as const, target, options: this.objectOptions(target) })),
+            { kind: 'use_item_on_item', slots: occupiedInventorySlots },
             { kind: 'equip', slots: occupiedInventorySlots },
             { kind: 'drop', slots: occupiedInventorySlots },
             { kind: 'trade_offer_item', slots: occupiedInventorySlots },
@@ -214,5 +216,11 @@ export class PerceptionBuilder {
             { kind: 'logout' },
             { kind: 'noop' },
         ];
+    }
+
+    private objectOptions(target: ObjectRef): string[] {
+        const config = filestore.configStore.objectStore.getObject(target.objectId);
+        const options = (config?.options || []).filter(option => option && option.toLowerCase() !== 'hidden').map(option => option.toLowerCase());
+        return options.length > 0 ? options : ['action-1'];
     }
 }

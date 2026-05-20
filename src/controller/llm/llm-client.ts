@@ -4,6 +4,7 @@ export interface LlmRequest {
     endpoint: string;
     prompt: string;
     temperature?: number;
+    thinking?: boolean;
     signal?: AbortSignal;
     priority?: number;
 }
@@ -54,6 +55,12 @@ export class LlmClient {
             model: endpoint.model,
             messages: [{ role: 'user', content: request.prompt }],
             temperature: request.temperature ?? 0.2,
+            ...(request.thinking === undefined
+                ? {}
+                : {
+                      reasoning: { enabled: request.thinking },
+                      chat_template_kwargs: { enable_thinking: request.thinking },
+                  }),
             response_format: {
                 type: 'json_schema',
                 json_schema: {
@@ -190,8 +197,9 @@ export class LlmClient {
         const first = isRecord(choices[0]) ? choices[0] : {};
         const message = isRecord(first.message) ? first.message : {};
         const usage = isRecord(payload.usage) ? payload.usage : {};
+        const content = typeof message.content === 'string' && message.content.trim().length > 0 ? message.content : message.reasoning_content;
         return {
-            text: typeof message.content === 'string' ? message.content : '',
+            text: typeof content === 'string' ? content : '',
             model: typeof payload.model === 'string' ? payload.model : undefined,
             nooped: false,
             promptTokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,

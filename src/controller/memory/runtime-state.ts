@@ -5,6 +5,7 @@ export interface RuntimeState {
     resident: string;
     attention: number;
     tick: number;
+    cognition?: CognitiveState;
     legacy: {
         kind: string;
         progress: Record<string, unknown>;
@@ -28,6 +29,27 @@ export interface RuntimeState {
         tick: number;
         cause: string;
     };
+}
+
+export interface CognitiveState {
+    activeGoal?: ActiveGoalState;
+    lastBrainTick?: number;
+    lastBodyTick?: number;
+    lastGoalShareTick?: number;
+    lastAnchorReturnTick?: number;
+    lastBodyActionKey?: string;
+    lastBodyActionTick?: number;
+    lastDirectChatKey?: string;
+    lastPresenceBeaconTick?: number;
+}
+
+export interface ActiveGoalState {
+    id: string;
+    description: string;
+    steps?: string[];
+    success?: string;
+    createdAtTick: number;
+    ttlTicks?: number;
 }
 
 export class RuntimeStateStore {

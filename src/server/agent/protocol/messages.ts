@@ -8,6 +8,7 @@ export type ResidentFilter = 'online' | 'offline' | 'all';
 export type DisconnectPolicy = 'logout' | 'idle';
 export type SpectatorMode = 'follow' | 'free-camera' | 'picture-in-picture';
 export type SpectatorSubject = { kind: 'resident'; name: string } | { kind: 'player'; username: string };
+export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
 
 export interface AgentFrame<TKind extends string = string, TPayload = unknown> {
     v: 1;
@@ -41,8 +42,8 @@ export type ClientMessage =
           {
               name: string;
               spawnPosition?: { x: number; y: number; level?: number };
-              initialInventory?: unknown[];
-              initialEquipment?: unknown[];
+              initialInventory?: InitialContainerItem[];
+              initialEquipment?: InitialContainerItem[];
           }
       >
     | AgentFrame<'connect_resident', { name: string; observe?: boolean; control?: boolean; onDisconnect?: DisconnectPolicy }>
@@ -74,6 +75,12 @@ const residentFilterSchema = z.enum(['online', 'offline', 'all']).optional();
 const disconnectPolicySchema = z.enum(['logout', 'idle']).optional();
 const spectatorModeSchema = z.enum(['follow', 'free-camera', 'picture-in-picture']).optional();
 const positionSchema = z.object({ x: z.number().int(), y: z.number().int(), level: z.number().int().optional() });
+const initialContainerItemSchema = z.union([
+    z.number().int().positive(),
+    z.string().min(1),
+    z.object({ itemId: z.number().int().positive(), amount: z.number().int().positive().optional() }),
+    z.null(),
+]);
 const spectatorSubjectSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('resident'), name: z.string().min(1) }),
     z.object({ kind: z.literal('player'), username: z.string().min(1) }),
@@ -93,8 +100,8 @@ const clientPayloadSchemas = {
     create_resident: z.object({
         name: z.string().min(1),
         spawnPosition: positionSchema.optional(),
-        initialInventory: z.array(z.unknown()).optional(),
-        initialEquipment: z.array(z.unknown()).optional(),
+        initialInventory: z.array(initialContainerItemSchema).optional(),
+        initialEquipment: z.array(initialContainerItemSchema).optional(),
     }),
     connect_resident: z.object({
         name: z.string().min(1),

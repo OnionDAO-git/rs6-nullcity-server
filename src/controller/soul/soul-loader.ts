@@ -20,7 +20,12 @@ export class SoulLoader {
 
     private resolveSoulPath(residentName: string): string {
         const slug = residentName.replace(/^res:/, '');
-        const candidates = [path.join(this.soulsDir, `${slug}.md`), path.join(this.soulsDir, `${residentName}.md`)];
+        const fileSafeResidentName = residentName.replace(/[:/\\]/g, '-');
+        const candidates = [
+            path.join(this.soulsDir, `${slug}.md`),
+            path.join(this.soulsDir, `${fileSafeResidentName}.md`),
+            path.join(this.soulsDir, `${residentName}.md`),
+        ];
         const found = candidates.find(candidate => fs.existsSync(candidate));
         if (!found) {
             throw new Error(`Missing soul for ${residentName}; expected ${candidates.join(' or ')}`);
