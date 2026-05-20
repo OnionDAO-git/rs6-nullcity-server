@@ -245,6 +245,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: fireAction, cause: 'firemaking_fallback' };
         }
 
+        const exploreAction = goal && isExplorationGoal(goal) ? explorationAction(view, visibility.anchor) : undefined;
+        if (exploreAction) {
+            return { action: exploreAction, cause: 'exploration_fallback' };
+        }
+
         const follow = this.followAction(view);
         if (follow) {
             return { action: follow, cause: 'follow_player_fallback' };
@@ -375,6 +380,46 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        if (isLookIntent(command, chat.normalizedText)) {
+            return {
+                action: { kind: 'say', text: describeSurroundings(perception) },
+                cause: 'direct_chat_look',
+            };
+        }
+
+        if (isInventoryIntent(command, chat.normalizedText)) {
+            return {
+                action: { kind: 'say', text: describeInventory(perception) },
+                cause: 'direct_chat_inventory',
+            };
+        }
+
+        const pickup = pickupIntent(command);
+        if (pickup) {
+            const item = pickup.query
+                ? findWorldItem(perception.nearby?.worldItems || [], pickup.query)
+                : (perception.nearby?.worldItems || [])[0];
+            return {
+                action: item
+                    ? { kind: 'interact', target: item, option: 'pick-up', cause: 'direct_chat_pickup' }
+                    : { kind: 'say', text: pickup.query ? `I do not see ${pickup.query} on the ground.` : 'I do not see an item to pick up.' },
+                cause: 'direct_chat_pickup',
+            };
+        }
+
+        const drop = dropIntent(command);
+        if (drop) {
+            const slot = drop.query ? findSlot(perception.resident?.inventory || [], item => itemMatchesQuery(item, drop.query!)) : undefined;
+            return {
+                action: drop.query
+                    ? slot === undefined
+                        ? { kind: 'say', text: `I am not carrying ${drop.query}.` }
+                        : { kind: 'drop', slot, cause: 'direct_chat_drop' }
+                    : { kind: 'say', text: 'Tell me what to drop.' },
+                cause: 'direct_chat_drop',
+            };
+        }
+
         const attack = attackIntent(command);
         if (attack) {
             const target = findActorByName([...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])], attack);
@@ -388,6 +433,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return {
                 action: { kind: 'move_to', target: fleeTarget(perception), cause: 'direct_chat_retreat' },
                 cause: 'direct_chat_retreat',
+            };
+        }
+
+        if (isExploreIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = explorationGoal(this.options.state.tick);
+            return {
+                action: explorationAction(perception, this.visibilityAnchor()) || {
+                    kind: 'say',
+                    text: this.statusSpeech(perception, 'I will scout nearby and stay findable'),
+                },
+                cause: 'direct_chat_explore',
             };
         }
 
@@ -672,6 +728,17 @@ function woodcuttingGoal(tick: number): ActiveGoalState {
     };
 }
 
+function explorationGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'scout-nearby-area',
+        description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+        steps: ['Walk toward a nearby landmark or person', 'Report what is visible', 'Return near the anchor if I drift too far'],
+        success: 'A nearby landmark, actor, or item has been checked and I can report my location.',
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
 function levelOneWoodcuttingAction(perception: HybridPerception): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
@@ -732,6 +799,57 @@ function isFiremakingLog(item: Item): boolean {
     return FIREMAKING_LOG_ITEM_IDS.has(item.itemId) || FIREMAKING_LOG_KEY_PATTERN.test(item.key || '');
 }
 
+function isExplorationGoal(goal: ActiveGoalState): boolean {
+    return /explore|scout|survey|look around|nearby|landmark|area/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+function explorationAction(perception: HybridPerception, anchor?: Pos): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const object = (perception.nearby?.objects || [])
+        .filter(candidate => !FIRE_OBJECT_IDS.has(candidate.objectId) && !LEVEL_ONE_TREE_IDS.has(candidate.objectId))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (object) {
+        if (distance(here, object.position) > 2) {
+            return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
+        }
+        return { kind: 'say', text: `I am checking the landmark at ${object.position.x},${object.position.y}.`, cause: 'explore_visible_object' };
+    }
+
+    const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (npc) {
+        if (distance(here, npc.position) > 2) {
+            return { kind: 'move_to', target: npc.position, range: 2, cause: 'explore_visible_actor' };
+        }
+        return { kind: 'say', text: `I see ${actorName(npc)} nearby at ${npc.position.x},${npc.position.y}.`, cause: 'explore_visible_actor' };
+    }
+
+    const item = (perception.nearby?.worldItems || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (item) {
+        if (distance(here, item.position) > 1) {
+            return { kind: 'move_to', target: item.position, range: 1, cause: 'explore_visible_item' };
+        }
+        return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
+    }
+
+    const patrol = explorationPatrolTarget(here, anchor);
+    if (distance(here, patrol) > 1) {
+        return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
+    }
+
+    return { kind: 'say', text: `I am scouting near ${here.x},${here.y} and staying findable.`, cause: 'explore_patrol' };
+}
+
+function explorationPatrolTarget(here: Pos, anchor?: Pos): Pos {
+    const center = anchor && distance(here, anchor) <= DEFAULT_RETURN_TO_ANCHOR_RADIUS ? anchor : here;
+    const dx = here.x >= center.x ? -4 : 4;
+    const dy = here.y >= center.y ? 4 : -4;
+    return { x: center.x + dx, y: center.y + dy, level: center.level };
+}
+
 function latestAddressedChat(perception: HybridPerception, commandPrefix: string, lastKey: string | undefined):
     | { key: string; normalizedText: string; from?: Actor }
     | undefined {
@@ -782,6 +900,20 @@ function isStatusIntent(command: string, fullText: string): boolean {
     );
 }
 
+function isLookIntent(command: string, fullText: string): boolean {
+    return (
+        /^(what do you see|look|look around|suggest|actions|what can we do|what is nearby)\b/.test(command) ||
+        /\b(what do you see|what can we do|what is nearby|look around)\b/.test(fullText)
+    );
+}
+
+function isInventoryIntent(command: string, fullText: string): boolean {
+    return (
+        /^(inventory|what are you carrying|what do you have|supplies)\b/.test(command) ||
+        /\b(inventory|what are you carrying|what do you have|supplies)\b/.test(fullText)
+    );
+}
+
 function isFiremakingIntent(command: string, fullText: string): boolean {
     return /^(make a fire|light a fire|start a fire|burn logs|firemaking)\b/.test(command) || /\b(make a fire|light a fire|start a fire|firemaking)\b/.test(fullText);
 }
@@ -793,6 +925,28 @@ function isWoodcuttingIntent(command: string, fullText: string): boolean {
 function attackIntent(command: string): string | undefined {
     const match = command.match(/^attack\s+(.+)/);
     return match ? cleanTarget(match[1]) : undefined;
+}
+
+function pickupIntent(command: string): { query?: string } | undefined {
+    const match = command.match(/^(pick up|take|loot)(?:\s+(.+))?/);
+    if (!match) {
+        return undefined;
+    }
+    const query = match[2] ? cleanTarget(match[2]) : undefined;
+    return query ? { query } : {};
+}
+
+function dropIntent(command: string): { query?: string } | undefined {
+    const match = command.match(/^drop(?:\s+(.+))?/);
+    if (!match) {
+        return undefined;
+    }
+    const query = match[1] ? cleanTarget(match[1]) : undefined;
+    return query ? { query } : {};
+}
+
+function isExploreIntent(command: string, fullText: string): boolean {
+    return /^(explore|scout|patrol|survey|wander)\b/.test(command) || /\b(explore|scout|patrol|survey)\b/.test(fullText);
 }
 
 function isRetreatIntent(command: string, fullText: string): boolean {
@@ -829,6 +983,68 @@ function isLowHealth(perception: HybridPerception): boolean {
 
 function firstFoodSlot(inventory: Array<Item | null>): number | undefined {
     return findSlot(inventory, item => FOOD_KEY_PATTERN.test(item.key || ''));
+}
+
+function findWorldItem(items: Array<Item & { position: Pos; ownerId?: string }>, query: string): (Item & { position: Pos; ownerId?: string }) | undefined {
+    return items.find(item => itemMatchesQuery(item, query));
+}
+
+function itemMatchesQuery(item: Item | null, query: string): boolean {
+    if (!item) {
+        return false;
+    }
+    const wanted = normalizeText(query);
+    const labels = [itemLabel(item), item.key || '', String(item.itemId)].map(normalizeText);
+    return labels.some(label => label.includes(wanted) || wanted.includes(label));
+}
+
+function describeSurroundings(perception: HybridPerception): string {
+    const npc = perception.nearby?.npcs?.[0];
+    if (npc) {
+        return `I see ${actorName(npc)} nearby at ${npc.position.x},${npc.position.y}. I can talk, fight if needed, pick up items, or explore.`;
+    }
+
+    const item = perception.nearby?.worldItems?.[0];
+    if (item) {
+        return `I see ${itemLabel(item)} on the ground at ${item.position.x},${item.position.y}. I can pick it up or keep scouting.`;
+    }
+
+    const object = perception.nearby?.objects?.[0];
+    if (object) {
+        return `I see scenery at ${object.position.x},${object.position.y}. I can move closer and inspect the area.`;
+    }
+
+    const player = perception.nearby?.players?.[0];
+    if (player) {
+        return `I see ${actorName(player)} nearby at ${player.position.x},${player.position.y}.`;
+    }
+
+    return 'I do not see anything actionable nearby yet.';
+}
+
+function describeInventory(perception: HybridPerception): string {
+    const counts = new Map<string, number>();
+    for (const item of perception.resident?.inventory || []) {
+        if (!item) {
+            continue;
+        }
+        const label = itemLabel(item);
+        counts.set(label, (counts.get(label) || 0) + item.amount);
+    }
+
+    if (counts.size === 0) {
+        return 'I am not carrying anything.';
+    }
+
+    const labels = [...counts.entries()].map(([label, amount]) => (amount > 1 ? `${label} x${amount}` : label));
+    return `I am carrying ${labels.join(', ')}.`;
+}
+
+function itemLabel(item: Item): string {
+    return (item.key || `item ${item.itemId}`)
+        .replace(/^rs:/i, '')
+        .replace(/_/g, ' ')
+        .trim();
 }
 
 function fleeTarget(perception: HybridPerception): Pos {

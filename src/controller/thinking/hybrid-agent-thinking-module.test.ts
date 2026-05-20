@@ -577,6 +577,130 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('answers direct look commands with actionable surroundings without inference', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                worldItems: [{ itemId: 1511, key: 'rs:logs', amount: 1, position: { x: 3218, y: 3202, level: 0 } }],
+                events: [chatFromCodex('agent what do you see?', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'I see Hans nearby at 3219,3201. I can talk, fight if needed, pick up items, or explore.' },
+        ]);
+        expect(result.cause).toBe('direct_chat_look');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('answers direct inventory commands without inference', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 3 },
+                    ],
+                },
+                events: [chatFromCodex('agent inventory', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am carrying tinderbox, logs x3.' }]);
+        expect(result.cause).toBe('direct_chat_inventory');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('runs direct pickup and drop commands without inference', async () => {
+        const logs = { itemId: 1511, key: 'rs:logs', amount: 1, position: { x: 3219, y: 3201, level: 0 } };
+        const pickupAgent = hybridAgent(scriptedLlm([]), runtimeState());
+
+        const pickup = await pickupAgent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                worldItems: [logs],
+                events: [chatFromCodex('agent pick up logs', 3218, 3201)],
+            }),
+        );
+
+        expect(pickup.actions).toEqual([{ kind: 'interact', target: logs, option: 'pick-up', cause: 'direct_chat_pickup' }]);
+        expect(pickup.cause).toBe('direct_chat_pickup');
+
+        const dropAgent = hybridAgent(scriptedLlm([]), runtimeState());
+        const drop = await dropAgent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [null, { itemId: 1511, key: 'rs:logs', amount: 1 }],
+                },
+                events: [chatFromCodex('agent drop logs', 3218, 3201)],
+            }),
+        );
+
+        expect(drop.actions).toEqual([{ kind: 'drop', slot: 1, cause: 'direct_chat_drop' }]);
+        expect(drop.cause).toBe('direct_chat_drop');
+    });
+
+    it('starts a local exploration workflow from direct chat without inference', async () => {
+        const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                objects: [fountain],
+                events: [chatFromCodex('agent explore', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(result.cause).toBe('direct_chat_explore');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('uses local exploration fallback when an active scouting goal has no Body action', async () => {
+        const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout the nearby Lumbridge area and look for useful places.',
+                steps: ['walk to nearby landmarks', 'report anything useful'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                objects: [fountain],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(result.cause).toBe('exploration_fallback');
+    });
+
     it('starts a firemaking workflow from direct chat without waiting for inference', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const llm = scriptedLlm([]);
