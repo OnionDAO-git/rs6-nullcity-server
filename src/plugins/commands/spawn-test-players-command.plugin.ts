@@ -26,7 +26,9 @@ const handler: commandActionHandler = ({ player, args }) => {
         player.sendMessage(`Warning: There was only room for ${playerSpawnCount}/${playerCount} player spawns.`);
     }
 
-    activeWorld.spawnFakeResidents(playerSpawnCount, new Position(x, y, 0)).catch(error => player.sendMessage(error?.message || String(error)));
+    activeWorld
+        .spawnFakeResidents(playerSpawnCount, new Position(x, y, 0))
+        .catch(error => player.sendMessage(error?.message || String(error)));
 };
 
 export default {

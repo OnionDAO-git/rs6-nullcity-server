@@ -21,8 +21,8 @@ describe('ResidentSession', () => {
         (activeWorld.tickComplete as unknown as TickSubject).next();
 
         await expect(result).resolves.toEqual({ ok: true });
-        expect(observerA.sendActionResults).toHaveBeenCalledWith(resident, [{ ok: true }]);
-        expect(observerB.sendActionResults).toHaveBeenCalledWith(resident, [{ ok: true }]);
+        expect(observerA.sendActionResults).toHaveBeenCalledWith(resident, [{ requestId: 'request-1', result: { ok: true } }]);
+        expect(observerB.sendActionResults).toHaveBeenCalledWith(resident, [{ requestId: 'request-1', result: { ok: true } }]);
         expect(resident.drainActionResults).toHaveBeenCalledTimes(1);
 
         session.close();

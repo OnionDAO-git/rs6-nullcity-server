@@ -104,7 +104,9 @@ describe('BasicAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I see nearby scenery we may be able to inspect. Lead me closer if you want to try it.' }]);
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'I see nearby scenery we may be able to inspect. Lead me closer if you want to try it.' },
+        ]);
     });
 
     it('talks to a named NPC when commanded', async () => {
@@ -311,7 +313,9 @@ describe('BasicAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'Alice is attacking me. Tell me "agent attack Alice" if I should fight back.' }]);
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'Alice is attacking me. Tell me "agent attack Alice" if I should fight back.' },
+        ]);
     });
 
     it('attacks a named player when explicitly commanded', async () => {
@@ -394,15 +398,17 @@ function runtimeState(): RuntimeState {
     };
 }
 
-function perception(overrides: {
-    tick?: number;
-    resident?: Record<string, unknown>;
-    players?: Array<Record<string, unknown>>;
-    npcs?: Array<Record<string, unknown>>;
-    worldItems?: Array<Record<string, unknown>>;
-    objects?: Array<Record<string, unknown>>;
-    events?: Array<Record<string, unknown>>;
-} = {}): Perception {
+function perception(
+    overrides: {
+        tick?: number;
+        resident?: Record<string, unknown>;
+        players?: Array<Record<string, unknown>>;
+        npcs?: Array<Record<string, unknown>>;
+        worldItems?: Array<Record<string, unknown>>;
+        objects?: Array<Record<string, unknown>>;
+        events?: Array<Record<string, unknown>>;
+    } = {},
+): Perception {
     return {
         tick: overrides.tick ?? 1,
         resident: overrides.resident || residentAt(3200, 3200),

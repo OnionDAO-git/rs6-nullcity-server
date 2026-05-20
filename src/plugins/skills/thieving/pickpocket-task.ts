@@ -76,7 +76,7 @@ export class PickpocketTask extends Task {
         }
 
         this.player.skills.addExp(Skill.THIEVING, this.target.xp);
-        this.player.sendMessage('You pick the target\'s pocket.');
+        this.player.sendMessage("You pick the target's pocket.");
         this.stop();
     }
 

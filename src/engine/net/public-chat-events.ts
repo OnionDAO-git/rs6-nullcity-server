@@ -32,10 +32,6 @@ export function publishPublicChatToNearbyResidents(player: Player, text: string,
     }
 }
 
-function isNearby(
-    a: { x: number; y: number; level?: number },
-    b: { x: number; y: number; level?: number },
-    maxDistance: number,
-): boolean {
+function isNearby(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }, maxDistance: number): boolean {
     return (a.level ?? 0) === (b.level ?? 0) && Math.abs(a.x - b.x) <= maxDistance && Math.abs(a.y - b.y) <= maxDistance;
 }

@@ -492,11 +492,7 @@ export class ActionAdapter {
     }
 }
 
-function isNearby(
-    a: { x: number; y: number; level?: number },
-    b: { x: number; y: number; level?: number },
-    maxDistance: number,
-): boolean {
+function isNearby(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }, maxDistance: number): boolean {
     return (a.level ?? 0) === (b.level ?? 0) && Math.abs(a.x - b.x) <= maxDistance && Math.abs(a.y - b.y) <= maxDistance;
 }
 
@@ -511,7 +507,11 @@ function tileDistance(a: { x: number; y: number; level?: number }, b: { x: numbe
     return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
-function approachScore(candidate: { x: number; y: number; level?: number }, target: { x: number; y: number; level?: number }, range: number): number {
+function approachScore(
+    candidate: { x: number; y: number; level?: number },
+    target: { x: number; y: number; level?: number },
+    range: number,
+): number {
     return Math.max(0, tileDistance(candidate, target) - range);
 }
 

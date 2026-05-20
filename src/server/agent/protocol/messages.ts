@@ -73,12 +73,15 @@ export type ServerMessage =
     | AgentFrame<'spectator_connected', { sessionId: string; subject: SpectatorSubject; initialState: unknown }>
     | AgentFrame<'spectator_rebuild', { sessionId: string; payload: unknown }>
     | AgentFrame<'spectator_packet', { sessionId: string; opcode: number; payload: SpectatorRsPacketFrame }>
-    | AgentFrame<'spectator_perception', { sessionId: string; perception: Perception; position?: { x: number; y: number; level: number }; regionId?: number }>
+    | AgentFrame<
+          'spectator_perception',
+          { sessionId: string; perception: Perception; position?: { x: number; y: number; level: number }; regionId?: number }
+      >
     | AgentFrame<'spectator_disconnected', { sessionId: string; cause?: string }>
     | AgentFrame<'perception', { resident_id: string; perception: Perception }>
     | AgentFrame<'action_result', { resident_id: string; request_id?: string | number; result: ActionResult; cause?: string }>
     | AgentFrame<'event', { resident_id: string; event: unknown }>
-    | AgentFrame<'ok', { ok: true }>
+    | AgentFrame<'ok', { ok: true; result?: ActionResult }>
     | AgentFrame<'error', { request_id?: string | number; code: string; message: string; cause?: string }>;
 
 const requestIdSchema = z.union([z.string(), z.number()]).optional();

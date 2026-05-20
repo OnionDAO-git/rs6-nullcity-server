@@ -67,7 +67,12 @@ describe('ActionAdapter', () => {
         const speakingResident = {
             username: 'res:agent',
             position: { x: 3230, y: 3239, level: 0 },
-            toActorRef: jest.fn(() => ({ id: 'resident:res:agent', kind: 'resident', name: 'res:agent', position: { x: 3230, y: 3239, level: 0 } })),
+            toActorRef: jest.fn(() => ({
+                id: 'resident:res:agent',
+                kind: 'resident',
+                name: 'res:agent',
+                position: { x: 3230, y: 3239, level: 0 },
+            })),
             emitPerceptionEvent: jest.fn(),
             playerEvents: { emit: jest.fn() },
             inventory: { items: [] },
@@ -114,10 +119,10 @@ describe('ActionAdapter', () => {
         });
 
         expect(result).toEqual({ ok: true });
-        expect(walkTo).toHaveBeenCalledWith(
-            expect.objectContaining({ x: 3219, y: 3202, level: 0 }),
-            { pathingSearchRadius: 3, ignoreDestination: false },
-        );
+        expect(walkTo).toHaveBeenCalledWith(expect.objectContaining({ x: 3219, y: 3202, level: 0 }), {
+            pathingSearchRadius: 3,
+            ignoreDestination: false,
+        });
     });
 
     it('rejects move_to actions when no path can be queued', () => {
@@ -139,10 +144,10 @@ describe('ActionAdapter', () => {
         });
 
         expect(result).toEqual({ ok: false, reason: 'no_path' });
-        expect(walkTo).toHaveBeenCalledWith(
-            expect.objectContaining({ x: 3219, y: 3202, level: 0 }),
-            { pathingSearchRadius: 3, ignoreDestination: false },
-        );
+        expect(walkTo).toHaveBeenCalledWith(expect.objectContaining({ x: 3219, y: 3202, level: 0 }), {
+            pathingSearchRadius: 3,
+            ignoreDestination: false,
+        });
         expect(walkingQueue.clear).toHaveBeenCalled();
     });
 
@@ -171,10 +176,10 @@ describe('ActionAdapter', () => {
         });
 
         expect(result).toEqual({ ok: true });
-        expect(walkTo).toHaveBeenCalledWith(
-            expect.objectContaining({ x: 3228, y: 3201, level: 0 }),
-            { pathingSearchRadius: 6, ignoreDestination: false },
-        );
+        expect(walkTo).toHaveBeenCalledWith(expect.objectContaining({ x: 3228, y: 3201, level: 0 }), {
+            pathingSearchRadius: 6,
+            ignoreDestination: false,
+        });
     });
 
     it('tries alternate local steps when the preferred step cannot queue', () => {
@@ -204,10 +209,10 @@ describe('ActionAdapter', () => {
         });
 
         expect(result).toEqual({ ok: true });
-        expect(walkTo).toHaveBeenCalledWith(
-            expect.objectContaining({ x: 3225, y: 3200, level: 0 }),
-            { pathingSearchRadius: 3, ignoreDestination: false },
-        );
+        expect(walkTo).toHaveBeenCalledWith(expect.objectContaining({ x: 3225, y: 3200, level: 0 }), {
+            pathingSearchRadius: 3,
+            ignoreDestination: false,
+        });
     });
 
     it('walks range move_to actions on a normal route to the nearest reachable tile beside the target', () => {
@@ -238,10 +243,10 @@ describe('ActionAdapter', () => {
         });
 
         expect(result).toEqual({ ok: true });
-        expect(walkTo).toHaveBeenCalledWith(
-            expect.objectContaining({ x: 3229, y: 3208, level: 0 }),
-            { pathingSearchRadius: 5, ignoreDestination: false },
-        );
+        expect(walkTo).toHaveBeenCalledWith(expect.objectContaining({ x: 3229, y: 3208, level: 0 }), {
+            pathingSearchRadius: 5,
+            ignoreDestination: false,
+        });
     });
 
     it('falls back to a verified local step only when the direct route cannot queue', () => {
@@ -271,15 +276,14 @@ describe('ActionAdapter', () => {
         });
 
         expect(result).toEqual({ ok: true });
-        expect(walkTo).toHaveBeenNthCalledWith(
-            1,
-            expect.objectContaining({ x: 3228, y: 3204, level: 0 }),
-            { pathingSearchRadius: 6, ignoreDestination: false },
-        );
-        expect(walkTo).toHaveBeenCalledWith(
-            expect.objectContaining({ x: 3225, y: 3201, level: 0 }),
-            { pathingSearchRadius: 3, ignoreDestination: false },
-        );
+        expect(walkTo).toHaveBeenNthCalledWith(1, expect.objectContaining({ x: 3228, y: 3204, level: 0 }), {
+            pathingSearchRadius: 6,
+            ignoreDestination: false,
+        });
+        expect(walkTo).toHaveBeenCalledWith(expect.objectContaining({ x: 3225, y: 3201, level: 0 }), {
+            pathingSearchRadius: 3,
+            ignoreDestination: false,
+        });
     });
 
     it('translates object action aliases to configured object options before dispatch', () => {

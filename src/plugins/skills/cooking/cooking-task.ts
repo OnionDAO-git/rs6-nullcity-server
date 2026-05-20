@@ -37,7 +37,10 @@ export class CookingTask extends ActorTask<Player> {
 
         if (!this.actor.skills.hasLevel(Skill.COOKING, this.cookable.level)) {
             const cookedItem = findItem(this.cookable.cookedItemId);
-            this.actor.sendMessage(`You need a cooking level of ${this.cookable.level} to cook ${cookedItem?.name.toLowerCase() || 'that'}.`, true);
+            this.actor.sendMessage(
+                `You need a cooking level of ${this.cookable.level} to cook ${cookedItem?.name.toLowerCase() || 'that'}.`,
+                true,
+            );
             this.stop();
             return;
         }

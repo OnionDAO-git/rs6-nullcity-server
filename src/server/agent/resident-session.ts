@@ -4,10 +4,15 @@ import type { Perception } from '@engine/world/actor/resident/perception/percept
 import type { Resident } from '@engine/world/actor/resident/resident';
 import type { ActionLog } from './protocol/action-log';
 
+export interface ResidentActionResult {
+    requestId?: string | number;
+    result: ActionResult;
+}
+
 export interface ResidentObserver {
     id: string;
     sendPerception(resident: Resident, perception: Perception): void;
-    sendActionResults?(resident: Resident, results: ReadonlyArray<ActionResult>): void;
+    sendActionResults?(resident: Resident, results: ReadonlyArray<ResidentActionResult>): void;
     sendEvents?(resident: Resident, events: ReadonlyArray<PerceptionEvent>): void;
 }
 
@@ -20,6 +25,7 @@ export class ResidentSession {
     private readonly observers = new Map<string, ResidentObserver>();
     private readonly resultWaiters: ResultWaiter[] = [];
     private readonly eventWaiters: EventWaiter[] = [];
+    private readonly pendingRequestIds: Array<string | number | undefined> = [];
     private readonly tickSubscription;
     private latestPerception: Perception | null = null;
     private closed = false;
@@ -55,6 +61,7 @@ export class ResidentSession {
             throw new Error('ESESSION_CLOSED');
         }
         this.resident.enqueueActions([action]);
+        this.pendingRequestIds.push(requestId);
         this.actionLog.append(this.resident.username, { type: 'action', requestId, action });
     }
 
@@ -121,9 +128,9 @@ export class ResidentSession {
         for (const event of perception.events) {
             this.actionLog.append(this.resident.username, { type: 'event', tick: perception.tick, event });
         }
-        const actionResults = this.resident.drainActionResults();
+        const actionResults = this.correlateActionResults(this.resident.drainActionResults());
         if (actionResults.length) {
-            this.resolveResultWaiters(actionResults);
+            this.resolveResultWaiters(actionResults.map(actionResult => actionResult.result));
         }
         if (perception.events.length) {
             this.resolveMatchingEventWaiters(perception.events);
@@ -136,6 +143,13 @@ export class ResidentSession {
             observer.sendEvents?.(this.resident, perception.events);
             observer.sendActionResults?.(this.resident, actionResults);
         }
+    }
+
+    private correlateActionResults(results: ReadonlyArray<ActionResult>): ResidentActionResult[] {
+        return results.map(result => ({
+            requestId: this.pendingRequestIds.shift(),
+            result,
+        }));
     }
 
     private resolveResultWaiters(results: ReadonlyArray<ActionResult>): void {

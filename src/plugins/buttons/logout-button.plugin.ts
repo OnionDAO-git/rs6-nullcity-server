@@ -9,9 +9,7 @@ export const handler: buttonActionHandler = details => {
     player.logout();
 
     // Update online players friends lists that have this player as a friend
-    const otherPlayers = activeWorld.playerList.filter(
-        (p): p is Player => p !== null && p.friendsList.indexOf(playerName) !== -1,
-    );
+    const otherPlayers = activeWorld.playerList.filter((p): p is Player => p !== null && p.friendsList.indexOf(playerName) !== -1);
     if (otherPlayers && otherPlayers.length !== 0) {
         otherPlayers.forEach(otherPlayer => otherPlayer.outgoingPackets.updateFriendStatus(playerName, 0));
     }

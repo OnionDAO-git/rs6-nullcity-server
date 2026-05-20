@@ -24,9 +24,9 @@
     "bypassTeleportRequirements": false,
     "agentGateway": {
         "enabled": true,
-        "host": "0.0.0.0",
+        "host": "127.0.0.1",
         "port": 43595,
-        "authToken": null,
+        "authToken": "change-me-before-binding-publicly",
         "allowDelete": false,
         "logFullPerceptions": false,
         "autosaveTicks": 1000,

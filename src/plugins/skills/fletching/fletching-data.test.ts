@@ -1,10 +1,5 @@
 import { itemIds } from '@engine/world/config/item-ids';
-import {
-    arrowFinishingByHead,
-    BOW_STRINGING_RECIPES,
-    HEADLESS_ARROW_RECIPES,
-    logCuttingByLog,
-} from './fletching-data';
+import { arrowFinishingByHead, BOW_STRINGING_RECIPES, HEADLESS_ARROW_RECIPES, logCuttingByLog } from './fletching-data';
 
 describe('fletching data', () => {
     it('uses the matching log for higher-tier bow recipes', () => {

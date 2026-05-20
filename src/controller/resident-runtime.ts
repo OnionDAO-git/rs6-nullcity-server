@@ -1,5 +1,9 @@
 import type { LlmClient } from './llm/llm-client';
+import { ActionCoordinator } from './actions/action-coordinator';
 import { type ResidentBody, createGatewayBody } from './body';
+import type { BodyActionLogEntry } from './body';
+import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
+import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
@@ -9,12 +13,25 @@ import { NervousSystem } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import type { Soul } from './soul/soul-schema';
+import type { SparkModule, SparkModuleIdentity } from './spark/modules';
 import { initialAttention } from './spark/attention';
-import { type ThinkingModule, createThinkingModule } from './thinking';
+import { type ThinkingModule, createThinkingModuleSelection } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
-import type { Perception, PerceptionEvent } from './transport/message-codecs';
+import type { AgentAction, Perception, PerceptionEvent } from './transport/message-codecs';
 
 const MAX_PENDING_EVENTS = 50;
+
+export interface ResidentRuntimeGameSkill {
+    buildContext(input: GameSkillContextInput): GameSkillContext;
+    observeAttempt(event: {
+        resident: string;
+        producer: 'nervous-system' | 'body';
+        perception: Perception;
+        context?: GameSkillContext;
+        attempt: ActionAttempt;
+    }): void;
+    flush?(): Promise<void>;
+}
 
 export interface ResidentRuntimeOptions {
     soul: Soul;
@@ -26,14 +43,20 @@ export interface ResidentRuntimeOptions {
     inferenceLog: InferenceLog;
     thinking?: ThinkingModule;
     body?: ResidentBody;
+    actionCoordinator?: ActionCoordinator;
+    gameSkill?: ResidentRuntimeGameSkill;
+    sparkModules?: SparkModule[];
 }
 
 export class ResidentRuntime {
     readonly name: string;
     private readonly state: RuntimeState;
     private readonly thinking: ThinkingModule;
+    private readonly thinkingSparkModule?: SparkModuleIdentity;
+    private readonly thinkingSourceModule?: SparkModule;
     private readonly nervousSystem: NervousSystem;
     private readonly body: ResidentBody;
+    private readonly actionCoordinator: ActionCoordinator;
     private readonly history = new PerceptionHistory();
     private readonly memoryRouter = new MemoryRouter();
     private readonly compressor = new PerceptionCompressor();
@@ -47,16 +70,30 @@ export class ResidentRuntime {
             initialAttention(options.soul.frontmatter.attentionProfile),
             options.soul.frontmatter.legacy?.kind || options.soul.frontmatter.archetype,
         );
-        this.thinking =
-            options.thinking ||
-            createThinkingModule({
+        if (options.thinking) {
+            this.thinking = options.thinking;
+        } else {
+            const selection = createThinkingModuleSelection({
                 soul: options.soul,
                 state: this.state,
                 memory: options.memory,
                 llm: options.llm,
+                sparkModules: options.sparkModules,
             });
+            this.thinking = selection.thinking;
+            this.thinkingSparkModule = selection.sparkModule;
+            this.thinkingSourceModule = selection.sourceModule;
+        }
         this.nervousSystem = new NervousSystem({ soul: options.soul, state: this.state, memory: options.memory });
         this.body = options.body || createGatewayBody(this.name, options.gateway, options.actionLog);
+        this.actionCoordinator =
+            options.actionCoordinator ||
+            new ActionCoordinator({
+                resident: this.name,
+                submitter: {
+                    submit: (action, metadata) => this.body.submit(action, metadata as Omit<BodyActionLogEntry, 'action' | 'result'>),
+                },
+            });
     }
 
     async onPerception(perception: Perception): Promise<void> {
@@ -67,12 +104,18 @@ export class ResidentRuntime {
             if (this.deciding && reaction.interruptThinking) {
                 this.thinking.stop(`nervous:${reaction.rule.id}`);
             }
-            await this.body.submit(reaction.action, {
-                tick: this.state.tick,
-                attention_after: this.state.attention,
-                source: 'nervous-system',
-                ruleId: reaction.rule.id,
+            const attempt = await this.actionCoordinator.submit({
+                producer: 'nervous-system',
+                action: reaction.action,
+                metadata: {
+                    tick: this.state.tick,
+                    attention_after: this.state.attention,
+                    source: 'nervous-system',
+                    ruleId: reaction.rule.id,
+                },
+                waitForEffect: this.effectWaitFor(reaction.action),
             });
+            this.observeGameSkillAttempt('nervous-system', perception, undefined, attempt);
             this.options.stateStore.save(this.state);
             if (reaction.suppressThinking) {
                 return;
@@ -86,6 +129,7 @@ export class ResidentRuntime {
                     tick: this.state.tick,
                     cause: 'urgent_interrupt',
                     perception_tokens: compressed.text.length,
+                    sparkModule: this.thinkingSparkModule,
                 });
             }
             return;
@@ -93,9 +137,16 @@ export class ResidentRuntime {
 
         const decisionPerception = this.withPendingEvents(perception);
         const compressed = this.compressor.compress(decisionPerception);
+        const compressedPerception = { ...decisionPerception, compressed: compressed.text };
+        const gameSkillContext = this.options.gameSkill?.buildContext({
+            resident: this.name,
+            tick: this.state.tick,
+            activeGoal: this.state.cognition?.activeGoal,
+            perception: compressedPerception,
+        });
         this.deciding = true;
         try {
-            const result = await this.thinking.think({ ...decisionPerception, compressed: compressed.text });
+            const result = await this.thinking.think(compressedPerception, gameSkillContext);
             for (const event of result.syntheticEvents || []) {
                 this.history.push(event);
             }
@@ -107,14 +158,22 @@ export class ResidentRuntime {
                 parse_ok: true,
                 cause: result.cause,
                 nooped: result.nooped,
+                sparkModule: this.thinkingSparkModule,
             });
 
             for (const action of result.actions) {
-                await this.body.submit(action, {
-                    tick: this.state.tick,
-                    attention_after: this.state.attention,
-                    source: 'thinking',
+                const attempt = await this.actionCoordinator.submit({
+                    producer: 'body',
+                    action,
+                    metadata: {
+                        tick: this.state.tick,
+                        attention_after: this.state.attention,
+                        source: 'thinking',
+                        sparkModule: this.thinkingSparkModule,
+                    },
+                    waitForEffect: this.effectWaitFor(action),
                 });
+                this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
             }
         } finally {
             this.options.stateStore.save(this.state);
@@ -145,8 +204,249 @@ export class ResidentRuntime {
         return { ...perception, events: [...events, ...pending] };
     }
 
+    private observeGameSkillAttempt(
+        producer: 'nervous-system' | 'body',
+        perception: Perception,
+        context: GameSkillContext | undefined,
+        attempt: ActionAttempt,
+    ): void {
+        try {
+            this.options.gameSkill?.observeAttempt({ resident: this.name, producer, perception, context, attempt });
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'game_skill_observe_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    private effectWaitFor(action: AgentAction): (() => Promise<EffectWaitResult>) | undefined {
+        if (action.kind === 'move_to' && isPosition(action.target)) {
+            const target = action.target;
+            const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
+            const afterSeq = this.body.getLatestPerceptionSeq();
+            return async () =>
+                perceptionWaitToEffect(
+                    await this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
+                        afterSeq,
+                        timeoutMs: 5000,
+                    }),
+                    perception => ({
+                        source: 'perception',
+                        detail: { kind: 'position_reached', position: perceptionPosition(perception) },
+                    }),
+                );
+        }
+
+        if (action.kind === 'say' && typeof action.text === 'string') {
+            const text = action.text;
+            const afterSeq = this.body.getLatestEventSeq();
+            return async () =>
+                eventWaitToEffect(
+                    await this.body.waitForEvent(event => event.kind === 'chat' && event.text === text, {
+                        afterSeq,
+                        timeoutMs: 3000,
+                    }),
+                    event => ({
+                        source: 'event',
+                        detail: { kind: 'chat_observed', text: event.text },
+                    }),
+                );
+        }
+
+        if (waitsForPerceptionEffect(action.kind) && supportsPerceptionEffectWait(this.body)) {
+            const before = this.body.getLatestPerception();
+            const afterSeq = this.body.getLatestPerceptionSeq();
+            return async () =>
+                perceptionWaitToEffect(
+                    await this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
+                        afterSeq,
+                        timeoutMs: 5000,
+                    }),
+                    perception => ({
+                        source: 'perception',
+                        detail: {
+                            kind: 'action_effect_observed',
+                            actionKind: action.kind,
+                            changed: changedEffectSections(before, perception, action),
+                            events: eventSummaries(perception, action),
+                        },
+                    }),
+                );
+        }
+
+        return undefined;
+    }
+
     stop(cause = 'runtime_stopped'): void {
         this.thinking.stop(cause);
+        this.thinkingSourceModule?.stop?.(cause);
         this.options.stateStore.save(this.state);
     }
+}
+
+interface Position {
+    x: number;
+    y: number;
+    level?: number;
+}
+
+function perceptionWaitToEffect(
+    wait: Awaited<ReturnType<ResidentBody['waitForPerception']>>,
+    evidence: (perception: Perception) => ActionEvidence,
+): EffectWaitResult {
+    if (!wait.ok) {
+        return { ok: false, reason: wait.reason };
+    }
+    return { ok: true, evidence: [evidence(wait.observation.value)] };
+}
+
+function eventWaitToEffect(
+    wait: Awaited<ReturnType<ResidentBody['waitForEvent']>>,
+    evidence: (event: PerceptionEvent) => ActionEvidence,
+): EffectWaitResult {
+    if (!wait.ok) {
+        return { ok: false, reason: wait.reason };
+    }
+    return { ok: true, evidence: [evidence(wait.observation.value)] };
+}
+
+function perceptionPosition(perception: Perception): Position | undefined {
+    const resident = record(perception.resident);
+    const position = record(resident.position);
+    if (typeof position.x !== 'number' || typeof position.y !== 'number') {
+        return undefined;
+    }
+    return {
+        x: position.x,
+        y: position.y,
+        level: typeof position.level === 'number' ? position.level : undefined,
+    };
+}
+
+function positionMatches(position: Position | undefined, target: Position, range = 0): boolean {
+    if (!position || (target.level !== undefined && position.level !== target.level && position.level !== undefined)) {
+        return false;
+    }
+    const distance = Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y));
+    if (range > 0) {
+        return distance <= range;
+    }
+    return (
+        position.x === target.x &&
+        position.y === target.y &&
+        (target.level === undefined || position.level === target.level || position.level === undefined)
+    );
+}
+
+function isPosition(value: unknown): value is Position {
+    const recordValue = record(value);
+    return typeof recordValue.x === 'number' && typeof recordValue.y === 'number';
+}
+
+function waitsForPerceptionEffect(kind: string): boolean {
+    return ['interact', 'use_item_on', 'use_item_on_item', 'attack', 'item_action', 'equip', 'drop', 'eat'].includes(kind);
+}
+
+function supportsPerceptionEffectWait(body: ResidentBody): boolean {
+    return (
+        typeof body.getLatestPerception === 'function' &&
+        typeof body.getLatestPerceptionSeq === 'function' &&
+        typeof body.waitForPerception === 'function'
+    );
+}
+
+function actionEffectObserved(action: AgentAction, before: Perception | undefined, after: Perception): boolean {
+    return changedEffectSections(before, after, action).length > 0 || eventSummaries(after, action).length > 0;
+}
+
+function effectState(perception: Perception | undefined, action?: AgentAction): Record<string, unknown> {
+    const root = record(perception);
+    const resident = record(root.resident);
+    const nearby = record(root.nearby);
+    const state: Record<string, unknown> = {
+        hp: resident.hp,
+        skills: resident.skills,
+        inCombat: resident.inCombat,
+        combatTarget: resident.combatTarget,
+        inventory: resident.inventory,
+        equipment: resident.equipment,
+        activeTrade: resident.activeTrade,
+        nearbyWorldItems: nearby.worldItems,
+        nearbyObjects: nearby.objects,
+    };
+    const allowed = effectStateSections(action);
+    return Object.fromEntries(Object.entries(state).filter(([key]) => allowed.includes(key)));
+}
+
+function changedEffectSections(before: Perception | undefined, after: Perception, action?: AgentAction): string[] {
+    const beforeState = effectState(before, action);
+    const afterState = effectState(after, action);
+    return Object.keys(afterState).filter(key => JSON.stringify(beforeState[key]) !== JSON.stringify(afterState[key]));
+}
+
+function effectStateSections(action?: AgentAction): string[] {
+    switch (action?.kind) {
+        case 'eat':
+            return ['hp', 'inventory'];
+        case 'drop':
+            return ['inventory', 'nearbyWorldItems'];
+        case 'equip':
+        case 'unequip':
+            return ['inventory', 'equipment'];
+        case 'attack':
+            return ['hp', 'skills', 'inCombat', 'combatTarget'];
+        default:
+            return [
+                'hp',
+                'skills',
+                'inCombat',
+                'combatTarget',
+                'inventory',
+                'equipment',
+                'activeTrade',
+                'nearbyWorldItems',
+                'nearbyObjects',
+            ];
+    }
+}
+
+function eventSummaries(perception: Perception, action?: AgentAction): Array<Record<string, unknown>> {
+    const events = Array.isArray(perception.events) ? perception.events : [];
+    return events
+        .filter(event => eventMatchesActionEffect(event, action))
+        .slice(0, 5)
+        .map(event => {
+            const eventRecord = record(event);
+            return {
+                kind: eventRecord.kind,
+                text: typeof eventRecord.text === 'string' ? eventRecord.text.slice(0, 160) : undefined,
+            };
+        });
+}
+
+function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean {
+    const eventRecord = record(event);
+    if (eventRecord.kind === 'chat') {
+        return false;
+    }
+    const text = typeof eventRecord.text === 'string' ? eventRecord.text.toLowerCase() : '';
+    switch (action?.kind) {
+        case 'eat':
+            return /eat|heal/.test(text);
+        case 'attack':
+            return /attack|hit|damage|dead|dies|defeat|combat/.test(text);
+        case 'drop':
+            return /drop|dropped/.test(text);
+        case 'equip':
+        case 'unequip':
+            return /wear|wield|equip|remove/.test(text);
+        default:
+            return eventRecord.kind === 'message' || text.length > 0;
+    }
+}
+
+function record(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }

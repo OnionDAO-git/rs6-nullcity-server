@@ -12,7 +12,7 @@ export interface SimulationGatewayClientOptions {
 export interface SimulationGatewayEvents {
     perception: [residentId: string, perception: Perception];
     event: [residentId: string, event: PerceptionEvent];
-    actionResult: [residentId: string, result: ActionResult];
+    actionResult: [residentId: string, result: ActionResult, requestId: string | undefined];
     serverError: [error: Error, frame: NormalizedFrame];
     message: [frame: NormalizedFrame];
     disconnect: [];
@@ -76,8 +76,8 @@ export class SimulationGatewayClient extends EventEmitter {
         }));
     }
 
-    submitAction(name: string, action: AgentAction): Promise<void> {
-        return this.request('submit_action', { name, action }).then(() => undefined);
+    submitAction(name: string, action: AgentAction): Promise<string> {
+        return this.request('submit_action', { name, action }).then(frame => String(frame.id));
     }
 
     disconnectResident(name: string, cause = 'simulation_stop'): Promise<void> {
@@ -152,7 +152,11 @@ export class SimulationGatewayClient extends EventEmitter {
         } else if (frame.kind === 'event') {
             this.emit('event', String(frame.payload.resident_id), frame.payload.event as PerceptionEvent);
         } else if (frame.kind === 'action_result') {
-            this.emit('actionResult', String(frame.payload.resident_id), frame.payload.result as ActionResult);
+            const requestId =
+                typeof frame.payload.request_id === 'string' || typeof frame.payload.request_id === 'number'
+                    ? String(frame.payload.request_id)
+                    : undefined;
+            this.emit('actionResult', String(frame.payload.resident_id), frame.payload.result as ActionResult, requestId);
         }
 
         this.emit('message', frame);

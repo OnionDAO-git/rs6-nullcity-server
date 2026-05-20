@@ -221,7 +221,7 @@ export class ChatHuffman {
 export function decodePackedChat(data: Uint8Array | Int8Array, codec: ChatHuffman): string {
     let pos = 0;
     const first = data[pos++] & 0xff;
-    const length = first < 128 ? first : (((first << 8) | (data[pos++] & 0xff)) - 32768);
+    const length = first < 128 ? first : ((first << 8) | (data[pos++] & 0xff)) - 32768;
     if (length <= 0 || length > 32767) {
         return '';
     }

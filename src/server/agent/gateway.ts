@@ -7,9 +7,17 @@ import { PerceptionBuilder } from '@engine/world/actor/resident/perception/perce
 import { isResident } from '@engine/world/actor/util';
 import { logger } from '@runejs/common';
 import type { AgentGatewayConfig } from './config';
+import { isLoopbackPeerAddress } from './auth';
 import { defaultAgentGatewayConfig } from './config';
 import { ActionLog } from './protocol/action-log';
-import { type ClientMessage, type ObservableSubjectSummary, type SpectatorMode, type SpectatorSubject, frame, parseClientMessage } from './protocol/messages';
+import {
+    type ClientMessage,
+    type ObservableSubjectSummary,
+    type SpectatorMode,
+    type SpectatorSubject,
+    frame,
+    parseClientMessage,
+} from './protocol/messages';
 import { ResidentRegistry } from './resident-registry';
 import { type ResidentObserver, ResidentSession } from './resident-session';
 import { ResidentMcpFacade } from './transports/mcp-transport';
@@ -113,8 +121,14 @@ export class AgentGateway {
                 }
             },
             sendActionResults: (resident, results) => {
-                for (const result of results) {
-                    send(frame('action_result', { resident_id: resident.residentId, result }));
+                for (const actionResult of results) {
+                    send(
+                        frame('action_result', {
+                            resident_id: resident.residentId,
+                            request_id: actionResult.requestId,
+                            result: actionResult.result,
+                        }),
+                    );
                 }
             },
         };
@@ -218,7 +232,11 @@ export class AgentGateway {
             }
             case 'connect_resident': {
                 const controlsResident = message.payload.control !== false;
-                const resident = await this.registry.connect(message.payload.name, controlsResident ? controllerId : null, message.payload.onDisconnect);
+                const resident = await this.registry.connect(
+                    message.payload.name,
+                    controlsResident ? controllerId : null,
+                    message.payload.onDisconnect,
+                );
                 const session = this.sessionFor(resident);
                 if (message.payload.observe !== false) {
                     session.attach(observer);
@@ -244,8 +262,8 @@ export class AgentGateway {
                 if (this.registry.controllerFor(message.payload.name) !== controllerId) {
                     throw new Error('ECONTROL_REQUIRED');
                 }
-                this.sessionFor(resident).submitAction(message.payload.action, message.id);
-                send(frame('ok', { ok: true }, message.id));
+                const result = await this.sessionFor(resident).submitActionAndWait(message.payload.action, message.id);
+                send(frame('ok', { ok: true, result }, message.id));
                 return;
             }
             case 'detach': {
@@ -409,12 +427,14 @@ export class AgentGateway {
                 }),
             );
         }
-        session.send(frame('spectator_perception', {
-            sessionId,
-            perception,
-            position: this.positionSummary(player),
-            regionId,
-        }));
+        session.send(
+            frame('spectator_perception', {
+                sessionId,
+                perception,
+                position: this.positionSummary(player),
+                regionId,
+            }),
+        );
     }
 
     private closeSpectatorSession(sessionId: string, cause?: string, notify = true): void {
@@ -529,21 +549,9 @@ export class AgentGateway {
     private authorized(request: http.IncomingMessage): boolean {
         if (!this.config.authToken) {
             const address = request.socket.remoteAddress || '';
-            return isLocalPeerAddress(address);
+            return isLoopbackPeerAddress(address);
         }
 
         return request.headers.authorization === `Bearer ${this.config.authToken}`;
     }
-}
-
-function isLocalPeerAddress(address: string): boolean {
-    const normalized = address.replace(/^::ffff:/, '');
-    if (normalized === '127.0.0.1' || normalized === '::1') {
-        return true;
-    }
-    if (/^10\./.test(normalized) || /^192\.168\./.test(normalized)) {
-        return true;
-    }
-    const match = normalized.match(/^172\.(\d+)\./);
-    return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31);
 }

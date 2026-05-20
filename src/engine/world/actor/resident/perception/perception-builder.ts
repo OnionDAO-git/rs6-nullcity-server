@@ -85,10 +85,7 @@ export class PerceptionBuilder {
         });
     }
 
-    private buildForAnchor(
-        player: Player,
-        options: { id: string; events: Perception['events']; availableActions: boolean },
-    ): Perception {
+    private buildForAnchor(player: Player, options: { id: string; events: Perception['events']; availableActions: boolean }): Perception {
         const visionRange = this.options.visionRange ?? 15;
         const position = player.position;
         const instanceId = player.instance.instanceId;
@@ -221,7 +218,9 @@ export class PerceptionBuilder {
 
     private objectOptions(target: ObjectRef): string[] {
         const config = filestore.configStore.objectStore.getObject(target.objectId);
-        const options = (config?.options || []).filter(option => option && option.toLowerCase() !== 'hidden').map(option => option.toLowerCase());
+        const options = (config?.options || [])
+            .filter(option => option && option.toLowerCase() !== 'hidden')
+            .map(option => option.toLowerCase());
         return options.length > 0 ? options : ['action-1'];
     }
 }

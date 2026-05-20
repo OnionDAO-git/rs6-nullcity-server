@@ -3,6 +3,8 @@ import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
+import type { GameSkillContext } from '../knowledge/game-skill-context';
+import { resolveSparkModules, sparkModuleIdentity, type SparkModule, type SparkModuleIdentity } from '../spark/modules';
 import { Spark, type SparkTickResult } from '../spark/spark';
 import { BasicAgentThinkingModule } from './basic-agent-thinking-module';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
@@ -10,7 +12,7 @@ import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 export type ThoughtResult = SparkTickResult;
 
 export interface ThinkingModule {
-    think(perception: Perception): Promise<ThoughtResult>;
+    think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult>;
     considerInterrupt(perception: Perception): boolean;
     stop(cause: string): void;
 }
@@ -20,17 +22,51 @@ export interface SparkThinkingModuleOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+    sparkModules?: SparkModule[];
+}
+
+export interface ThinkingModuleSelection {
+    thinking: ThinkingModule;
+    sparkModule?: SparkModuleIdentity;
+    sourceModule?: SparkModule;
 }
 
 export function createThinkingModule(options: SparkThinkingModuleOptions): ThinkingModule {
-    if (options.soul.frontmatter.behavior?.kind === 'basic-agent') {
-        return new BasicAgentThinkingModule({ soul: options.soul, state: options.state });
-    }
-    if (options.soul.frontmatter.behavior?.kind === 'hybrid-agent') {
-        return new HybridAgentThinkingModule(options);
+    return createThinkingModuleSelection(options).thinking;
+}
+
+export function createThinkingModuleSelection(options: SparkThinkingModuleOptions): ThinkingModuleSelection {
+    const hasExplicitModuleStack = options.soul.frontmatter.modules !== undefined;
+    const selectedModules = resolveSparkModules(options.soul.frontmatter.modules, options.sparkModules || []);
+    for (const selected of selectedModules) {
+        const thinking = selected.module.createThinkingModule?.({
+            soul: options.soul,
+            state: options.state,
+            memory: options.memory,
+            llm: options.llm,
+            config: selected.config,
+        });
+        if (thinking) {
+            return {
+                thinking,
+                sparkModule: sparkModuleIdentity(selected.module.manifest),
+                sourceModule: selected.module,
+            };
+        }
     }
 
-    return new SparkThinkingModule(options);
+    if (hasExplicitModuleStack) {
+        throw new Error('Selected SPARK module stack does not provide a thinking module');
+    }
+
+    if (options.soul.frontmatter.behavior?.kind === 'basic-agent') {
+        return { thinking: new BasicAgentThinkingModule({ soul: options.soul, state: options.state }) };
+    }
+    if (options.soul.frontmatter.behavior?.kind === 'hybrid-agent') {
+        return { thinking: new HybridAgentThinkingModule(options) };
+    }
+
+    return { thinking: new SparkThinkingModule(options) };
 }
 
 export class SparkThinkingModule implements ThinkingModule {
@@ -40,7 +76,7 @@ export class SparkThinkingModule implements ThinkingModule {
         this.spark = new Spark(options.soul, options.state, options.memory, options.llm);
     }
 
-    think(perception: Perception): Promise<ThoughtResult> {
+    think(perception: Perception, _gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         return this.spark.tick(perception);
     }
 

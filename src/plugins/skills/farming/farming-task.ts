@@ -153,7 +153,12 @@ export class FarmingTask extends Task {
         const key = patchKey(this.object);
         const state = getPatchState(this.player, key);
         const crop = getCrop(state.crop);
-        if (state.status !== 'planted' || !crop || state.plantedAtTick === undefined || !cropReady(crop, state.plantedAtTick, unixGrowthTick())) {
+        if (
+            state.status !== 'planted' ||
+            !crop ||
+            state.plantedAtTick === undefined ||
+            !cropReady(crop, state.plantedAtTick, unixGrowthTick())
+        ) {
             this.player.sendMessage('There is nothing ready to harvest here.');
             return;
         }

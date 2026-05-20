@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { objectIds } from '@engine/world/config/object-ids';
+import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { parseCompletion } from '../llm/completion-parser';
 import type { LlmClient } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
@@ -76,8 +77,13 @@ const TINDERBOX_ITEM_IDS = new Set([590]);
 const COIN_ITEM_IDS = new Set([995]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
+const WOODCUTTING_AXE_ITEM_IDS = new Set([1351, 1349, 1353, 1361, 1355, 1357, 1359]);
+const SMALL_FISHING_NET_ITEM_IDS = new Set([303]);
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
-const BONE_ITEM_IDS = new Set([526, 528, 530, 532, 534, 536, 2859, 3123, 3125, 3179, 3180, 3181, 3182, 3183, 3185, 3186, 4812, 4813, 4814, 6729, 6812]);
+const FISHING_SPOT_PATTERN = /\bfishing\s+spot\b/i;
+const BONE_ITEM_IDS = new Set([
+    526, 528, 530, 532, 534, 536, 2859, 3123, 3125, 3179, 3180, 3181, 3182, 3183, 3185, 3186, 4812, 4813, 4814, 6729, 6812,
+]);
 const BONE_KEY_PATTERN = /^rs:(bones|bones_.+|.+_bones)$/i;
 const SAFE_BONE_SOURCE_PATTERN = /\b(chicken|cow|goblin|rat|giant rat|spider|man|woman)\b/i;
 const LOW_RISK_BONE_SOURCE_PATTERN = /\b(chicken|cow|rat|giant rat)\b/i;
@@ -85,31 +91,16 @@ const MEDIUM_RISK_BONE_SOURCE_PATTERN = /\b(goblin|spider)\b/i;
 const HUMAN_BONE_SOURCE_PATTERN = /\b(man|woman)\b/i;
 const SAFE_COMBAT_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin)\b/i;
 const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
-const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
-const LEVEL_ONE_TREE_IDS = new Set([
-    ...objectIds.tree.normal.map(tree => tree.default),
-    ...objectIds.tree.dead.map(tree => tree.default),
-]);
-const OPENABLE_OBSTACLE_IDS = new Set([
-    1530,
-    11707,
-    1533,
-    1516,
-    1519,
-    1536,
-    11993,
-    13001,
-    1551,
-    1553,
-    12986,
-    12987,
-]);
+const FOOD_KEY_PATTERN =
+    /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+const LEVEL_ONE_TREE_IDS = new Set([...objectIds.tree.normal.map(tree => tree.default), ...objectIds.tree.dead.map(tree => tree.default)]);
+const OPENABLE_OBSTACLE_IDS = new Set([1530, 11707, 1533, 1516, 1519, 1536, 11993, 13001, 1551, 1553, 12986, 12987]);
 const STUCK_OBSTACLE_RANGE = 2;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
 
-    async think(perception: Perception): Promise<ThoughtResult> {
+    async think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         this.advanceTick(perception);
         this.ensureCognition();
 
@@ -138,7 +129,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (this.shouldRunBrain()) {
-            const brain = await this.runBrain(perception);
+            const brain = await this.runBrain(perception, gameSkill);
             if (brain.action) {
                 return this.result([brain.action], brain.cause, brain.envelopeTokens, brain.nooped);
             }
@@ -153,7 +144,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return this.result([presenceBeacon], 'presence_beacon', 0, false);
         }
 
-        return this.runBody(perception);
+        return this.runBody(perception, gameSkill);
     }
 
     considerInterrupt(_perception: Perception): boolean {
@@ -164,13 +155,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         // Hybrid MVP performs one awaited inference at a time and keeps no abort controller.
     }
 
-    private async runBrain(perception: Perception): Promise<{ action?: AgentAction; cause: string; envelopeTokens: number; nooped: boolean }> {
+    private async runBrain(
+        perception: Perception,
+        gameSkill?: GameSkillContext,
+    ): Promise<{ action?: AgentAction; cause: string; envelopeTokens: number; nooped: boolean }> {
         const behavior = this.behavior();
         const prompt = buildBrainPrompt({
             soul: this.options.soul,
             perception,
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
+            gameSkill,
         });
         const response = await this.options.llm.complete({
             endpoint: this.endpointFor(behavior.brain),
@@ -214,7 +209,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return { cause: parsed.cause || 'brain_goal', envelopeTokens: estimateTokens(prompt), nooped: response.nooped && !parsed.goal };
     }
 
-    private async runBody(perception: Perception): Promise<ThoughtResult> {
+    private async runBody(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         const behavior = this.behavior();
         const visibility = this.visibilityStatus(perception);
         const prompt = buildBodyPrompt({
@@ -222,6 +217,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             perception,
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
+            gameSkill,
             visibility,
         });
         const response = await this.options.llm.complete({
@@ -307,35 +303,48 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
     }
 
-    private fallbackAction(perception: Perception, visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>):
-        | { action: AgentAction; cause: string }
-        | undefined {
+    private fallbackAction(
+        perception: Perception,
+        visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
+    ): { action: AgentAction; cause: string } | undefined {
         const view = perception as HybridPerception;
         const goal = this.activeGoal();
-        const prayerAction = goal && /prayer|bone|bones|bury/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
-            ? prayerTrainingAction(view)
-            : undefined;
+        const prayerAction =
+            goal && /prayer|bone|bones|bury/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
+                ? prayerTrainingAction(view)
+                : undefined;
         if (prayerAction) {
             return { action: prayerAction, cause: prayerAction.cause || 'prayer_bury_bones' };
         }
 
-        const combatAction = goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view, this.pickupCooldowns(), this.options.state.tick) : undefined;
+        const combatAction =
+            goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view, this.pickupCooldowns(), this.options.state.tick) : undefined;
         if (combatAction) {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }
 
-        const fireAction = goal && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
-            ? firemakingAction(view)
-            : undefined;
+        const fishingAction = goal && isStarterFishingGoal(goal) ? starterFishingAction(view) : undefined;
+        if (fishingAction) {
+            return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
+        }
+
+        const fireAction =
+            goal && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
+                ? firemakingAction(view)
+                : undefined;
         if (fireAction) {
             return { action: fireAction, cause: 'firemaking_fallback' };
         }
 
-        const exploreAction = goal && isExplorationGoal(goal)
-            ? explorationAction(view, visibility.anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick)
-            : undefined;
+        const exploreAction =
+            goal && isExplorationGoal(goal)
+                ? explorationAction(view, visibility.anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick)
+                : undefined;
         if (exploreAction) {
-            return { action: exploreAction, cause: exploreAction.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback' };
+            return {
+                action: exploreAction,
+                cause: exploreAction.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback',
+            };
         }
 
         const follow = this.followAction(view);
@@ -392,6 +401,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
 
+        if (isStarterFishingGoal(goal)) {
+            const fishingAction = starterFishingAction(perception);
+            if (fishingAction) {
+                return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
+            }
+        }
+
         if (isWoodcuttingTrainingGoal(goal) && !isFiremakingGoal(goal)) {
             const fireAction = firemakingAction(perception);
             if (fireAction) {
@@ -433,7 +449,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return undefined;
         }
 
-        return explorationAction(perception, this.visibilityAnchor(), this.options.state.resident, this.pickupCooldowns(), this.options.state.tick);
+        return explorationAction(
+            perception,
+            this.visibilityAnchor(),
+            this.options.state.resident,
+            this.pickupCooldowns(),
+            this.options.state.tick,
+        );
     }
 
     private stabilizedMoveAction(
@@ -479,7 +501,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     return { action: recovery, cause: 'stuck_move_recovery' };
                 }
 
-                if (action?.kind === 'move_to' && !sameMoveIntent(action, updated) && this.options.state.tick - updated.startedAtTick < MOVE_COMMIT_TICKS) {
+                if (
+                    action?.kind === 'move_to' &&
+                    !sameMoveIntent(action, updated) &&
+                    this.options.state.tick - updated.startedAtTick < MOVE_COMMIT_TICKS
+                ) {
                     return { action: moveIntentAction(updated, 'continue_move'), cause: 'continue_move' };
                 }
 
@@ -498,7 +524,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return undefined;
     }
 
-    private approachDistantInteraction(actions: AgentAction[], perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+    private approachDistantInteraction(
+        actions: AgentAction[],
+        perception: HybridPerception,
+    ): { action: AgentAction; cause: string } | undefined {
         const action = actions[0];
         if (action?.kind === 'move_to' && typeof action.range === 'number') {
             return undefined;
@@ -565,7 +594,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const explore = explorationAction(perception, anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick);
         return {
-            action: explore ? actionWithCause(explore, 'routine_loop_break') : { kind: 'say', text: 'I have worked this spot for a while. I am going to scout nearby.', cause: 'routine_loop_break' },
+            action: explore
+                ? actionWithCause(explore, 'routine_loop_break')
+                : { kind: 'say', text: 'I have worked this spot for a while. I am going to scout nearby.', cause: 'routine_loop_break' },
             cause: 'routine_loop_break',
         };
     }
@@ -585,7 +616,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return undefined;
         }
 
-        return { kind: 'move_to', target: target.position, range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS, cause: 'follow_player_fallback' };
+        return {
+            kind: 'move_to',
+            target: target.position,
+            range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
+            cause: 'follow_player_fallback',
+        };
     }
 
     private directChatAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
@@ -607,7 +643,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
 
             return {
-                action: { kind: 'move_to', target: speakerPosition, range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS, cause: 'direct_chat_follow' },
+                action: {
+                    kind: 'move_to',
+                    target: speakerPosition,
+                    range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
+                    cause: 'direct_chat_follow',
+                },
                 cause: 'direct_chat_follow',
             };
         }
@@ -629,7 +670,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
 
             return {
-                action: { kind: 'move_to', target: anchor, range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS, cause: 'direct_chat_return_home' },
+                action: {
+                    kind: 'move_to',
+                    target: anchor,
+                    range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
+                    cause: 'direct_chat_return_home',
+                },
                 cause: 'direct_chat_return_home',
             };
         }
@@ -671,14 +717,19 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return {
                 action: item
                     ? { kind: 'interact', target: item, option: 'pick-up', cause: 'direct_chat_pickup' }
-                    : { kind: 'say', text: pickup.query ? `I do not see ${pickup.query} on the ground.` : 'I do not see an item to pick up.' },
+                    : {
+                          kind: 'say',
+                          text: pickup.query ? `I do not see ${pickup.query} on the ground.` : 'I do not see an item to pick up.',
+                      },
                 cause: 'direct_chat_pickup',
             };
         }
 
         const drop = dropIntent(command);
         if (drop) {
-            const slot = drop.query ? findSlot(perception.resident?.inventory || [], item => itemMatchesQuery(item, drop.query!)) : undefined;
+            const slot = drop.query
+                ? findSlot(perception.resident?.inventory || [], item => itemMatchesQuery(item, drop.query!))
+                : undefined;
             return {
                 action: drop.query
                     ? slot === undefined
@@ -692,11 +743,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (isPrayerTrainingIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = prayerGoal(this.options.state.tick);
             return {
-                action:
-                    prayerTrainingAction(perception) || {
-                        kind: 'say',
-                        text: this.statusSpeech(perception, 'I will look for a safe creature, collect bones, then bury them'),
-                    },
+                action: prayerTrainingAction(perception) || {
+                    kind: 'say',
+                    text: this.statusSpeech(perception, 'I will look for a safe creature, collect bones, then bury them'),
+                },
                 cause: 'direct_chat_train_prayer',
             };
         }
@@ -704,11 +754,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (isBuryBonesIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = prayerGoal(this.options.state.tick);
             return {
-                action:
-                    buryBonesAction(perception) || {
-                        kind: 'say',
-                        text: this.statusSpeech(perception, 'I will look for bones to bury'),
-                    },
+                action: buryBonesAction(perception) || {
+                    kind: 'say',
+                    text: this.statusSpeech(perception, 'I will look for bones to bury'),
+                },
                 cause: 'direct_chat_bury_bones',
             };
         }
@@ -716,11 +765,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (isCombatTrainingIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = combatGoal(this.options.state.tick);
             return {
-                action:
-                    combatTrainingAction(perception) || {
-                        kind: 'say',
-                        text: this.statusSpeech(perception, 'I will look for a safe low-level creature to fight'),
-                    },
+                action: combatTrainingAction(perception) || {
+                    kind: 'say',
+                    text: this.statusSpeech(perception, 'I will look for a safe low-level creature to fight'),
+                },
                 cause: 'direct_chat_train_combat',
             };
         }
@@ -729,16 +777,30 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (talk) {
             const target = findActorByName(perception.nearby?.npcs || [], talk);
             return {
-                action: target ? npcTalkAction(perception, target, 'direct_chat_talk') : { kind: 'say', text: `I do not see ${cleanTarget(talk)} from here.` },
+                action: target
+                    ? npcTalkAction(perception, target, 'direct_chat_talk')
+                    : { kind: 'say', text: `I do not see ${cleanTarget(talk)} from here.` },
                 cause: 'direct_chat_talk',
             };
         }
 
         const attack = attackIntent(command);
         if (attack) {
+            if (isLowHealth(perception)) {
+                const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+                return {
+                    action:
+                        foodSlot === undefined
+                            ? { kind: 'say', text: 'I am too hurt to attack without food. I need to heal or retreat first.' }
+                            : { kind: 'eat', slot: foodSlot, cause: 'direct_chat_eat_before_attack' },
+                    cause: 'direct_chat_attack',
+                };
+            }
             const target = findActorByName([...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])], attack);
             return {
-                action: target ? { kind: 'attack', target, cause: 'direct_chat_attack' } : { kind: 'say', text: `I do not see ${cleanTarget(attack)} from here.` },
+                action: target
+                    ? { kind: 'attack', target, cause: 'direct_chat_attack' }
+                    : { kind: 'say', text: `I do not see ${cleanTarget(attack)} from here.` },
                 cause: 'direct_chat_attack',
             };
         }
@@ -766,7 +828,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return {
                 action:
                     slot === undefined
-                        ? { kind: 'say', text: tradeOffer ? `I do not have a spare ${tradeOffer} to offer.` : 'I do not have a safe spare item to offer.' }
+                        ? {
+                              kind: 'say',
+                              text: tradeOffer
+                                  ? `I do not have a spare ${tradeOffer} to offer.`
+                                  : 'I do not have a safe spare item to offer.',
+                          }
                         : { kind: 'trade_offer_item', inventorySlot: slot, amount: 1, cause: 'direct_chat_trade_offer' },
                 cause: 'direct_chat_trade_offer',
             };
@@ -774,7 +841,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         if (isTradeAcceptIntent(command, chat.normalizedText)) {
             return {
-                action: tradeAcceptAction(perception.resident?.activeTrade) || { kind: 'say', text: 'I do not have a trade ready to accept yet.' },
+                action: tradeAcceptAction(perception.resident?.activeTrade) || {
+                    kind: 'say',
+                    text: 'I do not have a trade ready to accept yet.',
+                },
                 cause: 'direct_chat_trade_accept',
             };
         }
@@ -782,7 +852,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (isExploreIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = explorationGoal(this.options.state.tick);
             return {
-                action: explorationAction(perception, this.visibilityAnchor(), this.options.state.resident, this.pickupCooldowns(), this.options.state.tick) || {
+                action: explorationAction(
+                    perception,
+                    this.visibilityAnchor(),
+                    this.options.state.resident,
+                    this.pickupCooldowns(),
+                    this.options.state.tick,
+                ) || {
                     kind: 'say',
                     text: this.statusSpeech(perception, 'I will scout nearby and stay findable'),
                 },
@@ -792,25 +868,32 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         if (isFiremakingIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
+            const action = firemakingAction(perception) || levelOneWoodcuttingAction(perception);
+            return {
+                action: action || missingFiremakingToolAction(perception),
+                cause: 'direct_chat_make_fire',
+            };
+        }
+
+        if (isStarterFishingIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = starterFishingGoal(this.options.state.tick);
             return {
                 action:
-                    firemakingAction(perception) ||
-                    levelOneWoodcuttingAction(perception) || {
-                        kind: 'say',
-                        text: this.statusSpeech(perception, 'I will gather logs, then use the tinderbox to light them'),
-                    },
-                cause: 'direct_chat_make_fire',
+                    starterFishingAction(perception) ||
+                    missingStarterFishingAction(perception, this.statusSpeech(perception, 'I will look for a Fishing spot')),
+                cause: 'direct_chat_fish',
             };
         }
 
         if (isWoodcuttingIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = woodcuttingGoal(this.options.state.tick);
             return {
-                action:
-                    levelOneWoodcuttingAction(perception) || {
-                        kind: 'say',
-                        text: this.statusSpeech(perception, 'I will look for an ordinary tree or dead tree to chop'),
-                    },
+                action: levelOneWoodcuttingAction(perception) || {
+                    kind: 'say',
+                    text: hasWoodcuttingAxe(perception)
+                        ? this.statusSpeech(perception, 'I will look for an ordinary tree or dead tree to chop')
+                        : 'I need an axe before I can chop trees.',
+                },
                 cause: 'direct_chat_chop_wood',
             };
         }
@@ -835,6 +918,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         } else if (isLowHealth(perception) && firstFoodSlot(perception.resident?.inventory || []) === undefined) {
             action = { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' };
+        } else if (isLowHealth(perception)) {
+            const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+            action =
+                foodSlot === undefined
+                    ? { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' }
+                    : { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_retaliating' };
         } else {
             action = { kind: 'attack', target, cause: 'combat_retaliate' };
         }
@@ -922,7 +1011,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false): string {
         const here = perception.resident?.position;
         const next = includeNextStep ? nextStepSuggestion(perception, this.options.state.resident) : undefined;
-        const goal = summarizeGoalForSpeech(this.activeGoal()?.description || 'staying findable and looking for useful actions', Boolean(next));
+        const goal = summarizeGoalForSpeech(
+            this.activeGoal()?.description || 'staying findable and looking for useful actions',
+            Boolean(next),
+        );
         return cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}`) || prefix;
     }
 
@@ -967,7 +1059,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
         const key = JSON.stringify(action);
         const cognition = this.cognition();
-        return cognition.lastBodyActionKey === key && this.options.state.tick - (cognition.lastBodyActionTick || 0) < REPEAT_ACTION_BACKOFF_TICKS;
+        return (
+            cognition.lastBodyActionKey === key &&
+            this.options.state.tick - (cognition.lastBodyActionTick || 0) < REPEAT_ACTION_BACKOFF_TICKS
+        );
     }
 
     private rememberBodyAction(action: AgentAction): void {
@@ -1010,7 +1105,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private shouldRunBody(): boolean {
-        return this.options.state.tick - (this.cognition().lastBodyTick || 0) >= (this.behavior().bodyEveryTicks ?? DEFAULT_BODY_EVERY_TICKS);
+        return (
+            this.options.state.tick - (this.cognition().lastBodyTick || 0) >= (this.behavior().bodyEveryTicks ?? DEFAULT_BODY_EVERY_TICKS)
+        );
     }
 
     private shouldShareGoal(): boolean {
@@ -1185,6 +1282,17 @@ function woodcuttingGoal(tick: number): ActiveGoalState {
     };
 }
 
+function starterFishingGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'catch-starter-fish',
+        description: 'Catch shrimp with a small fishing net at a visible Fishing spot.',
+        steps: ['Carry a small fishing net', 'Find a Fishing spot', 'Move beside it', 'Use the net option'],
+        success: 'A net fishing attempt is underway or raw shrimp are collected.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
 function prayerGoal(tick: number): ActiveGoalState {
     return {
         id: 'train-prayer-with-bones',
@@ -1223,6 +1331,9 @@ function levelOneWoodcuttingAction(perception: HybridPerception): AgentAction | 
     if (!here) {
         return undefined;
     }
+    if (!hasWoodcuttingAxe(perception)) {
+        return undefined;
+    }
 
     const target = (perception.nearby?.objects || [])
         .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
@@ -1236,6 +1347,26 @@ function levelOneWoodcuttingAction(perception: HybridPerception): AgentAction | 
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
+}
+
+function starterFishingAction(perception: HybridPerception): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !hasSmallFishingNet(perception)) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.npcs || [])
+        .filter(isFishingSpot)
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!target) {
+        return undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'starter_fishing_approach' };
+    }
+
+    return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
 }
 
 function findSlot(items: Array<Item | null>, predicate: (item: Item) => boolean): number | undefined {
@@ -1256,6 +1387,48 @@ function isFiremakingLog(item: Item): boolean {
     return FIREMAKING_LOG_ITEM_IDS.has(item.itemId) || FIREMAKING_LOG_KEY_PATTERN.test(item.key || '');
 }
 
+function isWoodcuttingAxe(item: Item): boolean {
+    return WOODCUTTING_AXE_ITEM_IDS.has(item.itemId) || /\b(axe|hatchet)\b/i.test(item.key || '');
+}
+
+function hasWoodcuttingAxe(perception: HybridPerception): boolean {
+    return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isWoodcuttingAxe(item)));
+}
+
+function isSmallFishingNet(item: Item): boolean {
+    return SMALL_FISHING_NET_ITEM_IDS.has(item.itemId) || /\bsmall(_|\s)?fishing(_|\s)?net\b|\bsmall(_|\s)?net\b/i.test(item.key || '');
+}
+
+function hasSmallFishingNet(perception: HybridPerception): boolean {
+    return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isSmallFishingNet(item)));
+}
+
+function isFishingSpot(actor: Actor): boolean {
+    return [actor.name, actor.key, actor.id]
+        .filter((value): value is string => Boolean(value))
+        .some(value => FISHING_SPOT_PATTERN.test(value));
+}
+
+function missingFiremakingToolAction(perception: HybridPerception): AgentAction {
+    const inventory = perception.resident?.inventory || [];
+    const hasLogs = findSlot(inventory, isFiremakingLog) !== undefined;
+    const hasTinderbox = findSlot(inventory, isTinderbox) !== undefined;
+    if (!hasLogs && !hasWoodcuttingAxe(perception)) {
+        return { kind: 'say', text: 'I need an axe or logs before I can make a fire from that tree.' };
+    }
+    if (!hasTinderbox) {
+        return { kind: 'say', text: 'I need a tinderbox before I can light logs.' };
+    }
+    return { kind: 'say', text: 'I will gather logs, then use the tinderbox to light them.' };
+}
+
+function missingStarterFishingAction(perception: HybridPerception, missingSpotText: string): AgentAction {
+    if (!hasSmallFishingNet(perception)) {
+        return { kind: 'say', text: 'I need a small fishing net before I can catch shrimp.' };
+    }
+    return { kind: 'say', text: missingSpotText };
+}
+
 function isBones(item: Item): boolean {
     return BONE_ITEM_IDS.has(item.itemId) || BONE_KEY_PATTERN.test(item.key || '');
 }
@@ -1269,7 +1442,11 @@ function buryBonesAction(perception: HybridPerception): AgentAction | undefined 
 
     const bones = (perception.nearby?.worldItems || [])
         .filter(isBones)
-        .sort((a, b) => distance(perception.resident?.position || a.position, a.position) - distance(perception.resident?.position || b.position, b.position))[0];
+        .sort(
+            (a, b) =>
+                distance(perception.resident?.position || a.position, a.position) -
+                distance(perception.resident?.position || b.position, b.position),
+        )[0];
     if (bones) {
         return { kind: 'interact', target: bones, option: 'pick-up', cause: 'prayer_pickup_bones' };
     }
@@ -1306,7 +1483,11 @@ function prayerTrainingAction(perception: HybridPerception): AgentAction | undef
     return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
 }
 
-function combatTrainingAction(perception: HybridPerception, pickupCooldowns?: Record<string, number>, currentTick?: number): AgentAction | undefined {
+function combatTrainingAction(
+    perception: HybridPerception,
+    pickupCooldowns?: Record<string, number>,
+    currentTick?: number,
+): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
@@ -1341,7 +1522,11 @@ function combatTrainingAction(perception: HybridPerception, pickupCooldowns?: Re
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
 }
 
-function combatLootOrPrayerAction(perception: HybridPerception, pickupCooldowns?: Record<string, number>, currentTick?: number): AgentAction | undefined {
+function combatLootOrPrayerAction(
+    perception: HybridPerception,
+    pickupCooldowns?: Record<string, number>,
+    currentTick?: number,
+): AgentAction | undefined {
     const bonesSlot = findSlot(perception.resident?.inventory || [], isBones);
     if (bonesSlot !== undefined) {
         return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'combat_bury_looted_bones' };
@@ -1361,12 +1546,10 @@ function safeBoneSourceTarget(perception: HybridPerception): Actor | undefined {
         return undefined;
     }
 
-    return (perception.nearby?.npcs || [])
-        .filter(isSafeBoneSource)
-        .sort((a, b) => {
-            const priority = boneSourcePriority(a) - boneSourcePriority(b);
-            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-        })[0];
+    return (perception.nearby?.npcs || []).filter(isSafeBoneSource).sort((a, b) => {
+        const priority = boneSourcePriority(a) - boneSourcePriority(b);
+        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+    })[0];
 }
 
 function isSafeBoneSource(actor: Actor): boolean {
@@ -1396,12 +1579,10 @@ function safeCombatTarget(perception: HybridPerception): Actor | undefined {
         return undefined;
     }
 
-    return (perception.nearby?.npcs || [])
-        .filter(isSafeCombatTarget)
-        .sort((a, b) => {
-            const priority = combatTargetPriority(a) - combatTargetPriority(b);
-            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-        })[0];
+    return (perception.nearby?.npcs || []).filter(isSafeCombatTarget).sort((a, b) => {
+        const priority = combatTargetPriority(a) - combatTargetPriority(b);
+        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+    })[0];
 }
 
 function isSafeCombatTarget(actor: Actor): boolean {
@@ -1441,6 +1622,12 @@ function isWoodcuttingTrainingGoal(goal: ActiveGoalState): boolean {
     return /woodcut|chop|tree|gather logs/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
+function isStarterFishingGoal(goal: ActiveGoalState): boolean {
+    return /fish|fishing|shrimp|anchov|small net|small_fishing_net|fishing spot/i.test(
+        `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`,
+    );
+}
+
 function isFiremakingGoal(goal: ActiveGoalState): boolean {
     return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
 }
@@ -1474,7 +1661,11 @@ function explorationAction(
         if (distance(here, object.position) > 2) {
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
-        return { kind: 'say', text: `I am checking the landmark at ${object.position.x},${object.position.y}.`, cause: 'explore_visible_object' };
+        return {
+            kind: 'say',
+            text: `I am checking the landmark at ${object.position.x},${object.position.y}.`,
+            cause: 'explore_visible_object',
+        };
     }
 
     const item = (perception.nearby?.worldItems || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -1536,7 +1727,13 @@ function inventoryHasFreeSlot(inventory: Array<Item | null>): boolean {
 }
 
 function isUsefulGroundItem(item: Item): boolean {
-    return COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '') || isFiremakingLog(item) || isBones(item) || FOOD_KEY_PATTERN.test(item.key || '');
+    return (
+        COIN_ITEM_IDS.has(item.itemId) ||
+        /coins?/i.test(item.key || '') ||
+        isFiremakingLog(item) ||
+        isBones(item) ||
+        FOOD_KEY_PATTERN.test(item.key || '')
+    );
 }
 
 function usefulGroundItemPriority(item: Item): number {
@@ -1603,7 +1800,10 @@ function worldItemLike(value: unknown): WorldItem | undefined {
 }
 
 function normalizeActorId(id: string): string {
-    return id.toLowerCase().replace(/^player:/, '').replace(/^resident:/, '');
+    return id
+        .toLowerCase()
+        .replace(/^player:/, '')
+        .replace(/^resident:/, '');
 }
 
 function explorationPatrolTarget(here: Pos, anchor?: Pos): Pos {
@@ -1643,6 +1843,13 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string): 
     const safeTarget = safeCombatTarget(perception);
     if (safeTarget) {
         return `fight the safe ${actorName(safeTarget)} at ${safeTarget.position.x},${safeTarget.position.y}.`;
+    }
+
+    const fishingSpot = (perception.nearby?.npcs || [])
+        .filter(isFishingSpot)
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (fishingSpot && hasSmallFishingNet(perception)) {
+        return `fish at ${fishingSpot.position.x},${fishingSpot.position.y} with my small net.`;
     }
 
     const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -1719,9 +1926,11 @@ function positionKey(position: Pos): string {
     return `${position.x},${position.y},${position.level}`;
 }
 
-function latestAddressedChat(perception: HybridPerception, commandPrefix: string, lastKey: string | undefined):
-    | { key: string; normalizedText: string; from?: Actor }
-    | undefined {
+function latestAddressedChat(
+    perception: HybridPerception,
+    commandPrefix: string,
+    lastKey: string | undefined,
+): { key: string; normalizedText: string; from?: Actor } | undefined {
     const events = perception.events || [];
     for (let index = events.length - 1; index >= 0; index -= 1) {
         const event = events[index];
@@ -1759,15 +1968,24 @@ function addressedCommand(text: string, commandPrefix: string): string {
 }
 
 function isFollowIntent(command: string, fullText: string): boolean {
-    return /^(follow me|follow|come here|come to me|keep up|guard me|guard)\b/.test(command) || /\b(follow me|come here|come to me)\b/.test(fullText);
+    return (
+        /^(follow me|follow|come here|come to me|keep up|guard me|guard)\b/.test(command) ||
+        /\b(follow me|come here|come to me)\b/.test(fullText)
+    );
 }
 
 function isReturnHomeIntent(command: string, fullText: string): boolean {
-    return /^(return home|go home|home|return to start|go to start|back to anchor)\b/.test(command) || /\b(return home|go home|return to start|go to start|back to anchor)\b/.test(fullText);
+    return (
+        /^(return home|go home|home|return to start|go to start|back to anchor)\b/.test(command) ||
+        /\b(return home|go home|return to start|go to start|back to anchor)\b/.test(fullText)
+    );
 }
 
 function isStopIntent(command: string, fullText: string): boolean {
-    return /^(stop|pause|wait|hold position|cancel goal|clear goal)\b/.test(command) || /\b(cancel goal|clear goal|hold position)\b/.test(fullText);
+    return (
+        /^(stop|pause|wait|hold position|cancel goal|clear goal)\b/.test(command) ||
+        /\b(cancel goal|clear goal|hold position)\b/.test(fullText)
+    );
 }
 
 function isStatusIntent(command: string, fullText: string): boolean {
@@ -1792,11 +2010,24 @@ function isInventoryIntent(command: string, fullText: string): boolean {
 }
 
 function isFiremakingIntent(command: string, fullText: string): boolean {
-    return /^(make a fire|light a fire|start a fire|burn logs|firemaking)\b/.test(command) || /\b(make a fire|light a fire|start a fire|firemaking)\b/.test(fullText);
+    return (
+        /^(make a fire|light a fire|start a fire|burn logs|firemaking)\b/.test(command) ||
+        /\b(make a fire|light a fire|start a fire|firemaking)\b/.test(fullText)
+    );
 }
 
 function isWoodcuttingIntent(command: string, fullText: string): boolean {
-    return /^(chop wood|cut wood|chop a tree|cut a tree|woodcutting|gather logs)\b/.test(command) || /\b(chop wood|cut wood|woodcutting|gather logs)\b/.test(fullText);
+    return (
+        /^(chop wood|cut wood|chop a tree|cut a tree|woodcutting|gather logs)\b/.test(command) ||
+        /\b(chop wood|cut wood|woodcutting|gather logs)\b/.test(fullText)
+    );
+}
+
+function isStarterFishingIntent(command: string, fullText: string): boolean {
+    return (
+        /^(fish|go fish|go fishing|catch fish|catch shrimp|fishing|net fish)\b/.test(command) ||
+        /\b(catch shrimp|go fishing|small net fishing)\b/.test(fullText)
+    );
 }
 
 function isBuryBonesIntent(command: string, fullText: string): boolean {
@@ -1804,7 +2035,10 @@ function isBuryBonesIntent(command: string, fullText: string): boolean {
 }
 
 function isPrayerTrainingIntent(command: string, fullText: string): boolean {
-    return /^(train prayer|prayer training|combat prayer|get bones|collect bones|prayer)\b/.test(command) || /\b(train prayer|prayer training|combat prayer|get bones|collect bones)\b/.test(fullText);
+    return (
+        /^(train prayer|prayer training|combat prayer|get bones|collect bones|prayer)\b/.test(command) ||
+        /\b(train prayer|prayer training|combat prayer|get bones|collect bones)\b/.test(fullText)
+    );
 }
 
 function isCombatTrainingIntent(command: string, fullText: string): boolean {
@@ -1941,7 +2175,7 @@ function safeTradeOfferSlot(inventory: Array<Item | null>, query?: string): numb
 }
 
 function isEssentialTool(item: Item): boolean {
-    return isTinderbox(item) || ESSENTIAL_TOOL_KEY_PATTERN.test(item.key || '');
+    return isTinderbox(item) || isSmallFishingNet(item) || ESSENTIAL_TOOL_KEY_PATTERN.test(item.key || '');
 }
 
 function tradeRequestOrApproach(perception: HybridPerception, target: Actor | undefined, cause: string): AgentAction | undefined {
@@ -1982,6 +2216,13 @@ function itemMatchesQuery(item: Item | null, query: string): boolean {
 }
 
 function describeSurroundings(perception: HybridPerception): string {
+    const fishingSpot = (perception.nearby?.npcs || []).find(isFishingSpot);
+    if (fishingSpot) {
+        return hasSmallFishingNet(perception)
+            ? `I see a Fishing spot at ${fishingSpot.position.x},${fishingSpot.position.y}. I can use my small fishing net there.`
+            : `I see a Fishing spot at ${fishingSpot.position.x},${fishingSpot.position.y}. I need a small fishing net before I can use it.`;
+    }
+
     const npc = perception.nearby?.npcs?.[0];
     if (npc) {
         return `I see ${actorName(npc)} nearby at ${npc.position.x},${npc.position.y}. I can talk, fight if needed, pick up items, or explore.`;
@@ -2024,10 +2265,7 @@ function describeInventory(perception: HybridPerception): string {
 }
 
 function itemLabel(item: Item): string {
-    return (item.key || `item ${item.itemId}`)
-        .replace(/^rs:/i, '')
-        .replace(/_/g, ' ')
-        .trim();
+    return (item.key || `item ${item.itemId}`).replace(/^rs:/i, '').replace(/_/g, ' ').trim();
 }
 
 function fleeTarget(perception: HybridPerception): Pos {
@@ -2078,12 +2316,18 @@ function cleanSpeech(text: string | undefined): string | undefined {
 }
 
 function summarizeGoalForSpeech(text: string, reserveSpaceForNextStep: boolean): string {
-    const clean = text.trim().replace(/\s+/g, ' ').replace(/[.!?]+$/g, '');
+    const clean = text
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(/[.!?]+$/g, '');
     const max = reserveSpaceForNextStep ? 96 : 160;
     if (clean.length <= max) {
         return clean;
     }
-    return `${clean.slice(0, max - 3).trimEnd().replace(/[,:;.!?]+$/g, '')}...`;
+    return `${clean
+        .slice(0, max - 3)
+        .trimEnd()
+        .replace(/[,:;.!?]+$/g, '')}...`;
 }
 
 function goalId(description: string): string {
@@ -2122,7 +2366,11 @@ function isMoveTo(action: AgentAction, target: Pos | undefined): boolean {
 }
 
 function actionTargetPosition(action: AgentAction): Pos | undefined {
-    if (!['interact', 'use_item_on', 'attack', 'trade_request'].includes(action.kind) || !('target' in action) || !isRecord(action.target)) {
+    if (
+        !['interact', 'use_item_on', 'attack', 'trade_request'].includes(action.kind) ||
+        !('target' in action) ||
+        !isRecord(action.target)
+    ) {
         return undefined;
     }
 

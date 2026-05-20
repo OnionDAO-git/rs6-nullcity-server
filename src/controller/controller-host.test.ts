@@ -6,7 +6,9 @@ import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
 import type { MemoryStore } from './memory/memory-store';
 import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
+import type { ResidentRuntime } from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
+import type { SparkModule } from './spark/modules';
 import type { GatewayClient } from './transport/gateway-client';
 import type { ConnectResidentPayload, CreateResidentPayload, ResidentSummary } from './transport/message-codecs';
 
@@ -134,6 +136,90 @@ describe('ControllerHost reconcile lifecycle', () => {
 
         await host.stop();
     });
+
+    it('passes configured SPARK modules into created runtimes', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: { sparkModules?: SparkModule[] }) => {
+            void options;
+            return runtime;
+        });
+        const sparkModules = [sparkModule('onion.custom')];
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory, sparkModules });
+
+        await host.start();
+
+        expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ sparkModules }));
+
+        await host.stop();
+    });
+
+    it('uses the built-in standard SPARK module registry by default', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: { sparkModules?: SparkModule[] }) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory });
+
+        await host.start();
+
+        const runtimeOptions = runtimeFactory.mock.calls[0]?.[0];
+        expect(runtimeOptions).toBeDefined();
+        expect(runtimeOptions.sparkModules?.map(module => module.manifest.id)).toContain('onion.runescape.standard');
+
+        await host.stop();
+    });
+
+    it('flushes game-skill feedback before stopping', async () => {
+        const gateway = new FakeGateway();
+        const gameSkill = {
+            buildContext: jest.fn(() => ({ knowledgeResults: [], workflowAvailability: [], brainSection: '', bodySection: '' })),
+            observeAttempt: jest.fn(),
+            flush: jest.fn(async () => undefined),
+        };
+        const host = new ControllerHost(config(), { ...dependencies(gateway), gameSkill });
+
+        await host.start();
+        await host.stop();
+
+        expect(gameSkill.flush).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits for in-flight perception handlers before flushing game-skill feedback', async () => {
+        const gateway = new FakeGateway();
+        const gameSkill = {
+            buildContext: jest.fn(() => ({ knowledgeResults: [], workflowAvailability: [], brainSection: '', bodySection: '' })),
+            observeAttempt: jest.fn(),
+            flush: jest.fn(async () => undefined),
+        };
+        const deps = dependencies(gateway);
+        let releasePerception!: () => void;
+        const perceptionDone = new Promise<void>(resolve => {
+            releasePerception = resolve;
+        });
+        const runtime = {
+            onPerception: jest.fn(async () => {
+                await perceptionDone;
+            }),
+            onEvent: jest.fn(),
+            stop: jest.fn(),
+        } as unknown as ResidentRuntime;
+        const host = new ControllerHost(config(), { ...deps, gameSkill, runtimeFactory: jest.fn(() => runtime) });
+
+        await host.start();
+        gateway.emit('perception', 'resident:res:pip', { tick: 1, events: [] });
+        await Promise.resolve();
+        const stop = host.stop();
+        await Promise.resolve();
+
+        expect(gameSkill.flush).not.toHaveBeenCalled();
+        releasePerception();
+        await stop;
+
+        expect(gameSkill.flush).toHaveBeenCalledTimes(1);
+    });
 });
 
 function dependencies(gateway: FakeGateway): ControllerHostOptions {
@@ -177,14 +263,36 @@ function dependencies(gateway: FakeGateway): ControllerHostOptions {
     };
 }
 
+function fakeRuntime(): ResidentRuntime {
+    return {
+        onPerception: jest.fn(async () => undefined),
+        onEvent: jest.fn(),
+        stop: jest.fn(),
+    } as unknown as ResidentRuntime;
+}
+
+function sparkModule(id: string): SparkModule {
+    return {
+        manifest: {
+            id,
+            version: '0.1.0',
+            displayName: id,
+            capabilities: ['thinking'],
+            risk: 'reviewed',
+        },
+    };
+}
+
 function config(): ControllerConfig {
     return {
+        controller: { instanceId: 'test-instance' },
         residents: ['res:pip'],
         gateway: { url: 'ws://controller-host.test', controllerId: 'test-controller' },
         inference: { maxConcurrent: 1 },
         souls: { dir: '/tmp/souls' },
         memory: { dir: '/tmp/memory', qmdBin: '' },
         logging: { dir: '/tmp/logs', fullPerceptions: false },
+        knowledge: { dir: '/tmp/knowledge', enableSuggestions: true, emitStdout: false, storageMode: 'ephemeral' },
         llm: { endpoints: {} },
     };
 }

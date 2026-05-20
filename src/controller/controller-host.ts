@@ -1,11 +1,15 @@
 import { ControllerConfig } from './config';
+import { createDefaultGameSkillEntries } from './knowledge/game-skill-entries';
+import { GameSkillService } from './knowledge/game-skill-context';
+import { KnowledgeSuggestionStore } from './knowledge/suggestions';
 import { LlmClient } from './llm/llm-client';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryStore } from './memory/memory-store';
 import { RuntimeStateStore } from './memory/runtime-state';
-import { ResidentRuntime } from './resident-runtime';
+import { ResidentRuntime, type ResidentRuntimeGameSkill } from './resident-runtime';
 import { SoulLoader } from './soul/soul-loader';
+import { standardSparkModules, type SparkModule } from './spark';
 import { GatewayClient } from './transport/gateway-client';
 
 export interface ControllerHostOptions {
@@ -18,6 +22,9 @@ export interface ControllerHostOptions {
     llm?: LlmClient;
     actionLog?: ActionLog;
     inferenceLog?: InferenceLog;
+    gameSkill?: ResidentRuntimeGameSkill;
+    sparkModules?: SparkModule[];
+    runtimeFactory?: (options: ConstructorParameters<typeof ResidentRuntime>[0]) => ResidentRuntime;
 }
 
 export class ControllerHost {
@@ -30,11 +37,14 @@ export class ControllerHost {
     private readonly llm: LlmClient;
     private readonly actionLog: ActionLog;
     private readonly inferenceLog: InferenceLog;
+    private readonly gameSkill: ResidentRuntimeGameSkill;
+    private readonly sparkModules: SparkModule[];
     private reconcileTimer?: NodeJS.Timeout;
     private running = false;
     private lifecycleInFlight?: Promise<void>;
     private reconcileInFlight?: Promise<void>;
     private reconcileQueued = false;
+    private readonly inFlightPerceptions = new Set<Promise<void>>();
 
     constructor(
         private readonly config: ControllerConfig,
@@ -55,6 +65,23 @@ export class ControllerHost {
         this.llm = options.llm || new LlmClient(config.llm.endpoints, config.inference.maxConcurrent);
         this.actionLog = options.actionLog || new ActionLog(config.logging.dir);
         this.inferenceLog = options.inferenceLog || new InferenceLog(config.logging.dir, Boolean(options.logEnvelope));
+        this.sparkModules = options.sparkModules || standardSparkModules();
+        this.gameSkill =
+            options.gameSkill ||
+            new GameSkillService({
+                controllerId: config.gateway.controllerId,
+                instanceId: config.controller.instanceId,
+                entries: createDefaultGameSkillEntries(config.knowledge.runebenchWikiDir),
+                suggestionStore: config.knowledge.enableSuggestions
+                    ? new KnowledgeSuggestionStore({
+                          root: config.knowledge.dir,
+                          controllerId: config.gateway.controllerId,
+                          instanceId: config.controller.instanceId,
+                          emitStdout: config.knowledge.emitStdout,
+                          storageMode: config.knowledge.storageMode,
+                      })
+                    : undefined,
+            });
         this.bindGatewayEvents();
     }
 
@@ -76,6 +103,8 @@ export class ControllerHost {
         }
 
         this.stopAllRuntimes('controller_stop');
+        await this.drainInFlightPerceptions();
+        await this.gameSkill.flush?.();
         this.gateway.close();
     }
 
@@ -160,17 +189,32 @@ export class ControllerHost {
             return;
         }
 
+        const runtimeOptions = {
+            soul,
+            gateway: this.gateway,
+            memory: this.memory,
+            stateStore: this.stateStore,
+            llm: this.llm,
+            actionLog: this.actionLog,
+            inferenceLog: this.inferenceLog,
+            gameSkill: this.gameSkill,
+            sparkModules: this.sparkModules,
+        };
         this.runtimes.set(
             soul.frontmatter.name,
-            new ResidentRuntime({
-                soul,
-                gateway: this.gateway,
-                memory: this.memory,
-                stateStore: this.stateStore,
-                llm: this.llm,
-                actionLog: this.actionLog,
-                inferenceLog: this.inferenceLog,
-            }),
+            this.options.runtimeFactory
+                ? this.options.runtimeFactory(runtimeOptions)
+                : new ResidentRuntime({
+                      soul,
+                      gateway: this.gateway,
+                      memory: this.memory,
+                      stateStore: this.stateStore,
+                      llm: this.llm,
+                      actionLog: this.actionLog,
+                      inferenceLog: this.inferenceLog,
+                      gameSkill: this.gameSkill,
+                      sparkModules: this.sparkModules,
+                  }),
         );
     }
 
@@ -181,10 +225,13 @@ export class ControllerHost {
             }
         });
         this.gateway.on('perception', (residentId, perception) => {
-            this.runtimes
-                .get(this.runtimeName(residentId))
-                ?.onPerception(perception)
-                .catch(error => this.handleError(error));
+            const runtime = this.runtimes.get(this.runtimeName(residentId));
+            if (!runtime) {
+                return;
+            }
+            const task = runtime.onPerception(perception).catch(error => this.handleError(error));
+            this.inFlightPerceptions.add(task);
+            task.finally(() => this.inFlightPerceptions.delete(task));
         });
         this.gateway.on('event', (residentId, event) => {
             this.runtimes.get(this.runtimeName(residentId))?.onEvent(event);
@@ -234,6 +281,12 @@ export class ControllerHost {
 
         runtime.stop(cause);
         this.runtimes.delete(name);
+    }
+
+    private async drainInFlightPerceptions(): Promise<void> {
+        while (this.inFlightPerceptions.size > 0) {
+            await Promise.allSettled([...this.inFlightPerceptions]);
+        }
     }
 
     private handleError(error: unknown): void {

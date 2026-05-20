@@ -14,6 +14,6 @@ export class IdleBrain implements Brain {
             }
         }
 
-        return [{ kind: 'noop' }];
+        return [];
     }
 }

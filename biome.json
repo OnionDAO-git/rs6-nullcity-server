@@ -7,7 +7,7 @@
     },
     "files": {
         "ignoreUnknown": false,
-        "ignore": []
+        "ignore": ["data/config/xteas/**/*.json"]
     },
     "formatter": {
         "enabled": true,

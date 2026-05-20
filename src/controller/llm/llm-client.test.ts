@@ -49,7 +49,7 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
-    it('keeps JSON object fallback for non-retryable schema compatibility failures', async () => {
+    it('uses text fallback for non-retryable schema compatibility failures', async () => {
         const fetchMock = jest
             .fn()
             .mockResolvedValueOnce(new Response('{}', { status: 400, statusText: 'Bad Request' }))
@@ -62,7 +62,7 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(response.text).toBe('fallback ok');
         expect(fetchMock).toHaveBeenCalledTimes(2);
         const fallbackBody = JSON.parse(String(fetchMock.mock.calls[1][1].body));
-        expect(fallbackBody.response_format).toEqual({ type: 'json_object' });
+        expect(fallbackBody.response_format).toEqual({ type: 'text' });
     });
 
     it('uses reasoning content when reasoning models leave message content empty', async () => {

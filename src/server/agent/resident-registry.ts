@@ -51,7 +51,11 @@ export class ResidentRegistry {
         return [...names].sort().map(name => this.summary(name));
     }
 
-    public create(name: string, spawnPosition?: { x: number; y: number; level?: number }, options: ResidentCreateOptions = {}): ResidentSummary {
+    public create(
+        name: string,
+        spawnPosition?: { x: number; y: number; level?: number },
+        options: ResidentCreateOptions = {},
+    ): ResidentSummary {
         name = this.assertValidName(name);
         if (playerExists(name, { saveDir: this.saveDir })) {
             throw new Error('ENAME_TAKEN');
