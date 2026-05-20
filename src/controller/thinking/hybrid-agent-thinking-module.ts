@@ -59,6 +59,9 @@ const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
 const BONE_ITEM_IDS = new Set([526, 528, 530, 532, 534, 536, 2859, 3123, 3125, 3179, 3180, 3181, 3182, 3183, 3185, 3186, 4812, 4813, 4814, 6729, 6812]);
 const BONE_KEY_PATTERN = /^rs:(bones|bones_.+|.+_bones)$/i;
 const SAFE_BONE_SOURCE_PATTERN = /\b(chicken|cow|goblin|rat|giant rat|spider|man|woman)\b/i;
+const LOW_RISK_BONE_SOURCE_PATTERN = /\b(chicken|cow|rat|giant rat)\b/i;
+const MEDIUM_RISK_BONE_SOURCE_PATTERN = /\b(goblin|spider)\b/i;
+const HUMAN_BONE_SOURCE_PATTERN = /\b(man|woman)\b/i;
 const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
 const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LEVEL_ONE_TREE_IDS = new Set([
@@ -921,7 +924,10 @@ function safeBoneSourceTarget(perception: HybridPerception): Actor | undefined {
 
     return (perception.nearby?.npcs || [])
         .filter(isSafeBoneSource)
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        .sort((a, b) => {
+            const priority = boneSourcePriority(a) - boneSourcePriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
 }
 
 function isSafeBoneSource(actor: Actor): boolean {
@@ -929,6 +935,20 @@ function isSafeBoneSource(actor: Actor): boolean {
         return false;
     }
     return SAFE_BONE_SOURCE_PATTERN.test([actor.name, actor.key, actor.id].filter(Boolean).join(' '));
+}
+
+function boneSourcePriority(actor: Actor): number {
+    const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
+    if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 0;
+    }
+    if (MEDIUM_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 1;
+    }
+    if (HUMAN_BONE_SOURCE_PATTERN.test(label)) {
+        return 2;
+    }
+    return 3;
 }
 
 function isExplorationGoal(goal: ActiveGoalState): boolean {

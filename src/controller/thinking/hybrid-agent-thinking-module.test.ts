@@ -747,6 +747,26 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('prefers a lower-risk animal bone source over an adjacent human for prayer training', async () => {
+        const man = npc('Man', 3219, 3201);
+        const chicken = npc('Chicken', 3225, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [man, chicken],
+                events: [chatFromCodex('agent train prayer', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: chicken.position, range: 1, cause: 'prayer_approach_safe_bone_source' }]);
+        expect(result.cause).toBe('direct_chat_train_prayer');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('attacks an adjacent safe bone source when a prayer goal has no bones yet', async () => {
         const rat = npc('Rat', 3219, 3201);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
