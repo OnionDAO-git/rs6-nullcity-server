@@ -71,6 +71,7 @@ const SAFE_BONE_SOURCE_PATTERN = /\b(chicken|cow|goblin|rat|giant rat|spider|man
 const LOW_RISK_BONE_SOURCE_PATTERN = /\b(chicken|cow|rat|giant rat)\b/i;
 const MEDIUM_RISK_BONE_SOURCE_PATTERN = /\b(goblin|spider)\b/i;
 const HUMAN_BONE_SOURCE_PATTERN = /\b(man|woman)\b/i;
+const SAFE_COMBAT_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin)\b/i;
 const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
 const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LEVEL_ONE_TREE_IDS = new Set([
@@ -275,6 +276,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: prayerAction, cause: prayerAction.cause || 'prayer_bury_bones' };
         }
 
+        const combatAction = goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view) : undefined;
+        if (combatAction) {
+            return { action: combatAction, cause: combatAction.cause || 'combat_training' };
+        }
+
         const fireAction = goal && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
             ? firemakingAction(view)
             : undefined;
@@ -313,6 +319,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const prayerAction = prayerTrainingAction(perception);
             if (prayerAction) {
                 return { action: prayerAction, cause: prayerAction.cause || 'prayer_training' };
+            }
+        }
+
+        if (isCombatTrainingGoal(goal)) {
+            const combatAction = combatTrainingAction(perception);
+            if (combatAction) {
+                return { action: combatAction, cause: combatAction.cause || 'combat_training' };
             }
         }
 
@@ -477,6 +490,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                         text: this.statusSpeech(perception, 'I will look for bones to bury'),
                     },
                 cause: 'direct_chat_bury_bones',
+            };
+        }
+
+        if (isCombatTrainingIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = combatGoal(this.options.state.tick);
+            return {
+                action:
+                    combatTrainingAction(perception) || {
+                        kind: 'say',
+                        text: this.statusSpeech(perception, 'I will look for a safe low-level creature to fight'),
+                    },
+                cause: 'direct_chat_train_combat',
             };
         }
 
@@ -889,6 +914,17 @@ function prayerGoal(tick: number): ActiveGoalState {
     };
 }
 
+function combatGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'train-combat-safely',
+        description: 'Train combat on safe low-level NPCs and stop when hurt.',
+        steps: ['Find a safe Chicken, Rat, Cow, or Goblin', 'Move beside it', 'Attack when healthy', 'Eat or stop when hurt'],
+        success: 'A safe creature is attacked while Agent remains healthy enough to continue.',
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
 function explorationGoal(tick: number): ActiveGoalState {
     return {
         id: 'scout-nearby-area',
@@ -988,6 +1024,34 @@ function prayerTrainingAction(perception: HybridPerception): AgentAction | undef
     return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
 }
 
+function combatTrainingAction(perception: HybridPerception): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    if (isLowHealth(perception)) {
+        const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+        return foodSlot === undefined
+            ? { kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' }
+            : { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_training' };
+    }
+
+    const target = safeCombatTarget(perception);
+    if (!target) {
+        const waypoint = nearestPrayerTrainingWaypoint(here);
+        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
+            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
+            : undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'combat_approach_safe_target' };
+    }
+
+    return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
+}
+
 function nearestPrayerTrainingWaypoint(here: Pos): Pos {
     return [...PRAYER_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
 }
@@ -1027,8 +1091,44 @@ function boneSourcePriority(actor: Actor): number {
     return 3;
 }
 
+function safeCombatTarget(perception: HybridPerception): Actor | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    return (perception.nearby?.npcs || [])
+        .filter(isSafeCombatTarget)
+        .sort((a, b) => {
+            const priority = combatTargetPriority(a) - combatTargetPriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
+}
+
+function isSafeCombatTarget(actor: Actor): boolean {
+    if (actor.kind !== 'npc' || actor.hpFraction === 0) {
+        return false;
+    }
+    return SAFE_COMBAT_TARGET_PATTERN.test([actor.name, actor.key, actor.id].filter(Boolean).join(' '));
+}
+
+function combatTargetPriority(actor: Actor): number {
+    const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
+    if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 0;
+    }
+    if (MEDIUM_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 1;
+    }
+    return 2;
+}
+
 function isExplorationGoal(goal: ActiveGoalState): boolean {
     return /explore|scout|survey|look around|nearby|landmark|area/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+function isCombatTrainingGoal(goal: ActiveGoalState): boolean {
+    return /combat|fight|fighting|attack|melee/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
 function explorationAction(perception: HybridPerception, anchor?: Pos): AgentAction | undefined {
@@ -1162,6 +1262,13 @@ function isBuryBonesIntent(command: string, fullText: string): boolean {
 
 function isPrayerTrainingIntent(command: string, fullText: string): boolean {
     return /^(train prayer|prayer training|combat prayer|get bones|collect bones|prayer)\b/.test(command) || /\b(train prayer|prayer training|combat prayer|get bones|collect bones)\b/.test(fullText);
+}
+
+function isCombatTrainingIntent(command: string, fullText: string): boolean {
+    return (
+        /^(train combat|combat training|practice combat|train melee|melee training|fight something|fight safely)\b/.test(command) ||
+        /\b(train combat|combat training|practice combat|train melee|melee training|fight something|fight safely)\b/.test(fullText)
+    );
 }
 
 function attackIntent(command: string): string | undefined {

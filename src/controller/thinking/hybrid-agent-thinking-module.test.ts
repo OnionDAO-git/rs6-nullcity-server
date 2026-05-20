@@ -593,6 +593,109 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('starts combat training by approaching a safe low-level NPC without inference', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const chicken = npc('Chicken', 3224, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [goblin, chicken],
+                events: [chatFromCodex('agent train combat', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: chicken.position, range: 1, cause: 'combat_approach_safe_target' }]);
+        expect(result.cause).toBe('direct_chat_train_combat');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('attacks an adjacent safe target for an active combat training goal', async () => {
+        const rat = npc('Rat', 3219, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs and retreat if hurt.',
+                steps: ['find a chicken or rat', 'attack when healthy', 'eat or stop when hurt'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                npcs: [rat],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'combat_attack_safe_target' }]);
+        expect(result.cause).toBe('combat_attack_safe_target');
+    });
+
+    it('eats before continuing combat training when hurt and carrying food', async () => {
+        const chicken = npc('Chicken', 3219, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs and retreat if hurt.',
+                steps: ['fight a safe target', 'eat when hurt'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [chicken],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'eat', slot: 0, cause: 'combat_eat_before_training' }]);
+        expect(result.cause).toBe('combat_eat_before_training');
+    });
+
+    it('refuses to start combat training while hurt and carrying no food', async () => {
+        const chicken = npc('Chicken', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                npcs: [chicken],
+                events: [chatFromCodex('agent train combat', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' }]);
+        expect(result.cause).toBe('direct_chat_train_combat');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('runs direct retreat commands without inference', async () => {
         const goblin = npc('Goblin', 3219, 3201);
         const llm = scriptedLlm([]);
