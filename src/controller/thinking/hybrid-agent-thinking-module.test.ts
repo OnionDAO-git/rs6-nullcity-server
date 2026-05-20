@@ -243,6 +243,41 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('woodcutting_level1_routine');
     });
 
+    it('keeps routine woodcutting focused on the nearest ordinary tree when Body suggests a different one', async () => {
+        const nearestTree = { objectId: 1278, position: { x: 3234, y: 3231, level: 0 }, orientation: 1 };
+        const fartherTree = { objectId: 1278, position: { x: 3243, y: 3242, level: 0 }, orientation: 3 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'interact', target: fartherTree, option: 'chop down' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-woodcutting',
+                description: 'Chop ordinary trees to train Woodcutting and gather logs for firemaking.',
+                steps: ['Move to a nearby ordinary tree or dead tree.', 'Chop the tree to gather logs.'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3234, 3231),
+                objects: [nearestTree, fartherTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: nearestTree, option: 'chop down', cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('woodcutting_level1_routine');
+    });
+
     it('does not keep repeating the same anchor move when a firemaking fallback is available', async () => {
         const anchorMove = { kind: 'move_to', target: { x: 3200, y: 3200, level: 0 } };
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [anchorMove] }) }]);

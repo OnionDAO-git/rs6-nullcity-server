@@ -314,14 +314,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return undefined;
         }
 
-        const targetObject = actionObjectTarget(actions[0], perception);
-        if (targetObject && LEVEL_ONE_TREE_IDS.has(targetObject.objectId)) {
-            return undefined;
-        }
-        if (!targetObject && actions.length > 0) {
-            return undefined;
-        }
-
         const woodcutting = levelOneWoodcuttingAction(perception);
         return woodcutting ? { action: woodcutting, cause: woodcutting.cause || 'woodcutting_level1_routine' } : undefined;
     }
@@ -847,28 +839,6 @@ function levelOneWoodcuttingAction(perception: HybridPerception): AgentAction | 
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
-}
-
-function actionObjectTarget(action: AgentAction | undefined, perception: HybridPerception): { objectId: number; position: Pos; orientation?: number } | undefined {
-    if (!action) {
-        return undefined;
-    }
-
-    const target = (action as { target?: unknown }).target as { objectId?: number; position?: Pos; x?: number; y?: number; level?: number } | undefined;
-    if (target?.objectId && target.position) {
-        return { objectId: target.objectId, position: target.position };
-    }
-    if (action.kind === 'move_to' && target) {
-        const position = 'position' in target && target.position ? target.position : { x: target.x, y: target.y, level: target.level };
-        return (perception.nearby?.objects || []).find(
-            object =>
-                object.position.x === position.x &&
-                object.position.y === position.y &&
-                object.position.level === (position.level ?? object.position.level),
-        );
-    }
-
-    return undefined;
 }
 
 function findSlot(items: Array<Item | null>, predicate: (item: Item) => boolean): number | undefined {
