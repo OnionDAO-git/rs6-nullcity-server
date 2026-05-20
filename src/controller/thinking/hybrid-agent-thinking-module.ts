@@ -25,6 +25,9 @@ type HybridPerception = {
     tick?: number;
     resident?: {
         position?: Pos;
+        hp?: { current?: number; max?: number };
+        inCombat?: boolean;
+        combatTarget?: Actor | null;
         busy?: boolean;
         inventory?: Array<Item | null>;
     };
@@ -49,6 +52,7 @@ const TINDERBOX_ITEM_IDS = new Set([590]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
 const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
+const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LEVEL_ONE_TREE_IDS = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
@@ -64,6 +68,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const directChat = this.directChatAction(perception as HybridPerception);
         if (directChat) {
             return this.result([directChat.action], directChat.cause, 0, false);
+        }
+
+        const combat = this.combatReaction(perception as HybridPerception);
+        if (combat) {
+            return this.result([combat.action], combat.cause, 0, false);
         }
 
         if ((perception as HybridPerception).resident?.busy) {
@@ -366,6 +375,22 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        const attack = attackIntent(command);
+        if (attack) {
+            const target = findActorByName([...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])], attack);
+            return {
+                action: target ? { kind: 'attack', target, cause: 'direct_chat_attack' } : { kind: 'say', text: `I do not see ${cleanTarget(attack)} from here.` },
+                cause: 'direct_chat_attack',
+            };
+        }
+
+        if (isRetreatIntent(command, chat.normalizedText)) {
+            return {
+                action: { kind: 'move_to', target: fleeTarget(perception), cause: 'direct_chat_retreat' },
+                cause: 'direct_chat_retreat',
+            };
+        }
+
         if (isFiremakingIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
             return {
@@ -395,6 +420,32 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             action: { kind: 'say', text: this.statusSpeech(perception, 'I hear you') },
             cause: 'direct_chat_ack',
         };
+    }
+
+    private combatReaction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const target = latestCombatAttacker(perception) || perception.resident?.combatTarget || undefined;
+        if (!target) {
+            return undefined;
+        }
+
+        let action: AgentAction;
+        if (target.kind === 'player') {
+            action = {
+                kind: 'say',
+                text: `${actorName(target)} is attacking me. Tell me "${this.commandPrefix()} attack ${actorName(target)}" if I should fight back.`,
+            };
+        } else if (isLowHealth(perception) && firstFoodSlot(perception.resident?.inventory || []) === undefined) {
+            action = { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' };
+        } else {
+            action = { kind: 'attack', target, cause: 'combat_retaliate' };
+        }
+
+        if (this.isRepeatedAction(action)) {
+            return undefined;
+        }
+
+        this.rememberBodyAction(action);
+        return { action, cause: action.cause || 'combat_reaction' };
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
@@ -737,6 +788,69 @@ function isFiremakingIntent(command: string, fullText: string): boolean {
 
 function isWoodcuttingIntent(command: string, fullText: string): boolean {
     return /^(chop wood|cut wood|chop a tree|cut a tree|woodcutting|gather logs)\b/.test(command) || /\b(chop wood|cut wood|woodcutting|gather logs)\b/.test(fullText);
+}
+
+function attackIntent(command: string): string | undefined {
+    const match = command.match(/^attack\s+(.+)/);
+    return match ? cleanTarget(match[1]) : undefined;
+}
+
+function isRetreatIntent(command: string, fullText: string): boolean {
+    return /^(run away|flee|retreat|escape)\b/.test(command) || /\b(run away|flee|retreat|escape)\b/.test(fullText);
+}
+
+function latestCombatAttacker(perception: HybridPerception): Actor | undefined {
+    for (const event of [...(perception.events || [])].reverse()) {
+        if (!['hit_taken', 'hit', 'attacked'].includes(String(event.kind || ''))) {
+            continue;
+        }
+        const attacker = actorLike(event.from);
+        if (attacker) {
+            return attacker;
+        }
+    }
+
+    return undefined;
+}
+
+function findActorByName(actors: Actor[], query: string): Actor | undefined {
+    const wanted = normalizeText(cleanTarget(query));
+    return actors.find(actor => {
+        const names = [actor.name, actor.key, actor.id].filter((value): value is string => Boolean(value)).map(normalizeText);
+        return names.some(name => name.includes(wanted) || wanted.includes(name));
+    });
+}
+
+function isLowHealth(perception: HybridPerception): boolean {
+    const hp = perception.resident?.hp;
+    const max = Number(hp?.max || 0);
+    return max > 0 && Number(hp?.current || 0) / max <= 0.4;
+}
+
+function firstFoodSlot(inventory: Array<Item | null>): number | undefined {
+    return findSlot(inventory, item => FOOD_KEY_PATTERN.test(item.key || ''));
+}
+
+function fleeTarget(perception: HybridPerception): Pos {
+    const here = perception.resident?.position || { x: 0, y: 0, level: 0 };
+    const threat = latestCombatAttacker(perception) || perception.resident?.combatTarget;
+    if (!threat) {
+        return { x: here.x + 4, y: here.y, level: here.level };
+    }
+
+    return {
+        x: here.x + Math.sign(here.x - threat.position.x || 1) * 4,
+        y: here.y + Math.sign(here.y - threat.position.y || 1) * 4,
+        level: here.level,
+    };
+}
+
+function actorName(actor: Actor): string {
+    return actor.name || actor.key || displayName(actor.id);
+}
+
+function cleanTarget(text: string): string {
+    return text.trim().replace(/[.!?]+$/g, '');
 }
 
 function actorLike(value: unknown): Actor | undefined {

@@ -478,6 +478,105 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('retaliates against NPC attackers without waiting for inference', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'combat_retaliate' }]);
+        expect(result.cause).toBe('combat_retaliate');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('retreats from NPC combat when hurt and carrying no recognizable food', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' }]);
+        expect(result.cause).toBe('combat_retreat');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('warns when attacked by a player instead of fighting back automatically', async () => {
+        const alice = player('Alice', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [alice],
+                events: [{ kind: 'hit_taken', from: alice }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'Alice is attacking me. Tell me "agent attack Alice" if I should fight back.' }]);
+        expect(result.cause).toBe('combat_reaction');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('runs direct attack commands against visible actors without inference', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                npcs: [goblin],
+                events: [chatFromCodex('agent attack goblin', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'direct_chat_attack' }]);
+        expect(result.cause).toBe('direct_chat_attack');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('runs direct retreat commands without inference', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: { ...residentAt(3218, 3201), combatTarget: goblin },
+                npcs: [goblin],
+                events: [chatFromCodex('agent run away', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'direct_chat_retreat' }]);
+        expect(result.cause).toBe('direct_chat_retreat');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('starts a firemaking workflow from direct chat without waiting for inference', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const llm = scriptedLlm([]);
@@ -652,5 +751,26 @@ function chatFromCodex(text: string, x: number, y: number): Record<string, unkno
         },
         text,
         to: 'public',
+    };
+}
+
+function npc(name: string, x: number, y: number): Record<string, unknown> {
+    return {
+        id: `npc:${name.toLowerCase()}`,
+        kind: 'npc',
+        name,
+        key: name.toLowerCase(),
+        position: { x, y, level: 0 },
+        hpFraction: 1,
+    };
+}
+
+function player(name: string, x: number, y: number): Record<string, unknown> {
+    return {
+        id: `player:${name.toLowerCase()}`,
+        kind: 'player',
+        name,
+        position: { x, y, level: 0 },
+        hpFraction: 1,
     };
 }
