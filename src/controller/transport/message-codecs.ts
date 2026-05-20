@@ -147,6 +147,7 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
     z.object({ kind: z.literal('use_item_on_item'), itemSlot: z.number().int().nonnegative(), targetSlot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('attack'), target: actorRefSchema }),
     z.object({ kind: z.literal('cast_spell'), spellKey: z.string(), target: actorRefSchema.optional() }),
+    z.object({ kind: z.literal('item_action'), slot: z.number().int().nonnegative(), option: z.string().min(1) }),
     z.object({ kind: z.literal('equip'), slot: z.number().int().nonnegative() }),
     z.object({
         kind: z.literal('unequip'),

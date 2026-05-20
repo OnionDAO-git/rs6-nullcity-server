@@ -310,6 +310,19 @@ describe('ActionAdapter', () => {
         );
     });
 
+    it('dispatches generic inventory item actions through the engine item pipe', () => {
+        const actingResident = resident();
+
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'item_action',
+            slot: 0,
+            option: 'bury',
+        } as never);
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'bury');
+    });
+
     it('dispatches use_item_on against NPCs through the engine item-on-npc pipe', () => {
         const npc = { type: 'npc', position: { x: 3200, y: 3200, level: 0 } };
         (activeWorld.npcList as unknown[])[3] = npc;

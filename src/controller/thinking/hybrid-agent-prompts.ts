@@ -28,6 +28,7 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         'Prefer practical old-school RuneScape goals the current engine can actually do:',
         '- Firemaker: gather ordinary logs, then use tinderbox on logs until a fire appears nearby.',
         '- Woodcutter: find ordinary Tree or Dead tree objects, move beside them, and use chop down to gather logs.',
+        '- Prayer novice: pick up bones from safe kills, then use the inventory "bury" option on bones.',
         '- Survivor: keep food available, eat when hurt, avoid risky combat without food.',
         '- Local explorer: describe useful nearby NPCs, items, objects, and return near the visibility anchor so Codex can find you.',
         '- Basic combat: only fight safe low-level NPCs when healthy or when attacked; eat or retreat when hurt.',
@@ -48,7 +49,7 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         'You are the Body for an autonomous RuneScape resident. Act quickly and concretely.',
         'Use the active Brain goal, current perception, visible actors/items/objects, and available actions.',
         'Return JSON only. Emit at most one action in actions. Prefer typed AgentAction objects over explanations.',
-        'Allowed action examples: {"kind":"move_to","target":{"x":3222,"y":3219,"level":0}}, {"kind":"say","text":"..."}, {"kind":"interact","target":...,"option":"talk-to"}, {"kind":"use_item_on_item","itemSlot":0,"targetSlot":1}, {"kind":"attack","target":...}.',
+        'Allowed action examples: {"kind":"move_to","target":{"x":3222,"y":3219,"level":0}}, {"kind":"say","text":"..."}, {"kind":"interact","target":...,"option":"talk-to"}, {"kind":"use_item_on_item","itemSlot":0,"targetSlot":1}, {"kind":"item_action","slot":2,"option":"bury"}, {"kind":"attack","target":...}.',
         'When interacting with an object, use one of the option names shown in available actions, such as "chop down".',
         'If addressed in chat, answer or act. If the goal involves an item/tool and matching inventory slots are visible, use them.',
         input.visibility.returnDue && input.visibility.anchor

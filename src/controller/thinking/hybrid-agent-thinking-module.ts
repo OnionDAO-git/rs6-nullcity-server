@@ -51,6 +51,8 @@ const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const TINDERBOX_ITEM_IDS = new Set([590]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
+const BONE_ITEM_IDS = new Set([526, 528, 530, 532, 534, 536, 2859, 3123, 3125, 3179, 3180, 3181, 3182, 3183, 3185, 3186, 4812, 4813, 4814, 6729, 6812]);
+const BONE_KEY_PATTERN = /^rs:(bones|bones_.+|.+_bones)$/i;
 const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
 const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LEVEL_ONE_TREE_IDS = new Set([
@@ -243,6 +245,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         | undefined {
         const view = perception as HybridPerception;
         const goal = this.activeGoal();
+        const prayerAction = goal && /prayer|bone|bones|bury/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
+            ? buryBonesAction(view)
+            : undefined;
+        if (prayerAction) {
+            return { action: prayerAction, cause: prayerAction.cause || 'prayer_bury_bones' };
+        }
+
         const fireAction = goal && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
             ? firemakingAction(view)
             : undefined;
@@ -422,6 +431,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                         : { kind: 'drop', slot, cause: 'direct_chat_drop' }
                     : { kind: 'say', text: 'Tell me what to drop.' },
                 cause: 'direct_chat_drop',
+            };
+        }
+
+        if (isBuryBonesIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = prayerGoal(this.options.state.tick);
+            return {
+                action:
+                    buryBonesAction(perception) || {
+                        kind: 'say',
+                        text: this.statusSpeech(perception, 'I will look for bones to bury'),
+                    },
+                cause: 'direct_chat_bury_bones',
             };
         }
 
@@ -761,6 +782,17 @@ function woodcuttingGoal(tick: number): ActiveGoalState {
     };
 }
 
+function prayerGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'train-prayer-with-bones',
+        description: 'Pick up bones and bury them to train Prayer after safe combat.',
+        steps: ['Find bones on the ground or in inventory', 'Pick up visible bones', 'Use the bury option on carried bones'],
+        success: 'Bones are buried and Prayer gains progress.',
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
 function explorationGoal(tick: number): ActiveGoalState {
     return {
         id: 'scout-nearby-area',
@@ -830,6 +862,27 @@ function isTinderbox(item: Item): boolean {
 
 function isFiremakingLog(item: Item): boolean {
     return FIREMAKING_LOG_ITEM_IDS.has(item.itemId) || FIREMAKING_LOG_KEY_PATTERN.test(item.key || '');
+}
+
+function isBones(item: Item): boolean {
+    return BONE_ITEM_IDS.has(item.itemId) || BONE_KEY_PATTERN.test(item.key || '');
+}
+
+function buryBonesAction(perception: HybridPerception): AgentAction | undefined {
+    const inventory = perception.resident?.inventory || [];
+    const bonesSlot = findSlot(inventory, isBones);
+    if (bonesSlot !== undefined) {
+        return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'prayer_bury_bones' };
+    }
+
+    const bones = (perception.nearby?.worldItems || [])
+        .filter(isBones)
+        .sort((a, b) => distance(perception.resident?.position || a.position, a.position) - distance(perception.resident?.position || b.position, b.position))[0];
+    if (bones) {
+        return { kind: 'interact', target: bones, option: 'pick-up', cause: 'prayer_pickup_bones' };
+    }
+
+    return undefined;
 }
 
 function isExplorationGoal(goal: ActiveGoalState): boolean {
@@ -959,6 +1012,10 @@ function isFiremakingIntent(command: string, fullText: string): boolean {
 
 function isWoodcuttingIntent(command: string, fullText: string): boolean {
     return /^(chop wood|cut wood|chop a tree|cut a tree|woodcutting|gather logs)\b/.test(command) || /\b(chop wood|cut wood|woodcutting|gather logs)\b/.test(fullText);
+}
+
+function isBuryBonesIntent(command: string, fullText: string): boolean {
+    return /^(bury bones|train prayer|prayer|bury)\b/.test(command) || /\b(bury bones|train prayer)\b/.test(fullText);
 }
 
 function attackIntent(command: string): string | undefined {

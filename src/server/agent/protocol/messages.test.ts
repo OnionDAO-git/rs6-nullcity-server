@@ -49,6 +49,30 @@ describe('agent protocol messages', () => {
         expect(message.payload.action).toEqual({ kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1 });
     });
 
+    it('parses generic inventory item action frames', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'bury-1',
+                kind: 'submit_action',
+                payload: {
+                    name: 'res:agent',
+                    action: {
+                        kind: 'item_action',
+                        slot: 3,
+                        option: 'bury',
+                    },
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('submit_action');
+        if (message.kind !== 'submit_action') {
+            throw new Error('Expected submit_action');
+        }
+        expect(message.payload.action).toEqual({ kind: 'item_action', slot: 3, option: 'bury' });
+    });
+
     it('rejects malformed action frames', () => {
         expect(() =>
             parseClientMessage(

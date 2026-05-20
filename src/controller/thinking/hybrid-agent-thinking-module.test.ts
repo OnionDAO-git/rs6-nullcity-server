@@ -654,6 +654,74 @@ describe('HybridAgentThinkingModule', () => {
         expect(drop.cause).toBe('direct_chat_drop');
     });
 
+    it('runs direct bury bones commands from inventory without inference', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [null, { itemId: 526, key: 'rs:bones', amount: 1 }],
+                },
+                events: [chatFromCodex('agent bury bones', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'item_action', slot: 1, option: 'bury', cause: 'prayer_bury_bones' }]);
+        expect(result.cause).toBe('direct_chat_bury_bones');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('picks up visible bones before burying when none are carried', async () => {
+        const bones = { itemId: 526, key: 'rs:bones', amount: 1, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                worldItems: [bones],
+                events: [chatFromCodex('agent bury bones', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: bones, option: 'pick-up', cause: 'prayer_pickup_bones' }]);
+        expect(result.cause).toBe('direct_chat_bury_bones');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('uses prayer muscle memory when the active goal asks to bury bones', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-prayer',
+                description: 'Pick up bones and bury them to train Prayer after combat.',
+                steps: ['find bones', 'pick up bones', 'bury bones'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 526, key: 'rs:bones', amount: 1 }],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'item_action', slot: 0, option: 'bury', cause: 'prayer_bury_bones' }]);
+        expect(result.cause).toBe('prayer_bury_bones');
+    });
+
     it('runs direct NPC talk commands without inference', async () => {
         const hans = npc('Hans', 3219, 3201);
         const llm = scriptedLlm([]);

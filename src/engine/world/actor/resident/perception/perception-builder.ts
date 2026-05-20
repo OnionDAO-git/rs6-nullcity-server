@@ -205,6 +205,7 @@ export class PerceptionBuilder {
             ...worldItems.map(target => ({ kind: 'interact' as const, target, options: ['pick-up'] })),
             ...objects.map(target => ({ kind: 'interact' as const, target, options: this.objectOptions(target) })),
             { kind: 'use_item_on_item', slots: occupiedInventorySlots },
+            { kind: 'item_action', slots: occupiedInventorySlots, options: ['bury', 'eat', 'wield', 'wear', 'drop'] },
             { kind: 'equip', slots: occupiedInventorySlots },
             { kind: 'drop', slots: occupiedInventorySlots },
             { kind: 'trade_offer_item', slots: occupiedInventorySlots },

@@ -63,6 +63,8 @@ export class ActionAdapter {
                 return this.useItemOnItem(resident, action.itemSlot, action.targetSlot);
             case 'cast_spell':
                 return this.castSpell(resident, action.spellKey, action.target);
+            case 'item_action':
+                return this.itemAction(resident, action.slot, action.option);
             case 'trade_request':
                 return this.tradeRequest(resident, action.target);
             case 'trade_offer_item':

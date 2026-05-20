@@ -44,6 +44,7 @@ export type AgentAction =
     | { kind: 'use_item_on_item'; itemSlot: number; targetSlot: number }
     | { kind: 'attack'; target: ActorRef }
     | { kind: 'cast_spell'; spellKey: string; target?: ActorRef }
+    | { kind: 'item_action'; slot: number; option: string }
     | { kind: 'equip'; slot: number }
     | { kind: 'unequip'; equipmentSlot: EquipmentSlot }
     | { kind: 'drop'; slot: number }
@@ -68,6 +69,7 @@ export type AgentActionShape =
     | { kind: 'interact'; target: ActorRef | ObjectRef | WorldItemRef; options: string[] }
     | { kind: 'use_item_on_item'; slots: number[] }
     | { kind: 'attack'; target: ActorRef }
+    | { kind: 'item_action'; slots: number[]; options: string[] }
     | { kind: 'equip'; slots: number[] }
     | { kind: 'drop'; slots: number[] }
     | { kind: 'trade_request'; targets: ActorRef[] }
@@ -163,6 +165,7 @@ export const AgentActionSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('use_item_on_item'), itemSlot: z.number().int().nonnegative(), targetSlot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('attack'), target: ActorRefSchema }),
     z.object({ kind: z.literal('cast_spell'), spellKey: z.string().min(1), target: ActorRefSchema.optional() }),
+    z.object({ kind: z.literal('item_action'), slot: z.number().int().nonnegative(), option: z.string().min(1) }),
     z.object({ kind: z.literal('equip'), slot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('unequip'), equipmentSlot: equipmentSlotSchema }),
     z.object({ kind: z.literal('drop'), slot: z.number().int().nonnegative() }),
