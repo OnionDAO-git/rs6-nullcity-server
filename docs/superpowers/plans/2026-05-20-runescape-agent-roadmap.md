@@ -408,6 +408,37 @@ Safe public module facade building blocks are implemented, but the public member
 - `[ ]` **O7: `MODEL_CONFIG`-style precomputed UI metadata dictionary.** Single source for module IDs, faction colors, emotion presets.
 - `[ ]` **O8: env + CLI dual config audit.** Document conventions and apply across rs6 CLIs.
 
+## Workstream P: Deeper Game-Skill Knowledge
+
+**Purpose:** Expand the agent's RuneScape knowledge so residents can act intelligently across all 23 RS skills, world geography, NPC inventory, items beyond starter, and basic quest awareness. Currently `docs/runescape-skill/` covers only ~5 starter skills. Spec: `docs/superpowers/specs/2026-05-22-deeper-game-skill-knowledge-design.md`. 6 plans (P-retrieval, P-skills-batch-1/2, P-world-geography, P-npcs-items, P-quests).
+
+- `[~]` **P1: Retrieval improvements (perception+goal-filtered).** Token-budgeted retrieval to avoid prompt envelope bloat.
+- `[~]` **P2: Skills batch 1 — promote `feat/skill-*.md` to consumed knowledge.** ~12 already-curated skill files get promoted into `docs/runescape-skill/skills/`.
+- `[~]` **P3: Skills batch 2 — remaining skills.** Cover all 23 with per-skill mini-playbooks.
+- `[~]` **P4: World geography.** Lumbridge, Varrock, Falador, Edgeville, Al Kharid; guilds; banks; wilderness boundary; travel routes.
+- `[~]` **P5: NPCs + items.** Combat NPCs, shopkeepers, key quest-givers; weapons/food/prayer items/tools by tier.
+- `[~]` **P6: Basic quest awareness.** Six starter quests (Cook's Assistant, Restless Ghost, etc.) so residents can opportunistically progress them.
+
+## Workstream Q: Smarter Behavior (F+G finish)
+
+**Purpose:** Finish the behavior layer — non-command small talk, clarifying questions, deeper stuck recovery with help-request speech, combat survival personality, item trading, broader command vocabulary. Spec: `docs/superpowers/specs/2026-05-22-smarter-behavior-design.md`. 5 plans, one per sub-feature.
+
+- `[~]` **Q1 (F2): Non-command small talk + clarifying questions.** Resident responds in character to public chat that's not a command; asks a clarifying question instead of guessing on ambiguous commands.
+- `[~]` **Q2 (F3): Deeper stuck recovery with help-request speech.** When no useful local recovery exists, the resident says "I'm stuck near the eastern fence — can someone open the gate?"
+- `[~]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
+- `[~]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
+- `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
+
+## Workstream R: SPARK Module Extraction (finish B2-B5)
+
+**Purpose:** Break the 2578-line `hybrid-agent-thinking-module.ts` monolith into four single-responsibility units plus a slim orchestrator. Foundation for all downstream behavior work — every other improvement is easier once this lands. Spec: `docs/superpowers/specs/2026-05-22-spark-module-extraction-design.md`. 5 plans (α/β/γ/δ/ε).
+
+- `[~]` **R1: Extract `runescape-workflows.ts` (workflow cards).** Cleanest seam first.
+- `[~]` **R2: Extract `runescape-body-routines.ts` (deterministic per-tick body decisions).**
+- `[~]` **R3: Extract `runescape-nervous-rules.ts` (kernel-priority survival reflexes).**
+- `[~]` **R4: Extract `runescape-brain-planner.ts` (high-level goal selection).**
+- `[~]` **R5: Slim the orchestrator.** What remains in `hybrid-agent-thinking-module.ts` should be under 500 lines — pure wiring.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.

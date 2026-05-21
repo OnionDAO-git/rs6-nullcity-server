@@ -59,11 +59,14 @@ After those four, if you're working a specific workstream:
 ## What's open
 
 - **Workstream J: Patron / human-attention loop** — spec exists. Highest June-1 leverage. 8 tasks.
-- **Workstream K: rs6 factions** — spec exists. Blocked on maintainer creative input (K1).
-- **Workstream L: Cross-resident lore** — deferred; spec needed first.
+- **Workstream K: rs6 factions** — spec exists, creative drafts available for edit. Maintainer-pending lock on names/POIs.
+- **Workstream L: Cross-resident lore** — spec exists. 4 plans covering interact-resident verbs, projects, WorldEventBus, in-game perception events.
 - **Workstream M: Hero residents** — spec exists. 6 tasks.
 - **Workstream N: Embassy / IRL event** — spec exists. 5 tasks.
 - **Workstream O: Engineering polish** — no spec needed; 8 independently-scoped tasks.
+- **Workstream P: Deeper game-skill knowledge** — spec exists. 6 plans: retrieval improvements, 23-skill expansion, world geography, NPCs+items, quests. Promotes `feat/skill-*.md` files.
+- **Workstream Q: Smarter behavior (F+G finish)** — spec exists. 5 plans for non-command small talk, stuck-help-speech, combat personality, trading, broader command loop.
+- **Workstream R: SPARK module extraction (B2-B5)** — spec exists. 5 plans carving the 2578-line monolith into 4 composable units + slim orchestrator. Foundation move; unblocks Q's integration points.
 
 ---
 
