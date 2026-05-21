@@ -157,10 +157,12 @@ describe('ControllerHost reconcile lifecycle', () => {
     it('opens a runtime evidence session for created residents', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
-        const runtimeFactory = jest.fn((options: { evidence?: { sessionId: string; store: { currentSession: () => unknown }; trajectory: unknown } }) => {
-            void options;
-            return runtime;
-        });
+        const runtimeFactory = jest.fn(
+            (options: { evidence?: { sessionId: string; store: { currentSession: () => unknown }; trajectory: unknown; library?: unknown } }) => {
+                void options;
+                return runtime;
+            },
+        );
         const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory });
 
         await host.start();
@@ -170,6 +172,7 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(evidence?.sessionId).toContain('res-pip');
         expect(evidence?.store.currentSession()).toEqual(expect.objectContaining({ sessionId: evidence?.sessionId }));
         expect(evidence?.trajectory).toBeDefined();
+        expect(evidence?.library).toBeDefined();
 
         await host.stop();
     });

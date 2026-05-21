@@ -4,7 +4,7 @@ import path from 'path';
 import type { ResidentBody } from './body';
 import { ResidentBody as ConcreteResidentBody } from './body';
 import type { BodyGateway } from './body';
-import { EvidenceStore, TrajectoryBuilder } from './evidence';
+import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import type { LlmClient } from './llm/llm-client';
 import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
@@ -113,6 +113,61 @@ describe('ResidentRuntime modules', () => {
         ]);
         expect(state.lastMeaningfulProgressAt).toBe(2);
         expect(state.stuckSince).toBeUndefined();
+    });
+
+    it('updates Library of Souls story artifacts from runtime speech', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-library-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-library-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-21T11:40:00.000Z') });
+        const session = store.beginSession('session-library', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-21T11:40:01.000Z') }),
+            library: new LibraryUpdater('res:pip', evidenceRoot, { now: () => new Date('2026-05-21T11:40:02.000Z') }),
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'say', text: 'I want to find a tree.', cause: 'library-test' }],
+                cause: 'library-test',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-say' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(async () => ({ ok: false, status: 'timeout' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        await runtime.onPerception({ tick: 12, events: [] });
+
+        const libraryDir = path.join(evidenceRoot, 'library', 'res-pip');
+        expect(readJsonl(path.join(libraryDir, 'timeline.jsonl'))).toEqual([
+            expect.objectContaining({ kind: 'say', text: 'I want to find a tree.', lifeIndex: 1 }),
+        ]);
+        expect(JSON.parse(fs.readFileSync(path.join(libraryDir, 'portrait.json'), 'utf8'))).toEqual(
+            expect.objectContaining({
+                residentName: 'res:pip',
+                voice: { quotes: [expect.objectContaining({ text: 'I want to find a tree.', tag: 'mentions_want' })] },
+            }),
+        );
     });
 
     it('uses a selected SPARK module for thinking and logs module identity', async () => {

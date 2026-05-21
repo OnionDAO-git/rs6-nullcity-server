@@ -30,6 +30,7 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
                 sessionId: expect.stringContaining('make-fire-5m'),
                 trajectory: expect.anything(),
                 store: expect.anything(),
+                library: expect.anything(),
             }),
         );
         expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('/trajectory/'));

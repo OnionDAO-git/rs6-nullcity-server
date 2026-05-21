@@ -3,7 +3,15 @@ import { ActionCoordinator } from './actions/action-coordinator';
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
-import { EVIDENCE_SCHEMA_VERSION, ProgressTracker, type EvidenceStore, type ProgressSnapshot, type TrajectoryBuilder } from './evidence';
+import {
+    EVIDENCE_SCHEMA_VERSION,
+    ProgressTracker,
+    type EvidenceStore,
+    type LibraryUpdater,
+    type ProgressLine,
+    type ProgressSnapshot,
+    type TrajectoryBuilder,
+} from './evidence';
 import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
@@ -55,6 +63,7 @@ export interface ResidentRuntimeEvidence {
     store: EvidenceStore;
     sessionId: string;
     trajectory: TrajectoryBuilder;
+    library?: LibraryUpdater;
 }
 
 export class ResidentRuntime {
@@ -251,7 +260,10 @@ export class ResidentRuntime {
         return {
             onAckReady: attempt => {
                 const requestId = attempt.requestId || attempt.attemptId;
-                this.recordEvidence(trajectory => trajectory.recordAction(attempt.action, requestId));
+                this.recordEvidence(trajectory => {
+                    const line = trajectory.recordAction(attempt.action, requestId);
+                    this.evidence?.library?.observeTrajectory(line);
+                });
             },
             onEffectResolved: attempt => {
                 const requestId = attempt.requestId || attempt.attemptId;
@@ -288,7 +300,7 @@ export class ResidentRuntime {
             return;
         }
         try {
-            this.evidence.store.appendProgress({
+            const line: ProgressLine = {
                 schemaVersion: EVIDENCE_SCHEMA_VERSION,
                 ts: new Date().toISOString(),
                 tick,
@@ -297,7 +309,9 @@ export class ResidentRuntime {
                 meaningful: delta.meaningful,
                 reasons: delta.reasons,
                 stuckSince: delta.stuckSince,
-            });
+            };
+            this.evidence.store.appendProgress(line);
+            this.evidence.library?.observeProgress(line);
         } catch (error) {
             this.options.inferenceLog.append(this.name, {
                 tick: this.state.tick,

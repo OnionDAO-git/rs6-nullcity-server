@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { residentSlug } from '../memory/runtime-state';
+import { renderPortrait, type PortraitIndex } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine } from './significance';
 
@@ -17,13 +18,8 @@ export interface LibraryUpdaterOptions {
     now?: () => Date;
 }
 
-interface LibraryIndex {
+interface LibraryIndex extends PortraitIndex {
     schemaVersion: 1;
-    resident: string;
-    createdAt: string;
-    updatedAt: string;
-    lives: number;
-    currentState: 'living' | 'ended';
 }
 
 export class LibraryUpdater {
@@ -52,6 +48,7 @@ export class LibraryUpdater {
         } else {
             this.touchIndex(index);
         }
+        this.schedulePortraitRegeneration();
     }
 
     observeProgress(line: ProgressLine): void {
@@ -74,6 +71,7 @@ export class LibraryUpdater {
             this.previousStuckSince = null;
         }
         this.touchIndex(index);
+        this.schedulePortraitRegeneration();
     }
 
     observePatron(event: PatronEvent): void {
@@ -91,6 +89,13 @@ export class LibraryUpdater {
             significanceReasons: [`patron:${event.kind}`],
         });
         this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    async regeneratePortrait(): Promise<void> {
+        const rendered = renderPortrait(this.residentName, this.readIndex(), this.readTimeline());
+        this.writeAtomic(this.portraitJsonPath(), `${JSON.stringify(rendered.portrait, null, 2)}\n`);
+        this.writeAtomic(this.portraitMarkdownPath(), rendered.markdown);
     }
 
     private applyLegacyEvent(line: TrajectoryLine, index: LibraryIndex): void {
@@ -128,6 +133,24 @@ export class LibraryUpdater {
         return JSON.parse(fs.readFileSync(this.indexPath(), 'utf8')) as LibraryIndex;
     }
 
+    private readTimeline(): Array<Record<string, unknown>> {
+        if (!fs.existsSync(this.timelinePath())) {
+            return [];
+        }
+        return fs
+            .readFileSync(this.timelinePath(), 'utf8')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .flatMap(line => {
+                try {
+                    return [JSON.parse(line) as Record<string, unknown>];
+                } catch {
+                    return [];
+                }
+            });
+    }
+
     private writeIndex(index: LibraryIndex): void {
         fs.mkdirSync(this.libraryDir(), { recursive: true });
         fs.writeFileSync(this.indexPath(), `${JSON.stringify(index, null, 2)}\n`);
@@ -143,6 +166,25 @@ export class LibraryUpdater {
 
     private indexPath(): string {
         return path.join(this.libraryDir(), 'index.json');
+    }
+
+    private portraitJsonPath(): string {
+        return path.join(this.libraryDir(), 'portrait.json');
+    }
+
+    private portraitMarkdownPath(): string {
+        return path.join(this.libraryDir(), 'portrait.md');
+    }
+
+    private writeAtomic(filePath: string, text: string): void {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        const tmpPath = `${filePath}.tmp`;
+        fs.writeFileSync(tmpPath, text);
+        fs.renameSync(tmpPath, filePath);
+    }
+
+    private schedulePortraitRegeneration(): void {
+        void this.regeneratePortrait();
     }
 }
 

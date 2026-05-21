@@ -39,17 +39,17 @@ export class TrajectoryBuilder {
         this.now = options.now ?? (() => new Date());
     }
 
-    beginTick(tick: number, perception: Perception): void {
+    beginTick(tick: number, perception: Perception): TrajectoryLine {
         this.currentTick = tick;
         const encoded = stableEncode(perception);
-        this.append('begin_tick', {
+        return this.append('begin_tick', {
             perceptionHash: sha256(encoded),
             perceptionBytes: Buffer.byteLength(encoded, 'utf8'),
         });
     }
 
-    recordHook(winner: FiredHook | null): void {
-        this.append('hook', {
+    recordHook(winner: FiredHook | null): TrajectoryLine {
+        return this.append('hook', {
             winnerId: winner?.id ?? null,
             priority: winner?.priority ?? null,
             cause: winner?.cause ?? null,
@@ -57,25 +57,25 @@ export class TrajectoryBuilder {
         });
     }
 
-    recordBudget(budget: BudgetDecision): void {
-        this.append('budget', {
+    recordBudget(budget: BudgetDecision): TrajectoryLine {
+        return this.append('budget', {
             ok: budget.ok,
             window: budget.window,
             retryAt: budget.retryAt?.toISOString(),
         });
     }
 
-    recordPlan(plan: unknown): void {
-        this.append('plan', { plan });
+    recordPlan(plan: unknown): TrajectoryLine {
+        return this.append('plan', { plan });
     }
 
-    recordDecision(decision: DecisionRecord): void {
-        this.append('decision', decision as Record<string, unknown>);
+    recordDecision(decision: DecisionRecord): TrajectoryLine {
+        return this.append('decision', decision as Record<string, unknown>);
     }
 
-    recordAction(action: AgentAction, requestId: string): void {
+    recordAction(action: AgentAction, requestId: string): TrajectoryLine {
         const actionKind = action.kind;
-        this.append(actionKind === 'say' ? 'say' : 'action', {
+        return this.append(actionKind === 'say' ? 'say' : 'action', {
             requestId,
             actionKind,
             action,
@@ -84,8 +84,8 @@ export class TrajectoryBuilder {
         });
     }
 
-    recordActionResult(requestId: string, outcome: ActionEffectOutcome): void {
-        this.append('action_result', {
+    recordActionResult(requestId: string, outcome: ActionEffectOutcome): TrajectoryLine {
+        return this.append('action_result', {
             requestId,
             status: outcome.status,
             reason: outcome.reason,
@@ -93,27 +93,29 @@ export class TrajectoryBuilder {
         });
     }
 
-    recordLegacy(event: unknown): void {
-        this.append('legacy_event', { event });
+    recordLegacy(event: unknown): TrajectoryLine {
+        return this.append('legacy_event', { event });
     }
 
-    endTick(reason: EndTickReason): void {
-        this.append('end_tick', { reason });
+    endTick(reason: EndTickReason): TrajectoryLine {
+        return this.append('end_tick', { reason });
     }
 
-    private append(kind: TrajectoryLine['kind'], fields: Record<string, unknown>): void {
+    private append(kind: TrajectoryLine['kind'], fields: Record<string, unknown>): TrajectoryLine {
         const session = this.store.currentSession();
         if (!session) {
             throw new Error('Evidence session has not started');
         }
-        this.store.appendTrajectory({
+        const line: TrajectoryLine = {
             schemaVersion: EVIDENCE_SCHEMA_VERSION,
             ts: this.now().toISOString(),
             tick: this.currentTick,
             sessionId: session.sessionId,
             kind,
             ...fields,
-        });
+        };
+        this.store.appendTrajectory(line);
+        return line;
     }
 }
 

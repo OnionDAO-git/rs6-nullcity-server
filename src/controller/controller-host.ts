@@ -1,5 +1,5 @@
 import { ControllerConfig } from './config';
-import { EvidenceStore, TrajectoryBuilder } from './evidence';
+import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import { createDefaultGameSkillEntries } from './knowledge/game-skill-entries';
 import { GameSkillService } from './knowledge/game-skill-context';
 import { KnowledgeSuggestionStore } from './knowledge/suggestions';
@@ -217,6 +217,7 @@ export class ControllerHost {
             store,
             sessionId: session.sessionId,
             trajectory: new TrajectoryBuilder(store),
+            library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir),
         };
     }
 

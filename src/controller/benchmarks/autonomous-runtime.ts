@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from '../config';
-import { EvidenceStore, TrajectoryBuilder } from '../evidence';
+import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 import { createDefaultGameSkillEntries } from '../knowledge/game-skill-entries';
 import { GameSkillService } from '../knowledge/game-skill-context';
 import { KnowledgeSuggestionStore } from '../knowledge/suggestions';
@@ -88,6 +88,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             store,
             sessionId: session.sessionId,
             trajectory: new TrajectoryBuilder(store),
+            library: new LibraryUpdater(context.resident, root),
         };
     }
 

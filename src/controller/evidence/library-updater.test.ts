@@ -57,6 +57,63 @@ describe('LibraryUpdater', () => {
             }),
         );
     });
+
+    it('regenerates portrait.md and portrait.json from the resident timeline', async () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeTrajectory(trajectory({ kind: 'say', tick: 1, text: 'I want to chop a sturdy tree.' }));
+        updater.observeProgress(progress({ tick: 2, meaningful: true, reasons: ['xp_gain:woodcutting:25'] }));
+        updater.observePatron({
+            kind: 'patron_gift',
+            ts: '2026-05-21T11:02:00.000Z',
+            tick: 3,
+            patronHandle: 'Alice',
+            artifact: 'tinderbox',
+        });
+        updater.observeTrajectory(trajectory({ kind: 'say', tick: 4, text: 'Tell James I found sparks.' }));
+        updater.observeTrajectory(trajectory({ kind: 'legacy_event', tick: 5, event: { cause: 'goblin ambush' } }));
+
+        await updater.regeneratePortrait();
+
+        const portrait = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'portrait.json'), 'utf8'));
+        expect(portrait).toEqual(
+            expect.objectContaining({
+                schemaVersion: 1,
+                residentName: 'res:agent',
+                epithet: expect.any(String),
+                currentState: 'deceased',
+                livesCount: 1,
+                patrons: [
+                    expect.objectContaining({
+                        handle: 'Alice',
+                        sentence: expect.stringContaining('tinderbox'),
+                    }),
+                ],
+            }),
+        );
+        expect(portrait.voice.quotes).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ text: 'Tell James I found sparks.', tag: 'last_words' }),
+                expect.objectContaining({ text: 'I want to chop a sturdy tree.', tag: 'mentions_want' }),
+            ]),
+        );
+        expect(portrait.lives[0]).toEqual(
+            expect.objectContaining({
+                index: 1,
+                deathCause: 'goblin ambush',
+                lastWords: 'Tell James I found sparks.',
+                notableEvents: expect.arrayContaining([expect.objectContaining({ kind: 'first_xp' })]),
+            }),
+        );
+        expect(portrait.wants.unfulfilledAtDeath).toEqual([{ lifeIndex: 1, want: 'I want to chop a sturdy tree.' }]);
+
+        const markdown = fs.readFileSync(path.join(libraryDir(root), 'portrait.md'), 'utf8');
+        expect(markdown).toContain('# res:agent,');
+        expect(markdown).toContain('## What they wanted');
+        expect(markdown).toContain('## In their own words');
+        expect(markdown).toContain('### How it ended');
+        expect(markdown).toContain('## Patrons');
+    });
 });
 
 function testUpdater(): { updater: LibraryUpdater; root: string } {
