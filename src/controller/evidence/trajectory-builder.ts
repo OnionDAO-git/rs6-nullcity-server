@@ -3,17 +3,7 @@ import type { BudgetDecision } from '../llm/budgets';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import type { FiredHook } from '../spark/hook-evaluator';
 import type { EvidenceStore } from './evidence-store';
-import { EVIDENCE_SCHEMA_VERSION, type TrajectoryLine } from './schemas';
-
-export type EndTickReason =
-    | 'legacy_complete'
-    | 'attention_exhausted'
-    | 'plan_continuation'
-    | 'hook_noop'
-    | `budget_exhausted:${string}`
-    | 'parse_failed'
-    | 'legacy_complete_post_action'
-    | 'tick_complete';
+import { EVIDENCE_SCHEMA_VERSION, type EndTickReason, type TrajectoryLine } from './schemas';
 
 export interface DecisionRecord {
     cause?: string;

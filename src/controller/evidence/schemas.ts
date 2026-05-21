@@ -2,6 +2,17 @@ import { z } from 'zod';
 
 export const EVIDENCE_SCHEMA_VERSION = 1;
 
+export const endTickReasonSchema = z.union([
+    z.literal('legacy_complete'),
+    z.literal('attention_exhausted'),
+    z.literal('plan_continuation'),
+    z.literal('hook_noop'),
+    z.string().regex(/^budget_exhausted:[a-z0-9_-]+$/),
+    z.literal('parse_failed'),
+    z.literal('legacy_complete_post_action'),
+    z.literal('tick_complete'),
+]);
+
 export const trajectoryLineKindSchema = z.enum([
     'begin_tick',
     'end_tick',
@@ -25,7 +36,20 @@ export const trajectoryLineSchema = z
         sessionId: z.string().min(1),
         kind: trajectoryLineKindSchema,
     })
-    .passthrough();
+    .passthrough()
+    .superRefine((line, context) => {
+        if (line.kind !== 'end_tick') {
+            return;
+        }
+        const parsed = endTickReasonSchema.safeParse(line.reason);
+        if (!parsed.success) {
+            context.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['reason'],
+                message: 'Invalid end_tick reason',
+            });
+        }
+    });
 
 export const progressLineSchema = z
     .object({
@@ -62,3 +86,4 @@ export type TrajectoryLine = z.infer<typeof trajectoryLineSchema>;
 export type ProgressLine = z.infer<typeof progressLineSchema>;
 export type EvidenceIndex = z.infer<typeof evidenceIndexSchema>;
 export type EvidenceSessionIndexEntry = EvidenceIndex['sessions'][number];
+export type EndTickReason = z.infer<typeof endTickReasonSchema>;
