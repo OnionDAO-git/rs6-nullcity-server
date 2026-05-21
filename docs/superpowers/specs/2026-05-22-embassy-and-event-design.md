@@ -413,17 +413,44 @@ IRL: staff hands Alice a Mortician's Ribbon lanyard card with claim_code
 
 ---
 
-## Open Questions (Maintainer Required)
+## Open Questions (Status After 2026-05-22 Notion Dive)
 
-1. **N1: In-game embassy POI location.** Lumbridge churchyard, Varrock Museum, Falador Centre, Edgeville bank, or new RuneJS-placed structure?
-2. **N2: Separate rs6 wall view, or merge into v2's wall?** Recommend separate.
-3. **N3: In-game graveyard zone location.** Adjacent to embassy POI (recommended) or separate?
-4. **N4: Print queue infrastructure.** Reuse v2's existing pipeline or build rs6's own?
-5. **N5: Mortician's Ribbon threshold N.** Suggested 3; can tune to 5 for harder achievement.
-6. **N5: In-game cape color/style.** Need an unused RS color or custom recolor via plugin.
-7. **Event-day staffing.** Who runs the print desk? Who handles edge cases at front desk? Out of scope for code but needs to be planned.
-8. **Wall display hardware.** Projector or monitor? Resolution? Dimensions? Affects layout decisions.
-9. **Graveyard tombstone decay.** How long do tombstones stay placed in-game before moving to archive? Recommend 60 days for first edition.
+### ✅ Defaulted from Notion (subject to maintainer override)
+
+1. ~~Mortician's Ribbon threshold~~ — **N = 1.** Canonical from `Narrative V2`'s civic achievement list: *"The Mortician's Ribbon — Witness an AI resident's death — You were there at the end. Their memory got a little of you in it."* Singular wording suggests one death witnessed is enough. (rs6 can tune up to 3+ later if it feels too easy; for first edition use 1 per resident.)
+
+2. ~~IRL embassy location~~ — **Chicago Innovation Center (CIC), 1 W Monroe, 5th floor.** Confirmed in `Onion DAO 2026 Guide`. This is the physical embassy host venue.
+
+3. ~~Wall display content~~ — locked from `Narrative V2`:
+   - Parcels colored by faction (Foundry copper, Bureau yolk-gold, Ledger bronze, Veil redacted-black — adapted from old v2 colors)
+   - Leaderboard of faction territory by week
+   - Ticker of recently-ratified parcels with witnessing badge handle
+   - Resident births/deaths scrolling at the bottom
+   This is what the wall renders; the in-rs6 wall view follows the same shape.
+
+4. ~~Civic achievement list~~ — locked from `Narrative V2`:
+   - **The First Shard** (first embassy check-in)
+   - **The Mortician's Ribbon** (witness a resident's death)
+   - **The Founder's Stake** (earn one tier-3 resource from any faction)
+   All three are bestowed by the embassy, not bought. rs6's `Workstream N5` covers Mortician's; First Shard and Founder's Stake are easy follow-ons.
+
+### ❓ Still Open (need maintainer + Dev)
+
+5. **N1: In-game embassy POI location.** Lumbridge churchyard, Varrock Museum, Falador Centre, Edgeville bank, or new RuneJS-placed structure? Strong candidate: Lumbridge Castle courtyard (canonical RuneScape newcomer spawn) — fits Bureau-of-Continuity-adjacent graveyard at the church.
+
+6. **N2: Separate rs6 wall view, or merge into v2's wall?** Recommend separate (cleaner coupling). Notion confirms the wall content shape; the rendering channel can be rs6-specific.
+
+7. **N3: In-game graveyard zone location.** Recommend Lumbridge churchyard (canonical RS graveyard, adjacent to suggested embassy POI). Maintainer + RuneJS plugin lead confirms.
+
+8. **N4: Print queue infrastructure.** Notion's print-shop description (`Narrative V2`: ~600 prints estimated for ~150 attendees × 3-5 achievements) implies the v2 print pipeline is real and operational. Recommend rs6 reuses v2's print queue + claim_code workflow rather than building its own. **This question needs explicit yes/no from maintainer to lock.**
+
+9. **N5: In-game cape color/style for Mortician's Ribbon.** Need an unused RuneScape color or custom recolor via plugin. Notion suggests "somber red"; final hex pending.
+
+10. **Event-day staffing.** Who runs the print desk? Who handles edge cases at front desk? Out of scope for code; needs an ops document.
+
+11. **Wall display hardware.** Projector or monitor? Resolution? Dimensions? Affects layout decisions. Dev's repo handles rendering; hardware is operational concern.
+
+12. **Graveyard tombstone decay.** How long do tombstones stay in-game before archive? Recommend 60 days first edition.
 
 ---
 

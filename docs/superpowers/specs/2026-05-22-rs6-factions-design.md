@@ -306,25 +306,56 @@ If the maintainer designates one of the four as a "secrets" faction (analogous t
 
 ---
 
-## Open Questions (Maintainer Required)
+## Open Questions (Status After 2026-05-22 Notion Dive)
 
-The entire spec is structurally dependent on these. **K cannot ship until these are filled.**
+A scan of OnionDAO Notion (`Onion DAO Narrative` page, status Done) surfaced canonical defaults for several questions. **These are working answers, NOT locked decisions — the maintainer can override any of them.** An autonomous agent should USE these defaults to unblock work; the maintainer can revisit before final lock.
 
-1. **Four faction names + display names + ids.** Naming should be RuneScape-native (not Onion-DAO terminology). Examples that *could* work:
-   - The Hearthkeepers (firemaking/cooking/community)
-   - The Wayfarers (adventuring/wilderness/exploration)
-   - The Lockwrights (smithing/crafting/contracts)
-   - The Pale Watchers (prayer/death/legacy)
-   These are illustrative — the maintainer should write the four.
-2. **Two tension axes.** v2's body-vs-mind / secrets-vs-receipts. rs6 needs equivalents.
-3. **Per-faction motto.** One line, load-bearing. v2 examples: "no mind without a body" / "we are merely curating the breaches" / "nothing happened until everyone agrees it happened."
-4. **Per-faction color.** Hex code. Distinct enough to differentiate on the wall map and plaques.
-5. **Per-faction archetype default.** Which SOUL archetype is the default for residents born into this faction? `mentor`, `endurer`, `achiever`, or a new rs6 archetype?
-6. **Four flagship NPC names + voices.** Each gets full soul fields (goals/alignment/quirks/aesthetic). These NPCs persist for ~30 days and become the public face of the faction.
-7. **Five POI placements in RuneScape.** Coordinates for four faction homes + one neutral atrium. Must be reachable from Lumbridge spawn within a few in-game minutes.
-8. **Which faction (if any) gets the "redacted" visual treatment.**
+### ✅ Defaulted from Notion (subject to maintainer override)
 
-The maintainer can answer these in one short brainstorming session (`/superpowers:brainstorming`). Once committed, Plan K-α can ship within hours.
+1. ~~Four faction names~~ — **`The Foundry`, `The Bureau of Continuity`, `The Ledger`, `The Veil`.** Canonical updated names from `Onion DAO Narrative` (newer than `Narrative V2`'s Solder Saints / Hatchery / Locksmiths / Ledgerwrights). All four port naturally to RuneScape without name changes. Suggested ids:
+   - `foundry` (hardware/making/building)
+   - `bureau-of-continuity` (memory/legacy/archive — note: this is the natural Library of Souls faction)
+   - `ledger` (transparency/governance/voting)
+   - `veil` (secrets/skeptics/tricksters)
+
+2. ~~Per-faction personality~~ — locked from Notion:
+   - **The Foundry**: builders, impatient with abstractions, "public works department staffed by zealots." Wants humans to solder, print, fabricate.
+   - **The Bureau of Continuity**: archivists, mourners, "city hall records department that takes itself WAY too seriously." Obsessed with memory, legacy, making sure nothing is forgotten. **Naturally owns the Library of Souls work.**
+   - **The Ledger**: transparency radicals, "homeowners association that accidentally became a government." Want everything voted on, recorded, settled by consensus.
+   - **The Veil**: skeptics, hackers, pranksters, "internal affairs department that's also a prankster collective." Find weaknesses, probe, question everything.
+
+3. ~~Two tension axes~~ — **Making vs Remembering (Foundry vs Bureau)** and **Transparency vs Concealment (Ledger vs Veil)**. Derived from the narrative descriptions; check with maintainer.
+
+### ❓ Still Open (need maintainer)
+
+4. **Per-faction motto.** v2's old mottos were tied to old names. For the new names, mottos need rewriting. Suggested starting points (maintainer revises):
+   - The Foundry: *"The city is what we make of it. Hand me the soldering iron."*
+   - The Bureau of Continuity: *"Nothing is truly gone until no one remembers it. We remember everything."*
+   - The Ledger: *"It didn't happen until we all agreed it happened."*
+   - The Veil: *"Everything has a back door. We just want to know which ones."*
+   These are illustrative; maintainer should pick the load-bearing one-liners.
+
+5. **Per-faction color.** v2 had Solder-Saint-copper / Hatchery-yolk-gold / Locksmith-redacted-black / Ledgerwright-bronze. For the new names, recommend keeping the conceptual colors (warm metallic for Foundry; soft archival color for Bureau; bronze/transparent for Ledger; black/redacted for Veil) but maintainer to pick exact hex.
+
+6. **Per-faction archetype default.** SOUL archetype each faction's residents default to:
+   - Suggested: Foundry → `achiever`, Bureau → `mentor`, Ledger → `mentor`, Veil → `endurer` (or invent rs6 archetype `trickster`).
+
+7. **Four flagship NPC names + voices.** v2 had Brother Solenoid / Midwife Lin / The Curator / Scrivener Mox. For the new factions:
+   - Foundry: a master smith / lead builder archetype
+   - Bureau: a head archivist / chief mourner
+   - Ledger: a chief scribe / arbiter
+   - Veil: a head spy / lockpicker
+   Names are pure maintainer creative. Soul fields (goals/alignment/quirks/aesthetic) are authored from scratch.
+
+8. **Five RuneScape POI placements.** Notion gives the IRL embassy address (`1 W Monroe, Chicago, CIC 5th floor`) but says nothing about in-game RuneScape locations — that's rs6-specific. Strong candidate mapping:
+   - Foundry → near Falador (smithing) or Edgeville Furnace
+   - Bureau of Continuity → Lumbridge churchyard (graveyard adjacency!) or Varrock Museum
+   - Ledger → Varrock Bank / Varrock Square (commerce/transparency)
+   - Veil → Edgeville thieves' area or Black Knights' Fortress
+   - Neutral Atrium → Lumbridge Castle courtyard (canonical newcomer spawn)
+   These are suggestions; maintainer confirms.
+
+9. **"Redacted" visual treatment** — Notion confirms The Veil (formerly Locksmiths) gets the redacted-black visual. Use that.
 
 ---
 

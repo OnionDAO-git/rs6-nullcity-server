@@ -191,24 +191,38 @@ For active workstream work, read the relevant spec(s) in `docs/superpowers/specs
 
 ---
 
-## Open Strategic Decisions (Maintainer Required)
+## Open Strategic Decisions
 
-These cannot be auto-specced. Maintainer (James) must decide before downstream work can lock:
+A 2026-05-22 Notion dive (canonical sources: `Narrative V2`, `Onion DAO Narrative`, `Onion DAO 2026 Guide`) defaulted several of these. **Defaulted answers are working values that an autonomous agent should use to unblock work — the maintainer can override any of them.** Resolved decisions are tracked in `docs/human-decisions.md`.
 
-- **The four rs6 faction names + lore.** *Workstream K.* Blocks K1, K3, K4, K5; partially blocks J5 (credit surfaces reference factions).
-- **rs6 currency name** — "Null Coins"? Repurposed gp-sink? *Workstream J.* Blocks J1, J2, J6, J7.
-- **rs6 currency decay rate** (per tick). *Workstream J.* Blocks J1.
-- **Visitor-born ritual names** (three parts totaling ~24 currency). *Workstream J.*
-- **rs6 embassy POI location in-game.** *Workstream N.*
-- **In-game graveyard zone location.** *Workstream N.*
-- **Mortician's Ribbon threshold N.** *Workstream N.*
-- **Letters delivery channel** — in-game mail? clan-chat broadcast? message-of-the-week? *Workstream J.*
-- **Whether to keep the v2 print queue + claim_code workflow or build rs6's own.** *Workstream N.*
-- **Notion target page** for canonical narrative source. *General.*
-- **June 1 demo cast** — which named heroes appear at the event? *Workstream M.*
-- **Live smoke owner.** Per the morning brief, Codex will run end-to-end smoke against a real RuneJS server. *Workstream I close-out.*
+### ✅ Defaulted from Notion (subject to maintainer override)
 
-Track resolved decisions in `docs/human-decisions.md`. An autonomous agent encountering one of these as a blocker should mark the relevant roadmap task `[!]` and add a one-line note describing what's blocked.
+- **Four faction names** — **`The Foundry`** (hardware/making), **`The Bureau of Continuity`** (memory/legacy — natural Library-of-Souls owner), **`The Ledger`** (transparency/governance), **`The Veil`** (secrets/skeptics). Canonical updated names from `Onion DAO Narrative`. These port directly to RuneScape without renaming.
+- **Tension axes** — **Making vs Remembering** (Foundry vs Bureau) and **Transparency vs Concealment** (Ledger vs Veil). Derived from narrative descriptions.
+- **Currency name** — **`Shards`**. Canonical. Stored on the IRL badge as ESP-NOW packets, non-transferable between humans.
+- **Shard earning rates** — 1–3 per workshop, 5–20 per competition, 3–10 per quest, 1 daily check-in, 2 referral. From `Narrative V2`.
+- **Standing tier names** — **Acquaintance, Ally, Officer** (at thresholds 10/30/75 Shards by v2 defaults).
+- **Civic achievements** — three canonical: **First Shard** (first check-in), **Mortician's Ribbon** (witness one resident death — threshold N=1), **Founder's Stake** (earn one tier-3 resource).
+- **IRL embassy location** — **Chicago Innovation Center (CIC), 1 W Monroe, 5th floor.**
+- **Visual treatment for The Veil** — redacted-black on the wall map (carries forward v2's Locksmith treatment).
+
+### ❓ Still Open (need maintainer)
+
+- **Per-faction mottos.** v2's old mottos were tied to old names; new mottos need re-writing for The Foundry / Bureau of Continuity / Ledger / Veil. *Workstream K.*
+- **Per-faction colors (hex).** Conceptually: warm-metallic, archival-soft, bronze, redacted-black; exact hex TBD.
+- **Per-faction default SOUL archetype.** *Workstream K.*
+- **Four flagship NPC names + voices** (goals/alignment/quirks/aesthetic). *Workstream K3.*
+- **Five RuneScape POI placements.** Notion gives the IRL embassy address; in-game RuneScape locations are rs6-specific. Strong candidate mapping: Foundry → Falador smithing area, Bureau → Lumbridge churchyard (Library-of-Souls adjacency), Ledger → Varrock Square/bank, Veil → Edgeville thieves' area, Atrium → Lumbridge Castle courtyard. *Workstream K4 + N1 + N3.*
+- **Shard → attention conversion ratio** and **attention decay rate per tick.** *Workstream J.*
+- **Visitor-born ritual names** (three parts of 8 Shards each). Suggested: Kindling / Inscription / Vow. *Workstream J.*
+- **Letter delivery channel** — RS in-game mailbox, clan-chat, scroll pickup, or web-only inbox? Recommend web-only inbox first. *Workstream J.*
+- **In-game patron verbs surface** — chathead, embassy hub, or hybrid. *Workstream J.*
+- **Whether rs6 and v2 share a currency ledger** or maintain separate balances. *Workstream J — deepest unresolved economic question.*
+- **Print queue reuse** — Does rs6 share v2's print queue + claim_code workflow? Strong default: yes (reuse). *Workstream N.*
+- **June 1 hero cast** — Which named heroes appear at the event? *Workstream M.*
+- **Live smoke owner** — Codex per morning brief. *Workstream I close-out.*
+
+An autonomous agent encountering an unresolved item should mark the relevant roadmap task `[!]` with a one-line note. An agent encountering a Notion-defaulted item should USE THE DEFAULT and note its source.
 
 ---
 

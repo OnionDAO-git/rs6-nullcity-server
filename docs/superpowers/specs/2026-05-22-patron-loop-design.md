@@ -451,17 +451,48 @@ Build order:
 
 ---
 
-## Open Questions (Maintainer Required)
+## Open Questions (Status After 2026-05-22 Notion Dive)
 
-1. **`<CURRENCY>` name.** Suggested: "Null Coins", "Sparks", "Tokens of Witness". Affects all UI text and ledger labels.
-2. **Currency-to-attention conversion ratio.** Default 2 attention per 1 currency. Should it be more/less generous?
-3. **Decay rate of resident attention per tick.** Default: 1 attention per tick. Combined with refill ratio determines economy.
-4. **Birth ritual names.** Three parts of 8 each. Suggested: "Kindling, Inscription, Vow." Maintainer to pick rs6-flavored versions.
-5. **Letter delivery channel** — RuneScape mailbox, clan chat broadcast on login, or static scroll pickup at embassy?
-6. **In-game patron verbs surface** — chathead menu directly on resident NPCs (intimate, less discoverable) or embassy POI as single hub (discoverable, less intimate)? Hybrid recommended: gift/offer on chathead, sponsor at embassy.
-7. **Standing tier names.** v2 uses stranger/acquaintance/ally/officer. rs6 may want RS-flavored equivalents.
-8. **Per-Handler contribution cap.** v2 caps first-10-Shards-at-full-strength on a single campaign. Apply here too?
-9. **Should currency be reusable across v2 and rs6?** If James earns Shards at the workshop, can he spend them in rs6? Or are the economies separate?
+OnionDAO Notion (`Narrative V2`, `Onion DAO Narrative`, `Onion DAO 2026 Guide`) answered several. **Defaulted answers are working values, not locked — maintainer can override.**
+
+### ✅ Defaulted from Notion (subject to maintainer override)
+
+1. ~~Currency name~~ — **`Shards`** (canonical, used in both `Narrative V2` and the `Onion DAO 2026 Guide`). Replace all `<CURRENCY>` references in this spec with `Shards`. Description from Notion: *"the embassy's official unit of attention"*, stored on the badge as ESP-NOW packets, non-transferable between humans.
+
+2. ~~Shard earning rates~~ — locked from Notion `Narrative V2`:
+   - Workshop attendance: 1–3 Shards
+   - Competition placement: 5–20 Shards
+   - Experience / quest completion: 3–10 Shards
+   - Daily embassy check-in: 1 Shard
+   - Bring someone new into a workshop: 2 Shards (the referral bonus)
+   *(These resolve sub-questions of J7.)*
+
+3. ~~Standing tier names~~ — **`Acquaintance`, `Ally`, `Officer`** (canonical from `Narrative V2`'s "Design Notes & Open Questions"). Three tiers, gating T1/T2/T3 resources respectively. v2's threshold values (10/30/75 Shards) carry over as defaults until tuning.
+
+4. ~~Birth ritual name framing~~ — Not directly answered in Notion, but the "three parts of 8 Shards each totaling 24" mechanic is implied by v2's 24-Shard birth tithe. Suggested rs6-flavored names (still maintainer creative):
+   - **Kindling** (8): the human supplies attention's first ember
+   - **Inscription** (8): the human writes soul fields
+   - **Vow** (8): the human binds Standing to the new resident
+   Or use v2 naming if the maintainer wants tighter alignment.
+
+### ❓ Still Open (need maintainer)
+
+5. **Shard → attention conversion ratio.** How many `attention` units does 1 Shard refill? Notion is silent. Default: 2 attention per 1 Shard. Tunable.
+
+6. **Resident attention decay rate per tick.** Default: 1 attention per tick. Combined with refill ratio, determines pace economy.
+
+7. **Letter delivery channel.** Notion confirms letters exist as a concept (residents leaving "memories, artifacts, and legacies") but doesn't pick a delivery mechanism. Three options remain:
+   - RuneScape in-game mailbox (most natural; requires plugin work)
+   - Clan-chat broadcast on login (wide, less personal)
+   - Static scroll pickup at the embassy POI (requires N1)
+   - Web-only inbox via residents-dashboard (Dev's repo — works immediately, no in-game work)
+   Recommend: web-only inbox first; in-game delivery deferred.
+
+8. **In-game patron verbs surface.** Chathead menu on resident NPCs (intimate, less discoverable) OR embassy POI hub (discoverable, less intimate) OR hybrid. Recommend hybrid: gift/offer on chathead; sponsor at embassy NPC.
+
+9. **Per-Handler contribution cap.** v2's first-10-Shards-at-full-strength rule. Carry over to rs6? Recommend yes for parity.
+
+10. **Cross-economy reusability.** If James earns Shards at the IRL workshop, can he spend them in rs6 (RuneScape) AND in v2 (nullv2)? OR are the rs6 and v2 economies separate ledgers? **This is the deepest open question** — affects whether rs6 reuses v2's existing currency tables or builds its own. Recommend: separate ledgers (rs6 has its own `humans.shard_balance_rs6` column) with optional admin-bridge for cross-credit.
 
 ---
 
