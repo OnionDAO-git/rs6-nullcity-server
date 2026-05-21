@@ -268,11 +268,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Success metric: produces at least one fire from self-chopped logs in benchmark or live test.
   - Verified 2026-05-21 on `nullcity`: autonomous `woodcutting-firemaking-10m` passed (`status=passed`, `score=1`, artifact `/tmp/oniondao-wood-fire-bench-post-stale-log-fix/bench_20260521072605_woodcutting_firemaking_10m.json`). This pass also suppresses stale fire-adjacent log pickups and stale "Next: pick up logs" beacons after firemaking consumes the logs.
 
-- `[~]` **G2: Fishing plus cooking loop.**
+- `[x]` **G2: Fishing plus cooking loop.**
   - Deliverable: find fishing spot, use small net, catch shrimp, cook on range/fire when available.
   - Success metric: inventory changes from raw shrimp to cooked shrimp or clear failure explanation.
   - Partial 2026-05-21 on `claude/evidence-loop-p1`: added deterministic starter cooking behavior. `agent cook shrimp` uses carried raw shrimp/anchovies on a visible fire/range without inference, active starter-fishing goals cook raw catches before more net fishing, and missing heat is explained in chat. Focused thinking tests, typecheck, lint, build, and full Jest suite passed. Remaining gap: live or benchmark proof that raw fish changes to cooked fish in-game.
   - Partial 2026-05-21 on `claude/evidence-loop-p1`: added `fishing-cooking-10m` verifier/CLI wiring, autonomous selected-module proof requirements, false-positive coverage for externally supplied fish and cooked fish without a cooking action, benchmark-goal seeding, and scripted fallback to make a cooking fire when raw fish is ready. Focused benchmark/thinking tests and benchmark dry-run passed. Remaining gap: live autonomous benchmark proof against the local server.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: live autonomous `fishing-cooking-10m` passed against the local server with `onion.runescape.standard` (`status=passed`, `score=1`, artifact `/tmp/oniondao-fishing-cooking-bench/bench_20260521162350_fishing_cooking_10m.json`). The run showed the module netting fish, making a fire from carried logs and tinderbox, and attempting cooking actions under benchmark observation.
 
 - `[x]` **G3: Prayer starter loop.**
   - Deliverable: bury bones from inventory or safe defeated enemies.
@@ -349,7 +350,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
   - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
-  - Human-like next slice: F1 goal sharing cadence, then F3/F4 exploration/stuck recovery and G2 fishing-cooking.
+  - Human-like next slice: F1 goal sharing cadence, then F3/F4 exploration/stuck recovery, then a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
 
 ## Agent Update Protocol
 
