@@ -38,7 +38,7 @@ Agents should update the status marker and add a one-line note under the task wh
   - Example gateway config uses `127.0.0.1` and a placeholder auth token.
 - `[x]` MVP game-skill context, workflow availability, prompt injection, and knowledge suggestion plumbing exist.
 - `[x]` A dedicated agent-facing RuneScape skill/doc index exists under `docs/runescape-skill/`.
-- `[ ]` Benchmark harness and dashboard module panels are not built yet.
+- `[>]` Benchmark harness foundation exists; starter suite and dashboard benchmark pages are still pending.
 
 ## Workstream A: SPARK Capability Facades
 
@@ -124,10 +124,11 @@ Agents should update the status marker and add a one-line note under the task wh
   - Deliverable: every task has a verifier, scoring rubric, and fixture tests.
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
 
-- `[ ]` **C5: Add benchmark CLI.**
+- `[x]` **C5: Add benchmark CLI.**
   - Files: `src/controller/benchmarks/cli.ts`, `package.json`
   - Deliverable: `npm run controller:bench -- --task make-fire-5m --module onion.runescape.standard`
   - Verification: dry-run test and one local smoke run when server/controller are available.
+  - Verified 2026-05-20 on `codex/body-waiter-coordinator` with CLI parser tests, focused benchmark tests, typecheck, lint, build, dry run, and live `make-fire-5m` smoke (`status=passed`, `score=1`, artifact `data/benchmarks/bench_20260521001409_make_fire_5m.json`).
 
 ## Workstream D: Dashboard Debugging
 

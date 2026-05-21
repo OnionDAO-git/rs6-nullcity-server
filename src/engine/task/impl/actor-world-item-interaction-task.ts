@@ -18,7 +18,7 @@ export abstract class ActorWorldItemInteractionTask<TActor extends Actor = Actor
      * @param worldItem The world item to interact with.
      */
     constructor(actor: TActor, worldItem: WorldItem) {
-        super(actor, worldItem.position, 1);
+        super(actor, worldItem.position, 1, !actor.position.withinInteractionDistance(worldItem.position, 1));
 
         if (!worldItem) {
             this.stop();

@@ -1,6 +1,6 @@
 import { objectIds } from '../../../engine/world/config/object-ids';
 import type { AgentAction, Perception, PerceptionEvent } from '../../transport/message-codecs';
-import type { BenchmarkTaskOutcome } from '../benchmark-runner';
+import type { BenchmarkTask, BenchmarkTaskOutcome } from '../benchmark-runner';
 
 export const MAKE_FIRE_5M_TASK_ID = 'make-fire-5m';
 export const MAKE_FIRE_5M_TASK_VERSION = '0.1.0';
@@ -19,6 +19,46 @@ export interface MakeFire5mVerificationInput {
     actions: MakeFire5mActionAttempt[];
     perceptions: Perception[];
     events: PerceptionEvent[];
+}
+
+export function makeFire5mBenchmarkTask(now: () => number = () => Date.now()): BenchmarkTask {
+    return {
+        id: MAKE_FIRE_5M_TASK_ID,
+        version: MAKE_FIRE_5M_TASK_VERSION,
+        timeoutMs: MAKE_FIRE_5M_BUDGET_MS,
+        resident: {
+            spawnPosition: { x: 3225, y: 3230, level: 0 },
+            initialInventory: [{ itemId: 590 }, { itemId: 1511 }],
+        },
+        run: async context => {
+            const startedAt = now();
+            const actions: MakeFire5mActionAttempt[] = [];
+            const action: AgentAction = { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'benchmark_make_fire_5m' };
+            actions.push({ action });
+            await context.submitAction(action);
+            context.recordSummary('Submitted tinderbox-on-logs action for make-fire-5m.');
+
+            while (!context.signal.aborted && now() - startedAt < MAKE_FIRE_5M_BUDGET_MS) {
+                const outcome = verifyMakeFire5m({
+                    elapsedMs: now() - startedAt,
+                    actions,
+                    perceptions: [...context.perceptions()],
+                    events: [...context.events()],
+                });
+                if (outcome.status === 'passed') {
+                    return outcome;
+                }
+                await sleep(1000, context.signal);
+            }
+
+            return verifyMakeFire5m({
+                elapsedMs: now() - startedAt,
+                actions,
+                perceptions: [...context.perceptions()],
+                events: [...context.events()],
+            });
+        },
+    };
 }
 
 export function verifyMakeFire5m(input: MakeFire5mVerificationInput): BenchmarkTaskOutcome {
@@ -192,4 +232,21 @@ function stringField(record: Record<string, unknown>, key: string): string | und
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+        return Promise.resolve();
+    }
+    return new Promise(resolve => {
+        const timeout = setTimeout(resolve, ms);
+        signal.addEventListener(
+            'abort',
+            () => {
+                clearTimeout(timeout);
+                resolve();
+            },
+            { once: true },
+        );
+    });
 }

@@ -70,7 +70,7 @@ export class BenchmarkRunner {
 
     constructor(private readonly options: BenchmarkRunnerOptions) {
         this.runId = options.runId || benchmarkRunId(options.task.id, options.now?.() || new Date());
-        this.resident = options.residentName || `bench:${options.task.id}:${this.runId}`;
+        this.resident = options.residentName || benchmarkResidentName(options.task.id, this.runId);
         this.now = options.now || (() => new Date());
     }
 
@@ -115,14 +115,28 @@ export class BenchmarkRunner {
             }
         }
 
-        if (cleanupFailures.length > 0 && outcome.status === 'passed') {
-            outcome = {
-                status: 'error',
-                score: 0,
-                failureReason: `cleanup failed: ${cleanupFailures.join('; ')}`,
-                metrics: outcome.metrics,
-                summaries: outcome.summaries,
-            };
+        if (cleanupFailures.length > 0) {
+            const cleanupSummary = `cleanup failed: ${cleanupFailures.join('; ')}`;
+            if (outcome.status === 'passed') {
+                outcome = {
+                    ...outcome,
+                    metrics: {
+                        ...outcome.metrics,
+                        cleanupFailures: cleanupFailures.length,
+                    },
+                    summaries: [...(outcome.summaries || []), cleanupSummary],
+                };
+            } else {
+                outcome = {
+                    ...outcome,
+                    failureReason: [outcome.failureReason, cleanupSummary].filter(Boolean).join('; '),
+                    metrics: {
+                        ...outcome.metrics,
+                        cleanupFailures: cleanupFailures.length,
+                    },
+                    summaries: [...(outcome.summaries || []), cleanupSummary],
+                };
+            }
         }
 
         const endedAt = this.now().toISOString();
@@ -160,7 +174,7 @@ export class BenchmarkRunner {
             signal,
             submitAction: async action => {
                 const ack = await this.options.gateway.submitActionWithRequestId(this.resident, action);
-                evidence.actionAttemptIds.push(ack.requestId);
+                pushUnique(evidence.actionAttemptIds, ack.requestId);
                 return ack.ackResult;
             },
             recordInferenceRequest: requestId => {
@@ -232,9 +246,7 @@ export class BenchmarkRunner {
                     if (!matchesResident(residentId, this.resident) || typeof requestId !== 'string') {
                         return;
                     }
-                    if (!evidence.actionAttemptIds.includes(requestId)) {
-                        evidence.actionAttemptIds.push(requestId);
-                    }
+                    pushUnique(evidence.actionAttemptIds, requestId);
                 },
             },
         ];
@@ -267,6 +279,12 @@ function createEvidenceBuffer(): BenchmarkEvidenceBuffer {
     };
 }
 
+function pushUnique(values: string[], value: string): void {
+    if (!values.includes(value)) {
+        values.push(value);
+    }
+}
+
 function outcomeFromError(error: unknown): BenchmarkTaskOutcome {
     if (error instanceof BenchmarkTimeoutError) {
         return { status: 'timeout', score: 0, failureReason: error.message };
@@ -284,6 +302,23 @@ function benchmarkRunId(taskId: string, now: Date): string {
         .replace(/[-:.TZ]/g, '')
         .slice(0, 14);
     return `bench_${stamp}_${taskId.replace(/[^a-z0-9]+/gi, '_')}`;
+}
+
+function benchmarkResidentName(taskId: string, runId: string): string {
+    const task = taskId
+        .replace(/^make-/, '')
+        .replace(/[^a-z0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 7);
+    return `res:bmk_${task || 'task'}_${shortHash(runId)}`.slice(0, 24);
+}
+
+function shortHash(value: string): string {
+    let hash = 5381;
+    for (const char of value) {
+        hash = ((hash << 5) + hash + char.charCodeAt(0)) >>> 0;
+    }
+    return hash.toString(36).padStart(8, '0').slice(0, 8);
 }
 
 function matchesResident(residentId: unknown, resident: string): boolean {

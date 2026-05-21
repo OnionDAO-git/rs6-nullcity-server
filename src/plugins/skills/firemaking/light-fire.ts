@@ -1,5 +1,6 @@
 import { randomBetween } from '@engine/util/num';
 import type { Player } from '@engine/world/actor/player/player';
+import type { PerceptionEvent } from '@engine/world/actor/resident/action/agent-action';
 import { itemIds } from '@engine/world/config/item-ids';
 import { objectIds } from '@engine/world/config/object-ids';
 import type { WorldItem } from '@engine/world/items/world-item';
@@ -59,6 +60,7 @@ export const lightFire = (player: Player, position: Position, worldItemLog: Worl
     player.playAnimation(null);
     player.sendMessage('The fire catches and the logs begin to burn.');
     player.skills.firemaking.addExp(burnExp);
+    emitFireLitEvent(player, position, worldItemLog, burnExp);
 
     if (!player.walkingQueue.moveIfAble(-1, 0)) {
         if (!player.walkingQueue.moveIfAble(1, 0)) {
@@ -76,3 +78,14 @@ export const lightFire = (player: Player, position: Position, worldItemLog: Worl
     player.metadata.lastFire = Date.now();
     player.busy = false;
 };
+
+function emitFireLitEvent(player: Player, position: Position, worldItemLog: WorldItem, experience: number): void {
+    const event: PerceptionEvent = {
+        kind: 'fire_lit',
+        item: { itemId: worldItemLog.itemId, amount: worldItemLog.amount },
+        position: { x: position.x, y: position.y, level: position.level },
+        experience,
+    };
+    player.playerEvents.emit('fire_lit', event);
+    (player as Player & { emitPerceptionEvent?: (event: PerceptionEvent) => void }).emitPerceptionEvent?.(event);
+}
