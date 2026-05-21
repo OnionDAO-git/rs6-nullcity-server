@@ -58,6 +58,20 @@ describe('LibraryUpdater', () => {
         );
     });
 
+    it('tags the final spoken line before a legacy event as last words', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeTrajectory(trajectory({ kind: 'say', tick: 2, text: 'I want one more log.' }));
+        updater.observeTrajectory(trajectory({ kind: 'say', tick: 4, text: 'Remember the fire.' }));
+        updater.observeTrajectory(trajectory({ kind: 'legacy_event', tick: 5, event: { cause: 'death' } }));
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({ kind: 'say', text: 'I want one more log.', lastWords: false }),
+            expect.objectContaining({ kind: 'say', text: 'Remember the fire.', lastWords: true }),
+            expect.objectContaining({ kind: 'legacy_event' }),
+        ]);
+    });
+
     it('regenerates portrait.md and portrait.json from the resident timeline', async () => {
         const { updater, root } = testUpdater();
 

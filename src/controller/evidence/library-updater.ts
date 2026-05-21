@@ -42,6 +42,9 @@ export class LibraryUpdater {
             return;
         }
         const index = this.readIndex();
+        if (line.kind === 'legacy_event') {
+            this.markLastWords(index.lives, line.tick);
+        }
         this.appendTimeline({ ...result.timelineEvent, lifeIndex: index.lives, significanceReasons: result.reasons });
         if (line.kind === 'legacy_event') {
             this.applyLegacyEvent(line, index);
@@ -122,6 +125,21 @@ export class LibraryUpdater {
         fs.appendFileSync(this.timelinePath(), `${JSON.stringify(pruneUndefined(event))}\n`);
     }
 
+    private markLastWords(lifeIndex: number, tick: number): void {
+        const timeline = this.readTimeline();
+        const lastSayIndex = timeline.findLastIndex(
+            event =>
+                event.kind === 'say' &&
+                numberField(event, 'lifeIndex', 1) === lifeIndex &&
+                numberField(event, 'tick') <= tick,
+        );
+        if (lastSayIndex < 0) {
+            return;
+        }
+        timeline[lastSayIndex] = { ...timeline[lastSayIndex], lastWords: true };
+        this.writeTimeline(timeline);
+    }
+
     private readIndex(): LibraryIndex {
         if (!fs.existsSync(this.indexPath())) {
             const now = this.now().toISOString();
@@ -153,6 +171,11 @@ export class LibraryUpdater {
                     return [];
                 }
             });
+    }
+
+    private writeTimeline(events: Array<Record<string, unknown>>): void {
+        const text = events.map(event => JSON.stringify(pruneUndefined(event))).join('\n');
+        this.writeAtomic(this.timelinePath(), text.length > 0 ? `${text}\n` : '');
     }
 
     private writeIndex(index: LibraryIndex): void {
@@ -194,6 +217,11 @@ export class LibraryUpdater {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function numberField(record: Record<string, unknown>, key: string, fallback = 0): number {
+    const value = record[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
 function pruneUndefined(record: Record<string, unknown>): Record<string, unknown> {
