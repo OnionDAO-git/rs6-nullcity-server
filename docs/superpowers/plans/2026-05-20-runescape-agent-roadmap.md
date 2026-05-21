@@ -221,6 +221,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: command examples are copy/pasteable and use configured data dirs.
   - Verified 2026-05-21 in this pass: runbook and RuneScape skill index now document local-vs-Railgun `RUNEBENCH_WIKI_DIR`, mounted wiki paths, durable knowledge dirs, and the rule that engine-local facts beat wiki snippets.
 
+- `[x]` **E5: Clean up knowledge suggestion workflow attribution.**
+  - Files: `src/controller/knowledge/game-skill-context.ts`, `src/controller/knowledge/game-skill-context.test.ts`
+  - Deliverable: combat, prayer, follow, fishing, firemaking, and woodcutting attempts are suggested against the workflow that produced the action, not whichever visible workflow sorts first.
+  - Verification: focused knowledge tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: normalized action causes before classification, kept combat movement and prayer-driven attacks under `safe-combat`, kept bury-bones under `train-prayer`, and preserved follow attribution. Focused knowledge tests, typecheck, lint, build, and full Jest suite passed.
+
 ## Workstream F: Human-Like Behavior Layer
 
 **Purpose:** Make the resident feel like a human-ish player instead of a static script.
@@ -327,7 +333,6 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` Build the consumption safety and proof loop next.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
-  - Knowledge suggestion attribution cleanup: live combat-prayer proof showed successful combat/pickup/bury actions being proposed under `train-woodcutting`; fix workflow classification before relying on the suggestion queue for self-improvement.
   - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
   - Human-like next slice: F1 goal sharing cadence, then F3/F4 exploration/stuck recovery and G2 fishing-cooking.

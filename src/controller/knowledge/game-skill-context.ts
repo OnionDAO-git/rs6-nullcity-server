@@ -216,26 +216,30 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
     const cause = `${textField(action.cause)} ${textField(attempt.cause)}`.trim();
     const target = record(action.target);
     const combined = `${kind} ${option} ${cause} ${targetText(target)}`.toLowerCase();
+    const words = combined.replace(/[_:-]+/g, ' ');
 
     if (kind === 'item_action' && /\bbury\b/.test(option)) {
         return 'train-prayer';
     }
-    if (isBonesTarget(target) || /\bbones?\b|\bbury\b/.test(combined)) {
-        return 'train-prayer';
-    }
-    if (kind === 'attack' || /\battack\b|\bsafe[_ -]?combat\b|\bcombat[_ -]?attack\b/.test(combined)) {
+    if (
+        kind === 'attack' ||
+        /\battack\b|\bsafe combat\b|\bcombat attack\b|\bcombat seek\b|\bcombat approach\b|\bcombat loot\b|\bsafe target\b/.test(words)
+    ) {
         return 'safe-combat';
     }
-    if (/\bfishing\b|\bsmall[_ -]?net\b|\bstarter[_ -]?fishing\b/.test(combined) || (kind === 'interact' && option === 'net')) {
+    if (isBonesTarget(target) || /\bbones?\b|\bbury\b/.test(words)) {
+        return 'train-prayer';
+    }
+    if (/\bfishing\b|\bsmall net\b|\bstarter fishing\b/.test(words) || (kind === 'interact' && option === 'net')) {
         return 'fishing-starter';
     }
-    if (/\bfiremaking\b|\bmake[_ -]?fire\b|\btinderbox\b|\bwoodcutting_chain_firemaking\b|\bfiremaking_fallback\b/.test(combined)) {
+    if (/\bfiremaking\b|\bmake fire\b|\btinderbox\b|\bwoodcutting chain firemaking\b|\bfiremaking fallback\b/.test(words)) {
         return 'make-fire';
     }
-    if (/\bwoodcutting\b|\bchop\b|\bchop down\b/.test(combined)) {
+    if (/\bwoodcutting\b|\bchop\b|\bchop down\b/.test(words)) {
         return 'train-woodcutting';
     }
-    if (/\bfollow\b|follow[_ -]|[_ -]follow|follow-codex|\bcodex\b/.test(combined)) {
+    if (/\bfollow\b|\bfollow codex\b|\bcodex\b/.test(words)) {
         return 'follow-codex';
     }
     return undefined;

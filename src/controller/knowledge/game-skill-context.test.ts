@@ -439,6 +439,100 @@ describe('GameSkillService', () => {
         expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
     });
 
+    it('attributes combat movement attempts to safe combat when woodcutting is also available', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = combatAndWoodcuttingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('safe-combat', 'Train safe combat near trees.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-combat-move',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'move_to',
+                    target: { x: 3214, y: 3238, level: 0 },
+                    range: 2,
+                    cause: 'combat_seek_safe_target',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'derived', detail: { kind: 'position_reached' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'safe-combat',
+                proposedChange: expect.objectContaining({
+                    targetId: 'safe-combat',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
+    });
+
+    it('attributes prayer-driven attack attempts to safe combat instead of prayer or woodcutting', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = combatAndWoodcuttingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('combat-prayer', 'Fight a chicken for bones, bury them, and chop nearby trees if useful.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-prayer-combat-attack',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'attack',
+                    target: { id: 'npc:1', kind: 'npc', key: 'rs:chicken', name: 'Chicken', position: { x: 3214, y: 3238, level: 0 } },
+                    cause: 'prayer_attack_safe_bone_source',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'hit_dealt' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'safe-combat',
+                proposedChange: expect.objectContaining({
+                    targetId: 'safe-combat',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-prayer' }));
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
+    });
+
     it('attributes underscore follow causes to follow-codex when other workflows are visible', () => {
         const append = jest.fn();
         const service = new GameSkillService({
@@ -510,4 +604,25 @@ function goal(id: string, description: string) {
 
 function perception(compressed: string) {
     return { tick: 1, compressed } as any;
+}
+
+function combatAndWoodcuttingPerception() {
+    return {
+        tick: 1,
+        resident: {
+            inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+        },
+        nearby: {
+            objects: [{ objectId: 1278, name: 'Tree', position: { x: 3213, y: 3238, level: 0 } }],
+            npcs: [{ id: 'npc:1', kind: 'npc', key: 'rs:chicken', name: 'Chicken', position: { x: 3214, y: 3238, level: 0 } }],
+        },
+        availableActions: [
+            {
+                kind: 'interact',
+                target: { objectId: 1278, position: { x: 3213, y: 3238, level: 0 } },
+                options: ['chop down'],
+            },
+        ],
+        events: [],
+    } as any;
 }
