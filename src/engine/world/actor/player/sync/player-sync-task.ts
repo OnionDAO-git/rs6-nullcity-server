@@ -7,6 +7,8 @@ import { stringToLong } from '@engine/util/strings';
 import { activeWorld } from '@engine/world';
 import type { UpdateFlags } from '@engine/world/actor/update-flags';
 import { isPlayer, isResident } from '@engine/world/actor/util';
+import { getLoadedMapBuildArea } from '@engine/world/map/map-build-area';
+import { serverConfig } from '@server/game/game-server';
 import type { Player } from '../player';
 import { SyncTask, appendMovement, registerNewActors, syncTrackedActors } from './actor-sync';
 
@@ -30,13 +32,15 @@ export class PlayerSyncTask extends SyncTask<void> {
             const updateMaskData = new ByteBuffer(5000);
 
             if (updateFlags.mapRegionUpdateRequired || this.player.metadata.teleporting) {
+                const loadedMapArea = getLoadedMapBuildArea(this.player.position, serverConfig.loadedZoneScale);
+                const localCoordBits = loadedMapArea.scale > 2 ? 9 : 7;
                 playerUpdatePacket.putBits(1, 1); // Update Required
                 playerUpdatePacket.putBits(2, 3); // Map Region changed (movement type - 0=nomove, 1=walk, 2=run, 3=mapchange
                 playerUpdatePacket.putBits(1, this.player.metadata.teleporting ? 1 : 0); // Whether or not the client should discard the current walking queue (1 if teleporting, 0 if not)
                 playerUpdatePacket.putBits(2, this.player.position.level); // Player Height
                 playerUpdatePacket.putBits(1, updateFlags.updateBlockRequired ? 1 : 0); // Whether or not an update flag block follows
-                playerUpdatePacket.putBits(7, this.player.position.chunkLocalX); // Player Local Chunk X
-                playerUpdatePacket.putBits(7, this.player.position.chunkLocalY); // Player Local Chunk Y
+                playerUpdatePacket.putBits(localCoordBits, loadedMapArea.localTileX); // Player Local Build Area X
+                playerUpdatePacket.putBits(localCoordBits, loadedMapArea.localTileY); // Player Local Build Area Y
             } else {
                 appendMovement(this.player, playerUpdatePacket);
             }

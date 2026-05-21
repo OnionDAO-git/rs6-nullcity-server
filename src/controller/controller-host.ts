@@ -30,7 +30,9 @@ export interface ControllerHostOptions {
 export class ControllerHost {
     private readonly gateway: GatewayClient;
     private readonly runtimes = new Map<string, ResidentRuntime>();
+    private readonly configuredDesired: Set<string>;
     private readonly desired: Set<string>;
+    private readonly paused = new Set<string>();
     private readonly soulLoader: SoulLoader;
     private readonly memory: MemoryStore;
     private readonly stateStore: RuntimeStateStore;
@@ -58,6 +60,7 @@ export class ControllerHost {
                 controllerId: config.gateway.controllerId,
                 reconnect: !options.once,
             });
+        this.configuredDesired = new Set(config.residents);
         this.desired = new Set(config.residents);
         this.soulLoader = options.soulLoader || new SoulLoader(config.souls.dir);
         this.memory = options.memory || new MemoryStore(config.memory.dir, config.memory.qmdBin);
@@ -130,6 +133,7 @@ export class ControllerHost {
     }
 
     private async performReconcile(): Promise<void> {
+        this.refreshDesiredResidents();
         const list = await this.gateway.listResidents('all');
         const residents = new Map(list.map(resident => [resident.name, resident]));
 
@@ -277,8 +281,24 @@ export class ControllerHost {
     }
 
     private pauseResident(name: string, cause: string): void {
+        this.paused.add(name);
         this.desired.delete(name);
         this.stopRuntime(name, cause);
+    }
+
+    private refreshDesiredResidents(): void {
+        this.desired.clear();
+        const discovered = this.discoveredSoulResidents();
+        for (const name of [...this.configuredDesired, ...discovered]) {
+            if (!this.paused.has(name)) {
+                this.desired.add(name);
+            }
+        }
+    }
+
+    private discoveredSoulResidents(): string[] {
+        const loader = this.soulLoader as Partial<Pick<SoulLoader, 'listResidentNames'>>;
+        return typeof loader.listResidentNames === 'function' ? loader.listResidentNames() : [];
     }
 
     private stopRuntime(name: string, cause: string): void {

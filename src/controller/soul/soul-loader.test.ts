@@ -1,4 +1,6 @@
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { SoulLoader } from './soul-loader';
 
 describe('SoulLoader', () => {
@@ -17,5 +19,15 @@ describe('SoulLoader', () => {
         const soul = loader.load('res:agent');
 
         expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
+    });
+
+    it('lists resident names from valid soul files', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-soul-loader-list-'));
+        fs.writeFileSync(path.join(root, 'res-agent.md'), `---\nname: res:agent\narchetype: endurer\n---\n# Agent\n`);
+        fs.writeFileSync(path.join(root, 'README.md'), '# Ignore me\n');
+
+        const loader = new SoulLoader(root);
+
+        expect(loader.listResidentNames()).toEqual(['res:agent']);
     });
 });

@@ -175,6 +175,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             temperature: this.temperatureFor(behavior.brain, 0.7),
             thinking: behavior.brain?.thinking ?? true,
             priority: 5,
+            ...(this.modelFor(behavior.brain) ? { model: this.modelFor(behavior.brain) } : {}),
         });
 
         const parsed = parseBrainCompletion(response.text);
@@ -228,6 +229,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             temperature: this.temperatureFor(behavior.body, 0.15),
             thinking: behavior.body?.thinking ?? false,
             priority: 2,
+            ...(this.modelFor(behavior.body) ? { model: this.modelFor(behavior.body) } : {}),
         });
         this.cognition().lastBodyTick = this.options.state.tick;
 
@@ -1143,6 +1145,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private endpointFor(profile?: InferenceProfileDefinition): string {
         return profile?.endpoint || this.options.soul.frontmatter.model?.endpoint || 'default';
+    }
+
+    private modelFor(profile?: InferenceProfileDefinition): string | undefined {
+        return profile?.model || this.options.soul.frontmatter.model?.model;
     }
 
     private temperatureFor(profile: InferenceProfileDefinition | undefined, fallback: number): number {

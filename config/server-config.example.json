@@ -21,6 +21,7 @@
     "checkCredentials": true,
     "tutorialEnabled": false,
     "adminDropsEnabled": true,
+    "loadedZoneScale": 1,
     "bypassTeleportRequirements": false,
     "agentGateway": {
         "enabled": true,

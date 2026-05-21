@@ -14,6 +14,7 @@ export interface GameServerConfig {
     checkCredentials: boolean;
     tutorialEnabled: boolean;
     adminDropsEnabled: boolean;
+    loadedZoneScale?: number;
     bypassTeleportRequirements?: boolean;
     agentGateway?: {
         enabled: boolean;

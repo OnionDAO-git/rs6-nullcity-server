@@ -99,6 +99,7 @@ export class ResidentRuntime {
                     submit: (action, metadata) => this.body.submit(action, metadata as Omit<BodyActionLogEntry, 'action' | 'result'>),
                 },
             });
+        this.options.stateStore.save(this.state);
     }
 
     async onPerception(perception: Perception): Promise<void> {

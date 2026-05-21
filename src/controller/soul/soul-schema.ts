@@ -19,6 +19,7 @@ export interface SoulFrontmatter {
     loves?: string[];
     model?: {
         endpoint?: string;
+        model?: string;
         temperature?: number;
     };
     attentionProfile?: {
@@ -114,6 +115,7 @@ export interface HybridAgentBehaviorDefinition {
 
 export interface InferenceProfileDefinition {
     endpoint?: string;
+    model?: string;
     temperature?: number;
     thinking?: boolean;
 }
@@ -156,6 +158,7 @@ const behaviorPositionSchema = z.object({
 });
 const inferenceProfileSchema = z.object({
     endpoint: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
     temperature: z.number().min(0).max(2).optional(),
     thinking: z.boolean().optional(),
 });
@@ -211,6 +214,7 @@ export const soulFrontmatterSchema = z
         model: z
             .object({
                 endpoint: z.string().optional(),
+                model: z.string().min(1).optional(),
                 temperature: z.number().min(0).max(2).optional(),
             })
             .optional(),

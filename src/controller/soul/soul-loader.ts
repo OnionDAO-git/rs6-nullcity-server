@@ -6,6 +6,27 @@ import { type Soul, validateSoulFrontmatter } from './soul-schema';
 export class SoulLoader {
     constructor(private readonly soulsDir: string) {}
 
+    listResidentNames(): string[] {
+        if (!fs.existsSync(this.soulsDir)) {
+            return [];
+        }
+
+        return fs
+            .readdirSync(this.soulsDir)
+            .filter(file => file.endsWith('.md'))
+            .flatMap(file => {
+                const sourcePath = path.join(this.soulsDir, file);
+                try {
+                    const raw = fs.readFileSync(sourcePath, 'utf8');
+                    const parsed = parseFrontmatter(raw, sourcePath);
+                    return isRecord(parsed.frontmatter) ? [validateSoulFrontmatter(parsed.frontmatter, sourcePath).name] : [];
+                } catch {
+                    return [];
+                }
+            })
+            .sort((a, b) => a.localeCompare(b));
+    }
+
     load(residentName: string): Soul {
         const sourcePath = this.resolveSoulPath(residentName);
         const raw = fs.readFileSync(sourcePath, 'utf8');
@@ -51,4 +72,8 @@ function parseFrontmatter(raw: string, sourcePath: string): { frontmatter: unkno
         frontmatter: yaml.load(frontmatterRaw) || {},
         body,
     };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

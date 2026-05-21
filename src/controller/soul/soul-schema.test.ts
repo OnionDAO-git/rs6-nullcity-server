@@ -52,4 +52,26 @@ describe('validateSoulFrontmatter modules', () => {
             ),
         ).toThrow('Invalid soul frontmatter');
     });
+
+    it('accepts per-resident model overrides in soul and hybrid inference profiles', () => {
+        const frontmatter = validateSoulFrontmatter(
+            {
+                name: 'res:agent',
+                archetype: 'endurer',
+                model: { endpoint: 'local', model: 'resident-model', temperature: 0.4 },
+                behavior: {
+                    kind: 'hybrid-agent',
+                    brain: { model: 'resident-brain-model', thinking: true },
+                    body: { model: 'resident-body-model', thinking: false },
+                },
+            },
+            '/tmp/res-agent.md',
+        );
+
+        expect(frontmatter.model).toEqual({ endpoint: 'local', model: 'resident-model', temperature: 0.4 });
+        expect(frontmatter.behavior).toMatchObject({
+            brain: { model: 'resident-brain-model' },
+            body: { model: 'resident-body-model' },
+        });
+    });
 });

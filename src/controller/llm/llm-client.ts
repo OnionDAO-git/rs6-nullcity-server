@@ -2,6 +2,7 @@ import type { LlmEndpointConfig } from '../config';
 
 export interface LlmRequest {
     endpoint: string;
+    model?: string;
     prompt: string;
     temperature?: number;
     thinking?: boolean;
@@ -44,15 +45,16 @@ export class LlmClient {
 
         const endpointKey = this.endpoints[request.endpoint] ? request.endpoint : 'default';
         const endpoint = this.endpoints[endpointKey];
-        if (!endpoint?.baseUrl || !endpoint.model) {
-            return { text: JSON.stringify({ actions: [] }), model: endpoint?.model, nooped: true };
+        const model = request.model || endpoint?.model;
+        if (!endpoint?.baseUrl || !model) {
+            return { text: JSON.stringify({ actions: [] }), model, nooped: true };
         }
         if (this.isPaused(endpointKey)) {
-            return { text: JSON.stringify({ actions: [] }), model: endpoint.model, nooped: true };
+            return { text: JSON.stringify({ actions: [] }), model, nooped: true };
         }
 
         const body = {
-            model: endpoint.model,
+            model,
             messages: [{ role: 'user', content: request.prompt }],
             temperature: request.temperature ?? 0.2,
             ...(request.thinking === undefined
@@ -75,7 +77,7 @@ export class LlmClient {
             return await this.postCompletionWithRetry(endpointKey, endpoint, body, request.signal);
         } catch (error) {
             if (request.signal?.aborted) {
-                return { text: '', model: endpoint.model, nooped: true, cancelledBy: String(request.signal.reason || 'aborted') };
+                return { text: '', model, nooped: true, cancelledBy: String(request.signal.reason || 'aborted') };
             }
             if (isRetryableError(error)) {
                 throw error;

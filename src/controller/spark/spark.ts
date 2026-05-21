@@ -127,6 +127,7 @@ export class Spark {
                 temperature: this.soul.frontmatter.model?.temperature,
                 signal: request.controller.signal,
                 priority: winner.priority,
+                ...(this.soul.frontmatter.model?.model ? { model: this.soul.frontmatter.model.model } : {}),
             })
             .then(value => {
                 this.mailbox.finish(request.id, value);

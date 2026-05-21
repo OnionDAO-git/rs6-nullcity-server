@@ -1,6 +1,8 @@
 import { regionChangeActionFactory } from '@engine/action/pipe/region-change.action';
 import { activeWorld } from '@engine/world';
 import { isNpc, isPlayer } from '@engine/world/actor/util';
+import { getLoadedMapBuildArea } from '@engine/world/map/map-build-area';
+import { serverConfig } from '@server/game/game-server';
 import { Subject } from 'rxjs';
 import { Position } from '../position';
 import type { Actor } from './actor';
@@ -214,9 +216,12 @@ export class WalkingQueue {
             this.movementEvent.next(this.actor.position);
 
             if (isPlayer(this.actor)) {
-                const mapDiffX = this.actor.position.x - lastMapRegionUpdatePosition.chunkX * 8;
-                const mapDiffY = this.actor.position.y - lastMapRegionUpdatePosition.chunkY * 8;
-                if (mapDiffX < 16 || mapDiffX > 87 || mapDiffY < 16 || mapDiffY > 87) {
+                const loadedMapArea = getLoadedMapBuildArea(lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
+                const mapDiffX = this.actor.position.x - loadedMapArea.baseTileX;
+                const mapDiffY = this.actor.position.y - loadedMapArea.baseTileY;
+                const rebuildMargin = 16;
+                const rebuildLimit = Math.min(loadedMapArea.sizeTiles - rebuildMargin - 1, 239);
+                if (mapDiffX < rebuildMargin || mapDiffX > rebuildLimit || mapDiffY < rebuildMargin || mapDiffY > rebuildLimit) {
                     this.actor.updateFlags.mapRegionUpdateRequired = true;
                     this.actor.lastMapRegionUpdatePosition = this.actor.position;
                 }

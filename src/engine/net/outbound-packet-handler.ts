@@ -9,6 +9,7 @@ import type { Item } from '@engine/world/items/item';
 import { ItemContainer } from '@engine/world/items/item-container';
 import type { WorldItem } from '@engine/world/items/world-item';
 import type { Chunk, ChunkUpdateItem } from '@engine/world/map/chunk';
+import { getLoadedMapBuildArea, getLoadedMapRegions } from '@engine/world/map/map-build-area';
 import type { ConstructedChunk, ConstructedRegion } from '@engine/world/map/region';
 import { Position } from '@engine/world/position';
 import { ByteBuffer, logger } from '@runejs/common';
@@ -255,8 +256,9 @@ export class OutboundPacketHandler {
     }
 
     public updateReferencePosition(position: Position): void {
-        const offsetX = position.x - this.player.lastMapRegionUpdatePosition.chunkX * 8;
-        const offsetY = position.y - this.player.lastMapRegionUpdatePosition.chunkY * 8;
+        const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
+        const offsetX = position.x - loadedMapArea.baseTileX;
+        const offsetY = position.y - loadedMapArea.baseTileY;
 
         const packet = new Packet(254);
         packet.put(offsetY);
@@ -705,25 +707,20 @@ export class OutboundPacketHandler {
     }
 
     private writeCurrentMapChunkPayload(packet: Packet): void {
-        packet.put(this.player.position.chunkLocalY, 'short');
-        packet.put(this.player.position.chunkX + 6, 'short', 'le');
-        packet.put(this.player.position.chunkLocalX, 'short');
-        packet.put(this.player.position.chunkY + 6, 'short', 'le');
-        packet.put(this.player.position.level);
+        const loadedMapArea = getLoadedMapBuildArea(this.player.position, serverConfig.loadedZoneScale);
 
-        const startX = Math.floor(this.player.position.chunkX / 8);
-        const endX = Math.floor((this.player.position.chunkX + 12) / 8);
-        const startY = Math.floor(this.player.position.chunkY / 8);
-        const endY = Math.floor((this.player.position.chunkY + 12) / 8);
+        packet.put(loadedMapArea.localTileY, 'short');
+        packet.put(loadedMapArea.centerZoneX, 'short', 'le');
+        packet.put(loadedMapArea.localTileX, 'short');
+        packet.put(loadedMapArea.centerZoneY, 'short', 'le');
+        packet.put(this.player.position.level);
 
         const encryptionEnabled = serverConfig.encryptionEnabled === undefined ? true : serverConfig.encryptionEnabled;
 
-        for (let mapX = startX; mapX <= endX; mapX++) {
-            for (let mapY = startY; mapY <= endY; mapY++) {
-                const xteaRegion = xteaRegions[`l${mapX}_${mapY}`];
-                for (let seeds = 0; seeds < 4; seeds++) {
-                    packet.put(encryptionEnabled ? (xteaRegion?.key[seeds] ?? 0) : 0, 'int');
-                }
+        for (const region of getLoadedMapRegions(this.player.position, serverConfig.loadedZoneScale)) {
+            const xteaRegion = xteaRegions[`l${region.x}_${region.y}`];
+            for (let seeds = 0; seeds < 4; seeds++) {
+                packet.put(encryptionEnabled ? (xteaRegion?.key[seeds] ?? 0) : 0, 'int');
             }
         }
     }
@@ -772,8 +769,9 @@ export class OutboundPacketHandler {
     }
 
     private putCameraPosition(packet: Packet, position: Position, height: number, speed: number, acceleration: number): void {
-        packet.put(position.calculateChunkLocalX(this.player.lastMapRegionUpdatePosition));
-        packet.put(position.calculateChunkLocalY(this.player.lastMapRegionUpdatePosition));
+        const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
+        packet.put(position.x - loadedMapArea.baseTileX);
+        packet.put(position.y - loadedMapArea.baseTileY);
         packet.put(height, 'SHORT');
         packet.put(speed);
         packet.put(acceleration);
@@ -788,8 +786,9 @@ export class OutboundPacketHandler {
     private getChunkOffset(chunk: Chunk): { offsetX: number; offsetY: number } {
         let offsetX = (chunk.position.x + 6) * 8;
         let offsetY = (chunk.position.y + 6) * 8;
-        offsetX -= this.player.lastMapRegionUpdatePosition.chunkX * 8;
-        offsetY -= this.player.lastMapRegionUpdatePosition.chunkY * 8;
+        const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
+        offsetX -= loadedMapArea.baseTileX;
+        offsetY -= loadedMapArea.baseTileY;
 
         return { offsetX, offsetY };
     }

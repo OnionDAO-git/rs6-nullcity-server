@@ -106,6 +106,17 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
     });
 
+    it('lets an individual request override the endpoint model', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('custom'));
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        await client.complete({ endpoint: 'default', model: 'resident-model', prompt: 'decide' });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.model).toBe('resident-model');
+    });
+
     it('admits queued requests by priority when concurrency is exhausted', async () => {
         let releaseFirst: (() => void) | undefined;
         const firstResponse = new Promise<Response>(resolve => {

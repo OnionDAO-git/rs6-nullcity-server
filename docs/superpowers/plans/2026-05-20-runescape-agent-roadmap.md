@@ -178,10 +178,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: dashboard test or local browser screenshot at `/observe/resident/res%3Aagent`.
   - Verified 2026-05-20 in `rs6-nullcity-residents-dashboard` with runtime read-model and activity snapshot tests plus dashboard typecheck/build.
 
-- `[ ]` **D2: Add current goal and last thought/action panel.**
+- `[>]` **D2: Add current goal and last thought/action panel.**
   - Files: dashboard resident observe route/components
   - Deliverable: humans can see active goal, recent action, evidence, final status, and failure reason.
   - Verification: Playwright/browser inspection with `res:agent`.
+  - Partial 2026-05-21 on `nullcity`: resident detail Spark Activity now surfaces Thinking/Nervous/Body state, current goal, recent inference/action/feed, and explicitly distinguishes gateway-online residents that are still waiting for controller runtime state. Dashboard spawn now writes controller-discoverable SOUL files for autonomous residents, and the controller discovers valid SOUL files from `souls.dir` during reconcile.
 
 - `[ ]` **D3: Add benchmark run list and detail pages.**
   - Files: dashboard benchmark routes/components

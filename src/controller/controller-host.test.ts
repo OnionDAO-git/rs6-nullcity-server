@@ -137,6 +137,29 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('discovers desired residents from soul files during reconcile', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => ['res:newcomer']),
+            load: jest.fn((name: string) => soul(name)),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const host = new ControllerHost({ ...config(), residents: [] }, deps);
+
+        await host.start();
+
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: 'res:newcomer',
+            spawnPosition: undefined,
+            initialInventory: undefined,
+            initialEquipment: undefined,
+        });
+        expect(gateway.connectResident).toHaveBeenCalledWith({ name: 'res:newcomer', observe: true, control: true, onDisconnect: 'idle' });
+        expect(runtimeCount(host)).toBe(1);
+
+        await host.stop();
+    });
+
     it('passes configured SPARK modules into created runtimes', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
