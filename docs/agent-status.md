@@ -10,6 +10,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-21 late      claude  workstream=none  align coordination doc with direct-to-nullcity workflow per maintainer guidance "no branches, just pushes to main." Revised Rule 3, dropped "current branch" column from workstream ownership table, updated examples. Pushed directly to nullcity.
 2026-05-21 night     claude  branch=claude/evidence-loop-p1    workstream=I  starting autonomous overnight implementation of Plan P1 (Evidence foundation + mock perception) per maintainer authorization. 30-min heartbeat via /loop. Will pull nullcity each cycle to stay in sync with Codex; OK to touch shared files per maintainer guidance. Live smoke only with separate port to avoid collision with Codex. Branch will be pushed; nullcity untouched until merge in the morning. Morning brief will be at docs/morning-brief-2026-05-22.md.
 2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added the first P1 foundation slice: EvidenceStore schemas/files, ProgressTracker, MockPerceptionAdapter, and RuntimeState progress fields. Focused tests plus typecheck/lint/build passed.
+2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added tested TrajectoryBuilder begin/end/action/action_result/legacy recording over EvidenceStore. Focused evidence tests plus typecheck/lint/build passed.
 ```
 
 ## Conventions
