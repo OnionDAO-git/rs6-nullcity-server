@@ -2380,6 +2380,30 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('runs direct cook commands on carried raw starter fish without inference', async () => {
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3202, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 317, key: 'rs:raw_shrimp', amount: 1 }],
+                },
+                objects: [fire],
+                events: [chatFromCodex('agent cook shrimp', 3218, 3200)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'use_item_on', itemSlot: 0, target: fire, cause: 'starter_fishing_cook_catch' }]);
+        expect(result.cause).toBe('direct_chat_cook');
+        expect(state.cognition?.activeGoal?.id).toBe('cook-starter-fish');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('uses net on a visible starter fishing spot so the interaction task can path', async () => {
         const fishingSpot = npc('Fishing spot', 3224, 3201);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
@@ -2409,6 +2433,78 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
         expect(result.cause).toBe('starter_fishing_net');
+    });
+
+    it('cooks raw starter fish on a visible fire before continuing the starter fishing loop', async () => {
+        const fishingSpot = npc('Fishing spot', 3224, 3201);
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3202, level: 0 } };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch.',
+                steps: ['Catch shrimp', 'Cook raw fish on a fire or range'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                npcs: [fishingSpot],
+                objects: [fire],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'use_item_on', itemSlot: 1, target: fire, cause: 'starter_fishing_cook_catch' }]);
+        expect(result.cause).toBe('starter_fishing_cook_catch');
+    });
+
+    it('explains the missing heat source when carrying raw starter fish', async () => {
+        const fishingSpot = npc('Fishing spot', 3224, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch.',
+                steps: ['Catch shrimp', 'Cook raw fish on a fire or range'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' },
+        ]);
+        expect(result.cause).toBe('starter_fishing_missing_heat');
     });
 
     it('seeds starter fishing as the active benchmark goal without initial Brain drift', async () => {

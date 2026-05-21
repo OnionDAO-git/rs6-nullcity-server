@@ -268,9 +268,10 @@ Safe public module facade building blocks are implemented, but the public member
   - Success metric: produces at least one fire from self-chopped logs in benchmark or live test.
   - Verified 2026-05-21 on `nullcity`: autonomous `woodcutting-firemaking-10m` passed (`status=passed`, `score=1`, artifact `/tmp/oniondao-wood-fire-bench-post-stale-log-fix/bench_20260521072605_woodcutting_firemaking_10m.json`). This pass also suppresses stale fire-adjacent log pickups and stale "Next: pick up logs" beacons after firemaking consumes the logs.
 
-- `[ ]` **G2: Fishing plus cooking loop.**
+- `[~]` **G2: Fishing plus cooking loop.**
   - Deliverable: find fishing spot, use small net, catch shrimp, cook on range/fire when available.
   - Success metric: inventory changes from raw shrimp to cooked shrimp or clear failure explanation.
+  - Partial 2026-05-21 on `claude/evidence-loop-p1`: added deterministic starter cooking behavior. `agent cook shrimp` uses carried raw shrimp/anchovies on a visible fire/range without inference, active starter-fishing goals cook raw catches before more net fishing, and missing heat is explained in chat. Focused thinking tests, typecheck, lint, build, and full Jest suite passed. Remaining gap: live or benchmark proof that raw fish changes to cooked fish in-game.
 
 - `[x]` **G3: Prayer starter loop.**
   - Deliverable: bury bones from inventory or safe defeated enemies.
