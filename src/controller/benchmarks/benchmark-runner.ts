@@ -138,6 +138,7 @@ export class BenchmarkRunner {
         let connected = false;
         let outcome: BenchmarkTaskOutcome | undefined;
         const cleanupFailures: string[] = [];
+        const cleanupSkips: string[] = [];
 
         try {
             await this.options.gateway.createResident({ name: this.resident, ...this.options.task.resident });
@@ -192,7 +193,7 @@ export class BenchmarkRunner {
                         outcome?.status === 'passed' ? 'benchmark_complete' : `benchmark_${outcome?.status || 'stopped'}`,
                     );
                 } catch (error) {
-                    cleanupFailures.push(errorMessage(error));
+                    recordCleanupProblem(error, cleanupFailures, cleanupSkips);
                 }
             }
             this.unbindEvidenceListeners(listeners);
@@ -203,7 +204,7 @@ export class BenchmarkRunner {
                 try {
                     await this.options.gateway.disconnectResident(peer.resident);
                 } catch (error) {
-                    cleanupFailures.push(errorMessage(error));
+                    recordCleanupProblem(error, cleanupFailures, cleanupSkips);
                 }
             }
             for (const peer of [...peers].reverse()) {
@@ -213,21 +214,21 @@ export class BenchmarkRunner {
                 try {
                     await this.options.gateway.deleteResident(peer.resident);
                 } catch (error) {
-                    cleanupFailures.push(errorMessage(error));
+                    recordCleanupProblem(error, cleanupFailures, cleanupSkips);
                 }
             }
             if (connected) {
                 try {
                     await this.options.gateway.disconnectResident(this.resident);
                 } catch (error) {
-                    cleanupFailures.push(errorMessage(error));
+                    recordCleanupProblem(error, cleanupFailures, cleanupSkips);
                 }
             }
             if (created) {
                 try {
                     await this.options.gateway.deleteResident(this.resident);
                 } catch (error) {
-                    cleanupFailures.push(errorMessage(error));
+                    recordCleanupProblem(error, cleanupFailures, cleanupSkips);
                 }
             }
         }
@@ -254,6 +255,16 @@ export class BenchmarkRunner {
                     summaries: [...(outcome.summaries || []), cleanupSummary],
                 };
             }
+        }
+        if (cleanupSkips.length > 0) {
+            outcome = {
+                ...outcome,
+                metrics: {
+                    ...outcome.metrics,
+                    cleanupSkipped: cleanupSkips.length,
+                },
+                summaries: [...(outcome.summaries || []), cleanupSkippedSummary(cleanupSkips.length)],
+            };
         }
 
         if (mode === 'autonomous') {
@@ -639,6 +650,23 @@ function perceptionId(perception: Record<string, unknown>): string | undefined {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
+}
+
+function recordCleanupProblem(error: unknown, failures: string[], skips: string[]): void {
+    const message = errorMessage(error);
+    if (isDeleteDisabledError(message)) {
+        skips.push(message);
+        return;
+    }
+    failures.push(message);
+}
+
+function isDeleteDisabledError(message: string): boolean {
+    return message === 'EDELETE_DISABLED' || message === 'EDELETE_DISABLED: EDELETE_DISABLED';
+}
+
+function cleanupSkippedSummary(count: number): string {
+    return `cleanup skipped: delete disabled for ${count} disposable resident${count === 1 ? '' : 's'}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

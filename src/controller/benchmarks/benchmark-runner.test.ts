@@ -122,6 +122,79 @@ describe('BenchmarkRunner', () => {
         expect(artifact.evidence.summaries).toContain('cleanup failed: delete disabled');
     });
 
+    it('records gateway delete-disabled cleanup as skipped instead of failed', async () => {
+        const gateway = new MockBenchmarkGateway();
+        gateway.deleteResident.mockRejectedValue(new Error('EDELETE_DISABLED'));
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: async () => ({ status: 'passed', score: 1, metrics: { successEvents: 1 } }),
+        };
+
+        const artifact = await runner(gateway, task).run();
+
+        expect(artifact.status).toBe('passed');
+        expect(artifact.failureReason).toBeUndefined();
+        expect(artifact.metrics.cleanupFailures).toBeUndefined();
+        expect(artifact.metrics.cleanupSkipped).toBe(1);
+        expect(artifact.evidence.summaries).toContain('cleanup skipped: delete disabled for 1 disposable resident');
+    });
+
+    it('keeps non-passing benchmark failure reasons focused when delete is disabled locally', async () => {
+        const gateway = new MockBenchmarkGateway();
+        gateway.deleteResident.mockRejectedValue(new Error('EDELETE_DISABLED'));
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 1,
+            run: () => new Promise(() => undefined),
+        };
+
+        const artifact = await runner(gateway, task).run();
+
+        expect(artifact.status).toBe('timeout');
+        expect(artifact.failureReason).toContain('timed out');
+        expect(artifact.failureReason).not.toContain('cleanup');
+        expect(artifact.metrics.cleanupSkipped).toBe(1);
+        expect(artifact.evidence.summaries).toContain('cleanup skipped: delete disabled for 1 disposable resident');
+    });
+
+    it('records gateway-client formatted delete-disabled cleanup as skipped', async () => {
+        const gateway = new MockBenchmarkGateway();
+        gateway.deleteResident.mockRejectedValue(new Error('EDELETE_DISABLED: EDELETE_DISABLED'));
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: async () => ({ status: 'passed', score: 1 }),
+        };
+
+        const artifact = await runner(gateway, task).run();
+
+        expect(artifact.status).toBe('passed');
+        expect(artifact.metrics.cleanupSkipped).toBe(1);
+        expect(artifact.metrics.cleanupFailures).toBeUndefined();
+    });
+
+    it('counts delete-disabled cleanup skips for both disposable peer and resident', async () => {
+        const gateway = new MockBenchmarkGateway();
+        gateway.deleteResident.mockRejectedValue(new Error('EDELETE_DISABLED'));
+        const task: BenchmarkTask = {
+            id: 'follow-and-chat-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            peers: [{ id: 'codex' }],
+            run: async () => ({ status: 'passed', score: 1 }),
+        };
+
+        const artifact = await runner(gateway, task).run();
+
+        expect(gateway.deleteResident).toHaveBeenCalledTimes(2);
+        expect(artifact.metrics.cleanupSkipped).toBe(2);
+        expect(artifact.evidence.summaries).toContain('cleanup skipped: delete disabled for 2 disposable residents');
+    });
+
     it('uses recorded evidence as the canonical attempted action count', async () => {
         const gateway = new MockBenchmarkGateway();
         const task: BenchmarkTask = {
