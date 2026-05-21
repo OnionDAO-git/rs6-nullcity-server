@@ -287,6 +287,8 @@ describe('BenchmarkRunner', () => {
         const autonomousRuntime = {
             start: jest.fn(async context => {
                 context.recordInferenceRequest({ requestId: 'infer-1', cause: 'body_tick', sparkModule: module });
+                context.recordArtifactPath('/tmp/nullcity-benchmark/evidence/trajectory/current');
+                context.recordArtifactPath('/tmp/nullcity-benchmark/evidence/progress/current');
                 context.recordActionAttempt({
                     requestId: 'auto-action-1',
                     action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'agent_make_fire' },
@@ -345,6 +347,10 @@ describe('BenchmarkRunner', () => {
                 cause: 'body_tick',
                 sparkModule: module,
             }),
+        ]);
+        expect(artifact.evidence.artifactPaths).toEqual([
+            '/tmp/nullcity-benchmark/evidence/trajectory/current',
+            '/tmp/nullcity-benchmark/evidence/progress/current',
         ]);
         expect(artifact.evidence.summaries).toContain('Autonomous runtime produced make-fire evidence.');
         expect(artifact.evidence.summaries).toContain('Autonomous verifier saw module evidence.');

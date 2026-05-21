@@ -39,6 +39,7 @@ export interface BenchmarkTaskContext {
     submitPeerAction(id: string, action: AgentAction): Promise<ActionResult>;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
     recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
+    recordArtifactPath?(path: string): void;
     recordSummary(summary: string): void;
     actionAttempts(): readonly BenchmarkRecordedActionAttempt[];
     latestPerception(): Perception | undefined;
@@ -81,6 +82,7 @@ export interface BenchmarkAutonomousRuntimeContext {
     readonly signal: AbortSignal;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
     recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
+    recordArtifactPath?(path: string): void;
     recordSummary(summary: string): void;
 }
 
@@ -107,6 +109,7 @@ interface BenchmarkEvidenceBuffer {
     actionAttempts: BenchmarkRecordedActionAttempt[];
     inferenceRequestIds: string[];
     inferenceRequests: BenchmarkRecordedInferenceRequest[];
+    artifactPaths: string[];
     perceptionIds: string[];
     summaries: string[];
     perceptions: Perception[];
@@ -298,6 +301,7 @@ export class BenchmarkRunner {
                     inferenceRequests: evidence.inferenceRequests,
                     perceptionIds: evidence.perceptionIds,
                     summaries: [...evidence.summaries, ...(outcome.summaries || [])],
+                    artifactPaths: evidence.artifactPaths,
                 },
                 failureReason: outcome.failureReason,
             }),
@@ -329,6 +333,9 @@ export class BenchmarkRunner {
             recordInferenceRequest: request => {
                 recordInferenceRequest(evidence, request);
             },
+            recordArtifactPath: artifactPath => {
+                pushUnique(evidence.artifactPaths, artifactPath);
+            },
             recordSummary: summary => {
                 evidence.summaries.push(summary);
             },
@@ -350,6 +357,9 @@ export class BenchmarkRunner {
             },
             recordInferenceRequest: request => {
                 recordInferenceRequest(evidence, request);
+            },
+            recordArtifactPath: artifactPath => {
+                pushUnique(evidence.artifactPaths, artifactPath);
             },
             recordSummary: summary => {
                 evidence.summaries.push(summary);
@@ -446,6 +456,7 @@ function createEvidenceBuffer(): BenchmarkEvidenceBuffer {
         actionAttempts: [],
         inferenceRequestIds: [],
         inferenceRequests: [],
+        artifactPaths: [],
         perceptionIds: [],
         summaries: [],
         perceptions: [],
