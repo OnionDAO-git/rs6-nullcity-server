@@ -117,5 +117,8 @@ function copyEvidenceArtifacts(artifact: BenchmarkArtifact, outputDir: string): 
 
 function evidenceArtifactKind(sourcePath: string): string {
     const parent = path.basename(path.dirname(sourcePath));
+    if (sourcePath.split(path.sep).includes('library')) {
+        return 'library';
+    }
     return parent === 'trajectory' || parent === 'progress' ? parent : 'artifacts';
 }

@@ -98,6 +98,10 @@ export class LibraryUpdater {
         this.writeAtomic(this.portraitMarkdownPath(), rendered.markdown);
     }
 
+    artifactPaths(): string[] {
+        return [this.timelinePath(), this.indexPath(), this.portraitJsonPath(), this.portraitMarkdownPath()];
+    }
+
     private applyLegacyEvent(line: TrajectoryLine, index: LibraryIndex): void {
         const event = isRecord(line.event) ? line.event : {};
         const nextIndex: LibraryIndex = {

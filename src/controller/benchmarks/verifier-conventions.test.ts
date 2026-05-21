@@ -31,20 +31,25 @@ describe('verifier conventions', () => {
         expect(writes.join('')).toContain('__REWARD_JSON_END__');
     });
 
-    it('copies retained evidence artifacts into the benchmark output directory', () => {
+    it('copies retained evidence and library artifacts into the benchmark output directory', () => {
         const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-reward-'));
         const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-runtime-'));
         const trajectoryPath = path.join(runtimeDir, 'trajectory', '20260521-run.jsonl');
         const progressPath = path.join(runtimeDir, 'progress', '20260521-run.jsonl');
+        const portraitPath = path.join(runtimeDir, 'library', 'res-agent', 'portrait.json');
+        const timelinePath = path.join(runtimeDir, 'library', 'res-agent', 'timeline.jsonl');
         fs.mkdirSync(path.dirname(trajectoryPath), { recursive: true });
         fs.mkdirSync(path.dirname(progressPath), { recursive: true });
+        fs.mkdirSync(path.dirname(portraitPath), { recursive: true });
         fs.writeFileSync(trajectoryPath, '{"kind":"action"}\n');
         fs.writeFileSync(progressPath, '{"kind":"progress"}\n');
+        fs.writeFileSync(portraitPath, '{"residentName":"res:agent"}\n');
+        fs.writeFileSync(timelinePath, '{"kind":"say"}\n');
 
         emitVerifierConventions({
             artifact: artifact({
                 evidence: {
-                    artifactPaths: [trajectoryPath, progressPath],
+                    artifactPaths: [trajectoryPath, progressPath, portraitPath, timelinePath],
                 },
             }),
             outputDir,
@@ -56,6 +61,10 @@ describe('verifier conventions', () => {
         expect(fs.readFileSync(path.join(outputDir, 'evidence', 'progress', '20260521-run.jsonl'), 'utf8')).toBe(
             '{"kind":"progress"}\n',
         );
+        expect(fs.readFileSync(path.join(outputDir, 'evidence', 'library', 'portrait.json'), 'utf8')).toBe(
+            '{"residentName":"res:agent"}\n',
+        );
+        expect(fs.readFileSync(path.join(outputDir, 'evidence', 'library', 'timeline.jsonl'), 'utf8')).toBe('{"kind":"say"}\n');
     });
 
     it('classifies benchmark failures into the shared failure taxonomy', () => {

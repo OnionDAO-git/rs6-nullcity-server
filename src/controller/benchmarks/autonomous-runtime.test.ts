@@ -35,6 +35,10 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
         );
         expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('/trajectory/'));
         expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('/progress/'));
+        expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('/library/'));
+        expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('timeline.jsonl'));
+        expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('portrait.json'));
+        expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('portrait.md'));
 
         await driver.stop('test_complete');
     });

@@ -82,13 +82,17 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         const root = this.runDirs?.memory || this.options.config.memory.dir;
         const store = new EvidenceStore(context.resident, root);
         const session = store.beginSession(`${context.task.id}-${Date.now()}`, `benchmark:${context.task.id}`);
+        const library = new LibraryUpdater(context.resident, root);
         context.recordArtifactPath?.(session.trajectoryPath);
         context.recordArtifactPath?.(session.progressPath);
+        for (const artifactPath of library.artifactPaths()) {
+            context.recordArtifactPath?.(artifactPath);
+        }
         return {
             store,
             sessionId: session.sessionId,
             trajectory: new TrajectoryBuilder(store),
-            library: new LibraryUpdater(context.resident, root),
+            library,
         };
     }
 
