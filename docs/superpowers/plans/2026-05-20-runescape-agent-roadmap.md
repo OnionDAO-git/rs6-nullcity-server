@@ -231,11 +231,12 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Make the resident feel like a human-ish player instead of a static script.
 
-- `[~]` **F1: Goal sharing cadence.**
+- `[x]` **F1: Goal sharing cadence.**
   - Files: `src/controller/thinking/hybrid-agent-thinking-module.ts`, extracted Brain planner when available
   - Deliverable: agent periodically says what he is trying to do, why, and what he needs from nearby humans.
   - Verification: chat tests cover "I am going to chop logs", "I need a tinderbox/logs", and "I am stuck near a fence".
   - Partial 2026-05-21: `presence_beacon` already periodically reports location, active goal, and a concrete next step before Body inference; focused tests cover active-goal beacons, visible item opportunities, and starter fishing next-step speech. Direct workflow responses already explain missing tools such as axes, logs, tinderboxes, nets, and low-health blockers. Stuck movement now reports recognized visible fence blockers once before recovery. Remaining gap: benchmark/manual proof that nearby humans see the cadence during normal play.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: benchmark-seeded goals now begin the presence-beacon cadence after the first share interval even when Brain never had to announce the goal. Focused test covers this regression, and live autonomous `fishing-cooking-10m` passed while recording public status lines with location, goal, and next step in trajectory evidence (`/tmp/oniondao-fishing-cooking-beacon-bench-current/bench_20260521165903_fishing_cooking_10m.json`, score 1, `trajectorySays=6`).
 
 - `[~]` **F2: Nearby human reaction.**
   - Files: standard module Body/Brain code and tests
@@ -350,7 +351,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
   - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
-  - Human-like next slice: F1 goal sharing cadence, then F3/F4 exploration/stuck recovery, then a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
+  - Human-like next slice: F3/F4 exploration/stuck recovery, then a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
 
 ## Agent Update Protocol
 

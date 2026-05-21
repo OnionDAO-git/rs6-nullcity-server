@@ -2643,6 +2643,39 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('starts beaconing benchmark-seeded goals after the first share interval', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+        const scene = (tick: number) =>
+            perception({
+                tick,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+            });
+
+        await agent.think(scene(1));
+        const result = await agent.think(scene(22));
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net at a visible Fishing spot. Next: fish at 3219,3201 with my small net.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
     it('beacons a concrete nearby opportunity with its active goal', async () => {
         const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
         const llm = scriptedLlm([]);

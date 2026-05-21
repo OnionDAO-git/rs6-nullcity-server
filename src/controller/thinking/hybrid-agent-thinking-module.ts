@@ -1028,7 +1028,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
-        if (!this.activeGoal()) {
+        const goal = this.activeGoal();
+        if (!goal) {
             return undefined;
         }
 
@@ -1239,6 +1240,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (!cognition.activeGoal || cognition.activeGoal.id !== goal.id || this.goalExpired(cognition.activeGoal)) {
             this.clearGoalMomentum();
             cognition.activeGoal = goal;
+            cognition.lastPresenceBeaconTick ??= this.options.state.tick;
+            cognition.lastGoalShareTick ??= this.options.state.tick;
         }
         cognition.lastBrainTick = this.options.state.tick;
     }
