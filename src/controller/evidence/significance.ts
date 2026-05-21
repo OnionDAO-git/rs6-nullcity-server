@@ -30,6 +30,7 @@ export interface SignificanceResult {
 export interface ProgressSignificanceContext {
     seenXpSkills?: ReadonlySet<string>;
     previousStuckSince?: number | null;
+    recentHpDangerSince?: number | null;
 }
 
 export interface TrajectorySignificanceContext {
@@ -116,6 +117,17 @@ export function classifyProgressLine(line: ProgressLine, context: ProgressSignif
             skill: firstXp.skill,
             amount: firstXp.amount,
             reason: firstXp.reason,
+        });
+    }
+
+    const hpRecovery = hpRecoveryReason(line.reasons, context.recentHpDangerSince);
+    if (hpRecovery) {
+        return story('near_death_survival', ['hp:near_death_survival', hpRecovery.reason], {
+            ...timelineBase(line),
+            kind: 'near_death_survival',
+            dangerSince: hpRecovery.dangerSince,
+            recoveredAmount: hpRecovery.amount,
+            reason: hpRecovery.reason,
         });
     }
 
@@ -250,6 +262,24 @@ function firstXpReason(
             continue;
         }
         return { skill, amount: Number(match[2]), reason };
+    }
+    return undefined;
+}
+
+function hpRecoveryReason(
+    reasons: string[],
+    recentHpDangerSince: number | null | undefined,
+): { amount: number; reason: string; dangerSince: number } | undefined {
+    if (typeof recentHpDangerSince !== 'number') {
+        return undefined;
+    }
+
+    for (const reason of reasons) {
+        const match = /^hp:\+(\d+(?:\.\d+)?)$/.exec(reason);
+        if (!match) {
+            continue;
+        }
+        return { amount: Number(match[1]), reason, dangerSince: recentHpDangerSince };
     }
     return undefined;
 }

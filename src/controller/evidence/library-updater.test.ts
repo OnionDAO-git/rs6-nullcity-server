@@ -113,6 +113,33 @@ describe('LibraryUpdater', () => {
         expect(markdown).toContain('- Codex (3 interactions)');
     });
 
+    it('records near-death survival in the timeline and portrait', async () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeProgress(progress({ tick: 2, meaningful: true, reasons: ['hp:-4'] }));
+        updater.observeProgress(progress({ tick: 5, meaningful: true, reasons: ['hp:+3', 'inventory:-1'] }));
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'near_death_survival',
+                tick: 5,
+                dangerSince: 2,
+                recoveredAmount: 3,
+            }),
+        ]);
+
+        await updater.regeneratePortrait();
+
+        const portrait = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'portrait.json'), 'utf8'));
+        expect(portrait.lives[0]).toEqual(
+            expect.objectContaining({
+                epithet: 'The survivor',
+                notableEvents: expect.arrayContaining([expect.objectContaining({ kind: 'near_death_survival' })]),
+            }),
+        );
+        expect(fs.readFileSync(path.join(libraryDir(root), 'portrait.md'), 'utf8')).toContain('Survived danger at tick 5');
+    });
+
     it('keeps peer interaction counts across library updater restarts', () => {
         const { updater, root } = testUpdater();
         const target = {

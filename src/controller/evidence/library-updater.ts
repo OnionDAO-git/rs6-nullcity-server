@@ -29,6 +29,7 @@ export class LibraryUpdater {
     private readonly seenPeers = new Set<string>();
     private readonly peerInteractionCounts = new Map<string, number>();
     private previousStuckSince: number | null = null;
+    private recentHpDangerSince: number | null = null;
 
     constructor(
         private readonly residentName: string,
@@ -69,7 +70,13 @@ export class LibraryUpdater {
         const result = classifyProgressLine(line, {
             seenXpSkills: this.seenXpSkills,
             previousStuckSince: this.previousStuckSince,
+            recentHpDangerSince: this.recentHpDangerSince,
         });
+        if (result.storyKind === 'near_death_survival') {
+            this.recentHpDangerSince = null;
+        } else if (dangerousHpLoss(line.reasons)) {
+            this.recentHpDangerSince = line.tick;
+        }
         if (result.lane !== 'story' || !result.timelineEvent) {
             return;
         }
@@ -274,6 +281,13 @@ function numberField(record: Record<string, unknown>, key: string, fallback = 0)
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
     const value = record[key];
     return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function dangerousHpLoss(reasons: string[]): boolean {
+    return reasons.some(reason => {
+        const match = /^hp:-(\d+(?:\.\d+)?)$/.exec(reason);
+        return match ? Number(match[1]) >= 3 : false;
+    });
 }
 
 function pruneUndefined(record: Record<string, unknown>): Record<string, unknown> {

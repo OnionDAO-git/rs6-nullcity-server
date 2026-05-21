@@ -283,6 +283,9 @@ function lifeEpithet(events: Array<Record<string, unknown>>, deathCause?: string
     if (firstXp) {
         return `The new ${stringField(firstXp, 'skill') || 'skill'} hand`;
     }
+    if (events.some(event => event.kind === 'near_death_survival')) {
+        return 'The survivor';
+    }
     if (deathCause) {
         return 'The unfinished life';
     }
@@ -307,6 +310,9 @@ function eventSummary(event: Record<string, unknown>): string {
     }
     if (event.kind === 'relationship_repeated') {
         return `Built history with ${stringField(event, 'peer') || 'someone'} at tick ${numberField(event, 'tick')}`;
+    }
+    if (event.kind === 'near_death_survival') {
+        return `Survived danger at tick ${numberField(event, 'tick')}`;
     }
     if (event.kind === 'say') {
         return `Said "${stringField(event, 'text') || ''}"`;

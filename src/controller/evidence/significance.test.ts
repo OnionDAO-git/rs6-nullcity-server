@@ -101,6 +101,23 @@ describe('evidence significance predicates', () => {
         );
     });
 
+    it('promotes HP recovery after a dangerous hit to the story lane', () => {
+        const line = progress({ tick: 18, meaningful: true, reasons: ['hp:+4', 'inventory:-1'] });
+
+        expect(classifyProgressLine(line, { recentHpDangerSince: 12 })).toEqual(
+            expect.objectContaining({
+                lane: 'story',
+                storyKind: 'near_death_survival',
+                timelineEvent: expect.objectContaining({
+                    kind: 'near_death_survival',
+                    dangerSince: 12,
+                    recoveredAmount: 4,
+                    reason: 'hp:+4',
+                }),
+            }),
+        );
+    });
+
     it('does not promote repeat XP gains or non-meaningful progress without a new stuck signal', () => {
         const repeatXp = progress({ meaningful: true, reasons: ['xp_gain:woodcutting:25'] });
         const idle = progress({ meaningful: false, reasons: [], stuckSince: null });

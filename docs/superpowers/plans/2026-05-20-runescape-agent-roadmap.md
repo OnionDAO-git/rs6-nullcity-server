@@ -324,6 +324,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: first peer encounters and repeated interactions now append Library timeline events, hydrate restart-safe relationship counters, and render portrait "Who they knew" entries. Focused evidence tests, typecheck, lint, build, and full Jest suite passed.
 
+- `[x]` **I2: Record survival milestones.**
+  - Files: `src/controller/evidence/significance.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/evidence/portrait-template.ts`
+  - Deliverable: dangerous HP drops followed by healing/recovery become timeline events and portrait life notes.
+  - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: dangerous HP losses now arm a survival milestone, later HP recovery appends a `near_death_survival` timeline event, and portraits summarize the life as "The survivor" with a notable event. Focused evidence tests, typecheck, lint, build, and full Jest suite passed.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
