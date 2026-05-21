@@ -32,23 +32,25 @@ If those three disagree, the roadmap wins for intent and `git status` wins for i
 
 ## Workstream Ownership (as of 2026-05-21)
 
-| Workstream | Owner | Current branch | Status |
-|---|---|---|---|
-| A: SPARK Capability Facades | done; no current owner | `main` | `[x]` |
-| B: Standard RuneScape Module Extraction | unassigned | — | `[ ]` |
-| C: Benchmark Harness — `combat-prayer-10m` | Codex | `nullcity` | `[>]` |
-| D: Dashboard Debugging | Dev | `codex/spark-module-dashboard` (dashboard repo) | `[>]` |
-| E: Knowledge & Agent Skill | done | `main` | `[x]` |
-| F: Human-Like Behavior | unassigned | — | `[~]` partial |
-| G: Real Gameplay Workflows | unassigned | — | `[ ]` |
-| H: Railgun & Operations | unassigned | — | `[~]` partial |
-| **I (proposed): Evidence Layer & Library of Souls** | **Claude** | TBD | `[~]` design ready |
-| **J (proposed): Patron / Human-Attention Loop** | unassigned | — | `[ ]` candidate |
-| **K (proposed): Factions Adapted For Runescape** | unassigned | — | `[ ]` candidate |
-| **L (proposed): Cross-Resident Memory & Lore** | unassigned | — | `[ ]` candidate |
-| **M (proposed): Hero Residents & Story Arcs** | unassigned | — | `[ ]` candidate |
-| **N (proposed): Physical Event & Embassy** | unassigned | — | `[ ]` candidate |
-| **O (proposed): Engineering & Tooling Polish** | unassigned | — | `[ ]` candidate |
+All routine work targets `nullcity` directly (see Rule 3). Workstream owners commit and push there as they go; cross-repo work (Dev's dashboard) is in a separate repo with its own default branch.
+
+| Workstream | Owner | Status |
+|---|---|---|
+| A: SPARK Capability Facades | done; no current owner | `[x]` |
+| B: Standard RuneScape Module Extraction | unassigned | `[ ]` |
+| C: Benchmark Harness — `combat-prayer-10m` | Codex | `[>]` |
+| D: Dashboard Debugging | Dev (separate repo) | `[>]` |
+| E: Knowledge & Agent Skill | done | `[x]` |
+| F: Human-Like Behavior | unassigned | `[~]` partial |
+| G: Real Gameplay Workflows | unassigned | `[ ]` |
+| H: Railgun & Operations | unassigned | `[~]` partial |
+| **I (proposed): Evidence Layer & Library of Souls** | **Claude** | `[~]` design ready |
+| **J (proposed): Patron / Human-Attention Loop** | unassigned | `[ ]` candidate |
+| **K (proposed): Factions Adapted For Runescape** | unassigned | `[ ]` candidate |
+| **L (proposed): Cross-Resident Memory & Lore** | unassigned | `[ ]` candidate |
+| **M (proposed): Hero Residents & Story Arcs** | unassigned | `[ ]` candidate |
+| **N (proposed): Physical Event & Embassy** | unassigned | `[ ]` candidate |
+| **O (proposed): Engineering & Tooling Polish** | unassigned | `[ ]` candidate |
 
 Workstreams I–O are proposed in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`. They do not exist in the roadmap file yet because Codex has uncommitted edits there; apply the delta after the Codex merge. Candidate idea provenance and "next step" hooks for J–O live in `docs/null-city-ideation-backlog.md`.
 
@@ -73,14 +75,17 @@ After the work is done and verified, set the marker to `[x]` or `[!]` as appropr
 
 Exception: while Codex has the roadmap dirty, other agents propose roadmap changes via a delta file (e.g., `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`) instead of editing the roadmap directly.
 
-### Rule 3 — Branch hygiene
+### Rule 3 — Push directly to the default branch
 
-- Each agent works on its own branch. Do not push directly to `main` or to another agent's branch.
-- Default branch names by owner:
-  - Claude: `claude/<topic>` (e.g., `claude/evidence-loop`)
-  - Codex: `codex/<topic>` or `nullcity` (existing naming)
-  - Dev: their existing convention in the dashboard repo
-- Rebase against `main`, not against another agent's in-flight branch.
+This repo's workflow is **direct-to-default-branch** (`nullcity` is the default; there is no literal `main`). Do not create per-agent feature branches for routine work — they add overhead without buying isolation, and they fragment the history.
+
+Implications:
+
+- Commit and push directly to `nullcity` for normal scoped work (doc updates, small features, bug fixes, isolated module additions).
+- Pull `nullcity` immediately before pushing so you never have a non-fast-forward by accident. If your local branch has diverged, rebase onto `nullcity` rather than merging.
+- Reserve feature branches for genuinely risky or experimental work where the maintainer wants a PR gate. When in doubt, ask before branching.
+- Because there is no branch-level isolation between agents, **file-level collision avoidance is the primary safety mechanism**. Read `git status` + the status log before editing; set the `[>]` roadmap marker; append a status line for any in-flight work that spans more than a single commit.
+- The dashboard repo (`rs6-nullcity-residents-dashboard`) has its own conventions — follow Dev's existing pattern there.
 
 ### Rule 4 — Cross-repo seams are contracts
 
@@ -104,8 +109,8 @@ Each is documented in the spec at `docs/superpowers/specs/2026-05-21-spark-evide
 `docs/agent-status.md` is an append-only short log. Add a line when you start meaningful work and when you finish. Format:
 
 ```
-2026-05-21 18:14 claude branch=claude/evidence-loop  workstream=I  starting P1 ProgressTracker + EvidenceStore
-2026-05-21 22:02 claude branch=claude/evidence-loop  workstream=I  P1 merged at <sha>; tests green
+2026-05-21 18:14 claude  workstream=I  starting P1 ProgressTracker + EvidenceStore (on nullcity)
+2026-05-21 22:02 claude  workstream=I  P1 pushed to nullcity at <sha>; tests green
 ```
 
 One line, plain text, no editorializing. Other agents read the tail before starting work.
@@ -151,9 +156,9 @@ Until Codex's in-flight `combat-prayer-10m` work merges:
 - Claude proposes:
   - roadmap delta in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`, to be applied after Codex merges
 
-After Codex merges:
+After Codex finishes their combat-prayer-10m work:
 
-- Claude pulls main, applies the roadmap delta, marks Workstream I tasks `[>]`, and proceeds with P1.
+- Claude pulls `nullcity`, applies the roadmap delta, marks Workstream I tasks `[>]`, and proceeds with P1 — committing and pushing directly to `nullcity` per Rule 3.
 
 ## Coordination With Dev (Dashboard)
 

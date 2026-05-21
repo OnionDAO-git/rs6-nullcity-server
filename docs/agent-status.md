@@ -7,6 +7,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 ```
 2026-05-21 evening   claude  branch=claude/evidence-loop-docs  workstream=I,J,K,L,M,N,O  initial drop: spec v2.1 (evidence loop + Library of Souls), coordination protocol, RuneBench conventions adopted (17 items), ideation backlog (90+ items across 12 themes), roadmap delta proposing Workstreams I-O. No src/ changes.
 2026-05-21 late      claude  branch=nullcity                   workstream=I,J,K,L,M,N,O  privacy + final-review fixes applied (callback names onAckReady+onEffectResolved, line-number refs guidance-only, NullCityNotes.md ref removed, /Users/ paths abstracted). Cherry-picked clean commit onto nullcity and pushed (aa970c30). 6 docs, 1590 insertions, zero src/ touches.
+2026-05-21 late      claude  workstream=none  align coordination doc with direct-to-nullcity workflow per maintainer guidance "no branches, just pushes to main." Revised Rule 3, dropped "current branch" column from workstream ownership table, updated examples. Pushed directly to nullcity.
 ```
 
 ## Conventions
