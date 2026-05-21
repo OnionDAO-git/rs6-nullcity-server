@@ -10,6 +10,7 @@ export interface BrainPromptInput {
     activeGoal?: ActiveGoalState;
     commandPrefix: string;
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
+    progress?: RuntimeProgressPromptInput;
 }
 
 export interface BodyPromptInput {
@@ -18,10 +19,17 @@ export interface BodyPromptInput {
     activeGoal?: ActiveGoalState;
     commandPrefix: string;
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
+    progress?: RuntimeProgressPromptInput;
     visibility: {
         anchor?: { x: number; y: number; level: number };
         returnDue: boolean;
     };
+}
+
+export interface RuntimeProgressPromptInput {
+    tick: number;
+    lastMeaningfulProgressAt?: number;
+    stuckSince?: number;
 }
 
 export function buildBrainPrompt(input: BrainPromptInput): string {
@@ -39,6 +47,7 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         '',
         brainPlaybookPrompt(),
         input.gameSkill?.brainSection || '',
+        runtimeProgressSection(input.progress, 'brain'),
         'Return JSON only with this shape:',
         '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars"}',
         '',
@@ -62,6 +71,7 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         '',
         bodyPlaybookPrompt(),
         input.gameSkill?.bodySection || '',
+        runtimeProgressSection(input.progress, 'body'),
         input.visibility.returnDue && input.visibility.anchor
             ? `Visibility rule: Agent is due to return near ${JSON.stringify(input.visibility.anchor)} so Codex can find him. Prefer moving there unless a chat command or survival need is more important.`
             : 'Visibility rule: stay findable and mention useful intentions in public chat sometimes.',
@@ -80,4 +90,24 @@ function summarizePerception(perception: Perception): string {
     }
 
     return JSON.stringify(perception, null, 2).slice(0, 12000);
+}
+
+function runtimeProgressSection(progress: RuntimeProgressPromptInput | undefined, role: 'brain' | 'body'): string {
+    if (!progress || (progress.lastMeaningfulProgressAt === undefined && progress.stuckSince === undefined)) {
+        return '';
+    }
+    const lines = [
+        'Runtime progress evidence:',
+        `- current tick: ${progress.tick}`,
+        `- last meaningful progress tick: ${progress.lastMeaningfulProgressAt ?? 'unknown'}`,
+        `- stuck since tick: ${progress.stuckSince ?? 'not stuck'}`,
+    ];
+    if (progress.stuckSince !== undefined) {
+        lines.push(
+            role === 'brain'
+                ? '- Evidence says the current approach is stuck; choose a different tactic, smaller subgoal, or ask for help in chat.'
+                : '- Evidence says the current approach is stuck. Do not repeat the same failed action; try opening a blocker, stepping to a different tile, choosing a nearer target, or saying what blocks you.',
+        );
+    }
+    return lines.join('\n');
 }

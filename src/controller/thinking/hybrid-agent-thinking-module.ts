@@ -168,6 +168,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
             gameSkill,
+            progress: this.progressPromptInput(),
         });
         const response = await this.options.llm.complete({
             endpoint: this.endpointFor(behavior.brain),
@@ -220,6 +221,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
             gameSkill,
+            progress: this.progressPromptInput(),
             visibility,
         });
         const response = await this.options.llm.complete({
@@ -1118,6 +1120,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return (
             this.options.state.tick - (this.cognition().lastBodyTick || 0) >= (this.behavior().bodyEveryTicks ?? DEFAULT_BODY_EVERY_TICKS)
         );
+    }
+
+    private progressPromptInput(): { tick: number; lastMeaningfulProgressAt?: number; stuckSince?: number } {
+        return {
+            tick: this.options.state.tick,
+            lastMeaningfulProgressAt: this.options.state.lastMeaningfulProgressAt,
+            stuckSince: this.options.state.stuckSince,
+        };
     }
 
     private shouldShareGoal(): boolean {
