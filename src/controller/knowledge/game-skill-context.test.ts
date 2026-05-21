@@ -376,6 +376,132 @@ describe('GameSkillService', () => {
             }),
         );
     });
+
+    it('attributes bury-bones attempts to prayer even when woodcutting is also available', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = {
+            tick: 1,
+            resident: {
+                inventory: [
+                    { itemId: 526, key: 'rs:bones', amount: 1 },
+                    { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                ],
+            },
+            nearby: {
+                objects: [{ objectId: 1278, name: 'Tree', position: { x: 3213, y: 3238, level: 0 } }],
+                npcs: [{ id: 'npc:1', kind: 'npc', key: 'rs:chicken', name: 'Chicken', position: { x: 3214, y: 3238, level: 0 } }],
+            },
+            availableActions: [
+                {
+                    kind: 'interact',
+                    target: { objectId: 1278, position: { x: 3213, y: 3238, level: 0 } },
+                    options: ['chop down'],
+                },
+            ],
+            events: [],
+        } as any;
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('combat-prayer', 'Fight a chicken, bury bones, and chop nearby trees if useful.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-bury-bones',
+                resident: 'res:agent',
+                producer: 'body',
+                action: { kind: 'item_action', slot: 0, option: 'bury', cause: 'combat_bury_looted_bones' },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'prayer_xp_changed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'train-prayer',
+                proposedChange: expect.objectContaining({
+                    targetId: 'train-prayer',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
+    });
+
+    it('attributes underscore follow causes to follow-codex when other workflows are visible', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = {
+            tick: 1,
+            resident: {
+                inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+            },
+            nearby: {
+                objects: [{ objectId: 1278, name: 'Tree', position: { x: 3213, y: 3238, level: 0 } }],
+                players: [{ id: 'player:Codex', kind: 'player', name: 'Codex', position: { x: 3215, y: 3238, level: 0 } }],
+            },
+            availableActions: [
+                {
+                    kind: 'interact',
+                    target: { objectId: 1278, position: { x: 3213, y: 3238, level: 0 } },
+                    options: ['chop down'],
+                },
+            ],
+            events: [],
+        } as any;
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Follow Codex while trees are nearby.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-follow-codex',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'move_to',
+                    target: { x: 3215, y: 3238, level: 0 },
+                    range: 2,
+                    cause: 'direct_chat_follow',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'derived', detail: { kind: 'position_reached' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'follow-codex',
+                proposedChange: expect.objectContaining({
+                    targetId: 'follow-codex',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
+    });
 });
 
 function goal(id: string, description: string) {

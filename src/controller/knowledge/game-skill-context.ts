@@ -102,7 +102,7 @@ export class GameSkillService {
             return;
         }
 
-        const workflow = event.context?.workflowAvailability.find(availability => availability.status !== 'not_relevant');
+        const workflow = selectWorkflowForAttempt(event.attempt, event.context?.workflowAvailability || []);
         if (event.attempt.finalStatus === 'success' && (!workflow || event.attempt.evidence.length === 0)) {
             return;
         }
@@ -195,6 +195,66 @@ function effectEvidenceSummaries(attempt: ActionAttempt): string[] {
         const changed = Array.isArray(detail.changed) ? ` changed=${detail.changed.join(',')}` : '';
         return `${kind}${changed}`;
     });
+}
+
+function selectWorkflowForAttempt(attempt: ActionAttempt, workflowAvailability: WorkflowAvailability[]): WorkflowAvailability | undefined {
+    const visible = workflowAvailability.filter(availability => availability.status !== 'not_relevant');
+    const preferredWorkflowId = preferredWorkflowForAttempt(attempt);
+    if (preferredWorkflowId) {
+        const preferred = visible.find(availability => availability.workflowId === preferredWorkflowId);
+        if (preferred) {
+            return preferred;
+        }
+    }
+    return visible[0];
+}
+
+function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined {
+    const action = record(attempt.action);
+    const kind = textField(action.kind);
+    const option = textField(action.option);
+    const cause = `${textField(action.cause)} ${textField(attempt.cause)}`.trim();
+    const target = record(action.target);
+    const combined = `${kind} ${option} ${cause} ${targetText(target)}`.toLowerCase();
+
+    if (kind === 'item_action' && /\bbury\b/.test(option)) {
+        return 'train-prayer';
+    }
+    if (isBonesTarget(target) || /\bbones?\b|\bbury\b/.test(combined)) {
+        return 'train-prayer';
+    }
+    if (kind === 'attack' || /\battack\b|\bsafe[_ -]?combat\b|\bcombat[_ -]?attack\b/.test(combined)) {
+        return 'safe-combat';
+    }
+    if (/\bfishing\b|\bsmall[_ -]?net\b|\bstarter[_ -]?fishing\b/.test(combined) || (kind === 'interact' && option === 'net')) {
+        return 'fishing-starter';
+    }
+    if (/\bfiremaking\b|\bmake[_ -]?fire\b|\btinderbox\b|\bwoodcutting_chain_firemaking\b|\bfiremaking_fallback\b/.test(combined)) {
+        return 'make-fire';
+    }
+    if (/\bwoodcutting\b|\bchop\b|\bchop down\b/.test(combined)) {
+        return 'train-woodcutting';
+    }
+    if (/\bfollow\b|follow[_ -]|[_ -]follow|follow-codex|\bcodex\b/.test(combined)) {
+        return 'follow-codex';
+    }
+    return undefined;
+}
+
+function targetText(target: Record<string, unknown>): string {
+    return [target.key, target.name, target.itemId, target.id, target.objectId].map(value => String(value || '')).join(' ');
+}
+
+function isBonesTarget(target: Record<string, unknown>): boolean {
+    const itemId = typeof target.itemId === 'number' ? target.itemId : undefined;
+    if (itemId !== undefined && [526, 528, 530, 532, 534, 536].includes(itemId)) {
+        return true;
+    }
+    return /\bbones?\b/.test(targetText(target).toLowerCase().replace(/[_:]/g, ' '));
+}
+
+function textField(value: unknown): string {
+    return typeof value === 'string' ? value.toLowerCase() : '';
 }
 
 function evaluateWorkflows(goalText: string, perceptionText: string, facts: PerceptionFacts): WorkflowAvailability[] {
