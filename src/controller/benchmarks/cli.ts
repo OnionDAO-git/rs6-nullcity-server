@@ -12,6 +12,7 @@ import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
+import { WOODCUTTING_FIREMAKING_10M_TASK_ID, makeWoodcuttingFiremaking10mBenchmarkTask } from './tasks/woodcutting-firemaking-10m';
 
 export interface BenchmarkCliOptions {
     taskId: string;
@@ -143,6 +144,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === FOLLOW_AND_CHAT_5M_TASK_ID) {
         return makeFollowAndChat5mBenchmarkTask();
+    }
+    if (taskId === WOODCUTTING_FIREMAKING_10M_TASK_ID) {
+        return makeWoodcuttingFiremaking10mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }

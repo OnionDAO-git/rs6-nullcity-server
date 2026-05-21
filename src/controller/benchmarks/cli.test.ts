@@ -75,4 +75,18 @@ describe('benchmark CLI', () => {
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"task":{"id":"follow-and-chat-5m","version":"0.1.0"');
     });
+
+    it('can dry-run the woodcutting-firemaking benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'woodcutting-firemaking-10m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"woodcutting-firemaking-10m","version":"0.1.0"');
+    });
 });

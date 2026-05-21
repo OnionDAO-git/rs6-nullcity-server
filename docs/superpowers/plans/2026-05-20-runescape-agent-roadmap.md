@@ -146,6 +146,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
   - Partial 2026-05-20 on `codex/body-waiter-coordinator`: added `explore-report-5m` verifier/CLI wiring and live smoke (`status=passed`, `score=1`, artifact `data/benchmarks/bench_20260521002220_explore_report_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer, follow-and-chat.
   - Partial 2026-05-21 on `codex/body-waiter-coordinator`: added `follow-and-chat-5m`, disposable benchmark peer support, exact per-run peer chat stimuli, and live autonomous smoke (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, `statusResponses=1`, `movedTowardSpeaker=1`, artifact `/tmp/oniondao-autonomous-follow-chat/bench_20260521044246_follow_and_chat_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer. Local gateway still reports delete-disabled cleanup as a metric.
+  - Partial 2026-05-21 on `nullcity`: added `woodcutting-firemaking-10m` verifier/CLI wiring and autonomous fixture coverage. The verifier requires a selected module to chop a level-1 tree, gain self-supplied logs or woodcutting success evidence, then attempt firemaking and observe a firemaking success signal. Remaining tasks: starter-fishing and combat-prayer, plus live autonomous smoke for woodcutting-firemaking.
 
 - `[x]` **C5: Add benchmark CLI.**
   - Files: `src/controller/benchmarks/cli.ts`, `package.json`
