@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from '../config';
+import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 import { createDefaultGameSkillEntries } from '../knowledge/game-skill-entries';
 import { GameSkillService } from '../knowledge/game-skill-context';
 import { KnowledgeSuggestionStore } from '../knowledge/suggestions';
@@ -10,7 +11,7 @@ import { ActionLog } from '../logging/action-log';
 import { InferenceLog } from '../logging/inference-log';
 import { MemoryStore } from '../memory/memory-store';
 import { RuntimeStateStore } from '../memory/runtime-state';
-import { ResidentRuntime, type ResidentRuntimeGameSkill } from '../resident-runtime';
+import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from '../resident-runtime';
 import { type Soul, validateSoulFrontmatter } from '../soul/soul-schema';
 import type { SparkModule, SparkModuleIdentity } from '../spark';
 import type { GatewayClient } from '../transport/gateway-client';
@@ -54,6 +55,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             inferenceLog: new RecordingInferenceLog(this.runDirs.logging, false, context),
             gameSkill: this.gameSkill,
             sparkModules: this.options.sparkModules,
+            evidence: this.createEvidence(context),
         });
         this.bindGatewayEvents(context);
         context.recordSummary(`Started autonomous ResidentRuntime for ${context.module.id}@${context.module.version}.`);
@@ -69,11 +71,29 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         await this.gameSkill?.flush?.();
         this.context?.recordSummary(`Stopped autonomous ResidentRuntime: ${cause}.`);
         if (this.runDirs) {
-            fs.rmSync(this.runDirs.root, { recursive: true, force: true });
-            this.runDirs = undefined;
+            this.context?.recordSummary(`Retained autonomous runtime artifacts in ${this.runDirs.root}.`);
         }
+        this.runDirs = undefined;
         this.context = undefined;
         this.gameSkill = undefined;
+    }
+
+    private createEvidence(context: BenchmarkAutonomousRuntimeContext): ResidentRuntimeEvidence {
+        const root = this.runDirs?.memory || this.options.config.memory.dir;
+        const store = new EvidenceStore(context.resident, root);
+        const session = store.beginSession(`${context.task.id}-${Date.now()}`, `benchmark:${context.task.id}`);
+        const library = new LibraryUpdater(context.resident, root);
+        context.recordArtifactPath?.(session.trajectoryPath);
+        context.recordArtifactPath?.(session.progressPath);
+        for (const artifactPath of library.artifactPaths()) {
+            context.recordArtifactPath?.(artifactPath);
+        }
+        return {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store),
+            library,
+        };
     }
 
     private createGameSkill(): ResidentRuntimeGameSkill {

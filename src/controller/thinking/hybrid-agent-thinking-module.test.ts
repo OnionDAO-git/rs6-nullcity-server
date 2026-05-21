@@ -393,6 +393,43 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('opportunistic_pickup');
     });
 
+    it('does not chase firemaking logs beside an active fire as opportunistic loot', async () => {
+        const logs = { itemId: 1511, key: 'rs:logs', amount: 1, position: { x: 3218, y: 3201, level: 0 } };
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3201, level: 0 }, orientation: 0 };
+        const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                steps: ['Find a tree', 'Chop it', 'Use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                worldItems: [logs],
+                objects: [fire, tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: tree, option: 'chop down', cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('firemaking_gather_logs');
+    });
+
     it('does not abandon routine skill work for distant opportunistic pickups', async () => {
         const coins = { itemId: 995, key: 'rs:coins', amount: 12, position: { x: 3230, y: 3200, level: 0 } };
         const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
@@ -2343,6 +2380,30 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('runs direct cook commands on carried raw starter fish without inference', async () => {
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3202, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 317, key: 'rs:raw_shrimp', amount: 1 }],
+                },
+                objects: [fire],
+                events: [chatFromCodex('agent cook shrimp', 3218, 3200)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'use_item_on', itemSlot: 0, target: fire, cause: 'starter_fishing_cook_catch' }]);
+        expect(result.cause).toBe('direct_chat_cook');
+        expect(state.cognition?.activeGoal?.id).toBe('cook-starter-fish');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('uses net on a visible starter fishing spot so the interaction task can path', async () => {
         const fishingSpot = npc('Fishing spot', 3224, 3201);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
@@ -2374,6 +2435,78 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('starter_fishing_net');
     });
 
+    it('cooks raw starter fish on a visible fire before continuing the starter fishing loop', async () => {
+        const fishingSpot = npc('Fishing spot', 3224, 3201);
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3202, level: 0 } };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch.',
+                steps: ['Catch shrimp', 'Cook raw fish on a fire or range'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                npcs: [fishingSpot],
+                objects: [fire],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'use_item_on', itemSlot: 1, target: fire, cause: 'starter_fishing_cook_catch' }]);
+        expect(result.cause).toBe('starter_fishing_cook_catch');
+    });
+
+    it('explains the missing heat source when carrying raw starter fish', async () => {
+        const fishingSpot = npc('Fishing spot', 3224, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch.',
+                steps: ['Catch shrimp', 'Cook raw fish on a fire or range'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' },
+        ]);
+        expect(result.cause).toBe('starter_fishing_missing_heat');
+    });
+
     it('seeds starter fishing as the active benchmark goal without initial Brain drift', async () => {
         const fishingSpot = npc('Fishing spot', 3239, 3244);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
@@ -2403,6 +2536,48 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
         expect(result.cause).toBe('starter_fishing_net');
         expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
+    it('seeds fishing-cooking as an active benchmark goal without initial Brain drift', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3238, 3244),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                objects: [{ objectId: objectIds.fire, position: { x: 3238, y: 3244, level: 0 } }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'use_item_on',
+                itemSlot: 1,
+                target: { objectId: objectIds.fire, position: { x: 3238, y: 3244, level: 0 } },
+                cause: 'starter_fishing_cook_catch',
+            },
+        ]);
+        expect(result.cause).toBe('starter_fishing_cook_catch');
+        expect(state.cognition?.activeGoal?.id).toBe('catch-and-cook-starter-fish');
         expect(llm.complete).toHaveBeenCalledTimes(1);
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
     });
@@ -2441,6 +2616,36 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
     });
 
+    it('seeds explore-report as an active benchmark goal without initial Brain drift', async () => {
+        const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'explore-report-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                objects: [fountain],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(result.cause).toBe('exploration_fallback');
+        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
     it('beacons its active goal periodically before Body inference', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();
@@ -2466,6 +2671,39 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('starts beaconing benchmark-seeded goals after the first share interval', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+        const scene = (tick: number) =>
+            perception({
+                tick,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+            });
+
+        await agent.think(scene(1));
+        const result = await agent.think(scene(22));
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net at a visible Fishing spot. Next: fish at 3219,3201 with my small net.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 
     it('beacons a concrete nearby opportunity with its active goal', async () => {
@@ -2494,6 +2732,49 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([
             { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not beacon stale firemaking logs beside an active fire as the next step', async () => {
+        const logs = { itemId: 1511, key: 'rs:logs', amount: 1, position: { x: 3218, y: 3201, level: 0 } };
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3201, level: 0 }, orientation: 0 };
+        const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                worldItems: [logs],
+                objects: [fire, tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Gather ordinary logs and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
+            },
         ]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();

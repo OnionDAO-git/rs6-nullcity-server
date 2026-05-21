@@ -141,7 +141,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-20 on `codex/body-waiter-coordinator` with fixture tests for pass, timeout, wrong action, and unsafe repeated action loops.
 
 - `[x]` **C4: Implement starter benchmark suite.**
-  - Tasks: `woodcutting-firemaking-10m`, `starter-fishing-5m`, `combat-prayer-10m`, `explore-report-5m`, `follow-and-chat-5m`
+  - Tasks: `woodcutting-firemaking-10m`, `starter-fishing-5m`, `fishing-cooking-10m`, `combat-prayer-10m`, `explore-report-5m`, `follow-and-chat-5m`
   - Deliverable: every task has a verifier, scoring rubric, and fixture tests.
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
   - Partial 2026-05-20 on `codex/body-waiter-coordinator`: added `explore-report-5m` verifier/CLI wiring and live smoke (`status=passed`, `score=1`, artifact `data/benchmarks/bench_20260521002220_explore_report_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer, follow-and-chat.
@@ -222,15 +222,22 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: command examples are copy/pasteable and use configured data dirs.
   - Verified 2026-05-21 in this pass: runbook and RuneScape skill index now document local-vs-Railgun `RUNEBENCH_WIKI_DIR`, mounted wiki paths, durable knowledge dirs, and the rule that engine-local facts beat wiki snippets.
 
+- `[x]` **E5: Clean up knowledge suggestion workflow attribution.**
+  - Files: `src/controller/knowledge/game-skill-context.ts`, `src/controller/knowledge/game-skill-context.test.ts`
+  - Deliverable: combat, prayer, follow, fishing, firemaking, and woodcutting attempts are suggested against the workflow that produced the action, not whichever visible workflow sorts first.
+  - Verification: focused knowledge tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: normalized action causes before classification, kept combat movement and prayer-driven attacks under `safe-combat`, kept bury-bones under `train-prayer`, and preserved follow attribution. Focused knowledge tests, typecheck, lint, build, and full Jest suite passed.
+
 ## Workstream F: Human-Like Behavior Layer
 
 **Purpose:** Make the resident feel like a human-ish player instead of a static script.
 
-- `[~]` **F1: Goal sharing cadence.**
+- `[x]` **F1: Goal sharing cadence.**
   - Files: `src/controller/thinking/hybrid-agent-thinking-module.ts`, extracted Brain planner when available
   - Deliverable: agent periodically says what he is trying to do, why, and what he needs from nearby humans.
   - Verification: chat tests cover "I am going to chop logs", "I need a tinderbox/logs", and "I am stuck near a fence".
   - Partial 2026-05-21: `presence_beacon` already periodically reports location, active goal, and a concrete next step before Body inference; focused tests cover active-goal beacons, visible item opportunities, and starter fishing next-step speech. Direct workflow responses already explain missing tools such as axes, logs, tinderboxes, nets, and low-health blockers. Stuck movement now reports recognized visible fence blockers once before recovery. Remaining gap: benchmark/manual proof that nearby humans see the cadence during normal play.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: benchmark-seeded goals now begin the presence-beacon cadence after the first share interval even when Brain never had to announce the goal. Focused test covers this regression, and live autonomous `fishing-cooking-10m` passed while recording public status lines with location, goal, and next step in trajectory evidence (`/tmp/oniondao-fishing-cooking-beacon-bench-current/bench_20260521165903_fishing_cooking_10m.json`, score 1, `trajectorySays=6`).
 
 - `[~]` **F2: Nearby human reaction.**
   - Files: standard module Body/Brain code and tests
@@ -244,10 +251,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: tests simulate blocked tree/fence and assert recovery, not tiny-step loops.
   - Partial 2026-05-21: committed movement tracks stationary ticks, opens nearby doors/gates first, reports visible fence blockers once, then switches to a patrol recovery move. Remaining gap: broader alternate-path tests, help-request speech when no useful recovery exists, and live benchmark/manual proof.
 
-- `[ ]` **F4: Exploration loop.**
+- `[x]` **F4: Exploration loop.**
   - Files: Brain planner, Body routines, knowledge docs
   - Deliverable: agent walks to visible landmarks, reports what he sees, records useful places, and returns to anchor periodically.
   - Verification: local live test or simulation where dashboard shows meaningful movement and chat.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: `explore-report-5m` now seeds a local scouting goal instead of relying on Brain drift. Focused thinking test covers initial exploration movement without deep inference, and live autonomous benchmark passed (`status=passed`, `score=1`, `selectedModuleActions=3`, `positionChanged=1`, `informativeReports=1`, `trajectorySays=2`, artifact `/tmp/oniondao-explore-report-seeded-bench/bench_20260521172341_explore_report_5m.json`).
 
 - `[ ]` **F5: Combat survival personality.**
   - Files: nervous rules, combat workflow, standard module
@@ -258,13 +266,17 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Expand from "can make a fire" to basic RuneScape loops.
 
-- `[ ]` **G1: Woodcutting plus firemaking loop.**
+- `[x]` **G1: Woodcutting plus firemaking loop.**
   - Deliverable: find level-appropriate tree, chop logs, make fire, repeat safely.
   - Success metric: produces at least one fire from self-chopped logs in benchmark or live test.
+  - Verified 2026-05-21 on `nullcity`: autonomous `woodcutting-firemaking-10m` passed (`status=passed`, `score=1`, artifact `/tmp/oniondao-wood-fire-bench-post-stale-log-fix/bench_20260521072605_woodcutting_firemaking_10m.json`). This pass also suppresses stale fire-adjacent log pickups and stale "Next: pick up logs" beacons after firemaking consumes the logs.
 
-- `[ ]` **G2: Fishing plus cooking loop.**
+- `[x]` **G2: Fishing plus cooking loop.**
   - Deliverable: find fishing spot, use small net, catch shrimp, cook on range/fire when available.
   - Success metric: inventory changes from raw shrimp to cooked shrimp or clear failure explanation.
+  - Partial 2026-05-21 on `claude/evidence-loop-p1`: added deterministic starter cooking behavior. `agent cook shrimp` uses carried raw shrimp/anchovies on a visible fire/range without inference, active starter-fishing goals cook raw catches before more net fishing, and missing heat is explained in chat. Focused thinking tests, typecheck, lint, build, and full Jest suite passed. Remaining gap: live or benchmark proof that raw fish changes to cooked fish in-game.
+  - Partial 2026-05-21 on `claude/evidence-loop-p1`: added `fishing-cooking-10m` verifier/CLI wiring, autonomous selected-module proof requirements, false-positive coverage for externally supplied fish and cooked fish without a cooking action, benchmark-goal seeding, and scripted fallback to make a cooking fire when raw fish is ready. Focused benchmark/thinking tests and benchmark dry-run passed. Remaining gap: live autonomous benchmark proof against the local server.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: live autonomous `fishing-cooking-10m` passed against the local server with `onion.runescape.standard` (`status=passed`, `score=1`, artifact `/tmp/oniondao-fishing-cooking-bench/bench_20260521162350_fishing_cooking_10m.json`). The run showed the module netting fish, making a fire from carried logs and tinderbox, and attempting cooking actions under benchmark observation.
 
 - `[x]` **G3: Prayer starter loop.**
   - Deliverable: bury bones from inventory or safe defeated enemies.
@@ -308,6 +320,94 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: PR checklist includes roadmap update.
   - Verified 2026-05-21 in this pass: this roadmap now includes an agent update protocol, verification commands, and a PR checklist requiring roadmap status plus benchmark/test evidence for behavior changes.
 
+## Workstream I: Library Of Souls Evidence
+
+**Purpose:** Turn resident actions, relationships, death, and recovery into durable story artifacts that humans and future agents can inspect without reading raw JSONL logs.
+
+- `[x]` **I1: Record relationship milestones.**
+  - Files: `src/controller/evidence/significance.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/evidence/portrait-template.ts`
+  - Deliverable: first peer encounters and repeated interactions become timeline events and portrait relationships.
+  - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: first peer encounters and repeated interactions now append Library timeline events, hydrate restart-safe relationship counters, and render portrait "Who they knew" entries. Focused evidence tests, typecheck, lint, build, and full Jest suite passed.
+
+- `[x]` **I2: Record survival milestones.**
+  - Files: `src/controller/evidence/significance.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/evidence/portrait-template.ts`
+  - Deliverable: dangerous HP drops followed by healing/recovery become timeline events and portrait life notes.
+  - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: dangerous HP losses now arm a survival milestone, later HP recovery appends a `near_death_survival` timeline event, and portraits summarize the life as "The survivor" with a notable event. Focused evidence tests, typecheck, lint, build, and full Jest suite passed.
+
+- `[x]` **I3: Record unfulfilled wants at life end.**
+  - Files: `src/controller/evidence/library-updater.ts`, `src/controller/evidence/portrait-template.ts`
+  - Deliverable: resident wants spoken during a life become explicit `wants_unfulfilled` timeline events when that life ends.
+  - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: legacy events now append deduped `wants_unfulfilled` records for spoken wants in that life before closing the life, and portraits summarize them as "Still wanted ...". Focused evidence tests, typecheck, lint, build, full Jest suite, and `git diff --check` passed.
+
+## Workstream J: Patron / Human-Attention Loop
+
+**Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
+
+- `[ ]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
+- `[ ]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
+- `[ ]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
+- `[ ]` **J4: Letters system.** Four canonical kinds (`standing | epitaph | civic | broadcast`). In-game scroll/postbag delivery + web inbox parity. Denormalised sender snapshot preserved post-death.
+- `[ ]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
+- `[ ]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
+- `[ ]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
+- `[ ]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
+
+## Workstream K: Factions Adapted For Runescape
+
+**Purpose:** rs6 needs its own four factions; v2's Solder Saints / Hatchery / Locksmiths / Ledgerwrights are Onion-DAO-flavored and don't translate to RuneScape lore. The four-faction shape + two tension axes + flagship NPCs + home rooms patterns transfer. Spec: `docs/superpowers/specs/2026-05-22-rs6-factions-design.md`. **This workstream requires maintainer creative input before any K-task can ship.**
+
+- `[!]` **K1: Name the four rs6 factions.** Mottos, colors, home POIs, fault lines. Maintainer decision required — see spec's open questions.
+- `[ ]` **K2: Define the two rs6 tension axes.** Analog of v2's body-vs-mind and secrets-vs-receipts.
+- `[ ]` **K3: Seed four flagship NPCs.** ~30-day lifespan, full soul fields, idempotent seed (mirrors v2's `seed.ts` pattern).
+- `[ ]` **K4: Place the five rs6 rooms in-game.** Four faction homes + one neutral atrium. Every `say` line tagged with `room`.
+- `[ ]` **K5: Visual treatment for the secrets faction.** Fog-of-war or hidden-marker rendering equivalent to v2's "redacted" black tile.
+
+## Workstream L: Cross-Resident Memory And Lore
+
+**Purpose:** Residents that affect each other beyond independent action — interactions, projects, rumor. Largely unmined in v2. Spec: `docs/superpowers/specs/2026-05-22-cross-resident-lore-design.md` *(deferred until after J/K land — not load-bearing for June 1)*.
+
+- `[ ]` **L1: `interact_resident` action verbs.** `whisper`, `gift`, `assist_skill`, `challenge_duel` with typed preconditions.
+- `[ ]` **L2: Resident-owned projects.** Long-running funded artifacts (shop, citadel room, herb patch). Pick three project archetypes for rs6 MVP.
+- `[ ]` **L3: `world_events` or broadcast channel.** Shared data surface; ambient utterances propagate to adjacent rooms.
+- `[ ]` **L4: Resident-perceived in-game events.** Player level-ups, PKs, quest completions, faction territory shifts in the perception envelope.
+
+## Workstream M: Hero Residents And Story Arcs
+
+**Purpose:** Named residents who become event focal points for human players. Spec: `docs/superpowers/specs/2026-05-22-hero-residents-design.md`.
+
+- `[ ]` **M1: Hero story-arc shape.** Pitch → fund → progress → resolve → letter. Resolution event template + faction effect.
+- `[ ]` **M2: Lifespan tiers.** Flagships ~30 days, visitor-borns ~24 hours. Asymmetry is intentional.
+- `[ ]` **M3: `request_attention` action.** Hero NPC dialog or in-world begging surface; can also dispatch a letter to a recent patron.
+- `[ ]` **M4: `prepare_epitaph` action.** When `lifespanTicks < threshold`, hero spends a tick writing its own epitaph that overrides the templated one at death.
+- `[ ]` **M5: `trade_resource` action.** Hero proactively offers a resource to a patron who's neglected them.
+- `[ ]` **M6: Hero-as-resource-gatherer at faction landmarks.** Heroes skill-train at rs6 zones their faction controls; output → faction stockpile.
+
+## Workstream N: Physical Event And Embassy
+
+**Purpose:** IRL June 1 surfaces and their in-game counterparts. Most owned by Dev (dashboard) or shared with v2 (staff scanner, print queue), but rs6 needs its own placement decisions. Spec: `docs/superpowers/specs/2026-05-22-embassy-and-event-design.md`.
+
+- `[ ]` **N1: Pick the rs6 embassy POI in-game.** Location for handler interaction, ritual redemption, standing display.
+- `[ ]` **N2: Wall-map projection coordination.** Decide whether rs6 events feed v2's wall ticker or rs6 gets its own wall view. Coordinate with Dev.
+- `[ ]` **N3: In-game graveyard zone.** Tombstones examinable for name/faction/epitaph/cause/ticks-lived. Mirror on dashboard library page.
+- `[ ]` **N4: IRL graveyard wall at the embassy.** Printed epitaphs at the physical embassy; refresh cadence + printing pipeline.
+- `[ ]` **N5: Mortician's Ribbon civic achievement.** Bestowed for humans witnessing N resident deaths (N TBD). In-game cape/title + lanyard variant.
+
+## Workstream O: Engineering And Tooling Polish
+
+**Purpose:** Reusable infrastructure patterns from v2 and RuneBench that don't fit in other workstreams. Spec: *not needed* — items are independently scoped enough that no autonomous-dev spec is required.
+
+- `[ ]` **O1: Tick worker discipline.** Graceful SIGTERM, per-tick stats log line, `status='alive'` guard on decrement UPDATE.
+- `[ ]` **O2: Shard + attention ledger discipline.** Append-only ledgers with denormalised balance caches updated in same tx.
+- `[ ]` **O3: Static catalog in code audit.** Confirm rs6 factions/resources/achievements/rooms/emotions live in typed catalogs, not DB rows.
+- `[ ]` **O4: Real-completion inference health check.** Health endpoint exercises a real LLM call, not just connect.
+- `[ ]` **O5: Layered Docker base image.** Pre-cache engine + deps to cut per-iteration build time.
+- `[ ]` **O6: GitHub Pages auto-deploy from result JSON.** Static leaderboard / library snapshot rebuilt when results change.
+- `[ ]` **O7: `MODEL_CONFIG`-style precomputed UI metadata dictionary.** Single source for module IDs, faction colors, emotion presets.
+- `[ ]` **O8: env + CLI dual config audit.** Document conventions and apply across rs6 CLIs.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
@@ -317,10 +417,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` Build the consumption safety and proof loop next.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
-  - Knowledge suggestion attribution cleanup: live combat-prayer proof showed successful combat/pickup/bury actions being proposed under `train-woodcutting`; fix workflow classification before relying on the suggestion queue for self-improvement.
-  - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
-  - Human-like next slice: F1 goal sharing cadence, then F3/F4 exploration/stuck recovery and G2 fishing-cooking.
+  - Human-like next slice: finish F3 help-request behavior when no recovery move exists, then build a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
 
 ## Agent Update Protocol
 

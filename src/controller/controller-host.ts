@@ -1,4 +1,5 @@
 import { ControllerConfig } from './config';
+import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import { createDefaultGameSkillEntries } from './knowledge/game-skill-entries';
 import { GameSkillService } from './knowledge/game-skill-context';
 import { KnowledgeSuggestionStore } from './knowledge/suggestions';
@@ -6,8 +7,8 @@ import { LlmClient } from './llm/llm-client';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryStore } from './memory/memory-store';
-import { RuntimeStateStore } from './memory/runtime-state';
-import { ResidentRuntime, type ResidentRuntimeGameSkill } from './resident-runtime';
+import { residentSlug, RuntimeStateStore } from './memory/runtime-state';
+import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
 import { SoulLoader } from './soul/soul-loader';
 import { standardSparkModules, type SparkModule } from './spark';
 import { GatewayClient } from './transport/gateway-client';
@@ -203,23 +204,45 @@ export class ControllerHost {
             inferenceLog: this.inferenceLog,
             gameSkill: this.gameSkill,
             sparkModules: this.sparkModules,
+            evidence: this.tryCreateRuntimeEvidence(soul),
         };
         this.runtimes.set(
             soul.frontmatter.name,
-            this.options.runtimeFactory
-                ? this.options.runtimeFactory(runtimeOptions)
-                : new ResidentRuntime({
-                      soul,
-                      gateway: this.gateway,
-                      memory: this.memory,
-                      stateStore: this.stateStore,
-                      llm: this.llm,
-                      actionLog: this.actionLog,
-                      inferenceLog: this.inferenceLog,
-                      gameSkill: this.gameSkill,
-                      sparkModules: this.sparkModules,
-                  }),
+            this.options.runtimeFactory ? this.options.runtimeFactory(runtimeOptions) : new ResidentRuntime(runtimeOptions),
         );
+    }
+
+    private createRuntimeEvidence(soul: ReturnType<SoulLoader['load']>): ResidentRuntimeEvidence {
+        const store = new EvidenceStore(soul.frontmatter.name, this.config.memory.dir);
+        const residentId = residentSlug(soul.frontmatter.name);
+        const sessionId = `${this.config.controller.instanceId}-${residentId}-${Date.now()}`;
+        const session = store.beginSession(sessionId, soul.sourcePath || 'unknown-soul');
+        return {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store),
+            library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir),
+        };
+    }
+
+    /**
+     * Wraps createRuntimeEvidence so an evidence-layer failure (disk full,
+     * permission denied, corrupt index.json) does not block the resident from
+     * starting. Per spec: "evidence loss is preferred over agent loss." On
+     * failure the resident runs without an evidence sink; ResidentRuntime is
+     * defensive about an undefined `evidence` field.
+     */
+    private tryCreateRuntimeEvidence(soul: ReturnType<SoulLoader['load']>): ResidentRuntimeEvidence | undefined {
+        try {
+            return this.createRuntimeEvidence(soul);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error(
+                `[controller-host] evidence init failed for resident ${soul.frontmatter.name}; resident will start without evidence sink`,
+                error,
+            );
+            return undefined;
+        }
     }
 
     private bindGatewayEvents(): void {

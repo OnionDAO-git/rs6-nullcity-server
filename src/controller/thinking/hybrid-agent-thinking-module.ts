@@ -79,6 +79,9 @@ const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 633
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
 const WOODCUTTING_AXE_ITEM_IDS = new Set([1351, 1349, 1353, 1361, 1355, 1357, 1359]);
 const SMALL_FISHING_NET_ITEM_IDS = new Set([303]);
+const STARTER_RAW_FISH_ITEM_IDS = new Set([317, 321]);
+const STARTER_RAW_FISH_KEY_PATTERN = /^rs:raw_(shrimp|anchovies)$/i;
+const COOKING_HEAT_OBJECT_IDS = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 const FISHING_SPOT_PATTERN = /\bfishing\s+spot\b/i;
 const BONE_ITEM_IDS = new Set([
@@ -168,6 +171,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
             gameSkill,
+            progress: this.progressPromptInput(),
         });
         const response = await this.options.llm.complete({
             endpoint: this.endpointFor(behavior.brain),
@@ -221,6 +225,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
             gameSkill,
+            progress: this.progressPromptInput(),
             visibility,
         });
         const response = await this.options.llm.complete({
@@ -327,6 +332,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }
 
+        const cookingAction = goal && isStarterFishingGoal(goal) ? starterFishingCookingAction(view) : undefined;
+        if (cookingAction) {
+            return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
+        }
+
         const fishingAction = goal && isStarterFishingGoal(goal) ? starterFishingAction(view) : undefined;
         if (fishingAction) {
             return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
@@ -406,6 +416,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isStarterFishingGoal(goal)) {
+            const cookingAction = starterFishingCookingAction(perception);
+            if (cookingAction) {
+                return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
+            }
             const fishingAction = starterFishingAction(perception);
             if (fishingAction) {
                 return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
@@ -887,6 +901,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        if (isCookingIntent(command, chat.normalizedText)) {
+            this.cognition().activeGoal = starterCookingGoal(this.options.state.tick);
+            return {
+                action: starterFishingCookingAction(perception) || {
+                    kind: 'say',
+                    text: 'I need raw shrimp or anchovies before I can cook starter fish.',
+                },
+                cause: 'direct_chat_cook',
+            };
+        }
+
         if (isStarterFishingIntent(command, chat.normalizedText)) {
             this.cognition().activeGoal = starterFishingGoal(this.options.state.tick);
             return {
@@ -1005,7 +1030,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
-        if (!this.activeGoal()) {
+        const goal = this.activeGoal();
+        if (!goal) {
             return undefined;
         }
 
@@ -1122,6 +1148,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         );
     }
 
+    private progressPromptInput(): { tick: number; lastMeaningfulProgressAt?: number; stuckSince?: number } {
+        return {
+            tick: this.options.state.tick,
+            lastMeaningfulProgressAt: this.options.state.lastMeaningfulProgressAt,
+            stuckSince: this.options.state.stuckSince,
+        };
+    }
+
     private shouldShareGoal(): boolean {
         const interval = this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;
         if (interval <= 0) {
@@ -1212,6 +1246,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (!cognition.activeGoal || cognition.activeGoal.id !== goal.id || this.goalExpired(cognition.activeGoal)) {
             this.clearGoalMomentum();
             cognition.activeGoal = goal;
+            cognition.lastPresenceBeaconTick ??= this.options.state.tick;
+            cognition.lastGoalShareTick ??= this.options.state.tick;
         }
         cognition.lastBrainTick = this.options.state.tick;
     }
@@ -1323,6 +1359,28 @@ function starterFishingGoal(tick: number): ActiveGoalState {
     };
 }
 
+function starterFishingCookingGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'catch-and-cook-starter-fish',
+        description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+        steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire', 'Use raw fish on the fire or range'],
+        success: 'Raw fish turn into cooked food or a clear blocker is explained.',
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
+}
+
+function starterCookingGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'cook-starter-fish',
+        description: 'Cook raw shrimp or anchovies on a visible fire or range.',
+        steps: ['Carry raw shrimp or anchovies', 'Find a fire or range', 'Use raw fish on the heat source'],
+        success: 'Raw fish turn into cooked food or a clear blocker is explained.',
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
 function prayerGoal(tick: number): ActiveGoalState {
     return {
         id: 'train-prayer-with-bones',
@@ -1349,8 +1407,14 @@ function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | 
     if (taskId === 'starter-fishing-5m') {
         return starterFishingGoal(tick);
     }
+    if (taskId === 'fishing-cooking-10m') {
+        return starterFishingCookingGoal(tick);
+    }
     if (taskId === 'combat-prayer-10m') {
         return combatGoal(tick);
+    }
+    if (taskId === 'explore-report-5m') {
+        return explorationGoal(tick);
     }
     return undefined;
 }
@@ -1437,6 +1501,32 @@ function isSmallFishingNet(item: Item): boolean {
 
 function hasSmallFishingNet(perception: HybridPerception): boolean {
     return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isSmallFishingNet(item)));
+}
+
+function isStarterRawFish(item: Item): boolean {
+    return STARTER_RAW_FISH_ITEM_IDS.has(item.itemId) || STARTER_RAW_FISH_KEY_PATTERN.test(item.key || '');
+}
+
+function starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {
+    const rawFishSlot = findSlot(perception.resident?.inventory || [], isStarterRawFish);
+    if (rawFishSlot === undefined) {
+        return undefined;
+    }
+
+    const here = perception.resident?.position;
+    const heatSource = (perception.nearby?.objects || [])
+        .filter(object => COOKING_HEAT_OBJECT_IDS.has(object.objectId))
+        .sort((a, b) => distance(here || a.position, a.position) - distance(here || b.position, b.position))[0];
+    if (heatSource) {
+        return { kind: 'use_item_on', itemSlot: rawFishSlot, target: heatSource, cause: 'starter_fishing_cook_catch' };
+    }
+
+    const fireAction = firemakingAction(perception);
+    if (fireAction) {
+        return actionWithCause(fireAction, 'starter_fishing_make_cooking_fire');
+    }
+
+    return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };
 }
 
 function isFishingSpot(actor: Actor): boolean {
@@ -1732,9 +1822,11 @@ function opportunisticPickupAction(
         return undefined;
     }
 
+    const suppressFiremakingLogPickup = hasNearbyFire(perception);
     const item = (perception.nearby?.worldItems || [])
         .filter(candidate => {
             if (
+                (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
                 isPickupOnCooldown(candidate, pickupCooldowns, currentTick)
@@ -1881,8 +1973,14 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string): 
         return undefined;
     }
 
+    const suppressFiremakingLogPickup = hasNearbyFire(perception);
     const item = (perception.nearby?.worldItems || [])
-        .filter(candidate => isUsefulGroundItem(candidate) && !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id))
+        .filter(
+            candidate =>
+                !(suppressFiremakingLogPickup && isFiremakingLog(candidate)) &&
+                isUsefulGroundItem(candidate) &&
+                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id),
+        )
         .sort((a, b) => {
             const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
             return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
@@ -2083,6 +2181,10 @@ function isStarterFishingIntent(command: string, fullText: string): boolean {
         /^(fish|go fish|go fishing|catch fish|catch shrimp|fishing|net fish)\b/.test(command) ||
         /\b(catch shrimp|go fishing|small net fishing)\b/.test(fullText)
     );
+}
+
+function isCookingIntent(command: string, fullText: string): boolean {
+    return /^(cook|cook fish|cook shrimp|cook food|cooking)\b/.test(command) || /\b(cook shrimp|cook fish|cook food)\b/.test(fullText);
 }
 
 function isBuryBonesIntent(command: string, fullText: string): boolean {

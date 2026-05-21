@@ -24,6 +24,8 @@ export interface RuntimeState {
     hookCooldowns?: Record<string, number>;
     shadowedHooks?: Array<{ tick: number; id: string; priority: number; shadowedBy: string }>;
     previousIntent?: unknown;
+    lastMeaningfulProgressAt?: number;
+    stuckSince?: number;
     deceased?: {
         date: string;
         tick: number;

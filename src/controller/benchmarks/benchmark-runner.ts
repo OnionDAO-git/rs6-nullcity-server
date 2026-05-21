@@ -1,3 +1,4 @@
+import fs from 'fs';
 import type { SparkModuleIdentity } from '../spark';
 import type { SubmittedActionAck } from '../transport/gateway-client';
 import type { ActionResult, AgentAction, CreateResidentPayload, Perception, PerceptionEvent } from '../transport/message-codecs';
@@ -39,6 +40,7 @@ export interface BenchmarkTaskContext {
     submitPeerAction(id: string, action: AgentAction): Promise<ActionResult>;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
     recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
+    recordArtifactPath?(path: string): void;
     recordSummary(summary: string): void;
     actionAttempts(): readonly BenchmarkRecordedActionAttempt[];
     latestPerception(): Perception | undefined;
@@ -81,6 +83,7 @@ export interface BenchmarkAutonomousRuntimeContext {
     readonly signal: AbortSignal;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
     recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
+    recordArtifactPath?(path: string): void;
     recordSummary(summary: string): void;
 }
 
@@ -107,6 +110,7 @@ interface BenchmarkEvidenceBuffer {
     actionAttempts: BenchmarkRecordedActionAttempt[];
     inferenceRequestIds: string[];
     inferenceRequests: BenchmarkRecordedInferenceRequest[];
+    artifactPaths: string[];
     perceptionIds: string[];
     summaries: string[];
     perceptions: Perception[];
@@ -289,6 +293,7 @@ export class BenchmarkRunner {
                 metrics: {
                     ...outcome.metrics,
                     ...moduleEvidenceMetrics(mode, evidence, this.options.module),
+                    ...evidenceArtifactMetrics(evidence.artifactPaths),
                     actionsAttempted: Math.max(evidence.actionAttemptIds.length, evidence.actionAttempts.length),
                 },
                 evidence: {
@@ -298,6 +303,7 @@ export class BenchmarkRunner {
                     inferenceRequests: evidence.inferenceRequests,
                     perceptionIds: evidence.perceptionIds,
                     summaries: [...evidence.summaries, ...(outcome.summaries || [])],
+                    artifactPaths: evidence.artifactPaths,
                 },
                 failureReason: outcome.failureReason,
             }),
@@ -329,6 +335,9 @@ export class BenchmarkRunner {
             recordInferenceRequest: request => {
                 recordInferenceRequest(evidence, request);
             },
+            recordArtifactPath: artifactPath => {
+                pushUnique(evidence.artifactPaths, artifactPath);
+            },
             recordSummary: summary => {
                 evidence.summaries.push(summary);
             },
@@ -350,6 +359,9 @@ export class BenchmarkRunner {
             },
             recordInferenceRequest: request => {
                 recordInferenceRequest(evidence, request);
+            },
+            recordArtifactPath: artifactPath => {
+                pushUnique(evidence.artifactPaths, artifactPath);
             },
             recordSummary: summary => {
                 evidence.summaries.push(summary);
@@ -446,6 +458,7 @@ function createEvidenceBuffer(): BenchmarkEvidenceBuffer {
         actionAttempts: [],
         inferenceRequestIds: [],
         inferenceRequests: [],
+        artifactPaths: [],
         perceptionIds: [],
         summaries: [],
         perceptions: [],
@@ -565,6 +578,65 @@ function moduleEvidenceMetrics(
         selectedModuleInferences: selectedModuleInferenceCount(evidence, module),
         untaggedActions: evidence.actionAttempts.filter(attempt => !attempt.sparkModule).length,
     };
+}
+
+function evidenceArtifactMetrics(paths: string[]): Record<string, number> {
+    if (paths.length === 0) {
+        return {};
+    }
+    const metrics = {
+        trajectoryLines: 0,
+        trajectoryActions: 0,
+        trajectorySays: 0,
+        progressLines: 0,
+        meaningfulProgressTicks: 0,
+        stuckProgressTicks: 0,
+    };
+    for (const artifactPath of paths) {
+        for (const line of readJsonlRecords(artifactPath)) {
+            if (line.kind === 'progress') {
+                metrics.progressLines += 1;
+                if (line.meaningful === true) {
+                    metrics.meaningfulProgressTicks += 1;
+                }
+                if (typeof line.stuckSince === 'number') {
+                    metrics.stuckProgressTicks += 1;
+                }
+                continue;
+            }
+            if (typeof line.kind === 'string') {
+                metrics.trajectoryLines += 1;
+                if (line.kind === 'action' || line.kind === 'say') {
+                    metrics.trajectoryActions += 1;
+                }
+                if (line.kind === 'say') {
+                    metrics.trajectorySays += 1;
+                }
+            }
+        }
+    }
+    return metrics;
+}
+
+function readJsonlRecords(filePath: string): Array<Record<string, unknown>> {
+    if (!fs.existsSync(filePath)) {
+        return [];
+    }
+    return fs
+        .readFileSync(filePath, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map(line => safeJsonRecord(line))
+        .filter((line): line is Record<string, unknown> => Boolean(line));
+}
+
+function safeJsonRecord(line: string): Record<string, unknown> | undefined {
+    try {
+        const parsed = JSON.parse(line);
+        return isRecord(parsed) ? parsed : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function selectedModuleActionCount(evidence: BenchmarkEvidenceBuffer, module: SparkModuleIdentity): number {

@@ -3,6 +3,15 @@ import { ActionCoordinator } from './actions/action-coordinator';
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
+import {
+    EVIDENCE_SCHEMA_VERSION,
+    ProgressTracker,
+    type EvidenceStore,
+    type LibraryUpdater,
+    type ProgressLine,
+    type ProgressSnapshot,
+    type TrajectoryBuilder,
+} from './evidence';
 import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
@@ -47,6 +56,14 @@ export interface ResidentRuntimeOptions {
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
     sparkModules?: SparkModule[];
+    evidence?: ResidentRuntimeEvidence;
+}
+
+export interface ResidentRuntimeEvidence {
+    store: EvidenceStore;
+    sessionId: string;
+    trajectory: TrajectoryBuilder;
+    library?: LibraryUpdater;
 }
 
 export class ResidentRuntime {
@@ -63,10 +80,13 @@ export class ResidentRuntime {
     private readonly memoryRouter = new MemoryRouter();
     private readonly compressor = new PerceptionCompressor();
     private readonly pendingEvents: PerceptionEvent[] = [];
+    private readonly evidence?: ResidentRuntimeEvidence;
+    private readonly progressTracker = new ProgressTracker();
     private deciding = false;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
+        this.evidence = options.evidence;
         this.state = options.stateStore.load(
             this.name,
             initialAttention(options.soul.frontmatter.attentionProfile),
@@ -103,6 +123,10 @@ export class ResidentRuntime {
     }
 
     async onPerception(perception: Perception): Promise<void> {
+        return this.withEvidenceTick(perception, () => this.handlePerception(perception));
+    }
+
+    private async handlePerception(perception: Perception): Promise<void> {
         this.history.push(perception);
         this.body.observePerception(perception);
         const reaction = this.nervousSystem.react(perception);
@@ -121,6 +145,7 @@ export class ResidentRuntime {
                     sparkModule: reaction.sparkModule,
                 },
                 waitForEffect: this.effectWaitFor(reaction.action),
+                ...this.evidenceCallbacks(),
             });
             this.observeGameSkillAttempt('nervous-system', perception, undefined, attempt);
             this.options.stateStore.save(this.state);
@@ -154,6 +179,15 @@ export class ResidentRuntime {
         this.deciding = true;
         try {
             const result = await this.thinking.think(compressedPerception, gameSkillContext);
+            this.recordEvidence(trajectory =>
+                trajectory.recordDecision({
+                    cause: result.cause,
+                    moduleId: this.thinkingSparkModule?.id,
+                    moduleVersion: this.thinkingSparkModule?.version,
+                    promptTokens: result.envelopeTokens,
+                    actionKinds: result.actions.map(action => action.kind),
+                }),
+            );
             for (const event of result.syntheticEvents || []) {
                 this.history.push(event);
             }
@@ -179,6 +213,7 @@ export class ResidentRuntime {
                         sparkModule: this.thinkingSparkModule,
                     },
                     waitForEffect: this.effectWaitFor(action),
+                    ...this.evidenceCallbacks(),
                 });
                 this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
             }
@@ -209,6 +244,101 @@ export class ResidentRuntime {
         const pending = this.pendingEvents.splice(0);
         const events = Array.isArray(perception.events) ? (perception.events as PerceptionEvent[]) : [];
         return { ...perception, events: [...events, ...pending] };
+    }
+
+    private async withEvidenceTick(perception: Perception, run: () => Promise<void>): Promise<void> {
+        const tick = typeof perception.tick === 'number' ? perception.tick : this.state.tick;
+        const began = this.recordEvidence(trajectory => trajectory.beginTick(tick, perception));
+        this.observeRuntimeProgress(tick, perception);
+        try {
+            await run();
+        } finally {
+            if (began) {
+                this.recordEvidence(trajectory => trajectory.endTick('tick_complete'));
+            }
+        }
+    }
+
+    private evidenceCallbacks(): ResidentRuntimeActionCallbacks {
+        return {
+            onAckReady: attempt => {
+                const requestId = attempt.requestId || attempt.attemptId;
+                this.recordEvidence(trajectory => {
+                    const line = trajectory.recordAction(attempt.action, requestId);
+                    this.evidence?.library?.observeTrajectory(line);
+                });
+            },
+            onEffectResolved: attempt => {
+                const requestId = attempt.requestId || attempt.attemptId;
+                this.recordEvidence(trajectory =>
+                    trajectory.recordActionResult(requestId, {
+                        status: attempt.finalStatus,
+                        reason: attempt.finalReason || stringReason(attempt.ackResult?.reason),
+                        evidence: attempt.evidence,
+                    }),
+                );
+            },
+        };
+    }
+
+    private observeRuntimeProgress(tick: number, perception: Perception): void {
+        const delta = this.progressTracker.observe(progressSnapshotFromPerception(tick, perception));
+        if (delta.meaningful) {
+            this.state.lastMeaningfulProgressAt = tick;
+            this.state.stuckSince = undefined;
+        } else if (delta.stuckSince !== null) {
+            this.state.stuckSince = delta.stuckSince;
+        } else {
+            this.state.stuckSince = undefined;
+        }
+
+        this.recordProgressEvidence(tick, delta);
+    }
+
+    private recordProgressEvidence(
+        tick: number,
+        delta: { meaningful: boolean; reasons: string[]; stuckSince: number | null },
+    ): void {
+        if (!this.evidence) {
+            return;
+        }
+        try {
+            const line: ProgressLine = {
+                schemaVersion: EVIDENCE_SCHEMA_VERSION,
+                ts: new Date().toISOString(),
+                tick,
+                sessionId: this.evidence.sessionId,
+                kind: 'progress',
+                meaningful: delta.meaningful,
+                reasons: delta.reasons,
+                stuckSince: delta.stuckSince,
+            };
+            this.evidence.store.appendProgress(line);
+            this.evidence.library?.observeProgress(line);
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'evidence_progress_record_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    private recordEvidence(write: (trajectory: TrajectoryBuilder) => void): boolean {
+        if (!this.evidence) {
+            return false;
+        }
+        try {
+            write(this.evidence.trajectory);
+            return true;
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'evidence_record_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return false;
+        }
     }
 
     private observeGameSkillAttempt(
@@ -291,6 +421,7 @@ export class ResidentRuntime {
 
     stop(cause = 'runtime_stopped'): void {
         this.thinking.stop(cause);
+        this.recordEvidence(() => this.evidence?.store.endSession(this.evidence.sessionId, 'shutdown'));
         const sourceModules = new Set(
             [this.thinkingSourceModule, this.nervousSourceModule].filter((module): module is SparkModule => Boolean(module)),
         );
@@ -299,6 +430,11 @@ export class ResidentRuntime {
         }
         this.options.stateStore.save(this.state);
     }
+}
+
+interface ResidentRuntimeActionCallbacks {
+    onAckReady?: (attempt: ActionAttempt) => void;
+    onEffectResolved?: (attempt: ActionAttempt) => void;
 }
 
 interface Position {
@@ -360,6 +496,57 @@ function isPosition(value: unknown): value is Position {
     return typeof recordValue.x === 'number' && typeof recordValue.y === 'number';
 }
 
+function progressSnapshotFromPerception(tick: number, perception: Perception): ProgressSnapshot {
+    const root = record(perception);
+    const resident = record(root.resident);
+    return {
+        tick,
+        xpBySkill: xpBySkill(resident.skills),
+        inventoryCount: inventoryCount(resident.inventory),
+        positionHash: positionHash(resident.position),
+        hp: currentHp(resident),
+    };
+}
+
+function xpBySkill(value: unknown): Record<string, number> {
+    return Object.fromEntries(
+        Object.entries(record(value)).map(([skill, skillValue]) => {
+            if (typeof skillValue === 'number') {
+                return [skill, skillValue];
+            }
+            const skillRecord = record(skillValue);
+            return [skill, numberField(skillRecord.xp) ?? numberField(skillRecord.experience) ?? 0];
+        }),
+    );
+}
+
+function inventoryCount(value: unknown): number {
+    if (!Array.isArray(value)) {
+        return 0;
+    }
+    return value.filter(item => Object.keys(record(item)).length > 0).length;
+}
+
+function positionHash(value: unknown): string {
+    const position = record(value);
+    const x = numberField(position.x);
+    const y = numberField(position.y);
+    if (x === undefined || y === undefined) {
+        return 'unknown';
+    }
+    return `${x},${y},${numberField(position.level) ?? 0}`;
+}
+
+function currentHp(resident: Record<string, unknown>): number {
+    const hp = record(resident.hp);
+    const hitpoints = record(resident.hitpoints);
+    return numberField(hp.current) ?? numberField(hitpoints.current) ?? numberField(resident.hp) ?? 0;
+}
+
+function numberField(value: unknown): number | undefined {
+    return typeof value === 'number' ? value : undefined;
+}
+
 function waitsForPerceptionEffect(kind: string): boolean {
     return ['interact', 'use_item_on', 'use_item_on_item', 'attack', 'item_action', 'equip', 'drop', 'eat'].includes(kind);
 }
@@ -370,6 +557,10 @@ function supportsPerceptionEffectWait(body: ResidentBody): boolean {
         typeof body.getLatestPerceptionSeq === 'function' &&
         typeof body.waitForPerception === 'function'
     );
+}
+
+function stringReason(reason: unknown): string | undefined {
+    return typeof reason === 'string' ? reason : undefined;
 }
 
 function actionEffectObserved(action: AgentAction, before: Perception | undefined, after: Perception): boolean {

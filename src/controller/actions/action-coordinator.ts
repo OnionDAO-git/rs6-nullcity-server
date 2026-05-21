@@ -19,6 +19,8 @@ export interface ActionCoordinatorSubmitInput {
     traceId?: string;
     metadata?: unknown;
     waitForEffect?: (signal: AbortSignal) => Promise<EffectWaitResult>;
+    onAckReady?: (attempt: ActionAttempt) => void;
+    onEffectResolved?: (attempt: ActionAttempt) => void;
 }
 
 const PRODUCER_PRIORITY: Record<ActionProducer, number> = {
@@ -45,33 +47,40 @@ export class ActionCoordinator {
         }
 
         const attempt = this.createAttempt(input);
-        const active: ActiveAction = { attempt, abort: new AbortController() };
+        const active: ActiveAction = { attempt, abort: new AbortController(), onEffectResolved: input.onEffectResolved };
         this.active = active;
         try {
             attempt.ackResult = await this.options.submitter.submit(input.action, input.metadata);
             if (typeof attempt.ackResult.requestId === 'string') {
                 attempt.requestId = attempt.ackResult.requestId;
             }
+            this.safeNotifyAck(input.onAckReady, attempt);
             if (attempt.finalStatus === 'interrupted_after_submit') {
+                this.notifyEffectResolved(active);
                 return attempt;
             }
             if (!attempt.ackResult.ok) {
                 attempt.finalStatus = 'failure';
                 attempt.finalReason = typeof attempt.ackResult.reason === 'string' ? attempt.ackResult.reason : 'ack_failed';
+                this.notifyEffectResolved(active);
                 return attempt;
             }
             if (input.waitForEffect) {
                 const effectResult = await input.waitForEffect(active.abort.signal);
                 if (finalStatus(attempt) === 'interrupted_after_submit') {
+                    this.notifyEffectResolved(active);
                     return attempt;
                 }
                 this.applyEffectResult(attempt, effectResult);
+                this.notifyEffectResolved(active);
                 return attempt;
             }
             if (finalStatus(attempt) === 'interrupted_after_submit') {
+                this.notifyEffectResolved(active);
                 return attempt;
             }
             attempt.finalStatus = 'success';
+            this.notifyEffectResolved(active);
             return attempt;
         } finally {
             if (this.active === active) {
@@ -89,6 +98,7 @@ export class ActionCoordinator {
         active.attempt.finalReason = cause;
         active.abort.abort();
         this.active = undefined;
+        this.notifyEffectResolved(active);
         return active.attempt;
     }
 
@@ -108,6 +118,7 @@ export class ActionCoordinator {
         active.attempt.finalReason = `interrupted_by:${input.producer}`;
         active.abort.abort();
         this.active = undefined;
+        this.notifyEffectResolved(active);
         return undefined;
     }
 
@@ -137,11 +148,46 @@ export class ActionCoordinator {
         attempt.finalStatus = effectReasonToStatus(result.reason);
         attempt.finalReason = result.reason;
     }
+
+    private notifyEffectResolved(active: ActiveAction): void {
+        if (active.effectResolvedNotified) {
+            return;
+        }
+        active.effectResolvedNotified = true;
+        const callback = active.onEffectResolved;
+        if (!callback) {
+            return;
+        }
+        // Evidence-layer errors must not crash the action loop. Per spec
+        // (docs/superpowers/specs/2026-05-21-spark-evidence-loop-design.md):
+        // "evidence loss is preferred over agent loss." Swallow + log.
+        try {
+            callback(active.attempt);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('[action-coordinator] onEffectResolved callback threw; suppressing to protect action loop', error);
+        }
+    }
+
+    private safeNotifyAck(callback: ((attempt: ActionAttempt) => void) | undefined, attempt: ActionAttempt): void {
+        if (!callback) {
+            return;
+        }
+        // Evidence-layer errors must not crash the action loop.
+        try {
+            callback(attempt);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('[action-coordinator] onAckReady callback threw; suppressing to protect action loop', error);
+        }
+    }
 }
 
 interface ActiveAction {
     attempt: ActionAttempt;
     abort: AbortController;
+    onEffectResolved?: (attempt: ActionAttempt) => void;
+    effectResolvedNotified?: boolean;
 }
 
 function effectReasonToStatus(reason: EffectFailureReason): ActionFinalStatus {

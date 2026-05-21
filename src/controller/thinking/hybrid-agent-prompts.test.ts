@@ -56,6 +56,42 @@ describe('hybrid agent prompts', () => {
         expect(prompt).toContain('Skill: Fishing');
         expect(prompt).toContain('rs:small_fishing_net');
     });
+
+    it('tells the Brain when evidence says the resident is stuck', () => {
+        const prompt = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Still beside the same fence. No inventory or XP changes.'),
+            commandPrefix: '!',
+            progress: {
+                tick: 44,
+                lastMeaningfulProgressAt: 19,
+                stuckSince: 40,
+            },
+        });
+
+        expect(prompt).toContain('Runtime progress evidence');
+        expect(prompt).toContain('last meaningful progress tick: 19');
+        expect(prompt).toContain('stuck since tick: 40');
+        expect(prompt).toContain('choose a different tactic');
+    });
+
+    it('tells the Body to change tactics when runtime progress is stuck', () => {
+        const prompt = buildBodyPrompt({
+            soul: testSoul(),
+            perception: perception('Still beside the same fence. No inventory or XP changes.'),
+            commandPrefix: '!',
+            progress: {
+                tick: 44,
+                lastMeaningfulProgressAt: 19,
+                stuckSince: 40,
+            },
+            visibility: { returnDue: false },
+        });
+
+        expect(prompt).toContain('Runtime progress evidence');
+        expect(prompt).toContain('stuck since tick: 40');
+        expect(prompt).toContain('Do not repeat the same failed action');
+    });
 });
 
 function testSoul(): Soul {
