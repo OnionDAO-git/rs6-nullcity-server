@@ -6,8 +6,15 @@ describe('benchmarkArtifactSchema', () => {
 
         expect(parsed.runId).toBe('bench_20260520_make_fire_001');
         expect(parsed.module).toEqual({ id: 'onion.runescape.standard', version: '0.1.0' });
+        expect(parsed.mode).toBe('scripted');
         expect(parsed.status).toBe('passed');
         expect(parsed.metrics.actionsAttempted).toBe(7);
+    });
+
+    it('records autonomous benchmark mode when modules drive their own actions', () => {
+        const parsed = benchmarkArtifactSchema.parse(artifact({ mode: 'autonomous' }));
+
+        expect(parsed.mode).toBe('autonomous');
     });
 
     it('rejects artifacts without module identity', () => {
@@ -50,6 +57,7 @@ function artifact(overrides: Record<string, unknown> = {}): Record<string, unkno
         runId: 'bench_20260520_make_fire_001',
         task: { id: 'make-fire-5m', version: '0.1.0' },
         module: { id: 'onion.runescape.standard', version: '0.1.0' },
+        mode: 'scripted',
         resident: 'res:agent',
         modelProfile: 'local-qwen-body',
         commits: [

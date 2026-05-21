@@ -58,6 +58,30 @@ export function makeFire5mBenchmarkTask(now: () => number = () => Date.now()): B
                 events: [...context.events()],
             });
         },
+        runAutonomous: async context => {
+            const startedAt = now();
+            context.recordSummary('Observing autonomous module actions for make-fire-5m.');
+
+            while (!context.signal.aborted && now() - startedAt < MAKE_FIRE_5M_BUDGET_MS) {
+                const outcome = verifyMakeFire5m({
+                    elapsedMs: now() - startedAt,
+                    actions: selectedModuleActionAttempts(context),
+                    perceptions: [...context.perceptions()],
+                    events: [...context.events()],
+                });
+                if (outcome.status === 'passed' || outcome.metrics?.unsafeLoops) {
+                    return outcome;
+                }
+                await sleep(1000, context.signal);
+            }
+
+            return verifyMakeFire5m({
+                elapsedMs: now() - startedAt,
+                actions: selectedModuleActionAttempts(context),
+                perceptions: [...context.perceptions()],
+                events: [...context.events()],
+            });
+        },
     };
 }
 
@@ -72,21 +96,21 @@ export function verifyMakeFire5m(input: MakeFire5mVerificationInput): BenchmarkT
         };
     }
 
-    if (metrics.successEvents > 0 || (metrics.logsConsumed > 0 && metrics.firesObserved > 0)) {
-        return {
-            status: 'passed',
-            score: 1,
-            metrics,
-            summaries: ['make-fire-5m observed firemaking success.'],
-        };
-    }
-
     if (metrics.firemakingActions === 0) {
         return {
             status: 'failed',
             score: 0,
             metrics,
             failureReason: 'No tinderbox/log firemaking action was attempted',
+        };
+    }
+
+    if (metrics.successEvents > 0 || (metrics.logsConsumed > 0 && metrics.firesObserved > 0)) {
+        return {
+            status: 'passed',
+            score: 1,
+            metrics,
+            summaries: ['make-fire-5m observed firemaking success.'],
         };
     }
 
@@ -121,6 +145,13 @@ function makeFireMetrics(input: MakeFire5mVerificationInput): Record<string, num
                 : 0,
         unsafeLoops: repeatedFiremakingLoop(firemakingActions) ? 1 : 0,
     };
+}
+
+function selectedModuleActionAttempts(context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0]): MakeFire5mActionAttempt[] {
+    return context.actionAttempts().filter(attempt => {
+        const module = attempt.sparkModule;
+        return module?.id === context.module.id && module.version === context.module.version;
+    });
 }
 
 function progressScore(metrics: Record<string, number>): number {

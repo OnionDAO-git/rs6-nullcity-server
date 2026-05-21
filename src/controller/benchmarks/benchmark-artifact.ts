@@ -7,6 +7,20 @@ const identitySchema = z.object({
 });
 
 export const benchmarkRunStatusSchema = z.enum(['passed', 'failed', 'timeout', 'error', 'cancelled']);
+export const benchmarkRunModeSchema = z.enum(['scripted', 'autonomous']);
+const evidenceActionAttemptSchema = z.object({
+    requestId: z.string().min(1).optional(),
+    actionKind: z.string().min(1),
+    source: z.string().min(1).optional(),
+    cause: z.string().min(1).optional(),
+    ok: z.boolean().optional(),
+    sparkModule: identitySchema.optional(),
+});
+const evidenceInferenceRequestSchema = z.object({
+    requestId: z.string().min(1).optional(),
+    cause: z.string().min(1).optional(),
+    sparkModule: identitySchema.optional(),
+});
 
 export const benchmarkArtifactSchema = z
     .object({
@@ -14,6 +28,7 @@ export const benchmarkArtifactSchema = z
         runId: z.string().min(1),
         task: identitySchema,
         module: identitySchema,
+        mode: benchmarkRunModeSchema.default('scripted'),
         resident: z.string().min(1),
         modelProfile: z.string().min(1),
         commits: z
@@ -35,7 +50,9 @@ export const benchmarkArtifactSchema = z
         evidence: z
             .object({
                 actionAttemptIds: z.array(z.string().min(1)).optional(),
+                actionAttempts: z.array(evidenceActionAttemptSchema).optional(),
                 inferenceRequestIds: z.array(z.string().min(1)).optional(),
+                inferenceRequests: z.array(evidenceInferenceRequestSchema).optional(),
                 perceptionIds: z.array(z.string().min(1)).optional(),
                 summaries: z.array(z.string().min(1)).optional(),
                 artifactPaths: z.array(z.string().min(1)).optional(),
@@ -65,6 +82,7 @@ export const benchmarkArtifactSchema = z
 
 export type BenchmarkArtifact = z.infer<typeof benchmarkArtifactSchema>;
 export type BenchmarkRunStatus = z.infer<typeof benchmarkRunStatusSchema>;
+export type BenchmarkRunMode = z.infer<typeof benchmarkRunModeSchema>;
 
 export function normalizeBenchmarkArtifact(candidate: unknown): BenchmarkArtifact {
     if (!candidate || typeof candidate !== 'object') {

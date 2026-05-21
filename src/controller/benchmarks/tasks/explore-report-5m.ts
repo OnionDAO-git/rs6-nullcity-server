@@ -71,6 +71,30 @@ export function makeExploreReport5mBenchmarkTask(now: () => number = () => Date.
                 events: [...context.events()],
             });
         },
+        runAutonomous: async context => {
+            const startedAt = now();
+            context.recordSummary('Observing autonomous module actions for explore-report-5m.');
+
+            while (!context.signal.aborted && now() - startedAt < EXPLORE_REPORT_5M_BUDGET_MS) {
+                const outcome = verifyExploreReport5m({
+                    elapsedMs: now() - startedAt,
+                    actions: selectedModuleActionAttempts(context),
+                    perceptions: [...context.perceptions()],
+                    events: [...context.events()],
+                });
+                if (outcome.status === 'passed') {
+                    return outcome;
+                }
+                await sleep(500, context.signal);
+            }
+
+            return verifyExploreReport5m({
+                elapsedMs: now() - startedAt,
+                actions: selectedModuleActionAttempts(context),
+                perceptions: [...context.perceptions()],
+                events: [...context.events()],
+            });
+        },
     };
 }
 
@@ -118,6 +142,13 @@ export function verifyExploreReport5m(input: ExploreReport5mVerificationInput): 
         metrics,
         summaries: ['explore-report-5m observed movement and an informative environment report.'],
     };
+}
+
+function selectedModuleActionAttempts(context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0]): ExploreReport5mActionAttempt[] {
+    return context.actionAttempts().filter(attempt => {
+        const module = attempt.sparkModule;
+        return module?.id === context.module.id && module.version === context.module.version;
+    });
 }
 
 function exploreReportMetrics(input: ExploreReport5mVerificationInput): Record<string, number> {

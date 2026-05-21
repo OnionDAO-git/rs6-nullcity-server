@@ -1,7 +1,13 @@
 import type { SparkModuleIdentity } from '../spark';
 import type { SubmittedActionAck } from '../transport/gateway-client';
 import type { ActionResult, AgentAction, CreateResidentPayload, Perception, PerceptionEvent } from '../transport/message-codecs';
-import { type BenchmarkArtifact, type BenchmarkRunStatus, benchmarkArtifactSchema, normalizeBenchmarkArtifact } from './benchmark-artifact';
+import {
+    type BenchmarkArtifact,
+    type BenchmarkRunMode,
+    type BenchmarkRunStatus,
+    benchmarkArtifactSchema,
+    normalizeBenchmarkArtifact,
+} from './benchmark-artifact';
 
 export interface BenchmarkGateway {
     createResident(payload: CreateResidentPayload): Promise<unknown>;
@@ -26,10 +32,13 @@ export interface BenchmarkTaskOutcome {
 
 export interface BenchmarkTaskContext {
     readonly resident: string;
+    readonly module: SparkModuleIdentity;
     readonly signal: AbortSignal;
     submitAction(action: AgentAction): Promise<ActionResult>;
-    recordInferenceRequest(requestId: string): void;
+    recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
+    recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
     recordSummary(summary: string): void;
+    actionAttempts(): readonly BenchmarkRecordedActionAttempt[];
     latestPerception(): Perception | undefined;
     perceptions(): readonly Perception[];
     events(): readonly PerceptionEvent[];
@@ -41,12 +50,44 @@ export interface BenchmarkTask {
     timeoutMs: number;
     resident?: Omit<CreateResidentPayload, 'name'>;
     run(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
+    runAutonomous?(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
+}
+
+export interface BenchmarkRecordedActionAttempt {
+    requestId?: string;
+    action: AgentAction;
+    result?: ActionResult;
+    source?: string;
+    sparkModule?: SparkModuleIdentity;
+}
+
+export interface BenchmarkRecordedInferenceRequest {
+    requestId?: string;
+    cause?: string;
+    sparkModule?: SparkModuleIdentity;
+}
+
+export interface BenchmarkAutonomousRuntimeContext {
+    readonly resident: string;
+    readonly task: BenchmarkTask;
+    readonly module: SparkModuleIdentity;
+    readonly signal: AbortSignal;
+    recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
+    recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
+    recordSummary(summary: string): void;
+}
+
+export interface BenchmarkAutonomousRuntime {
+    start(context: BenchmarkAutonomousRuntimeContext): Promise<void>;
+    stop(cause: string): Promise<void>;
 }
 
 export interface BenchmarkRunnerOptions {
     gateway: BenchmarkGateway;
     task: BenchmarkTask;
     module: SparkModuleIdentity;
+    mode?: BenchmarkRunMode;
+    autonomousRuntime?: BenchmarkAutonomousRuntime;
     modelProfile: string;
     commits: BenchmarkArtifact['commits'];
     runId?: string;
@@ -56,7 +97,9 @@ export interface BenchmarkRunnerOptions {
 
 interface BenchmarkEvidenceBuffer {
     actionAttemptIds: string[];
+    actionAttempts: BenchmarkRecordedActionAttempt[];
     inferenceRequestIds: string[];
+    inferenceRequests: BenchmarkRecordedInferenceRequest[];
     perceptionIds: string[];
     summaries: string[];
     perceptions: Perception[];
@@ -79,6 +122,8 @@ export class BenchmarkRunner {
         const evidence = createEvidenceBuffer();
         const abortController = new AbortController();
         const listeners = this.bindEvidenceListeners(evidence);
+        const mode = this.options.mode || 'scripted';
+        let autonomousStarted = false;
         let created = false;
         let connected = false;
         let outcome: BenchmarkTaskOutcome | undefined;
@@ -94,10 +139,41 @@ export class BenchmarkRunner {
                 onDisconnect: 'idle',
             });
             connected = true;
-            outcome = await this.runTaskWithTimeout(this.createTaskContext(evidence, abortController.signal), abortController);
+            if (mode === 'autonomous') {
+                const autonomousRuntime = this.options.autonomousRuntime;
+                const runAutonomous = this.options.task.runAutonomous;
+                if (!autonomousRuntime) {
+                    throw new Error('Autonomous benchmark mode requires an autonomous runtime');
+                }
+                if (!runAutonomous) {
+                    throw new Error(`Benchmark task ${this.options.task.id} does not support autonomous mode`);
+                }
+                await autonomousRuntime.start(this.createAutonomousRuntimeContext(evidence, abortController.signal));
+                autonomousStarted = true;
+                outcome = await this.runTaskWithTimeout(
+                    this.createTaskContext(evidence, abortController.signal),
+                    abortController,
+                    runAutonomous,
+                );
+            } else {
+                outcome = await this.runTaskWithTimeout(
+                    this.createTaskContext(evidence, abortController.signal),
+                    abortController,
+                    this.options.task.run,
+                );
+            }
         } catch (error) {
             outcome = outcomeFromError(error);
         } finally {
+            if (autonomousStarted && this.options.autonomousRuntime) {
+                try {
+                    await this.options.autonomousRuntime.stop(
+                        outcome?.status === 'passed' ? 'benchmark_complete' : `benchmark_${outcome?.status || 'stopped'}`,
+                    );
+                } catch (error) {
+                    cleanupFailures.push(errorMessage(error));
+                }
+            }
             this.unbindEvidenceListeners(listeners);
             if (connected) {
                 try {
@@ -139,6 +215,10 @@ export class BenchmarkRunner {
             }
         }
 
+        if (mode === 'autonomous') {
+            outcome = enforceAutonomousModuleEvidence(outcome, evidence, this.options.module);
+        }
+
         const endedAt = this.now().toISOString();
         return benchmarkArtifactSchema.parse(
             normalizeBenchmarkArtifact({
@@ -146,6 +226,7 @@ export class BenchmarkRunner {
                 runId: this.runId,
                 task: { id: this.options.task.id, version: this.options.task.version },
                 module: this.options.module,
+                mode,
                 resident: this.resident,
                 modelProfile: this.options.modelProfile,
                 commits: this.options.commits,
@@ -154,12 +235,15 @@ export class BenchmarkRunner {
                 status: outcome.status,
                 score: outcome.score ?? defaultScore(outcome.status),
                 metrics: {
-                    actionsAttempted: evidence.actionAttemptIds.length,
                     ...outcome.metrics,
+                    ...moduleEvidenceMetrics(mode, evidence, this.options.module),
+                    actionsAttempted: Math.max(evidence.actionAttemptIds.length, evidence.actionAttempts.length),
                 },
                 evidence: {
                     actionAttemptIds: evidence.actionAttemptIds,
+                    actionAttempts: evidence.actionAttempts.map(actionAttemptEvidence),
                     inferenceRequestIds: evidence.inferenceRequestIds,
+                    inferenceRequests: evidence.inferenceRequests,
                     perceptionIds: evidence.perceptionIds,
                     summaries: [...evidence.summaries, ...(outcome.summaries || [])],
                 },
@@ -171,29 +255,56 @@ export class BenchmarkRunner {
     private createTaskContext(evidence: BenchmarkEvidenceBuffer, signal: AbortSignal): BenchmarkTaskContext {
         return {
             resident: this.resident,
+            module: this.options.module,
             signal,
             submitAction: async action => {
                 const ack = await this.options.gateway.submitActionWithRequestId(this.resident, action);
-                pushUnique(evidence.actionAttemptIds, ack.requestId);
+                recordActionAttempt(evidence, { requestId: ack.requestId, action, result: ack.ackResult });
                 return ack.ackResult;
             },
-            recordInferenceRequest: requestId => {
-                evidence.inferenceRequestIds.push(requestId);
+            recordActionAttempt: attempt => {
+                recordActionAttempt(evidence, attempt);
+            },
+            recordInferenceRequest: request => {
+                recordInferenceRequest(evidence, request);
             },
             recordSummary: summary => {
                 evidence.summaries.push(summary);
             },
+            actionAttempts: () => evidence.actionAttempts,
             latestPerception: () => evidence.perceptions.at(-1),
             perceptions: () => evidence.perceptions,
             events: () => evidence.events,
         };
     }
 
-    private async runTaskWithTimeout(context: BenchmarkTaskContext, abortController: AbortController): Promise<BenchmarkTaskOutcome> {
+    private createAutonomousRuntimeContext(evidence: BenchmarkEvidenceBuffer, signal: AbortSignal): BenchmarkAutonomousRuntimeContext {
+        return {
+            resident: this.resident,
+            task: this.options.task,
+            module: this.options.module,
+            signal,
+            recordActionAttempt: attempt => {
+                recordActionAttempt(evidence, attempt);
+            },
+            recordInferenceRequest: request => {
+                recordInferenceRequest(evidence, request);
+            },
+            recordSummary: summary => {
+                evidence.summaries.push(summary);
+            },
+        };
+    }
+
+    private async runTaskWithTimeout(
+        context: BenchmarkTaskContext,
+        abortController: AbortController,
+        run: (context: BenchmarkTaskContext) => Promise<BenchmarkTaskOutcome>,
+    ): Promise<BenchmarkTaskOutcome> {
         let timeout: NodeJS.Timeout | undefined;
         try {
             return await Promise.race([
-                this.options.task.run(context),
+                run(context),
                 new Promise<BenchmarkTaskOutcome>((_, reject) => {
                     timeout = setTimeout(() => {
                         abortController.abort();
@@ -271,12 +382,122 @@ export class BenchmarkRunner {
 function createEvidenceBuffer(): BenchmarkEvidenceBuffer {
     return {
         actionAttemptIds: [],
+        actionAttempts: [],
         inferenceRequestIds: [],
+        inferenceRequests: [],
         perceptionIds: [],
         summaries: [],
         perceptions: [],
         events: [],
     };
+}
+
+function recordActionAttempt(evidence: BenchmarkEvidenceBuffer, attempt: BenchmarkRecordedActionAttempt): void {
+    evidence.actionAttempts.push(attempt);
+    if (attempt.requestId) {
+        pushUnique(evidence.actionAttemptIds, attempt.requestId);
+    }
+    const resultRequestId = requestIdFromResult(attempt.result);
+    if (resultRequestId) {
+        pushUnique(evidence.actionAttemptIds, resultRequestId);
+    }
+}
+
+function recordInferenceRequest(evidence: BenchmarkEvidenceBuffer, request: string | BenchmarkRecordedInferenceRequest): void {
+    const inference = typeof request === 'string' ? { requestId: request } : request;
+    evidence.inferenceRequests.push(inference);
+    if (inference.requestId) {
+        pushUnique(evidence.inferenceRequestIds, inference.requestId);
+    }
+}
+
+function actionAttemptEvidence(
+    attempt: BenchmarkRecordedActionAttempt,
+): NonNullable<BenchmarkArtifact['evidence']['actionAttempts']>[number] {
+    const requestId = attempt.requestId || requestIdFromResult(attempt.result);
+    return {
+        requestId,
+        actionKind: attempt.action.kind,
+        source: attempt.source,
+        cause: actionCause(attempt.action),
+        ok: typeof attempt.result?.ok === 'boolean' ? attempt.result.ok : undefined,
+        sparkModule: attempt.sparkModule,
+    };
+}
+
+function requestIdFromResult(result: ActionResult | undefined): string | undefined {
+    if (!result || typeof result !== 'object') {
+        return undefined;
+    }
+    const value = (result as Record<string, unknown>).requestId;
+    return typeof value === 'string' ? value : undefined;
+}
+
+function actionCause(action: AgentAction): string | undefined {
+    const value = (action as Record<string, unknown>).cause;
+    return typeof value === 'string' ? value : undefined;
+}
+
+function enforceAutonomousModuleEvidence(
+    outcome: BenchmarkTaskOutcome,
+    evidence: BenchmarkEvidenceBuffer,
+    module: SparkModuleIdentity,
+): BenchmarkTaskOutcome {
+    if (outcome.status !== 'passed') {
+        return outcome;
+    }
+    if (selectedModuleActionCount(evidence, module) > 0) {
+        if (selectedModuleInferenceCount(evidence, module) > 0) {
+            return outcome;
+        }
+        return {
+            ...outcome,
+            status: 'failed',
+            score: 0,
+            failureReason: `Autonomous benchmark passed task verifier without selected module inference evidence for ${module.id}@${module.version}`,
+            summaries: [
+                ...(outcome.summaries || []),
+                `Autonomous benchmark requires selected module inference evidence for ${module.id}@${module.version}.`,
+            ],
+        };
+    }
+    return {
+        ...outcome,
+        status: 'failed',
+        score: 0,
+        failureReason: `Autonomous benchmark passed task verifier without selected module action evidence for ${module.id}@${module.version}`,
+        summaries: [
+            ...(outcome.summaries || []),
+            `Autonomous benchmark requires selected module action evidence for ${module.id}@${module.version}.`,
+        ],
+    };
+}
+
+function moduleEvidenceMetrics(
+    mode: BenchmarkRunMode,
+    evidence: BenchmarkEvidenceBuffer,
+    module: SparkModuleIdentity,
+): Record<string, number> {
+    if (mode !== 'autonomous') {
+        return {};
+    }
+    return {
+        selectedModuleActions: selectedModuleActionCount(evidence, module),
+        selectedModuleInferences: selectedModuleInferenceCount(evidence, module),
+        untaggedActions: evidence.actionAttempts.filter(attempt => !attempt.sparkModule).length,
+    };
+}
+
+function selectedModuleActionCount(evidence: BenchmarkEvidenceBuffer, module: SparkModuleIdentity): number {
+    return evidence.actionAttempts.filter(attempt => sameModule(attempt.sparkModule, module)).length;
+}
+
+function selectedModuleInferenceCount(evidence: BenchmarkEvidenceBuffer, module: SparkModuleIdentity): number {
+    return evidence.inferenceRequests.filter(request => sameModule(request.sparkModule, module)).length;
+}
+
+function sameModule(candidate: SparkModuleIdentity | undefined, expected: SparkModuleIdentity): boolean {
+    return candidate?.id === expected.id && candidate.version === expected.version;
 }
 
 function pushUnique(values: string[], value: string): void {

@@ -121,6 +121,153 @@ describe('BenchmarkRunner', () => {
         expect(artifact.metrics.cleanupFailures).toBe(1);
         expect(artifact.evidence.summaries).toContain('cleanup failed: delete disabled');
     });
+
+    it('uses recorded evidence as the canonical attempted action count', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: async context => {
+                await context.submitAction({ kind: 'say', text: 'benchmark hello' });
+                return { status: 'passed', score: 1, metrics: { actionsAttempted: 99 } };
+            },
+        };
+
+        const artifact = await runner(gateway, task).run();
+
+        expect(artifact.metrics.actionsAttempted).toBe(1);
+    });
+
+    it('fails autonomous passes that lack selected module action evidence', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const autonomousRuntime = {
+            start: jest.fn(async context => {
+                context.recordActionAttempt({
+                    requestId: 'other-module-action',
+                    action: { kind: 'say', text: 'not selected' },
+                    result: { ok: true },
+                    source: 'thinking',
+                    sparkModule: { id: 'onion.other', version: '0.1.0' },
+                });
+            }),
+            stop: jest.fn(async () => undefined),
+        };
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: async () => ({ status: 'passed', score: 1 }),
+            runAutonomous: async () => ({ status: 'passed', score: 1 }),
+        };
+
+        const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime }).run();
+
+        expect(artifact.status).toBe('failed');
+        expect(artifact.failureReason).toContain('without selected module action evidence');
+        expect(artifact.metrics.selectedModuleActions).toBe(0);
+        expect(artifact.metrics.actionsAttempted).toBe(1);
+    });
+
+    it('fails autonomous passes that lack selected module inference evidence', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const module = { id: 'onion.runescape.standard', version: '0.1.0' };
+        const autonomousRuntime = {
+            start: jest.fn(async context => {
+                context.recordActionAttempt({
+                    requestId: 'selected-module-action',
+                    action: { kind: 'say', text: 'selected module action' },
+                    result: { ok: true },
+                    source: 'thinking',
+                    sparkModule: module,
+                });
+            }),
+            stop: jest.fn(async () => undefined),
+        };
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: async () => ({ status: 'passed', score: 1 }),
+            runAutonomous: async () => ({ status: 'passed', score: 1 }),
+        };
+
+        const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime, module }).run();
+
+        expect(artifact.status).toBe('failed');
+        expect(artifact.failureReason).toContain('without selected module inference evidence');
+        expect(artifact.metrics.selectedModuleActions).toBe(1);
+        expect(artifact.metrics.selectedModuleInferences).toBe(0);
+    });
+
+    it('can run an autonomous runtime instead of submitting scripted task actions', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const module = { id: 'onion.runescape.standard', version: '0.1.0' };
+        const autonomousRuntime = {
+            start: jest.fn(async context => {
+                context.recordInferenceRequest({ requestId: 'infer-1', cause: 'body_tick', sparkModule: module });
+                context.recordActionAttempt({
+                    requestId: 'auto-action-1',
+                    action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'agent_make_fire' },
+                    result: { ok: true },
+                    source: 'thinking',
+                    sparkModule: module,
+                });
+                context.recordSummary('Autonomous runtime produced make-fire evidence.');
+            }),
+            stop: jest.fn(async () => undefined),
+        };
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: jest.fn(async context => {
+                await context.submitAction({ kind: 'say', text: 'scripted path should not run' });
+                return { status: 'passed' as const, score: 1 };
+            }),
+            runAutonomous: jest.fn(async context => ({
+                status: 'passed' as const,
+                score: 0.8,
+                metrics: { autonomousActions: context.actionAttempts().length },
+                summaries: ['Autonomous verifier saw module evidence.'],
+            })),
+        };
+
+        const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime, module }).run();
+
+        expect(task.run).not.toHaveBeenCalled();
+        expect(task.runAutonomous).toHaveBeenCalledTimes(1);
+        expect(gateway.submitActionWithRequestId).not.toHaveBeenCalled();
+        expect(autonomousRuntime.start).toHaveBeenCalledWith(
+            expect.objectContaining({
+                resident: expect.stringMatching(/^res:bmk_fire_5m_[a-z0-9]{8}$/),
+                task,
+                module,
+            }),
+        );
+        expect(autonomousRuntime.stop).toHaveBeenCalledWith('benchmark_complete');
+        expect(artifact.mode).toBe('autonomous');
+        expect(artifact.metrics.autonomousActions).toBe(1);
+        expect(artifact.evidence.actionAttemptIds).toEqual(['auto-action-1']);
+        expect(artifact.evidence.actionAttempts).toEqual([
+            expect.objectContaining({
+                requestId: 'auto-action-1',
+                actionKind: 'use_item_on_item',
+                source: 'thinking',
+                sparkModule: module,
+            }),
+        ]);
+        expect(artifact.evidence.inferenceRequestIds).toEqual(['infer-1']);
+        expect(artifact.evidence.inferenceRequests).toEqual([
+            expect.objectContaining({
+                requestId: 'infer-1',
+                cause: 'body_tick',
+                sparkModule: module,
+            }),
+        ]);
+        expect(artifact.evidence.summaries).toContain('Autonomous runtime produced make-fire evidence.');
+        expect(artifact.evidence.summaries).toContain('Autonomous verifier saw module evidence.');
+    });
 });
 
 class MockBenchmarkGateway extends EventEmitter implements BenchmarkGateway {
@@ -131,7 +278,11 @@ class MockBenchmarkGateway extends EventEmitter implements BenchmarkGateway {
     deleteResident = jest.fn(async () => undefined);
 }
 
-function runner(gateway: BenchmarkGateway, task: BenchmarkTask): BenchmarkRunner {
+function runner(
+    gateway: BenchmarkGateway,
+    task: BenchmarkTask,
+    overrides: Partial<ConstructorParameters<typeof BenchmarkRunner>[0]> = {},
+): BenchmarkRunner {
     return new BenchmarkRunner({
         gateway,
         task,
@@ -143,5 +294,6 @@ function runner(gateway: BenchmarkGateway, task: BenchmarkTask): BenchmarkRunner
             let tick = 0;
             return () => new Date(Date.UTC(2026, 4, 20, 10, 0, tick++));
         })(),
+        ...overrides,
     });
 }

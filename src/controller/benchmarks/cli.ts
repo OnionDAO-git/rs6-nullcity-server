@@ -6,6 +6,8 @@ import { sparkModuleIdentity } from '../spark';
 import { standardSparkModules } from '../spark/standard-modules';
 import { GatewayClient } from '../transport/gateway-client';
 import type { BenchmarkArtifact } from './benchmark-artifact';
+import type { BenchmarkRunMode } from './benchmark-artifact';
+import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
@@ -15,6 +17,7 @@ export interface BenchmarkCliOptions {
     moduleId: string;
     configPath: string;
     outputDir: string;
+    mode: BenchmarkRunMode;
     dryRun: boolean;
 }
 
@@ -32,6 +35,7 @@ export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
         moduleId: DEFAULT_MODULE_ID,
         configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
         outputDir: DEFAULT_OUTPUT_DIR,
+        mode: 'scripted',
         dryRun: false,
     };
 
@@ -57,6 +61,10 @@ export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
             options.outputDir = arg.slice('--output='.length);
         } else if (arg.startsWith('--output-dir=')) {
             options.outputDir = arg.slice('--output-dir='.length);
+        } else if (arg === '--mode') {
+            options.mode = readMode(readRequiredValue(argv, ++i, arg));
+        } else if (arg.startsWith('--mode=')) {
+            options.mode = readMode(arg.slice('--mode='.length));
         } else {
             throw new Error(`Unknown benchmark CLI argument ${arg}`);
         }
@@ -80,7 +88,7 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
         const task = taskById(options.taskId);
         const module = sparkModuleById(options.moduleId);
         if (options.dryRun) {
-            stdout(`${JSON.stringify({ dryRun: true, task: { id: task.id, version: task.version }, module })}\n`);
+            stdout(`${JSON.stringify({ dryRun: true, mode: options.mode, task: { id: task.id, version: task.version }, module })}\n`);
             return 0;
         }
 
@@ -95,10 +103,21 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
         await gateway.connect();
         try {
             await gateway.hello();
+            const sparkModules = standardSparkModules();
             const artifact = await new BenchmarkRunner({
                 gateway,
                 task,
                 module,
+                mode: options.mode,
+                autonomousRuntime:
+                    options.mode === 'autonomous'
+                        ? new ResidentRuntimeBenchmarkDriver({
+                              config,
+                              gateway,
+                              module,
+                              sparkModules,
+                          })
+                        : undefined,
                 modelProfile: config.llm.endpoints.default?.model || 'default',
                 commits: [gitCommit('rs6-nullcity-server')],
             }).run();
@@ -164,6 +183,13 @@ function readRequiredValue(argv: string[], index: number, arg: string): string {
         throw new Error(`${arg} requires a value`);
     }
     return value;
+}
+
+function readMode(value: string): BenchmarkRunMode {
+    if (value === 'scripted' || value === 'autonomous') {
+        return value;
+    }
+    throw new Error(`Unknown benchmark mode ${value}`);
 }
 
 if (require.main === module) {

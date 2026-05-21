@@ -12,6 +12,8 @@ describe('benchmark CLI', () => {
                 'controller.yml',
                 '--output',
                 'data/benchmarks',
+                '--mode',
+                'autonomous',
                 '--dry-run',
             ]),
         ).toEqual({
@@ -19,6 +21,7 @@ describe('benchmark CLI', () => {
             moduleId: 'onion.runescape.standard',
             configPath: 'controller.yml',
             outputDir: 'data/benchmarks',
+            mode: 'autonomous',
             dryRun: true,
         });
     });
@@ -32,8 +35,23 @@ describe('benchmark CLI', () => {
 
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"dryRun":true');
+        expect(writes.join('')).toContain('"mode":"scripted"');
         expect(writes.join('')).toContain('"task":{"id":"make-fire-5m","version":"0.1.0"');
         expect(writes.join('')).toContain('"module":{"id":"onion.runescape.standard","version":"0.1.0"}');
+    });
+
+    it('can dry-run autonomous benchmark mode', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'make-fire-5m', '--module', 'onion.runescape.standard', '--mode', 'autonomous', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"mode":"autonomous"');
     });
 
     it('can dry-run the explore-report benchmark task', async () => {

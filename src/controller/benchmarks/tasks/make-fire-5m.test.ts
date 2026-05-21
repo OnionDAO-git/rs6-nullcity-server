@@ -1,5 +1,8 @@
 import type { AgentAction, Perception, PerceptionEvent } from '../../transport/message-codecs';
-import { verifyMakeFire5m } from './make-fire-5m';
+import type { BenchmarkTaskContext } from '../benchmark-runner';
+import { makeFire5mBenchmarkTask, verifyMakeFire5m } from './make-fire-5m';
+
+const STANDARD_MODULE = { id: 'onion.runescape.standard', version: '0.1.0' };
 
 describe('verifyMakeFire5m', () => {
     it('passes when logs are consumed and a fire appears nearby', () => {
@@ -55,6 +58,18 @@ describe('verifyMakeFire5m', () => {
         expect(outcome.failureReason).toContain('No tinderbox/log firemaking action');
     });
 
+    it('does not pass on ambient firemaking success events without a resident action', () => {
+        const outcome = verifyMakeFire5m({
+            elapsedMs: 12_000,
+            actions: [],
+            perceptions: [perception({ inventory: [item(590, 'rs:tinderbox'), item(1511, 'rs:logs')], objects: [] })],
+            events: [{ kind: 'message', text: 'The fire catches and the logs begin to burn.' }],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('No tinderbox/log firemaking action');
+    });
+
     it('fails unsafe loops before the agent spams the same firemaking action forever', () => {
         const fireAction = { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1 };
         const outcome = verifyMakeFire5m({
@@ -68,10 +83,26 @@ describe('verifyMakeFire5m', () => {
         expect(outcome.failureReason).toContain('unsafe loop');
         expect(outcome.metrics?.unsafeLoops).toBe(1);
     });
+
+    it('autonomous mode observes module firemaking evidence without submitting scripted actions', async () => {
+        const submitAction = jest.fn();
+        const task = makeFire5mBenchmarkTask(() => 1_000);
+        const context = taskContext({
+            submitAction,
+            actionAttempts: [attempt({ kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'agent_make_fire' }, STANDARD_MODULE)],
+            perceptions: [perception({ inventory: [item(590, 'rs:tinderbox'), item(1511, 'rs:logs')], objects: [] })],
+            events: [{ kind: 'message', text: 'The fire catches and the logs begin to burn.' }],
+        });
+
+        const outcome = await task.runAutonomous?.(context);
+
+        expect(submitAction).not.toHaveBeenCalled();
+        expect(outcome?.status).toBe('passed');
+    });
 });
 
-function attempt(action: AgentAction): { action: AgentAction } {
-    return { action };
+function attempt(action: AgentAction, sparkModule?: typeof STANDARD_MODULE): { action: AgentAction; sparkModule?: typeof STANDARD_MODULE } {
+    return { action, sparkModule };
 }
 
 function perception(overrides: {
@@ -93,4 +124,25 @@ function perception(overrides: {
 
 function item(itemId: number, key: string): Record<string, unknown> {
     return { itemId, key, amount: 1 };
+}
+
+function taskContext(overrides: {
+    submitAction: jest.Mock;
+    actionAttempts: Array<{ action: AgentAction; sparkModule?: typeof STANDARD_MODULE }>;
+    perceptions: Perception[];
+    events: PerceptionEvent[];
+}): BenchmarkTaskContext {
+    return {
+        resident: 'res:bmk_fire',
+        module: STANDARD_MODULE,
+        signal: new AbortController().signal,
+        submitAction: overrides.submitAction,
+        recordActionAttempt: jest.fn(),
+        recordInferenceRequest: jest.fn(),
+        recordSummary: jest.fn(),
+        actionAttempts: () => overrides.actionAttempts,
+        latestPerception: () => overrides.perceptions.at(-1),
+        perceptions: () => overrides.perceptions,
+        events: () => overrides.events,
+    };
 }

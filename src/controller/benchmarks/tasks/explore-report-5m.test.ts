@@ -1,5 +1,8 @@
 import type { AgentAction, Perception, PerceptionEvent } from '../../transport/message-codecs';
-import { verifyExploreReport5m } from './explore-report-5m';
+import type { BenchmarkTaskContext } from '../benchmark-runner';
+import { makeExploreReport5mBenchmarkTask, verifyExploreReport5m } from './explore-report-5m';
+
+const STANDARD_MODULE = { id: 'onion.runescape.standard', version: '0.1.0' };
 
 describe('verifyExploreReport5m', () => {
     it('passes when the resident moves and gives an informative environment report', () => {
@@ -91,10 +94,32 @@ describe('verifyExploreReport5m', () => {
         expect(outcome.status).toBe('timeout');
         expect(outcome.failureReason).toContain('5 minute budget');
     });
+
+    it('autonomous mode observes module exploration evidence without submitting scripted actions', async () => {
+        const submitAction = jest.fn();
+        const task = makeExploreReport5mBenchmarkTask(() => 1_000);
+        const context = taskContext({
+            submitAction,
+            actionAttempts: [
+                attempt({ kind: 'move_to', target: { x: 3228, y: 3230, level: 0 }, cause: 'agent_explore' }, STANDARD_MODULE),
+                attempt({ kind: 'say', text: 'I moved to 3228,3230. Nearby: trees and players.', cause: 'agent_report' }, STANDARD_MODULE),
+            ],
+            perceptions: [
+                perception({ position: { x: 3225, y: 3230, level: 0 } }),
+                perception({ position: { x: 3228, y: 3230, level: 0 } }),
+            ],
+            events: [],
+        });
+
+        const outcome = await task.runAutonomous?.(context);
+
+        expect(submitAction).not.toHaveBeenCalled();
+        expect(outcome?.status).toBe('passed');
+    });
 });
 
-function attempt(action: AgentAction): { action: AgentAction } {
-    return { action };
+function attempt(action: AgentAction, sparkModule?: typeof STANDARD_MODULE): { action: AgentAction; sparkModule?: typeof STANDARD_MODULE } {
+    return { action, sparkModule };
 }
 
 function perception(overrides: {
@@ -114,5 +139,26 @@ function perception(overrides: {
             worldItems: [],
         },
         events: overrides.events || [],
+    };
+}
+
+function taskContext(overrides: {
+    submitAction: jest.Mock;
+    actionAttempts: Array<{ action: AgentAction; sparkModule?: typeof STANDARD_MODULE }>;
+    perceptions: Perception[];
+    events: PerceptionEvent[];
+}): BenchmarkTaskContext {
+    return {
+        resident: 'res:bmk_explore',
+        module: STANDARD_MODULE,
+        signal: new AbortController().signal,
+        submitAction: overrides.submitAction,
+        recordActionAttempt: jest.fn(),
+        recordInferenceRequest: jest.fn(),
+        recordSummary: jest.fn(),
+        actionAttempts: () => overrides.actionAttempts,
+        latestPerception: () => overrides.perceptions.at(-1),
+        perceptions: () => overrides.perceptions,
+        events: () => overrides.events,
     };
 }
