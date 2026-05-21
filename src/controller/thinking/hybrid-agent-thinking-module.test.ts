@@ -208,7 +208,10 @@ describe('HybridAgentThinkingModule', () => {
                 tick: 3,
                 resident: {
                     ...residentAt(3225, 3230),
-                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
                 },
                 objects: [normalTree],
             }),
@@ -242,6 +245,7 @@ describe('HybridAgentThinkingModule', () => {
                     ...residentAt(3225, 3230),
                     inventory: [
                         { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
                         { itemId: 1511, key: 'rs:logs', amount: 1 },
                     ],
                 },
@@ -319,7 +323,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'interact', target: nearestTree, option: 'chop down', cause: 'woodcutting_level1_routine' }]);
+        expect(result.actions).toEqual([
+            { kind: 'interact', target: nearestTree, option: 'chop down', cause: 'woodcutting_level1_routine' },
+        ]);
         expect(result.cause).toBe('woodcutting_level1_routine');
     });
 
@@ -490,7 +496,10 @@ describe('HybridAgentThinkingModule', () => {
                 tick: 40,
                 resident: {
                     ...residentAt(3225, 3231),
-                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
                 },
                 objects: [normalTree, landmark],
             }),
@@ -698,8 +707,16 @@ describe('HybridAgentThinkingModule', () => {
         const firstLandmark = { x: 3243, y: 3242, level: 0 };
         const secondLandmark = { x: 3241, y: 3253, level: 0 };
         const llm = scriptedLlm([
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: firstLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: secondLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: firstLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: secondLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
         ]);
         const state = runtimeState();
         state.cognition = {
@@ -734,9 +751,21 @@ describe('HybridAgentThinkingModule', () => {
     it('switches to a nearby patrol when a committed move makes no visible progress', async () => {
         const blockedLandmark = { x: 3243, y: 3242, level: 0 };
         const llm = scriptedLlm([
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
         ]);
         const state = runtimeState();
         state.cognition = {
@@ -770,7 +799,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' }]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
+        ]);
         expect(result.cause).toBe('stuck_move_recovery');
     });
 
@@ -778,9 +809,21 @@ describe('HybridAgentThinkingModule', () => {
         const blockedLandmark = { x: 3243, y: 3242, level: 0 };
         const door = { objectId: 1530, position: { x: 3233, y: 3244, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
-            { text: JSON.stringify({ actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }] }) },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
         ]);
         const state = runtimeState();
         state.cognition = {
@@ -870,7 +913,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3222, y: 3213, level: 0 }, range: 2, cause: 'direct_chat_follow' }]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3222, y: 3213, level: 0 }, range: 2, cause: 'direct_chat_follow' },
+        ]);
         expect(result.cause).toBe('direct_chat_follow');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -887,7 +932,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3200, y: 3200, level: 0 }, range: 2, cause: 'direct_chat_return_home' }]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3200, y: 3200, level: 0 }, range: 2, cause: 'direct_chat_return_home' },
+        ]);
         expect(result.cause).toBe('direct_chat_return_home');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -962,6 +1009,29 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('eats before retaliating when hurt and carrying food', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' }]);
+        expect(result.cause).toBe('combat_eat_before_retaliating');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('warns when attacked by a player instead of fighting back automatically', async () => {
         const alice = player('Alice', 3219, 3201);
         const llm = scriptedLlm([]);
@@ -976,7 +1046,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'Alice is attacking me. Tell me "agent attack Alice" if I should fight back.' }]);
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'Alice is attacking me. Tell me "agent attack Alice" if I should fight back.' },
+        ]);
         expect(result.cause).toBe('combat_reaction');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -996,6 +1068,29 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'direct_chat_attack' }]);
+        expect(result.cause).toBe('direct_chat_attack');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('refuses direct attack commands when hurt and carrying no food', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                npcs: [goblin],
+                events: [chatFromCodex('agent attack goblin', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am too hurt to attack without food. I need to heal or retreat first.' }]);
         expect(result.cause).toBe('direct_chat_attack');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -1192,7 +1287,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' }]);
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' },
+        ]);
         expect(result.cause).toBe('direct_chat_train_combat');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -1404,6 +1501,28 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('describes visible fishing spots as fishing opportunities when carrying a net', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+                events: [chatFromCodex('agent what do you see?', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I see a Fishing spot at 3219,3201. I can use my small fishing net there.' }]);
+        expect(result.cause).toBe('direct_chat_look');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('answers direct inventory commands without inference', async () => {
         const llm = scriptedLlm([]);
         const agent = hybridAgent(llm, runtimeState());
@@ -1532,7 +1651,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: chicken.position, range: 1, cause: 'prayer_approach_safe_bone_source' }]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: chicken.position, range: 1, cause: 'prayer_approach_safe_bone_source' },
+        ]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -1579,7 +1700,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 6, cause: 'prayer_seek_safe_bone_source' }]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 6, cause: 'prayer_seek_safe_bone_source' },
+        ]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -1938,7 +2061,10 @@ describe('HybridAgentThinkingModule', () => {
                 tick: 2,
                 resident: {
                     ...residentAt(3225, 3230),
-                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
                 },
                 objects: [normalTree],
                 events: [chatFromCodex('agent make a fire', 3224, 3230)],
@@ -1948,6 +2074,105 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([{ kind: 'move_to', target: normalTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
         expect(result.cause).toBe('direct_chat_make_fire');
         expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not pretend it can chop logs for firemaking without an axe', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                objects: [normalTree],
+                events: [chatFromCodex('agent make a fire', 3224, 3230)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I need an axe or logs before I can make a fire from that tree.' }]);
+        expect(result.cause).toBe('direct_chat_make_fire');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('starts a starter fishing workflow from direct chat without waiting for inference', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+                events: [chatFromCodex('agent fish', 3218, 3200)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
+        expect(result.cause).toBe('direct_chat_fish');
+        expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not pretend it can fish without a small fishing net', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [],
+                },
+                npcs: [fishingSpot],
+                events: [chatFromCodex('agent fish', 3218, 3200)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I need a small fishing net before I can catch shrimp.' }]);
+        expect(result.cause).toBe('direct_chat_fish');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps starter fishing goals focused on a visible fishing spot when Body inference noops', async () => {
+        const fishingSpot = npc('Fishing spot', 3224, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-shrimp',
+                description: 'Catch shrimp with a small fishing net at a Fishing spot.',
+                steps: ['Find a Fishing spot', 'Use the net option'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
+        expect(result.cause).toBe('starter_fishing_approach');
     });
 
     it('beacons its active goal periodically before Body inference', async () => {
@@ -2003,6 +2228,43 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([
             { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('beacons starter fishing as the concrete next step instead of talking to the spot', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-starter-fish',
+                description: 'Catch shrimp with a small fishing net.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net. Next: fish at 3219,3201 with my small net.',
+            },
         ]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -2117,15 +2379,17 @@ function memory(): MemoryStore {
     } as unknown as MemoryStore;
 }
 
-function perception(overrides: {
-    tick?: number;
-    resident?: Record<string, unknown>;
-    players?: Array<Record<string, unknown>>;
-    npcs?: Array<Record<string, unknown>>;
-    worldItems?: Array<Record<string, unknown>>;
-    objects?: Array<Record<string, unknown>>;
-    events?: Array<Record<string, unknown>>;
-} = {}): Perception {
+function perception(
+    overrides: {
+        tick?: number;
+        resident?: Record<string, unknown>;
+        players?: Array<Record<string, unknown>>;
+        npcs?: Array<Record<string, unknown>>;
+        worldItems?: Array<Record<string, unknown>>;
+        objects?: Array<Record<string, unknown>>;
+        events?: Array<Record<string, unknown>>;
+    } = {},
+): Perception {
     return {
         tick: overrides.tick ?? 1,
         resident: overrides.resident || residentAt(3200, 3200),
@@ -2149,7 +2413,7 @@ function residentAt(x: number, y: number): Record<string, unknown> {
         inCombat: false,
         combatTarget: null,
         busy: false,
-        inventory: [],
+        inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
         equipment: [],
     };
 }

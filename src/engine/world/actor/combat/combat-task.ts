@@ -52,9 +52,7 @@ export class CombatTask extends Task {
         // died, the attacker died, or any other system fired the legacy signal.
         // Without this subscription the in-task liveness check is delayed by up
         // to `attackSpeedTicks` ticks.
-        this.cancelSubscription = attacker.actionsCancelled
-            .pipe(take(1))
-            .subscribe(() => this.stop());
+        this.cancelSubscription = attacker.actionsCancelled.pipe(take(1)).subscribe(() => this.stop());
     }
 
     /**

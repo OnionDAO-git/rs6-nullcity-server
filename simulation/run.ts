@@ -32,7 +32,7 @@ async function main(): Promise<void> {
     const byResidentId = new Map<string, ResidentAssignment>();
     const byName = new Map(assignments.map(assignment => [assignment.name, assignment]));
     const actionQueue = new Map<string, Promise<void>>();
-    const pendingActions = new Map<string, AgentAction[]>();
+    const pendingActions = new Map<string, Map<string, AgentAction>>();
 
     gateway.on('perception', (residentId, perception) => {
         const assignment = byResidentId.get(residentId) || byName.get(stripResidentId(residentId));
@@ -55,11 +55,10 @@ async function main(): Promise<void> {
             .catch(() => undefined)
             .then(async () => {
                 reporter.action(assignment.name, action);
-                queuePendingAction(pendingActions, assignment.name, action);
-                await gateway.submitAction(assignment.name, action);
+                const requestId = await gateway.submitAction(assignment.name, action);
+                queuePendingAction(pendingActions, assignment.name, requestId, action);
             })
             .catch(error => {
-                dropPendingAction(pendingActions, assignment.name);
                 reporter.bug(
                     assignment.name,
                     { severity: 'error', kind: 'infrastructure', reason: 'submit_action_failed' },
@@ -73,11 +72,13 @@ async function main(): Promise<void> {
         const resident = stripResidentId(residentId);
         reporter.event(resident, `resident_event:${event.kind || 'unknown'}`, { event });
     });
-    gateway.on('actionResult', (residentId, result: ActionResult) => {
+    gateway.on('actionResult', (residentId, result: ActionResult, requestId: string | undefined) => {
         const resident = stripResidentId(residentId);
         reporter.action(
             resident,
-            dropPendingAction(pendingActions, resident) || { kind: 'noop', cause: 'unmatched_action_result' },
+            requestId
+                ? dropPendingAction(pendingActions, resident, requestId) || { kind: 'noop', cause: `unmatched_action_result:${requestId}` }
+                : { kind: 'noop', cause: 'missing_action_result_request_id' },
             result,
         );
     });
@@ -132,7 +133,7 @@ function emitInitialPerception(
     planner: GoalPlanner,
     gateway: SimulationGatewayClient,
     reporter: SimulationReporter,
-    pendingActions: Map<string, AgentAction[]>,
+    pendingActions: Map<string, Map<string, AgentAction>>,
     assignment: ResidentAssignment,
     perception: Perception,
     actionIntervalTicks: number,
@@ -143,30 +144,43 @@ function emitInitialPerception(
         return;
     }
     reporter.action(assignment.name, action);
-    queuePendingAction(pendingActions, assignment.name, action);
-    gateway.submitAction(assignment.name, action).catch(error => {
-        dropPendingAction(pendingActions, assignment.name);
-        reporter.bug(
-            assignment.name,
-            { severity: 'error', kind: 'infrastructure', reason: 'submit_action_failed' },
-            { error: error.message },
-        );
-    });
+    gateway
+        .submitAction(assignment.name, action)
+        .then(requestId => {
+            queuePendingAction(pendingActions, assignment.name, requestId, action);
+        })
+        .catch(error => {
+            reporter.bug(
+                assignment.name,
+                { severity: 'error', kind: 'infrastructure', reason: 'submit_action_failed' },
+                { error: error.message },
+            );
+        });
 }
 
-function queuePendingAction(pendingActions: Map<string, AgentAction[]>, resident: string, action: AgentAction): void {
+function queuePendingAction(
+    pendingActions: Map<string, Map<string, AgentAction>>,
+    resident: string,
+    requestId: string,
+    action: AgentAction,
+): void {
     let pending = pendingActions.get(resident);
     if (!pending) {
-        pending = [];
+        pending = new Map();
         pendingActions.set(resident, pending);
     }
-    pending.push(action);
+    pending.set(requestId, action);
 }
 
-function dropPendingAction(pendingActions: Map<string, AgentAction[]>, resident: string): AgentAction | undefined {
+function dropPendingAction(
+    pendingActions: Map<string, Map<string, AgentAction>>,
+    resident: string,
+    requestId: string,
+): AgentAction | undefined {
     const pending = pendingActions.get(resident);
-    const action = pending?.shift() || undefined;
-    if (pending && pending.length === 0) {
+    const action = pending?.get(requestId);
+    pending?.delete(requestId);
+    if (pending && pending.size === 0) {
         pendingActions.delete(resident);
     }
     return action;

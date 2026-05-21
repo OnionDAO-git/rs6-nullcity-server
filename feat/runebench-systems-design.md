@@ -3,6 +3,8 @@
 Status: revised draft after local analysis of RuneBench/rs-sdk and specialist review.
 This is a design and task list only; it does not implement the work.
 
+Historical note: this file is useful background, not the active task tracker. Some sections describe work that has since shipped or changed shape. Use `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the source of truth before executing anything here.
+
 Review input incorporated:
 
 - RuneBench/rs-sdk fidelity review: keep the BotSDK lifecycle, typed MCP facade, action porcelain, benchmarks, reward traces, and disposable benchmark isolation.
@@ -52,6 +54,38 @@ The important design shift is that "AI intelligence" sits on top of a dependable
 - Keep Brain/Body prompt changes behind proven non-LLM routines and benchmarks.
 - Isolate benchmarks from persistent human-visible resident identities.
 - Keep arbitrary code execution out of the autonomous resident loop.
+
+## 2026-05-20 Design Iteration: Request Correlation And Body Ownership
+
+Specialist feedback split the next slice into three concerns:
+
+- Simulation review: run a live three-resident experiment that covers movement, object interaction, and chat, then inspect action/perception logs rather than trusting the dashboard alone.
+- Runtime review: build request-id correlation, body waiters, and a single-owner action coordinator before adding more Brain/Body prompt cleverness.
+- Benchmark/progress review: keep effect evidence separate from submit acknowledgements, and treat `ok: true` as "the server accepted/applied a low-level action", not "the goal progressed".
+
+Experiment results:
+
+- Baseline before request correlation: one `work_loop` resident for 20s produced 9 submitted actions, 42 action results, and 33 unmatched results.
+- First three-resident run after request correlation exposed noisy internal brain noops. Residents moved and chatted, but each resident also emitted 149 uncorrelated noop results during 90s.
+- Second run confirmed the source: gateway-created residents use `IdleBrain`, which returned a noop whenever no survival action was needed.
+- After changing `IdleBrain` and default `ScriptedBrain` to stay quiet unless they have a real action, the fresh 45s run produced clean correlation:
+  - `res:bmk_idle_walk001`: 19 submitted movement actions, 19 correlated results, 38 unique observed positions, 13 arrival events.
+  - `res:bmk_idle_work001`: 19 submitted object interactions, 19 correlated results, but no position or inventory progress.
+  - `res:bmk_idle_chat001`: 19 submitted chat actions, 19 correlated results, 19 chat events.
+  - Missing request-id results: 0.
+
+Design adjustments from the experiment:
+
+- Idle resident brains should be survival-only. "Doing nothing" must not emit `noop` action results.
+- Request correlation is necessary and now works, but it is not the gameplay success signal.
+- The worker resident shows the next gap clearly: object `interact` returns `ok: true` without proving useful effect. Phase 3 porcelain actions must wait for inventory, XP, event, position, or target-state evidence.
+- Dashboard/debug surfaces should show both action acceptance and meaningful progress, otherwise a stuck agent still looks busy.
+
+Follow-up behavior slice:
+
+- Added initial `ResidentActions` helpers for `walkTo` and `say`. These submit exactly one action through `ActionCoordinator`, then wait for matching perception/event evidence before returning success.
+- Routed runtime Body `move_to` and `say` actions through effect waiters. This makes the live resident behave more like a human player: after choosing to move or speak, it watches for arrival/chat evidence instead of immediately deciding again from the submit acknowledgement.
+- This is intentionally narrow. Skill interactions still need workflow-specific effect checks, especially logs received, logs consumed, XP gained, target unavailable, and combat state changes.
 
 ## What To Add From RuneBench
 
@@ -719,13 +753,15 @@ Do not make Brain/Body rely on the new tool catalog until:
 
 ### Phase 1: Body Waiters And ActionCoordinator
 
-- Add `ResidentBody.waitForPerception(predicate, timeoutMs)`.
-- Add `ResidentBody.waitForEvent(predicate, timeoutMs)`.
-- Add sequence numbers/timestamps for perception and event updates.
-- Add `ActionAttempt` and `ActionCoordinator`.
-- Route NervousSystem and ThinkingModule submissions through the coordinator.
-- Add cancellation and priority tests.
-- Add request-id correlation for later `action_result` frames, or an equivalent attempt update that lets waiters distinguish acknowledgement from gameplay result.
+- Done: add `ResidentBody.waitForPerception(predicate, timeoutMs)`.
+- Done: add `ResidentBody.waitForEvent(predicate, timeoutMs)`.
+- Done: add sequence numbers/timestamps for perception and event updates.
+- Done: add `ActionAttempt` and `ActionCoordinator`.
+- Done: route NervousSystem and ThinkingModule submissions through the coordinator.
+- Done: add cancellation and priority tests.
+- Done: add request-id correlation for later `action_result` frames, with gateway/client/session tests.
+- Done: make idle resident brains quiet so live action streams are not polluted by internal noops.
+- Remaining: persist/stream attempt lifecycle updates for dashboard and future SDK consumers.
 
 Acceptance:
 
@@ -753,7 +789,10 @@ Acceptance:
 
 ### Phase 3: Initial ResidentActions Porcelain
 
-- Implement generic primitives aligned to current `AgentAction` schema.
+- Started: implement generic primitives aligned to current `AgentAction` schema.
+- Done: `walkTo()` waits for future position evidence.
+- Done: `say()` waits for matching chat event evidence.
+- Remaining: effect-aware `interact`, `pickupItem`, `useItemOnItem`, `itemAction`, `eat`, and `attack` helpers.
 - Implement first workflows: `walkTo`, `pickupItem`, `useItemOnItem`, `chopTree`, `burnLogs`, `buryBones`, `eatFood`, `attackSafeNpc`.
 - Each workflow returns `{ ok, reason, message, evidence }`.
 - Each workflow labels evidence confidence.
@@ -809,13 +848,29 @@ Acceptance:
 
 - Generate markdown from local config, skill specs, visible option strings, and failure messages.
 - Add a bounded retrieval function keyed by active goal and visible entities.
-- Include retrieval snippets in Brain prompt only.
+- Include retrieval snippets in Brain and Body prompts. Brain uses them to select realistic goals; Body uses them to pick valid immediate tool/action calls.
+- Keep entries source-labeled and prefer engine-local facts over external wiki facts when they disagree.
+- Treat the RuneBench wiki clone as an optional reference cache. Import only selected bounded snippets for NPC/shop/quest context; do not commit a bulk wiki scrape.
 
 Acceptance:
 
 - A woodcutting goal retrieves ordinary tree/axe/log guidance.
 - A combat-prayer goal retrieves safe target, food, and bones guidance.
 - Prompt size remains bounded.
+
+Implemented starter slice:
+
+- `src/controller/knowledge/knowledge-retriever.ts` defines source-labeled engine knowledge entries for firemaking, woodcutting, fishing, mining, prayer, safe starter combat, following/reporting, and tool shops.
+- `buildBrainPrompt()` and `buildBodyPrompt()` retrieve compact relevant snippets from active goal + perception and inject them under "Relevant game knowledge".
+- `src/controller/knowledge/wiki-importer.ts` can load bounded snippets from a local RuneBench wiki checkout for curated pages such as chickens, cows, goblins, and starter shops.
+- `src/controller/knowledge/skill-guide-importer.ts` converts local skill guide JSON into bounded knowledge entries, giving us a path to generate more of the pack from engine data rather than hand-written facts.
+- Focused tests cover retrieval ranking, prompt injection, and safe local wiki snippet loading.
+
+Next iteration:
+
+- Generate the starter entries from `data/config/**` and `src/plugins/skills/skill-guides/**` instead of maintaining all facts by hand.
+- Attach knowledge snippets to workflow cards so availability can say "can do now", "missing tool", "missing visible target", or "unsafe".
+- Add curated RuneBench wiki pages for low-level NPCs and starter shops as optional reference context, with source paths and tight character limits.
 
 ### Phase 8: Dashboard Integration
 
@@ -844,6 +899,8 @@ Acceptance:
 - Server MCP remains low-level or thinly delegates to controller routines.
 
 ## First Implementation Slice
+
+Historical note: this slice proposal predates the current roadmap and several pieces have already landed or moved. Use `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the authoritative active task list; keep this section as RuneBench-derived design context.
 
 The first PR should stay small enough to review:
 

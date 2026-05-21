@@ -5,7 +5,7 @@ import type { Brain } from './brain';
 export type ScriptedBrainHandler = (perception: Perception) => AgentAction[] | Promise<AgentAction[]>;
 
 export class ScriptedBrain implements Brain {
-    public constructor(private readonly handler: ScriptedBrainHandler = () => [{ kind: 'noop' }]) {}
+    public constructor(private readonly handler: ScriptedBrainHandler = () => []) {}
 
     public decide(perception: Perception): AgentAction[] | Promise<AgentAction[]> {
         return this.handler(perception);

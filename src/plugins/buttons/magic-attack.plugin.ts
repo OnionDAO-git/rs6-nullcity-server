@@ -20,9 +20,7 @@ const hook: MagicOnNPCActionHook = {
     handler: ({ npc, player, widgetId, buttonId }: MagicOnNPCAction) => {
         const spell = findSpellByButton(widgetId, buttonId);
         if (!spell) {
-            player.outgoingPackets.chatboxMessage(
-                `Unknown spell (widget ${widgetId} button ${buttonId}).`,
-            );
+            player.outgoingPackets.chatboxMessage(`Unknown spell (widget ${widgetId} button ${buttonId}).`);
             return;
         }
 

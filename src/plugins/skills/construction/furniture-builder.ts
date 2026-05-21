@@ -45,9 +45,7 @@ export const buildFurnitureHandler: objectInteractionActionHandler = ({ player, 
     }
 
     const currentRoom = getCurrentRoom(player);
-    const room = currentRoom
-        ? (player.metadata.customMap?.chunks[currentRoom.level][currentRoom.x][currentRoom.y] as Room | null)
-        : null;
+    const room = currentRoom ? (player.metadata.customMap?.chunks[currentRoom.level][currentRoom.x][currentRoom.y] as Room | null) : null;
     if (!room || !furniture.roomTypes.includes(room.type)) {
         player.sendMessage(`You cannot build ${furniture.name} here.`);
         return;
@@ -77,9 +75,7 @@ export const buildFurnitureHandler: objectInteractionActionHandler = ({ player, 
 
 export const removeFurnitureHandler: objectInteractionActionHandler = ({ player, object, position }) => {
     const currentRoom = getCurrentRoom(player);
-    const room = currentRoom
-        ? (player.metadata.customMap?.chunks[currentRoom.level][currentRoom.x][currentRoom.y] as Room | null)
-        : null;
+    const room = currentRoom ? (player.metadata.customMap?.chunks[currentRoom.level][currentRoom.x][currentRoom.y] as Room | null) : null;
     if (!room) {
         return;
     }

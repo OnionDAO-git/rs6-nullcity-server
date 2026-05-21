@@ -14,7 +14,8 @@ export interface NervousSystemOptions {
 type Item = { itemId?: number; key?: string; amount?: number };
 
 const LOW_HEALTH_FOOD_THRESHOLD = 0.4;
-const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+const FOOD_KEY_PATTERN =
+    /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
     priority: 100,

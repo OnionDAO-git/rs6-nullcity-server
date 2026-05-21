@@ -101,7 +101,15 @@ export function hasMaterials(inventory: { amount(itemId: number): number }, mate
     return materials.every(material => inventory.amount(material.itemId) >= material.amount);
 }
 
-export function removeMaterials(inventory: { findIndex(itemId: number): number; amountInStack(slot: number): number; set(slot: number, item: any): void; remove(slot: number): void }, materials: { itemId: number; amount: number }[]): void {
+export function removeMaterials(
+    inventory: {
+        findIndex(itemId: number): number;
+        amountInStack(slot: number): number;
+        set(slot: number, item: any): void;
+        remove(slot: number): void;
+    },
+    materials: { itemId: number; amount: number }[],
+): void {
     for (const material of materials) {
         let remaining = material.amount;
         while (remaining > 0) {

@@ -104,6 +104,7 @@ export type PerceptionEvent =
     | { kind: 'trade_completed'; received: ItemRef[]; given: ItemRef[] }
     | { kind: 'trade_cancelled'; reason: string }
     | { kind: 'arrived' }
+    | { kind: 'fire_lit'; item: ItemRef; position: Pos; experience: number }
     | { kind: 'level_up'; skill: string; level: number };
 
 export type ActiveTrade = TradePerceptionState;

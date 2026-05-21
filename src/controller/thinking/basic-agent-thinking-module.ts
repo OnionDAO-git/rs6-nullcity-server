@@ -38,7 +38,8 @@ const DEFAULT_COMMENT_EVERY_TICKS = 60;
 const AMBIENT_REPEAT_SUPPRESSION_TICKS = 600;
 const FOLLOW_MOVE_RETRY_TICKS = 60;
 const FIREMAKING_AUTONOMY_PAUSE_TICKS = 120;
-const FOOD_KEY_PATTERN = /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+const FOOD_KEY_PATTERN =
+    /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const TINDERBOX_ITEM_IDS = new Set([590]);
 const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
@@ -58,8 +59,7 @@ export class BasicAgentThinkingModule implements ThinkingModule {
     private suppressAutonomyUntilTick = -Infinity;
 
     constructor(private readonly options: BasicAgentThinkingModuleOptions) {
-        const behavior =
-            options.soul.frontmatter.behavior?.kind === 'basic-agent' ? options.soul.frontmatter.behavior : undefined;
+        const behavior = options.soul.frontmatter.behavior?.kind === 'basic-agent' ? options.soul.frontmatter.behavior : undefined;
         this.commandPrefix = normalizeText(behavior?.commandPrefix || displayName(options.soul.frontmatter.name));
         this.followTarget = behavior?.followPlayer ? normalizeText(behavior.followPlayer) : undefined;
         this.followEnabled = Boolean(this.followTarget);
@@ -124,7 +124,14 @@ export class BasicAgentThinkingModule implements ThinkingModule {
             this.guardTarget = /^guard/.test(text) ? this.followTarget : this.guardTarget;
             this.followEnabled = true;
             this.lastFollowMoveTarget = undefined;
-            return [{ kind: 'say', text: /^guard/.test(text) ? `Guarding you, ${actorName(command.speaker)}.` : `Following you, ${actorName(command.speaker)}.` }];
+            return [
+                {
+                    kind: 'say',
+                    text: /^guard/.test(text)
+                        ? `Guarding you, ${actorName(command.speaker)}.`
+                        : `Following you, ${actorName(command.speaker)}.`,
+                },
+            ];
         }
 
         if (/^(stay|wait|stop|stop following|hold position)\b/.test(text)) {
@@ -160,7 +167,9 @@ export class BasicAgentThinkingModule implements ThinkingModule {
         const talk = text.match(/^talk to\s+(.+)/);
         if (talk) {
             const npc = this.findActor(perception.nearby?.npcs || [], talk[1]);
-            return npc ? [{ kind: 'interact', target: npc, option: 'talk-to' }] : [{ kind: 'say', text: `I do not see ${cleanTarget(talk[1])} from here.` }];
+            return npc
+                ? [{ kind: 'interact', target: npc, option: 'talk-to' }]
+                : [{ kind: 'say', text: `I do not see ${cleanTarget(talk[1])} from here.` }];
         }
 
         const attack = text.match(/^attack\s+(.+)/);
@@ -269,7 +278,10 @@ export class BasicAgentThinkingModule implements ThinkingModule {
             return undefined;
         }
 
-        if (samePosition(target.position, this.lastFollowMoveTarget) && this.options.state.tick - this.lastFollowMoveTick < FOLLOW_MOVE_RETRY_TICKS) {
+        if (
+            samePosition(target.position, this.lastFollowMoveTarget) &&
+            this.options.state.tick - this.lastFollowMoveTick < FOLLOW_MOVE_RETRY_TICKS
+        ) {
             return undefined;
         }
 
@@ -488,11 +500,7 @@ function itemMatchesQuery(item: Item, query: string): boolean {
 }
 
 function itemLabel(item: Item): string {
-    return (item.key || `item ${item.itemId}`)
-        .replace(/^rs:/i, '')
-        .replace(/_/g, ' ')
-        .trim()
-        .toLowerCase();
+    return (item.key || `item ${item.itemId}`).replace(/^rs:/i, '').replace(/_/g, ' ').trim().toLowerCase();
 }
 
 function isTinderbox(item: Item): boolean {

@@ -13,6 +13,7 @@ Reference clone: `/Users/james/Code/OnionDAO/.codex-artifacts/reference/RuneBenc
 - **Telemetry is first-class.** `skill_tracker.ts`, `check_xp_rate.ts`, `check_skill_xp.ts`, `check_gold.ts`, and trajectory extraction make behavior inspectable.
 - **Tasks are generated from source of truth.** `generate-tasks.ts` creates repeatable benchmark directories rather than hand-maintained one-offs.
 - **Long-running behavior is bounded.** RuneBench recommends 10s probes, then 30-60s tests, then longer loops only after evidence.
+- **APIs grow from failure analysis.** RuneBench explicitly notes that the SDK improved by categorizing failed runs and adding missing harness features. Our equivalent is action/progress logs feeding new `ResidentActions`, workflow cards, and dashboard diagnostics.
 
 ## Translation To NullCity
 
@@ -48,6 +49,15 @@ The direct translation is not "let the agent write scripts." The better translat
 4. **Dashboard-facing causality.**
    Keep cause labels explicit enough to debug: `woodcutting_level1_routine`, `woodcutting_chain_firemaking`, `combat_loot_pickup`, `routine_loop_break`, etc.
 
+## Current Ported Slice
+
+- `runebench-playbook.ts` now keeps workflow cards as typed data, then renders them into prompts. This gives us one source of truth for prompt text today and future dashboard/routine availability checks.
+- `knowledge-retriever.ts` adds a compact local knowledge pack for starter skills and safe behaviors. Brain and Body both receive only the snippets relevant to the active goal and current perception.
+- `wiki-importer.ts` can pull bounded snippets from the local RuneBench wiki clone for curated references such as low-level NPCs and starter shops. Local engine config remains authoritative.
+- `skill-guide-importer.ts` converts the repo's skill-guide JSON into compact knowledge entries, which is the first step toward generated game knowledge instead of hand-maintained prompt lore.
+
+The next RuneBench idea to port is the measurable-run loop: small benchmark tasks with trajectory/progress artifacts, starting with `make-fire-5m`, then woodcutting, combat-prayer, exploration, and follow/chat.
+
 ## Backlog
 
 ### Tool Surface
@@ -64,6 +74,7 @@ The direct translation is not "let the agent write scripts." The better translat
   - shop inventories when shop support lands;
   - skill guides and beginner workflows.
 - Add a compact retrieval step so Brain can see relevant skill/wiki snippets without bloating every prompt.
+- Add curated wiki snippets for starter NPCs (`chicken`, `cow`, `goblin`, `giant-rat`) and shops (`lumbridge-general-store`, tool/fishing shops), but keep them bounded and cite source paths.
 
 ### Telemetry
 

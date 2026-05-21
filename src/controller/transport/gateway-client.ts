@@ -35,6 +35,11 @@ export interface GatewayClientEvents {
     ready: [];
 }
 
+export interface SubmittedActionAck {
+    requestId: string;
+    ackResult: ActionResult;
+}
+
 type PendingRequest = {
     resolve: (value: unknown) => void;
     reject: (reason: Error) => void;
@@ -106,9 +111,16 @@ export class GatewayClient extends EventEmitter {
     }
 
     submitAction(name: string, action: AgentAction): Promise<ActionResult> {
-        return this.request('submit_action', { name, action }).then(value => {
+        return this.submitActionWithRequestId(name, action).then(value => value.ackResult);
+    }
+
+    submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {
+        return this.requestWithId('submit_action', { name, action }).then(({ requestId, value }) => {
             const payload = readPayload(value);
-            return (payload.result || { ok: true, cause: payload.cause }) as ActionResult;
+            return {
+                requestId,
+                ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
+            };
         });
     }
 
@@ -143,6 +155,10 @@ export class GatewayClient extends EventEmitter {
     }
 
     private request(type: string, payload?: unknown): Promise<unknown> {
+        return this.requestWithId(type, payload).then(({ value }) => value);
+    }
+
+    private requestWithId(type: string, payload?: unknown): Promise<{ requestId: string; value: unknown }> {
         const socket = this.socket;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             return Promise.reject(new Error('Gateway socket is not open'));
@@ -163,7 +179,7 @@ export class GatewayClient extends EventEmitter {
         });
 
         socket.send(encodeMessage(makeRequest(type, requestId, payload)));
-        return promise;
+        return promise.then(value => ({ requestId, value }));
     }
 
     private handleMessage(raw: WebSocket.RawData): void {

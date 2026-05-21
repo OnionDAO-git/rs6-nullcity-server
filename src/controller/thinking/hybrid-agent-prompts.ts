@@ -1,6 +1,7 @@
 import type { ActiveGoalState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
+import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { bodyPlaybookPrompt, brainPlaybookPrompt } from './runebench-playbook';
 
 export interface BrainPromptInput {
@@ -8,6 +9,7 @@ export interface BrainPromptInput {
     perception: Perception;
     activeGoal?: ActiveGoalState;
     commandPrefix: string;
+    gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
 }
 
 export interface BodyPromptInput {
@@ -15,6 +17,7 @@ export interface BodyPromptInput {
     perception: Perception;
     activeGoal?: ActiveGoalState;
     commandPrefix: string;
+    gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
     visibility: {
         anchor?: { x: number; y: number; level: number };
         returnDue: boolean;
@@ -35,6 +38,7 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         '- Basic combat: only fight safe low-level NPCs when healthy or when attacked; eat or retreat when hurt.',
         '',
         brainPlaybookPrompt(),
+        input.gameSkill?.brainSection || '',
         'Return JSON only with this shape:',
         '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars"}',
         '',
@@ -57,6 +61,7 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         'If addressed in chat, answer or act. If the goal involves an item/tool and matching inventory slots are visible, use them.',
         '',
         bodyPlaybookPrompt(),
+        input.gameSkill?.bodySection || '',
         input.visibility.returnDue && input.visibility.anchor
             ? `Visibility rule: Agent is due to return near ${JSON.stringify(input.visibility.anchor)} so Codex can find him. Prefer moving there unless a chat command or survival need is more important.`
             : 'Visibility rule: stay findable and mention useful intentions in public chat sometimes.',

@@ -81,7 +81,7 @@ export class LlmClient {
                 throw error;
             }
 
-            const fallbackBody = { ...body, response_format: { type: 'json_object' } };
+            const fallbackBody = { ...body, response_format: { type: 'text' } };
             return this.postCompletionWithRetry(endpointKey, endpoint, fallbackBody, request.signal);
         }
     }
@@ -197,7 +197,8 @@ export class LlmClient {
         const first = isRecord(choices[0]) ? choices[0] : {};
         const message = isRecord(first.message) ? first.message : {};
         const usage = isRecord(payload.usage) ? payload.usage : {};
-        const content = typeof message.content === 'string' && message.content.trim().length > 0 ? message.content : message.reasoning_content;
+        const content =
+            typeof message.content === 'string' && message.content.trim().length > 0 ? message.content : message.reasoning_content;
         return {
             text: typeof content === 'string' ? content : '',
             model: typeof payload.model === 'string' ? payload.model : undefined,

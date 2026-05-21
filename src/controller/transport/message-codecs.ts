@@ -194,7 +194,9 @@ export function makeRequest<TType extends string, TPayload>(
     requestId: string,
     payload?: TPayload,
 ): GatewayEnvelope<TType, TPayload> {
-    return payload === undefined ? { v: AGENT_PROTOCOL_VERSION, kind, id: requestId } : { v: AGENT_PROTOCOL_VERSION, kind, id: requestId, payload };
+    return payload === undefined
+        ? { v: AGENT_PROTOCOL_VERSION, kind, id: requestId }
+        : { v: AGENT_PROTOCOL_VERSION, kind, id: requestId, payload };
 }
 
 export function readError(message: ServerMessage): { request_id?: string; code: string; message: string; cause?: string } | undefined {

@@ -19,9 +19,9 @@ describe('controller process lock', () => {
         const dir = tempDir();
         const first = acquireControllerLock({ lockDir: dir, controllerId: 'nullcity-controller', pid: 123, isProcessAlive: () => true });
 
-        expect(() => acquireControllerLock({ lockDir: dir, controllerId: 'nullcity-controller', pid: 456, isProcessAlive: () => true })).toThrow(
-            /controller lock already held by pid 123/,
-        );
+        expect(() =>
+            acquireControllerLock({ lockDir: dir, controllerId: 'nullcity-controller', pid: 456, isProcessAlive: () => true }),
+        ).toThrow(/controller lock already held by pid 123/);
 
         first.release();
     });

@@ -21,6 +21,9 @@ legacy:
   kind: endurer
   parameters:
     targetTicks: 50000
+modules:
+  - id: onion.runescape.standard
+    enabled: true
 behavior:
   kind: hybrid-agent
   followPlayer: codex

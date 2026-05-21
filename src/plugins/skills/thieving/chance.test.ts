@@ -3,11 +3,15 @@ import { pickpocketSuccessChance, rollSuccess, selectReward } from './chance';
 describe('thieving chance helpers', () => {
     it('scales success chance with level and clamps at 95%', () => {
         expect(pickpocketSuccessChance({ thievingLevel: 1, targetLevel: 1, baseChance: 0.5, minChance: 0.1, levelFactor: 0.01 })).toBe(0.5);
-        expect(pickpocketSuccessChance({ thievingLevel: 99, targetLevel: 1, baseChance: 0.5, minChance: 0.1, levelFactor: 0.01 })).toBe(0.95);
+        expect(pickpocketSuccessChance({ thievingLevel: 99, targetLevel: 1, baseChance: 0.5, minChance: 0.1, levelFactor: 0.01 })).toBe(
+            0.95,
+        );
     });
 
     it('does not fall below the configured minimum chance', () => {
-        expect(pickpocketSuccessChance({ thievingLevel: 1, targetLevel: 40, baseChance: 0.05, minChance: 0.1, levelFactor: 0.01 })).toBe(0.1);
+        expect(pickpocketSuccessChance({ thievingLevel: 1, targetLevel: 40, baseChance: 0.05, minChance: 0.1, levelFactor: 0.01 })).toBe(
+            0.1,
+        );
     });
 
     it('rolls success using the supplied RNG', () => {

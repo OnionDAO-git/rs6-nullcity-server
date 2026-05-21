@@ -7,6 +7,8 @@ node_modules
 /data/agent-logs
 /data/controller/logs
 /data/controller/memory
+/data/benchmarks/*.json
+/data/knowledge/suggestions.*.jsonl
 /data/memory/*
 !/data/memory/README.md
 /data/saves/*.json

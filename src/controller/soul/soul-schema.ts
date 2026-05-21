@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SoulSparkModuleSelection } from '../spark/modules';
 import type { InitialContainerItem } from '../transport/message-codecs';
 import type { AgentAction } from '../transport/message-codecs';
 import { agentActionSchema } from '../transport/message-codecs';
@@ -32,6 +33,7 @@ export interface SoulFrontmatter {
     hooks?: SoulHookDefinition[];
     nervousSystem?: SoulNervousRuleDefinition[];
     behavior?: SoulBehaviorDefinition;
+    modules?: SoulSparkModuleSelection[];
     startingBeliefs?: string[];
     spawnPosition?: unknown;
     initialInventory?: InitialContainerItem[];
@@ -185,46 +187,56 @@ const hybridAgentBehaviorSchema = z.object({
     body: inferenceProfileSchema.optional(),
 });
 const soulBehaviorSchema = z.discriminatedUnion('kind', [basicAgentBehaviorSchema, hybridAgentBehaviorSchema]);
+const soulSparkModuleSchema = z
+    .object({
+        id: z.string().min(1),
+        enabled: z.boolean().optional(),
+        config: z.record(z.string(), z.unknown()).optional(),
+    })
+    .strict();
 
-export const soulFrontmatterSchema = z.object({
-    name: z.string().min(1),
-    display: z.string().optional(),
-    archetype: soulArchetypeSchema,
-    voice: z
-        .object({
-            register: z.string().optional(),
-            quirks: z.array(z.string()).optional(),
-        })
-        .optional(),
-    fears: z.array(z.string()).optional(),
-    loves: z.array(z.string()).optional(),
-    model: z
-        .object({
-            endpoint: z.string().optional(),
-            temperature: z.number().min(0).max(2).optional(),
-        })
-        .optional(),
-    attentionProfile: z
-        .object({
-            startingAttention: z.number().positive().optional(),
-            decayCurve: decayCurveSchema.default('standard'),
-        })
-        .default({ decayCurve: 'standard' }),
-    legacy: z
-        .object({
-            kind: soulArchetypeSchema,
-            parameters: z.record(z.string(), z.unknown()).default({}),
-        })
-        .optional(),
-    variables: z.array(soulVariableSchema).optional(),
-    hooks: z.array(soulHookSchema).optional(),
-    nervousSystem: z.array(soulNervousRuleSchema).optional(),
-    behavior: soulBehaviorSchema.optional(),
-    startingBeliefs: z.array(z.string()).optional(),
-    spawnPosition: z.unknown().optional(),
-    initialInventory: z.array(initialContainerItemSchema).max(28).optional(),
-    initialEquipment: z.array(initialContainerItemSchema).max(14).optional(),
-});
+export const soulFrontmatterSchema = z
+    .object({
+        name: z.string().min(1),
+        display: z.string().optional(),
+        archetype: soulArchetypeSchema,
+        voice: z
+            .object({
+                register: z.string().optional(),
+                quirks: z.array(z.string()).optional(),
+            })
+            .optional(),
+        fears: z.array(z.string()).optional(),
+        loves: z.array(z.string()).optional(),
+        model: z
+            .object({
+                endpoint: z.string().optional(),
+                temperature: z.number().min(0).max(2).optional(),
+            })
+            .optional(),
+        attentionProfile: z
+            .object({
+                startingAttention: z.number().positive().optional(),
+                decayCurve: decayCurveSchema.default('standard'),
+            })
+            .default({ decayCurve: 'standard' }),
+        legacy: z
+            .object({
+                kind: soulArchetypeSchema,
+                parameters: z.record(z.string(), z.unknown()).default({}),
+            })
+            .optional(),
+        variables: z.array(soulVariableSchema).optional(),
+        hooks: z.array(soulHookSchema).optional(),
+        nervousSystem: z.array(soulNervousRuleSchema).optional(),
+        behavior: soulBehaviorSchema.optional(),
+        modules: z.array(soulSparkModuleSchema).optional(),
+        startingBeliefs: z.array(z.string()).optional(),
+        spawnPosition: z.unknown().optional(),
+        initialInventory: z.array(initialContainerItemSchema).max(28).optional(),
+        initialEquipment: z.array(initialContainerItemSchema).max(14).optional(),
+    })
+    .strict();
 
 export function validateSoulFrontmatter(value: unknown, sourcePath: string): SoulFrontmatter {
     const parsed = soulFrontmatterSchema.safeParse(value);
@@ -234,8 +246,22 @@ export function validateSoulFrontmatter(value: unknown, sourcePath: string): Sou
     }
 
     const frontmatter = parsed.data;
+    validateUniqueModuleSelections(frontmatter.modules);
     return {
         ...frontmatter,
         legacy: frontmatter.legacy || { kind: frontmatter.archetype, parameters: {} },
     };
+}
+
+function validateUniqueModuleSelections(modules: SoulSparkModuleSelection[] | undefined): void {
+    if (!modules) {
+        return;
+    }
+    const seen = new Set<string>();
+    for (const module of modules) {
+        if (seen.has(module.id)) {
+            throw new Error(`Duplicate SPARK module selection ${module.id}`);
+        }
+        seen.add(module.id);
+    }
 }

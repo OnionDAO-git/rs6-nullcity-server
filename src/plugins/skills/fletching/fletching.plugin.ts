@@ -2,12 +2,7 @@ import type { ItemOnItemActionHook, itemOnItemActionHandler } from '@engine/acti
 import { findItem } from '@engine/config/config-handler';
 import { itemSelectionDialogue } from '@engine/world/actor/dialogue';
 import { itemIds } from '@engine/world/config/item-ids';
-import {
-    arrowFinishingByHead,
-    bowStringingByUnstrung,
-    HEADLESS_ARROW_RECIPES,
-    logCuttingByLog,
-} from './fletching-data';
+import { arrowFinishingByHead, bowStringingByUnstrung, HEADLESS_ARROW_RECIPES, logCuttingByLog } from './fletching-data';
 import { FletchingTask } from './fletching-task';
 import type { Fletchable } from './fletching-types';
 
@@ -34,7 +29,9 @@ function startRecipeSelection(details: Parameters<itemOnItemActionHandler>[0], r
 
         const primaryIngredient = recipe.ingredient[0];
         const selectedAmount =
-            selection.amount > 0 ? selection.amount : Math.floor(details.player.inventory.amount(primaryIngredient.itemId) / primaryIngredient.amount);
+            selection.amount > 0
+                ? selection.amount
+                : Math.floor(details.player.inventory.amount(primaryIngredient.itemId) / primaryIngredient.amount);
 
         if (selectedAmount <= 0) {
             details.player.sendMessage("You don't have enough materials to make that.");

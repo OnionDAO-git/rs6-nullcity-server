@@ -36,7 +36,17 @@ export const pickpocketTargets: PickpocketTarget[] = [
     },
     {
         key: 'guard',
-        npcKeys: ['rs:guard', 'rs:guard:0', 'rs:guard:1', 'rs:guard:2', 'rs:guard:3', 'rs:guard:4', 'rs:guard:5', 'rs:guard:6', 'rs:guard:7'],
+        npcKeys: [
+            'rs:guard',
+            'rs:guard:0',
+            'rs:guard:1',
+            'rs:guard:2',
+            'rs:guard:3',
+            'rs:guard:4',
+            'rs:guard:5',
+            'rs:guard:6',
+            'rs:guard:7',
+        ],
         level: 40,
         xp: 46.8,
         baseChance: 0.25,

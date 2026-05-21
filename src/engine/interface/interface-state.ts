@@ -180,7 +180,7 @@ export class InterfaceState {
         }
 
         if (!options.doNotRegister) {
-          this.widgetSlots[widget.slot] = widget;
+            this.widgetSlots[widget.slot] = widget;
         }
         this.showWidget(widget);
         return widget;

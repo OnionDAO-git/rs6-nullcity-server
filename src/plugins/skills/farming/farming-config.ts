@@ -98,7 +98,9 @@ export const farmingCrops: FarmingCropDefinition[] = [
 export const farmingPatchObjectIds = [
     ...new Set([
         ...farmingPatches.flatMap(patch => [...patch.objectIds.weeds, ...patch.objectIds.empty, ...(patch.objectIds.dead ?? [])]),
-        ...farmingCrops.flatMap(crop => [crop.objectIds.planted, crop.objectIds.watered, crop.objectIds.grown, crop.objectIds.dead].filter(Boolean) as number[]),
+        ...farmingCrops.flatMap(
+            crop => [crop.objectIds.planted, crop.objectIds.watered, crop.objectIds.grown, crop.objectIds.dead].filter(Boolean) as number[],
+        ),
     ]),
 ];
 
@@ -113,7 +115,9 @@ export function getCrop(cropKey: string | undefined): FarmingCropDefinition | un
 }
 
 export function getPatchByObjectId(objectId: number): FarmingPatchDefinition | undefined {
-    return farmingPatches.find(patch => [...patch.objectIds.weeds, ...patch.objectIds.empty, ...(patch.objectIds.dead ?? [])].includes(objectId));
+    return farmingPatches.find(patch =>
+        [...patch.objectIds.weeds, ...patch.objectIds.empty, ...(patch.objectIds.dead ?? [])].includes(objectId),
+    );
 }
 
 export function isFarmingPatchObject(objectId: number): boolean {

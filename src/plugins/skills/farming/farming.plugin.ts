@@ -64,7 +64,14 @@ export default {
         {
             type: 'item_on_object',
             objectIds: farmingPatchObjectIds,
-            itemIds: [...farmingSeedItemIds, farmingTools.rake, farmingTools.seedDibber, farmingTools.spade, farmingTools.compost, ...farmingTools.wateringCans],
+            itemIds: [
+                ...farmingSeedItemIds,
+                farmingTools.rake,
+                farmingTools.seedDibber,
+                farmingTools.spade,
+                farmingTools.compost,
+                ...farmingTools.wateringCans,
+            ],
             walkTo: true,
             handler: itemOnPatch,
         } as ItemOnObjectActionHook,

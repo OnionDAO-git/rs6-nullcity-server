@@ -5,14 +5,7 @@ import { Skill } from '@engine/world/actor/skills';
 import { animationIds } from '@engine/world/config/animation-ids';
 import { soundIds } from '@engine/world/config/sound-ids';
 import type { Item } from '@engine/world/items/item';
-import {
-    cleanHerbRecipes,
-    finishedPotionRecipes,
-    grindingRecipes,
-    itemId,
-    recipeItemIds,
-    unfinishedPotionRecipes,
-} from './herblore-data';
+import { cleanHerbRecipes, finishedPotionRecipes, grindingRecipes, itemId, recipeItemIds, unfinishedPotionRecipes } from './herblore-data';
 
 function sameItem(item: Item | null, expectedItemId: number): boolean {
     return item?.itemId === expectedItemId && item.amount >= 1;
@@ -34,12 +27,7 @@ function replaceTwoWithOne(
     return true;
 }
 
-function findPair<T>(
-    usedItemId: number,
-    usedWithItemId: number,
-    recipes: T[],
-    getPair: (recipe: T) => [number, number],
-): T | undefined {
+function findPair<T>(usedItemId: number, usedWithItemId: number, recipes: T[], getPair: (recipe: T) => [number, number]): T | undefined {
     return recipes.find(recipe => {
         const [a, b] = getPair(recipe);
         return (usedItemId === a && usedWithItemId === b) || (usedItemId === b && usedWithItemId === a);
@@ -71,7 +59,10 @@ const cleanHerb: itemInteractionActionHandler = details => {
 
 const mixItems: itemOnItemActionHandler = details => {
     const { player, usedItem, usedWithItem, usedSlot, usedWithSlot } = details;
-    if (!sameItem(player.inventory.items[usedSlot], usedItem.itemId) || !sameItem(player.inventory.items[usedWithSlot], usedWithItem.itemId)) {
+    if (
+        !sameItem(player.inventory.items[usedSlot], usedItem.itemId) ||
+        !sameItem(player.inventory.items[usedWithSlot], usedWithItem.itemId)
+    ) {
         player.sendMessage('You need the ingredients in your inventory to do that.');
         return;
     }

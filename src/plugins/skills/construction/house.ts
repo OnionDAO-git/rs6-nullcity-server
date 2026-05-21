@@ -95,14 +95,11 @@ export const spawnBuiltFurniture = (player: Player): void => {
                     const position = furniture.object;
                     if (furniture.hotspotObject) {
                         player.personalInstance.hideGameObject(furniture.hotspotObject);
-                        player.outgoingPackets.removeLocationObject(
-                            furniture.hotspotObject,
-                            {
-                                x: furniture.hotspotObject.x,
-                                y: furniture.hotspotObject.y,
-                                level: furniture.hotspotObject.level,
-                            } as Position,
-                        );
+                        player.outgoingPackets.removeLocationObject(furniture.hotspotObject, {
+                            x: furniture.hotspotObject.x,
+                            y: furniture.hotspotObject.y,
+                            level: furniture.hotspotObject.level,
+                        } as Position);
                     }
                     player.personalInstance.spawnGameObject(furniture.object);
                     player.outgoingPackets.setLocationObject(furniture.object, {
