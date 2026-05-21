@@ -1,0 +1,179 @@
+# Multi-Agent Coordination Protocol
+
+**Audience:** Any agent (Claude, Codex, future) or human working in this repo or the residents-dashboard repo.
+**Date:** 2026-05-21.
+**Status:** Draft; revise as the team learns what actually prevents collisions.
+
+**New here? Start by skimming this file end-to-end, then read `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` for the canonical workstream board, then the spec at `docs/superpowers/specs/2026-05-21-spark-evidence-loop-design.md` for the active design work.**
+
+## Why This Exists
+
+Three agents are active across two repos:
+
+- **Claude (Anthropic)** operated by the maintainer in `rs6-nullcity-server`.
+- **Codex (OpenAI)** operated by the maintainer in `rs6-nullcity-server`.
+- **Dev's agent** working in `rs6-nullcity-residents-dashboard`.
+
+We do not have a shared message bus, real-time presence, or a job queue. Coordination must therefore be:
+
+- **Async** — agents commit and read; they do not negotiate live.
+- **Repository-grounded** — the source of truth is files in git, not chat.
+- **Cheap to follow** — overhead must be smaller than the cost of a merge conflict.
+
+## Source Of Truth
+
+The canonical "what is happening right now" is the union of:
+
+1. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — workstream board with `[ ] [>] [~] [x] [!]` task markers. *Note: as of 2026-05-21 the roadmap reflects Workstreams A–H only. Workstream I and the proposed J–O candidates live in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md` and will be merged into the roadmap after Codex's `nullcity` branch lands.*
+2. `git status` on the active branch.
+3. `docs/agent-status.md` — short append-only log of who-is-doing-what (see below).
+
+If those three disagree, the roadmap wins for intent and `git status` wins for in-flight reality.
+
+## Workstream Ownership (as of 2026-05-21)
+
+| Workstream | Owner | Current branch | Status |
+|---|---|---|---|
+| A: SPARK Capability Facades | done; no current owner | `main` | `[x]` |
+| B: Standard RuneScape Module Extraction | unassigned | — | `[ ]` |
+| C: Benchmark Harness — `combat-prayer-10m` | Codex | `nullcity` | `[>]` |
+| D: Dashboard Debugging | Dev | `codex/spark-module-dashboard` (dashboard repo) | `[>]` |
+| E: Knowledge & Agent Skill | done | `main` | `[x]` |
+| F: Human-Like Behavior | unassigned | — | `[~]` partial |
+| G: Real Gameplay Workflows | unassigned | — | `[ ]` |
+| H: Railgun & Operations | unassigned | — | `[~]` partial |
+| **I (proposed): Evidence Layer & Library of Souls** | **Claude** | TBD | `[~]` design ready |
+| **J (proposed): Patron / Human-Attention Loop** | unassigned | — | `[ ]` candidate |
+| **K (proposed): Factions Adapted For Runescape** | unassigned | — | `[ ]` candidate |
+| **L (proposed): Cross-Resident Memory & Lore** | unassigned | — | `[ ]` candidate |
+| **M (proposed): Hero Residents & Story Arcs** | unassigned | — | `[ ]` candidate |
+| **N (proposed): Physical Event & Embassy** | unassigned | — | `[ ]` candidate |
+| **O (proposed): Engineering & Tooling Polish** | unassigned | — | `[ ]` candidate |
+
+Workstreams I–O are proposed in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`. They do not exist in the roadmap file yet because Codex has uncommitted edits there; apply the delta after the Codex merge. Candidate idea provenance and "next step" hooks for J–O live in `docs/null-city-ideation-backlog.md`.
+
+## Conflict Avoidance Rules
+
+### Rule 1 — Check before opening
+
+Before editing a file, every agent does:
+
+```bash
+git status --short
+git log -n 10 --oneline
+```
+
+If a file appears as `M` or `??` in `git status --short`, another worker has it open. Do not touch.
+
+### Rule 2 — Update the marker before the code
+
+Before editing a file owned by a roadmap task, set the task marker to `[>]` in the roadmap. Other agents read the roadmap before starting work; the marker is the lock.
+
+After the work is done and verified, set the marker to `[x]` or `[!]` as appropriate.
+
+Exception: while Codex has the roadmap dirty, other agents propose roadmap changes via a delta file (e.g., `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`) instead of editing the roadmap directly.
+
+### Rule 3 — Branch hygiene
+
+- Each agent works on its own branch. Do not push directly to `main` or to another agent's branch.
+- Default branch names by owner:
+  - Claude: `claude/<topic>` (e.g., `claude/evidence-loop`)
+  - Codex: `codex/<topic>` or `nullcity` (existing naming)
+  - Dev: their existing convention in the dashboard repo
+- Rebase against `main`, not against another agent's in-flight branch.
+
+### Rule 4 — Cross-repo seams are contracts
+
+The dashboard repo reads from the server repo via:
+- HTTP/WS gateway protocol (`message-codecs.ts`)
+- File-system artifacts written by the server (e.g., benchmark artifacts, future `library/<resident>/portrait.json`)
+- Read-only memory dir contents
+
+These are versioned contracts. If the schema changes, the changing side updates the schema doc and bumps a version field; the consuming side reads the version before parsing.
+
+For Workstream I, the relevant contracts are:
+
+- `portrait.json` shape (read by dashboard's resident page)
+- `timeline.jsonl` line schema (read by dashboard's resident detail page)
+- `reward.json` shape (read by dashboard benchmark detail page)
+
+Each is documented in the spec at `docs/superpowers/specs/2026-05-21-spark-evidence-loop-design.md`. Bump the `schemaVersion` field in writes; readers honor it.
+
+### Rule 5 — Sync log
+
+`docs/agent-status.md` is an append-only short log. Add a line when you start meaningful work and when you finish. Format:
+
+```
+2026-05-21 18:14 claude branch=claude/evidence-loop  workstream=I  starting P1 ProgressTracker + EvidenceStore
+2026-05-21 22:02 claude branch=claude/evidence-loop  workstream=I  P1 merged at <sha>; tests green
+```
+
+One line, plain text, no editorializing. Other agents read the tail before starting work.
+
+### Rule 6 — No silent refactors of shared files
+
+If a refactor of a shared file is unavoidable, post intent to `docs/agent-status.md` first, wait for the other agent's next status line that doesn't conflict, then proceed.
+
+Shared files (high-collision risk, agree before touching):
+- `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`
+- `src/controller/spark/spark.ts`
+- `src/controller/resident-runtime.ts`
+- `src/controller/actions/action-coordinator.ts`
+- `src/server/agent/gateway.ts`
+
+These are not exclusive — they are flagged for explicit coordination, not for locking.
+
+### Rule 7 — Tests are the receiver
+
+Tests are the only reliable handoff. Before claiming a task done, every agent runs:
+
+```bash
+npm run typecheck
+npm run lint
+npm test -- --runInBand
+```
+
+And records the result in the roadmap task note. Another agent can re-run those locally and trust the green.
+
+## Specific Coordination For Workstream I (Evidence Layer)
+
+Until Codex's in-flight `combat-prayer-10m` work merges:
+
+- Claude does **not** edit:
+  - `src/controller/benchmarks/cli.ts`
+  - `src/controller/benchmarks/tasks/combat-prayer-10m.ts`
+  - `src/controller/thinking/hybrid-agent-thinking-module.ts`
+  - The roadmap file itself
+- Claude **does** edit:
+  - new files under `src/controller/evidence/`
+  - `src/controller/benchmarks/verifier-conventions.ts` (NEW file; does not conflict with cli.ts)
+  - new docs under `docs/`
+- Claude proposes:
+  - roadmap delta in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`, to be applied after Codex merges
+
+After Codex merges:
+
+- Claude pulls main, applies the roadmap delta, marks Workstream I tasks `[>]`, and proceeds with P1.
+
+## Coordination With Dev (Dashboard)
+
+Workstream I produces files Dev's dashboard will eventually read. Pre-commit to:
+
+- A stable `portrait.json` schema documented in the spec.
+- A stable `reward.json` schema documented in the spec.
+- Field additions only (never removals) without a version bump.
+- A short heads-up note in `docs/agent-status.md` whenever a contract field is added.
+
+Dev's `[D2]/[D3]` dashboard work can proceed independently — Workstream I lands the producer, Workstream D lands the consumer.
+
+## When Things Go Wrong
+
+- **Merge conflict in a coordination file (roadmap, agent-status):** preserve both edits, never overwrite; the merging agent posts a status line describing what was preserved.
+- **A schema breaks a downstream reader:** the writer rolls forward, not back; add a versioned field and a brief migration note. Downstream consumers detect the bump and adapt or fail loudly.
+- **An agent goes silent mid-`[>]`:** another agent may take the task only if `agent-status.md` shows no activity for >24h and the in-progress changes are either committed or trivially recoverable from a stash/branch.
+
+## Open Questions
+
+1. Should we adopt a longer sync log format (date + branch + commit sha)? Probably yes once we have more than 3 active agents; not yet.
+2. Should `agent-status.md` be auto-generated from git log? Maybe; for now manual entries are fine because they describe intent, not just history.
+3. Should we have a dedicated coordination channel outside the repo (Slack, Discord)? Out of scope here; repo-grounded only.
