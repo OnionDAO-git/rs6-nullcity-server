@@ -143,7 +143,6 @@ describe('ResidentRegistry', () => {
         expect(existsSync(join(saveDir, 'res:gone_extra.json'))).toBe(true);
     });
 
-
     it('prunes inactive residents before reporting online or controller state', () => {
         const registry = new ResidentRegistry(saveDir, playerSaveDir);
         const internals = registry as unknown as {

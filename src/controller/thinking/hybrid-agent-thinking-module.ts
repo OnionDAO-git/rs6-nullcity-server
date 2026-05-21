@@ -104,6 +104,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     async think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         this.advanceTick(perception);
         this.ensureCognition();
+        this.ensureBenchmarkGoal();
 
         const directChat = this.directChatAction(perception as HybridPerception);
         if (directChat) {
@@ -536,6 +537,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     ): { action: AgentAction; cause: string } | undefined {
         const action = actions[0];
         if (action?.kind === 'move_to' && typeof action.range === 'number') {
+            return undefined;
+        }
+        if (action?.kind === 'interact' && action.cause === 'starter_fishing_net') {
             return undefined;
         }
         const here = perception.resident?.position;
@@ -1192,6 +1196,20 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         this.options.state.cognition ||= {};
     }
 
+    private ensureBenchmarkGoal(): void {
+        const goal = benchmarkGoalForTask(this.options.soul.frontmatter.legacy?.parameters?.benchmarkTask, this.options.state.tick);
+        if (!goal) {
+            return;
+        }
+
+        const cognition = this.cognition();
+        if (!cognition.activeGoal || cognition.activeGoal.id !== goal.id || this.goalExpired(cognition.activeGoal)) {
+            this.clearGoalMomentum();
+            cognition.activeGoal = goal;
+        }
+        cognition.lastBrainTick = this.options.state.tick;
+    }
+
     private cognition() {
         this.ensureCognition();
         return this.options.state.cognition!;
@@ -1321,6 +1339,13 @@ function combatGoal(tick: number): ActiveGoalState {
     };
 }
 
+function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | undefined {
+    if (taskId === 'starter-fishing-5m') {
+        return starterFishingGoal(tick);
+    }
+    return undefined;
+}
+
 function explorationGoal(tick: number): ActiveGoalState {
     return {
         id: 'scout-nearby-area',
@@ -1366,10 +1391,6 @@ function starterFishingAction(perception: HybridPerception): AgentAction | undef
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (!target) {
         return undefined;
-    }
-
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'starter_fishing_approach' };
     }
 
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };

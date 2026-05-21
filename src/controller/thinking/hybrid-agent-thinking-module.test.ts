@@ -2343,7 +2343,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('keeps starter fishing goals focused on a visible fishing spot when Body inference noops', async () => {
+    it('uses net on a visible starter fishing spot so the interaction task can path', async () => {
         const fishingSpot = npc('Fishing spot', 3224, 3201);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
@@ -2370,8 +2370,41 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
-        expect(result.cause).toBe('starter_fishing_approach');
+        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
+        expect(result.cause).toBe('starter_fishing_net');
+    });
+
+    it('seeds starter fishing as the active benchmark goal without initial Brain drift', async () => {
+        const fishingSpot = npc('Fishing spot', 3239, 3244);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3237, 3244),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
+        expect(result.cause).toBe('starter_fishing_net');
+        expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
     });
 
     it('beacons its active goal periodically before Body inference', async () => {
@@ -2503,9 +2536,9 @@ describe('HybridAgentThinkingModule', () => {
     });
 });
 
-function hybridAgent(llm: MockLlm, state = runtimeState()): HybridAgentThinkingModule {
+function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul()): HybridAgentThinkingModule {
     return new HybridAgentThinkingModule({
-        soul: soul(),
+        soul: agentSoul,
         state,
         memory: memory(),
         llm: llm as unknown as LlmClient,
