@@ -44,13 +44,13 @@ All routine work targets `nullcity` directly (see Rule 3). Workstream owners com
 | F: Human-Like Behavior | unassigned | `[~]` partial |
 | G: Real Gameplay Workflows | unassigned | `[ ]` |
 | H: Railgun & Operations | unassigned | `[~]` partial |
-| **I (proposed): Evidence Layer & Library of Souls** | **Claude** | `[~]` design ready |
-| **J (proposed): Patron / Human-Attention Loop** | unassigned | `[ ]` candidate |
-| **K (proposed): Factions Adapted For Runescape** | unassigned | `[ ]` candidate |
-| **L (proposed): Cross-Resident Memory & Lore** | unassigned | `[ ]` candidate |
-| **M (proposed): Hero Residents & Story Arcs** | unassigned | `[ ]` candidate |
-| **N (proposed): Physical Event & Embassy** | unassigned | `[ ]` candidate |
-| **O (proposed): Engineering & Tooling Polish** | unassigned | `[ ]` candidate |
+| **I: Evidence Layer & Library of Souls** | merged | `[x]` mostly done — see roadmap |
+| **J: Patron / Human-Attention Loop** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-patron-loop-design.md` |
+| **K: Factions Adapted For Runescape** | unassigned | `[!]` spec exists, blocked on maintainer creative input |
+| **L: Cross-Resident Memory & Lore** | unassigned | `[ ]` no spec yet — deferred |
+| **M: Hero Residents & Story Arcs** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-hero-residents-design.md` |
+| **N: Physical Event & Embassy** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-embassy-and-event-design.md` |
+| **O: Engineering & Tooling Polish** | unassigned | `[ ]` no spec needed — independently scoped tasks |
 
 Workstreams I–O are proposed in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`. They do not exist in the roadmap file yet because Codex has uncommitted edits there; apply the delta after the Codex merge. Candidate idea provenance and "next step" hooks for J–O live in `docs/null-city-ideation-backlog.md`.
 
