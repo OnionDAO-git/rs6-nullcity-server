@@ -9,7 +9,9 @@
 
 ## TL;DR
 
-**Plan P1 is complete. All 12 planned tasks landed plus a bonus runtime-wiring task. `npm test`: 100 suites / 542 tests pass. Build + lint + typecheck green. Ready to merge to `nullcity` via fast-forward.**
+**Plan P1 is complete + 6 review fixes applied. All 12 planned tasks landed plus runtime-wiring + parts of P2 (Library of Souls last-words/relationships/wants) + early P3 (verifier conventions) + a benchmark gameplay slice (fishing-cooking). `npm test`: 105 suites / 593 tests pass + 1 todo. Build + lint + typecheck green. Ready to merge to `nullcity` via fast-forward.**
+
+**Update (post-review):** Tip is now [`57274b68`](https://github.com/OnionDAO-git/rs6-nullcity-server/commit/57274b68) `Apply review fixes`. A post-merge expert subagent review found 3 must-fix items (ActionCoordinator callbacks not wrapped in try/catch; EvidenceStore.beginSession failure killed resident startup; 6 of 8 spec-required exit-reason tests missing) and 3 should-fix items (moduleId/moduleVersion missing on decision lines; dead `appendLegacyEvent` code; recordLegacy nesting convention undocumented). All 6 are addressed. 5 new exit-reason tests landed; the 6th (`plan_continuation`) is `it.todo` with explicit reason. Verification re-run: typecheck + lint + build + 593 tests all green.
 
 Two agents collaborated overnight: Codex implemented the bulk of the code in tight TDD cycles, Claude (me) wrote the reference plan, added two test files (module-context facade + InferenceLog passthrough), and managed coordination. No collisions, no rebase conflicts.
 

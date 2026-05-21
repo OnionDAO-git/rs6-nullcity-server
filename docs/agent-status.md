@@ -29,6 +29,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  added deterministic Library portrait generation and wired live/benchmark runtimes to write timeline, portrait.json, and portrait.md from resident speech/progress. Full test/typecheck/lint/build passed.
 2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  added Library artifact retention for autonomous benchmarks so timeline/portrait files are recorded and copied into benchmark evidence output. Full test/typecheck/lint/build passed.
 2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  tagged final speech before Library legacy events as lastWords in timeline.jsonl so dashboards can show last words without recomputing portrait context. Full test/typecheck/lint/build passed.
+2026-05-21 morning   claude  branch=claude/evidence-loop-p1    workstream=I  applied 6 post-merge expert-review fixes (commit 57274b68): ActionCoordinator callback try/catch (must-fix), controller-host tryCreateRuntimeEvidence graceful degradation (must-fix), 5 new spark.tick exit-reason tests (must-fix; plan_continuation is it.todo), moduleId/moduleVersion threaded onto decision lines (should-fix), dead appendLegacyEvent removed (should-fix), recordLegacy nesting convention documented (should-fix). 105 suites/593 tests + 1 todo green; lint/typecheck/build clean. Brief updated. Ready for maintainer merge.
 ```
 
 ## Conventions
