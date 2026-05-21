@@ -314,6 +314,9 @@ function eventSummary(event: Record<string, unknown>): string {
     if (event.kind === 'near_death_survival') {
         return `Survived danger at tick ${numberField(event, 'tick')}`;
     }
+    if (event.kind === 'wants_unfulfilled') {
+        return `Still wanted "${stringField(event, 'want') || ''}"`;
+    }
     if (event.kind === 'say') {
         return `Said "${stringField(event, 'text') || ''}"`;
     }

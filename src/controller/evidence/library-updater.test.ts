@@ -68,8 +68,38 @@ describe('LibraryUpdater', () => {
         expect(readTimeline(root)).toEqual([
             expect.objectContaining({ kind: 'say', text: 'I want one more log.', lastWords: false }),
             expect.objectContaining({ kind: 'say', text: 'Remember the fire.', lastWords: true }),
+            expect.objectContaining({ kind: 'wants_unfulfilled', want: 'I want one more log.', wantedAtTick: 2 }),
             expect.objectContaining({ kind: 'legacy_event' }),
         ]);
+    });
+
+    it('records unfulfilled wants before closing a life', async () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeTrajectory(trajectory({ kind: 'say', tick: 2, text: 'I want to cook shrimp.' }));
+        updater.observeTrajectory(trajectory({ kind: 'say', tick: 4, text: 'I need a safe fire.' }));
+        updater.observeTrajectory(trajectory({ kind: 'legacy_event', tick: 5, event: { cause: 'death' } }));
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({ kind: 'say', text: 'I want to cook shrimp.' }),
+            expect.objectContaining({ kind: 'say', text: 'I need a safe fire.', lastWords: true }),
+            expect.objectContaining({
+                kind: 'wants_unfulfilled',
+                want: 'I want to cook shrimp.',
+                wantedAtTick: 2,
+                lifeIndex: 1,
+            }),
+            expect.objectContaining({
+                kind: 'wants_unfulfilled',
+                want: 'I need a safe fire.',
+                wantedAtTick: 4,
+                lifeIndex: 1,
+            }),
+            expect.objectContaining({ kind: 'legacy_event' }),
+        ]);
+
+        await updater.regeneratePortrait();
+        expect(fs.readFileSync(path.join(libraryDir(root), 'portrait.md'), 'utf8')).toContain('Still wanted "I want to cook shrimp."');
     });
 
     it('records peer relationships in the timeline and portrait', async () => {

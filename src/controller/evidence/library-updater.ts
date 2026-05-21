@@ -56,6 +56,7 @@ export class LibraryUpdater {
         const index = this.readIndex();
         if (line.kind === 'legacy_event') {
             this.markLastWords(index.lives, line.tick);
+            this.appendUnfulfilledWants(index.lives, line);
         }
         this.appendTimeline({ ...result.timelineEvent, lifeIndex: index.lives, significanceReasons: result.reasons });
         if (line.kind === 'legacy_event') {
@@ -153,6 +154,33 @@ export class LibraryUpdater {
         }
         timeline[lastSayIndex] = { ...timeline[lastSayIndex], lastWords: true };
         this.writeTimeline(timeline);
+    }
+
+    private appendUnfulfilledWants(lifeIndex: number, line: TrajectoryLine): void {
+        const timeline = this.readTimeline();
+        const existing = new Set(
+            timeline
+                .filter(event => event.kind === 'wants_unfulfilled' && numberField(event, 'lifeIndex', 1) === lifeIndex)
+                .map(event => `${stringField(event, 'want') || ''}:${numberField(event, 'wantedAtTick')}`),
+        );
+        const wants = uniqueWantEvents(timeline, lifeIndex, line.tick);
+        for (const want of wants) {
+            const key = `${want.text}:${want.tick}`;
+            if (existing.has(key)) {
+                continue;
+            }
+            this.appendTimeline({
+                schemaVersion: line.schemaVersion,
+                ts: line.ts,
+                tick: line.tick,
+                sessionId: line.sessionId,
+                kind: 'wants_unfulfilled',
+                want: want.text,
+                wantedAtTick: want.tick,
+                lifeIndex,
+                significanceReasons: ['want:unfulfilled'],
+            });
+        }
     }
 
     private hydratePeerContext(): void {
@@ -288,6 +316,31 @@ function dangerousHpLoss(reasons: string[]): boolean {
         const match = /^hp:-(\d+(?:\.\d+)?)$/.exec(reason);
         return match ? Number(match[1]) >= 3 : false;
     });
+}
+
+function uniqueWantEvents(
+    timeline: Array<Record<string, unknown>>,
+    lifeIndex: number,
+    tick: number,
+): Array<{ text: string; tick: number }> {
+    const seen = new Set<string>();
+    const wants: Array<{ text: string; tick: number }> = [];
+    for (const event of timeline) {
+        if (event.kind !== 'say' || numberField(event, 'lifeIndex', 1) !== lifeIndex || numberField(event, 'tick') > tick) {
+            continue;
+        }
+        const text = stringField(event, 'text');
+        if (!text || !isWantText(text) || seen.has(text)) {
+            continue;
+        }
+        seen.add(text);
+        wants.push({ text, tick: numberField(event, 'tick') });
+    }
+    return wants;
+}
+
+function isWantText(text: string): boolean {
+    return /\b(want|need|hope|wish|would like)\b/i.test(text);
 }
 
 function pruneUndefined(record: Record<string, unknown>): Record<string, unknown> {

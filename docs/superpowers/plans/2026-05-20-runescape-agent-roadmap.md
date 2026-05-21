@@ -330,6 +330,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: dangerous HP losses now arm a survival milestone, later HP recovery appends a `near_death_survival` timeline event, and portraits summarize the life as "The survivor" with a notable event. Focused evidence tests, typecheck, lint, build, and full Jest suite passed.
 
+- `[x]` **I3: Record unfulfilled wants at life end.**
+  - Files: `src/controller/evidence/library-updater.ts`, `src/controller/evidence/portrait-template.ts`
+  - Deliverable: resident wants spoken during a life become explicit `wants_unfulfilled` timeline events when that life ends.
+  - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: legacy events now append deduped `wants_unfulfilled` records for spoken wants in that life before closing the life, and portraits summarize them as "Still wanted ...". Focused evidence tests, typecheck, lint, build, full Jest suite, and `git diff --check` passed.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
