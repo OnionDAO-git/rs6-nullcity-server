@@ -3,6 +3,7 @@ import { ActionCoordinator } from './actions/action-coordinator';
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
+import type { EvidenceStore, TrajectoryBuilder } from './evidence';
 import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
@@ -47,6 +48,13 @@ export interface ResidentRuntimeOptions {
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
     sparkModules?: SparkModule[];
+    evidence?: ResidentRuntimeEvidence;
+}
+
+export interface ResidentRuntimeEvidence {
+    store: EvidenceStore;
+    sessionId: string;
+    trajectory: TrajectoryBuilder;
 }
 
 export class ResidentRuntime {
@@ -63,10 +71,12 @@ export class ResidentRuntime {
     private readonly memoryRouter = new MemoryRouter();
     private readonly compressor = new PerceptionCompressor();
     private readonly pendingEvents: PerceptionEvent[] = [];
+    private readonly evidence?: ResidentRuntimeEvidence;
     private deciding = false;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
+        this.evidence = options.evidence;
         this.state = options.stateStore.load(
             this.name,
             initialAttention(options.soul.frontmatter.attentionProfile),
@@ -102,6 +112,10 @@ export class ResidentRuntime {
     }
 
     async onPerception(perception: Perception): Promise<void> {
+        return this.withEvidenceTick(perception, () => this.handlePerception(perception));
+    }
+
+    private async handlePerception(perception: Perception): Promise<void> {
         this.history.push(perception);
         this.body.observePerception(perception);
         const reaction = this.nervousSystem.react(perception);
@@ -120,6 +134,7 @@ export class ResidentRuntime {
                     sparkModule: reaction.sparkModule,
                 },
                 waitForEffect: this.effectWaitFor(reaction.action),
+                ...this.evidenceCallbacks(),
             });
             this.observeGameSkillAttempt('nervous-system', perception, undefined, attempt);
             this.options.stateStore.save(this.state);
@@ -153,6 +168,13 @@ export class ResidentRuntime {
         this.deciding = true;
         try {
             const result = await this.thinking.think(compressedPerception, gameSkillContext);
+            this.recordEvidence(trajectory =>
+                trajectory.recordDecision({
+                    cause: result.cause,
+                    promptTokens: result.envelopeTokens,
+                    actionKinds: result.actions.map(action => action.kind),
+                }),
+            );
             for (const event of result.syntheticEvents || []) {
                 this.history.push(event);
             }
@@ -178,6 +200,7 @@ export class ResidentRuntime {
                         sparkModule: this.thinkingSparkModule,
                     },
                     waitForEffect: this.effectWaitFor(action),
+                    ...this.evidenceCallbacks(),
                 });
                 this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
             }
@@ -208,6 +231,54 @@ export class ResidentRuntime {
         const pending = this.pendingEvents.splice(0);
         const events = Array.isArray(perception.events) ? (perception.events as PerceptionEvent[]) : [];
         return { ...perception, events: [...events, ...pending] };
+    }
+
+    private async withEvidenceTick(perception: Perception, run: () => Promise<void>): Promise<void> {
+        const tick = typeof perception.tick === 'number' ? perception.tick : this.state.tick;
+        const began = this.recordEvidence(trajectory => trajectory.beginTick(tick, perception));
+        try {
+            await run();
+        } finally {
+            if (began) {
+                this.recordEvidence(trajectory => trajectory.endTick('tick_complete'));
+            }
+        }
+    }
+
+    private evidenceCallbacks(): ResidentRuntimeActionCallbacks {
+        return {
+            onAckReady: attempt => {
+                const requestId = attempt.requestId || attempt.attemptId;
+                this.recordEvidence(trajectory => trajectory.recordAction(attempt.action, requestId));
+            },
+            onEffectResolved: attempt => {
+                const requestId = attempt.requestId || attempt.attemptId;
+                this.recordEvidence(trajectory =>
+                    trajectory.recordActionResult(requestId, {
+                        status: attempt.finalStatus,
+                        reason: attempt.finalReason || stringReason(attempt.ackResult?.reason),
+                        evidence: attempt.evidence,
+                    }),
+                );
+            },
+        };
+    }
+
+    private recordEvidence(write: (trajectory: TrajectoryBuilder) => void): boolean {
+        if (!this.evidence) {
+            return false;
+        }
+        try {
+            write(this.evidence.trajectory);
+            return true;
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'evidence_record_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+            return false;
+        }
     }
 
     private observeGameSkillAttempt(
@@ -290,6 +361,7 @@ export class ResidentRuntime {
 
     stop(cause = 'runtime_stopped'): void {
         this.thinking.stop(cause);
+        this.recordEvidence(() => this.evidence?.store.endSession(this.evidence.sessionId, 'shutdown'));
         const sourceModules = new Set(
             [this.thinkingSourceModule, this.nervousSourceModule].filter((module): module is SparkModule => Boolean(module)),
         );
@@ -298,6 +370,11 @@ export class ResidentRuntime {
         }
         this.options.stateStore.save(this.state);
     }
+}
+
+interface ResidentRuntimeActionCallbacks {
+    onAckReady?: (attempt: ActionAttempt) => void;
+    onEffectResolved?: (attempt: ActionAttempt) => void;
 }
 
 interface Position {
@@ -369,6 +446,10 @@ function supportsPerceptionEffectWait(body: ResidentBody): boolean {
         typeof body.getLatestPerceptionSeq === 'function' &&
         typeof body.waitForPerception === 'function'
     );
+}
+
+function stringReason(reason: unknown): string | undefined {
+    return typeof reason === 'string' ? reason : undefined;
 }
 
 function actionEffectObserved(action: AgentAction, before: Perception | undefined, after: Perception): boolean {

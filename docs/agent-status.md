@@ -17,6 +17,8 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-21 night     claude  branch=claude/evidence-loop-p1    workstream=I  cycle 2: added Task 7 (InferenceLog promptHash passthrough test, 4 tests, 100% coverage on inference-log.ts) and Task 9 (module-context facade test, 2 tests verifying lastMeaningfulProgressAt + stuckSince propagate through snapshot). typecheck green. Remaining: Task 10 (spark.tick scope-guard wiring — biggest), Task 11 (integration test), Task 12 (verify + morning brief).
 2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added opt-in spark.tick Evidence Layer wiring for begin/hook/budget/decision/action/end_tick records. Focused P1 tests plus typecheck/lint/build passed.
 2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added Evidence Layer integration test proving MockPerceptionAdapter + TrajectoryBuilder + ProgressTracker write trajectory/progress JSONL together. Focused P1 tests plus typecheck/lint/build passed.
+2026-05-21 early     codex   branch=claude/evidence-loop-p1    workstream=I  wired live ResidentRuntime + ControllerHost evidence sessions for decision/action/action_result tick records. Focused runtime/host/evidence tests plus typecheck/lint passed.
+2026-05-21 early     codex   branch=claude/evidence-loop-p1    workstream=I  verification pass after runtime evidence wiring: full Jest suite (100 suites/542 tests) and build passed.
 ```
 
 ## Conventions

@@ -154,6 +154,26 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('opens a runtime evidence session for created residents', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: { evidence?: { sessionId: string; store: { currentSession: () => unknown }; trajectory: unknown } }) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory });
+
+        await host.start();
+
+        const evidence = runtimeFactory.mock.calls[0]?.[0].evidence;
+        expect(evidence?.sessionId).toContain('test-instance');
+        expect(evidence?.sessionId).toContain('res-pip');
+        expect(evidence?.store.currentSession()).toEqual(expect.objectContaining({ sessionId: evidence?.sessionId }));
+        expect(evidence?.trajectory).toBeDefined();
+
+        await host.stop();
+    });
+
     it('uses the built-in standard SPARK module registry by default', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();

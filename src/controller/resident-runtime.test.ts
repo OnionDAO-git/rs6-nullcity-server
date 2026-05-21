@@ -4,6 +4,7 @@ import path from 'path';
 import type { ResidentBody } from './body';
 import { ResidentBody as ConcreteResidentBody } from './body';
 import type { BodyGateway } from './body';
+import { EvidenceStore, TrajectoryBuilder } from './evidence';
 import type { LlmClient } from './llm/llm-client';
 import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
@@ -17,6 +18,51 @@ import type { ThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 
 describe('ResidentRuntime modules', () => {
+    it('writes runtime evidence around decisions and action results', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-evidence-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-21T08:45:00.000Z') });
+        const session = store.beginSession('session-a', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-21T08:45:01.000Z') }),
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [{ kind: 'noop', cause: 'module-test' }], cause: 'module-test', nooped: false })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-1' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        await runtime.onPerception({ tick: 7, events: [] });
+
+        expect(readJsonl(session.trajectoryPath)).toEqual([
+            expect.objectContaining({ kind: 'begin_tick', tick: 7 }),
+            expect.objectContaining({ kind: 'decision', tick: 7, cause: 'module-test', actionKinds: ['noop'] }),
+            expect.objectContaining({ kind: 'action', tick: 7, requestId: 'request-1', actionKind: 'noop' }),
+            expect.objectContaining({ kind: 'action_result', tick: 7, requestId: 'request-1', status: 'success' }),
+            expect.objectContaining({ kind: 'end_tick', tick: 7, reason: 'tick_complete' }),
+        ]);
+    });
+
     it('uses a selected SPARK module for thinking and logs module identity', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-spark-module-test-'));
         const state = stateFor('res:pip');
@@ -833,4 +879,13 @@ function gameSkillContext() {
         brainSection: 'Brain game skill section',
         bodySection: 'Body game skill section',
     };
+}
+
+function readJsonl(filePath: string): Array<Record<string, unknown>> {
+    return fs
+        .readFileSync(filePath, 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map(line => JSON.parse(line));
 }
