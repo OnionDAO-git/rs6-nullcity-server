@@ -3,7 +3,7 @@ import { ActionCoordinator } from './actions/action-coordinator';
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
-import type { EvidenceStore, TrajectoryBuilder } from './evidence';
+import { EVIDENCE_SCHEMA_VERSION, ProgressTracker, type EvidenceStore, type ProgressSnapshot, type TrajectoryBuilder } from './evidence';
 import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
@@ -72,6 +72,7 @@ export class ResidentRuntime {
     private readonly compressor = new PerceptionCompressor();
     private readonly pendingEvents: PerceptionEvent[] = [];
     private readonly evidence?: ResidentRuntimeEvidence;
+    private readonly progressTracker = new ProgressTracker();
     private deciding = false;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
@@ -236,6 +237,7 @@ export class ResidentRuntime {
     private async withEvidenceTick(perception: Perception, run: () => Promise<void>): Promise<void> {
         const tick = typeof perception.tick === 'number' ? perception.tick : this.state.tick;
         const began = this.recordEvidence(trajectory => trajectory.beginTick(tick, perception));
+        this.observeRuntimeProgress(tick, perception);
         try {
             await run();
         } finally {
@@ -262,6 +264,47 @@ export class ResidentRuntime {
                 );
             },
         };
+    }
+
+    private observeRuntimeProgress(tick: number, perception: Perception): void {
+        const delta = this.progressTracker.observe(progressSnapshotFromPerception(tick, perception));
+        if (delta.meaningful) {
+            this.state.lastMeaningfulProgressAt = tick;
+            this.state.stuckSince = undefined;
+        } else if (delta.stuckSince !== null) {
+            this.state.stuckSince = delta.stuckSince;
+        } else {
+            this.state.stuckSince = undefined;
+        }
+
+        this.recordProgressEvidence(tick, delta);
+    }
+
+    private recordProgressEvidence(
+        tick: number,
+        delta: { meaningful: boolean; reasons: string[]; stuckSince: number | null },
+    ): void {
+        if (!this.evidence) {
+            return;
+        }
+        try {
+            this.evidence.store.appendProgress({
+                schemaVersion: EVIDENCE_SCHEMA_VERSION,
+                ts: new Date().toISOString(),
+                tick,
+                sessionId: this.evidence.sessionId,
+                kind: 'progress',
+                meaningful: delta.meaningful,
+                reasons: delta.reasons,
+                stuckSince: delta.stuckSince,
+            });
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'evidence_progress_record_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 
     private recordEvidence(write: (trajectory: TrajectoryBuilder) => void): boolean {
@@ -434,6 +477,57 @@ function positionMatches(position: Position | undefined, target: Position, range
 function isPosition(value: unknown): value is Position {
     const recordValue = record(value);
     return typeof recordValue.x === 'number' && typeof recordValue.y === 'number';
+}
+
+function progressSnapshotFromPerception(tick: number, perception: Perception): ProgressSnapshot {
+    const root = record(perception);
+    const resident = record(root.resident);
+    return {
+        tick,
+        xpBySkill: xpBySkill(resident.skills),
+        inventoryCount: inventoryCount(resident.inventory),
+        positionHash: positionHash(resident.position),
+        hp: currentHp(resident),
+    };
+}
+
+function xpBySkill(value: unknown): Record<string, number> {
+    return Object.fromEntries(
+        Object.entries(record(value)).map(([skill, skillValue]) => {
+            if (typeof skillValue === 'number') {
+                return [skill, skillValue];
+            }
+            const skillRecord = record(skillValue);
+            return [skill, numberField(skillRecord.xp) ?? numberField(skillRecord.experience) ?? 0];
+        }),
+    );
+}
+
+function inventoryCount(value: unknown): number {
+    if (!Array.isArray(value)) {
+        return 0;
+    }
+    return value.filter(item => Object.keys(record(item)).length > 0).length;
+}
+
+function positionHash(value: unknown): string {
+    const position = record(value);
+    const x = numberField(position.x);
+    const y = numberField(position.y);
+    if (x === undefined || y === undefined) {
+        return 'unknown';
+    }
+    return `${x},${y},${numberField(position.level) ?? 0}`;
+}
+
+function currentHp(resident: Record<string, unknown>): number {
+    const hp = record(resident.hp);
+    const hitpoints = record(resident.hitpoints);
+    return numberField(hp.current) ?? numberField(hitpoints.current) ?? numberField(resident.hp) ?? 0;
+}
+
+function numberField(value: unknown): number | undefined {
+    return typeof value === 'number' ? value : undefined;
 }
 
 function waitsForPerceptionEffect(kind: string): boolean {
