@@ -308,6 +308,16 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: PR checklist includes roadmap update.
   - Verified 2026-05-21 in this pass: this roadmap now includes an agent update protocol, verification commands, and a PR checklist requiring roadmap status plus benchmark/test evidence for behavior changes.
 
+## Workstream I: Library Of Souls Evidence
+
+**Purpose:** Turn resident actions, relationships, death, and recovery into durable story artifacts that humans and future agents can inspect without reading raw JSONL logs.
+
+- `[x]` **I1: Record relationship milestones.**
+  - Files: `src/controller/evidence/significance.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/evidence/portrait-template.ts`
+  - Deliverable: first peer encounters and repeated interactions become timeline events and portrait relationships.
+  - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: first peer encounters and repeated interactions now append Library timeline events, hydrate restart-safe relationship counters, and render portrait "Who they knew" entries. Focused evidence tests, typecheck, lint, build, and full Jest suite passed.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.

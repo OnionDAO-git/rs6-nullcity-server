@@ -51,6 +51,43 @@ describe('evidence significance predicates', () => {
         );
     });
 
+    it('promotes first peer encounters and repeated peer interactions', () => {
+        const target = {
+            id: 'resident:res:codex',
+            kind: 'resident',
+            name: 'Codex',
+            position: { x: 3228, y: 3230, level: 0 },
+        };
+        const line = trajectory({ kind: 'action', actionKind: 'trade_request', action: { kind: 'trade_request', target } });
+
+        expect(classifyTrajectoryLine(line, { seenPeers: new Set() })).toEqual(
+            expect.objectContaining({
+                lane: 'story',
+                storyKind: 'first_peer_encounter',
+                timelineEvent: expect.objectContaining({
+                    kind: 'first_peer_encounter',
+                    peer: 'Codex',
+                    peerId: 'resident:res:codex',
+                    actionKind: 'trade_request',
+                }),
+            }),
+        );
+        expect(
+            classifyTrajectoryLine(line, { seenPeers: new Set(['resident:res:codex']), peerInteractionCounts: new Map([[target.id, 2]]) }),
+        ).toEqual(
+            expect.objectContaining({
+                lane: 'story',
+                storyKind: 'relationship_repeated',
+                timelineEvent: expect.objectContaining({
+                    kind: 'relationship_repeated',
+                    peer: 'Codex',
+                    peerId: 'resident:res:codex',
+                    interactions: 3,
+                }),
+            }),
+        );
+    });
+
     it('promotes first XP gains and stuck recovery from progress lines', () => {
         const firstXp = progress({ meaningful: true, reasons: ['xp_gain:woodcutting:25'] });
         const recovered = progress({ meaningful: true, reasons: ['inventory:+1'] });

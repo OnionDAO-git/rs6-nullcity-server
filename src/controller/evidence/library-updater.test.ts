@@ -72,6 +72,74 @@ describe('LibraryUpdater', () => {
         ]);
     });
 
+    it('records peer relationships in the timeline and portrait', async () => {
+        const { updater, root } = testUpdater();
+        const target = {
+            id: 'resident:res:codex',
+            kind: 'resident',
+            name: 'Codex',
+            position: { x: 3228, y: 3230, level: 0 },
+        };
+
+        updater.observeTrajectory(
+            trajectory({ kind: 'action', tick: 2, actionKind: 'trade_request', action: { kind: 'trade_request', target } }),
+        );
+        updater.observeTrajectory(
+            trajectory({ kind: 'action', tick: 4, actionKind: 'trade_request', action: { kind: 'trade_request', target } }),
+        );
+        updater.observeTrajectory(
+            trajectory({ kind: 'action', tick: 6, actionKind: 'trade_request', action: { kind: 'trade_request', target } }),
+        );
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({ kind: 'first_peer_encounter', peer: 'Codex', peerId: 'resident:res:codex', interactions: 1 }),
+            expect.objectContaining({ kind: 'relationship_repeated', peer: 'Codex', peerId: 'resident:res:codex', interactions: 3 }),
+        ]);
+
+        await updater.regeneratePortrait();
+
+        const portrait = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'portrait.json'), 'utf8'));
+        expect(portrait.relationships).toEqual([
+            expect.objectContaining({
+                peer: 'Codex',
+                firstMet: { tick: 2 },
+                interactions: 3,
+                lastInteraction: { tick: 6, partingBeforeDeath: false },
+            }),
+        ]);
+
+        const markdown = fs.readFileSync(path.join(libraryDir(root), 'portrait.md'), 'utf8');
+        expect(markdown).toContain('## Who they knew');
+        expect(markdown).toContain('- Codex (3 interactions)');
+    });
+
+    it('keeps peer interaction counts across library updater restarts', () => {
+        const { updater, root } = testUpdater();
+        const target = {
+            id: 'resident:res:codex',
+            kind: 'resident',
+            name: 'Codex',
+            position: { x: 3228, y: 3230, level: 0 },
+        };
+
+        updater.observeTrajectory(
+            trajectory({ kind: 'action', tick: 2, actionKind: 'trade_request', action: { kind: 'trade_request', target } }),
+        );
+        updater.observeTrajectory(
+            trajectory({ kind: 'action', tick: 4, actionKind: 'trade_request', action: { kind: 'trade_request', target } }),
+        );
+
+        const restarted = new LibraryUpdater('res:agent', root);
+        restarted.observeTrajectory(
+            trajectory({ kind: 'action', tick: 6, actionKind: 'trade_request', action: { kind: 'trade_request', target } }),
+        );
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({ kind: 'first_peer_encounter', interactions: 1 }),
+            expect.objectContaining({ kind: 'relationship_repeated', interactions: 3 }),
+        ]);
+    });
+
     it('regenerates portrait.md and portrait.json from the resident timeline', async () => {
         const { updater, root } = testUpdater();
 

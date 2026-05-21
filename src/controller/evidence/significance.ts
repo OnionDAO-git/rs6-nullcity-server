@@ -32,10 +32,22 @@ export interface ProgressSignificanceContext {
     previousStuckSince?: number | null;
 }
 
+export interface TrajectorySignificanceContext {
+    seenPeers?: ReadonlySet<string>;
+    peerInteractionCounts?: ReadonlyMap<string, number>;
+}
+
+export interface PeerInteraction {
+    id: string;
+    peer: string;
+    kind?: string;
+    actionKind: string;
+}
+
 const DIAGNOSTIC_TRAJECTORY_KINDS = new Set<TrajectoryLine['kind']>(['hook', 'budget', 'plan', 'error']);
 const PATRON_KINDS = new Set<StoryEventKind>(['patron_gift', 'patron_witness', 'patron_sponsor']);
 
-export function classifyTrajectoryLine(line: TrajectoryLine): SignificanceResult {
+export function classifyTrajectoryLine(line: TrajectoryLine, context: TrajectorySignificanceContext = {}): SignificanceResult {
     if (line.kind === 'say') {
         return story('say', ['voice:say'], {
             ...timelineBase(line),
@@ -61,6 +73,12 @@ export function classifyTrajectoryLine(line: TrajectoryLine): SignificanceResult
                 artifact: stringField(line, 'artifact'),
                 note: stringField(line, 'note'),
             });
+        }
+    }
+    if (line.kind === 'action') {
+        const peerInteraction = peerInteractionFromTrajectoryLine(line);
+        if (peerInteraction) {
+            return peerRelationshipStory(line, peerInteraction, context);
         }
     }
     if (DIAGNOSTIC_TRAJECTORY_KINDS.has(line.kind)) {
@@ -116,6 +134,47 @@ export function isStoryProgressLine(line: ProgressLine, context: ProgressSignifi
     return classifyProgressLine(line, context).lane === 'story';
 }
 
+export function peerInteractionFromTrajectoryLine(line: TrajectoryLine): PeerInteraction | undefined {
+    if (line.kind !== 'action') {
+        return undefined;
+    }
+
+    const action = recordField(line, 'action');
+    const actionKind = stringField(line, 'actionKind') || stringField(action, 'kind');
+    if (!actionKind) {
+        return undefined;
+    }
+
+    if (actionKind === 'whisper') {
+        const to = stringField(action, 'to');
+        return to ? { id: to, peer: to, actionKind } : undefined;
+    }
+
+    const target = recordField(action, 'target') || recordField(line, 'target');
+    if (!target) {
+        const peerId = stringField(line, 'peerId') || stringField(line, 'targetResident') || stringField(action, 'targetResident');
+        const peer = stringField(line, 'peer') || stringField(action, 'peer') || peerId;
+        return peerId && peer ? { id: peerId, peer, actionKind } : undefined;
+    }
+
+    const kind = stringField(target, 'kind');
+    if (kind !== 'player' && kind !== 'resident') {
+        return undefined;
+    }
+
+    const id = stringField(target, 'id');
+    if (!id) {
+        return undefined;
+    }
+
+    return {
+        id,
+        peer: stringField(target, 'name') || stringField(target, 'key') || id,
+        kind,
+        actionKind,
+    };
+}
+
 function story(storyKind: StoryEventKind, reasons: string[], timelineEvent: Record<string, unknown>): SignificanceResult {
     return {
         lane: 'story',
@@ -123,6 +182,36 @@ function story(storyKind: StoryEventKind, reasons: string[], timelineEvent: Reco
         reasons,
         timelineEvent: pruneUndefined(timelineEvent),
     };
+}
+
+function peerRelationshipStory(line: TrajectoryLine, peer: PeerInteraction, context: TrajectorySignificanceContext): SignificanceResult {
+    const seen = context.seenPeers?.has(peer.id) ?? false;
+    const currentInteractions = context.peerInteractionCounts?.get(peer.id) ?? (seen ? 1 : 0);
+    const interactions = currentInteractions + 1;
+    const base = {
+        ...timelineBase(line),
+        peer: peer.peer,
+        peerId: peer.id,
+        peerKind: peer.kind,
+        actionKind: peer.actionKind,
+        interactions,
+    };
+
+    if (!seen) {
+        return story('first_peer_encounter', [`peer:first:${peer.id}`], {
+            ...base,
+            kind: 'first_peer_encounter',
+        });
+    }
+
+    if (interactions === 3 || interactions % 5 === 0) {
+        return story('relationship_repeated', [`peer:repeated:${peer.id}:${interactions}`], {
+            ...base,
+            kind: 'relationship_repeated',
+        });
+    }
+
+    return none();
 }
 
 function diagnostic(reasons: string[]): SignificanceResult {
@@ -165,9 +254,20 @@ function firstXpReason(
     return undefined;
 }
 
-function stringField(record: Record<string, unknown>, key: string): string | undefined {
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+    if (!record) {
+        return undefined;
+    }
     const value = record[key];
     return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function recordField(record: Record<string, unknown> | undefined, key: string): Record<string, unknown> | undefined {
+    if (!record) {
+        return undefined;
+    }
+    const value = record[key];
+    return isRecord(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

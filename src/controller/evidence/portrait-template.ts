@@ -71,6 +71,7 @@ export function renderPortrait(residentName: string, index: PortraitIndex, timel
     const lastEvent = events.at(-1);
     const lives = buildLives(index, events);
     const quotes = buildQuotes(events, lives);
+    const relationships = buildRelationships(events);
     const patrons = buildPatrons(events);
     const wants = buildWants(events, index.currentState === 'ended');
     const artifacts = buildArtifacts(events);
@@ -91,7 +92,7 @@ export function renderPortrait(residentName: string, index: PortraitIndex, timel
         livesCount: Math.max(index.lives, lives.length),
         lives,
         voice: { quotes },
-        relationships: [],
+        relationships,
         patrons,
         wants,
         artifacts,
@@ -170,12 +171,52 @@ function buildPatrons(events: Array<Record<string, unknown>>): PortraitPatron[] 
     }));
 }
 
+function buildRelationships(events: Array<Record<string, unknown>>): PortraitRelationship[] {
+    const relationships = new Map<string, PortraitRelationship>();
+    for (const event of events) {
+        if (event.kind !== 'first_peer_encounter' && event.kind !== 'relationship_repeated' && event.kind !== 'relationship_parting') {
+            continue;
+        }
+        const peer = stringField(event, 'peer') || stringField(event, 'peerId');
+        if (!peer) {
+            continue;
+        }
+        const key = stringField(event, 'peerId') || peer;
+        const tick = numberField(event, 'tick');
+        const existing = relationships.get(key);
+        const interactions = Math.max(
+            existing?.interactions ?? 0,
+            numberField(event, 'interactions', existing ? existing.interactions : 1),
+        );
+        relationships.set(key, {
+            peer,
+            firstMet: existing?.firstMet ?? { tick },
+            interactions,
+            lastInteraction: {
+                tick: Math.max(existing?.lastInteraction?.tick ?? tick, tick),
+                partingBeforeDeath: event.kind === 'relationship_parting' || existing?.lastInteraction?.partingBeforeDeath === true,
+            },
+        });
+    }
+    return [...relationships.values()].sort((a, b) => a.firstMet.tick - b.firstMet.tick);
+}
+
 function buildWants(events: Array<Record<string, unknown>>, deceased: boolean): PortraitWants {
-    const wants = events.filter(event => event.kind === 'say').map(event => stringField(event, 'text') || '').filter(isWantText);
+    const wants = events
+        .filter(event => event.kind === 'say')
+        .map(event => stringField(event, 'text') || '')
+        .filter(isWantText);
     return {
         current: deceased ? [] : wants,
         unfulfilledAtDeath: deceased
-            ? wants.map(want => ({ lifeIndex: numberField(events.find(event => stringField(event, 'text') === want), 'lifeIndex', 1), want }))
+            ? wants.map(want => ({
+                  lifeIndex: numberField(
+                      events.find(event => stringField(event, 'text') === want),
+                      'lifeIndex',
+                      1,
+                  ),
+                  want,
+              }))
             : [],
     };
 }
@@ -207,7 +248,7 @@ function renderMarkdown(portrait: Portrait): string {
               : 'No recorded wants.',
         '',
         '## Who they knew',
-        portrait.relationships.length > 0 ? portrait.relationships.map(peer => `- ${peer.peer}`).join('\n') : 'No named relationships yet.',
+        portrait.relationships.length > 0 ? portrait.relationships.map(relationshipLine).join('\n') : 'No named relationships yet.',
         '',
         '## In their own words',
         portrait.voice.quotes.length > 0 ? portrait.voice.quotes.map(quote => `> ${quote.text}`).join('\n') : 'No recorded words.',
@@ -261,6 +302,12 @@ function eventSummary(event: Record<string, unknown>): string {
     if (event.kind === 'stuck_recovered') {
         return `Recovered momentum at tick ${numberField(event, 'tick')}`;
     }
+    if (event.kind === 'first_peer_encounter') {
+        return `Met ${stringField(event, 'peer') || 'someone'} at tick ${numberField(event, 'tick')}`;
+    }
+    if (event.kind === 'relationship_repeated') {
+        return `Built history with ${stringField(event, 'peer') || 'someone'} at tick ${numberField(event, 'tick')}`;
+    }
     if (event.kind === 'say') {
         return `Said "${stringField(event, 'text') || ''}"`;
     }
@@ -272,9 +319,8 @@ function isNotable(event: Record<string, unknown>): boolean {
 }
 
 function lastQuoteBefore(events: Array<Record<string, unknown>>, tick: number): string | undefined {
-    return [...events]
-        .reverse()
-        .find(event => event.kind === 'say' && numberField(event, 'tick') <= tick && typeof event.text === 'string')?.text as string | undefined;
+    return [...events].reverse().find(event => event.kind === 'say' && numberField(event, 'tick') <= tick && typeof event.text === 'string')
+        ?.text as string | undefined;
 }
 
 function deathCauseFromLegacy(event: Record<string, unknown>): string | undefined {
@@ -303,6 +349,11 @@ function patronSentence(handle: string, events: PortraitPatron['events']): strin
     return first.artifact
         ? `${handle} recorded ${first.kind.replace('patron_', '')} with ${first.artifact}.`
         : `${handle} recorded ${first.kind.replace('patron_', '')}.`;
+}
+
+function relationshipLine(relationship: PortraitRelationship): string {
+    const noun = relationship.interactions === 1 ? 'interaction' : 'interactions';
+    return `- ${relationship.peer} (${relationship.interactions} ${noun})`;
 }
 
 function isWantText(text: string): boolean {

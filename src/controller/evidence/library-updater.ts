@@ -3,7 +3,7 @@ import path from 'path';
 import { residentSlug } from '../memory/runtime-state';
 import { renderPortrait, type PortraitIndex } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
-import { classifyProgressLine, classifyTrajectoryLine } from './significance';
+import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
 
 export interface PatronEvent {
     kind: 'patron_gift' | 'patron_witness' | 'patron_sponsor';
@@ -20,11 +20,14 @@ export interface LibraryUpdaterOptions {
 
 interface LibraryIndex extends PortraitIndex {
     schemaVersion: 1;
+    relationshipCounts?: Record<string, number>;
 }
 
 export class LibraryUpdater {
     private readonly now: () => Date;
     private readonly seenXpSkills = new Set<string>();
+    private readonly seenPeers = new Set<string>();
+    private readonly peerInteractionCounts = new Map<string, number>();
     private previousStuckSince: number | null = null;
 
     constructor(
@@ -34,10 +37,18 @@ export class LibraryUpdater {
     ) {
         this.now = options.now ?? (() => new Date());
         this.writeIndex(this.readIndex());
+        this.hydratePeerContext();
     }
 
     observeTrajectory(line: TrajectoryLine): void {
-        const result = classifyTrajectoryLine(line);
+        const peerInteraction = peerInteractionFromTrajectoryLine(line);
+        const result = classifyTrajectoryLine(line, {
+            seenPeers: this.seenPeers,
+            peerInteractionCounts: this.peerInteractionCounts,
+        });
+        if (peerInteraction) {
+            this.recordPeerInteraction(peerInteraction);
+        }
         if (result.lane !== 'story' || !result.timelineEvent) {
             return;
         }
@@ -128,16 +139,51 @@ export class LibraryUpdater {
     private markLastWords(lifeIndex: number, tick: number): void {
         const timeline = this.readTimeline();
         const lastSayIndex = timeline.findLastIndex(
-            event =>
-                event.kind === 'say' &&
-                numberField(event, 'lifeIndex', 1) === lifeIndex &&
-                numberField(event, 'tick') <= tick,
+            event => event.kind === 'say' && numberField(event, 'lifeIndex', 1) === lifeIndex && numberField(event, 'tick') <= tick,
         );
         if (lastSayIndex < 0) {
             return;
         }
         timeline[lastSayIndex] = { ...timeline[lastSayIndex], lastWords: true };
         this.writeTimeline(timeline);
+    }
+
+    private hydratePeerContext(): void {
+        for (const [peerId, interactions] of Object.entries(this.readIndex().relationshipCounts || {})) {
+            if (Number.isFinite(interactions)) {
+                this.seenPeers.add(peerId);
+                this.peerInteractionCounts.set(peerId, interactions);
+            }
+        }
+        for (const event of this.readTimeline()) {
+            if (event.kind !== 'first_peer_encounter' && event.kind !== 'relationship_repeated') {
+                continue;
+            }
+            const peerId = stringField(event, 'peerId') || stringField(event, 'peer');
+            if (!peerId) {
+                continue;
+            }
+            this.seenPeers.add(peerId);
+            this.peerInteractionCounts.set(
+                peerId,
+                Math.max(this.peerInteractionCounts.get(peerId) ?? 0, numberField(event, 'interactions', 1)),
+            );
+        }
+    }
+
+    private recordPeerInteraction(peer: PeerInteraction): void {
+        this.seenPeers.add(peer.id);
+        const interactions = (this.peerInteractionCounts.get(peer.id) ?? 0) + 1;
+        this.peerInteractionCounts.set(peer.id, interactions);
+        const index = this.readIndex();
+        this.writeIndex({
+            ...index,
+            relationshipCounts: {
+                ...(index.relationshipCounts || {}),
+                [peer.id]: interactions,
+            },
+            updatedAt: this.now().toISOString(),
+        });
     }
 
     private readIndex(): LibraryIndex {
@@ -150,6 +196,7 @@ export class LibraryUpdater {
                 updatedAt: now,
                 lives: 1,
                 currentState: 'living',
+                relationshipCounts: {},
             };
         }
         return JSON.parse(fs.readFileSync(this.indexPath(), 'utf8')) as LibraryIndex;
@@ -222,6 +269,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function numberField(record: Record<string, unknown>, key: string, fallback = 0): number {
     const value = record[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 function pruneUndefined(record: Record<string, unknown>): Record<string, unknown> {
