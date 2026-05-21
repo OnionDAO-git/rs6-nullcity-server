@@ -98,6 +98,33 @@ describe('SPARK safe module context facades', () => {
         expect('model' in view).toBe(false);
         expect(Object.isFrozen(view)).toBe(true);
     });
+
+    it('propagates evidence-layer progress fields (lastMeaningfulProgressAt, stuckSince) through the state snapshot', () => {
+        const state = runtimeState();
+        state.lastMeaningfulProgressAt = 42;
+        state.stuckSince = 47;
+
+        const facade = createSparkModuleStateFacade(state);
+        const snapshot = facade.snapshot();
+
+        expect(snapshot.lastMeaningfulProgressAt).toBe(42);
+        expect(snapshot.stuckSince).toBe(47);
+        expect(Object.isFrozen(snapshot)).toBe(true);
+
+        // Mutation attempts on the snapshot fail; live state is unchanged.
+        expect(() => {
+            (snapshot as RuntimeState).stuckSince = 999;
+        }).toThrow();
+        expect(state.stuckSince).toBe(47);
+    });
+
+    it('omits evidence-layer progress fields from the snapshot when they are unset', () => {
+        const facade = createSparkModuleStateFacade(runtimeState());
+        const snapshot = facade.snapshot();
+
+        expect(snapshot.lastMeaningfulProgressAt).toBeUndefined();
+        expect(snapshot.stuckSince).toBeUndefined();
+    });
 });
 
 function soul(): Soul {
