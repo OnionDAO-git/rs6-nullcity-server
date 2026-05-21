@@ -125,6 +125,47 @@ describe('ActionCoordinator', () => {
         expect(effectResolved).toHaveBeenCalledWith(expect.objectContaining({ finalStatus: 'failure', finalReason: 'bad target' }));
     });
 
+    it('suppresses errors thrown by onAckReady so the action loop survives', async () => {
+        const submitter = fakeSubmitter(() => Promise.resolve({ ok: true, requestId: 'request-1' }));
+        const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        try {
+            const attempt = await coordinator.submit({
+                producer: 'body',
+                action: { kind: 'noop' },
+                onAckReady: () => {
+                    throw new Error('evidence-layer-boom');
+                },
+            });
+            expect(attempt.finalStatus).toBe('success');
+            expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('onAckReady'), expect.any(Error));
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
+    it('suppresses errors thrown by onEffectResolved so the action loop survives', async () => {
+        const submitter = fakeSubmitter(() => Promise.resolve({ ok: true, requestId: 'request-2' }));
+        const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        try {
+            const attempt = await coordinator.submit({
+                producer: 'body',
+                action: { kind: 'noop' },
+                waitForEffect: async () => ({ ok: true, evidence: [] }),
+                onEffectResolved: () => {
+                    throw new Error('evidence-layer-boom-2');
+                },
+            });
+            expect(attempt.finalStatus).toBe('success');
+            expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('onEffectResolved'), expect.any(Error));
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
     it('keeps metadata and request ids on attempts for audit trails', async () => {
         const submitter = fakeSubmitter(() => Promise.resolve({ ok: true, requestId: 'request-1' }));
         const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });

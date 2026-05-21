@@ -177,6 +177,44 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('still starts a resident when evidence-session creation throws', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn(
+            (options: { evidence?: unknown }) => {
+                void options;
+                return runtime;
+            },
+        );
+        const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+        // Point the memory dir at a non-existent path on a read-only volume to force
+        // EvidenceStore.beginSession to throw. /dev/null/evidence-cannot-be-created
+        // is guaranteed to fail mkdirSync on macOS and Linux.
+        const baseConfig = config();
+        const brokenConfig = { ...baseConfig, memory: { ...baseConfig.memory, dir: '/dev/null/evidence-cannot-be-created' } };
+        const host = new ControllerHost(brokenConfig, { ...dependencies(gateway), runtimeFactory });
+
+        try {
+            await host.start();
+
+            const passedEvidence = runtimeFactory.mock.calls[0]?.[0].evidence;
+            // Evidence init failed → resident still started, but evidence is undefined.
+            expect(passedEvidence).toBeUndefined();
+            expect(errorSpy).toHaveBeenCalled();
+            const errorCall = errorSpy.mock.calls[0];
+            expect(errorCall[0]).toEqual(expect.stringContaining('evidence init failed for resident'));
+            // Use duck-typing rather than instanceof; Jest's cross-realm
+            // checks sometimes report the same constructor as a mismatch.
+            expect(errorCall[1]).toEqual(expect.objectContaining({ message: expect.any(String) }));
+            expect(runtimeFactory).toHaveBeenCalled();
+
+            await host.stop();
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
     it('uses the built-in standard SPARK module registry by default', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();

@@ -54,7 +54,7 @@ export class ActionCoordinator {
             if (typeof attempt.ackResult.requestId === 'string') {
                 attempt.requestId = attempt.ackResult.requestId;
             }
-            input.onAckReady?.(attempt);
+            this.safeNotifyAck(input.onAckReady, attempt);
             if (attempt.finalStatus === 'interrupted_after_submit') {
                 this.notifyEffectResolved(active);
                 return attempt;
@@ -154,7 +154,32 @@ export class ActionCoordinator {
             return;
         }
         active.effectResolvedNotified = true;
-        active.onEffectResolved?.(active.attempt);
+        const callback = active.onEffectResolved;
+        if (!callback) {
+            return;
+        }
+        // Evidence-layer errors must not crash the action loop. Per spec
+        // (docs/superpowers/specs/2026-05-21-spark-evidence-loop-design.md):
+        // "evidence loss is preferred over agent loss." Swallow + log.
+        try {
+            callback(active.attempt);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('[action-coordinator] onEffectResolved callback threw; suppressing to protect action loop', error);
+        }
+    }
+
+    private safeNotifyAck(callback: ((attempt: ActionAttempt) => void) | undefined, attempt: ActionAttempt): void {
+        if (!callback) {
+            return;
+        }
+        // Evidence-layer errors must not crash the action loop.
+        try {
+            callback(attempt);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('[action-coordinator] onAckReady callback threw; suppressing to protect action loop', error);
+        }
     }
 }
 

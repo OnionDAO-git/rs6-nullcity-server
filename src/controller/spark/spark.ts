@@ -32,6 +32,13 @@ export interface SparkTickResult {
 
 export interface SparkOptions {
     evidence?: TrajectoryBuilder;
+    /**
+     * Identity of the SPARK module driving this Spark instance. Recorded on
+     * every `decision` trajectory line so downstream consumers can attribute
+     * inference to a specific reviewed module. Set by `runtime-facets` when
+     * resolving the soul's selected module stack.
+     */
+    moduleIdentity?: { id: string; version: string };
 }
 
 export class Spark {
@@ -168,6 +175,8 @@ export class Spark {
                 endReason = 'parse_failed';
                 this.options.evidence?.recordDecision({
                     cause: parsed.cause,
+                    moduleId: this.options.moduleIdentity?.id,
+                    moduleVersion: this.options.moduleIdentity?.version,
                     promptHash: sha256(envelope),
                     completionHash: sha256(response.text),
                     promptTokens: estimateTokens(envelope),
@@ -210,6 +219,8 @@ export class Spark {
             }
             this.options.evidence?.recordDecision({
                 cause: parsed.cause,
+                moduleId: this.options.moduleIdentity?.id,
+                moduleVersion: this.options.moduleIdentity?.version,
                 promptHash: sha256(envelope),
                 completionHash: sha256(response.text),
                 promptTokens: estimateTokens(envelope),

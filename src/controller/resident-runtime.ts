@@ -181,6 +181,8 @@ export class ResidentRuntime {
             this.recordEvidence(trajectory =>
                 trajectory.recordDecision({
                     cause: result.cause,
+                    moduleId: this.thinkingSparkModule?.id,
+                    moduleVersion: this.thinkingSparkModule?.version,
                     promptTokens: result.envelopeTokens,
                     actionKinds: result.actions.map(action => action.kind),
                 }),

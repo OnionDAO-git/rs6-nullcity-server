@@ -113,10 +113,6 @@ export class EvidenceStore {
         fs.appendFileSync(active.progressPath, `${JSON.stringify(parsed)}\n`);
     }
 
-    appendLegacyEvent(event: EvidenceLegacyEvent): void {
-        this.appendTrajectory({ ...event, kind: 'legacy_event' });
-    }
-
     rotate(): void {
         this.writeIndex(this.rotateIndex(this.readIndex()));
     }
@@ -183,13 +179,6 @@ export class EvidenceStore {
         return path.join(this.baseDir(), 'index.json');
     }
 }
-
-type EvidenceLegacyEvent = Omit<TrajectoryLine, 'kind'> & {
-    schemaVersion: typeof EVIDENCE_SCHEMA_VERSION;
-    ts: string;
-    tick: number;
-    sessionId: string;
-};
 
 function linkCurrent(dir: string, targetPath: string): void {
     const currentPath = path.join(dir, 'current');

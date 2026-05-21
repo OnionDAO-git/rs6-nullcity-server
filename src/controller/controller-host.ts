@@ -200,7 +200,7 @@ export class ControllerHost {
             inferenceLog: this.inferenceLog,
             gameSkill: this.gameSkill,
             sparkModules: this.sparkModules,
-            evidence: this.createRuntimeEvidence(soul),
+            evidence: this.tryCreateRuntimeEvidence(soul),
         };
         this.runtimes.set(
             soul.frontmatter.name,
@@ -219,6 +219,26 @@ export class ControllerHost {
             trajectory: new TrajectoryBuilder(store),
             library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir),
         };
+    }
+
+    /**
+     * Wraps createRuntimeEvidence so an evidence-layer failure (disk full,
+     * permission denied, corrupt index.json) does not block the resident from
+     * starting. Per spec: "evidence loss is preferred over agent loss." On
+     * failure the resident runs without an evidence sink; ResidentRuntime is
+     * defensive about an undefined `evidence` field.
+     */
+    private tryCreateRuntimeEvidence(soul: ReturnType<SoulLoader['load']>): ResidentRuntimeEvidence | undefined {
+        try {
+            return this.createRuntimeEvidence(soul);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error(
+                `[controller-host] evidence init failed for resident ${soul.frontmatter.name}; resident will start without evidence sink`,
+                error,
+            );
+            return undefined;
+        }
     }
 
     private bindGatewayEvents(): void {

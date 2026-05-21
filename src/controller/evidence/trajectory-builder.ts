@@ -93,6 +93,13 @@ export class TrajectoryBuilder {
         });
     }
 
+    /**
+     * Record a legacy event. The payload is intentionally nested under `event:`
+     * so the line shape is `{ kind: 'legacy_event', event: {...} }`. Downstream
+     * consumers (`library-updater.ts`, `significance.ts`, `portrait-template.ts`)
+     * read `line.event.*`, not flat fields. Preserve this nesting convention
+     * to avoid breaking those consumers.
+     */
     recordLegacy(event: unknown): TrajectoryLine {
         return this.append('legacy_event', { event });
     }
