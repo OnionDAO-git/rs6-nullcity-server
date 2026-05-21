@@ -222,10 +222,11 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Make the resident feel like a human-ish player instead of a static script.
 
-- `[ ]` **F1: Goal sharing cadence.**
+- `[~]` **F1: Goal sharing cadence.**
   - Files: `src/controller/thinking/hybrid-agent-thinking-module.ts`, extracted Brain planner when available
   - Deliverable: agent periodically says what he is trying to do, why, and what he needs from nearby humans.
   - Verification: chat tests cover "I am going to chop logs", "I need a tinderbox/logs", and "I am stuck near a fence".
+  - Partial 2026-05-21: `presence_beacon` already periodically reports location, active goal, and a concrete next step before Body inference; focused tests cover active-goal beacons, visible item opportunities, and starter fishing next-step speech. Direct workflow responses already explain missing tools such as axes, logs, tinderboxes, nets, and low-health blockers. Remaining gap: explicit stuck/blocker beacons such as "I am stuck near a fence" and a benchmark/manual proof that nearby humans see the cadence during normal play.
 
 - `[~]` **F2: Nearby human reaction.**
   - Files: standard module Body/Brain code and tests
