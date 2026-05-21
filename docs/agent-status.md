@@ -25,6 +25,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-21 early     codex   branch=claude/evidence-loop-p1    workstream=I  wired autonomous benchmarks to create ResidentRuntime evidence sessions, retain run artifacts, and include trajectory/progress artifact paths in benchmark JSON. Full test/typecheck/lint/build passed.
 2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  added benchmark artifact metrics from retained trajectory/progress JSONL: trajectory lines/actions/says plus meaningful/stuck progress ticks. Full test/typecheck/lint/build passed.
 2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  added verifier convention outputs for benchmarks: reward.json, reward.txt, stdout reward markers, failure taxonomy, and copied evidence artifacts. Full test/typecheck/lint/build passed.
+2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  started Library of Souls P2: significance predicates plus a timeline/index LibraryUpdater for story events, stuck recovery, first XP, and patron events. Full test/typecheck/lint/build passed.
 ```
 
 ## Conventions
