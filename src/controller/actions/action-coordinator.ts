@@ -18,7 +18,7 @@ export interface ActionCoordinatorSubmitInput {
     routineRunId?: string;
     traceId?: string;
     metadata?: unknown;
-    waitForEffect?: () => Promise<EffectWaitResult>;
+    waitForEffect?: (signal: AbortSignal) => Promise<EffectWaitResult>;
 }
 
 const PRODUCER_PRIORITY: Record<ActionProducer, number> = {
@@ -29,13 +29,13 @@ const PRODUCER_PRIORITY: Record<ActionProducer, number> = {
 };
 
 export class ActionCoordinator {
-    private active?: ActionAttempt;
+    private active?: ActiveAction;
     private seq = 0;
 
     constructor(private readonly options: ActionCoordinatorOptions) {}
 
     currentActivity(): ActionAttempt | undefined {
-        return this.active;
+        return this.active?.attempt;
     }
 
     async submit(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
@@ -45,7 +45,8 @@ export class ActionCoordinator {
         }
 
         const attempt = this.createAttempt(input);
-        this.active = attempt;
+        const active: ActiveAction = { attempt, abort: new AbortController() };
+        this.active = active;
         try {
             attempt.ackResult = await this.options.submitter.submit(input.action, input.metadata);
             if (typeof attempt.ackResult.requestId === 'string') {
@@ -60,7 +61,7 @@ export class ActionCoordinator {
                 return attempt;
             }
             if (input.waitForEffect) {
-                const effectResult = await input.waitForEffect();
+                const effectResult = await input.waitForEffect(active.abort.signal);
                 if (finalStatus(attempt) === 'interrupted_after_submit') {
                     return attempt;
                 }
@@ -73,7 +74,7 @@ export class ActionCoordinator {
             attempt.finalStatus = 'success';
             return attempt;
         } finally {
-            if (this.active === attempt) {
+            if (this.active === active) {
                 this.active = undefined;
             }
         }
@@ -84,10 +85,11 @@ export class ActionCoordinator {
         if (!active) {
             return undefined;
         }
-        active.finalStatus = active.ackResult ? 'interrupted_after_submit' : 'cancelled_before_submit';
-        active.finalReason = cause;
+        active.attempt.finalStatus = active.attempt.ackResult ? 'interrupted_after_submit' : 'cancelled_before_submit';
+        active.attempt.finalReason = cause;
+        active.abort.abort();
         this.active = undefined;
-        return active;
+        return active.attempt;
     }
 
     private resolveActiveConflict(input: ActionCoordinatorSubmitInput): ActionAttempt | undefined {
@@ -95,15 +97,16 @@ export class ActionCoordinator {
         if (!active) {
             return undefined;
         }
-        if (PRODUCER_PRIORITY[input.producer] <= PRODUCER_PRIORITY[active.producer]) {
+        if (PRODUCER_PRIORITY[input.producer] <= PRODUCER_PRIORITY[active.attempt.producer]) {
             return {
                 ...this.createAttempt(input),
                 finalStatus: 'blocked',
-                finalReason: `body_owned_by:${active.producer}`,
+                finalReason: `body_owned_by:${active.attempt.producer}`,
             };
         }
-        active.finalStatus = 'interrupted_after_submit';
-        active.finalReason = `interrupted_by:${input.producer}`;
+        active.attempt.finalStatus = 'interrupted_after_submit';
+        active.attempt.finalReason = `interrupted_by:${input.producer}`;
+        active.abort.abort();
         this.active = undefined;
         return undefined;
     }
@@ -134,6 +137,11 @@ export class ActionCoordinator {
         attempt.finalStatus = effectReasonToStatus(result.reason);
         attempt.finalReason = result.reason;
     }
+}
+
+interface ActiveAction {
+    attempt: ActionAttempt;
+    abort: AbortController;
 }
 
 function effectReasonToStatus(reason: EffectFailureReason): ActionFinalStatus {

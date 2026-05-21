@@ -25,7 +25,8 @@ export class ResidentSession {
     private readonly observers = new Map<string, ResidentObserver>();
     private readonly resultWaiters: ResultWaiter[] = [];
     private readonly eventWaiters: EventWaiter[] = [];
-    private readonly pendingRequestIds: Array<string | number | undefined> = [];
+    private readonly pendingRequests: PendingActionRequest[] = [];
+    private orphanedResultBudget = 0;
     private readonly tickSubscription;
     private latestPerception: Perception | null = null;
     private closed = false;
@@ -57,26 +58,34 @@ export class ResidentSession {
     }
 
     public submitAction(action: AgentAction, requestId?: string | number): void {
-        if (this.closed) {
-            throw new Error('ESESSION_CLOSED');
-        }
-        this.resident.enqueueActions([action]);
-        this.pendingRequestIds.push(requestId);
-        this.actionLog.append(this.resident.username, { type: 'action', requestId, action });
+        this.enqueueAction(action, requestId);
     }
 
     public submitActionAndWait(action: AgentAction, requestId?: string | number, timeoutMs = 3000): Promise<ActionResult> {
         if (this.closed) {
             return Promise.resolve({ ok: false, reason: 'session_closed' });
         }
-        this.submitAction(action, requestId);
+
+        const request = this.enqueueAction(action, requestId);
         return new Promise(resolve => {
             const timer = setTimeout(() => {
                 this.removeResultWaiter(resolve);
+                this.expirePendingRequest(request);
                 resolve({ ok: false, reason: 'action_result_timeout' });
             }, timeoutMs);
-            this.resultWaiters.push({ resolve, timer });
+            this.resultWaiters.push({ request, resolve, timer });
         });
+    }
+
+    private enqueueAction(action: AgentAction, requestId?: string | number): PendingActionRequest {
+        if (this.closed) {
+            throw new Error('ESESSION_CLOSED');
+        }
+        const request = { requestId };
+        this.resident.enqueueActions([action]);
+        this.pendingRequests.push(request);
+        this.actionLog.append(this.resident.username, { type: 'action', requestId, action });
+        return request;
     }
 
     public waitForEvent(kinds: string[] = [], timeoutMs = 30000): Promise<PerceptionEvent | null> {
@@ -107,6 +116,8 @@ export class ResidentSession {
         this.tickSubscription.unsubscribe();
         this.resolveAllResultWaiters({ ok: false, reason: 'session_closed' });
         this.resolveEventWaiters(null);
+        this.pendingRequests.splice(0, this.pendingRequests.length);
+        this.orphanedResultBudget = 0;
         this.observers.clear();
     }
 
@@ -129,9 +140,6 @@ export class ResidentSession {
             this.actionLog.append(this.resident.username, { type: 'event', tick: perception.tick, event });
         }
         const actionResults = this.correlateActionResults(this.resident.drainActionResults());
-        if (actionResults.length) {
-            this.resolveResultWaiters(actionResults.map(actionResult => actionResult.result));
-        }
         if (perception.events.length) {
             this.resolveMatchingEventWaiters(perception.events);
         }
@@ -146,18 +154,41 @@ export class ResidentSession {
     }
 
     private correlateActionResults(results: ReadonlyArray<ActionResult>): ResidentActionResult[] {
-        return results.map(result => ({
-            requestId: this.pendingRequestIds.shift(),
-            result,
-        }));
+        return results.map(result => {
+            if (this.orphanedResultBudget > 0) {
+                this.orphanedResultBudget -= 1;
+                const ambiguousRequest = this.pendingRequests.shift();
+                if (ambiguousRequest) {
+                    this.resolveResultWaiterForRequest(ambiguousRequest, { ok: false, reason: 'action_result_uncorrelated' });
+                }
+                return { result };
+            }
+
+            const request = this.pendingRequests.shift();
+            if (request) {
+                this.resolveResultWaiterForRequest(request, result);
+            }
+            return { requestId: request?.requestId, result };
+        });
     }
 
-    private resolveResultWaiters(results: ReadonlyArray<ActionResult>): void {
-        const waiters = this.resultWaiters.splice(0, results.length);
-        for (const [index, waiter] of waiters.entries()) {
-            clearTimeout(waiter.timer);
-            waiter.resolve(results[index] || results[results.length - 1]);
+    private expirePendingRequest(request: PendingActionRequest): void {
+        const index = this.pendingRequests.indexOf(request);
+        if (index === -1) {
+            return;
         }
+        this.pendingRequests.splice(index, 1);
+        this.orphanedResultBudget += 1;
+    }
+
+    private resolveResultWaiterForRequest(request: PendingActionRequest, result: ActionResult): void {
+        const index = this.resultWaiters.findIndex(waiter => waiter.request === request);
+        if (index === -1) {
+            return;
+        }
+        const [waiter] = this.resultWaiters.splice(index, 1);
+        clearTimeout(waiter.timer);
+        waiter.resolve(result);
     }
 
     private resolveAllResultWaiters(result: ActionResult): void {
@@ -205,8 +236,13 @@ export class ResidentSession {
 }
 
 interface ResultWaiter {
+    request: PendingActionRequest;
     resolve(result: ActionResult): void;
     timer: NodeJS.Timeout;
+}
+
+interface PendingActionRequest {
+    requestId?: string | number;
 }
 
 interface EventWaiter {

@@ -227,16 +227,17 @@ export class ResidentRuntime {
         }
     }
 
-    private effectWaitFor(action: AgentAction): (() => Promise<EffectWaitResult>) | undefined {
+    private effectWaitFor(action: AgentAction): ((signal: AbortSignal) => Promise<EffectWaitResult>) | undefined {
         if (action.kind === 'move_to' && isPosition(action.target)) {
             const target = action.target;
             const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
             const afterSeq = this.body.getLatestPerceptionSeq();
-            return async () =>
+            return async signal =>
                 perceptionWaitToEffect(
                     await this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
                         afterSeq,
                         timeoutMs: 5000,
+                        signal,
                     }),
                     perception => ({
                         source: 'perception',
@@ -248,11 +249,12 @@ export class ResidentRuntime {
         if (action.kind === 'say' && typeof action.text === 'string') {
             const text = action.text;
             const afterSeq = this.body.getLatestEventSeq();
-            return async () =>
+            return async signal =>
                 eventWaitToEffect(
                     await this.body.waitForEvent(event => event.kind === 'chat' && event.text === text, {
                         afterSeq,
                         timeoutMs: 3000,
+                        signal,
                     }),
                     event => ({
                         source: 'event',
@@ -264,11 +266,12 @@ export class ResidentRuntime {
         if (waitsForPerceptionEffect(action.kind) && supportsPerceptionEffectWait(this.body)) {
             const before = this.body.getLatestPerception();
             const afterSeq = this.body.getLatestPerceptionSeq();
-            return async () =>
+            return async signal =>
                 perceptionWaitToEffect(
                     await this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
                         afterSeq,
                         timeoutMs: 5000,
+                        signal,
                     }),
                     perception => ({
                         source: 'perception',

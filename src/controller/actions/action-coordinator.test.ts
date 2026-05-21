@@ -113,24 +113,24 @@ describe('ActionCoordinator', () => {
     });
 
     it('does not overwrite an interrupted attempt after an effect waiter returns', async () => {
-        let releaseWait!: () => void;
+        let capturedSignal: AbortSignal | undefined;
         const submitter = fakeSubmitter(() => Promise.resolve({ ok: true }));
         const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
 
         const first = coordinator.submit({
             producer: 'body',
             action: { kind: 'move_to', target: { x: 1, y: 1, level: 0 } },
-            waitForEffect: async () => {
-                await new Promise<void>(resolve => {
-                    releaseWait = resolve;
+            waitForEffect: async signal => {
+                capturedSignal = signal;
+                return new Promise(resolve => {
+                    signal.addEventListener('abort', () => resolve({ ok: false, reason: 'aborted' }), { once: true });
                 });
-                return { ok: true };
             },
         });
         await Promise.resolve();
+        await Promise.resolve();
 
         await coordinator.submit({ producer: 'nervous-system', action: { kind: 'eat', slot: 0 } });
-        releaseWait();
 
         await expect(first).resolves.toEqual(
             expect.objectContaining({
@@ -138,6 +138,7 @@ describe('ActionCoordinator', () => {
                 finalReason: 'interrupted_by:nervous-system',
             }),
         );
+        expect(capturedSignal?.aborted).toBe(true);
     });
 });
 

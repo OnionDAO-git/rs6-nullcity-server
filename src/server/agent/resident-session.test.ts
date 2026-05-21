@@ -38,6 +38,40 @@ describe('ResidentSession', () => {
         await expect(event).resolves.toEqual({ kind: 'chat', text: 'hello' });
         session.close();
     });
+
+    it('does not reuse a timed-out request id for a late action result', async () => {
+        const resident = fakeResident([], [[{ ok: true }]]);
+        const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
+        session.attach(observer);
+
+        const result = session.submitActionAndWait({ kind: 'noop' }, 'request-1', 1);
+        await expect(result).resolves.toEqual({ ok: false, reason: 'action_result_timeout' });
+
+        (activeWorld.tickComplete as unknown as TickSubject).next();
+
+        expect(observer.sendActionResults).toHaveBeenCalledWith(resident, [{ result: { ok: true } }]);
+        session.close();
+    });
+
+    it('fails a newer waiter instead of assigning it to an ambiguous post-timeout result', async () => {
+        const resident = fakeResident([], [[{ ok: true }]]);
+        const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
+        session.attach(observer);
+
+        await expect(session.submitActionAndWait({ kind: 'noop' }, 'request-1', 1)).resolves.toEqual({
+            ok: false,
+            reason: 'action_result_timeout',
+        });
+        const second = session.submitActionAndWait({ kind: 'say', text: 'second' }, 'request-2', 100);
+
+        (activeWorld.tickComplete as unknown as TickSubject).next();
+
+        await expect(second).resolves.toEqual({ ok: false, reason: 'action_result_uncorrelated' });
+        expect(observer.sendActionResults).toHaveBeenCalledWith(resident, [{ result: { ok: true } }]);
+        session.close();
+    });
 });
 
 interface TickSubject {
@@ -67,13 +101,13 @@ function createTickSubject(): TickSubject {
     };
 }
 
-function fakeResident(events = []): jest.Mocked<Resident> {
+function fakeResident(events = [], resultBatches: Array<Array<{ ok: boolean; reason?: string }>> = [[{ ok: true }]]): jest.Mocked<Resident> {
     return {
         username: 'res:pip',
         isActive: true,
         enqueueActions: jest.fn(),
         publishPerception: jest.fn(() => ({ tick: 1, events }) as never),
-        drainActionResults: jest.fn(() => [{ ok: true }]),
+        drainActionResults: jest.fn(() => (resultBatches.length ? resultBatches.shift() : []) as never),
         save: jest.fn(() => true),
     } as unknown as jest.Mocked<Resident>;
 }
