@@ -1407,6 +1407,9 @@ function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | 
     if (taskId === 'combat-prayer-10m') {
         return combatGoal(tick);
     }
+    if (taskId === 'explore-report-5m') {
+        return explorationGoal(tick);
+    }
     return undefined;
 }
 

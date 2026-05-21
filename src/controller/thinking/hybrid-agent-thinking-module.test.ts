@@ -2616,6 +2616,36 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
     });
 
+    it('seeds explore-report as an active benchmark goal without initial Brain drift', async () => {
+        const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'explore-report-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                objects: [fountain],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(result.cause).toBe('exploration_fallback');
+        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
     it('beacons its active goal periodically before Body inference', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();

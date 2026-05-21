@@ -250,10 +250,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: tests simulate blocked tree/fence and assert recovery, not tiny-step loops.
   - Partial 2026-05-21: committed movement tracks stationary ticks, opens nearby doors/gates first, reports visible fence blockers once, then switches to a patrol recovery move. Remaining gap: broader alternate-path tests, help-request speech when no useful recovery exists, and live benchmark/manual proof.
 
-- `[ ]` **F4: Exploration loop.**
+- `[x]` **F4: Exploration loop.**
   - Files: Brain planner, Body routines, knowledge docs
   - Deliverable: agent walks to visible landmarks, reports what he sees, records useful places, and returns to anchor periodically.
   - Verification: local live test or simulation where dashboard shows meaningful movement and chat.
+  - Verified 2026-05-21 on `claude/evidence-loop-p1`: `explore-report-5m` now seeds a local scouting goal instead of relying on Brain drift. Focused thinking test covers initial exploration movement without deep inference, and live autonomous benchmark passed (`status=passed`, `score=1`, `selectedModuleActions=3`, `positionChanged=1`, `informativeReports=1`, `trajectorySays=2`, artifact `/tmp/oniondao-explore-report-seeded-bench/bench_20260521172341_explore_report_5m.json`).
 
 - `[ ]` **F5: Combat survival personality.**
   - Files: nervous rules, combat workflow, standard module
@@ -349,9 +350,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` Build the consumption safety and proof loop next.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
-  - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
-  - Human-like next slice: F3/F4 exploration/stuck recovery, then a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
+  - Human-like next slice: finish F3 help-request behavior when no recovery move exists, then build a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
 
 ## Agent Update Protocol
 
