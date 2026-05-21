@@ -119,10 +119,11 @@ Agents should update the status marker and add a one-line note under the task wh
   - Verification: fixture tests for pass, timeout, wrong action, and unsafe loop.
   - Verified 2026-05-20 on `codex/body-waiter-coordinator` with fixture tests for pass, timeout, wrong action, and unsafe repeated action loops.
 
-- `[ ]` **C4: Implement starter benchmark suite.**
+- `[>]` **C4: Implement starter benchmark suite.**
   - Tasks: `woodcutting-firemaking-10m`, `starter-fishing-5m`, `combat-prayer-10m`, `explore-report-5m`, `follow-and-chat-5m`
   - Deliverable: every task has a verifier, scoring rubric, and fixture tests.
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
+  - Partial 2026-05-20 on `codex/body-waiter-coordinator`: added `explore-report-5m` verifier/CLI wiring and live smoke (`status=passed`, `score=1`, artifact `data/benchmarks/bench_20260521002220_explore_report_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer, follow-and-chat.
 
 - `[x]` **C5: Add benchmark CLI.**
   - Files: `src/controller/benchmarks/cli.ts`, `package.json`

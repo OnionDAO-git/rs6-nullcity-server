@@ -7,6 +7,7 @@ import { standardSparkModules } from '../spark/standard-modules';
 import { GatewayClient } from '../transport/gateway-client';
 import type { BenchmarkArtifact } from './benchmark-artifact';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
+import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
 
 export interface BenchmarkCliOptions {
@@ -116,6 +117,9 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
 function taskById(taskId: string): BenchmarkTask {
     if (taskId === MAKE_FIRE_5M_TASK_ID) {
         return makeFire5mBenchmarkTask();
+    }
+    if (taskId === EXPLORE_REPORT_5M_TASK_ID) {
+        return makeExploreReport5mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }
