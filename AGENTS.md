@@ -16,16 +16,20 @@ SPARK split:
 Before substantial autonomy, controller, dashboard, or agent behavior work, read:
 
 1. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`
-2. `docs/superpowers/specs/2026-05-20-spark-module-system-design.md`
-3. `docs/superpowers/plans/2026-05-20-spark-module-system-implementation.md` only for historical first-slice context
-4. `docs/controller-knowledge-runbook.md`
+2. `docs/superpowers/specs/2026-05-21-spark-faceted-module-system-design.md` and `docs/superpowers/plans/2026-05-21-spark-facets-implementation.md` for current SPARK facet work
+3. `docs/human-decisions.md` for open James/OnionDAO choices and default assumptions
+4. `docs/spark-module-authoring.md`, `docs/spark-module-experiments.md`, `docs/railgun-controller-deployment.md`, and `docs/controller-knowledge-runbook.md`
 5. `docs/superpowers/specs/2026-05-20-runescape-game-skill-design.md` and `docs/superpowers/plans/2026-05-20-runescape-game-skill-implementation.md` when changing knowledge, prompts, or workflow availability
-6. `feat/controller.md`, `feat/residents.md`, `feat/runebench-agent-design.md`, and `feat/runebench-systems-design.md` when changing resident design or RuneBench-derived behavior
-7. `../rs6-nullcity-residents-dashboard/SPEC.md` before dashboard work
+6. `feat/controller.md`, `feat/residents.md`, and `feat/runebench-agent-design.md` when changing resident design
+7. `feat/runebench-systems-design.md` only as historical RuneBench analysis unless the roadmap points to a specific active item
+8. `docs/superpowers/specs/2026-05-20-spark-module-system-design.md` and `docs/superpowers/plans/2026-05-20-spark-module-system-implementation.md` only for historical first-slice context
+9. `../rs6-nullcity-residents-dashboard/SPEC.md` before dashboard work
 
 The roadmap is the source of truth for active task status and next work. Older plans and RuneBench design notes are background unless the roadmap explicitly points to them as active.
 
 When work maps to the roadmap, update the matching task as you start, finish, block, or defer it. For small fixes or unrelated maintenance, do not force roadmap churn; summarize clearly in the final note.
+
+Until June 1, 2026, OnionDAO work is pre-launch development. Default to building fast with good design. Track Railgun, deployment, and secure-module questions in `docs/human-decisions.md`, but do not block local gameplay, dashboard, benchmark, or module progress on them unless the decision is marked Critical.
 
 ## Current Architecture Map
 
@@ -87,7 +91,10 @@ npm run controller:dev
 npm run controller:once
 npm run standalone
 npm run controller:knowledge:review
+npm run controller:bench -- --task make-fire-5m --module onion.runescape.standard --dry-run
 ```
+
+Current benchmark CLI tasks are scripted engine smokes. Do not use their scores as proof that a SPARK module made autonomous decisions until the roadmap's autonomous benchmark mode is implemented.
 
 ## Agent Work Protocol
 
@@ -97,6 +104,7 @@ npm run controller:knowledge:review
 4. Add/adjust tests for behavior changes.
 5. Use subagent/code review for major SPARK, security, runtime, or dashboard changes.
 6. Mark roadmap tasks `[x]` only after verification passes; mark `[!]` with the exact blocker if stuck.
-7. In final updates, report changed files, verification commands, and remaining blockers.
+7. If a James/OnionDAO decision is needed, add or update it in `docs/human-decisions.md`. Mark it Critical only when it blocks the current task or creates serious risk.
+8. In final updates, report changed files, verification commands, and remaining blockers.
 
 For current priority, see `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md#immediate-recommended-next-slice`.

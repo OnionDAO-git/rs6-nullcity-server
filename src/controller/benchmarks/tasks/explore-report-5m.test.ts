@@ -68,10 +68,7 @@ describe('verifyExploreReport5m', () => {
     it('does not accept vague chatter as an environment report', () => {
         const outcome = verifyExploreReport5m({
             elapsedMs: 20_000,
-            actions: [
-                attempt({ kind: 'move_to', target: { x: 3228, y: 3230, level: 0 } }),
-                attempt({ kind: 'say', text: 'hello' }),
-            ],
+            actions: [attempt({ kind: 'move_to', target: { x: 3228, y: 3230, level: 0 } }), attempt({ kind: 'say', text: 'hello' })],
             perceptions: [
                 perception({ position: { x: 3225, y: 3230, level: 0 } }),
                 perception({ position: { x: 3228, y: 3230, level: 0 } }),

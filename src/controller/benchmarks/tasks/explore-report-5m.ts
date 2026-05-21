@@ -163,7 +163,9 @@ function environmentReport(perception: Perception | undefined): string {
 }
 
 function positionChanged(perceptions: Perception[]): boolean {
-    const positions = perceptions.map(perceptionPosition).filter((position): position is { x: number; y: number; level: number } => !!position);
+    const positions = perceptions
+        .map(perceptionPosition)
+        .filter((position): position is { x: number; y: number; level: number } => !!position);
     if (positions.length < 2) {
         return false;
     }
@@ -172,7 +174,10 @@ function positionChanged(perceptions: Perception[]): boolean {
 }
 
 function spokenReports(actions: ExploreReport5mActionAttempt[]): string[] {
-    return actions.map(attempt => attempt.action).filter(isSayAction).map(action => action.text);
+    return actions
+        .map(attempt => attempt.action)
+        .filter(isSayAction)
+        .map(action => action.text);
 }
 
 function chatReports(input: ExploreReport5mVerificationInput): string[] {
@@ -207,7 +212,9 @@ function isInformativeReport(text: string): boolean {
 }
 
 function reportedMovement(reports: string[], perceptions: Perception[]): boolean {
-    const positions = perceptions.map(perceptionPosition).filter((position): position is { x: number; y: number; level: number } => !!position);
+    const positions = perceptions
+        .map(perceptionPosition)
+        .filter((position): position is { x: number; y: number; level: number } => !!position);
     for (const report of reports) {
         const match = /\bmoved to\s+(\d{4}),(\d{4})\b/i.exec(report);
         if (!match) {

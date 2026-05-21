@@ -1,5 +1,7 @@
 # SPARK Module System Design
 
+> **Current successor:** Use `docs/superpowers/specs/2026-05-21-spark-faceted-module-system-design.md` for the current Brain/Body/Nervous SPARK facet design. This file remains useful historical context for the first module-selection seam.
+
 ## Goal
 
 Turn the current RuneScape resident autonomy work into a modular SPARK engine: SOUL files provide authored identity, while SPARK modules provide resident intelligence capabilities that can be versioned, reviewed, benchmarked, and compared.

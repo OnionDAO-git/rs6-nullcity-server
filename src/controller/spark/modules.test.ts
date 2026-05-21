@@ -19,6 +19,12 @@ describe('resolveSparkModules', () => {
         ]);
     });
 
+    it('rejects unsafe selected module config', () => {
+        expect(() => resolveSparkModules([{ id: 'onion.alpha', config: { apiKey: 'abc123' } }], [alpha])).toThrow(
+            'SPARK module config apiKey is not allowed to contain secret-like fields',
+        );
+    });
+
     it('ignores disabled modules', () => {
         expect(resolveSparkModules([{ id: 'onion.alpha', enabled: false }], [alpha])).toEqual([]);
     });
@@ -52,6 +58,64 @@ describe('resolveSparkModules', () => {
                 ],
             ),
         ).toThrow('SPARK module onion.alpha exposes thinking without declaring the thinking capability');
+    });
+
+    it('throws when a nervous factory is not declared in capabilities', () => {
+        expect(() =>
+            resolveSparkModules(
+                [{ id: 'onion.alpha' }],
+                [
+                    {
+                        ...alpha,
+                        manifest: { ...alpha.manifest, capabilities: ['thinking'] },
+                        createNervousSystem: jest.fn(),
+                    },
+                ],
+            ),
+        ).toThrow('SPARK module onion.alpha exposes nervous rules without declaring the nervous-rules capability');
+    });
+
+    it.each([
+        ['hooks', { hooks: jest.fn(() => []) }, 'hooks'],
+        ['candidates', { candidates: jest.fn(() => []) }, 'candidates'],
+        ['prompt sections', { promptSections: jest.fn(() => []) }, 'prompt-sections'],
+        ['attempt observer', { observeAttempt: jest.fn() }, 'attempt-observer'],
+        ['benchmarks', { benchmarks: jest.fn(() => []) }, 'benchmarks'],
+    ] as const)('throws when %s are not declared in capabilities', (_label, extension, capability) => {
+        expect(() =>
+            resolveSparkModules(
+                [{ id: 'onion.alpha' }],
+                [
+                    {
+                        ...alpha,
+                        manifest: { ...alpha.manifest, capabilities: ['thinking'] },
+                        ...extension,
+                    },
+                ],
+            ),
+        ).toThrow(`SPARK module onion.alpha exposes ${capability} without declaring the ${capability} capability`);
+    });
+
+    it('accepts declared future extension facets without exposing them as callable module contract', () => {
+        expect(() =>
+            resolveSparkModules(
+                [{ id: 'onion.alpha' }],
+                [
+                    {
+                        ...alpha,
+                        manifest: {
+                            ...alpha.manifest,
+                            capabilities: ['thinking', 'hooks', 'candidates', 'prompt-sections', 'attempt-observer', 'benchmarks'],
+                        },
+                        hooks: jest.fn(() => []),
+                        candidates: jest.fn(() => []),
+                        promptSections: jest.fn(() => []),
+                        observeAttempt: jest.fn(),
+                        benchmarks: jest.fn(() => []),
+                    } as unknown as SparkModule,
+                ],
+            ),
+        ).not.toThrow();
     });
 
     it('rejects experimental modules in the reviewed in-repo seam', () => {

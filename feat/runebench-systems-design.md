@@ -3,6 +3,8 @@
 Status: revised draft after local analysis of RuneBench/rs-sdk and specialist review.
 This is a design and task list only; it does not implement the work.
 
+Historical note: this file is useful background, not the active task tracker. Some sections describe work that has since shipped or changed shape. Use `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the source of truth before executing anything here.
+
 Review input incorporated:
 
 - RuneBench/rs-sdk fidelity review: keep the BotSDK lifecycle, typed MCP facade, action porcelain, benchmarks, reward traces, and disposable benchmark isolation.

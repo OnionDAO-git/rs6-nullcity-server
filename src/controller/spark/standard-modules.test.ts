@@ -3,6 +3,7 @@ import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import { HybridAgentThinkingModule } from '../thinking';
+import { noopSparkModuleTelemetry } from './module-telemetry';
 import { RUNESCAPE_STANDARD_SPARK_MODULE_ID, standardSparkModules } from './standard-modules';
 
 describe('standardSparkModules', () => {
@@ -19,9 +20,26 @@ describe('standardSparkModules', () => {
             memory: {} as MemoryStore,
             llm: {} as LlmClient,
             config: {},
+            telemetry: noopSparkModuleTelemetry,
         });
 
         expect(thinking).toBeInstanceOf(HybridAgentThinkingModule);
+    });
+
+    it('adapts the current nervous system as a SPARK nervous facet', () => {
+        const standard = standardSparkModules().find(module => module.manifest.id === RUNESCAPE_STANDARD_SPARK_MODULE_ID);
+
+        const nervous = standard?.createNervousSystem?.({
+            soul: soul(),
+            state: runtimeState(),
+            memory: { ensureResident: jest.fn(() => '/tmp/res-test') } as unknown as MemoryStore,
+            llm: {} as LlmClient,
+            config: {},
+            telemetry: noopSparkModuleTelemetry,
+        });
+
+        expect(standard?.manifest.capabilities).toContain('nervous-rules');
+        expect(nervous?.react).toEqual(expect.any(Function));
     });
 });
 

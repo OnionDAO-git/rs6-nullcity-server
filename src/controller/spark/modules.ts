@@ -1,8 +1,12 @@
 import type { LlmClient } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
+import type { NervousReaction } from '../nervous-system/rules';
 import type { Soul } from '../soul/soul-schema';
 import type { ThinkingModule } from '../thinking/thinking-module';
+import type { Perception } from '../transport/message-codecs';
+import { validateSparkModuleConfig, type SparkModuleConfigPolicy, type SparkModuleConfigSchema } from './module-config';
+import type { SparkModuleTelemetry } from './module-telemetry';
 
 export type SparkModuleCapability =
     | 'thinking'
@@ -29,6 +33,10 @@ export interface SparkModuleIdentity {
     version: string;
 }
 
+export interface SparkNervousReaction extends NervousReaction {
+    sparkModule?: SparkModuleIdentity;
+}
+
 export interface SoulSparkModuleSelection {
     id: string;
     enabled?: boolean;
@@ -41,11 +49,19 @@ export interface TrustedSparkModuleContext {
     memory: MemoryStore;
     llm: LlmClient;
     config: Record<string, unknown>;
+    telemetry: SparkModuleTelemetry;
+}
+
+export interface SparkNervousSystem {
+    react(perception: Perception): SparkNervousReaction | undefined;
 }
 
 export interface SparkModule {
     manifest: SparkModuleManifest;
+    configSchema?: SparkModuleConfigSchema;
+    configPolicy?: SparkModuleConfigPolicy;
     createThinkingModule?(context: TrustedSparkModuleContext): ThinkingModule | undefined;
+    createNervousSystem?(context: TrustedSparkModuleContext): SparkNervousSystem | undefined;
     stop?(cause: string): void;
 }
 
@@ -69,7 +85,13 @@ export function resolveSparkModules(selections: SoulSparkModuleSelection[] | und
             if (!module) {
                 throw new Error(`Unknown SPARK module ${selection.id}`);
             }
-            return { module, config: selection.config || {} };
+            return {
+                module,
+                config: validateSparkModuleConfig(selection.config, {
+                    schema: module.configSchema,
+                    policy: module.configPolicy,
+                }),
+            };
         });
 }
 
@@ -91,11 +113,41 @@ function validateUniqueRegistry(available: SparkModule[]): void {
         if (module.manifest.risk === 'experimental') {
             throw new Error(`SPARK module ${module.manifest.id} is experimental and cannot be selected by SOUL`);
         }
-        if (module.createThinkingModule && !module.manifest.capabilities.includes('thinking')) {
-            throw new Error(`SPARK module ${module.manifest.id} exposes thinking without declaring the thinking capability`);
-        }
+        validateDeclaredCapabilities(module);
         seen.add(module.manifest.id);
     }
+}
+
+function validateDeclaredCapabilities(module: SparkModule): void {
+    const requirements: Array<{
+        capability: SparkModuleCapability;
+        exposedName: string;
+        isExposed: (candidate: SparkModule) => boolean;
+    }> = [
+        { capability: 'thinking', exposedName: 'thinking', isExposed: candidate => Boolean(candidate.createThinkingModule) },
+        { capability: 'nervous-rules', exposedName: 'nervous rules', isExposed: candidate => Boolean(candidate.createNervousSystem) },
+        { capability: 'hooks', exposedName: 'hooks', isExposed: candidate => hasFunction(candidate, 'hooks') },
+        { capability: 'candidates', exposedName: 'candidates', isExposed: candidate => hasFunction(candidate, 'candidates') },
+        { capability: 'prompt-sections', exposedName: 'prompt-sections', isExposed: candidate => hasFunction(candidate, 'promptSections') },
+        {
+            capability: 'attempt-observer',
+            exposedName: 'attempt-observer',
+            isExposed: candidate => hasFunction(candidate, 'observeAttempt'),
+        },
+        { capability: 'benchmarks', exposedName: 'benchmarks', isExposed: candidate => hasFunction(candidate, 'benchmarks') },
+    ];
+
+    for (const requirement of requirements) {
+        if (requirement.isExposed(module) && !module.manifest.capabilities.includes(requirement.capability)) {
+            throw new Error(
+                `SPARK module ${module.manifest.id} exposes ${requirement.exposedName} without declaring the ${requirement.capability} capability`,
+            );
+        }
+    }
+}
+
+function hasFunction(module: SparkModule, key: string): boolean {
+    return typeof (module as unknown as Record<string, unknown>)[key] === 'function';
 }
 
 function validateUniqueSelections(selections: SoulSparkModuleSelection[]): void {

@@ -57,6 +57,151 @@ describe('ResidentRuntime modules', () => {
         );
     });
 
+    it('gives selected SPARK modules a redacted telemetry sink', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-module-telemetry-test-'));
+        const state = stateFor('res:pip');
+        const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+        new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.telemetry' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog,
+            body: {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true })),
+            } as unknown as ResidentBody,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.telemetry',
+                        version: '0.1.0',
+                        displayName: 'Telemetry',
+                        capabilities: ['thinking'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: context => {
+                        context.telemetry.emit({ kind: 'debug', message: 'loaded TOKEN=secretvalue' });
+                        return thinkingModule();
+                    },
+                },
+            ],
+        });
+
+        expect(inferenceLog.append).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({
+                cause: 'module_telemetry',
+                sparkModule: { id: 'onion.telemetry', version: '0.1.0' },
+                telemetry: expect.objectContaining({ kind: 'debug', message: 'loaded [redacted]' }),
+            }),
+        );
+    });
+
+    it('logs SPARK module identity for module-provided nervous actions', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-module-nervous-test-'));
+        const state = stateFor('res:pip');
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.reflex' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            body,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.reflex',
+                        version: '0.1.0',
+                        displayName: 'Reflex',
+                        capabilities: ['thinking', 'nervous-rules'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: () => thinking,
+                    createNervousSystem: () => ({
+                        react: () => ({
+                            rule: {
+                                id: 'wave-on-hit',
+                                priority: 80,
+                                condition: { kind: 'always' },
+                                action: { kind: 'noop' },
+                            },
+                            action: { kind: 'noop', cause: 'nervous:wave-on-hit' },
+                            suppressThinking: true,
+                            interruptThinking: true,
+                        }),
+                    }),
+                },
+            ],
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'noop', cause: 'nervous:wave-on-hit' },
+            expect.objectContaining({
+                source: 'nervous-system',
+                ruleId: 'wave-on-hit',
+                sparkModule: { id: 'onion.reflex', version: '0.1.0' },
+            }),
+        );
+        expect(thinking.think).not.toHaveBeenCalled();
+    });
+
+    it('stops a source module only once when it provides multiple facets', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-module-stop-test-'));
+        const state = stateFor('res:pip');
+        const thinking = thinkingModule();
+        const stop = jest.fn();
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.dual' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            body: {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true })),
+            } as unknown as ResidentBody,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.dual',
+                        version: '0.1.0',
+                        displayName: 'Dual',
+                        capabilities: ['thinking', 'nervous-rules'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: () => thinking,
+                    createNervousSystem: () => ({ react: jest.fn(() => undefined) }),
+                    stop,
+                },
+            ],
+        });
+
+        runtime.stop('test-stop');
+
+        expect(thinking.stop).toHaveBeenCalledWith('test-stop');
+        expect(stop).toHaveBeenCalledTimes(1);
+        expect(stop).toHaveBeenCalledWith('test-stop');
+    });
+
     it('carries events received while thinking into the next decision', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-events-test-'));
         const state = stateFor('res:pip');
@@ -656,6 +801,14 @@ function sparkModule(id: string, thinking: ThinkingModule): SparkModule {
             risk: 'reviewed',
         },
         createThinkingModule: () => thinking,
+    };
+}
+
+function thinkingModule(): ThinkingModule {
+    return {
+        think: jest.fn(async () => ({ actions: [], nooped: true })),
+        considerInterrupt: jest.fn(() => false),
+        stop: jest.fn(),
     };
 }
 

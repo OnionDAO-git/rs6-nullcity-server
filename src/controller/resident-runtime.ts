@@ -13,9 +13,10 @@ import { NervousSystem } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import type { Soul } from './soul/soul-schema';
-import type { SparkModule, SparkModuleIdentity } from './spark/modules';
+import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import { initialAttention } from './spark/attention';
-import { type ThinkingModule, createThinkingModuleSelection } from './thinking';
+import { createSparkRuntimeFacets } from './spark/runtime-facets';
+import type { ThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import type { AgentAction, Perception, PerceptionEvent } from './transport/message-codecs';
 
@@ -54,7 +55,8 @@ export class ResidentRuntime {
     private readonly thinking: ThinkingModule;
     private readonly thinkingSparkModule?: SparkModuleIdentity;
     private readonly thinkingSourceModule?: SparkModule;
-    private readonly nervousSystem: NervousSystem;
+    private readonly nervousSystem: SparkNervousSystem;
+    private readonly nervousSourceModule?: SparkModule;
     private readonly body: ResidentBody;
     private readonly actionCoordinator: ActionCoordinator;
     private readonly history = new PerceptionHistory();
@@ -72,19 +74,22 @@ export class ResidentRuntime {
         );
         if (options.thinking) {
             this.thinking = options.thinking;
+            this.nervousSystem = new NervousSystem({ soul: options.soul, state: this.state, memory: options.memory });
         } else {
-            const selection = createThinkingModuleSelection({
+            const facets = createSparkRuntimeFacets({
                 soul: options.soul,
                 state: this.state,
                 memory: options.memory,
                 llm: options.llm,
                 sparkModules: options.sparkModules,
+                moduleTelemetry: entry => options.inferenceLog.append(this.name, { ...entry }),
             });
-            this.thinking = selection.thinking;
-            this.thinkingSparkModule = selection.sparkModule;
-            this.thinkingSourceModule = selection.sourceModule;
+            this.thinking = facets.thinking;
+            this.thinkingSparkModule = facets.thinkingSparkModule;
+            this.thinkingSourceModule = facets.thinkingSourceModule;
+            this.nervousSystem = facets.nervousSystem;
+            this.nervousSourceModule = facets.nervousSourceModule;
         }
-        this.nervousSystem = new NervousSystem({ soul: options.soul, state: this.state, memory: options.memory });
         this.body = options.body || createGatewayBody(this.name, options.gateway, options.actionLog);
         this.actionCoordinator =
             options.actionCoordinator ||
@@ -112,6 +117,7 @@ export class ResidentRuntime {
                     attention_after: this.state.attention,
                     source: 'nervous-system',
                     ruleId: reaction.rule.id,
+                    sparkModule: reaction.sparkModule,
                 },
                 waitForEffect: this.effectWaitFor(reaction.action),
             });
@@ -281,7 +287,12 @@ export class ResidentRuntime {
 
     stop(cause = 'runtime_stopped'): void {
         this.thinking.stop(cause);
-        this.thinkingSourceModule?.stop?.(cause);
+        const sourceModules = new Set(
+            [this.thinkingSourceModule, this.nervousSourceModule].filter((module): module is SparkModule => Boolean(module)),
+        );
+        for (const module of sourceModules) {
+            module.stop?.(cause);
+        }
         this.options.stateStore.save(this.state);
     }
 }

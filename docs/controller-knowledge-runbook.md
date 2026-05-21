@@ -12,6 +12,8 @@ CONTROLLER_INSTANCE_ID=${RAILGUN_INSTANCE_ID}
 CONTROLLER_MEMORY_DIR=/data/controller/memory
 CONTROLLER_LOG_DIR=/data/controller/logs
 CONTROLLER_KNOWLEDGE_DIR=/data/controller/knowledge
+CONTROLLER_SOULS_DIR=/app/data/souls
+GATEWAY_AUTH_TOKEN=REPLACE_ME_GATEWAY_TOKEN
 RUNEBENCH_WIKI_DIR=/app/reference/RuneBench/wiki
 NODE_ENV=production
 ```
@@ -21,9 +23,14 @@ Use this controller config shape:
 ```yaml
 controller:
   instanceId: ${CONTROLLER_INSTANCE_ID}
+residents:
+  - res:agent
 gateway:
-  url: wss://<agent-gateway-host>/agent
+  url: wss://REPLACE_ME_AGENT_GATEWAY_HOST/agent
   controllerId: onion-controller
+  authToken: ${GATEWAY_AUTH_TOKEN}
+souls:
+  dir: ${CONTROLLER_SOULS_DIR}
 memory:
   dir: ${CONTROLLER_MEMORY_DIR}
 logging:
@@ -37,10 +44,21 @@ knowledge:
 llm:
   endpoints:
     default:
-      baseUrl: http://inf.nullcity.ai:1234/api/v1
+      baseUrl: http://inf.nullcity.ai:1234
 ```
 
 In production, startup fails if it sees laptop-style local defaults for memory/log/knowledge directories. That is intentional: Railgun feedback should land in `/data/...` or in stdout logs, not inside an ephemeral app checkout.
+
+Tokenless gateway access is for loopback local development only. Any Railgun, private-network, or public `wss://` gateway must set `gateway.authToken` from a secret.
+
+## Wiki Reference Paths
+
+| Environment | `RUNEBENCH_WIKI_DIR` | Notes |
+| --- | --- | --- |
+| Local dev | optional repo-local reference checkout | Leave unset if no wiki snapshot is available. |
+| Railgun | `/app/reference/RuneBench/wiki` or another mounted read-only path | Mount the snapshot with the controller image or job config. |
+
+Engine-local facts and observed benchmark evidence take priority over imported wiki text. Use wiki snippets as supplemental hints, not as authority over item ids, object ids, action verbs, or engine-visible success signals.
 
 ## Where Feedback Goes
 
@@ -69,6 +87,7 @@ npm run controller:knowledge:review -- /data/controller/knowledge
 For stdout-drained Railgun logs, first export only suggestion events into JSONL files:
 
 ```bash
+mkdir -p /tmp/controller-knowledge
 grep '"event":"knowledge_suggestion"' railgun-controller.log > /tmp/controller-knowledge/suggestions.railgun-export.jsonl
 npm run controller:knowledge:review -- /tmp/controller-knowledge
 ```

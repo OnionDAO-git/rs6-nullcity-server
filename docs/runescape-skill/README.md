@@ -14,6 +14,7 @@ The controller's runtime prompt knowledge currently comes from `src/controller/k
 ## Update Rules
 
 - Prefer engine-local facts and observed benchmark evidence over external wiki memory.
+- For local dev, `RUNEBENCH_WIKI_DIR` may point at a repo-local RuneBench wiki snapshot or stay unset. For Railgun, mount the snapshot read-only and set `RUNEBENCH_WIKI_DIR=/app/reference/RuneBench/wiki` or the chosen mounted path.
 - Add exact object/NPC/item names and action verbs when known.
 - Include success and failure signals so weak models know when to stop or recover.
 - Do not let runtime agents edit these files directly; agents may suggest updates through the knowledge suggestion queue.
