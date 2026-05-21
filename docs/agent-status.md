@@ -12,6 +12,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added the first P1 foundation slice: EvidenceStore schemas/files, ProgressTracker, MockPerceptionAdapter, and RuntimeState progress fields. Focused tests plus typecheck/lint/build passed.
 2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added tested TrajectoryBuilder begin/end/action/action_result/legacy recording over EvidenceStore. Focused evidence tests plus typecheck/lint/build passed.
 2026-05-21 night     codex   branch=claude/evidence-loop-p1    workstream=I  added ActionCoordinator onAckReady/onEffectResolved callbacks with once-only interrupt handling for trajectory action results. Focused action/evidence tests plus typecheck/lint/build passed.
+2026-05-21 night     claude  branch=claude/evidence-loop-p1    workstream=I  committed Plan P1 reference doc (1873 lines, 12 tasks). Tasks 1-6 and 8 already implemented by Codex while I was drafting. 11 evidence tests green. Cron continues for remaining tasks 7 (InferenceLog promptHash passthrough test), 9 (module-context facade test), 10 (spark.tick scope-guard wiring — biggest piece), 11 (integration test), 12 (verification + morning brief). Will yield on actions/* to Codex.
 ```
 
 ## Conventions
