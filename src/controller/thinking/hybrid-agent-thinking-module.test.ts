@@ -1,3 +1,4 @@
+import { objectIds } from '@engine/world/config/object-ids';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
@@ -862,6 +863,144 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'interact', target: door, option: 'open', cause: 'stuck_open_obstacle' }]);
         expect(result.cause).toBe('stuck_open_obstacle');
+    });
+
+    it('reports a visible fence blocker before switching to stuck movement recovery', async () => {
+        const blockedLandmark = { x: 3243, y: 3242, level: 0 };
+        const fence = { objectId: objectIds.shortCuts.fenceNearKharidCows, position: { x: 3233, y: 3244, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['walk toward a nearby landmark', 'report blocked routes'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3233, 3243),
+                objects: [fence],
+            }),
+        );
+        await agent.think(
+            perception({
+                tick: 4,
+                resident: residentAt(3233, 3243),
+                objects: [fence],
+            }),
+        );
+        const report = await agent.think(
+            perception({
+                tick: 5,
+                resident: residentAt(3233, 3243),
+                objects: [fence],
+            }),
+        );
+        const recovery = await agent.think(
+            perception({
+                tick: 6,
+                resident: residentAt(3233, 3243),
+                objects: [fence],
+            }),
+        );
+
+        expect(report.actions).toEqual([
+            { kind: 'say', text: 'I am stuck near a fence. I will step away and try another route.', cause: 'stuck_blocker_report' },
+        ]);
+        expect(report.cause).toBe('stuck_blocker_report');
+        expect(recovery.actions).toEqual([
+            { kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
+        ]);
+        expect(recovery.cause).toBe('stuck_move_recovery');
+    });
+
+    it('does not report ordinary scenery as a stuck blocker', async () => {
+        const blockedLandmark = { x: 3243, y: 3242, level: 0 };
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3233, y: 3244, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['walk toward a nearby landmark', 'recover from blocked routes'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3233, 3243),
+                objects: [tree],
+            }),
+        );
+        await agent.think(
+            perception({
+                tick: 4,
+                resident: residentAt(3233, 3243),
+                objects: [tree],
+            }),
+        );
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                resident: residentAt(3233, 3243),
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
+        ]);
+        expect(result.cause).toBe('stuck_move_recovery');
     });
 
     it('answers direct status chat without waiting for Body inference', async () => {

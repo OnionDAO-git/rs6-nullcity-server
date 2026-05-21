@@ -95,6 +95,7 @@ const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LEVEL_ONE_TREE_IDS = new Set([...objectIds.tree.normal.map(tree => tree.default), ...objectIds.tree.dead.map(tree => tree.default)]);
 const OPENABLE_OBSTACLE_IDS = new Set([1530, 11707, 1533, 1516, 1519, 1536, 11993, 13001, 1551, 1553, 12986, 12987]);
+const FENCE_OBSTACLE_IDS = new Set([objectIds.shortCuts.fenceNearKharidCows]);
 const STUCK_OBSTACLE_RANGE = 2;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
@@ -489,6 +490,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     if (obstacle) {
                         cognition.activeMove = undefined;
                         return { action: obstacle, cause: 'stuck_open_obstacle' };
+                    }
+
+                    const blocker = stuckBlockerReportAction(perception, here, updated);
+                    if (blocker && !this.isRepeatedAction(blocker)) {
+                        return { action: blocker, cause: 'stuck_blocker_report' };
                     }
 
                     const recovery = {
@@ -1822,6 +1828,21 @@ function stuckOpenObstacleAction(perception: HybridPerception, here: Pos, active
         })[0];
 
     return obstacle ? { kind: 'interact', target: obstacle, option: 'open', cause: 'stuck_open_obstacle' } : undefined;
+}
+
+function stuckBlockerReportAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {
+    const blocker = (perception.nearby?.objects || [])
+        .filter(object => FENCE_OBSTACLE_IDS.has(object.objectId) && distance(here, object.position) <= STUCK_OBSTACLE_RANGE)
+        .sort((a, b) => {
+            const nearest = distance(here, a.position) - distance(here, b.position);
+            return nearest !== 0 ? nearest : distance(active.target, a.position) - distance(active.target, b.position);
+        })[0];
+
+    if (!blocker) {
+        return undefined;
+    }
+
+    return { kind: 'say', text: 'I am stuck near a fence. I will step away and try another route.', cause: 'stuck_blocker_report' };
 }
 
 function nextStepSuggestion(perception: HybridPerception, residentId?: string): string | undefined {

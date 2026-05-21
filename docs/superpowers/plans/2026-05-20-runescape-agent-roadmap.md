@@ -226,7 +226,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Files: `src/controller/thinking/hybrid-agent-thinking-module.ts`, extracted Brain planner when available
   - Deliverable: agent periodically says what he is trying to do, why, and what he needs from nearby humans.
   - Verification: chat tests cover "I am going to chop logs", "I need a tinderbox/logs", and "I am stuck near a fence".
-  - Partial 2026-05-21: `presence_beacon` already periodically reports location, active goal, and a concrete next step before Body inference; focused tests cover active-goal beacons, visible item opportunities, and starter fishing next-step speech. Direct workflow responses already explain missing tools such as axes, logs, tinderboxes, nets, and low-health blockers. Remaining gap: explicit stuck/blocker beacons such as "I am stuck near a fence" and a benchmark/manual proof that nearby humans see the cadence during normal play.
+  - Partial 2026-05-21: `presence_beacon` already periodically reports location, active goal, and a concrete next step before Body inference; focused tests cover active-goal beacons, visible item opportunities, and starter fishing next-step speech. Direct workflow responses already explain missing tools such as axes, logs, tinderboxes, nets, and low-health blockers. Stuck movement now reports recognized visible fence blockers once before recovery. Remaining gap: benchmark/manual proof that nearby humans see the cadence during normal play.
 
 - `[~]` **F2: Nearby human reaction.**
   - Files: standard module Body/Brain code and tests
@@ -234,10 +234,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: perception/chat tests for command prefix, direct name mention, and non-command small talk.
   - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events. Still needs non-command small talk and clarifying-question tests.
 
-- `[ ]` **F3: Stuck recovery.**
+- `[~]` **F3: Stuck recovery.**
   - Files: Body routine extraction files
   - Deliverable: after repeated failed movement or unreachable target attempts, agent tries alternate target, steps back, returns to anchor, or asks for help.
   - Verification: tests simulate blocked tree/fence and assert recovery, not tiny-step loops.
+  - Partial 2026-05-21: committed movement tracks stationary ticks, opens nearby doors/gates first, reports visible fence blockers once, then switches to a patrol recovery move. Remaining gap: broader alternate-path tests, help-request speech when no useful recovery exists, and live benchmark/manual proof.
 
 - `[ ]` **F4: Exploration loop.**
   - Files: Brain planner, Body routines, knowledge docs
