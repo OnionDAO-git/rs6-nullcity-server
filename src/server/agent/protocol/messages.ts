@@ -45,6 +45,7 @@ export interface ObservableSubjectSummary {
 export type ClientMessage =
     | AgentFrame<'auth', { token?: string }>
     | AgentFrame<'controller_hello', { controllerId: string; version: string; capabilities?: string[] }>
+    | AgentFrame<'gateway_status', Record<string, never>>
     | AgentFrame<'list_residents', { filter?: ResidentFilter }>
     | AgentFrame<'list_observable_subjects', { includeResidents?: boolean; includePlayers?: boolean }>
     | AgentFrame<'observe_subject', { subject: SpectatorSubject; mode?: SpectatorMode }>
@@ -68,6 +69,7 @@ export type ClientMessage =
     | AgentFrame<'delete_resident', { name: string }>;
 
 export type ServerMessage =
+    | AgentFrame<'gateway_status', { allowDelete: boolean }>
     | AgentFrame<'resident_list', { residents: ResidentSummary[] }>
     | AgentFrame<'observable_subject_list', { subjects: ObservableSubjectSummary[] }>
     | AgentFrame<'resident_created', { resident: ResidentSummary }>
@@ -126,6 +128,7 @@ const clientPayloadSchemas = {
         version: z.string().min(1),
         capabilities: z.array(z.string()).optional(),
     }),
+    gateway_status: z.object({}).default({}),
     list_residents: z.object({ filter: residentFilterSchema }).default({}),
     list_observable_subjects: z.object({ includeResidents: z.boolean().optional(), includePlayers: z.boolean().optional() }).default({}),
     observe_subject: z.object({ subject: spectatorSubjectSchema, mode: spectatorModeSchema }),

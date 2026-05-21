@@ -308,6 +308,10 @@ export class AgentGateway {
                 send(frame('ok', { ok: true }, message.id));
                 return;
             }
+            case 'gateway_status': {
+                send(frame('gateway_status', { allowDelete: Boolean(this.config.allowDelete) }, message.id));
+                return;
+            }
             default:
                 throw new Error('EUNKNOWN_MESSAGE');
         }
