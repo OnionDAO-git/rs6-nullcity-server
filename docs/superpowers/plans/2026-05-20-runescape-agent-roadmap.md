@@ -341,6 +341,72 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: legacy events now append deduped `wants_unfulfilled` records for spoken wants in that life before closing the life, and portraits summarize them as "Still wanted ...". Focused evidence tests, typecheck, lint, build, full Jest suite, and `git diff --check` passed.
 
+## Workstream J: Patron / Human-Attention Loop
+
+**Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
+
+- `[ ]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
+- `[ ]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
+- `[ ]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
+- `[ ]` **J4: Letters system.** Four canonical kinds (`standing | epitaph | civic | broadcast`). In-game scroll/postbag delivery + web inbox parity. Denormalised sender snapshot preserved post-death.
+- `[ ]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
+- `[ ]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
+- `[ ]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
+- `[ ]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
+
+## Workstream K: Factions Adapted For Runescape
+
+**Purpose:** rs6 needs its own four factions; v2's Solder Saints / Hatchery / Locksmiths / Ledgerwrights are Onion-DAO-flavored and don't translate to RuneScape lore. The four-faction shape + two tension axes + flagship NPCs + home rooms patterns transfer. Spec: `docs/superpowers/specs/2026-05-22-rs6-factions-design.md`. **This workstream requires maintainer creative input before any K-task can ship.**
+
+- `[!]` **K1: Name the four rs6 factions.** Mottos, colors, home POIs, fault lines. Maintainer decision required — see spec's open questions.
+- `[ ]` **K2: Define the two rs6 tension axes.** Analog of v2's body-vs-mind and secrets-vs-receipts.
+- `[ ]` **K3: Seed four flagship NPCs.** ~30-day lifespan, full soul fields, idempotent seed (mirrors v2's `seed.ts` pattern).
+- `[ ]` **K4: Place the five rs6 rooms in-game.** Four faction homes + one neutral atrium. Every `say` line tagged with `room`.
+- `[ ]` **K5: Visual treatment for the secrets faction.** Fog-of-war or hidden-marker rendering equivalent to v2's "redacted" black tile.
+
+## Workstream L: Cross-Resident Memory And Lore
+
+**Purpose:** Residents that affect each other beyond independent action — interactions, projects, rumor. Largely unmined in v2. Spec: `docs/superpowers/specs/2026-05-22-cross-resident-lore-design.md` *(deferred until after J/K land — not load-bearing for June 1)*.
+
+- `[ ]` **L1: `interact_resident` action verbs.** `whisper`, `gift`, `assist_skill`, `challenge_duel` with typed preconditions.
+- `[ ]` **L2: Resident-owned projects.** Long-running funded artifacts (shop, citadel room, herb patch). Pick three project archetypes for rs6 MVP.
+- `[ ]` **L3: `world_events` or broadcast channel.** Shared data surface; ambient utterances propagate to adjacent rooms.
+- `[ ]` **L4: Resident-perceived in-game events.** Player level-ups, PKs, quest completions, faction territory shifts in the perception envelope.
+
+## Workstream M: Hero Residents And Story Arcs
+
+**Purpose:** Named residents who become event focal points for human players. Spec: `docs/superpowers/specs/2026-05-22-hero-residents-design.md`.
+
+- `[ ]` **M1: Hero story-arc shape.** Pitch → fund → progress → resolve → letter. Resolution event template + faction effect.
+- `[ ]` **M2: Lifespan tiers.** Flagships ~30 days, visitor-borns ~24 hours. Asymmetry is intentional.
+- `[ ]` **M3: `request_attention` action.** Hero NPC dialog or in-world begging surface; can also dispatch a letter to a recent patron.
+- `[ ]` **M4: `prepare_epitaph` action.** When `lifespanTicks < threshold`, hero spends a tick writing its own epitaph that overrides the templated one at death.
+- `[ ]` **M5: `trade_resource` action.** Hero proactively offers a resource to a patron who's neglected them.
+- `[ ]` **M6: Hero-as-resource-gatherer at faction landmarks.** Heroes skill-train at rs6 zones their faction controls; output → faction stockpile.
+
+## Workstream N: Physical Event And Embassy
+
+**Purpose:** IRL June 1 surfaces and their in-game counterparts. Most owned by Dev (dashboard) or shared with v2 (staff scanner, print queue), but rs6 needs its own placement decisions. Spec: `docs/superpowers/specs/2026-05-22-embassy-and-event-design.md`.
+
+- `[ ]` **N1: Pick the rs6 embassy POI in-game.** Location for handler interaction, ritual redemption, standing display.
+- `[ ]` **N2: Wall-map projection coordination.** Decide whether rs6 events feed v2's wall ticker or rs6 gets its own wall view. Coordinate with Dev.
+- `[ ]` **N3: In-game graveyard zone.** Tombstones examinable for name/faction/epitaph/cause/ticks-lived. Mirror on dashboard library page.
+- `[ ]` **N4: IRL graveyard wall at the embassy.** Printed epitaphs at the physical embassy; refresh cadence + printing pipeline.
+- `[ ]` **N5: Mortician's Ribbon civic achievement.** Bestowed for humans witnessing N resident deaths (N TBD). In-game cape/title + lanyard variant.
+
+## Workstream O: Engineering And Tooling Polish
+
+**Purpose:** Reusable infrastructure patterns from v2 and RuneBench that don't fit in other workstreams. Spec: *not needed* — items are independently scoped enough that no autonomous-dev spec is required.
+
+- `[ ]` **O1: Tick worker discipline.** Graceful SIGTERM, per-tick stats log line, `status='alive'` guard on decrement UPDATE.
+- `[ ]` **O2: Shard + attention ledger discipline.** Append-only ledgers with denormalised balance caches updated in same tx.
+- `[ ]` **O3: Static catalog in code audit.** Confirm rs6 factions/resources/achievements/rooms/emotions live in typed catalogs, not DB rows.
+- `[ ]` **O4: Real-completion inference health check.** Health endpoint exercises a real LLM call, not just connect.
+- `[ ]` **O5: Layered Docker base image.** Pre-cache engine + deps to cut per-iteration build time.
+- `[ ]` **O6: GitHub Pages auto-deploy from result JSON.** Static leaderboard / library snapshot rebuilt when results change.
+- `[ ]` **O7: `MODEL_CONFIG`-style precomputed UI metadata dictionary.** Single source for module IDs, faction colors, emotion presets.
+- `[ ]` **O8: env + CLI dual config audit.** Document conventions and apply across rs6 CLIs.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
