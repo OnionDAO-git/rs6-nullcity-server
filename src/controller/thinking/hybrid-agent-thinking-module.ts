@@ -1350,6 +1350,17 @@ function starterFishingGoal(tick: number): ActiveGoalState {
     };
 }
 
+function starterFishingCookingGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'catch-and-cook-starter-fish',
+        description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+        steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire', 'Use raw fish on the fire or range'],
+        success: 'Raw fish turn into cooked food or a clear blocker is explained.',
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
+}
+
 function starterCookingGoal(tick: number): ActiveGoalState {
     return {
         id: 'cook-starter-fish',
@@ -1386,6 +1397,9 @@ function combatGoal(tick: number): ActiveGoalState {
 function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | undefined {
     if (taskId === 'starter-fishing-5m') {
         return starterFishingGoal(tick);
+    }
+    if (taskId === 'fishing-cooking-10m') {
+        return starterFishingCookingGoal(tick);
     }
     if (taskId === 'combat-prayer-10m') {
         return combatGoal(tick);

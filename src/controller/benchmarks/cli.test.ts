@@ -124,6 +124,17 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"starter-fishing-5m","version":"0.1.0"');
     });
 
+    it('can dry-run the fishing-cooking benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'fishing-cooking-10m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"fishing-cooking-10m","version":"0.1.0"');
+    });
+
     it('can dry-run the combat-prayer benchmark task', async () => {
         const writes: string[] = [];
 
@@ -162,12 +173,9 @@ describe('benchmark CLI', () => {
             run: jest.fn().mockResolvedValue(artifact),
         }));
 
-        const exitCode = await runBenchmarkCli(
-            ['--task', 'make-fire-5m', '--module', 'onion.runescape.standard', '--output', outputDir],
-            {
-                stdout: text => writes.push(text),
-            },
-        );
+        const exitCode = await runBenchmarkCli(['--task', 'make-fire-5m', '--module', 'onion.runescape.standard', '--output', outputDir], {
+            stdout: text => writes.push(text),
+        });
 
         const rewardJsonPath = path.join(outputDir, 'reward.json');
         const rewardTxtPath = path.join(outputDir, 'reward.txt');

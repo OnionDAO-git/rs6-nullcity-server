@@ -2540,6 +2540,48 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
     });
 
+    it('seeds fishing-cooking as an active benchmark goal without initial Brain drift', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3238, 3244),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                objects: [{ objectId: objectIds.fire, position: { x: 3238, y: 3244, level: 0 } }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'use_item_on',
+                itemSlot: 1,
+                target: { objectId: objectIds.fire, position: { x: 3238, y: 3244, level: 0 } },
+                cause: 'starter_fishing_cook_catch',
+            },
+        ]);
+        expect(result.cause).toBe('starter_fishing_cook_catch');
+        expect(state.cognition?.activeGoal?.id).toBe('catch-and-cook-starter-fish');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
     it('seeds combat prayer as the active benchmark goal without initial Brain drift', async () => {
         const goblin = npc('Goblin', 3254, 3231);
         goblin.key = 'rs:goblin';
