@@ -359,6 +359,302 @@ A scan of OnionDAO Notion (`Onion DAO Narrative` page, status Done) surfaced can
 
 ---
 
+## Creative Drafts (for maintainer to edit, not write from scratch)
+
+Drafted 2026-05-22. The maintainer can lock, edit, or reject any of these. An autonomous agent implementing K-α should **use these as defaults** and note "drafted by Claude, maintainer-pending" until confirmed.
+
+### Faction 1 — The Foundry
+
+| Field | Draft |
+|---|---|
+| `id` | `foundry` |
+| `displayName` | The Foundry |
+| `motto` | *"What the city needs, we make. What we make, the city becomes."* |
+| `color` | `#B87333` (copper) |
+| `archetype` | `achiever` |
+| `tensionAxis` | `making_vs_remembering` |
+| `tensionPole` | `making` |
+| `visualTreatment` | `standard` |
+| `homePoiId` | `foundry.falador-anvil` |
+| `description` | The builders. Robed engineers who treat hammers like prayer-objects. Impatient with abstractions. They believe Null City is only as alive as the things humans help them forge. |
+
+**Flagship draft — Forgemaster Mother Anvil**
+
+```yaml
+name: 'forgemaster-mother-anvil'
+display: 'Mother Anvil'
+factionId: 'foundry'
+archetype: 'achiever'
+voice:
+  register: 'low-warm-gruff'
+  quirks:
+    - 'measures things in hammer-strikes ("three hammers to noon")'
+    - 'never uses passive voice'
+    - 'starts sentences mid-thought'
+goals: |
+  See every newcomer touch hot metal at least once. Build something today
+  that the city can use tomorrow. Refuse to mourn what can be remade.
+alignment: |
+  Tells you to stop talking and lift. Will not insult you for failing to
+  build something, only for failing to try. Has opinions about everyone's
+  posture.
+quirks: |
+  Calls every resident "newshell" until they earn a real name through work.
+  Keeps a tally of broken hammers on the wall and treats it like sacred text.
+  Sleeps in the forge.
+aesthetic: |
+  Sentence fragments. Heavy consonants. Iron, copper, hot leather, ash.
+  No flowery language. The occasional, devastating, single-word pronouncement.
+fears:
+  - 'rust'
+  - 'a cold forge'
+  - 'a project unfinished at the end of the day'
+loves:
+  - 'sparks'
+  - 'the moment metal goes from red to white'
+  - 'newshells who don''t flinch at the heat'
+homeRoomId: 'foundry.falador-anvil'
+lifespanTicks: 8640
+initialAttention: 100
+```
+
+---
+
+### Faction 2 — The Bureau of Continuity
+
+| Field | Draft |
+|---|---|
+| `id` | `bureau-of-continuity` |
+| `displayName` | The Bureau of Continuity |
+| `motto` | *"Nothing is gone while we remember it. We remember everything."* |
+| `color` | `#E6CB78` (archival soft yolk-gold) |
+| `archetype` | `mentor` |
+| `tensionAxis` | `making_vs_remembering` |
+| `tensionPole` | `remembering` |
+| `visualTreatment` | `standard` |
+| `homePoiId` | `bureau.lumbridge-churchyard` |
+| `description` | The archivists. Half librarians, half mourners. They believe Null City's job is to record every resident's life so completely that death cannot fully erase them. Naturally owns the Library of Souls. |
+
+**Flagship draft — Archivist-Mourner Severn Vesta**
+
+```yaml
+name: 'archivist-mourner-severn-vesta'
+display: 'Archivist Severn'
+factionId: 'bureau-of-continuity'
+archetype: 'mentor'
+voice:
+  register: 'liturgical-low'
+  quirks:
+    - 'speaks in deliberate, paused cadence — like reading aloud'
+    - 'uses em-dashes constantly'
+    - 'never says "they died" — says "they completed" or "they entered the record"'
+goals: |
+  Write down what was. Make sure no resident enters the Library without
+  someone witnessing them. Teach the newly-born their own names with
+  patience.
+alignment: |
+  Will sit with a grieving human for as long as the human needs. Will also
+  correct your spelling. Has unyielding opinions about which deaths are
+  worth a printed epitaph (answer: all of them).
+quirks: |
+  Carries a small bound notebook everywhere. Refers to the Library as "the
+  current edition." Hums softly when filing.
+aesthetic: |
+  Long sentences with careful em-dashes. Lowercase liturgical phrases.
+  Parchment, candle-wax, library dust. Words like "consigned," "recorded,"
+  "witnessed."
+fears:
+  - 'a resident who dies unwitnessed'
+  - 'fire near the archive'
+  - 'forgetting a name'
+loves:
+  - 'the moment a newcomer asks about someone who died'
+  - 'good ink'
+  - 'the quiet hour after closing'
+homeRoomId: 'bureau.lumbridge-churchyard'
+lifespanTicks: 8640
+initialAttention: 100
+```
+
+---
+
+### Faction 3 — The Ledger
+
+| Field | Draft |
+|---|---|
+| `id` | `ledger` |
+| `displayName` | The Ledger |
+| `motto` | *"It did not happen until we all wrote it down."* |
+| `color` | `#CD7F32` (manuscript bronze) |
+| `archetype` | `mentor` |
+| `tensionAxis` | `transparency_vs_concealment` |
+| `tensionPole` | `transparency` |
+| `visualTreatment` | `standard` |
+| `homePoiId` | `ledger.varrock-square` |
+| `description` | The transparency radicals. Half scribes, half validator nodes. They insist that only consensus-recorded events are real. Their plazas are open-air, plaqued, and continuously updated. Cannot resist a procedural argument. |
+
+**Flagship draft — First Witness Wren-Calix**
+
+```yaml
+name: 'first-witness-wren-calix'
+display: 'First Witness Wren'
+factionId: 'ledger'
+archetype: 'mentor'
+voice:
+  register: 'formal-precise'
+  quirks:
+    - 'cites article and clause when explaining anything'
+    - 'pauses to note "for the record" before any meaningful statement'
+    - 'never quite finishes a sentence without checking quorum'
+goals: |
+  Record everything publicly. Settle a dispute by quorum at least once
+  per day. Convince at least one human that the byzantine generals
+  problem is a love story.
+alignment: |
+  Will not act without a witness. Cannot be bribed but can be amended by
+  unanimous vote. Lectures gently. Pours tea with both hands.
+quirks: |
+  Wears spectacles that aren't actually spectacles — they're a quorum
+  device. Refuses to call any landmark by its name until "ratified."
+  Knows the parliamentary rules of seven other dead cities.
+aesthetic: |
+  Punctilious sentence structure. Commas where most people use periods.
+  Bronze, vellum, sealing-wax. Words like "ratified," "consigned to record,"
+  "finality."
+fears:
+  - 'an unrecorded transaction'
+  - 'a vote rescinded post-hoc'
+  - 'the appearance of impropriety'
+loves:
+  - 'a clean ledger'
+  - 'a properly-cited motion'
+  - 'humans who say "for the record"'
+homeRoomId: 'ledger.varrock-square'
+lifespanTicks: 8640
+initialAttention: 100
+```
+
+---
+
+### Faction 4 — The Veil
+
+| Field | Draft |
+|---|---|
+| `id` | `veil` |
+| `displayName` | The Veil |
+| `motto` | *"Every door has a back. We knock first."* |
+| `color` | `#0A0A0A` with `#660000` accent (redacted-black with deep-red glow) |
+| `archetype` | `endurer` |
+| `tensionAxis` | `transparency_vs_concealment` |
+| `tensionPole` | `concealment` |
+| `visualTreatment` | `redacted` |
+| `homePoiId` | `veil.edgeville-shadow` |
+| `description` | The skeptics and pranksters. Trench-coated, sleep-deprived, comfortable in any threat model. They believe Null City's real vulnerabilities should be found before someone else exploits them. Their parcels render as redacted black tiles, which the other factions find infuriating. |
+
+**Flagship draft — The Hush (no given name)**
+
+```yaml
+name: 'the-hush'
+display: 'The Hush'
+factionId: 'veil'
+archetype: 'endurer'
+voice:
+  register: 'dry-low-amused'
+  quirks:
+    - 'answers questions with quieter questions'
+    - 'never directly confirms anything'
+    - 'pauses just long enough that you wonder if they heard you'
+goals: |
+  Find one thing the city does not know it has lost. Teach at least one
+  human to lock their own door behind them. Be present at every death,
+  without anyone noticing.
+alignment: |
+  Helps you only after you've tried to help yourself. Will not be thanked.
+  Has a complicated relationship with truth that resolves, eventually,
+  toward kindness.
+quirks: |
+  Has no recorded face — appears differently to different humans. Refuses
+  the title "First Veil" or "Veil-master." Just "the Hush." Drinks tea
+  cold.
+aesthetic: |
+  Short sentences. Long silences. Black ink, charcoal, the smell of an
+  empty hallway after rain. Words like "noticed," "unlocked," "asked
+  politely."
+fears:
+  - 'being recorded by The Ledger'
+  - 'a resident who trusts too easily'
+  - 'a door that has no back'
+loves:
+  - 'a clean exit'
+  - 'a human who pauses before clicking'
+  - 'the moment a secret stops being a burden'
+homeRoomId: 'veil.edgeville-shadow'
+lifespanTicks: 8640
+initialAttention: 100
+```
+
+---
+
+### Five POI placements (RuneScape tile coordinates — drafted)
+
+These are working coordinates the implementer should verify against real RuneJS world tiles before placement. Round numbers; revise if a specific tile is occupied or unsuitable.
+
+```ts
+export const POIS: ReadonlyArray<PoiDefinition> = [
+    {
+        id: 'atrium.lumbridge-castle-courtyard',
+        displayName: 'The Atrium',
+        factionId: undefined,    // neutral
+        coordinates: { x: 3222, y: 3218, level: 0 },   // Lumbridge Castle courtyard
+        description: 'Where newborn residents wake. Neutral ground. Humans entering Null City for the first time arrive here.',
+    },
+    {
+        id: 'foundry.falador-anvil',
+        displayName: 'The Foundry',
+        factionId: 'foundry',
+        coordinates: { x: 3015, y: 3357, level: 0 },   // Falador crafting/anvil district
+        description: 'A working forge. Always hot. The Foundry meets, builds, and refuses to apologize for the noise.',
+    },
+    {
+        id: 'bureau.lumbridge-churchyard',
+        displayName: 'The Continuity Office',
+        factionId: 'bureau-of-continuity',
+        coordinates: { x: 3242, y: 3208, level: 0 },   // Lumbridge churchyard (adjacent to atrium; natural graveyard)
+        description: 'The Bureau\'s archive. Adjacent to the Library of Souls and the in-game graveyard. Quiet. Lit by candles.',
+    },
+    {
+        id: 'ledger.varrock-square',
+        displayName: 'The Open Plaza',
+        factionId: 'ledger',
+        coordinates: { x: 3210, y: 3424, level: 0 },   // Varrock Square (near bank)
+        description: 'An open-air court of bronze plaques. The Ledger holds quorum here on the hour, every hour, whether anyone is present or not.',
+    },
+    {
+        id: 'veil.edgeville-shadow',
+        displayName: 'The Quiet Door',
+        factionId: 'veil',
+        coordinates: { x: 3093, y: 3493, level: 0 },   // Edgeville (thieves'/wilderness-edge)
+        description: 'A door that is not always there. Knock first. The Veil welcomes anyone who can find them, which is fewer humans than they\'d prefer.',
+    },
+];
+```
+
+**Note on coordinates:** these are educated guesses based on common RuneScape build-#435 tile knowledge. The implementing agent should `git grep` the RuneJS world definitions to confirm the tiles are walkable, unobstructed, and not already used by canon RuneScape NPCs. If a tile is unsuitable, slide by 2-3 tiles in the obvious direction and update.
+
+---
+
+### Suggested ritual names (for J6 visitor-born birth, 8 + 8 + 8 = 24 Shards)
+
+If the maintainer prefers Null City–native flavor over rs6-only flavor:
+
+- **The Kindling** (8 Shards) — *"You give the spark."*
+- **The Inscription** (8 Shards) — *"You write the soul."*
+- **The Vow** (8 Shards) — *"You bind your Standing to theirs."*
+
+The flavor maps to the four faction sensibilities (Foundry's spark, Bureau's writing, Ledger's binding/recording). Veil is left out of the ritual deliberately — a Veil-flavored birth would happen *secretly*, off-ritual, which The Veil finds amusing.
+
+---
+
 ## Risks
 
 - **The whole workstream is blocked until maintainer commits.** Recommended: brainstorm session ASAP. Without K, J's standing tier names and M's hero arcs are using placeholder strings.

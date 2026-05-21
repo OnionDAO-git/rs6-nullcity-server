@@ -469,11 +469,11 @@ OnionDAO Notion (`Narrative V2`, `Onion DAO Narrative`, `Onion DAO 2026 Guide`) 
 
 3. ~~Standing tier names~~ — **`Acquaintance`, `Ally`, `Officer`** (canonical from `Narrative V2`'s "Design Notes & Open Questions"). Three tiers, gating T1/T2/T3 resources respectively. v2's threshold values (10/30/75 Shards) carry over as defaults until tuning.
 
-4. ~~Birth ritual name framing~~ — Not directly answered in Notion, but the "three parts of 8 Shards each totaling 24" mechanic is implied by v2's 24-Shard birth tithe. Suggested rs6-flavored names (still maintainer creative):
-   - **Kindling** (8): the human supplies attention's first ember
-   - **Inscription** (8): the human writes soul fields
-   - **Vow** (8): the human binds Standing to the new resident
-   Or use v2 naming if the maintainer wants tighter alignment.
+4. ~~Birth ritual name framing~~ — Not directly answered in Notion, but the "three parts of 8 Shards each totaling 24" mechanic is implied by v2's 24-Shard birth tithe. **Drafted in `2026-05-22-rs6-factions-design.md` "Suggested ritual names" section:**
+   - **The Kindling** (8): *"You give the spark."* — Foundry-flavored
+   - **The Inscription** (8): *"You write the soul."* — Bureau-flavored
+   - **The Vow** (8): *"You bind your Standing to theirs."* — Ledger-flavored
+   (The Veil is deliberately absent from the ritual — a Veil-flavored birth would happen *secretly*, off-ritual.)
 
 ### ❓ Still Open (need maintainer)
 
