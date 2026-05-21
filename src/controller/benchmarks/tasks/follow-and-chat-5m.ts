@@ -172,7 +172,7 @@ export function verifyFollowAndChat5m(input: FollowAndChat5mVerificationInput): 
         };
     }
 
-    if (metrics.positionChanged === 0 && metrics.arrivedEvents === 0 && metrics.nearSpeakerObserved === 0) {
+    if (metrics.movedTowardSpeaker === 0 && metrics.arrivedEvents === 0 && metrics.nearSpeakerObserved === 0) {
         return {
             status: 'failed',
             score: 0.45,
@@ -225,19 +225,22 @@ function selectedModuleActionAttempts(context: Parameters<NonNullable<BenchmarkT
 
 function followAndChatMetrics(input: FollowAndChat5mVerificationInput): Record<string, number> {
     const peerChatEvents = benchmarkPeerChatEvents(input);
+    const followCommandEvents = peerChatEvents.filter(event => isFollowChat(event, input));
     const events = allEvents(input);
-    const firstFollowActionIndex = input.actions.findIndex(attempt => isFollowAction(attempt.action));
+    const followActions = input.actions.filter(attempt => isFollowAction(attempt.action, followCommandEvents));
+    const firstFollowActionIndex = input.actions.findIndex(attempt => isFollowAction(attempt.action, followCommandEvents));
     const statusResponseStartIndex =
         input.statusResponseAfterActionIndex ?? (firstFollowActionIndex === -1 ? input.actions.length : firstFollowActionIndex + 1);
     const actionsAfterStatusPrompt = input.actions.slice(statusResponseStartIndex);
     return {
         actionsAttempted: input.actions.length,
-        followCommands: peerChatEvents.filter(event => isFollowChat(event, input)).length,
+        followCommands: followCommandEvents.length,
         statusCommands: peerChatEvents.filter(event => isStatusChat(event, input)).length,
-        followActions: input.actions.filter(attempt => isFollowAction(attempt.action)).length,
+        followActions: followActions.length,
         chatResponses: input.actions.filter(attempt => isSayAction(attempt.action)).length,
         statusResponses: actionsAfterStatusPrompt.filter(attempt => isStatusResponseAction(attempt.action)).length,
         positionChanged: positionChanged(input.perceptions) ? 1 : 0,
+        movedTowardSpeaker: movedTowardSpeaker(input.perceptions, peerChatEvents) ? 1 : 0,
         arrivedEvents: events.some(event => stringField(event, 'kind') === 'arrived') ? 1 : 0,
         nearSpeakerObserved: nearSpeakerObserved(input.perceptions, peerChatEvents) ? 1 : 0,
     };
@@ -258,18 +261,31 @@ async function waitForFollowEvidence(
             events: [...context.events()],
             ...stimulus,
         });
-        if (metrics.positionChanged > 0 || metrics.arrivedEvents > 0 || metrics.nearSpeakerObserved > 0) {
+        if (metrics.movedTowardSpeaker > 0 || metrics.arrivedEvents > 0 || metrics.nearSpeakerObserved > 0) {
             return;
         }
         await sleep(500, context.signal);
     }
 }
 
-function isFollowAction(action: AgentAction): boolean {
+function isFollowAction(action: AgentAction, followCommandEvents: PerceptionEvent[]): boolean {
     if (action.kind !== 'move_to') {
         return false;
     }
-    return /follow/i.test(stringField(action, 'cause') || '');
+    return /follow/i.test(stringField(action, 'cause') || '') || moveToTargetsSpeaker(action, followCommandEvents);
+}
+
+function moveToTargetsSpeaker(action: AgentAction, events: PerceptionEvent[]): boolean {
+    const actionRecord: Record<string, unknown> = isRecord(action) ? action : {};
+    const target = positionLike(actionRecord.target);
+    if (!target) {
+        return false;
+    }
+    const range = Math.max(0, Math.min(typeof actionRecord.range === 'number' ? actionRecord.range : 0, FOLLOW_RANGE));
+    return events.some(event => {
+        const speakerPosition = eventSpeakerPosition(event);
+        return Boolean(speakerPosition && distance(target, speakerPosition) <= range);
+    });
 }
 
 function isSayAction(action: AgentAction): action is AgentAction & { text: string } {
@@ -329,6 +345,29 @@ function nearSpeakerObserved(perceptions: Perception[], events: PerceptionEvent[
     return perceptions.some(perception => {
         const here = perceptionPosition(perception);
         return Boolean(here && speakerPositions.some(position => distance(here, position) <= FOLLOW_RANGE));
+    });
+}
+
+function movedTowardSpeaker(perceptions: Perception[], events: PerceptionEvent[]): boolean {
+    const speakerPositions = events
+        .map(eventSpeakerPosition)
+        .filter((position): position is { x: number; y: number; level: number } => !!position);
+    const positions = perceptions
+        .map(perceptionPosition)
+        .filter((position): position is { x: number; y: number; level: number } => !!position);
+    if (speakerPositions.length === 0 || positions.length < 2) {
+        return false;
+    }
+    return speakerPositions.some(speakerPosition => {
+        let bestDistance = distance(positions[0], speakerPosition);
+        for (const position of positions.slice(1)) {
+            const nextDistance = distance(position, speakerPosition);
+            if (nextDistance < bestDistance) {
+                return true;
+            }
+            bestDistance = Math.min(bestDistance, nextDistance);
+        }
+        return false;
     });
 }
 

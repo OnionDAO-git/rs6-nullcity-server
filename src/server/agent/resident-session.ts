@@ -26,7 +26,6 @@ export class ResidentSession {
     private readonly resultWaiters: ResultWaiter[] = [];
     private readonly eventWaiters: EventWaiter[] = [];
     private readonly pendingRequests: PendingActionRequest[] = [];
-    private orphanedResultBudget = 0;
     private readonly tickSubscription;
     private latestPerception: Perception | null = null;
     private closed = false;
@@ -117,7 +116,6 @@ export class ResidentSession {
         this.resolveAllResultWaiters({ ok: false, reason: 'session_closed' });
         this.resolveEventWaiters(null);
         this.pendingRequests.splice(0, this.pendingRequests.length);
-        this.orphanedResultBudget = 0;
         this.observers.clear();
     }
 
@@ -155,16 +153,11 @@ export class ResidentSession {
 
     private correlateActionResults(results: ReadonlyArray<ActionResult>): ResidentActionResult[] {
         return results.map(result => {
-            if (this.orphanedResultBudget > 0) {
-                this.orphanedResultBudget -= 1;
-                const ambiguousRequest = this.pendingRequests.shift();
-                if (ambiguousRequest) {
-                    this.resolveResultWaiterForRequest(ambiguousRequest, { ok: false, reason: 'action_result_uncorrelated' });
-                }
+            const request = this.pendingRequests.shift();
+            if (request?.orphaned) {
                 return { result };
             }
 
-            const request = this.pendingRequests.shift();
             if (request) {
                 this.resolveResultWaiterForRequest(request, result);
             }
@@ -177,8 +170,7 @@ export class ResidentSession {
         if (index === -1) {
             return;
         }
-        this.pendingRequests.splice(index, 1);
-        this.orphanedResultBudget += 1;
+        request.orphaned = true;
     }
 
     private resolveResultWaiterForRequest(request: PendingActionRequest, result: ActionResult): void {
@@ -243,6 +235,7 @@ interface ResultWaiter {
 
 interface PendingActionRequest {
     requestId?: string | number;
+    orphaned?: boolean;
 }
 
 interface EventWaiter {

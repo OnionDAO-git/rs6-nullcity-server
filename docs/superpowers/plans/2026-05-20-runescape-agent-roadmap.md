@@ -40,7 +40,7 @@ Agents should update the status marker and add a one-line note under the task wh
   - Example gateway config uses `127.0.0.1` and a placeholder auth token.
 - `[x]` MVP game-skill context, workflow availability, prompt injection, and knowledge suggestion plumbing exist.
 - `[x]` A dedicated agent-facing RuneScape skill/doc index exists under `docs/runescape-skill/`.
-- `[~]` Benchmark harness foundation exists; scripted make-fire/explore smokes exist, but autonomous module benchmark mode and dashboard benchmark pages are still pending.
+- `[~]` Benchmark harness foundation exists; scripted and autonomous make-fire/explore/follow-chat smokes exist, but dashboard benchmark pages are still pending.
 
 ## Workstream A: SPARK Capability Facades
 
@@ -145,7 +145,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: every task has a verifier, scoring rubric, and fixture tests.
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
   - Partial 2026-05-20 on `codex/body-waiter-coordinator`: added `explore-report-5m` verifier/CLI wiring and live smoke (`status=passed`, `score=1`, artifact `data/benchmarks/bench_20260521002220_explore_report_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer, follow-and-chat.
-  - Partial 2026-05-21 on `codex/body-waiter-coordinator`: added `follow-and-chat-5m`, disposable benchmark peer support, exact per-run peer chat stimuli, and live autonomous smoke (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, `statusResponses=1`, `arrivedEvents=1`, artifact `/tmp/oniondao-autonomous-bench/bench_20260521041950_follow_and_chat_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer. Local gateway still reports delete-disabled cleanup as a metric.
+  - Partial 2026-05-21 on `codex/body-waiter-coordinator`: added `follow-and-chat-5m`, disposable benchmark peer support, exact per-run peer chat stimuli, and live autonomous smoke (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, `statusResponses=1`, `movedTowardSpeaker=1`, artifact `/tmp/oniondao-autonomous-follow-chat/bench_20260521044246_follow_and_chat_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer. Local gateway still reports delete-disabled cleanup as a metric.
 
 - `[x]` **C5: Add benchmark CLI.**
   - Files: `src/controller/benchmarks/cli.ts`, `package.json`
@@ -156,8 +156,8 @@ Safe public module facade building blocks are implemented, but the public member
 - `[x]` **C6: Add autonomous module benchmark mode.**
   - Files: `src/controller/benchmarks/benchmark-runner.ts`, `src/controller/benchmarks/cli.ts`, benchmark task verifiers, fixture tests.
   - Deliverable: a benchmark mode starts or attaches to `ResidentRuntime` with the selected SPARK module and observes the module's decisions instead of submitting the winning action from the task script.
-  - Verification: artifact records `mode: autonomous`, action/inference evidence contains the selected module id/version, and at least `make-fire-5m` can be run without scripted task action injection.
-  - Verified 2026-05-21 on `codex/body-waiter-coordinator`: autonomous runner mode starts a benchmark `ResidentRuntime`, records `mode: autonomous`, requires selected-module action and inference evidence before a pass, isolates benchmark runtime memory/log/knowledge writes to temp dirs, and keeps scripted task injection out of `runAutonomous`. Focused benchmark tests, typecheck, lint, format, build, `git diff --check`, full Jest suite, and live `make-fire-5m` autonomous smoke passed (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, artifact `/tmp/oniondao-autonomous-bench/bench_20260521032113_make_fire_5m.json`). Local gateway still reports delete-disabled cleanup as a metric.
+  - Verification: artifact records `mode: autonomous`, action evidence contains the selected module id/version, inference evidence is recorded as an optional metric, and at least `make-fire-5m` can be run without scripted task action injection.
+  - Verified 2026-05-21 on `codex/body-waiter-coordinator`: autonomous runner mode starts a benchmark `ResidentRuntime`, records `mode: autonomous`, requires selected-module action evidence before a pass, records selected-module inference evidence as an optional metric, isolates benchmark runtime memory/log/knowledge writes to temp dirs, and keeps scripted task injection out of `runAutonomous`. Focused benchmark tests, typecheck, lint, format, build, `git diff --check`, full Jest suite, and live `make-fire-5m` autonomous smoke passed (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, artifact `/tmp/oniondao-autonomous-bench/bench_20260521032113_make_fire_5m.json`). Local gateway still reports delete-disabled cleanup as a metric.
 
 - `[ ]` **C7: Make benchmark cleanup quiet in local dev.**
   - Files: benchmark runner, local dev config/docs, gateway delete policy as needed.

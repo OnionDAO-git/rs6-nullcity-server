@@ -139,7 +139,7 @@ describe('BenchmarkRunner', () => {
         expect(artifact.metrics.actionsAttempted).toBe(1);
     });
 
-    it('fails autonomous passes that lack selected module action evidence', async () => {
+    it('fails autonomous passes whose action evidence is untagged or from another module', async () => {
         const gateway = new MockBenchmarkGateway();
         const autonomousRuntime = {
             start: jest.fn(async context => {
@@ -149,6 +149,12 @@ describe('BenchmarkRunner', () => {
                     result: { ok: true },
                     source: 'thinking',
                     sparkModule: { id: 'onion.other', version: '0.1.0' },
+                });
+                context.recordActionAttempt({
+                    requestId: 'untagged-action',
+                    action: { kind: 'say', text: 'untagged' },
+                    result: { ok: true },
+                    source: 'workflow',
                 });
             }),
             stop: jest.fn(async () => undefined),
@@ -166,10 +172,11 @@ describe('BenchmarkRunner', () => {
         expect(artifact.status).toBe('failed');
         expect(artifact.failureReason).toContain('without selected module action evidence');
         expect(artifact.metrics.selectedModuleActions).toBe(0);
-        expect(artifact.metrics.actionsAttempted).toBe(1);
+        expect(artifact.metrics.untaggedActions).toBe(1);
+        expect(artifact.metrics.actionsAttempted).toBe(2);
     });
 
-    it('fails autonomous passes that lack selected module inference evidence', async () => {
+    it('passes autonomous selected-module actions without inference evidence and records the inference metric', async () => {
         const gateway = new MockBenchmarkGateway();
         const module = { id: 'onion.runescape.standard', version: '0.1.0' };
         const autonomousRuntime = {
@@ -194,8 +201,9 @@ describe('BenchmarkRunner', () => {
 
         const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime, module }).run();
 
-        expect(artifact.status).toBe('failed');
-        expect(artifact.failureReason).toContain('without selected module inference evidence');
+        expect(artifact.status).toBe('passed');
+        expect(artifact.failureReason).toBeUndefined();
+        expect(artifact.score).toBe(1);
         expect(artifact.metrics.selectedModuleActions).toBe(1);
         expect(artifact.metrics.selectedModuleInferences).toBe(0);
     });

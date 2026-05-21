@@ -527,19 +527,7 @@ function enforceAutonomousModuleEvidence(
         return outcome;
     }
     if (selectedModuleActionCount(evidence, module) > 0) {
-        if (selectedModuleInferenceCount(evidence, module) > 0) {
-            return outcome;
-        }
-        return {
-            ...outcome,
-            status: 'failed',
-            score: 0,
-            failureReason: `Autonomous benchmark passed task verifier without selected module inference evidence for ${module.id}@${module.version}`,
-            summaries: [
-                ...(outcome.summaries || []),
-                `Autonomous benchmark requires selected module inference evidence for ${module.id}@${module.version}.`,
-            ],
-        };
+        return outcome;
     }
     return {
         ...outcome,

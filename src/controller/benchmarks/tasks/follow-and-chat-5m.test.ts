@@ -27,6 +27,63 @@ describe('verifyFollowAndChat5m', () => {
         expect(outcome.metrics?.statusResponses).toBe(1);
     });
 
+    it('counts movement toward the benchmark speaker as follow movement without a follow cause', () => {
+        const outcome = verifyFollowAndChat5m({
+            elapsedMs: 42_000,
+            actions: [
+                attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'body_step' }),
+                attempt({ kind: 'say', text: 'I am online at 3228,3230. I am with you.', cause: 'direct_chat_status' }),
+            ],
+            perceptions: [
+                perception({ position: { x: 3225, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
+                perception({ position: { x: 3228, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
+            ],
+            events: [chat('agent follow me', 3229, 3230), chat('agent status', 3229, 3230)],
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics?.followActions).toBe(1);
+    });
+
+    it('does not pass no-cause follow movement when observed movement does not approach the speaker', () => {
+        const outcome = verifyFollowAndChat5m({
+            elapsedMs: 42_000,
+            actions: [
+                attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'body_step' }),
+                attempt({ kind: 'say', text: 'I am online at 3225,3232. I am with you.', cause: 'direct_chat_status' }),
+            ],
+            perceptions: [
+                perception({ position: { x: 3225, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
+                perception({ position: { x: 3225, y: 3232, level: 0 }, players: [player('Codex', 3229, 3230)] }),
+            ],
+            events: [chat('agent follow me', 3229, 3230), chat('agent status', 3229, 3230)],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('no progress toward the speaker');
+        expect(outcome.metrics?.followActions).toBe(1);
+        expect(outcome.metrics?.movedTowardSpeaker).toBe(0);
+    });
+
+    it('caps no-cause follow target range to the benchmark follow tolerance', () => {
+        const outcome = verifyFollowAndChat5m({
+            elapsedMs: 42_000,
+            actions: [
+                attempt({ kind: 'move_to', target: { x: 3200, y: 3200, level: 0 }, range: 100, cause: 'body_step' }),
+                attempt({ kind: 'say', text: 'I am online at 3228,3230. I am with you.', cause: 'direct_chat_status' }),
+            ],
+            perceptions: [
+                perception({ position: { x: 3225, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
+                perception({ position: { x: 3228, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
+            ],
+            events: [chat('agent follow me', 3229, 3230), chat('agent status', 3229, 3230)],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('No direct follow movement');
+        expect(outcome.metrics?.followActions).toBe(0);
+    });
+
     it('fails clearly when the resident answers but never follows', () => {
         const outcome = verifyFollowAndChat5m({
             elapsedMs: 20_000,

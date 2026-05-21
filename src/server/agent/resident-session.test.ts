@@ -54,23 +54,92 @@ describe('ResidentSession', () => {
         session.close();
     });
 
-    it('fails a newer waiter instead of assigning it to an ambiguous post-timeout result', async () => {
+    it('resolves an earlier wait with its real result when a later wait times out first', async () => {
+        jest.useFakeTimers();
         const resident = fakeResident([], [[{ ok: true }]]);
         const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);
         const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
         session.attach(observer);
 
-        await expect(session.submitActionAndWait({ kind: 'noop' }, 'request-1', 1)).resolves.toEqual({
-            ok: false,
-            reason: 'action_result_timeout',
-        });
-        const second = session.submitActionAndWait({ kind: 'say', text: 'second' }, 'request-2', 100);
+        try {
+            const first = session.submitActionAndWait({ kind: 'noop' }, 'request-1', 100);
+            const second = session.submitActionAndWait({ kind: 'say', text: 'second' }, 'request-2', 1);
 
-        (activeWorld.tickComplete as unknown as TickSubject).next();
+            jest.advanceTimersByTime(1);
+            await expect(second).resolves.toEqual({ ok: false, reason: 'action_result_timeout' });
 
-        await expect(second).resolves.toEqual({ ok: false, reason: 'action_result_uncorrelated' });
-        expect(observer.sendActionResults).toHaveBeenCalledWith(resident, [{ result: { ok: true } }]);
-        session.close();
+            (activeWorld.tickComplete as unknown as TickSubject).next();
+
+            await expect(first).resolves.toEqual({ ok: true });
+            expect(observer.sendActionResults).toHaveBeenCalledWith(resident, [{ requestId: 'request-1', result: { ok: true } }]);
+        } finally {
+            session.close();
+            jest.useRealTimers();
+        }
+    });
+
+    it('consumes a timed-out result without assigning it to a newer waiter', async () => {
+        jest.useFakeTimers();
+        const resident = fakeResident([], [[{ ok: true }], [{ ok: true }]]);
+        const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
+        session.attach(observer);
+
+        try {
+            const first = session.submitActionAndWait({ kind: 'noop' }, 'request-1', 1);
+            jest.advanceTimersByTime(1);
+            await expect(first).resolves.toEqual({ ok: false, reason: 'action_result_timeout' });
+
+            const second = session.submitActionAndWait({ kind: 'say', text: 'second' }, 'request-2', 100);
+            let settled = false;
+            second.then(() => {
+                settled = true;
+            });
+
+            (activeWorld.tickComplete as unknown as TickSubject).next();
+            await Promise.resolve();
+
+            expect(settled).toBe(false);
+            expect(observer.sendActionResults).toHaveBeenCalledWith(resident, [{ result: { ok: true } }]);
+
+            (activeWorld.tickComplete as unknown as TickSubject).next();
+
+            await expect(second).resolves.toEqual({ ok: true });
+            expect(observer.sendActionResults).toHaveBeenLastCalledWith(resident, [{ requestId: 'request-2', result: { ok: true } }]);
+        } finally {
+            session.close();
+            jest.useRealTimers();
+        }
+    });
+
+    it('preserves FIFO correlation when a middle request times out', async () => {
+        jest.useFakeTimers();
+        const resident = fakeResident([], [[{ ok: true }, { ok: true }, { ok: true }]]);
+        const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
+        session.attach(observer);
+
+        try {
+            const first = session.submitActionAndWait({ kind: 'noop' }, 'request-1', 100);
+            const second = session.submitActionAndWait({ kind: 'say', text: 'second' }, 'request-2', 1);
+            const third = session.submitActionAndWait({ kind: 'say', text: 'third' }, 'request-3', 100);
+
+            jest.advanceTimersByTime(1);
+            await expect(second).resolves.toEqual({ ok: false, reason: 'action_result_timeout' });
+
+            (activeWorld.tickComplete as unknown as TickSubject).next();
+
+            await expect(first).resolves.toEqual({ ok: true });
+            await expect(third).resolves.toEqual({ ok: true });
+            expect(observer.sendActionResults).toHaveBeenCalledWith(resident, [
+                { requestId: 'request-1', result: { ok: true } },
+                { result: { ok: true } },
+                { requestId: 'request-3', result: { ok: true } },
+            ]);
+        } finally {
+            session.close();
+            jest.useRealTimers();
+        }
     });
 });
 

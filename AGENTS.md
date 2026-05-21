@@ -94,7 +94,7 @@ npm run controller:knowledge:review
 npm run controller:bench -- --task make-fire-5m --module onion.runescape.standard --dry-run
 ```
 
-Benchmark CLI tasks support scripted smokes and autonomous module mode. Use `--mode autonomous` plus selected-module action/inference evidence before treating a score as proof that a SPARK module made decisions.
+Benchmark CLI tasks support scripted smokes and autonomous module mode. Use `--mode autonomous` plus selected-module action evidence before treating a score as proof that a SPARK module made decisions; selected-module inference evidence is an optional metric that only proves LLM-backed reasoning when present.
 
 ## Agent Work Protocol
 
