@@ -920,6 +920,66 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('moves toward direct follow commands from another resident peer', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'stay-visible',
+                description: 'Stay visible to nearby actors.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromResidentPeer('agent follow me', 3222, 3213)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3222, y: 3213, level: 0 }, range: 2, cause: 'direct_chat_follow' },
+        ]);
+        expect(result.cause).toBe('direct_chat_follow');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('ignores direct follow chat emitted by itself', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'stay-visible',
+                description: 'Stay visible to nearby actors.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromSelfResident('agent follow me', 3222, 3213)],
+            }),
+        );
+
+        expect(result.cause).not.toBe('direct_chat_follow');
+        expect(result.actions).not.toContainEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3213, level: 0 },
+            range: 2,
+            cause: 'direct_chat_follow',
+        });
+    });
+
     it('returns to the visibility anchor on direct home commands without inference', async () => {
         const llm = scriptedLlm([]);
         const agent = hybridAgent(llm, runtimeState());
@@ -2425,6 +2485,36 @@ function chatFromCodex(text: string, x: number, y: number): Record<string, unkno
             id: 'player:codex',
             kind: 'player',
             name: 'codex',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        },
+        text,
+        to: 'public',
+    };
+}
+
+function chatFromResidentPeer(text: string, x: number, y: number): Record<string, unknown> {
+    return {
+        kind: 'chat',
+        from: {
+            id: 'resident:res:bmk_codex',
+            kind: 'resident',
+            name: 'Codex',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        },
+        text,
+        to: 'public',
+    };
+}
+
+function chatFromSelfResident(text: string, x: number, y: number): Record<string, unknown> {
+    return {
+        kind: 'chat',
+        from: {
+            id: 'resident:res:agent',
+            kind: 'resident',
+            name: 'res:agent',
             position: { x, y, level: 0 },
             hpFraction: 1,
         },

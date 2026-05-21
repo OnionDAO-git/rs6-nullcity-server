@@ -153,6 +153,8 @@ function taskContext(overrides: {
         module: STANDARD_MODULE,
         signal: new AbortController().signal,
         submitAction: overrides.submitAction,
+        peerResident: jest.fn(),
+        submitPeerAction: jest.fn(),
         recordActionAttempt: jest.fn(),
         recordInferenceRequest: jest.fn(),
         recordSummary: jest.fn(),

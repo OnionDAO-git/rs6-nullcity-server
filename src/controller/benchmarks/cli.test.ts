@@ -64,4 +64,15 @@ describe('benchmark CLI', () => {
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"task":{"id":"explore-report-5m","version":"0.1.0"');
     });
+
+    it('can dry-run the follow-and-chat benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'follow-and-chat-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"follow-and-chat-5m","version":"0.1.0"');
+    });
 });

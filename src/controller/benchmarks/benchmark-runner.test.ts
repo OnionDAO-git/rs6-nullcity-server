@@ -268,6 +268,60 @@ describe('BenchmarkRunner', () => {
         expect(artifact.evidence.summaries).toContain('Autonomous runtime produced make-fire evidence.');
         expect(artifact.evidence.summaries).toContain('Autonomous verifier saw module evidence.');
     });
+
+    it('creates disposable peer residents and keeps peer actions out of agent action evidence', async () => {
+        const gateway = new MockBenchmarkGateway();
+        (gateway.submitActionWithRequestId as jest.Mock).mockImplementation(async (_resident, action) => ({
+            requestId: action.kind === 'say' && action.text === 'agent follow me' ? 'peer-request-1' : 'agent-request-1',
+            ackResult: { ok: true },
+        }));
+        const residentName = expect.stringMatching(/^res:bmk_follow_[a-z0-9]{8}$/);
+        const peerName = expect.stringMatching(/^res:bmk_codex_[a-z0-9]{8}$/);
+        const task: BenchmarkTask = {
+            id: 'follow-and-chat-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            resident: {
+                spawnPosition: { x: 3225, y: 3230, level: 0 },
+            },
+            peers: [
+                {
+                    id: 'codex',
+                    spawnPosition: { x: 3229, y: 3230, level: 0 },
+                },
+            ],
+            run: async context => {
+                expect(context.peerResident('codex')).toEqual(peerName);
+                await context.submitPeerAction('codex', { kind: 'say', text: 'agent follow me' });
+                await context.submitAction({ kind: 'say', text: 'I heard you' });
+                return { status: 'passed', score: 1 };
+            },
+        };
+
+        const artifact = await runner(gateway, task).run();
+
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: residentName,
+            spawnPosition: { x: 3225, y: 3230, level: 0 },
+        });
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: peerName,
+            spawnPosition: { x: 3229, y: 3230, level: 0 },
+        });
+        expect(gateway.connectResident).toHaveBeenCalledWith({
+            name: peerName,
+            observe: false,
+            control: true,
+            onDisconnect: 'idle',
+        });
+        expect(gateway.submitActionWithRequestId).toHaveBeenCalledWith(peerName, { kind: 'say', text: 'agent follow me' });
+        expect(gateway.submitActionWithRequestId).toHaveBeenCalledWith(residentName, { kind: 'say', text: 'I heard you' });
+        expect(gateway.disconnectResident).toHaveBeenCalledWith(peerName);
+        expect(gateway.deleteResident).toHaveBeenCalledWith(peerName);
+        expect(artifact.status).toBe('passed');
+        expect(artifact.evidence.actionAttemptIds).toEqual(['agent-request-1']);
+        expect(artifact.metrics.actionsAttempted).toBe(1);
+    });
 });
 
 class MockBenchmarkGateway extends EventEmitter implements BenchmarkGateway {

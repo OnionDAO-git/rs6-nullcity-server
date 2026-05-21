@@ -145,6 +145,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: every task has a verifier, scoring rubric, and fixture tests.
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
   - Partial 2026-05-20 on `codex/body-waiter-coordinator`: added `explore-report-5m` verifier/CLI wiring and live smoke (`status=passed`, `score=1`, artifact `data/benchmarks/bench_20260521002220_explore_report_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer, follow-and-chat.
+  - Partial 2026-05-21 on `codex/body-waiter-coordinator`: added `follow-and-chat-5m`, disposable benchmark peer support, exact per-run peer chat stimuli, and live autonomous smoke (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, `statusResponses=1`, `arrivedEvents=1`, artifact `/tmp/oniondao-autonomous-bench/bench_20260521041950_follow_and_chat_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer. Local gateway still reports delete-disabled cleanup as a metric.
 
 - `[x]` **C5: Add benchmark CLI.**
   - Files: `src/controller/benchmarks/cli.ts`, `package.json`
@@ -157,6 +158,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: a benchmark mode starts or attaches to `ResidentRuntime` with the selected SPARK module and observes the module's decisions instead of submitting the winning action from the task script.
   - Verification: artifact records `mode: autonomous`, action/inference evidence contains the selected module id/version, and at least `make-fire-5m` can be run without scripted task action injection.
   - Verified 2026-05-21 on `codex/body-waiter-coordinator`: autonomous runner mode starts a benchmark `ResidentRuntime`, records `mode: autonomous`, requires selected-module action and inference evidence before a pass, isolates benchmark runtime memory/log/knowledge writes to temp dirs, and keeps scripted task injection out of `runAutonomous`. Focused benchmark tests, typecheck, lint, format, build, `git diff --check`, full Jest suite, and live `make-fire-5m` autonomous smoke passed (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, artifact `/tmp/oniondao-autonomous-bench/bench_20260521032113_make_fire_5m.json`). Local gateway still reports delete-disabled cleanup as a metric.
+
+- `[ ]` **C7: Make benchmark cleanup quiet in local dev.**
+  - Files: benchmark runner, local dev config/docs, gateway delete policy as needed.
+  - Deliverable: disposable benchmark residents and peers are removed cleanly in an explicit local benchmark mode, or cleanup-disabled local runs are clearly separated from pass/fail metrics and easy to sweep.
+  - Verification: local autonomous benchmark artifact has no cleanup warning when cleanup is intentionally enabled; delete remains disabled by default for normal local gameplay unless explicitly opted in.
 
 ## Workstream D: Dashboard Debugging
 
@@ -220,10 +226,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: agent periodically says what he is trying to do, why, and what he needs from nearby humans.
   - Verification: chat tests cover "I am going to chop logs", "I need a tinderbox/logs", and "I am stuck near a fence".
 
-- `[ ]` **F2: Nearby human reaction.**
+- `[~]` **F2: Nearby human reaction.**
   - Files: standard module Body/Brain code and tests
   - Deliverable: agent hears public chat, responds to direct commands, asks clarifying questions, and follows simple requests.
   - Verification: perception/chat tests for command prefix, direct name mention, and non-command small talk.
+  - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events. Still needs non-command small talk and clarifying-question tests.
 
 - `[ ]` **F3: Stuck recovery.**
   - Files: Body routine extraction files
@@ -260,9 +267,10 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: request trade, offer simple item, accept/decline safely, describe trade state.
   - Success metric: test covers trade request, offer, accept, and decline.
 
-- `[ ]` **G5: Follow and command loop.**
+- `[~]` **G5: Follow and command loop.**
   - Deliverable: agent follows configured player, responds to "agent come here", "agent make fire", "agent stop", "agent status".
   - Success metric: local browser test with human client can see movement or chat within 10 seconds.
+  - Partial 2026-05-21: `follow-and-chat-5m` proves the standard module reacts to a benchmark peer's exact per-run "agent follow me" prompt, moves, then answers that peer's "agent status" prompt in autonomous mode. Still needs browser/manual human-client confirmation and broader command-loop benchmark coverage.
 
 ## Workstream H: Railgun And OnionDAO Operations
 
@@ -301,9 +309,10 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` Build the consumption safety and proof loop next.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
-  - Autonomous benchmark mode C6: current benchmark CLI tasks are scripted engine smokes, not autonomous module benchmarks. Add C6 before using benchmark scores to compare SPARK modules.
+  - Starter gameplay benchmarks C4/G1-G3: add autonomous woodcutting-firemaking, starter-fishing, and combat-prayer tasks now that make-fire, explore-report, and follow-and-chat have live proof.
+  - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
-  - Human-like next slice after safe facades: F1/F2/G5 social command polish, then F3/F4/G1 stuck recovery and self-supplied firemaking.
+  - Human-like next slice: F1 goal sharing cadence, then F3/F4/G1 stuck recovery and self-supplied woodcutting/firemaking.
 
 ## Agent Update Protocol
 

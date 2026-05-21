@@ -35,6 +35,8 @@ export interface BenchmarkTaskContext {
     readonly module: SparkModuleIdentity;
     readonly signal: AbortSignal;
     submitAction(action: AgentAction): Promise<ActionResult>;
+    peerResident(id: string): string | undefined;
+    submitPeerAction(id: string, action: AgentAction): Promise<ActionResult>;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
     recordInferenceRequest(request: string | BenchmarkRecordedInferenceRequest): void;
     recordSummary(summary: string): void;
@@ -44,11 +46,16 @@ export interface BenchmarkTaskContext {
     events(): readonly PerceptionEvent[];
 }
 
+export interface BenchmarkTaskPeer extends Omit<CreateResidentPayload, 'name'> {
+    id: string;
+}
+
 export interface BenchmarkTask {
     id: string;
     version: string;
     timeoutMs: number;
     resident?: Omit<CreateResidentPayload, 'name'>;
+    peers?: BenchmarkTaskPeer[];
     run(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
     runAutonomous?(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
 }
@@ -110,11 +117,13 @@ export class BenchmarkRunner {
     private readonly runId: string;
     private readonly resident: string;
     private readonly now: () => Date;
+    private readonly peerResidents: Map<string, string>;
 
     constructor(private readonly options: BenchmarkRunnerOptions) {
         this.runId = options.runId || benchmarkRunId(options.task.id, options.now?.() || new Date());
         this.resident = options.residentName || benchmarkResidentName(options.task.id, this.runId);
         this.now = options.now || (() => new Date());
+        this.peerResidents = new Map((options.task.peers || []).map(peer => [peer.id, benchmarkPeerResidentName(peer.id, this.runId)]));
     }
 
     async run(): Promise<BenchmarkArtifact> {
@@ -123,6 +132,7 @@ export class BenchmarkRunner {
         const abortController = new AbortController();
         const listeners = this.bindEvidenceListeners(evidence);
         const mode = this.options.mode || 'scripted';
+        const peers = benchmarkPeerStates(this.options.task, this.peerResidents);
         let autonomousStarted = false;
         let created = false;
         let connected = false;
@@ -139,6 +149,17 @@ export class BenchmarkRunner {
                 onDisconnect: 'idle',
             });
             connected = true;
+            for (const peer of peers) {
+                await this.options.gateway.createResident({ name: peer.resident, ...peerCreatePayload(peer.definition) });
+                peer.created = true;
+                await this.options.gateway.connectResident({
+                    name: peer.resident,
+                    observe: false,
+                    control: true,
+                    onDisconnect: 'idle',
+                });
+                peer.connected = true;
+            }
             if (mode === 'autonomous') {
                 const autonomousRuntime = this.options.autonomousRuntime;
                 const runAutonomous = this.options.task.runAutonomous;
@@ -175,6 +196,26 @@ export class BenchmarkRunner {
                 }
             }
             this.unbindEvidenceListeners(listeners);
+            for (const peer of [...peers].reverse()) {
+                if (!peer.connected) {
+                    continue;
+                }
+                try {
+                    await this.options.gateway.disconnectResident(peer.resident);
+                } catch (error) {
+                    cleanupFailures.push(errorMessage(error));
+                }
+            }
+            for (const peer of [...peers].reverse()) {
+                if (!peer.created) {
+                    continue;
+                }
+                try {
+                    await this.options.gateway.deleteResident(peer.resident);
+                } catch (error) {
+                    cleanupFailures.push(errorMessage(error));
+                }
+            }
             if (connected) {
                 try {
                     await this.options.gateway.disconnectResident(this.resident);
@@ -260,6 +301,15 @@ export class BenchmarkRunner {
             submitAction: async action => {
                 const ack = await this.options.gateway.submitActionWithRequestId(this.resident, action);
                 recordActionAttempt(evidence, { requestId: ack.requestId, action, result: ack.ackResult });
+                return ack.ackResult;
+            },
+            peerResident: id => this.peerResidents.get(id),
+            submitPeerAction: async (id, action) => {
+                const peerResident = this.peerResidents.get(id);
+                if (!peerResident) {
+                    throw new Error(`Unknown benchmark peer ${id}`);
+                }
+                const ack = await this.options.gateway.submitActionWithRequestId(peerResident, action);
                 return ack.ackResult;
             },
             recordActionAttempt: attempt => {
@@ -390,6 +440,36 @@ function createEvidenceBuffer(): BenchmarkEvidenceBuffer {
         perceptions: [],
         events: [],
     };
+}
+
+interface BenchmarkPeerState {
+    definition: BenchmarkTaskPeer;
+    resident: string;
+    created: boolean;
+    connected: boolean;
+}
+
+function benchmarkPeerStates(task: BenchmarkTask, names: Map<string, string>): BenchmarkPeerState[] {
+    return (task.peers || []).map(peer => ({
+        definition: peer,
+        resident: names.get(peer.id) || benchmarkPeerResidentName(peer.id, task.id),
+        created: false,
+        connected: false,
+    }));
+}
+
+function peerCreatePayload(peer: BenchmarkTaskPeer): Omit<CreateResidentPayload, 'name'> {
+    const payload: Omit<CreateResidentPayload, 'name'> = {};
+    if (peer.spawnPosition !== undefined) {
+        payload.spawnPosition = peer.spawnPosition;
+    }
+    if (peer.initialInventory !== undefined) {
+        payload.initialInventory = peer.initialInventory;
+    }
+    if (peer.initialEquipment !== undefined) {
+        payload.initialEquipment = peer.initialEquipment;
+    }
+    return payload;
 }
 
 function recordActionAttempt(evidence: BenchmarkEvidenceBuffer, attempt: BenchmarkRecordedActionAttempt): void {
@@ -530,8 +610,18 @@ function benchmarkResidentName(taskId: string, runId: string): string {
         .replace(/^make-/, '')
         .replace(/[^a-z0-9]+/gi, '_')
         .replace(/^_+|_+$/g, '')
-        .slice(0, 7);
+        .slice(0, 7)
+        .replace(/_+$/g, '');
     return `res:bmk_${task || 'task'}_${shortHash(runId)}`.slice(0, 24);
+}
+
+function benchmarkPeerResidentName(peerId: string, runId: string): string {
+    const peer = peerId
+        .replace(/[^a-z0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '')
+        .slice(0, 7)
+        .replace(/_+$/g, '');
+    return `res:bmk_${peer || 'peer'}_${shortHash(`${runId}:${peerId}`)}`.slice(0, 24);
 }
 
 function shortHash(value: string): string {

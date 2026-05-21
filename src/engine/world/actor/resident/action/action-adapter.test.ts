@@ -18,6 +18,7 @@ jest.mock('@engine/world', () => ({
         npcList: [],
         playerList: [],
         findActivePlayerByUsername: jest.fn(),
+        findNearbyPlayers: jest.fn(),
         findObjectAtLocation: jest.fn(),
     },
 }));
@@ -58,6 +59,28 @@ describe('ActionAdapter', () => {
         (activeWorld.npcList as unknown[]).length = 0;
         (activeWorld.playerList as unknown[]).length = 0;
         (activeWorld.findActivePlayerByUsername as jest.Mock).mockReset();
+        (activeWorld.findNearbyPlayers as jest.Mock).mockReset();
+        (activeWorld.findNearbyPlayers as jest.Mock).mockImplementation((position, distance, instanceId) => {
+            const minX = position.x - distance / 2;
+            const minY = position.y - distance / 2;
+            const maxX = minX + distance;
+            const maxY = minY + distance;
+            return (
+                activeWorld.playerList as Array<{
+                    instance?: { instanceId?: string };
+                    personalInstance?: { instanceId?: string };
+                    position?: { x: number; y: number; level?: number };
+                }>
+            ).filter(
+                player =>
+                    (player.instance?.instanceId === instanceId || player.personalInstance?.instanceId === instanceId) &&
+                    player.position &&
+                    player.position.x >= minX &&
+                    player.position.x < maxX &&
+                    player.position.y >= minY &&
+                    player.position.y < maxY,
+            );
+        });
         (activeWorld.findObjectAtLocation as jest.Mock).mockReset();
         jest.mocked(filestore.configStore.objectStore.getObject).mockReset();
     });
@@ -91,6 +114,91 @@ describe('ActionAdapter', () => {
 
         expect(result).toEqual({ ok: true });
         expect(sendMessage).toHaveBeenCalledWith('res:agent: Visible hello');
+    });
+
+    it('broadcasts resident speech to nearby residents as public chat perception events', () => {
+        const from = {
+            id: 'resident:res:peer',
+            kind: 'resident' as const,
+            name: 'res:peer',
+            position: { x: 3230, y: 3239, level: 0 },
+        };
+        const speakingResident = residentActor({
+            username: 'res:peer',
+            position: { x: 3230, y: 3239, level: 0 },
+            toActorRef: jest.fn(() => from),
+            emitPerceptionEvent: jest.fn(),
+        });
+        const nearbyResident = residentActor({
+            username: 'res:agent',
+            position: { x: 3231, y: 3239, level: 0 },
+            emitPerceptionEvent: jest.fn(),
+        });
+        const edgeResident = residentActor({
+            username: 'res:edge',
+            position: { x: 3245, y: 3239, level: 0 },
+            emitPerceptionEvent: jest.fn(),
+        });
+        const farResident = residentActor({
+            username: 'res:far',
+            position: { x: 3300, y: 3300, level: 0 },
+            emitPerceptionEvent: jest.fn(),
+        });
+        (activeWorld.playerList as unknown[]).push(speakingResident, nearbyResident, edgeResident, farResident);
+
+        const result = new ActionAdapter().apply(speakingResident, {
+            kind: 'say',
+            text: 'agent follow me',
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(speakingResident.emitPerceptionEvent).toHaveBeenCalledWith({ kind: 'chat', from, text: 'agent follow me', to: 'public' });
+        expect(nearbyResident.emitPerceptionEvent).toHaveBeenCalledWith({ kind: 'chat', from, text: 'agent follow me', to: 'public' });
+        expect(edgeResident.emitPerceptionEvent).toHaveBeenCalledWith({ kind: 'chat', from, text: 'agent follow me', to: 'public' });
+        expect(farResident.emitPerceptionEvent).not.toHaveBeenCalled();
+    });
+
+    it('does not broadcast resident speech to residents in a different instance', () => {
+        const from = {
+            id: 'resident:res:peer',
+            kind: 'resident' as const,
+            name: 'res:peer',
+            position: { x: 3230, y: 3239, level: 0 },
+        };
+        const speakingResident = residentActor({
+            username: 'res:peer',
+            position: { x: 3230, y: 3239, level: 0 },
+            instanceId: 'instance-a',
+            toActorRef: jest.fn(() => from),
+        });
+        const sameInstanceResident = residentActor({
+            username: 'res:agent',
+            position: { x: 3231, y: 3239, level: 0 },
+            instanceId: 'instance-a',
+            emitPerceptionEvent: jest.fn(),
+        });
+        const otherInstanceResident = residentActor({
+            username: 'res:other',
+            position: { x: 3231, y: 3239, level: 0 },
+            instanceId: 'instance-b',
+            emitPerceptionEvent: jest.fn(),
+        });
+        (activeWorld.playerList as unknown[]).push(speakingResident, sameInstanceResident, otherInstanceResident);
+
+        const result = new ActionAdapter().apply(speakingResident, {
+            kind: 'say',
+            text: 'agent follow me',
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(activeWorld.findNearbyPlayers).toHaveBeenCalledWith(speakingResident.position, 32, 'instance-a');
+        expect(sameInstanceResident.emitPerceptionEvent).toHaveBeenCalledWith({
+            kind: 'chat',
+            from,
+            text: 'agent follow me',
+            to: 'public',
+        });
+        expect(otherInstanceResident.emitPerceptionEvent).not.toHaveBeenCalled();
     });
 
     it('walks move_to actions to the exact requested tile', () => {
@@ -422,3 +530,38 @@ describe('ActionAdapter', () => {
         expect(mockActionPipelineCall).not.toHaveBeenCalled();
     });
 });
+
+function residentActor(overrides: {
+    username: string;
+    position: { x: number; y: number; level: number };
+    instanceId?: string;
+    toActorRef?: jest.Mock;
+    emitPerceptionEvent?: jest.Mock;
+}): Resident {
+    const instanceId = overrides.instanceId || 'global';
+    const actor = {
+        type: 'player',
+        isActive: true,
+        username: overrides.username,
+        position: overrides.position,
+        instance: { instanceId },
+        personalInstance: { instanceId },
+        toActorRef:
+            overrides.toActorRef ||
+            jest.fn(() => ({
+                id: `resident:${overrides.username}`,
+                kind: 'resident',
+                name: overrides.username,
+                position: overrides.position,
+            })),
+        emitPerceptionEvent: overrides.emitPerceptionEvent || jest.fn(),
+        playerEvents: { emit: jest.fn() },
+        inventory: { items: [] },
+        actionPipeline: { call: mockActionPipelineCall },
+        equals(other: unknown) {
+            return other === actor;
+        },
+        [Symbol.for('nullcity.resident')]: true,
+    };
+    return actor as unknown as Resident;
+}

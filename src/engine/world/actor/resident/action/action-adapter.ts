@@ -5,6 +5,7 @@ import { findSpellByKey } from '@engine/world/actor/magic';
 import type { Npc } from '@engine/world/actor/npc';
 import type { Player } from '@engine/world/actor/player/player';
 import type { Resident } from '@engine/world/actor/resident/resident';
+import { isResident } from '@engine/world/actor/util';
 import { TradeEngine } from '@engine/world/actor/trade/trade-engine';
 import type { WorldItem } from '@engine/world/items/world-item';
 import { Position } from '@engine/world/position';
@@ -15,6 +16,7 @@ import {
     type ActorRef,
     type AgentAction,
     type ObjectRef,
+    type PerceptionEvent,
     type Pos,
     type WorldItemRef,
     isActorRef,
@@ -44,8 +46,10 @@ export class ActionAdapter {
             case 'unequip':
                 return resident.unequipItem(action.equipmentSlot) ? { ok: true } : { ok: false, reason: 'empty_equipment_slot' };
             case 'say':
-                resident.emitPerceptionEvent({ kind: 'chat', from: resident.toActorRef(), text: action.text, to: 'public' });
+                const event: PerceptionEvent = { kind: 'chat', from: resident.toActorRef(), text: action.text, to: 'public' };
+                resident.emitPerceptionEvent(event);
                 resident.playerEvents.emit('chat', action.text);
+                this.broadcastSpeechToNearbyResidents(resident, event);
                 this.echoSpeechToNearbyPlayers(resident, action.text);
                 return { ok: true };
             case 'whisper':
@@ -194,7 +198,7 @@ export class ActionAdapter {
     }
 
     private echoSpeechToNearbyPlayers(resident: Resident, text: string): void {
-        for (const player of activeWorld?.playerList || []) {
+        for (const player of nearbyPlayers(resident, 15)) {
             if (!player || player === resident || !player.isActive || typeof player.sendMessage !== 'function') {
                 continue;
             }
@@ -202,6 +206,18 @@ export class ActionAdapter {
                 continue;
             }
             void player.sendMessage(`${resident.username}: ${text}`);
+        }
+    }
+
+    private broadcastSpeechToNearbyResidents(resident: Resident, event: PerceptionEvent): void {
+        for (const player of nearbyPlayers(resident, 15)) {
+            if (!player || sameActor(player, resident) || !player.isActive || !isResident(player)) {
+                continue;
+            }
+            if (!isNearby(resident.position, player.position, 15)) {
+                continue;
+            }
+            player.emitPerceptionEvent(event);
         }
     }
 
@@ -494,6 +510,24 @@ export class ActionAdapter {
 
 function isNearby(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }, maxDistance: number): boolean {
     return (a.level ?? 0) === (b.level ?? 0) && Math.abs(a.x - b.x) <= maxDistance && Math.abs(a.y - b.y) <= maxDistance;
+}
+
+function nearbyPlayers(resident: Resident, maxDistance: number): Player[] {
+    const instanceId = resident.instance?.instanceId;
+    if (instanceId && typeof activeWorld?.findNearbyPlayers === 'function') {
+        return activeWorld.findNearbyPlayers(resident.position, maxDistance * 2 + 2, instanceId);
+    }
+    return (activeWorld?.playerList || []).filter((player): player is Player => Boolean(player));
+}
+
+function sameActor(a: unknown, b: unknown): boolean {
+    if (a === b) {
+        return true;
+    }
+    if (a && typeof (a as { equals?: unknown }).equals === 'function') {
+        return (a as { equals(other: unknown): boolean }).equals(b);
+    }
+    return false;
 }
 
 function sameTile(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }): boolean {

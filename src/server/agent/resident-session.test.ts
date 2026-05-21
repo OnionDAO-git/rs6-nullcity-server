@@ -101,7 +101,10 @@ function createTickSubject(): TickSubject {
     };
 }
 
-function fakeResident(events = [], resultBatches: Array<Array<{ ok: boolean; reason?: string }>> = [[{ ok: true }]]): jest.Mocked<Resident> {
+function fakeResident(
+    events = [],
+    resultBatches: Array<Array<{ ok: boolean; reason?: string }>> = [[{ ok: true }]],
+): jest.Mocked<Resident> {
     return {
         username: 'res:pip',
         isActive: true,

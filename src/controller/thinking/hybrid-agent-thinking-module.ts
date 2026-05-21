@@ -1944,7 +1944,7 @@ function latestAddressedChat(
         }
 
         const from = actorLike(event.from);
-        if (from?.kind === 'resident') {
+        if (from && isSelfActor(from, perception)) {
             continue;
         }
 
@@ -1957,6 +1957,10 @@ function latestAddressedChat(
     }
 
     return undefined;
+}
+
+function isSelfActor(actor: Actor, perception: HybridPerception): boolean {
+    return actor.kind === 'resident' && Boolean(perception.resident?.id) && actor.id === perception.resident?.id;
 }
 
 function mentionsCommandPrefix(text: string, commandPrefix: string): boolean {
