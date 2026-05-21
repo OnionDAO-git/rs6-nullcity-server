@@ -9,6 +9,7 @@ import type { BenchmarkArtifact } from './benchmark-artifact';
 import type { BenchmarkRunMode } from './benchmark-artifact';
 import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
+import { emitVerifierConventions } from './verifier-conventions';
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
@@ -126,7 +127,17 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
                 commits: [gitCommit('rs6-nullcity-server')],
             }).run();
             const artifactPath = writeArtifact(options.outputDir, artifact);
-            stdout(`${JSON.stringify({ artifactPath, status: artifact.status, score: artifact.score, runId: artifact.runId })}\n`);
+            const reward = emitVerifierConventions({ artifact, outputDir: options.outputDir, stdout });
+            stdout(
+                `${JSON.stringify({
+                    artifactPath,
+                    rewardJsonPath: reward.rewardJsonPath,
+                    rewardTxtPath: reward.rewardTxtPath,
+                    status: artifact.status,
+                    score: artifact.score,
+                    runId: artifact.runId,
+                })}\n`,
+            );
         } finally {
             gateway.close();
         }
