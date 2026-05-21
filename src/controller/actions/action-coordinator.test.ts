@@ -75,6 +75,56 @@ describe('ActionCoordinator', () => {
         expect(attempt.evidence).toEqual([{ source: 'perception', detail: { inventoryDelta: { 'rs:logs': -1 } } }]);
     });
 
+    it('fires ack and effect callbacks at distinct stages', async () => {
+        const submitter = fakeSubmitter(() => Promise.resolve({ ok: true, requestId: 'request-1' }));
+        const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
+        const seen: Array<{ event: string; status: string; requestId?: string; evidenceCount: number }> = [];
+
+        const attempt = await coordinator.submit({
+            producer: 'active-routine',
+            action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1 },
+            waitForEffect: async () => ({
+                ok: true,
+                evidence: [{ source: 'perception', detail: { inventoryDelta: { 'rs:logs': -1 } } }],
+            }),
+            onAckReady: ackAttempt =>
+                seen.push({
+                    event: 'ack',
+                    status: ackAttempt.finalStatus,
+                    requestId: ackAttempt.requestId,
+                    evidenceCount: ackAttempt.evidence.length,
+                }),
+            onEffectResolved: effectAttempt =>
+                seen.push({
+                    event: 'effect',
+                    status: effectAttempt.finalStatus,
+                    requestId: effectAttempt.requestId,
+                    evidenceCount: effectAttempt.evidence.length,
+                }),
+        });
+
+        expect(attempt.finalStatus).toBe('success');
+        expect(seen).toEqual([
+            { event: 'ack', status: 'accepted', requestId: 'request-1', evidenceCount: 0 },
+            { event: 'effect', status: 'success', requestId: 'request-1', evidenceCount: 1 },
+        ]);
+    });
+
+    it('fires the effect callback when an ack failure becomes the final result', async () => {
+        const submitter = fakeSubmitter(() => Promise.resolve({ ok: false, reason: 'bad target' }));
+        const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
+        const effectResolved = jest.fn();
+
+        const attempt = await coordinator.submit({
+            producer: 'active-routine',
+            action: { kind: 'interact', target: { objectId: 1278, position: { x: 1, y: 1, level: 0 } }, option: 'chop down' },
+            onEffectResolved: effectResolved,
+        });
+
+        expect(attempt.finalStatus).toBe('failure');
+        expect(effectResolved).toHaveBeenCalledWith(expect.objectContaining({ finalStatus: 'failure', finalReason: 'bad target' }));
+    });
+
     it('keeps metadata and request ids on attempts for audit trails', async () => {
         const submitter = fakeSubmitter(() => Promise.resolve({ ok: true, requestId: 'request-1' }));
         const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
@@ -139,6 +189,35 @@ describe('ActionCoordinator', () => {
             }),
         );
         expect(capturedSignal?.aborted).toBe(true);
+    });
+
+    it('reports an interrupted action result only once even when the waiter later returns', async () => {
+        const submitter = fakeSubmitter(() => Promise.resolve({ ok: true }));
+        const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
+        const effectResolved = jest.fn();
+
+        const first = coordinator.submit({
+            producer: 'body',
+            action: { kind: 'move_to', target: { x: 1, y: 1, level: 0 } },
+            waitForEffect: async signal =>
+                new Promise(resolve => {
+                    signal.addEventListener('abort', () => resolve({ ok: false, reason: 'aborted' }), { once: true });
+                }),
+            onEffectResolved: effectResolved,
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+
+        await coordinator.submit({ producer: 'nervous-system', action: { kind: 'eat', slot: 0 } });
+        await first;
+
+        expect(effectResolved).toHaveBeenCalledTimes(1);
+        expect(effectResolved).toHaveBeenCalledWith(
+            expect.objectContaining({
+                finalStatus: 'interrupted_after_submit',
+                finalReason: 'interrupted_by:nervous-system',
+            }),
+        );
     });
 });
 
