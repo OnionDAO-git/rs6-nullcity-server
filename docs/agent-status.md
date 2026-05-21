@@ -23,6 +23,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-21 early     codex   branch=claude/evidence-loop-p1    workstream=I  added live runtime progress evidence: perceptions now append progress.jsonl lines and update RuntimeState lastMeaningfulProgressAt/stuckSince for SPARK modules. Focused runtime/evidence tests plus typecheck/lint passed.
 2026-05-21 early     codex   branch=claude/evidence-loop-p1    workstream=F,I  fed runtime progress/stuck evidence into hybrid Brain and Body prompts so the agent can change tactics when evidence says it is stuck. Prompt/thinking tests passed.
 2026-05-21 early     codex   branch=claude/evidence-loop-p1    workstream=I  wired autonomous benchmarks to create ResidentRuntime evidence sessions, retain run artifacts, and include trajectory/progress artifact paths in benchmark JSON. Full test/typecheck/lint/build passed.
+2026-05-21 morning   codex   branch=claude/evidence-loop-p1    workstream=I  added benchmark artifact metrics from retained trajectory/progress JSONL: trajectory lines/actions/says plus meaningful/stuck progress ticks. Full test/typecheck/lint/build passed.
 ```
 
 ## Conventions

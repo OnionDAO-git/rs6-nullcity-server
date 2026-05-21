@@ -1,3 +1,4 @@
+import fs from 'fs';
 import type { SparkModuleIdentity } from '../spark';
 import type { SubmittedActionAck } from '../transport/gateway-client';
 import type { ActionResult, AgentAction, CreateResidentPayload, Perception, PerceptionEvent } from '../transport/message-codecs';
@@ -292,6 +293,7 @@ export class BenchmarkRunner {
                 metrics: {
                     ...outcome.metrics,
                     ...moduleEvidenceMetrics(mode, evidence, this.options.module),
+                    ...evidenceArtifactMetrics(evidence.artifactPaths),
                     actionsAttempted: Math.max(evidence.actionAttemptIds.length, evidence.actionAttempts.length),
                 },
                 evidence: {
@@ -576,6 +578,65 @@ function moduleEvidenceMetrics(
         selectedModuleInferences: selectedModuleInferenceCount(evidence, module),
         untaggedActions: evidence.actionAttempts.filter(attempt => !attempt.sparkModule).length,
     };
+}
+
+function evidenceArtifactMetrics(paths: string[]): Record<string, number> {
+    if (paths.length === 0) {
+        return {};
+    }
+    const metrics = {
+        trajectoryLines: 0,
+        trajectoryActions: 0,
+        trajectorySays: 0,
+        progressLines: 0,
+        meaningfulProgressTicks: 0,
+        stuckProgressTicks: 0,
+    };
+    for (const artifactPath of paths) {
+        for (const line of readJsonlRecords(artifactPath)) {
+            if (line.kind === 'progress') {
+                metrics.progressLines += 1;
+                if (line.meaningful === true) {
+                    metrics.meaningfulProgressTicks += 1;
+                }
+                if (typeof line.stuckSince === 'number') {
+                    metrics.stuckProgressTicks += 1;
+                }
+                continue;
+            }
+            if (typeof line.kind === 'string') {
+                metrics.trajectoryLines += 1;
+                if (line.kind === 'action' || line.kind === 'say') {
+                    metrics.trajectoryActions += 1;
+                }
+                if (line.kind === 'say') {
+                    metrics.trajectorySays += 1;
+                }
+            }
+        }
+    }
+    return metrics;
+}
+
+function readJsonlRecords(filePath: string): Array<Record<string, unknown>> {
+    if (!fs.existsSync(filePath)) {
+        return [];
+    }
+    return fs
+        .readFileSync(filePath, 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map(line => safeJsonRecord(line))
+        .filter((line): line is Record<string, unknown> => Boolean(line));
+}
+
+function safeJsonRecord(line: string): Record<string, unknown> | undefined {
+    try {
+        const parsed = JSON.parse(line);
+        return isRecord(parsed) ? parsed : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function selectedModuleActionCount(evidence: BenchmarkEvidenceBuffer, module: SparkModuleIdentity): number {

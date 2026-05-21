@@ -1,4 +1,7 @@
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { BenchmarkRunner, type BenchmarkGateway, type BenchmarkTask } from './benchmark-runner';
 
 describe('BenchmarkRunner', () => {
@@ -354,6 +357,61 @@ describe('BenchmarkRunner', () => {
         ]);
         expect(artifact.evidence.summaries).toContain('Autonomous runtime produced make-fire evidence.');
         expect(artifact.evidence.summaries).toContain('Autonomous verifier saw module evidence.');
+    });
+
+    it('summarizes runtime trajectory and progress artifact metrics for autonomous benchmarks', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const module = { id: 'onion.runescape.standard', version: '0.1.0' };
+        const evidenceDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-evidence-summary-'));
+        const trajectoryPath = path.join(evidenceDir, 'trajectory.jsonl');
+        const progressPath = path.join(evidenceDir, 'progress.jsonl');
+        fs.writeFileSync(
+            trajectoryPath,
+            [
+                JSON.stringify({ kind: 'begin_tick', tick: 1 }),
+                JSON.stringify({ kind: 'say', tick: 1 }),
+                JSON.stringify({ kind: 'action', tick: 2 }),
+                JSON.stringify({ kind: 'end_tick', tick: 2 }),
+            ].join('\n'),
+        );
+        fs.writeFileSync(
+            progressPath,
+            [
+                JSON.stringify({ kind: 'progress', tick: 1, meaningful: true, stuckSince: null }),
+                JSON.stringify({ kind: 'progress', tick: 2, meaningful: true, stuckSince: null }),
+                JSON.stringify({ kind: 'progress', tick: 3, meaningful: false, stuckSince: 3 }),
+            ].join('\n'),
+        );
+        const autonomousRuntime = {
+            start: jest.fn(async context => {
+                context.recordArtifactPath(trajectoryPath);
+                context.recordArtifactPath(progressPath);
+                context.recordActionAttempt({
+                    requestId: 'auto-action-1',
+                    action: { kind: 'say', text: 'checking evidence' },
+                    result: { ok: true },
+                    source: 'thinking',
+                    sparkModule: module,
+                });
+            }),
+            stop: jest.fn(async () => undefined),
+        };
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: jest.fn(async () => ({ status: 'passed' as const, score: 1 })),
+            runAutonomous: jest.fn(async () => ({ status: 'passed' as const, score: 1 })),
+        };
+
+        const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime, module }).run();
+
+        expect(artifact.metrics.trajectoryLines).toBe(4);
+        expect(artifact.metrics.trajectoryActions).toBe(2);
+        expect(artifact.metrics.trajectorySays).toBe(1);
+        expect(artifact.metrics.progressLines).toBe(3);
+        expect(artifact.metrics.meaningfulProgressTicks).toBe(2);
+        expect(artifact.metrics.stuckProgressTicks).toBe(1);
     });
 
     it('creates disposable peer residents and keeps peer actions out of agent action evidence', async () => {
