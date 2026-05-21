@@ -8,6 +8,18 @@ jest.mock('@engine/world', () => ({
 }));
 
 describe('ResidentSession', () => {
+    it('sends the current perception as soon as an observer attaches', () => {
+        const resident = fakeResident([{ kind: 'spawned' }] as never);
+        const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn() };
+
+        session.attach(observer);
+
+        expect(resident.publishPerception).toHaveBeenCalledTimes(1);
+        expect(observer.sendPerception).toHaveBeenCalledWith(resident, { tick: 1, events: [{ kind: 'spawned' }] });
+        session.close();
+    });
+
     it('fans out action results once and resolves MCP-style submit waiters', async () => {
         const resident = fakeResident();
         const actionLog = { append: jest.fn() } as unknown as ActionLog;

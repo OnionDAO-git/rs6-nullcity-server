@@ -47,9 +47,9 @@ export class ResidentSession {
             throw new Error('ESESSION_CLOSED');
         }
         this.observers.set(observer.id, observer);
-        if (this.latestPerception) {
-            observer.sendPerception(this.resident, this.latestPerception);
-        }
+        const perception = this.latestPerception || this.resident.perception || this.resident.publishPerception();
+        this.latestPerception = perception;
+        observer.sendPerception(this.resident, perception);
     }
 
     public detach(observerId: string): void {
