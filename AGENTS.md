@@ -53,6 +53,7 @@ Until June 1, 2026, OnionDAO work is pre-launch development. Default to building
 - For broad design or risky changes, use subagents for review when available.
 - For implementation, write or update focused tests first when practical.
 - Keep `AGENTS.md` concise; link to docs instead of embedding long plans.
+- Use succinct, human-readable commit messages that help Dev catch up from `git log`; prefer concrete behavior summaries over vague messages like "updates" or "fixes".
 
 ## Safety Boundaries
 

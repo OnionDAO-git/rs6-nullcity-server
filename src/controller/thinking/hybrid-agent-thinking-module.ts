@@ -1343,6 +1343,9 @@ function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | 
     if (taskId === 'starter-fishing-5m') {
         return starterFishingGoal(tick);
     }
+    if (taskId === 'combat-prayer-10m') {
+        return combatGoal(tick);
+    }
     return undefined;
 }
 

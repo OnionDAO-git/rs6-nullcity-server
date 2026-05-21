@@ -140,7 +140,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: fixture tests for pass, timeout, wrong action, and unsafe loop.
   - Verified 2026-05-20 on `codex/body-waiter-coordinator` with fixture tests for pass, timeout, wrong action, and unsafe repeated action loops.
 
-- `[~]` **C4: Implement starter benchmark suite.**
+- `[x]` **C4: Implement starter benchmark suite.**
   - Tasks: `woodcutting-firemaking-10m`, `starter-fishing-5m`, `combat-prayer-10m`, `explore-report-5m`, `follow-and-chat-5m`
   - Deliverable: every task has a verifier, scoring rubric, and fixture tests.
   - Verification: benchmark task tests pass locally and artifacts are written to the configured output dir.
@@ -148,6 +148,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Partial 2026-05-21 on `codex/body-waiter-coordinator`: added `follow-and-chat-5m`, disposable benchmark peer support, exact per-run peer chat stimuli, and live autonomous smoke (`status=passed`, `score=1`, `selectedModuleActions=2`, `selectedModuleInferences=2`, `statusResponses=1`, `movedTowardSpeaker=1`, artifact `/tmp/oniondao-autonomous-follow-chat/bench_20260521044246_follow_and_chat_5m.json`). Remaining tasks: woodcutting-firemaking, starter-fishing, combat-prayer. Local gateway still reports delete-disabled cleanup as a metric.
   - Partial 2026-05-21 on `nullcity`: added `woodcutting-firemaking-10m` verifier/CLI wiring and autonomous fixture coverage. The verifier requires a selected module to chop a level-1 tree, gain self-supplied logs or woodcutting success evidence, then attempt firemaking and observe a firemaking success signal. Live autonomous smoke passed (`status=passed`, `score=1`, `selectedModuleActions=5`, `woodcuttingEvidence=1`, `firemakingSuccess=1`, artifact `/tmp/oniondao-wood-fire-bench/bench_20260521052903_woodcutting_firemaking_10m.json`).
   - Partial 2026-05-21 on `nullcity`: added `starter-fishing-5m` verifier/CLI wiring, false-positive fixture coverage, benchmark-goal seeding, and a Body fix that uses the Fishing spot's `net` interaction directly instead of pathing to water-adjacent tiles first. Live autonomous smoke passed (`status=passed`, `score=1`, `selectedModuleActions=2`, `netActions=1`, `fishGained=1`, `fishingXpIncreased=1`, artifact `/tmp/oniondao-starter-fishing-bench/bench_20260521060945_starter_fishing_5m.json`). Remaining task: `combat-prayer-10m`.
+  - Verified 2026-05-21 on `nullcity`: added `combat-prayer-10m` verifier/CLI wiring, benchmark-goal seeding, false-positive coverage for unsafe targets, pre-existing/external bones, zero-damage hits, unordered burial, and bone loss without Prayer XP. Live autonomous smoke passed (`status=passed`, `score=1`, `selectedModuleActions=8`, `safeAttackActions=3`, `bonesEvidence=1`, `prayerXpIncreased=1`, `deathEvents=0`, artifact `/tmp/oniondao-combat-prayer-bench/bench_20260521064209_combat_prayer_10m.json`).
 
 - `[x]` **C5: Add benchmark CLI.**
   - Files: `src/controller/benchmarks/cli.ts`, `package.json`
@@ -264,9 +265,10 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: find fishing spot, use small net, catch shrimp, cook on range/fire when available.
   - Success metric: inventory changes from raw shrimp to cooked shrimp or clear failure explanation.
 
-- `[ ]` **G3: Prayer starter loop.**
+- `[x]` **G3: Prayer starter loop.**
   - Deliverable: bury bones from inventory or safe defeated enemies.
   - Success metric: prayer XP/level evidence or action success event.
+  - Verified 2026-05-21 on `nullcity`: `combat-prayer-10m` live autonomous smoke proved safe goblin combat, bones pickup, burial, Prayer XP, and survival under `onion.runescape.standard`.
 
 - `[ ]` **G4: Trading/giving items.**
   - Deliverable: request trade, offer simple item, accept/decline safely, describe trade state.
@@ -314,10 +316,10 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` Build the consumption safety and proof loop next.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
-  - Starter gameplay benchmarks C4/G1-G3: add `combat-prayer-10m` now that make-fire, explore-report, follow-and-chat, woodcutting-firemaking, and starter-fishing have live proof. Proposed scope: spawn near Lumbridge goblins with starter sword/shield and food; require selected-module safe attack evidence, bones from combat, bury action with Prayer XP or bones consumption, and survival/no-death guardrails.
+  - Knowledge suggestion attribution cleanup: live combat-prayer proof showed successful combat/pickup/bury actions being proposed under `train-woodcutting`; fix workflow classification before relying on the suggestion queue for self-improvement.
   - Benchmark cleanup C7: reduce `EDELETE_DISABLED` noise for disposable benchmark residents before the benchmark suite becomes a daily comparison tool.
   - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
-  - Human-like next slice: F1 goal sharing cadence, then F3/F4/G1 stuck recovery and self-supplied woodcutting/firemaking.
+  - Human-like next slice: F1 goal sharing cadence, then F3/F4 exploration/stuck recovery and G2 fishing-cooking.
 
 ## Agent Update Protocol
 

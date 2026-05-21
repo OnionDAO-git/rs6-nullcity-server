@@ -2407,6 +2407,40 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
     });
 
+    it('seeds combat prayer as the active benchmark goal without initial Brain drift', async () => {
+        const goblin = npc('Goblin', 3254, 3231);
+        goblin.key = 'rs:goblin';
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'combat-prayer-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3254, 3230),
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [goblin],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' }]);
+        expect(result.cause).toBe('combat_attack_safe_target');
+        expect(state.cognition?.activeGoal?.id).toBe('train-combat-safely');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
     it('beacons its active goal periodically before Body inference', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();
