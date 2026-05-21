@@ -257,9 +257,10 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Expand from "can make a fire" to basic RuneScape loops.
 
-- `[ ]` **G1: Woodcutting plus firemaking loop.**
+- `[x]` **G1: Woodcutting plus firemaking loop.**
   - Deliverable: find level-appropriate tree, chop logs, make fire, repeat safely.
   - Success metric: produces at least one fire from self-chopped logs in benchmark or live test.
+  - Verified 2026-05-21 on `nullcity`: autonomous `woodcutting-firemaking-10m` passed (`status=passed`, `score=1`, artifact `/tmp/oniondao-wood-fire-bench-post-stale-log-fix/bench_20260521072605_woodcutting_firemaking_10m.json`). This pass also suppresses stale fire-adjacent log pickups and stale "Next: pick up logs" beacons after firemaking consumes the logs.
 
 - `[ ]` **G2: Fishing plus cooking loop.**
   - Deliverable: find fishing spot, use small net, catch shrimp, cook on range/fire when available.

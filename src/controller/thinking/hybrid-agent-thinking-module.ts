@@ -1726,9 +1726,11 @@ function opportunisticPickupAction(
         return undefined;
     }
 
+    const suppressFiremakingLogPickup = hasNearbyFire(perception);
     const item = (perception.nearby?.worldItems || [])
         .filter(candidate => {
             if (
+                (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
                 isPickupOnCooldown(candidate, pickupCooldowns, currentTick)
@@ -1875,8 +1877,14 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string): 
         return undefined;
     }
 
+    const suppressFiremakingLogPickup = hasNearbyFire(perception);
     const item = (perception.nearby?.worldItems || [])
-        .filter(candidate => isUsefulGroundItem(candidate) && !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id))
+        .filter(
+            candidate =>
+                !(suppressFiremakingLogPickup && isFiremakingLog(candidate)) &&
+                isUsefulGroundItem(candidate) &&
+                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id),
+        )
         .sort((a, b) => {
             const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
             return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
