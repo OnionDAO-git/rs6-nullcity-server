@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { findItem } from '@engine/config/config-handler';
 import { activeWorld } from '@engine/world';
-import { loadPlayerSaveResult, playerExists } from '@engine/world/actor/player/player-data';
+import { type Appearance, loadPlayerSaveResult, playerExists } from '@engine/world/actor/player/player-data';
 import { IdleBrain } from '@engine/world/actor/resident/brain/idle-brain';
 import { RESIDENT_SAVE_DIR, Resident } from '@engine/world/actor/resident/resident';
 import type { Item } from '@engine/world/items/item';
@@ -18,6 +18,7 @@ export const isValidResidentName = (name: string): boolean => RESIDENT_NAME_PATT
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null | undefined;
 
 export interface ResidentCreateOptions {
+    appearance?: Appearance;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
 }
@@ -64,6 +65,9 @@ export class ResidentRegistry {
         const resident = new Resident(name, new IdleBrain());
         if (spawnPosition) {
             resident.position = new Position(spawnPosition.x, spawnPosition.y, spawnPosition.level);
+        }
+        if (options.appearance) {
+            resident.appearance = options.appearance;
         }
         this.applyInitialItems(resident.inventory, 28, options.initialInventory, 'inventory');
         this.applyInitialItems(resident.equipment, 14, options.initialEquipment, 'equipment');
@@ -128,9 +132,11 @@ export class ResidentRegistry {
     public delete(name: string): void {
         name = this.assertValidName(name);
         this.disconnect(name, 'delete_resident');
-        const filePath = join(this.saveDir, `${name}.json`);
-        if (existsSync(filePath)) {
-            rmSync(filePath);
+        const saveFile = `${name}.json`;
+        for (const file of readdirSync(this.saveDir)) {
+            if (file === saveFile || file.startsWith(`${saveFile}.`)) {
+                rmSync(join(this.saveDir, file), { force: true });
+            }
         }
     }
 

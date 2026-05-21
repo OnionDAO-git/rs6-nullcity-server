@@ -30,6 +30,7 @@ export interface GatewayClientEvents {
     perception: [residentId: string, perception: Perception];
     event: [residentId: string, event: PerceptionEvent];
     actionResult: [residentId: string, requestId: string | undefined, result: ActionResult, cause: string | undefined];
+    residentPaused: [name: string, cause: string | undefined];
     error: [error: Error];
     disconnect: [];
     ready: [];
@@ -209,6 +210,15 @@ export class GatewayClient extends EventEmitter {
                     (message.payload.result || { ok: true }) as ActionResult,
                     typeof message.payload.cause === 'string' ? message.payload.cause : undefined,
                 );
+            }
+
+            if (message.kind === 'resident_paused' && isRecord(message.payload)) {
+                this.emit(
+                    'residentPaused',
+                    String(message.payload.name || ''),
+                    typeof message.payload.cause === 'string' ? message.payload.cause : undefined,
+                );
+                return;
             }
 
             const requestId = stringifyRequestId(message.id);

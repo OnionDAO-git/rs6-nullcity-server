@@ -43,6 +43,7 @@ export class AgentGateway {
     private readonly registry = new ResidentRegistry();
     private readonly sessions = new Map<string, ResidentSession>();
     private readonly spectatorSessions = new Map<string, SpectatorSessionState>();
+    private readonly controllerSends = new Map<string, (message: object) => void>();
     private readonly actionLog = new ActionLog();
     private readonly spectatorPerception = new PerceptionBuilder();
     private readonly mcpFacade?: ResidentMcpFacade;
@@ -145,6 +146,7 @@ export class AgentGateway {
             try {
                 if (message.kind === 'controller_hello') {
                     controllerId = message.payload.controllerId || controllerId;
+                    this.controllerSends.set(controllerId, send);
                     send(frame('ok', { ok: true }, message.id));
                     return;
                 }
@@ -180,6 +182,7 @@ export class AgentGateway {
                 session?.close();
                 this.sessions.delete(name);
             }
+            this.controllerSends.delete(controllerId);
         });
     }
 
@@ -224,6 +227,7 @@ export class AgentGateway {
             }
             case 'create_resident': {
                 const resident = this.registry.create(message.payload.name, message.payload.spawnPosition, {
+                    appearance: message.payload.appearance,
                     initialInventory: message.payload.initialInventory,
                     initialEquipment: message.payload.initialEquipment,
                 });
@@ -282,16 +286,36 @@ export class AgentGateway {
                 send(frame('resident_disconnected', { name, cause: message.payload.cause }, message.id));
                 return;
             }
+            case 'pause_resident': {
+                const name = message.payload.name.toLowerCase();
+                const cause = message.payload.cause || 'dashboard_pause';
+                this.notifyControllers(frame('resident_paused', { name, cause }));
+                this.registry.disconnect(name, cause);
+                this.sessions.get(name)?.close();
+                this.sessions.delete(name);
+                send(frame('resident_paused', { name, cause }, message.id));
+                return;
+            }
             case 'delete_resident': {
                 if (!this.config.allowDelete) {
                     throw new Error('EDELETE_DISABLED');
                 }
-                this.registry.delete(message.payload.name);
+                const name = message.payload.name.toLowerCase();
+                this.notifyControllers(frame('resident_paused', { name, cause: 'delete_resident' }));
+                this.registry.delete(name);
+                this.sessions.get(name)?.close();
+                this.sessions.delete(name);
                 send(frame('ok', { ok: true }, message.id));
                 return;
             }
             default:
                 throw new Error('EUNKNOWN_MESSAGE');
+        }
+    }
+
+    private notifyControllers(message: object): void {
+        for (const send of this.controllerSends.values()) {
+            send(message);
         }
     }
 

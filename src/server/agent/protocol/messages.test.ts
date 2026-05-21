@@ -93,6 +93,21 @@ describe('agent protocol messages', () => {
     });
 
     it('parses resident creation with starter inventory', () => {
+        const appearance = {
+            gender: 0,
+            head: 2,
+            torso: 21,
+            arms: 29,
+            legs: 39,
+            hands: 34,
+            feet: 43,
+            facialHair: 12,
+            hairColor: 4,
+            torsoColor: 7,
+            legColor: 9,
+            feetColor: 3,
+            skinColor: 2,
+        };
         const message = parseClientMessage(
             JSON.stringify({
                 v: 1,
@@ -101,6 +116,7 @@ describe('agent protocol messages', () => {
                 payload: {
                     name: 'res:firepal',
                     spawnPosition: { x: 3222, y: 3202, level: 0 },
+                    appearance,
                     initialInventory: [{ itemId: 590, amount: 1 }, 1511, null],
                 },
             }),
@@ -110,6 +126,7 @@ describe('agent protocol messages', () => {
         if (message.kind !== 'create_resident') {
             throw new Error('Expected create_resident');
         }
+        expect(message.payload.appearance).toEqual(appearance);
         expect(message.payload.initialInventory).toEqual([{ itemId: 590, amount: 1 }, 1511, null]);
     });
 
@@ -132,6 +149,26 @@ describe('agent protocol messages', () => {
         }
         expect(message.payload.includeResidents).toBe(false);
         expect(message.payload.includePlayers).toBe(true);
+    });
+
+    it('parses resident pause requests', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'pause-1',
+                kind: 'pause_resident',
+                payload: {
+                    name: 'res:firepal',
+                    cause: 'dashboard_pause',
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('pause_resident');
+        if (message.kind !== 'pause_resident') {
+            throw new Error('Expected pause_resident');
+        }
+        expect(message.payload).toEqual({ name: 'res:firepal', cause: 'dashboard_pause' });
     });
 
     it('parses player spectator session requests', () => {

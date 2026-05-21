@@ -66,18 +66,13 @@ import { PlayerSyncTask } from './sync/player-sync-task';
 
 export const playerOptions: { option: string; index: number; placement: 'TOP' | 'BOTTOM' }[] = [
     {
-        option: 'Yeet',
-        index: 1,
-        placement: 'TOP',
-    },
-    {
         option: 'Follow',
         index: 0,
         placement: 'BOTTOM',
     },
     {
         option: 'Trade',
-        index: 2,
+        index: 1,
         placement: 'TOP',
     },
 ];

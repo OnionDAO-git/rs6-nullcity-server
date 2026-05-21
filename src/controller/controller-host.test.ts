@@ -187,6 +187,29 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(gameSkill.flush).toHaveBeenCalledTimes(1);
     });
 
+    it('pauses a resident runtime and keeps reconcile from restarting it', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) });
+
+        await host.start();
+        expect(runtimeCount(host)).toBe(1);
+
+        gateway.emit('residentPaused', 'res:pip', 'dashboard_pause');
+
+        expect(runtime.stop).toHaveBeenCalledWith('dashboard_pause');
+        expect(runtimeCount(host)).toBe(0);
+        const createCalls = gateway.createResident.mock.calls.length;
+        const connectCalls = gateway.connectResident.mock.calls.length;
+
+        await host.reconcile();
+
+        expect(gateway.createResident).toHaveBeenCalledTimes(createCalls);
+        expect(gateway.connectResident).toHaveBeenCalledTimes(connectCalls);
+
+        await host.stop();
+    });
+
     it('waits for in-flight perception handlers before flushing game-skill feedback', async () => {
         const gateway = new FakeGateway();
         const gameSkill = {

@@ -6,7 +6,7 @@ import { Packet, PacketType } from '@engine/net/packet';
 import { stringToLong } from '@engine/util/strings';
 import { activeWorld } from '@engine/world';
 import type { UpdateFlags } from '@engine/world/actor/update-flags';
-import { isPlayer } from '@engine/world/actor/util';
+import { isPlayer, isResident } from '@engine/world/actor/util';
 import type { Player } from '../player';
 import { SyncTask, appendMovement, registerNewActors, syncTrackedActors } from './actor-sync';
 
@@ -330,9 +330,9 @@ export class PlayerSyncTask extends SyncTask<void> {
 
             animations.forEach(animationId => appearanceData.put(animationId, 'SHORT'));
 
-            appearanceData.put(stringToLong(player.username), 'LONG'); // Username
+            appearanceData.put(stringToLong(this.displayUsername(player)), 'LONG'); // Username
             appearanceData.put(player.skills.getCombatLevel()); // Combat Level
-            appearanceData.put(player.skills.getTotalLevel(), 'SHORT'); // Skill Level (Total Level)
+            appearanceData.put(0, 'SHORT'); // Skill Level; zero makes the client show combat level.
 
             const appearanceDataSize = appearanceData.writerIndex;
 
@@ -354,5 +354,12 @@ export class PlayerSyncTask extends SyncTask<void> {
         } else {
             buffer.put(0x100 + appearanceInfo, 'SHORT');
         }
+    }
+
+    private displayUsername(player: Player): string {
+        if (isResident(player)) {
+            return player.username.replace(/^res:/i, '');
+        }
+        return player.username;
     }
 }

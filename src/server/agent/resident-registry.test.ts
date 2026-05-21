@@ -67,15 +67,33 @@ describe('ResidentRegistry', () => {
     it('applies initial inventory and equipment before saving new residents', () => {
         let savedInventory: unknown[] | undefined;
         let savedEquipment: unknown[] | undefined;
+        let savedAppearance: unknown;
+        const appearance = {
+            gender: 0,
+            head: 5,
+            torso: 22,
+            arms: 30,
+            legs: 38,
+            hands: 35,
+            feet: 44,
+            facialHair: 15,
+            hairColor: 6,
+            torsoColor: 10,
+            legColor: 11,
+            feetColor: 4,
+            skinColor: 1,
+        };
         jest.spyOn(Resident.prototype, 'save').mockImplementation(function save(this: Resident) {
             savedInventory = this.inventory.items.map(item => (item ? { ...item } : null));
             savedEquipment = this.equipment.items.map(item => (item ? { ...item } : null));
+            savedAppearance = { ...this.appearance };
             return true;
         });
         const registry = new ResidentRegistry(saveDir, playerSaveDir);
 
         expect(
             registry.create('res:firepal', undefined, {
+                appearance,
                 initialInventory: [{ itemId: 590, amount: 1 }, 1511, null, { itemId: 1511, amount: 3 }],
                 initialEquipment: [{ itemId: 1, amount: 1 }],
             }),
@@ -89,6 +107,7 @@ describe('ResidentRegistry', () => {
             null,
         ]);
         expect(savedEquipment?.slice(0, 2)).toEqual([{ itemId: 1, amount: 1 }, null]);
+        expect(savedAppearance).toEqual(appearance);
     });
 
     it('rejects oversized initial containers', () => {
@@ -110,6 +129,20 @@ describe('ResidentRegistry', () => {
 
         expect(registry.list()).toEqual([{ name: 'res:valid', online: false, controllerId: undefined, controlHeld: false }]);
     });
+
+    it('deletes resident save files and quarantined backups', () => {
+        writeFileSync(join(saveDir, 'res:gone.json'), '{}');
+        writeFileSync(join(saveDir, 'res:gone.json.bak'), '{}');
+        writeFileSync(join(saveDir, 'res:gone_extra.json'), '{}');
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        registry.delete('res:gone');
+
+        expect(existsSync(join(saveDir, 'res:gone.json'))).toBe(false);
+        expect(existsSync(join(saveDir, 'res:gone.json.bak'))).toBe(false);
+        expect(existsSync(join(saveDir, 'res:gone_extra.json'))).toBe(true);
+    });
+
 
     it('prunes inactive residents before reporting online or controller state', () => {
         const registry = new ResidentRegistry(saveDir, playerSaveDir);

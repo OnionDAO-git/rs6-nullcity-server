@@ -72,6 +72,7 @@ export interface SubmitActionPayload {
 
 export interface ResidentNamePayload {
     name: string;
+    cause?: string;
 }
 
 export type ClientMessage =
@@ -84,6 +85,7 @@ export type ClientMessage =
     | GatewayEnvelope<'submit_action', SubmitActionPayload>
     | GatewayEnvelope<'detach', ResidentNamePayload>
     | GatewayEnvelope<'disconnect_resident', ResidentNamePayload>
+    | GatewayEnvelope<'pause_resident', ResidentNamePayload>
     | GatewayEnvelope<'delete_resident', ResidentNamePayload>;
 
 export type ServerMessage =
@@ -91,6 +93,7 @@ export type ServerMessage =
     | GatewayEnvelope<'resident_created', { resident: ResidentSummary }>
     | GatewayEnvelope<'resident_connected', { resident: ResidentSummary; perception?: Perception | null }>
     | GatewayEnvelope<'resident_disconnected', ResidentNamePayload & { cause?: string }>
+    | GatewayEnvelope<'resident_paused', ResidentNamePayload & { cause?: string }>
     | GatewayEnvelope<'perception', { resident_id: string; perception: Perception }>
     | GatewayEnvelope<'action_result', { resident_id: string; request_id?: string | number; result: ActionResult; cause?: string }>
     | GatewayEnvelope<'event', { resident_id: string; event: PerceptionEvent }>

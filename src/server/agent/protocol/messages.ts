@@ -1,5 +1,6 @@
 import { type ActionResult, type AgentAction, AgentActionSchema } from '@engine/world/actor/resident/action/agent-action';
 import type { Perception } from '@engine/world/actor/resident/perception/perception-types';
+import type { Appearance } from '@engine/world/actor/player/player-data';
 import { z } from 'zod';
 
 export const AGENT_PROTOCOL_VERSION = 1;
@@ -53,6 +54,7 @@ export type ClientMessage =
           {
               name: string;
               spawnPosition?: { x: number; y: number; level?: number };
+              appearance?: Appearance;
               initialInventory?: InitialContainerItem[];
               initialEquipment?: InitialContainerItem[];
           }
@@ -62,6 +64,7 @@ export type ClientMessage =
     | AgentFrame<'submit_action', { name: string; action: AgentAction }>
     | AgentFrame<'detach', { name: string }>
     | AgentFrame<'disconnect_resident', { name: string; cause?: string }>
+    | AgentFrame<'pause_resident', { name: string; cause?: string }>
     | AgentFrame<'delete_resident', { name: string }>;
 
 export type ServerMessage =
@@ -70,6 +73,7 @@ export type ServerMessage =
     | AgentFrame<'resident_created', { resident: ResidentSummary }>
     | AgentFrame<'resident_connected', { resident: ResidentSummary; perception: Perception | null }>
     | AgentFrame<'resident_disconnected', { name: string; cause?: string }>
+    | AgentFrame<'resident_paused', { name: string; cause?: string }>
     | AgentFrame<'spectator_connected', { sessionId: string; subject: SpectatorSubject; initialState: unknown }>
     | AgentFrame<'spectator_rebuild', { sessionId: string; payload: unknown }>
     | AgentFrame<'spectator_packet', { sessionId: string; opcode: number; payload: SpectatorRsPacketFrame }>
@@ -89,6 +93,21 @@ const residentFilterSchema = z.enum(['online', 'offline', 'all']).optional();
 const disconnectPolicySchema = z.enum(['logout', 'idle']).optional();
 const spectatorModeSchema = z.enum(['follow', 'free-camera', 'picture-in-picture']).optional();
 const positionSchema = z.object({ x: z.number().int(), y: z.number().int(), level: z.number().int().optional() });
+const appearanceSchema = z.object({
+    gender: z.number().int(),
+    head: z.number().int(),
+    torso: z.number().int(),
+    arms: z.number().int(),
+    legs: z.number().int(),
+    hands: z.number().int(),
+    feet: z.number().int(),
+    facialHair: z.number().int(),
+    hairColor: z.number().int(),
+    torsoColor: z.number().int(),
+    legColor: z.number().int(),
+    feetColor: z.number().int(),
+    skinColor: z.number().int(),
+});
 const initialContainerItemSchema = z.union([
     z.number().int().positive(),
     z.string().min(1),
@@ -114,6 +133,7 @@ const clientPayloadSchemas = {
     create_resident: z.object({
         name: z.string().min(1),
         spawnPosition: positionSchema.optional(),
+        appearance: appearanceSchema.optional(),
         initialInventory: z.array(initialContainerItemSchema).optional(),
         initialEquipment: z.array(initialContainerItemSchema).optional(),
     }),
@@ -131,6 +151,7 @@ const clientPayloadSchemas = {
     submit_action: z.object({ name: z.string().min(1), action: AgentActionSchema }),
     detach: z.object({ name: z.string().min(1) }),
     disconnect_resident: z.object({ name: z.string().min(1), cause: z.string().optional() }),
+    pause_resident: z.object({ name: z.string().min(1), cause: z.string().optional() }),
     delete_resident: z.object({ name: z.string().min(1) }),
 } satisfies Record<ClientMessage['kind'], z.ZodTypeAny>;
 

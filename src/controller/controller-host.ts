@@ -236,6 +236,9 @@ export class ControllerHost {
         this.gateway.on('event', (residentId, event) => {
             this.runtimes.get(this.runtimeName(residentId))?.onEvent(event);
         });
+        this.gateway.on('residentPaused', (name, cause) => {
+            this.pauseResident(name, cause || 'gateway_pause');
+        });
         this.gateway.on('disconnect', () => {
             this.stopAllRuntimes('gateway_disconnect');
         });
@@ -271,6 +274,11 @@ export class ControllerHost {
         for (const name of [...this.runtimes.keys()]) {
             this.stopRuntime(name, cause);
         }
+    }
+
+    private pauseResident(name: string, cause: string): void {
+        this.desired.delete(name);
+        this.stopRuntime(name, cause);
     }
 
     private stopRuntime(name: string, cause: string): void {
