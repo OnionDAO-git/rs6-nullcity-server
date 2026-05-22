@@ -40,7 +40,7 @@ Agents should update the status marker and add a one-line note under the task wh
   - Example gateway config uses `127.0.0.1` and a placeholder auth token.
 - `[x]` MVP game-skill context, workflow availability, prompt injection, and knowledge suggestion plumbing exist.
 - `[x]` A dedicated agent-facing RuneScape skill/doc index exists under `docs/runescape-skill/`.
-- `[~]` Benchmark harness foundation exists; scripted and autonomous make-fire/explore/follow-chat smokes exist, but dashboard benchmark pages are still pending.
+- `[x]` Benchmark harness foundation and dashboard benchmark inspection exist; humans can inspect artifact lists/details and module leaderboard rows without opening raw JSON.
 
 ## Workstream A: SPARK Capability Facades
 
@@ -184,15 +184,17 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: Playwright/browser inspection with `res:agent`.
   - Partial 2026-05-21 on `nullcity`: resident detail Spark Activity now surfaces Thinking/Nervous/Body state, current goal, recent inference/action/feed, and explicitly distinguishes gateway-online residents that are still waiting for controller runtime state. Dashboard spawn now writes controller-discoverable SOUL files for autonomous residents, and the controller discovers valid SOUL files from `souls.dir` during reconcile.
 
-- `[ ]` **D3: Add benchmark run list and detail pages.**
+- `[x]` **D3: Add benchmark run list and detail pages.**
   - Files: dashboard benchmark routes/components
   - Deliverable: list benchmark artifacts, filter by module/task, and inspect run timeline.
   - Verification: fixture artifacts render correctly.
+  - Verified 2026-05-22 in `rs6-nullcity-residents-dashboard`: added benchmark artifact list/detail BFF endpoints, shared read models, `/benchmarks` and `/benchmarks/:runId` dashboard views, and fixture coverage for malformed-file skipping plus newest-first ordering. Validation passed with `bun test packages/server/src/runtime.test.ts`, `bun run typecheck`, `bun run check`, `bun run build`, `git diff --check`, and live API smokes against `http://127.0.0.1:8892/api/benchmarks` plus a detail artifact.
 
-- `[ ]` **D4: Add module leaderboard.**
+- `[x]` **D4: Add module leaderboard.**
   - Files: dashboard benchmark components
   - Deliverable: compare modules by pass rate, progress, efficiency, safety, reliability, and cost.
   - Verification: fixture data ranks modules deterministically.
+  - Verified 2026-05-22 in `rs6-nullcity-residents-dashboard`: added `/api/benchmarks/leaderboard`, deterministic module ranking by pass rate/progress/run count/recency, and a dashboard leaderboard panel that compares pass rate, average score, autonomous runs, average duration, safety incidents, cleanup failures, and inference count. Validation passed with dashboard runtime tests, `bun test`, `bun run typecheck`, `bun run check`, `bun run build`, `git diff --check`, and live `http://127.0.0.1:8893/api/benchmarks/leaderboard` smoke.
 
 ## Workstream E: RuneScape Knowledge And Agent Skill
 
@@ -443,12 +445,13 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
 - `[x]` SPARK facet runtime foundation made the standard module own Brain/Thinking plus Nervous compatibility facets while preserving kernel safety priority.
+- `[x]` Dashboard benchmark pages D3/D4 added artifact list/detail views and a module leaderboard for comparing SPARK module runs.
 
 ## Immediate Recommended Next Slice
 
 - `[ ]` Build the consumption safety and proof loop next.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
-  - Dashboard benchmark pages D3: humans need artifact list/detail views to inspect module experiments without spelunking JSON files.
+  - Benchmark proof is now visible in the dashboard; the next proof-loop slice should make new autonomous benchmark runs easier to launch/compare from a single operator command or dashboard action.
   - Human-like next slice: finish F3 help-request behavior when no recovery move exists, then build a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
 
 ## Agent Update Protocol
