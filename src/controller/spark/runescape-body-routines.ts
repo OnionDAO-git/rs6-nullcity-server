@@ -115,6 +115,9 @@ export const COIN_ITEM_IDS: ReadonlySet<number> = new Set([995]);
 export const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 
+/** Maximum tile distance considered for opportunistic loot pickup during combat. */
+export const COMBAT_LOOT_MAX_DISTANCE = 6;
+
 /** Range (in tiles) within which a prayer-training waypoint is considered reached. */
 export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
 
@@ -475,4 +478,23 @@ export function prayerTrainingAction(perception: BodyHybridPerception): AgentAct
     }
 
     return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
+}
+
+/**
+ * Bury bones looted during combat, or opportunistically pick up nearby
+ * useful items within the combat-loot radius. Moved verbatim from the
+ * monolith (R-β slice 8).
+ */
+export function combatLootOrPrayerAction(
+    perception: BodyHybridPerception,
+    pickupCooldowns?: Record<string, number>,
+    currentTick?: number,
+): AgentAction | undefined {
+    const bonesSlot = findSlot(perception.resident?.inventory || [], isBones);
+    if (bonesSlot !== undefined) {
+        return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'combat_bury_looted_bones' };
+    }
+
+    const pickup = opportunisticPickupAction(perception, undefined, COMBAT_LOOT_MAX_DISTANCE, pickupCooldowns, currentTick);
+    return pickup ? actionWithCause(pickup, 'combat_loot_pickup') : undefined;
 }

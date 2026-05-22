@@ -9,6 +9,7 @@ import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/ru
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
 import {
     COIN_ITEM_IDS,
+    COMBAT_LOOT_MAX_DISTANCE,
     COOKING_HEAT_OBJECT_IDS,
     FIRE_OBJECT_IDS,
     FOOD_KEY_PATTERN,
@@ -20,6 +21,7 @@ import {
     PRAYER_TRAINING_WAYPOINT_RANGE,
     actionWithCause,
     buryBonesAction,
+    combatLootOrPrayerAction,
     distance,
     findSlot,
     firemakingAction,
@@ -115,7 +117,6 @@ const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
 const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
 const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
-const COMBAT_LOOT_MAX_DISTANCE = 6;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // Item / actor classification predicates and their constant tables now live in
 // `../spark/runescape-workflows` (Plan R-α). Body-routine action helpers and
@@ -1760,20 +1761,6 @@ function combatTrainingAction(
     }
 
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
-}
-
-function combatLootOrPrayerAction(
-    perception: HybridPerception,
-    pickupCooldowns?: Record<string, number>,
-    currentTick?: number,
-): AgentAction | undefined {
-    const bonesSlot = findSlot(perception.resident?.inventory || [], isBones);
-    if (bonesSlot !== undefined) {
-        return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'combat_bury_looted_bones' };
-    }
-
-    const pickup = opportunisticPickupAction(perception, undefined, COMBAT_LOOT_MAX_DISTANCE, pickupCooldowns, currentTick);
-    return pickup ? actionWithCause(pickup, 'combat_loot_pickup') : undefined;
 }
 
 function safeCombatTarget(perception: HybridPerception): Actor | undefined {

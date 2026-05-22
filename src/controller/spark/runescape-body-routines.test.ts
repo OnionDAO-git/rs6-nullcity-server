@@ -8,6 +8,7 @@
 import { objectIds } from '@engine/world/config/object-ids';
 import {
     buryBonesAction,
+    combatLootOrPrayerAction,
     firemakingAction,
     levelOneWoodcuttingAction,
     opportunisticPickupAction,
@@ -652,6 +653,48 @@ describe('prayerTrainingAction', () => {
             perception({
                 resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 2, max: 10 } },
                 nearby: { npcs: [safeNpc('Chicken', 3220, 3220)] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('combatLootOrPrayerAction', () => {
+    const BONES = 526;
+    const COINS = 995;
+
+    it('buries bones looted during combat before pickup considerations', () => {
+        const action = combatLootOrPrayerAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BONES)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'item_action',
+            slot: 0,
+            option: 'bury',
+            cause: 'combat_bury_looted_bones',
+        });
+    });
+
+    it('picks up nearby loot inside the combat radius (re-cause stamps "combat_loot_pickup")', () => {
+        const coin: BodyWorldItem = { itemId: COINS, amount: 1, position: { x: 102, y: 100, level: 0 } };
+        const action = combatLootOrPrayerAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+        );
+        expect(action?.cause).toBe('combat_loot_pickup');
+    });
+
+    it('returns undefined when nothing is in inventory and no loot inside the combat radius', () => {
+        // place a coin OUTSIDE the COMBAT_LOOT_MAX_DISTANCE radius (6 tiles)
+        const farCoin: BodyWorldItem = { itemId: COINS, amount: 1, position: { x: 110, y: 100, level: 0 } };
+        const action = combatLootOrPrayerAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [farCoin] },
             }),
         );
         expect(action).toBeUndefined();
