@@ -116,6 +116,7 @@ const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
 const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
 const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
+const EXPLORATION_PATROL_STEP_DISTANCE = 3;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // Item / actor classification predicates and their constant tables now live in
@@ -670,7 +671,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 ? localAction
                 : {
                       kind: 'move_to',
-                      target: explorationPatrolTarget(here, anchor),
+                      target: stuckRecoveryPatrolTarget(here, active.target, this.options.state.tick, anchor),
                       range: 1,
                       cause: 'stuck_move_recovery',
                   };
@@ -1864,7 +1865,7 @@ function explorationAction(
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
 
-        const patrol = explorationPatrolTarget(here, anchor);
+        const patrol = explorationPatrolTarget(here, anchor, currentTick);
         if (distance(here, patrol) > 1) {
             return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
         }
@@ -1886,7 +1887,7 @@ function explorationAction(
         return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
     }
 
-    const patrol = explorationPatrolTarget(here, anchor);
+    const patrol = explorationPatrolTarget(here, anchor, currentTick);
     if (distance(here, patrol) > 1) {
         return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
     }
@@ -1972,11 +1973,37 @@ function worldItemLike(value: unknown): WorldItem | undefined {
     };
 }
 
-function explorationPatrolTarget(here: Pos, anchor?: Pos): Pos {
-    const center = anchor && distance(here, anchor) <= DEFAULT_RETURN_TO_ANCHOR_RADIUS ? anchor : here;
-    const dx = here.x >= center.x ? -4 : 4;
-    const dy = here.y >= center.y ? 4 : -4;
-    return { x: center.x + dx, y: center.y + dy, level: center.level };
+function explorationPatrolTarget(here: Pos, _anchor?: Pos, currentTick = 0): Pos {
+    const directions = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE);
+    const direction = directions[patrolDirectionIndex(here, currentTick, directions.length)];
+    return { x: here.x + direction.dx, y: here.y + direction.dy, level: here.level };
+}
+
+function stuckRecoveryPatrolTarget(here: Pos, blockedTarget: Pos, currentTick: number, anchor?: Pos): Pos {
+    const candidates = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE)
+        .map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }))
+        .filter(candidate => distance(candidate, blockedTarget) > distance(here, blockedTarget));
+    if (candidates.length > 0) {
+        return candidates[patrolDirectionIndex(here, currentTick, candidates.length)];
+    }
+    return explorationPatrolTarget(here, anchor, currentTick + 1);
+}
+
+function localPatrolDirections(step: number): Array<{ dx: number; dy: number }> {
+    return [
+        { dx: step, dy: 0 },
+        { dx: 0, dy: step },
+        { dx: -step, dy: 0 },
+        { dx: 0, dy: -step },
+    ];
+}
+
+function patrolDirectionIndex(here: Pos, currentTick: number, length: number): number {
+    if (length <= 1) {
+        return 0;
+    }
+    const tickBucket = Math.floor(currentTick / Math.max(1, DEFAULT_BODY_EVERY_TICKS));
+    return Math.abs(here.x * 31 + here.y * 17 + tickBucket) % length;
 }
 
 function stuckOpenObstacleAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {

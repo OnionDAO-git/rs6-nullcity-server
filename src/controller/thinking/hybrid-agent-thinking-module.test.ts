@@ -1003,7 +1003,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3226, y: 3242, level: 0 }, range: 1, cause: 'explore_patrol' }]);
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3233, y: 3238, level: 0 }, range: 1, cause: 'explore_patrol' }]);
         expect(result.cause).toBe('exploration_fallback');
     });
 
@@ -1059,7 +1059,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
+            { kind: 'move_to', target: { x: 3230, y: 3243, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
         ]);
         expect(result.cause).toBe('stuck_move_recovery');
     });
@@ -1140,7 +1140,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am stuck near 3233,3243 trying to reach 3229,3247. Can someone lead me or open a route?',
+                text: 'I am stuck near 3233,3243 trying to reach 3230,3243. Can someone lead me or open a route?',
                 cause: 'stuck_help_request',
             },
         ]);
@@ -1278,7 +1278,7 @@ describe('HybridAgentThinkingModule', () => {
         ]);
         expect(report.cause).toBe('stuck_blocker_report');
         expect(recovery.actions).toEqual([
-            { kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
+            { kind: 'move_to', target: { x: 3230, y: 3243, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
         ]);
         expect(recovery.cause).toBe('stuck_move_recovery');
     });
@@ -1339,7 +1339,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: { x: 3229, y: 3247, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
+            { kind: 'move_to', target: { x: 3230, y: 3243, level: 0 }, range: 1, cause: 'stuck_move_recovery' },
         ]);
         expect(result.cause).toBe('stuck_move_recovery');
     });
@@ -2715,7 +2715,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3226, y: 3242, level: 0 }, range: 1, cause: 'explore_patrol' }]);
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3233, y: 3238, level: 0 }, range: 1, cause: 'explore_patrol' }]);
         expect(result.cause).toBe('exploration_fallback');
     });
 
