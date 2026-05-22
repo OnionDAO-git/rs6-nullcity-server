@@ -119,6 +119,15 @@ export const FOOD_KEY_PATTERN =
 /** Maximum tile distance considered for opportunistic loot pickup during combat. */
 export const COMBAT_LOOT_MAX_DISTANCE = 6;
 
+/** Default body tick cadence; participates in the patrol-direction hash. Mirrors the monolith constant. */
+export const DEFAULT_BODY_EVERY_TICKS = 8;
+
+/** Ticks before an exploration target is considered eligible again after a recent visit. */
+export const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
+
+/** Patrol step distance (tiles) for the local exploration patroller. */
+export const EXPLORATION_PATROL_STEP_DISTANCE = 3;
+
 /** Range (in tiles) within which a prayer-training waypoint is considered reached. */
 export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
 
@@ -572,4 +581,152 @@ export function combatTrainingAction(
     }
 
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
+}
+
+// --- Exploration helpers (moved verbatim from the monolith). ---
+
+/** Speech helper used by exploration to approach and talk to a nearby NPC. */
+export function npcTalkAction(perception: BodyHybridPerception, target: BodyActor, cause: string): AgentAction {
+    const here = perception.resident?.position;
+    if (here && distance(here, target.position) > 2) {
+        return { kind: 'move_to', target: target.position, range: 1, cause };
+    }
+    return { kind: 'interact', target, option: 'talk-to', cause };
+}
+
+/** Human-readable label for inventory/world items. Strips the `rs:` prefix and underscores. */
+export function itemLabel(item: BodyItem): string {
+    return (item.key || `item ${item.itemId}`).replace(/^rs:/i, '').replace(/_/g, ' ').trim();
+}
+
+/** True when the given exploration cooldown key is still inside its cooldown window. */
+export function isExplorationOnCooldown(key: string, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
+    const last = cooldowns?.[key];
+    return last !== undefined && currentTick - last < EXPLORATION_TARGET_COOLDOWN_TICKS;
+}
+
+/** Stable cooldown key for an NPC the exploration routine just visited. */
+export function explorationActorCooldownKey(actor: BodyActor): string {
+    return actor.id ? `npc:${actor.id}` : `npc:${actor.key || actor.name || `${actor.position.x},${actor.position.y},${actor.position.level}`}`;
+}
+
+/** Stable cooldown key for a world object the exploration routine just visited. */
+export function explorationObjectCooldownKey(object: { objectId: number; position: BodyPos }): string {
+    return `object:${object.objectId}:${object.position.x},${object.position.y},${object.position.level}`;
+}
+
+/** Stable cooldown key for a ground item the exploration routine just visited. */
+export function explorationItemCooldownKey(item: BodyWorldItem): string {
+    return `item:${pickupItemKey(item)}`;
+}
+
+/** Patrol-step direction set used by both exploration patrol and stuck recovery. */
+export function localPatrolDirections(step: number): Array<{ dx: number; dy: number }> {
+    return [
+        { dx: step, dy: 0 },
+        { dx: 0, dy: step },
+        { dx: -step, dy: 0 },
+        { dx: 0, dy: -step },
+    ];
+}
+
+/** Stable pseudo-random direction index derived from position + tick bucket. */
+export function patrolDirectionIndex(here: BodyPos, currentTick: number, length: number): number {
+    if (length <= 1) {
+        return 0;
+    }
+    const tickBucket = Math.floor(currentTick / Math.max(1, DEFAULT_BODY_EVERY_TICKS));
+    return Math.abs(here.x * 31 + here.y * 17 + tickBucket) % length;
+}
+
+/** Returns the next patrol step away from `here`. The anchor parameter is currently ignored. */
+export function explorationPatrolTarget(here: BodyPos, _anchor?: BodyPos, currentTick = 0): BodyPos {
+    const directions = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE);
+    const direction = directions[patrolDirectionIndex(here, currentTick, directions.length)];
+    return { x: here.x + direction.dx, y: here.y + direction.dy, level: here.level };
+}
+
+/** Returns a patrol step that increases distance from the blocked target. Used by stuck recovery. */
+export function stuckRecoveryPatrolTarget(here: BodyPos, blockedTarget: BodyPos, currentTick: number, anchor?: BodyPos): BodyPos {
+    const candidates = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE)
+        .map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }))
+        .filter(candidate => distance(candidate, blockedTarget) > distance(here, blockedTarget));
+    if (candidates.length > 0) {
+        return candidates[patrolDirectionIndex(here, currentTick, candidates.length)];
+    }
+    return explorationPatrolTarget(here, anchor, currentTick + 1);
+}
+
+/**
+ * Pick up nearby loot, then talk to a nearby NPC, then move toward an
+ * uncooldowned object, then a world item, then patrol. Respects per-actor,
+ * per-object, and per-item exploration cooldowns. Moved verbatim from the
+ * monolith (R-β slice 10).
+ */
+export function explorationAction(
+    perception: BodyHybridPerception,
+    anchor?: BodyPos,
+    residentId?: string,
+    pickupCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+    explorationCooldowns?: Record<string, number>,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick);
+    if (pickup) {
+        return pickup;
+    }
+
+    const npc = (perception.nearby?.npcs || [])
+        .filter(candidate => !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (npc) {
+        return npcTalkAction(perception, npc, 'explore_talk_to_npc');
+    }
+
+    const object = (perception.nearby?.objects || [])
+        .filter(
+            candidate =>
+                !FIRE_OBJECT_IDS.has(candidate.objectId) &&
+                !LEVEL_ONE_TREE_IDS.has(candidate.objectId) &&
+                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (object) {
+        if (distance(here, object.position) > 2) {
+            return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
+        }
+
+        const patrol = explorationPatrolTarget(here, anchor, currentTick);
+        if (distance(here, patrol) > 1) {
+            return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
+        }
+
+        return {
+            kind: 'say',
+            text: `I am checking the landmark at ${object.position.x},${object.position.y}.`,
+            cause: 'explore_visible_object',
+        };
+    }
+
+    const item = (perception.nearby?.worldItems || [])
+        .filter(candidate => !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (item) {
+        if (distance(here, item.position) > 1) {
+            return { kind: 'move_to', target: item.position, range: 1, cause: 'explore_visible_item' };
+        }
+        return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
+    }
+
+    const patrol = explorationPatrolTarget(here, anchor, currentTick);
+    if (distance(here, patrol) > 1) {
+        return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
+    }
+
+    return { kind: 'say', text: `I am scouting near ${here.x},${here.y} and staying findable.`, cause: 'explore_patrol' };
 }

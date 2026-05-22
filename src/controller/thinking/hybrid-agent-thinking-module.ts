@@ -11,6 +11,7 @@ import {
     COIN_ITEM_IDS,
     COMBAT_LOOT_MAX_DISTANCE,
     COOKING_HEAT_OBJECT_IDS,
+    EXPLORATION_TARGET_COOLDOWN_TICKS,
     FIRE_OBJECT_IDS,
     FOOD_KEY_PATTERN,
     INTERACTION_APPROACH_RADIUS,
@@ -24,18 +25,26 @@ import {
     combatLootOrPrayerAction,
     combatTrainingAction,
     distance,
+    explorationAction,
+    explorationActorCooldownKey,
+    explorationItemCooldownKey,
+    explorationObjectCooldownKey,
+    explorationPatrolTarget,
     findSlot,
     firemakingAction,
     firstFoodSlot,
     hasNearbyFire,
     inventoryHasFreeSlot,
+    isExplorationOnCooldown,
     isLowHealth,
     isOwnedByAnotherActor,
     isPickupOnCooldown,
     isUsefulGroundItem,
+    itemLabel,
     levelOneWoodcuttingAction,
     nearestPrayerTrainingWaypoint,
     normalizeActorId,
+    npcTalkAction,
     opportunisticPickupAction,
     pickupItemKey,
     prayerTrainingAction,
@@ -43,6 +52,7 @@ import {
     safeCombatTarget,
     starterFishingAction,
     starterFishingCookingAction,
+    stuckRecoveryPatrolTarget,
     usefulGroundItemPriority,
 } from '../spark/runescape-body-routines';
 import {
@@ -118,8 +128,6 @@ const ROUTINE_LOOP_BREAK_ACTIONS = 3;
 const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
 const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
-const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
-const EXPLORATION_PATROL_STEP_DISTANCE = 3;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // Item / actor classification predicates and their constant tables now live in
@@ -1768,91 +1776,6 @@ function isFollowGoal(goal?: ActiveGoalState): boolean {
     return /^follow-/i.test(goal.id) || /\bfollow\b/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
-function explorationAction(
-    perception: HybridPerception,
-    anchor?: Pos,
-    residentId?: string,
-    pickupCooldowns?: Record<string, number>,
-    currentTick = perception.tick ?? 0,
-    explorationCooldowns?: Record<string, number>,
-): AgentAction | undefined {
-    const here = perception.resident?.position;
-    if (!here) {
-        return undefined;
-    }
-
-    const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick);
-    if (pickup) {
-        return pickup;
-    }
-
-    const npc = (perception.nearby?.npcs || [])
-        .filter(candidate => !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick))
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (npc) {
-        return npcTalkAction(perception, npc, 'explore_talk_to_npc');
-    }
-
-    const object = (perception.nearby?.objects || [])
-        .filter(
-            candidate =>
-                !FIRE_OBJECT_IDS.has(candidate.objectId) &&
-                !LEVEL_ONE_TREE_IDS.has(candidate.objectId) &&
-                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
-        )
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (object) {
-        if (distance(here, object.position) > 2) {
-            return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
-        }
-
-        const patrol = explorationPatrolTarget(here, anchor, currentTick);
-        if (distance(here, patrol) > 1) {
-            return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
-        }
-
-        return {
-            kind: 'say',
-            text: `I am checking the landmark at ${object.position.x},${object.position.y}.`,
-            cause: 'explore_visible_object',
-        };
-    }
-
-    const item = (perception.nearby?.worldItems || [])
-        .filter(candidate => !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick))
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (item) {
-        if (distance(here, item.position) > 1) {
-            return { kind: 'move_to', target: item.position, range: 1, cause: 'explore_visible_item' };
-        }
-        return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
-    }
-
-    const patrol = explorationPatrolTarget(here, anchor, currentTick);
-    if (distance(here, patrol) > 1) {
-        return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
-    }
-
-    return { kind: 'say', text: `I am scouting near ${here.x},${here.y} and staying findable.`, cause: 'explore_patrol' };
-}
-
-function isExplorationOnCooldown(key: string, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
-    const last = cooldowns?.[key];
-    return last !== undefined && currentTick - last < EXPLORATION_TARGET_COOLDOWN_TICKS;
-}
-
-function explorationActorCooldownKey(actor: Actor): string {
-    return actor.id ? `npc:${actor.id}` : `npc:${actor.key || actor.name || positionKey(actor.position)}`;
-}
-
-function explorationObjectCooldownKey(object: { objectId: number; position: Pos }): string {
-    return `object:${object.objectId}:${positionKey(object.position)}`;
-}
-
-function explorationItemCooldownKey(item: WorldItem): string {
-    return `item:${pickupItemKey(item)}`;
-}
-
 function explorationCooldownKeyFromAction(action: AgentAction): string | undefined {
     if (!/explore|routine_loop_break|stuck_move_recovery/i.test(String(action.cause || ''))) {
         return undefined;
@@ -1912,39 +1835,6 @@ function worldItemLike(value: unknown): WorldItem | undefined {
         position,
         ownerId: typeof value.ownerId === 'string' ? value.ownerId : undefined,
     };
-}
-
-function explorationPatrolTarget(here: Pos, _anchor?: Pos, currentTick = 0): Pos {
-    const directions = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE);
-    const direction = directions[patrolDirectionIndex(here, currentTick, directions.length)];
-    return { x: here.x + direction.dx, y: here.y + direction.dy, level: here.level };
-}
-
-function stuckRecoveryPatrolTarget(here: Pos, blockedTarget: Pos, currentTick: number, anchor?: Pos): Pos {
-    const candidates = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE)
-        .map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }))
-        .filter(candidate => distance(candidate, blockedTarget) > distance(here, blockedTarget));
-    if (candidates.length > 0) {
-        return candidates[patrolDirectionIndex(here, currentTick, candidates.length)];
-    }
-    return explorationPatrolTarget(here, anchor, currentTick + 1);
-}
-
-function localPatrolDirections(step: number): Array<{ dx: number; dy: number }> {
-    return [
-        { dx: step, dy: 0 },
-        { dx: 0, dy: step },
-        { dx: -step, dy: 0 },
-        { dx: 0, dy: -step },
-    ];
-}
-
-function patrolDirectionIndex(here: Pos, currentTick: number, length: number): number {
-    if (length <= 1) {
-        return 0;
-    }
-    const tickBucket = Math.floor(currentTick / Math.max(1, DEFAULT_BODY_EVERY_TICKS));
-    return Math.abs(here.x * 31 + here.y * 17 + tickBucket) % length;
 }
 
 function stuckOpenObstacleAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {
@@ -2044,15 +1934,6 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string): 
     }
 
     return undefined;
-}
-
-function npcTalkAction(perception: HybridPerception, target: Actor, cause: string): AgentAction {
-    const here = perception.resident?.position;
-    if (here && distance(here, target.position) > 2) {
-        return { kind: 'move_to', target: target.position, range: 1, cause };
-    }
-
-    return { kind: 'interact', target, option: 'talk-to', cause };
 }
 
 function isLocalRoutineCause(cause: string, action: AgentAction): boolean {
@@ -2472,10 +2353,6 @@ function describeInventory(perception: HybridPerception): string {
 
     const labels = [...counts.entries()].map(([label, amount]) => (amount > 1 ? `${label} x${amount}` : label));
     return `I am carrying ${labels.join(', ')}.`;
-}
-
-function itemLabel(item: Item): string {
-    return (item.key || `item ${item.itemId}`).replace(/^rs:/i, '').replace(/_/g, ' ').trim();
 }
 
 function fleeTarget(perception: HybridPerception): Pos {

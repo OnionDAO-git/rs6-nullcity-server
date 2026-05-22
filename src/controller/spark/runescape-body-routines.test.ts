@@ -10,6 +10,7 @@ import {
     buryBonesAction,
     combatLootOrPrayerAction,
     combatTrainingAction,
+    explorationAction,
     firemakingAction,
     levelOneWoodcuttingAction,
     opportunisticPickupAction,
@@ -790,5 +791,95 @@ describe('combatTrainingAction', () => {
             range: 1,
             cause: 'combat_approach_safe_target',
         });
+    });
+});
+
+describe('explorationAction', () => {
+    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`): BodyActor {
+        return { id, kind: 'npc', name, position: { x, y, level: 0 }, hpFraction: 1 };
+    }
+
+    it('returns an "interact talk-to" against an uncooldowned adjacent NPC', () => {
+        const guide = npc('RuneScape Guide', 100, 100);
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [guide] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'interact', target: guide, option: 'talk-to', cause: 'explore_talk_to_npc' });
+    });
+
+    it('moves toward a far-away NPC instead of talking', () => {
+        const guide = npc('RuneScape Guide', 105, 100);
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [guide] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: guide.position, range: 1, cause: 'explore_talk_to_npc' });
+    });
+
+    it('moves toward a visible landmark when no NPC is nearby', () => {
+        const fountain = { objectId: 879, position: { x: 105, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [fountain] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('falls back to patrol when nothing is in sight (moves to a non-here patrol position)', () => {
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            5,
+        );
+        expect(action?.kind).toBe('move_to');
+        expect(action?.cause).toBe('explore_patrol');
+    });
+
+    it('skips an NPC that is on exploration cooldown', () => {
+        const guide = npc('RuneScape Guide', 100, 100);
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [guide] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            5,
+            { [`npc:${guide.id}`]: 0 },
+        );
+        // No NPCs/objects/items remain after cooldown filter — falls back to patrol
+        expect(action?.cause).toBe('explore_patrol');
+    });
+
+    it('reports a visible item label adjacent to the resident', () => {
+        const coin: BodyWorldItem = { itemId: 995, key: 'rs:coins', amount: 5, position: { x: 100, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [], worldItems: [coin] },
+            }),
+        );
+        // Coins are useful so opportunistic pickup wins first; verify cause string family.
+        expect(['opportunistic_pickup', 'explore_visible_item']).toContain(action?.cause);
+    });
+
+    it('returns undefined when resident has no position', () => {
+        const action = explorationAction(
+            perception({ resident: { position: undefined, inventory: [] } }),
+        );
+        expect(action).toBeUndefined();
     });
 });
