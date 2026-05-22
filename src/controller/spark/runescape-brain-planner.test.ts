@@ -15,6 +15,14 @@ import {
     firemakingGoal,
     followGoal,
     goalId,
+    isCombatTrainingGoal,
+    isDedicatedExplorationGoal,
+    isExplorationGoal,
+    isFiremakingGoal,
+    isFollowGoal,
+    isPrayerTrainingGoal,
+    isStarterFishingGoal,
+    isWoodcuttingTrainingGoal,
     parseBrainCompletion,
     prayerGoal,
     starterCookingGoal,
@@ -258,5 +266,55 @@ describe('benchmarkGoalForTask', () => {
         expect(benchmarkGoalForTask('unknown', 0)).toBeUndefined();
         expect(benchmarkGoalForTask(null, 0)).toBeUndefined();
         expect(benchmarkGoalForTask(undefined, 0)).toBeUndefined();
+    });
+});
+
+describe('goal-identity predicates', () => {
+    it('isPrayerTrainingGoal matches prayer/bone goals but rejects combat training', () => {
+        expect(isPrayerTrainingGoal(prayerGoal(0))).toBe(true);
+        expect(isPrayerTrainingGoal(combatGoal(0))).toBe(false);
+        expect(isPrayerTrainingGoal(firemakingGoal(0))).toBe(false);
+    });
+
+    it('isExplorationGoal matches scout/explore/landmark phrasing', () => {
+        expect(isExplorationGoal(explorationGoal(0))).toBe(true);
+        // firemakingGoal mentions "logs" / "fire" but not exploration vocabulary
+        expect(isExplorationGoal(firemakingGoal(0))).toBe(false);
+    });
+
+    it('isDedicatedExplorationGoal is the stricter id+description-based form', () => {
+        expect(isDedicatedExplorationGoal(explorationGoal(0))).toBe(true);
+        expect(isDedicatedExplorationGoal(firemakingGoal(0))).toBe(false);
+    });
+
+    it('isCombatTrainingGoal matches combat/fight/attack/melee phrasing', () => {
+        expect(isCombatTrainingGoal(combatGoal(0))).toBe(true);
+        // Note: prayerGoal mentions "after safe combat" so this is true too
+        // — locking in monolith-verbatim behavior (the description-only regex
+        // is intentionally loose; the body routine uses isPrayerTrainingGoal
+        // first to disambiguate).
+        expect(isCombatTrainingGoal(firemakingGoal(0))).toBe(false);
+    });
+
+    it('isWoodcuttingTrainingGoal matches woodcutting/chop/tree goals', () => {
+        expect(isWoodcuttingTrainingGoal(woodcuttingGoal(0))).toBe(true);
+        expect(isWoodcuttingTrainingGoal(combatGoal(0))).toBe(false);
+    });
+
+    it('isStarterFishingGoal matches fishing/shrimp/net goals', () => {
+        expect(isStarterFishingGoal(starterFishingGoal(0))).toBe(true);
+        expect(isStarterFishingGoal(starterFishingCookingGoal(0))).toBe(true);
+        expect(isStarterFishingGoal(combatGoal(0))).toBe(false);
+    });
+
+    it('isFiremakingGoal matches fire/tinderbox/light goals', () => {
+        expect(isFiremakingGoal(firemakingGoal(0))).toBe(true);
+        expect(isFiremakingGoal(starterFishingGoal(0))).toBe(false);
+    });
+
+    it('isFollowGoal matches follow-* ids and follow-mentioning descriptions', () => {
+        expect(isFollowGoal(followGoal('Alice', 0))).toBe(true);
+        expect(isFollowGoal(firemakingGoal(0))).toBe(false);
+        expect(isFollowGoal(undefined)).toBe(false);
     });
 });

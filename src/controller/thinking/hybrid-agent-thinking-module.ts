@@ -87,6 +87,14 @@ import {
     firemakingGoal,
     followGoal,
     goalId,
+    isCombatTrainingGoal,
+    isDedicatedExplorationGoal,
+    isExplorationGoal,
+    isFiremakingGoal,
+    isFollowGoal,
+    isPrayerTrainingGoal,
+    isStarterFishingGoal,
+    isWoodcuttingTrainingGoal,
     parseBrainCompletion,
     prayerGoal,
     starterCookingGoal,
@@ -1616,46 +1624,6 @@ function missingStarterFishingAction(perception: HybridPerception, missingSpotTe
         return { kind: 'say', text: 'I need a small fishing net before I can catch shrimp.' };
     }
     return { kind: 'say', text: missingSpotText };
-}
-
-function isPrayerTrainingGoal(goal: ActiveGoalState): boolean {
-    if (/^train-combat|^combat/i.test(goal.id)) {
-        return false;
-    }
-    return /prayer|bone|bones|bury/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
-}
-
-function isExplorationGoal(goal: ActiveGoalState): boolean {
-    return /explore|scout|survey|look around|nearby|landmark|area/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
-}
-
-function isDedicatedExplorationGoal(goal: ActiveGoalState): boolean {
-    return /explore|scout|survey|look around|landmark/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
-}
-
-function isCombatTrainingGoal(goal: ActiveGoalState): boolean {
-    return /combat|fight|fighting|attack|melee/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
-}
-
-function isWoodcuttingTrainingGoal(goal: ActiveGoalState): boolean {
-    return /woodcut|chop|tree|gather logs/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
-}
-
-function isStarterFishingGoal(goal: ActiveGoalState): boolean {
-    return /fish|fishing|shrimp|anchov|small net|small_fishing_net|fishing spot/i.test(
-        `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`,
-    );
-}
-
-function isFiremakingGoal(goal: ActiveGoalState): boolean {
-    return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
-}
-
-function isFollowGoal(goal?: ActiveGoalState): boolean {
-    if (!goal) {
-        return false;
-    }
-    return /^follow-/i.test(goal.id) || /\bfollow\b/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
 function explorationCooldownKeyFromAction(action: AgentAction): string | undefined {

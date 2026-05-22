@@ -256,3 +256,58 @@ export function explorationGoal(tick: number): ActiveGoalState {
         createdAtTick: tick,
     };
 }
+
+// --- Goal-identity predicates (moved verbatim from the monolith). ---
+//
+// These predicates classify an Active Goal back to its workflow family.
+// They are intentionally fuzzy regex matches over the goal's id +
+// description + steps, so that user-authored or LLM-improvised goals can
+// still be routed to the appropriate Body routine.
+
+/** True when the goal looks like a prayer-training (bones / bury) goal. */
+export function isPrayerTrainingGoal(goal: ActiveGoalState): boolean {
+    if (/^train-combat|^combat/i.test(goal.id)) {
+        return false;
+    }
+    return /prayer|bone|bones|bury/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** True when the goal looks like an exploration / scouting goal (description-based). */
+export function isExplorationGoal(goal: ActiveGoalState): boolean {
+    return /explore|scout|survey|look around|nearby|landmark|area/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** Stricter exploration test: requires id-level evidence too. */
+export function isDedicatedExplorationGoal(goal: ActiveGoalState): boolean {
+    return /explore|scout|survey|look around|landmark/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** True when the goal looks like a combat-training goal. */
+export function isCombatTrainingGoal(goal: ActiveGoalState): boolean {
+    return /combat|fight|fighting|attack|melee/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** True when the goal looks like a woodcutting-training goal. */
+export function isWoodcuttingTrainingGoal(goal: ActiveGoalState): boolean {
+    return /woodcut|chop|tree|gather logs/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** True when the goal looks like a starter-fishing goal. */
+export function isStarterFishingGoal(goal: ActiveGoalState): boolean {
+    return /fish|fishing|shrimp|anchov|small net|small_fishing_net|fishing spot/i.test(
+        `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`,
+    );
+}
+
+/** True when the goal looks like a firemaking goal. */
+export function isFiremakingGoal(goal: ActiveGoalState): boolean {
+    return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** True when the goal is a follow-someone goal. Handles undefined input. */
+export function isFollowGoal(goal?: ActiveGoalState): boolean {
+    if (!goal) {
+        return false;
+    }
+    return /^follow-/i.test(goal.id) || /\bfollow\b/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
+}
