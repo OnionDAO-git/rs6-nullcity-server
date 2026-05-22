@@ -40,7 +40,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-22 afternoon claude  branch=nullcity                   workstream=meta    HANDOFF — re-issued cron with two-line discipline baked in. Old cron 386cd867 deleted; new cron to be created. P-α flagged Codex-active; autonomous cycles will pick P2 skill promotions / P4 geography / P5 NPCs / P6 quests / Q-G4 trading instead. No src/ changes. Collision risk: none (docs-only).
 2026-05-22 evening   antigravity branch=nullcity                   workstream=P              starting overshoot budget test ordering fix in knowledge-retriever.test.ts
 2026-05-22 evening   antigravity branch=nullcity                   workstream=P              HANDOFF — implemented renderKnowledgeEntry, enforceKnowledgeBudget, and overshoot Jest tests; verified and pushed commit 6307a081; collision risk: none.
-```
+2026-05-22 evening   claude  branch=nullcity                   workstream=P      STARTING — concrete weekend slice. Files: docs/runescape-skill/skills/combat.md (NEW), docs/runescape-skill/README.md (note skills/ subdir), docs/superpowers/specs/2026-05-22-deeper-game-skill-knowledge-design.md (correction: feat/skill-*.md files are server impl specs, NOT agent-facing knowledge — cannot be promoted verbatim; agent knowledge must be written from scratch in docs/runescape-skill/skills/). No src/ touches. Stays clear of Codex's context-derivation.ts WIP and antigravity's recent knowledge-retriever work.
 
 ## Conventions
 
