@@ -104,9 +104,90 @@ describe('Spark evidence integration', () => {
         expect(llm.complete).toHaveBeenCalled();
     });
 
-    it.todo(
-        'emits end_tick reason=plan_continuation when an active plan advances on a subsequent tick (requires installing a real Plan via parseCompletion-shaped LLM output; deferred until plan-schema fixtures are extracted)',
-    );
+    it('emits end_tick reason=plan_continuation when an active plan advances on a subsequent tick', async () => {
+        const { builder, trajectoryPath } = evidence();
+
+        const plan = {
+            id: 'test-plan',
+            steps: [
+                {
+                    id: 'step-1',
+                    action: { kind: 'say', text: 'Step 1' },
+                    advanceWhen: { kind: 'next_tick' },
+                },
+                {
+                    id: 'step-2',
+                    action: { kind: 'say', text: 'Step 2' },
+                    advanceWhen: { kind: 'next_tick' },
+                },
+            ],
+            currentStep: 0,
+            cause: 'test_plan_continuation',
+        };
+
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: JSON.stringify({
+                    cause: 'start_plan',
+                    actions: [{ kind: 'say', text: 'Step 1' }],
+                    plan,
+                }),
+                nooped: false,
+            })),
+        } as unknown as LlmClient;
+
+        const state = runtimeState();
+        const spark = new Spark(soul(), state, memory(), llm, { evidence: builder });
+
+        // Tick 1: Installs the plan and runs the first step
+        await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(readKinds(trajectoryPath)).toEqual(['begin_tick', 'hook', 'decision', 'say', 'end_tick']);
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+
+        // Put hooks on cooldown so no new hook fires on Tick 2, allowing advancePlan to execute
+        state.hookCooldowns = { always: 99999, idle_reflection: 99999, new_actor_or_chunk: 99999 };
+
+        // Tick 2: Plan continues to step 2 because the advance condition is 'next_tick'
+        await spark.tick({ tick: 2, events: [] });
+
+        // Tick 2 should record begin_tick, hook, plan, and end_tick with reason=plan_continuation
+        expect(readKinds(trajectoryPath)).toEqual([
+            'begin_tick',
+            'hook',
+            'decision',
+            'say',
+            'end_tick',
+            'begin_tick',
+            'hook',
+            'plan',
+            'end_tick',
+        ]);
+
+        const lines = readJsonl(trajectoryPath);
+
+        // Find the second end_tick line at the end of the array
+        const tick2EndTick = lines.filter((l) => l.kind === 'end_tick')[1];
+        expect(tick2EndTick).toMatchObject({
+            kind: 'end_tick',
+            reason: 'plan_continuation',
+            tick: 2,
+        });
+
+        // Verify the recorded plan line
+        const planLine = lines.find((l) => l.kind === 'plan');
+        expect(planLine).toMatchObject({
+            kind: 'plan',
+            tick: 2,
+            plan: {
+                cause: 'test_plan_continuation',
+                actionKinds: ['say'],
+            },
+        });
+
+        // LLM should not have been called on Tick 2
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
 
     it('emits end_tick reason=legacy_complete_post_action when actions trigger legacy completion', async () => {
         // Use the Endurer archetype: legacy completes when attention falls to zero
