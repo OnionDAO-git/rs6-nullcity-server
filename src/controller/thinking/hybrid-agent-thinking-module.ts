@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { objectIds } from '@engine/world/config/object-ids';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { parseCompletion } from '../llm/completion-parser';
 import type { LlmClient } from '../llm/llm-client';
@@ -71,6 +70,12 @@ import {
     isTinderbox,
     isWoodcuttingAxe,
 } from '../spark/runescape-workflows';
+import {
+    FENCE_OBSTACLE_IDS,
+    OPENABLE_OBSTACLE_IDS,
+    STUCK_OBSTACLE_RANGE,
+    stuckOpenObstacleAction,
+} from '../spark/runescape-nervous-rules';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
@@ -135,9 +140,8 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // their shared primitives (`distance`, `findSlot`, `hasNearbyFire`,
 // `FIRE_OBJECT_IDS`) live in `../spark/runescape-body-routines` (Plan R-β).
 // The monolith imports both above.
-const OPENABLE_OBSTACLE_IDS = new Set([1530, 11707, 1533, 1516, 1519, 1536, 11993, 13001, 1551, 1553, 12986, 12987]);
-const FENCE_OBSTACLE_IDS = new Set([objectIds.shortCuts.fenceNearKharidCows]);
-const STUCK_OBSTACLE_RANGE = 2;
+// `OPENABLE_OBSTACLE_IDS`, `FENCE_OBSTACLE_IDS`, `STUCK_OBSTACLE_RANGE`, and
+// `stuckOpenObstacleAction` now live in `../spark/runescape-nervous-rules` (Plan R-γ).
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
@@ -1835,17 +1839,6 @@ function worldItemLike(value: unknown): WorldItem | undefined {
         position,
         ownerId: typeof value.ownerId === 'string' ? value.ownerId : undefined,
     };
-}
-
-function stuckOpenObstacleAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {
-    const obstacle = (perception.nearby?.objects || [])
-        .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId) && distance(here, object.position) <= STUCK_OBSTACLE_RANGE)
-        .sort((a, b) => {
-            const nearest = distance(here, a.position) - distance(here, b.position);
-            return nearest !== 0 ? nearest : distance(active.target, a.position) - distance(active.target, b.position);
-        })[0];
-
-    return obstacle ? { kind: 'interact', target: obstacle, option: 'open', cause: 'stuck_open_obstacle' } : undefined;
 }
 
 function stuckBlockerReportAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {
