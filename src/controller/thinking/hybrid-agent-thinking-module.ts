@@ -8,9 +8,11 @@ import type { ActiveGoalState, ActiveMoveState, RuntimeState } from '../memory/r
 import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
 import {
+    COOKING_HEAT_OBJECT_IDS,
     FIRE_OBJECT_IDS,
     INTERACTION_APPROACH_RADIUS,
     LEVEL_ONE_TREE_IDS,
+    actionWithCause,
     buryBonesAction,
     distance,
     findSlot,
@@ -18,6 +20,7 @@ import {
     hasNearbyFire,
     levelOneWoodcuttingAction,
     starterFishingAction,
+    starterFishingCookingAction,
 } from '../spark/runescape-body-routines';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
@@ -103,7 +106,6 @@ const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const COMBAT_LOOT_MAX_DISTANCE = 6;
 const PICKUP_TARGET_COOLDOWN_TICKS = 120;
 const COIN_ITEM_IDS = new Set([995]);
-const COOKING_HEAT_OBJECT_IDS = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // Item / actor classification predicates and their constant tables now live in
 // `../spark/runescape-workflows` (Plan R-α). Body-routine action helpers and
@@ -1693,28 +1695,6 @@ function explorationGoal(tick: number): ActiveGoalState {
     };
 }
 
-function starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {
-    const rawFishSlot = findSlot(perception.resident?.inventory || [], isStarterRawFish);
-    if (rawFishSlot === undefined) {
-        return undefined;
-    }
-
-    const here = perception.resident?.position;
-    const heatSource = (perception.nearby?.objects || [])
-        .filter(object => COOKING_HEAT_OBJECT_IDS.has(object.objectId))
-        .sort((a, b) => distance(here || a.position, a.position) - distance(here || b.position, b.position))[0];
-    if (heatSource) {
-        return { kind: 'use_item_on', itemSlot: rawFishSlot, target: heatSource, cause: 'starter_fishing_cook_catch' };
-    }
-
-    const fireAction = firemakingAction(perception);
-    if (fireAction) {
-        return actionWithCause(fireAction, 'starter_fishing_make_cooking_fire');
-    }
-
-    return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };
-}
-
 function missingFiremakingToolAction(perception: HybridPerception): AgentAction {
     const inventory = perception.resident?.inventory || [];
     const hasLogs = findSlot(inventory, isFiremakingLog) !== undefined;
@@ -2276,10 +2256,6 @@ function routineLoopFamily(cause: string, action: AgentAction): string {
         return 'woodcutting-firemaking';
     }
     return cause;
-}
-
-function actionWithCause(action: AgentAction, cause: string): AgentAction {
-    return { ...action, cause };
 }
 
 function isConcreteExplorationOverride(action: AgentAction): boolean {

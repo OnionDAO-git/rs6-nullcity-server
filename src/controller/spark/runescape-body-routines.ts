@@ -19,7 +19,15 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import { hasSmallFishingNet, hasWoodcuttingAxe, isBones, isFiremakingLog, isFishingSpot, isTinderbox } from './runescape-workflows';
+import {
+    hasSmallFishingNet,
+    hasWoodcuttingAxe,
+    isBones,
+    isFiremakingLog,
+    isFishingSpot,
+    isStarterRawFish,
+    isTinderbox,
+} from './runescape-workflows';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -77,6 +85,19 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
     ...objectIds.tree.dead.map(tree => tree.default),
 ]);
 
+/** Object IDs that can be used as cooking heat sources by the fishing routine. */
+export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([
+    objectIds.fire,
+    114,
+    2728,
+    2729,
+    2730,
+    2731,
+    2859,
+    4172,
+    9682,
+]);
+
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
 /**
@@ -99,6 +120,14 @@ export function findSlot(items: Array<BodyItem | null>, predicate: (item: BodyIt
         }
     }
     return undefined;
+}
+
+/**
+ * Returns a shallow clone of the action with its `cause` rewritten.
+ * Mirrors the monolith's `actionWithCause` helper.
+ */
+export function actionWithCause(action: AgentAction, cause: string): AgentAction {
+    return { ...action, cause };
 }
 
 /**
@@ -208,4 +237,31 @@ export function buryBonesAction(perception: BodyHybridPerception): AgentAction |
     }
 
     return undefined;
+}
+
+/**
+ * Cook starter raw fish on a nearby heat source; if none in sight,
+ * fall back to lighting a cooking fire via firemakingAction; otherwise
+ * say what's missing. Moved verbatim from the monolith (R-β slice 5).
+ */
+export function starterFishingCookingAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const rawFishSlot = findSlot(perception.resident?.inventory || [], isStarterRawFish);
+    if (rawFishSlot === undefined) {
+        return undefined;
+    }
+
+    const here = perception.resident?.position;
+    const heatSource = (perception.nearby?.objects || [])
+        .filter(object => COOKING_HEAT_OBJECT_IDS.has(object.objectId))
+        .sort((a, b) => distance(here || a.position, a.position) - distance(here || b.position, b.position))[0];
+    if (heatSource) {
+        return { kind: 'use_item_on', itemSlot: rawFishSlot, target: heatSource, cause: 'starter_fishing_cook_catch' };
+    }
+
+    const fireAction = firemakingAction(perception);
+    if (fireAction) {
+        return actionWithCause(fireAction, 'starter_fishing_make_cooking_fire');
+    }
+
+    return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };
 }

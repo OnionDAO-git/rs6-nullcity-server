@@ -11,6 +11,7 @@ import {
     firemakingAction,
     levelOneWoodcuttingAction,
     starterFishingAction,
+    starterFishingCookingAction,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
@@ -343,6 +344,82 @@ describe('buryBonesAction', () => {
 
     it('returns undefined when no bones anywhere', () => {
         const action = buryBonesAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('starterFishingCookingAction', () => {
+    const RAW_SHRIMP = 317;
+    const RAW_ANCHOVIES = 321;
+    const TINDERBOX = 590;
+    const LOGS = 1511;
+    const COOKING_RANGE = 114;
+    const FIRE_OBJECT = FIRE_OBJECT_ID;
+
+    it('returns use_item_on against a heat source when raw fish is in inventory', () => {
+        const heatSource = { objectId: COOKING_RANGE, position: { x: 100, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [heatSource] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'use_item_on',
+            itemSlot: 0,
+            target: heatSource,
+            cause: 'starter_fishing_cook_catch',
+        });
+    });
+
+    it('uses nearest heat source when multiple are visible', () => {
+        const near = { objectId: COOKING_RANGE, position: { x: 101, y: 100, level: 0 } };
+        const far = { objectId: FIRE_OBJECT, position: { x: 110, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(RAW_ANCHOVIES)] },
+                nearby: { objects: [far, near] },
+            }),
+        );
+        expect((action as { target: unknown }).target).toBe(near);
+    });
+
+    it('falls back to lighting a cooking fire when no heat source but tinderbox+logs are carried', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [item(RAW_SHRIMP), item(TINDERBOX), item(LOGS)],
+                },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 1,
+            targetSlot: 2,
+            cause: 'starter_fishing_make_cooking_fire',
+        });
+    });
+
+    it('says when raw fish are carried but no heat source and no firemaking tools', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I have raw fish now. I need a fire or range to cook it.',
+            cause: 'starter_fishing_missing_heat',
+        });
+    });
+
+    it('returns undefined when no raw fish in inventory', () => {
+        const action = starterFishingCookingAction(
             perception({
                 resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
             }),
