@@ -11,6 +11,7 @@ import {
     firemakingAction,
     levelOneWoodcuttingAction,
     opportunisticPickupAction,
+    prayerTrainingAction,
     starterFishingAction,
     starterFishingCookingAction,
     type BodyActor,
@@ -548,6 +549,109 @@ describe('opportunisticPickupAction', () => {
             perception({
                 resident: { position: { x: 100, y: 100, level: 0 }, inventory },
                 nearby: { worldItems: [coin] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('prayerTrainingAction', () => {
+    const BONES = 526;
+
+    function safeNpc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`): BodyActor {
+        return {
+            id,
+            kind: 'npc',
+            name,
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('buries carried bones before anything else', () => {
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, inventory: [item(BONES)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'item_action',
+            slot: 0,
+            option: 'bury',
+            cause: 'prayer_bury_bones',
+        });
+    });
+
+    it('attacks an adjacent safe bone-source NPC after bones are exhausted', () => {
+        const chicken = safeNpc('Chicken', 3220, 3220);
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [chicken] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' });
+    });
+
+    it('moves toward a far-away safe bone source NPC', () => {
+        const chicken = safeNpc('Chicken', 3225, 3220);
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [chicken] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: chicken.position,
+            range: 1,
+            cause: 'prayer_approach_safe_bone_source',
+        });
+    });
+
+    it('prefers low-risk bone source over a higher-risk one even when slightly farther', () => {
+        const goblin = safeNpc('Goblin', 3221, 3220);
+        const chicken = safeNpc('Chicken', 3222, 3220);
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [goblin, chicken] },
+            }),
+        );
+        expect(action?.kind).toBe('move_to');
+        expect((action as unknown as { target: { x: number } }).target.x).toBe(3222);
+    });
+
+    it('returns a move-to-waypoint when no safe source nearby and far from waypoint', () => {
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'prayer_seek_safe_bone_source',
+        });
+    });
+
+    it('returns undefined when at the waypoint with no safe source visible (do not flap)', () => {
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3222, y: 3218, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when below low-health threshold', () => {
+        const action = prayerTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 2, max: 10 } },
+                nearby: { npcs: [safeNpc('Chicken', 3220, 3220)] },
             }),
         );
         expect(action).toBeUndefined();

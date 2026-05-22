@@ -20,11 +20,15 @@
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
 import {
+    HUMAN_BONE_SOURCE_PATTERN,
+    LOW_RISK_BONE_SOURCE_PATTERN,
+    MEDIUM_RISK_BONE_SOURCE_PATTERN,
     hasSmallFishingNet,
     hasWoodcuttingAxe,
     isBones,
     isFiremakingLog,
     isFishingSpot,
+    isSafeBoneSource,
     isStarterRawFish,
     isTinderbox,
 } from './runescape-workflows';
@@ -110,6 +114,15 @@ export const COIN_ITEM_IDS: ReadonlySet<number> = new Set([995]);
 /** Item-key pattern matched against food-shaped ground items by the pickup routine. */
 export const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+
+/** Range (in tiles) within which a prayer-training waypoint is considered reached. */
+export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
+
+/** Fixed waypoints the prayer/combat routines walk between when no safe target is in sight. */
+export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
+    { x: 3222, y: 3218, level: 0 },
+    { x: 3249, y: 3238, level: 0 },
+];
 
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
@@ -386,4 +399,80 @@ export function opportunisticPickupAction(
     }
 
     return { kind: 'interact', target: item, option: 'pick-up', cause: 'opportunistic_pickup' };
+}
+
+// --- Prayer/combat support helpers (moved verbatim from the monolith). ---
+
+/** True when the resident's current HP fraction is at or below 0.4 of max. */
+export function isLowHealth(perception: BodyHybridPerception): boolean {
+    const hp = perception.resident?.hp;
+    const max = Number(hp?.max || 0);
+    return max > 0 && Number(hp?.current || 0) / max <= 0.4;
+}
+
+/** Returns the nearest fixed prayer-training waypoint to the given position. */
+export function nearestPrayerTrainingWaypoint(here: BodyPos): BodyPos {
+    return [...PRAYER_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+/** Lower number = higher-priority NPC kill choice for prayer (bone) sourcing. */
+export function boneSourcePriority(actor: BodyActor): number {
+    const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
+    if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 0;
+    }
+    if (MEDIUM_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 1;
+    }
+    if (HUMAN_BONE_SOURCE_PATTERN.test(label)) {
+        return 2;
+    }
+    return 3;
+}
+
+/** Closest safe bone-source NPC, picked by priority then distance. */
+export function safeBoneSourceTarget(perception: BodyHybridPerception): BodyActor | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+    return (perception.nearby?.npcs || []).filter(isSafeBoneSource).sort((a, b) => {
+        const priority = boneSourcePriority(a) - boneSourcePriority(b);
+        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+    })[0];
+}
+
+/**
+ * Train Prayer by burying carried bones, picking up nearby ones, or
+ * killing a safe bone-source NPC. Moves toward a fixed waypoint when
+ * nothing is in sight. Aborts when low on health. Moved verbatim from
+ * the monolith (R-β slice 7).
+ */
+export function prayerTrainingAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const bonesAction = buryBonesAction(perception);
+    if (bonesAction) {
+        return bonesAction;
+    }
+    if (isLowHealth(perception)) {
+        return undefined;
+    }
+
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const target = safeBoneSourceTarget(perception);
+    if (!target) {
+        const waypoint = nearestPrayerTrainingWaypoint(here);
+        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
+            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'prayer_seek_safe_bone_source' }
+            : undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'prayer_approach_safe_bone_source' };
+    }
+
+    return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
 }

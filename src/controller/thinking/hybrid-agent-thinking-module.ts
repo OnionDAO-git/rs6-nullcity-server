@@ -16,6 +16,8 @@ import {
     LEVEL_ONE_TREE_IDS,
     MAX_INVENTORY_SLOTS,
     PICKUP_TARGET_COOLDOWN_TICKS,
+    PRAYER_TRAINING_WAYPOINTS,
+    PRAYER_TRAINING_WAYPOINT_RANGE,
     actionWithCause,
     buryBonesAction,
     distance,
@@ -23,13 +25,17 @@ import {
     firemakingAction,
     hasNearbyFire,
     inventoryHasFreeSlot,
+    isLowHealth,
     isOwnedByAnotherActor,
     isPickupOnCooldown,
     isUsefulGroundItem,
     levelOneWoodcuttingAction,
+    nearestPrayerTrainingWaypoint,
     normalizeActorId,
     opportunisticPickupAction,
     pickupItemKey,
+    prayerTrainingAction,
+    safeBoneSourceTarget,
     starterFishingAction,
     starterFishingCookingAction,
     usefulGroundItemPriority,
@@ -100,11 +106,6 @@ const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const DEFAULT_RETURN_TO_ANCHOR_EVERY_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_RADIUS = 12;
 const DEFAULT_FOLLOW_RADIUS = 2;
-const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
-const PRAYER_TRAINING_WAYPOINTS: Pos[] = [
-    { x: 3222, y: 3218, level: 0 },
-    { x: 3249, y: 3238, level: 0 },
-];
 const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const MOVE_COMMIT_TICKS = 24;
 const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
@@ -1722,35 +1723,6 @@ function missingStarterFishingAction(perception: HybridPerception, missingSpotTe
     return { kind: 'say', text: missingSpotText };
 }
 
-function prayerTrainingAction(perception: HybridPerception): AgentAction | undefined {
-    const bonesAction = buryBonesAction(perception);
-    if (bonesAction) {
-        return bonesAction;
-    }
-    if (isLowHealth(perception)) {
-        return undefined;
-    }
-
-    const here = perception.resident?.position;
-    if (!here) {
-        return undefined;
-    }
-
-    const target = safeBoneSourceTarget(perception);
-    if (!target) {
-        const waypoint = nearestPrayerTrainingWaypoint(here);
-        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
-            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'prayer_seek_safe_bone_source' }
-            : undefined;
-    }
-
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'prayer_approach_safe_bone_source' };
-    }
-
-    return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
-}
-
 function combatTrainingAction(
     perception: HybridPerception,
     pickupCooldowns?: Record<string, number>,
@@ -1802,36 +1774,6 @@ function combatLootOrPrayerAction(
 
     const pickup = opportunisticPickupAction(perception, undefined, COMBAT_LOOT_MAX_DISTANCE, pickupCooldowns, currentTick);
     return pickup ? actionWithCause(pickup, 'combat_loot_pickup') : undefined;
-}
-
-function nearestPrayerTrainingWaypoint(here: Pos): Pos {
-    return [...PRAYER_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
-}
-
-function safeBoneSourceTarget(perception: HybridPerception): Actor | undefined {
-    const here = perception.resident?.position;
-    if (!here) {
-        return undefined;
-    }
-
-    return (perception.nearby?.npcs || []).filter(isSafeBoneSource).sort((a, b) => {
-        const priority = boneSourcePriority(a) - boneSourcePriority(b);
-        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-    })[0];
-}
-
-function boneSourcePriority(actor: Actor): number {
-    const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
-    if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
-        return 0;
-    }
-    if (MEDIUM_RISK_BONE_SOURCE_PATTERN.test(label)) {
-        return 1;
-    }
-    if (HUMAN_BONE_SOURCE_PATTERN.test(label)) {
-        return 2;
-    }
-    return 3;
 }
 
 function safeCombatTarget(perception: HybridPerception): Actor | undefined {
@@ -2473,12 +2415,6 @@ function actorMatchesName(actor: Actor, query: string): boolean {
     const wanted = normalizeText(cleanTarget(query));
     const names = [actor.name, actor.key, actor.id].filter((value): value is string => Boolean(value)).map(normalizeText);
     return names.some(name => name.includes(wanted) || wanted.includes(name));
-}
-
-function isLowHealth(perception: HybridPerception): boolean {
-    const hp = perception.resident?.hp;
-    const max = Number(hp?.max || 0);
-    return max > 0 && Number(hp?.current || 0) / max <= 0.4;
 }
 
 function firstFoodSlot(inventory: Array<Item | null>): number | undefined {
