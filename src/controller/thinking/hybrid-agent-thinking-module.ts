@@ -73,6 +73,7 @@ import {
 import {
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
+    shouldEmitPresenceBeacon,
     stuckBlockerReportAction,
     stuckHelpRequestAction,
     stuckOpenObstacleAction,
@@ -1293,19 +1294,21 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
-        const goal = this.activeGoal();
-        if (!goal) {
+        const cognition = this.cognition();
+        if (
+            !shouldEmitPresenceBeacon({
+                tick: this.options.state.tick,
+                hasActiveGoal: this.activeGoal() !== undefined,
+                lastBeaconTick: cognition.lastPresenceBeaconTick,
+                lastGoalShareTick: cognition.lastGoalShareTick,
+                interval: this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS,
+            })
+        ) {
             return undefined;
         }
 
-        const interval = this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;
-        const last = this.cognition().lastPresenceBeaconTick ?? this.cognition().lastGoalShareTick;
-        if (last === undefined || (interval > 0 && this.options.state.tick - last < interval)) {
-            return undefined;
-        }
-
-        this.cognition().lastPresenceBeaconTick = this.options.state.tick;
-        this.cognition().lastGoalShareTick = this.options.state.tick;
+        cognition.lastPresenceBeaconTick = this.options.state.tick;
+        cognition.lastGoalShareTick = this.options.state.tick;
         return { kind: 'say', text: this.statusSpeech(perception, 'I am online', true) };
     }
 

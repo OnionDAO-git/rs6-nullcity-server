@@ -114,6 +114,49 @@ export function stuckBlockerReportAction(
 }
 
 /**
+ * Inputs for the pure timing predicate underlying the presence-beacon reflex.
+ * The monolith's `presenceBeaconAction` method mixes this predicate with
+ * cognition mutation and speech assembly; Plan R-γ extracts the predicate.
+ */
+export interface PresenceBeaconTiming {
+    /** Current world tick. */
+    tick: number;
+    /** Whether the agent has an active goal (no goal = no beacon). */
+    hasActiveGoal: boolean;
+    /** Tick when the last presence beacon was emitted (if any). */
+    lastBeaconTick: number | undefined;
+    /** Fallback: tick when the agent last shared its goal (any channel). */
+    lastGoalShareTick: number | undefined;
+    /** Configured beacon interval in ticks; <= 0 means "always due". */
+    interval: number;
+}
+
+/**
+ * Pure timing predicate: returns true when the orchestrator should emit a
+ * presence-beacon this tick. Mirrors the gating logic inside the monolith's
+ * `presenceBeaconAction` method (no goal → false; no reference tick → false;
+ * interval not yet elapsed → false; otherwise → true).
+ *
+ * Extracted verbatim from the monolith (R-γ).
+ */
+export function shouldEmitPresenceBeacon(input: PresenceBeaconTiming): boolean {
+    if (!input.hasActiveGoal) {
+        return false;
+    }
+
+    const last = input.lastBeaconTick ?? input.lastGoalShareTick;
+    if (last === undefined) {
+        return false;
+    }
+
+    if (input.interval > 0 && input.tick - last < input.interval) {
+        return false;
+    }
+
+    return true;
+}
+
+/**
  * Stuck-recovery escalation: when stuck-move-recovery itself has been
  * unable to make progress, emit a 'say' help-request directed at any
  * watching player. The active-move's cause must already be

@@ -10,6 +10,7 @@ import {
     FENCE_OBSTACLE_IDS,
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
+    shouldEmitPresenceBeacon,
     stuckBlockerReportAction,
     stuckHelpRequestAction,
     stuckOpenObstacleAction,
@@ -219,5 +220,87 @@ describe('stuckHelpRequestAction', () => {
     it('returns undefined when active.cause is missing', () => {
         const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, activeMove());
         expect(action).toBeUndefined();
+    });
+});
+
+describe('shouldEmitPresenceBeacon', () => {
+    // Pure timing predicate extracted from the monolith's presenceBeaconAction.
+    // Matches the monolith semantics:
+    //   - never emit if no active goal
+    //   - never emit on the very first tick (no last reference)
+    //   - emit only if interval has elapsed since the last beacon (or last
+    //     goal-share, as a fallback reference)
+    //   - if interval <= 0, treat as "always due"
+
+    it('returns false when there is no active goal', () => {
+        expect(
+            shouldEmitPresenceBeacon({
+                tick: 100,
+                hasActiveGoal: false,
+                lastBeaconTick: 0,
+                lastGoalShareTick: undefined,
+                interval: 50,
+            }),
+        ).toBe(false);
+    });
+
+    it('returns false on first observation (no last beacon or goal-share reference)', () => {
+        expect(
+            shouldEmitPresenceBeacon({
+                tick: 100,
+                hasActiveGoal: true,
+                lastBeaconTick: undefined,
+                lastGoalShareTick: undefined,
+                interval: 50,
+            }),
+        ).toBe(false);
+    });
+
+    it('returns false when the interval has not yet elapsed since the last beacon', () => {
+        expect(
+            shouldEmitPresenceBeacon({
+                tick: 110,
+                hasActiveGoal: true,
+                lastBeaconTick: 100,
+                lastGoalShareTick: undefined,
+                interval: 50,
+            }),
+        ).toBe(false);
+    });
+
+    it('returns true when the interval has elapsed since the last beacon', () => {
+        expect(
+            shouldEmitPresenceBeacon({
+                tick: 160,
+                hasActiveGoal: true,
+                lastBeaconTick: 100,
+                lastGoalShareTick: undefined,
+                interval: 50,
+            }),
+        ).toBe(true);
+    });
+
+    it('falls back to lastGoalShareTick when lastBeaconTick is undefined', () => {
+        expect(
+            shouldEmitPresenceBeacon({
+                tick: 160,
+                hasActiveGoal: true,
+                lastBeaconTick: undefined,
+                lastGoalShareTick: 100,
+                interval: 50,
+            }),
+        ).toBe(true);
+    });
+
+    it('returns true when interval is <= 0 (treat as always due) provided some reference exists', () => {
+        expect(
+            shouldEmitPresenceBeacon({
+                tick: 1,
+                hasActiveGoal: true,
+                lastBeaconTick: 0,
+                lastGoalShareTick: undefined,
+                interval: 0,
+            }),
+        ).toBe(true);
     });
 });
