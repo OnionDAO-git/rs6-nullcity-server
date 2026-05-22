@@ -34,6 +34,16 @@ export interface BenchmarkCliRuntime {
 
 const DEFAULT_OUTPUT_DIR = 'data/benchmarks';
 const DEFAULT_MODULE_ID = 'onion.runescape.standard';
+const ALL_TASK_ID = 'all';
+const CORE_TASK_IDS = [
+    MAKE_FIRE_5M_TASK_ID,
+    EXPLORE_REPORT_5M_TASK_ID,
+    FOLLOW_AND_CHAT_5M_TASK_ID,
+    WOODCUTTING_FIREMAKING_10M_TASK_ID,
+    STARTER_FISHING_5M_TASK_ID,
+    FISHING_COOKING_10M_TASK_ID,
+    COMBAT_PRAYER_10M_TASK_ID,
+];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
     const options: BenchmarkCliOptions = {
@@ -91,10 +101,18 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
 
     try {
         const options = parseBenchmarkCliArgs(argv);
-        const task = taskById(options.taskId);
+        const tasks = tasksById(options.taskId);
         const module = sparkModuleById(options.moduleId);
         if (options.dryRun) {
-            stdout(`${JSON.stringify({ dryRun: true, mode: options.mode, task: { id: task.id, version: task.version }, module })}\n`);
+            const taskSummaries = tasks.map(task => ({ id: task.id, version: task.version }));
+            stdout(
+                `${JSON.stringify({
+                    dryRun: true,
+                    mode: options.mode,
+                    ...(tasks.length === 1 ? { task: taskSummaries[0] } : { suite: { id: ALL_TASK_ID, tasks: taskSummaries } }),
+                    module,
+                })}\n`,
+            );
             return 0;
         }
 
@@ -110,35 +128,68 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
         try {
             await gateway.hello();
             const sparkModules = standardSparkModules();
-            const artifact = await new BenchmarkRunner({
-                gateway,
-                task,
-                module,
-                mode: options.mode,
-                autonomousRuntime:
-                    options.mode === 'autonomous'
-                        ? new ResidentRuntimeBenchmarkDriver({
-                              config,
-                              gateway,
-                              module,
-                              sparkModules,
-                          })
-                        : undefined,
-                modelProfile: config.llm.endpoints.default?.model || 'default',
-                commits: [gitCommit('rs6-nullcity-server')],
-            }).run();
-            const artifactPath = writeArtifact(options.outputDir, artifact);
-            const reward = emitVerifierConventions({ artifact, outputDir: options.outputDir, stdout });
-            stdout(
-                `${JSON.stringify({
-                    artifactPath,
-                    rewardJsonPath: reward.rewardJsonPath,
-                    rewardTxtPath: reward.rewardTxtPath,
-                    status: artifact.status,
-                    score: artifact.score,
-                    runId: artifact.runId,
-                })}\n`,
-            );
+            const results: Array<{ taskId: string; status: string; score: number; runId: string; artifactPath: string }> = [];
+            for (const task of tasks) {
+                const artifact = await new BenchmarkRunner({
+                    gateway,
+                    task,
+                    module,
+                    mode: options.mode,
+                    autonomousRuntime:
+                        options.mode === 'autonomous'
+                            ? new ResidentRuntimeBenchmarkDriver({
+                                  config,
+                                  gateway,
+                                  module,
+                                  sparkModules,
+                              })
+                            : undefined,
+                    modelProfile: config.llm.endpoints.default?.model || 'default',
+                    commits: [gitCommit('rs6-nullcity-server')],
+                }).run();
+                const artifactPath = writeArtifact(options.outputDir, artifact);
+                if (tasks.length === 1) {
+                    const reward = emitVerifierConventions({ artifact, outputDir: options.outputDir, stdout });
+                    stdout(
+                        `${JSON.stringify({
+                            artifactPath,
+                            rewardJsonPath: reward.rewardJsonPath,
+                            rewardTxtPath: reward.rewardTxtPath,
+                            status: artifact.status,
+                            score: artifact.score,
+                            runId: artifact.runId,
+                        })}\n`,
+                    );
+                } else {
+                    const result = {
+                        taskId: artifact.task.id,
+                        status: artifact.status,
+                        score: artifact.score,
+                        runId: artifact.runId,
+                        artifactPath,
+                    };
+                    results.push(result);
+                    stdout(`${JSON.stringify({ benchmark: result })}\n`);
+                }
+            }
+            if (tasks.length > 1) {
+                const passed = results.filter(result => result.status === 'passed').length;
+                const averageScore = results.length === 0 ? 0 : results.reduce((sum, result) => sum + result.score, 0) / results.length;
+                stdout(
+                    `${JSON.stringify({
+                        suite: {
+                            id: ALL_TASK_ID,
+                            mode: options.mode,
+                            module,
+                            total: results.length,
+                            passed,
+                            failed: results.length - passed,
+                            averageScore,
+                            results,
+                        },
+                    })}\n`,
+                );
+            }
         } finally {
             gateway.close();
         }
@@ -147,6 +198,10 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
         stderr(`[controller:bench] ${error instanceof Error ? error.message : String(error)}\n`);
         return 1;
     }
+}
+
+function tasksById(taskId: string): BenchmarkTask[] {
+    return taskId === ALL_TASK_ID ? CORE_TASK_IDS.map(taskById) : [taskById(taskId)];
 }
 
 function taskById(taskId: string): BenchmarkTask {

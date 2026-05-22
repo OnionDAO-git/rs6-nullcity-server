@@ -77,6 +77,25 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"mode":"autonomous"');
     });
 
+    it('can dry-run the full core benchmark suite', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'all', '--module', 'onion.runescape.standard', '--mode', 'autonomous', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        const output = writes.join('');
+        expect(exitCode).toBe(0);
+        expect(output).toContain('"suite":{"id":"all"');
+        expect(output).toContain('"id":"make-fire-5m"');
+        expect(output).toContain('"id":"combat-prayer-10m"');
+        expect(output).toContain('"mode":"autonomous"');
+        expect(GatewayClient).not.toHaveBeenCalled();
+    });
+
     it('can dry-run the explore-report benchmark task', async () => {
         const writes: string[] = [];
 
@@ -193,6 +212,55 @@ describe('benchmark CLI', () => {
         expect(output).toContain('__REWARD_JSON_END__');
         expect(output).toContain(`"rewardJsonPath":"${rewardJsonPath}"`);
         expect(output).toContain(`"rewardTxtPath":"${rewardTxtPath}"`);
+        expect(gateway.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('runs every core benchmark for --task all and prints a suite summary', async () => {
+        const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-cli-suite-'));
+        const writes: string[] = [];
+        const gateway = {
+            connect: jest.fn().mockResolvedValue(undefined),
+            hello: jest.fn().mockResolvedValue(undefined),
+            close: jest.fn(),
+        };
+
+        (loadControllerConfig as jest.Mock).mockReturnValue({
+            gateway: {
+                url: 'ws://localhost:3000',
+                authToken: 'test-token',
+                controllerId: 'test-controller',
+            },
+            llm: {
+                endpoints: {
+                    default: { model: 'local-test-model' },
+                },
+            },
+        });
+        (GatewayClient as unknown as jest.Mock).mockImplementation(() => gateway);
+        (BenchmarkRunner as jest.Mock).mockImplementation(({ task }) => ({
+            run: jest.fn().mockResolvedValue(
+                benchmarkArtifact({
+                    runId: `bench_${task.id.replace(/-/g, '_')}`,
+                    task: { id: task.id, version: task.version },
+                    score: task.id === 'combat-prayer-10m' ? 0.5 : 1,
+                }),
+            ),
+        }));
+
+        const exitCode = await runBenchmarkCli(['--task', 'all', '--module', 'onion.runescape.standard', '--output', outputDir], {
+            stdout: text => writes.push(text),
+        });
+
+        const output = writes.join('');
+        expect(exitCode).toBe(0);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(7);
+        expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
+        expect(output).toContain('"suite":{"id":"all"');
+        expect(output).toContain('"total":7');
+        expect(output).toContain('"passed":7');
+        expect(output).toContain('"averageScore":0.9285714285714286');
+        expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
+        expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);
     });
 });
