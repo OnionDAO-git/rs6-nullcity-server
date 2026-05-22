@@ -95,6 +95,8 @@ const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
 const ROUTINE_LOOP_BREAK_ACTIONS = 3;
 const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
+const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
+const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
 const MAX_INVENTORY_SLOTS = 28;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const COMBAT_LOOT_MAX_DISTANCE = 6;
@@ -374,7 +376,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const exploreAction =
             goal && isExplorationGoal(goal)
-                ? explorationAction(view, visibility.anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick)
+                ? explorationAction(
+                      view,
+                      visibility.anchor,
+                      this.options.state.resident,
+                      this.pickupCooldowns(),
+                      this.options.state.tick,
+                      this.explorationCooldowns(),
+                  )
                 : undefined;
         if (exploreAction) {
             return {
@@ -430,10 +439,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: opportunity, cause: 'opportunistic_pickup' };
         }
 
-        if (isExplorationGoal(goal)) {
-            const explorationAction = this.repeatedExplorationReportOverride(actions, perception);
-            if (explorationAction) {
-                return { action: explorationAction, cause: 'exploration_fallback' };
+        if (isDedicatedExplorationGoal(goal)) {
+            const explorationOverride = this.explorationRoutineOverride(actions, perception);
+            if (explorationOverride) {
+                return { action: explorationOverride, cause: 'exploration_fallback' };
             }
         }
 
@@ -495,7 +504,54 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.options.state.resident,
             this.pickupCooldowns(),
             this.options.state.tick,
+            this.explorationCooldowns(),
         );
+    }
+
+    private explorationRoutineOverride(actions: AgentAction[], perception: HybridPerception): AgentAction | undefined {
+        const reportOverride = this.repeatedExplorationReportOverride(actions, perception);
+        if (reportOverride) {
+            return reportOverride;
+        }
+
+        if (this.cognition().activeMove) {
+            return undefined;
+        }
+
+        const localAction = explorationAction(
+            perception,
+            this.visibilityAnchor(),
+            this.options.state.resident,
+            this.pickupCooldowns(),
+            this.options.state.tick,
+            this.explorationCooldowns(),
+        );
+        if (!localAction) {
+            return undefined;
+        }
+
+        const action = actions[0];
+        if (!action) {
+            return localAction;
+        }
+        if (action.kind === 'say') {
+            return undefined;
+        }
+
+        const here = perception.resident?.position;
+        const target = modelActionTarget(action);
+        const evidenceSaysStuck = typeof this.options.state.stuckSince === 'number';
+        if (
+            here &&
+            target &&
+            distance(here, target) > EXPLORATION_MODEL_TARGET_MAX_DISTANCE &&
+            (evidenceSaysStuck || isConcreteExplorationOverride(localAction)) &&
+            !this.isRepeatedAction(localAction)
+        ) {
+            return localAction;
+        }
+
+        return undefined;
     }
 
     private stabilizedMoveAction(
@@ -524,32 +580,23 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 };
                 cognition.activeMove = updated;
 
+                if (typeof this.options.state.stuckSince === 'number') {
+                    if (active.cause === 'stuck_move_recovery') {
+                        const helpRequest = stuckHelpRequestAction(here, updated);
+                        if (helpRequest && !this.isRepeatedAction(helpRequest)) {
+                            cognition.activeMove = undefined;
+                            return { action: helpRequest, cause: 'stuck_help_request' };
+                        }
+                    } else {
+                        const recovery = this.stuckMoveRecoveryAction(perception, here, updated, anchor);
+                        if (recovery) {
+                            return recovery;
+                        }
+                    }
+                }
+
                 if (stationaryCount >= MOVE_STUCK_STATIONARY_OBSERVATIONS) {
-                    const obstacle = stuckOpenObstacleAction(perception, here, updated);
-                    if (obstacle) {
-                        cognition.activeMove = undefined;
-                        return { action: obstacle, cause: 'stuck_open_obstacle' };
-                    }
-
-                    const blocker = stuckBlockerReportAction(perception, here, updated);
-                    if (blocker && !this.isRepeatedAction(blocker)) {
-                        return { action: blocker, cause: 'stuck_blocker_report' };
-                    }
-
-                    const helpRequest = stuckHelpRequestAction(here, updated);
-                    if (helpRequest && !this.isRepeatedAction(helpRequest)) {
-                        cognition.activeMove = undefined;
-                        return { action: helpRequest, cause: 'stuck_help_request' };
-                    }
-
-                    const recovery = {
-                        kind: 'move_to',
-                        target: explorationPatrolTarget(here, anchor),
-                        range: 1,
-                        cause: 'stuck_move_recovery',
-                    };
-                    this.rememberActiveMove(recovery, here);
-                    return { action: recovery, cause: 'stuck_move_recovery' };
+                    return this.stuckMoveRecoveryAction(perception, here, updated, anchor);
                 }
 
                 if (
@@ -573,6 +620,51 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         return undefined;
+    }
+
+    private stuckMoveRecoveryAction(
+        perception: HybridPerception,
+        here: Pos,
+        active: ActiveMoveState,
+        anchor?: Pos,
+    ): { action: AgentAction; cause: string } | undefined {
+        const obstacle = stuckOpenObstacleAction(perception, here, active);
+        if (obstacle) {
+            this.cognition().activeMove = undefined;
+            return { action: obstacle, cause: 'stuck_open_obstacle' };
+        }
+
+        const blocker = stuckBlockerReportAction(perception, here, active);
+        if (blocker && !this.isRepeatedAction(blocker)) {
+            return { action: blocker, cause: 'stuck_blocker_report' };
+        }
+
+        const helpRequest = stuckHelpRequestAction(here, active);
+        if (helpRequest && !this.isRepeatedAction(helpRequest)) {
+            this.cognition().activeMove = undefined;
+            return { action: helpRequest, cause: 'stuck_help_request' };
+        }
+
+        const localAction = explorationAction(
+            perception,
+            anchor,
+            this.options.state.resident,
+            this.pickupCooldowns(),
+            this.options.state.tick,
+            this.explorationCooldowns(),
+        );
+        const recovery =
+            localAction && isConcreteExplorationOverride(localAction)
+                ? localAction
+                : {
+                      kind: 'move_to',
+                      target: explorationPatrolTarget(here, anchor),
+                      range: 1,
+                      cause: 'stuck_move_recovery',
+                  };
+        const action = actionWithCause(recovery, 'stuck_move_recovery');
+        this.rememberActiveMove(action, here);
+        return { action, cause: 'stuck_move_recovery' };
     }
 
     private approachDistantInteraction(
@@ -634,8 +726,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         cognition.routineLoopKey = key;
 
         const lastBreakTick = cognition.lastRoutineLoopBreakTick || 0;
+        const evidenceSaysStuck = typeof this.options.state.stuckSince === 'number';
         if (
-            cognition.routineLoopCount < ROUTINE_LOOP_BREAK_ACTIONS ||
+            (!evidenceSaysStuck && cognition.routineLoopCount < ROUTINE_LOOP_BREAK_ACTIONS) ||
             (lastBreakTick > 0 && this.options.state.tick - lastBreakTick < ROUTINE_LOOP_BREAK_COOLDOWN_TICKS)
         ) {
             return undefined;
@@ -646,7 +739,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         cognition.lastRoutineLoopBreakTick = this.options.state.tick;
         cognition.activeGoal = explorationGoal(this.options.state.tick);
 
-        const explore = explorationAction(perception, anchor, this.options.state.resident, this.pickupCooldowns(), this.options.state.tick);
+        const explore = explorationAction(
+            perception,
+            anchor,
+            this.options.state.resident,
+            this.pickupCooldowns(),
+            this.options.state.tick,
+            this.explorationCooldowns(),
+        );
         return {
             action: explore
                 ? actionWithCause(explore, 'routine_loop_break')
@@ -962,6 +1062,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     this.options.state.resident,
                     this.pickupCooldowns(),
                     this.options.state.tick,
+                    this.explorationCooldowns(),
                 ) || {
                     kind: 'say',
                     text: this.statusSpeech(perception, 'I will scout nearby and stay findable'),
@@ -1242,6 +1343,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         cognition.lastBodyActionKey = key;
         cognition.lastBodyActionTick = this.options.state.tick;
         this.rememberPickupAttempt(action);
+        this.rememberExplorationAttempt(action);
     }
 
     private rememberActiveMove(action: AgentAction, here: Pos): void {
@@ -1377,10 +1479,31 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
     }
 
+    private rememberExplorationAttempt(action: AgentAction): void {
+        const key = explorationCooldownKeyFromAction(action);
+        if (!key) {
+            return;
+        }
+
+        const cooldowns = this.explorationCooldowns();
+        cooldowns[key] = this.options.state.tick;
+        for (const [cooldownKey, tick] of Object.entries(cooldowns)) {
+            if (this.options.state.tick - tick > EXPLORATION_TARGET_COOLDOWN_TICKS) {
+                delete cooldowns[cooldownKey];
+            }
+        }
+    }
+
     private pickupCooldowns(): Record<string, number> {
         const cognition = this.cognition();
         cognition.pickupCooldowns ||= {};
         return cognition.pickupCooldowns;
+    }
+
+    private explorationCooldowns(): Record<string, number> {
+        const cognition = this.cognition();
+        cognition.explorationCooldowns ||= {};
+        return cognition.explorationCooldowns;
     }
 
     private ensureCognition(): void {
@@ -1778,6 +1901,10 @@ function isExplorationGoal(goal: ActiveGoalState): boolean {
     return /explore|scout|survey|look around|nearby|landmark|area/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
+function isDedicatedExplorationGoal(goal: ActiveGoalState): boolean {
+    return /explore|scout|survey|look around|landmark/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
 function isCombatTrainingGoal(goal: ActiveGoalState): boolean {
     return /combat|fight|fighting|attack|melee/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
@@ -1808,7 +1935,8 @@ function explorationAction(
     anchor?: Pos,
     residentId?: string,
     pickupCooldowns?: Record<string, number>,
-    currentTick?: number,
+    currentTick = perception.tick ?? 0,
+    explorationCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
@@ -1820,18 +1948,31 @@ function explorationAction(
         return pickup;
     }
 
-    const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    const npc = (perception.nearby?.npcs || [])
+        .filter(candidate => !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (npc) {
         return npcTalkAction(perception, npc, 'explore_talk_to_npc');
     }
 
     const object = (perception.nearby?.objects || [])
-        .filter(candidate => !FIRE_OBJECT_IDS.has(candidate.objectId) && !LEVEL_ONE_TREE_IDS.has(candidate.objectId))
+        .filter(
+            candidate =>
+                !FIRE_OBJECT_IDS.has(candidate.objectId) &&
+                !LEVEL_ONE_TREE_IDS.has(candidate.objectId) &&
+                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+        )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (object) {
         if (distance(here, object.position) > 2) {
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
+
+        const patrol = explorationPatrolTarget(here, anchor);
+        if (distance(here, patrol) > 1) {
+            return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
+        }
+
         return {
             kind: 'say',
             text: `I am checking the landmark at ${object.position.x},${object.position.y}.`,
@@ -1839,7 +1980,9 @@ function explorationAction(
         };
     }
 
-    const item = (perception.nearby?.worldItems || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    const item = (perception.nearby?.worldItems || [])
+        .filter(candidate => !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (item) {
         if (distance(here, item.position) > 1) {
             return { kind: 'move_to', target: item.position, range: 1, cause: 'explore_visible_item' };
@@ -1940,8 +2083,58 @@ function isPickupOnCooldown(item: WorldItem, cooldowns: Record<string, number> |
     return last !== undefined && currentTick - last < PICKUP_TARGET_COOLDOWN_TICKS;
 }
 
+function isExplorationOnCooldown(key: string, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
+    const last = cooldowns?.[key];
+    return last !== undefined && currentTick - last < EXPLORATION_TARGET_COOLDOWN_TICKS;
+}
+
 function pickupItemKey(item: WorldItem): string {
     return `${item.itemId}:${item.key || ''}:${positionKey(item.position)}`;
+}
+
+function explorationActorCooldownKey(actor: Actor): string {
+    return actor.id ? `npc:${actor.id}` : `npc:${actor.key || actor.name || positionKey(actor.position)}`;
+}
+
+function explorationObjectCooldownKey(object: { objectId: number; position: Pos }): string {
+    return `object:${object.objectId}:${positionKey(object.position)}`;
+}
+
+function explorationItemCooldownKey(item: WorldItem): string {
+    return `item:${pickupItemKey(item)}`;
+}
+
+function explorationCooldownKeyFromAction(action: AgentAction): string | undefined {
+    if (!/explore|routine_loop_break|stuck_move_recovery/i.test(String(action.cause || ''))) {
+        return undefined;
+    }
+    if (!('target' in action) || !isRecord(action.target)) {
+        return undefined;
+    }
+
+    const actor = actorLike(action.target);
+    if (actor?.kind === 'npc') {
+        return explorationActorCooldownKey(actor);
+    }
+
+    const position = positionLike(action.target.position);
+    if (!position) {
+        return undefined;
+    }
+    if (typeof action.target.objectId === 'number') {
+        return explorationObjectCooldownKey({ objectId: action.target.objectId, position });
+    }
+    if (typeof action.target.itemId === 'number' && typeof action.target.amount === 'number') {
+        return explorationItemCooldownKey({
+            itemId: action.target.itemId,
+            key: typeof action.target.key === 'string' ? action.target.key : undefined,
+            amount: action.target.amount,
+            position,
+            ownerId: typeof action.target.ownerId === 'string' ? action.target.ownerId : undefined,
+        });
+    }
+
+    return undefined;
 }
 
 function pickupActionWorldItem(action: AgentAction): WorldItem | undefined {
@@ -2107,6 +2300,18 @@ function routineLoopFamily(cause: string, action: AgentAction): string {
 
 function actionWithCause(action: AgentAction, cause: string): AgentAction {
     return { ...action, cause };
+}
+
+function isConcreteExplorationOverride(action: AgentAction): boolean {
+    return /explore_talk_to_npc|opportunistic_pickup|explore_visible_item/i.test(String(action.cause || ''));
+}
+
+function modelActionTarget(action: AgentAction): Pos | undefined {
+    if (action.kind === 'move_to' && 'target' in action) {
+        return positionLike(action.target);
+    }
+
+    return actionTargetPosition(action);
 }
 
 function sameMoveIntent(action: AgentAction, active: ActiveMoveState): boolean {

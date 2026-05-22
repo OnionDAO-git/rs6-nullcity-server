@@ -494,6 +494,46 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
     });
 
+    it('uses evidence stuck state to break a repeated local routine immediately after restart', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const landmark = { objectId: 879, position: { x: 3230, y: 3231, level: 0 }, orientation: 0 };
+        const repeatedAction = { kind: 'interact', target: normalTree, option: 'chop down', cause: 'woodcutting_level1_routine' };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 70;
+        state.cognition = {
+            activeGoal: {
+                id: 'train-woodcutting',
+                description: 'Chop ordinary trees to train Woodcutting and gather logs for firemaking.',
+                steps: ['Move to a nearby ordinary tree or dead tree.', 'Chop the tree to gather logs.'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 80,
+            lastBodyActionKey: JSON.stringify(repeatedAction),
+            lastBodyActionTick: 95,
+            routineLoopKey: 'woodcutting-firemaking|3225,3231,0',
+            routineLoopCount: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: {
+                    ...residentAt(3225, 3231),
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [normalTree, landmark],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'routine_loop_break' }]);
+        expect(result.cause).toBe('routine_loop_break');
+        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+    });
+
     it('breaks out of alternating stationary firemaking and woodcutting work', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const landmark = { objectId: 879, position: { x: 3230, y: 3231, level: 0 }, orientation: 0 };
@@ -784,6 +824,187 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: firstLandmark, range: 1, cause: 'continue_move' }]);
         expect(result.cause).toBe('continue_move');
+    });
+
+    it('keeps scouting local opportunities instead of chasing a far model landmark', async () => {
+        const farLandmark = { x: 3245, y: 3245, level: 0 };
+        const guide = {
+            id: 'npc:86',
+            kind: 'npc' as const,
+            key: 'rs:runescape_guide',
+            name: 'RuneScape Guide',
+            position: { x: 3229, y: 3239, level: 0 },
+        };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: farLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['walk toward a nearby person', 'report what is visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3233, 3239),
+                npcs: [guide],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: guide.position, range: 1, cause: 'explore_talk_to_npc' }]);
+        expect(result.cause).toBe('exploration_fallback');
+    });
+
+    it('uses progress stuck evidence to abandon an active move and recover locally', async () => {
+        const blockedLandmark = { x: 3243, y: 3242, level: 0 };
+        const guide = {
+            id: 'npc:86',
+            kind: 'npc' as const,
+            key: 'rs:runescape_guide',
+            name: 'RuneScape Guide',
+            position: { x: 3229, y: 3239, level: 0 },
+        };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 80;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['walk toward a nearby landmark', 'recover from blocked routes'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+            activeMove: {
+                target: blockedLandmark,
+                range: 1,
+                cause: 'approach_interaction_target',
+                startedAtTick: 92,
+                lastTick: 99,
+                lastPositionKey: '3234,3236,0',
+                stationaryCount: 0,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3234, 3237),
+                npcs: [guide],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: guide.position, range: 1, cause: 'stuck_move_recovery' }]);
+        expect(result.cause).toBe('stuck_move_recovery');
+        expect(state.cognition?.activeMove?.target).toEqual(guide.position);
+    });
+
+    it('asks for help when progress evidence says a recovery move is also stuck', async () => {
+        const recoveryTarget = { x: 3230, y: 3238, level: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: recoveryTarget, range: 1, cause: 'continue_move' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 80;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover from blocked routes', 'ask for help'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+            activeMove: {
+                target: recoveryTarget,
+                range: 1,
+                cause: 'stuck_move_recovery',
+                startedAtTick: 92,
+                lastTick: 99,
+                lastPositionKey: '3233,3238,0',
+                stationaryCount: 0,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3233, 3237),
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am stuck near 3233,3237 trying to reach 3230,3238. Can someone lead me or open a route?',
+                cause: 'stuck_help_request',
+            },
+        ]);
+        expect(result.cause).toBe('stuck_help_request');
+        expect(state.cognition?.activeMove).toBeUndefined();
+    });
+
+    it('uses a local patrol instead of retrying a far model target after stuck evidence', async () => {
+        const farLandmark = { x: 3244, y: 3239, level: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: farLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 80;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3230, 3238),
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3226, y: 3242, level: 0 }, range: 1, cause: 'explore_patrol' }]);
+        expect(result.cause).toBe('exploration_fallback');
     });
 
     it('switches to a nearby patrol when a committed move makes no visible progress', async () => {
@@ -2377,6 +2598,52 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('exploration_fallback');
     });
 
+    it('does not keep talking to the same exploration NPC while scouting', async () => {
+        const guide = {
+            id: 'npc:86',
+            kind: 'npc' as const,
+            key: 'rs:runescape_guide',
+            name: 'RuneScape Guide',
+            position: { x: 3230, y: 3238, level: 0 },
+        };
+        const landmark = { objectId: 879, position: { x: 3235, y: 3239, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }, { text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['talk to a nearby person', 'move on to another landmark'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3230, 3239),
+                npcs: [guide],
+                objects: [landmark],
+            }),
+        );
+        const second = await agent.think(
+            perception({
+                tick: 102,
+                resident: residentAt(3230, 3239),
+                npcs: [guide],
+                objects: [landmark],
+            }),
+        );
+
+        expect(first.actions).toEqual([{ kind: 'interact', target: guide, option: 'talk-to', cause: 'explore_talk_to_npc' }]);
+        expect(second.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(state.cognition?.explorationCooldowns?.['npc:npc:86']).toBe(101);
+    });
+
     it('starts a local exploration workflow from direct chat without inference', async () => {
         const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([]);
@@ -2421,6 +2688,34 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(result.cause).toBe('exploration_fallback');
+    });
+
+    it('moves on when scouting has already reached a nearby landmark', async () => {
+        const fountain = { objectId: 879, position: { x: 3230, y: 3238, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['check a nearby landmark', 'move on after reaching it'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3230, 3238),
+                objects: [fountain],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3226, y: 3242, level: 0 }, range: 1, cause: 'explore_patrol' }]);
         expect(result.cause).toBe('exploration_fallback');
     });
 

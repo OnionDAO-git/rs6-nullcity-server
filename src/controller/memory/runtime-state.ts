@@ -51,6 +51,7 @@ export interface CognitiveState {
     lastRoutineLoopBreakTick?: number;
     lastExplorationReportTick?: number;
     pickupCooldowns?: Record<string, number>;
+    explorationCooldowns?: Record<string, number>;
 }
 
 export interface FollowTargetState {
