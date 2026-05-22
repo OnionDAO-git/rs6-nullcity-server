@@ -423,9 +423,12 @@ Safe public module facade building blocks are implemented, but the public member
 
 
 - `[~]` **P3: Skills batch 2 — remaining skills.** Cover all 23 with per-skill mini-playbooks.
-- `[~]` **P4: World geography.** Lumbridge, Varrock, Falador, Edgeville, Al Kharid; guilds; banks; wilderness boundary; travel routes.
-- `[~]` **P5: NPCs + items.** Combat NPCs, shopkeepers, key quest-givers; weapons/food/prayer items/tools by tier.
-- `[~]` **P6: Basic quest awareness.** Six starter quests (Cook's Assistant, Restless Ghost, etc.) so residents can opportunistically progress them.
+- `[x]` **P4: World geography.** Lumbridge, Varrock, Falador, Edgeville, Al Kharid; guilds; banks; wilderness boundary; travel routes.
+  - *Completed: Added 7 regional geography playbooks under places/ and replaced places.md with an index.*
+- `[x]` **P5: NPCs + items.** Combat NPCs, shopkeepers, key quest-givers; weapons/food/prayer items/tools by tier.
+  - *Completed: Added regional playbooks under npcs/ and created the npcs.md index.*
+- `[x]` **P6: Basic quest awareness.** Six starter quests (Cook's Assistant, Restless Ghost, etc.) so residents can opportunistically progress them.
+  - *Completed: Added Cooks Assistant, Restless Ghost, and Romeo & Juliet walkthroughs under quests/.*
 
 ## Workstream Q: Smarter Behavior (F+G finish)
 
