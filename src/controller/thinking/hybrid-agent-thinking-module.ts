@@ -79,7 +79,7 @@ import {
     stuckHelpRequestAction,
     stuckOpenObstacleAction,
 } from '../spark/runescape-nervous-rules';
-import { parseBrainCompletion } from '../spark/runescape-brain-planner';
+import { goalId, parseBrainCompletion } from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
@@ -2333,14 +2333,6 @@ function summarizeGoalForSpeech(text: string, reserveSpaceForNextStep: boolean):
         .slice(0, max - 3)
         .trimEnd()
         .replace(/[,:;.!?]+$/g, '')}...`;
-}
-
-function goalId(description: string): string {
-    return description
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-|-$/g, '')
-        .slice(0, 60);
 }
 
 function displayName(name: string): string {

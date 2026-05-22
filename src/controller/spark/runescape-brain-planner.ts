@@ -71,6 +71,21 @@ export function extractJson(text: string): unknown {
     return JSON.parse(trimmed);
 }
 
+// --- Goal-id slugify (moved verbatim from the monolith). ---
+
+/**
+ * Slugify a goal description into a stable kebab-case identifier. Used by
+ * the orchestrator when the Brain returns a goal without an explicit id.
+ * Mirrors the monolith's `goalId` helper.
+ */
+export function goalId(description: string): string {
+    return description
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 60);
+}
+
 /**
  * Parse a Brain LLM completion into the structured Brain decision shape.
  * Returns an empty object when the text is empty or when the parsed object

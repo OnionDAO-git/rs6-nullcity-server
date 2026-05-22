@@ -8,6 +8,7 @@
 import {
     brainCompletionSchema,
     brainGoalSchema,
+    goalId,
     parseBrainCompletion,
 } from './runescape-brain-planner';
 
@@ -106,5 +107,33 @@ describe('parseBrainCompletion', () => {
         const result = parseBrainCompletion('{"say":"Hi.","extra":"value"}');
         expect(result.say).toBe('Hi.');
         expect((result as Record<string, unknown>).extra).toBeUndefined();
+    });
+});
+
+describe('goalId', () => {
+    it('lowercases and slugifies the input description', () => {
+        expect(goalId('Light a Fire!')).toBe('light-a-fire');
+    });
+
+    it('collapses runs of non-alphanumerics into single dashes', () => {
+        expect(goalId('Hello,   World!!!')).toBe('hello-world');
+    });
+
+    it('trims leading and trailing dashes', () => {
+        expect(goalId('--Hello-World--')).toBe('hello-world');
+    });
+
+    it('truncates to 60 characters', () => {
+        const long = 'a'.repeat(80);
+        const result = goalId(long);
+        expect(result.length).toBeLessThanOrEqual(60);
+    });
+
+    it('returns an empty string for empty input', () => {
+        expect(goalId('')).toBe('');
+    });
+
+    it('returns an empty string for purely non-alphanumeric input', () => {
+        expect(goalId('!!!---')).toBe('');
     });
 });
