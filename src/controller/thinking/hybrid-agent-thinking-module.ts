@@ -674,7 +674,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         active: ActiveMoveState,
         anchor?: Pos,
     ): { action: AgentAction; cause: string } | undefined {
-        const obstacle = stuckOpenObstacleAction(perception, here, active);
+        const obstacle = stuckOpenObstacleAction(perception, here, active, this.explorationCooldowns(), this.options.state.tick);
         if (obstacle) {
             this.cognition().activeMove = undefined;
             return { action: obstacle, cause: 'stuck_open_obstacle' };
@@ -1659,7 +1659,7 @@ function isFollowGoal(goal?: ActiveGoalState): boolean {
 }
 
 function explorationCooldownKeyFromAction(action: AgentAction): string | undefined {
-    if (!/explore|routine_loop_break|stuck_move_recovery/i.test(String(action.cause || ''))) {
+    if (!/explore|routine_loop_break|stuck_move_recovery|stuck_open_obstacle/i.test(String(action.cause || ''))) {
         return undefined;
     }
     if (!('target' in action) || !isRecord(action.target)) {

@@ -821,6 +821,18 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: guide.position, range: 1, cause: 'explore_talk_to_npc' });
     });
 
+    it('does not chase fishing spots as exploration conversation targets', () => {
+        const fishingSpot = npc('Fishing spot', 105, 100);
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [fishingSpot], objects: [fountain] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
     it('moves toward a visible landmark when no NPC is nearby', () => {
         const fountain = { objectId: 879, position: { x: 105, y: 100, level: 0 } };
         const action = explorationAction(

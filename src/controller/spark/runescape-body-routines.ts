@@ -682,7 +682,11 @@ export function explorationAction(
     }
 
     const npc = (perception.nearby?.npcs || [])
-        .filter(candidate => !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick))
+        .filter(
+            candidate =>
+                !isFishingSpot(candidate) &&
+                !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick),
+        )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (npc) {
         return npcTalkAction(perception, npc, 'explore_talk_to_npc');

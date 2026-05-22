@@ -6,6 +6,7 @@
  */
 
 import { objectIds } from '@engine/world/config/object-ids';
+import { explorationObjectCooldownKey } from './runescape-body-routines';
 import {
     FENCE_OBSTACLE_IDS,
     OPENABLE_OBSTACLE_IDS,
@@ -149,6 +150,21 @@ describe('stuckOpenObstacleAction', () => {
             activeMove({ target: { x: 120, y: 100, level: 0 } }),
         );
         expect(action?.kind === 'interact' ? action.target : undefined).toBe(targetA);
+    });
+
+    it('does not retry an openable obstacle while its exploration cooldown is active', () => {
+        const obstacle = { objectId: OPENABLE_ID, position: { x: 101, y: 100, level: 0 } };
+        const action = stuckOpenObstacleAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: { objects: [obstacle] },
+            }),
+            { x: 100, y: 100, level: 0 },
+            activeMove(),
+            { [explorationObjectCooldownKey(obstacle)]: 90 },
+            100,
+        );
+        expect(action).toBeUndefined();
     });
 });
 

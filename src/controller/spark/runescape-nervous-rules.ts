@@ -20,7 +20,13 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import { distance, type BodyActor, type BodyPos } from './runescape-body-routines';
+import {
+    distance,
+    explorationObjectCooldownKey,
+    isExplorationOnCooldown,
+    type BodyActor,
+    type BodyPos,
+} from './runescape-body-routines';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -151,9 +157,16 @@ export function stuckOpenObstacleAction(
     perception: NervousHybridPerception,
     here: BodyPos,
     active: NervousActiveMoveState,
+    explorationCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
 ): AgentAction | undefined {
     const obstacle = (perception.nearby?.objects || [])
-        .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId) && distance(here, object.position) <= STUCK_OBSTACLE_RANGE)
+        .filter(
+            object =>
+                OPENABLE_OBSTACLE_IDS.has(object.objectId) &&
+                distance(here, object.position) <= STUCK_OBSTACLE_RANGE &&
+                !isExplorationOnCooldown(explorationObjectCooldownKey(object), explorationCooldowns, currentTick),
+        )
         .sort((a, b) => {
             const nearest = distance(here, a.position) - distance(here, b.position);
             return nearest !== 0 ? nearest : distance(active.target, a.position) - distance(active.target, b.position);
