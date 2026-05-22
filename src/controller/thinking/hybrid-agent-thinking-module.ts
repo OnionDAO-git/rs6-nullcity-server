@@ -16,6 +16,7 @@ import {
     firemakingAction,
     hasNearbyFire,
     levelOneWoodcuttingAction,
+    starterFishingAction,
 } from '../spark/runescape-body-routines';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
@@ -1566,22 +1567,6 @@ function explorationGoal(tick: number): ActiveGoalState {
         ttlTicks: 450,
         createdAtTick: tick,
     };
-}
-
-function starterFishingAction(perception: HybridPerception): AgentAction | undefined {
-    const here = perception.resident?.position;
-    if (!here || !hasSmallFishingNet(perception)) {
-        return undefined;
-    }
-
-    const target = (perception.nearby?.npcs || [])
-        .filter(isFishingSpot)
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (!target) {
-        return undefined;
-    }
-
-    return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
 }
 
 function starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {

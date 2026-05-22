@@ -9,6 +9,8 @@ import { objectIds } from '@engine/world/config/object-ids';
 import {
     firemakingAction,
     levelOneWoodcuttingAction,
+    starterFishingAction,
+    type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
 } from './runescape-body-routines';
@@ -193,6 +195,83 @@ describe('levelOneWoodcuttingAction', () => {
             perception({
                 resident: { position: undefined, inventory: [item(AXE)] },
                 nearby: { objects: [{ objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } }] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('starterFishingAction', () => {
+    const SMALL_NET = 303;
+
+    function fishingSpot(x: number, y: number): BodyActor {
+        return {
+            id: `npc:fishing-${x}-${y}`,
+            kind: 'npc',
+            name: 'Fishing spot',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('returns an "interact net" action when carrying a small net and a fishing spot is nearby', () => {
+        const spot = fishingSpot(102, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [spot] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: spot,
+            option: 'net',
+            cause: 'starter_fishing_net',
+        });
+    });
+
+    it('picks the nearest fishing spot of several', () => {
+        const near = fishingSpot(101, 100);
+        const far = fishingSpot(110, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [far, near] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: near,
+            option: 'net',
+            cause: 'starter_fishing_net',
+        });
+    });
+
+    it('returns undefined when no small fishing net is carried', () => {
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [fishingSpot(101, 100)] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when there is no nearby fishing spot', () => {
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when resident has no position', () => {
+        const action = starterFishingAction(
+            perception({
+                resident: { position: undefined, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [fishingSpot(101, 100)] },
             }),
         );
         expect(action).toBeUndefined();

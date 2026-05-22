@@ -19,7 +19,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import { hasWoodcuttingAxe, isFiremakingLog, isTinderbox } from './runescape-workflows';
+import { hasSmallFishingNet, hasWoodcuttingAxe, isFiremakingLog, isFishingSpot, isTinderbox } from './runescape-workflows';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -161,4 +161,25 @@ export function levelOneWoodcuttingAction(perception: BodyHybridPerception): Age
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
+}
+
+/**
+ * Find the nearest fishing spot and interact with the "net" option when
+ * carrying a small fishing net. Moved verbatim from the monolith (R-β
+ * slice 3).
+ */
+export function starterFishingAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !hasSmallFishingNet(perception)) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.npcs || [])
+        .filter(isFishingSpot)
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!target) {
+        return undefined;
+    }
+
+    return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
 }
