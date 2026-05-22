@@ -7,6 +7,22 @@ import type { MemoryStore } from '../memory/memory-store';
 import type { ActiveGoalState, ActiveMoveState, RuntimeState } from '../memory/runtime-state';
 import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
+import {
+    HUMAN_BONE_SOURCE_PATTERN,
+    LOW_RISK_BONE_SOURCE_PATTERN,
+    MEDIUM_RISK_BONE_SOURCE_PATTERN,
+    hasSmallFishingNet,
+    hasWoodcuttingAxe,
+    isBones,
+    isFiremakingLog,
+    isFishingSpot,
+    isSafeBoneSource,
+    isSafeCombatTarget,
+    isSmallFishingNet,
+    isStarterRawFish,
+    isTinderbox,
+    isWoodcuttingAxe,
+} from '../spark/runescape-workflows';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
@@ -73,26 +89,11 @@ const MAX_INVENTORY_SLOTS = 28;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const COMBAT_LOOT_MAX_DISTANCE = 6;
 const PICKUP_TARGET_COOLDOWN_TICKS = 120;
-const TINDERBOX_ITEM_IDS = new Set([590]);
 const COIN_ITEM_IDS = new Set([995]);
-const FIREMAKING_LOG_ITEM_IDS = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
-const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
-const WOODCUTTING_AXE_ITEM_IDS = new Set([1351, 1349, 1353, 1361, 1355, 1357, 1359]);
-const SMALL_FISHING_NET_ITEM_IDS = new Set([303]);
-const STARTER_RAW_FISH_ITEM_IDS = new Set([317, 321]);
-const STARTER_RAW_FISH_KEY_PATTERN = /^rs:raw_(shrimp|anchovies)$/i;
 const COOKING_HEAT_OBJECT_IDS = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
-const FISHING_SPOT_PATTERN = /\bfishing\s+spot\b/i;
-const BONE_ITEM_IDS = new Set([
-    526, 528, 530, 532, 534, 536, 2859, 3123, 3125, 3179, 3180, 3181, 3182, 3183, 3185, 3186, 4812, 4813, 4814, 6729, 6812,
-]);
-const BONE_KEY_PATTERN = /^rs:(bones|bones_.+|.+_bones)$/i;
-const SAFE_BONE_SOURCE_PATTERN = /\b(chicken|cow|goblin|rat|giant rat|spider|man|woman)\b/i;
-const LOW_RISK_BONE_SOURCE_PATTERN = /\b(chicken|cow|rat|giant rat)\b/i;
-const MEDIUM_RISK_BONE_SOURCE_PATTERN = /\b(goblin|spider)\b/i;
-const HUMAN_BONE_SOURCE_PATTERN = /\b(man|woman)\b/i;
-const SAFE_COMBAT_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin)\b/i;
+// Item / actor classification predicates and their constant tables now live in
+// `../spark/runescape-workflows` (Plan R-α). The monolith imports them above.
 const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
 const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
@@ -1630,34 +1631,6 @@ function findSlot(items: Array<Item | null>, predicate: (item: Item) => boolean)
     return undefined;
 }
 
-function isTinderbox(item: Item): boolean {
-    return TINDERBOX_ITEM_IDS.has(item.itemId) || /tinderbox/i.test(item.key || '');
-}
-
-function isFiremakingLog(item: Item): boolean {
-    return FIREMAKING_LOG_ITEM_IDS.has(item.itemId) || FIREMAKING_LOG_KEY_PATTERN.test(item.key || '');
-}
-
-function isWoodcuttingAxe(item: Item): boolean {
-    return WOODCUTTING_AXE_ITEM_IDS.has(item.itemId) || /\b(axe|hatchet)\b/i.test(item.key || '');
-}
-
-function hasWoodcuttingAxe(perception: HybridPerception): boolean {
-    return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isWoodcuttingAxe(item)));
-}
-
-function isSmallFishingNet(item: Item): boolean {
-    return SMALL_FISHING_NET_ITEM_IDS.has(item.itemId) || /\bsmall(_|\s)?fishing(_|\s)?net\b|\bsmall(_|\s)?net\b/i.test(item.key || '');
-}
-
-function hasSmallFishingNet(perception: HybridPerception): boolean {
-    return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isSmallFishingNet(item)));
-}
-
-function isStarterRawFish(item: Item): boolean {
-    return STARTER_RAW_FISH_ITEM_IDS.has(item.itemId) || STARTER_RAW_FISH_KEY_PATTERN.test(item.key || '');
-}
-
 function starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {
     const rawFishSlot = findSlot(perception.resident?.inventory || [], isStarterRawFish);
     if (rawFishSlot === undefined) {
@@ -1680,12 +1653,6 @@ function starterFishingCookingAction(perception: HybridPerception): AgentAction 
     return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };
 }
 
-function isFishingSpot(actor: Actor): boolean {
-    return [actor.name, actor.key, actor.id]
-        .filter((value): value is string => Boolean(value))
-        .some(value => FISHING_SPOT_PATTERN.test(value));
-}
-
 function missingFiremakingToolAction(perception: HybridPerception): AgentAction {
     const inventory = perception.resident?.inventory || [];
     const hasLogs = findSlot(inventory, isFiremakingLog) !== undefined;
@@ -1704,10 +1671,6 @@ function missingStarterFishingAction(perception: HybridPerception, missingSpotTe
         return { kind: 'say', text: 'I need a small fishing net before I can catch shrimp.' };
     }
     return { kind: 'say', text: missingSpotText };
-}
-
-function isBones(item: Item): boolean {
-    return BONE_ITEM_IDS.has(item.itemId) || BONE_KEY_PATTERN.test(item.key || '');
 }
 
 function buryBonesAction(perception: HybridPerception): AgentAction | undefined {
@@ -1829,13 +1792,6 @@ function safeBoneSourceTarget(perception: HybridPerception): Actor | undefined {
     })[0];
 }
 
-function isSafeBoneSource(actor: Actor): boolean {
-    if (actor.kind !== 'npc' || actor.hpFraction === 0) {
-        return false;
-    }
-    return SAFE_BONE_SOURCE_PATTERN.test([actor.name, actor.key, actor.id].filter(Boolean).join(' '));
-}
-
 function boneSourcePriority(actor: Actor): number {
     const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
     if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
@@ -1860,13 +1816,6 @@ function safeCombatTarget(perception: HybridPerception): Actor | undefined {
         const priority = combatTargetPriority(a) - combatTargetPriority(b);
         return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
     })[0];
-}
-
-function isSafeCombatTarget(actor: Actor): boolean {
-    if (actor.kind !== 'npc' || actor.hpFraction === 0) {
-        return false;
-    }
-    return SAFE_COMBAT_TARGET_PATTERN.test([actor.name, actor.key, actor.id].filter(Boolean).join(' '));
 }
 
 function combatTargetPriority(actor: Actor): number {
