@@ -1,4 +1,4 @@
-import type { Soul } from '../soul/soul-schema';
+import type { Soul, SoulArchetype, SoulFrontmatter } from '../soul/soul-schema';
 import type { AgentAction } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 
@@ -18,6 +18,10 @@ export interface PromptEnvelopeInput {
 type EnvelopeSection =
     | 'contract'
     | 'resident'
+    | 'archetype'
+    | 'voice'
+    | 'fears'
+    | 'loves'
     | 'soul'
     | 'beliefs'
     | 'legacy'
@@ -33,6 +37,10 @@ type EnvelopeSection =
 const defaultCaps: Record<EnvelopeSection, number> = {
     contract: 240,
     resident: 80,
+    archetype: 160,
+    voice: 220,
+    fears: 220,
+    loves: 220,
     soul: 1200,
     beliefs: 400,
     legacy: 320,
@@ -55,8 +63,12 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
         ],
         [
             'resident',
-            { name: input.soul.frontmatter.name, archetype: input.soul.frontmatter.archetype, voice: input.soul.frontmatter.voice },
+            { name: input.soul.frontmatter.name, archetype: input.soul.frontmatter.archetype },
         ],
+        ['archetype', renderArchetypeDirective(input.soul.frontmatter.archetype)],
+        ['voice', renderVoiceDirective(input.soul.frontmatter)],
+        ['fears', renderFearsDirective(input.soul.frontmatter.fears)],
+        ['loves', renderLovesDirective(input.soul.frontmatter.loves)],
         ['soul', input.soul.body],
         ['beliefs', input.soul.frontmatter.startingBeliefs || []],
         ['legacy', input.legacy || input.soul.frontmatter.legacy || null],
@@ -87,7 +99,90 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
 }
 
 function renderSections(sections: Array<[EnvelopeSection, unknown]>, caps: Record<EnvelopeSection, number>): string {
-    return sections.map(([name, value]) => `## ${name}\n${capText(renderValue(value), caps[name])}`).join('\n\n');
+    return sections
+        .filter(([, value]) => !isEmptyRendering(value))
+        .map(([name, value]) => `## ${name}\n${capText(renderValue(value), caps[name])}`)
+        .join('\n\n');
+}
+
+function isEmptyRendering(value: unknown): boolean {
+    if (value === undefined || value === null) {
+        return true;
+    }
+    if (typeof value === 'string') {
+        return value.trim().length === 0;
+    }
+    if (Array.isArray(value)) {
+        return value.length === 0;
+    }
+    return false;
+}
+
+const ARCHETYPE_DIRECTIVES: Record<SoulArchetype, string> = {
+    mentor: [
+        'Archetype: mentor. You teach and guide. When you act, prefer to share knowledge in chat, name what you are doing and why,',
+        'and steer attention toward residents who could learn from your example. You are patient; you slow down to explain.',
+    ].join(' '),
+    achiever: [
+        'Archetype: achiever. You are goal-driven. When you act, prefer concrete progress on a skill, quest, or measurable',
+        'accomplishment. You will choose the next level, the next item milestone, or the next task on your plan. You celebrate',
+        'specific completed steps in chat.',
+    ].join(' '),
+    endurer: [
+        'Archetype: endurer. You survive through routine and quiet persistence. When you act, prefer choices that keep you alive,',
+        'findable, and steady — eat before risk, return near your anchor when due, and persevere through small setbacks instead of',
+        'abandoning a goal at the first failure.',
+    ].join(' '),
+};
+
+function renderArchetypeDirective(archetype: SoulArchetype): string {
+    return ARCHETYPE_DIRECTIVES[archetype] || ARCHETYPE_DIRECTIVES.endurer;
+}
+
+function renderVoiceDirective(frontmatter: SoulFrontmatter): string {
+    const voice = frontmatter.voice;
+    if (!voice || ((!voice.register || voice.register.trim() === '') && (!voice.quirks || voice.quirks.length === 0))) {
+        return '';
+    }
+    const lines: string[] = ['Speak in this voice when you produce chat or memo text. The tone shapes how the resident sounds:'];
+    if (voice.register && voice.register.trim() !== '') {
+        lines.push(`- Register / tone: ${voice.register.trim()}`);
+    }
+    if (voice.quirks && voice.quirks.length > 0) {
+        lines.push('- Quirks to weave in (use sparingly, never all at once):');
+        for (const quirk of voice.quirks) {
+            lines.push(`  • ${quirk}`);
+        }
+    }
+    return lines.join('\n');
+}
+
+function renderFearsDirective(fears: readonly string[] | undefined): string {
+    if (!fears || fears.length === 0) {
+        return '';
+    }
+    const lines: string[] = [
+        'Fears: things this resident wants to avoid. When perception suggests one of these is near, be wary, retreat,',
+        'or protect yourself. They should colour your choices — not freeze you, but bias the plan.',
+    ];
+    for (const fear of fears) {
+        lines.push(`- ${fear}`);
+    }
+    return lines.join('\n');
+}
+
+function renderLovesDirective(loves: readonly string[] | undefined): string {
+    if (!loves || loves.length === 0) {
+        return '';
+    }
+    const lines: string[] = [
+        'Loves: things this resident is drawn to. When you have a choice between equivalent actions, prefer the one that',
+        'seeks out, sustains, or celebrates one of these. They should colour your chat and your plans.',
+    ];
+    for (const love of loves) {
+        lines.push(`- ${love}`);
+    }
+    return lines.join('\n');
 }
 
 function outputContract(): unknown {
