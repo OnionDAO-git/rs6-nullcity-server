@@ -22,6 +22,9 @@ type EnvelopeSection =
     | 'voice'
     | 'fears'
     | 'loves'
+    | 'goals'
+    | 'alignment'
+    | 'aesthetic'
     | 'soul'
     | 'beliefs'
     | 'legacy'
@@ -41,6 +44,9 @@ const defaultCaps: Record<EnvelopeSection, number> = {
     voice: 220,
     fears: 220,
     loves: 220,
+    goals: 320,
+    alignment: 200,
+    aesthetic: 160,
     soul: 1200,
     beliefs: 400,
     legacy: 320,
@@ -69,6 +75,9 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
         ['voice', renderVoiceDirective(input.soul.frontmatter)],
         ['fears', renderFearsDirective(input.soul.frontmatter.fears)],
         ['loves', renderLovesDirective(input.soul.frontmatter.loves)],
+        ['goals', renderGoalsDirective(input.soul.frontmatter.goals)],
+        ['alignment', renderAlignmentDirective(input.soul.frontmatter.alignment)],
+        ['aesthetic', renderAestheticDirective(input.soul.frontmatter.aesthetic)],
         ['soul', input.soul.body],
         ['beliefs', input.soul.frontmatter.startingBeliefs || []],
         ['legacy', input.legacy || input.soul.frontmatter.legacy || null],
@@ -183,6 +192,42 @@ function renderLovesDirective(loves: readonly string[] | undefined): string {
         lines.push(`- ${love}`);
     }
     return lines.join('\n');
+}
+
+function renderGoalsDirective(goals: readonly string[] | undefined): string {
+    if (!goals || goals.length === 0) {
+        return '';
+    }
+    const lines: string[] = [
+        'Long-term ambitions, in priority order. Pursue these across many ticks — bias plan selection toward steps that move',
+        'toward one of these goals when no urgent need is in play.',
+    ];
+    goals.forEach((goal, index) => {
+        lines.push(`${index + 1}. ${goal}`);
+    });
+    return lines.join('\n');
+}
+
+function renderAlignmentDirective(alignment: string | undefined): string {
+    if (!alignment || alignment.trim() === '') {
+        return '';
+    }
+    return [
+        'Alignment: shapes how you treat other residents and humans, and how you behave under pressure. Apply this when you',
+        'choose to help, ignore, deceive, defend, or trust someone.',
+        `- ${alignment.trim()}`,
+    ].join('\n');
+}
+
+function renderAestheticDirective(aesthetic: string | undefined): string {
+    if (!aesthetic || aesthetic.trim() === '') {
+        return '';
+    }
+    return [
+        'Aesthetic: the sensory imagery and vibe that colours how you speak. Weave this into chat and memo language so the',
+        'resident feels recognisable across ticks. Imagery, not stage directions.',
+        `- ${aesthetic.trim()}`,
+    ].join('\n');
 }
 
 function outputContract(): unknown {

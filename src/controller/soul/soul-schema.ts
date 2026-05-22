@@ -17,6 +17,26 @@ export interface SoulFrontmatter {
     };
     fears?: string[];
     loves?: string[];
+    /**
+     * Authored long-term ambitions for this resident, in priority order.
+     * The Brain uses these to bias goal selection toward what the resident
+     * actually cares about beyond the immediate tick. Plain language: "become
+     * a master of fire", "find a lost friend", "earn 100 shards".
+     */
+    goals?: string[];
+    /**
+     * Moral or behavioral alignment in plain language. Free-form, not a D&D
+     * grid. Shapes how the resident treats other residents and humans:
+     * "loyal to Codex but suspicious of strangers", "lawful, protective of
+     * younger residents", "trickster, never holds a grudge".
+     */
+    alignment?: string;
+    /**
+     * Visual / sensory aesthetic the resident embodies, used by the LLM to
+     * colour chat and say-actions: "rust and cold iron", "smoke and lantern
+     * light", "wet stone on the riverbank". Not visual rendering — vibe.
+     */
+    aesthetic?: string;
     model?: {
         endpoint?: string;
         model?: string;
@@ -211,6 +231,9 @@ export const soulFrontmatterSchema = z
             .optional(),
         fears: z.array(z.string()).optional(),
         loves: z.array(z.string()).optional(),
+        goals: z.array(z.string().min(1)).optional(),
+        alignment: z.string().min(1).optional(),
+        aesthetic: z.string().min(1).optional(),
         model: z
             .object({
                 endpoint: z.string().optional(),

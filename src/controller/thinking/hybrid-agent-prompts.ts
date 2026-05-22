@@ -160,6 +160,29 @@ function soulIdentitySection(frontmatter: SoulFrontmatter, role: 'brain' | 'body
         );
     }
 
+    if (frontmatter.goals && frontmatter.goals.length > 0) {
+        const numbered = frontmatter.goals
+            .map((goal, index) => `${index + 1}) ${goal}`)
+            .join(' | ');
+        lines.push(
+            role === 'brain'
+                ? `Long-term ambitions (pursue toward these across ticks, in priority order): ${numbered}.`
+                : `Long-term ambitions to pursue: ${numbered}. Prefer actions that move toward goal #1 when no urgent need is in play.`,
+        );
+    }
+
+    if (frontmatter.alignment && frontmatter.alignment.trim() !== '') {
+        lines.push(
+            `Alignment (how you treat other residents and humans, and behave under pressure): ${frontmatter.alignment.trim()}.`,
+        );
+    }
+
+    if (frontmatter.aesthetic && frontmatter.aesthetic.trim() !== '') {
+        lines.push(
+            `Aesthetic (sensory imagery / vibe to weave into chat and memos): ${frontmatter.aesthetic.trim()}.`,
+        );
+    }
+
     return lines.join('\n');
 }
 

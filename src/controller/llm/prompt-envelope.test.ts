@@ -139,6 +139,62 @@ describe('buildPromptEnvelope', () => {
         expect(rendered).toContain('Endurance is a choice made again each tick.');
     });
 
+    it('renders goals as a dedicated directive section that biases plan selection', () => {
+        const rendered = buildPromptEnvelope({
+            soul: testSoul({
+                goals: ['become a master firemaker', 'find a lost friend in Lumbridge'],
+            }),
+            perception: {},
+            memories: [],
+        });
+
+        expect(rendered).toContain('## goals');
+        expect(rendered).toContain('become a master firemaker');
+        expect(rendered).toContain('find a lost friend in Lumbridge');
+        // Must be framed as ambitions / direction, not just bullets
+        expect(rendered.toLowerCase()).toMatch(/ambit|long-term|pursue|toward|goal/);
+    });
+
+    it('renders alignment as a dedicated directive section that shapes social choices', () => {
+        const rendered = buildPromptEnvelope({
+            soul: testSoul({
+                alignment: 'loyal to Codex but suspicious of strangers',
+            }),
+            perception: {},
+            memories: [],
+        });
+
+        expect(rendered).toContain('## alignment');
+        expect(rendered).toContain('loyal to Codex but suspicious of strangers');
+        expect(rendered.toLowerCase()).toMatch(/treat|toward other|alignment|moral|behav/);
+    });
+
+    it('renders aesthetic as a dedicated directive section that colours language', () => {
+        const rendered = buildPromptEnvelope({
+            soul: testSoul({
+                aesthetic: 'rust and cold iron',
+            }),
+            perception: {},
+            memories: [],
+        });
+
+        expect(rendered).toContain('## aesthetic');
+        expect(rendered).toContain('rust and cold iron');
+        expect(rendered.toLowerCase()).toMatch(/imagery|vibe|colour|color|sensory|aesthetic/);
+    });
+
+    it('omits goals/alignment/aesthetic sections cleanly when unset', () => {
+        const rendered = buildPromptEnvelope({
+            soul: testSoul(),
+            perception: {},
+            memories: [],
+        });
+
+        expect(rendered).not.toContain('## goals');
+        expect(rendered).not.toContain('## alignment');
+        expect(rendered).not.toContain('## aesthetic');
+    });
+
     it('renders memories, perception, and the JSON output contract', () => {
         const rendered = buildPromptEnvelope({
             soul: testSoul(),

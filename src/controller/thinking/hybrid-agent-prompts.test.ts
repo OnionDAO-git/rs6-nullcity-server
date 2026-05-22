@@ -204,6 +204,47 @@ describe('hybrid agent prompts', () => {
 
             expect(prompt.toLowerCase()).toMatch(/endur|persever|survive/);
         });
+
+        it('injects long-term goals into the Brain prompt so plan selection respects them', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({
+                    goals: ['become a master firemaker', 'find a lost friend in Lumbridge'],
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+            });
+
+            expect(prompt).toContain('become a master firemaker');
+            expect(prompt).toContain('find a lost friend in Lumbridge');
+            expect(prompt.toLowerCase()).toMatch(/long-term|ambit|toward|pursue|goal/);
+        });
+
+        it('injects alignment into the Brain prompt so social choices respect it', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({
+                    alignment: 'loyal to Codex but suspicious of strangers',
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+            });
+
+            expect(prompt).toContain('loyal to Codex but suspicious of strangers');
+            expect(prompt.toLowerCase()).toMatch(/align|treat|toward other|moral|behav/);
+        });
+
+        it('injects aesthetic into the Body prompt so chat strings reflect the vibe', () => {
+            const prompt = buildBodyPrompt({
+                soul: testSoulWith({
+                    aesthetic: 'rust and cold iron',
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+                visibility: { returnDue: false },
+            });
+
+            expect(prompt).toContain('rust and cold iron');
+            expect(prompt.toLowerCase()).toMatch(/imagery|vibe|aesthetic|colour|color|sensory/);
+        });
     });
 });
 

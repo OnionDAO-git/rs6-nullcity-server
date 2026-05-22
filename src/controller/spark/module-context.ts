@@ -29,6 +29,9 @@ export interface SoulPublicView {
     voice?: DeepReadonly<{ register?: string; quirks?: string[] }>;
     fears?: readonly string[];
     loves?: readonly string[];
+    goals?: readonly string[];
+    alignment?: string;
+    aesthetic?: string;
     body: string;
 }
 
@@ -87,6 +90,9 @@ export function createSoulPublicView(soul: Soul): DeepReadonly<SoulPublicView> {
         voice: soul.frontmatter.voice,
         fears: soul.frontmatter.fears,
         loves: soul.frontmatter.loves,
+        goals: soul.frontmatter.goals,
+        alignment: soul.frontmatter.alignment,
+        aesthetic: soul.frontmatter.aesthetic,
         body: soul.body,
     });
 }

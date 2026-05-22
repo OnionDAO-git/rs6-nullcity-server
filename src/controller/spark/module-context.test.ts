@@ -99,6 +99,28 @@ describe('SPARK safe module context facades', () => {
         expect(Object.isFrozen(view)).toBe(true);
     });
 
+    it('exposes goals, alignment, and aesthetic on the public soul view', () => {
+        const soulWithExtras: Soul = {
+            sourcePath: '/tmp/secret-soul.md',
+            body: '# Soul with extras',
+            frontmatter: {
+                name: 'res:rich',
+                display: 'Rich Resident',
+                archetype: 'achiever',
+                goals: ['become a master firemaker', 'find a lost friend'],
+                alignment: 'loyal to Codex but suspicious of strangers',
+                aesthetic: 'rust and cold iron',
+            },
+        };
+
+        const view = createSoulPublicView(soulWithExtras);
+
+        expect(view.goals).toEqual(['become a master firemaker', 'find a lost friend']);
+        expect(view.alignment).toBe('loyal to Codex but suspicious of strangers');
+        expect(view.aesthetic).toBe('rust and cold iron');
+        expect(Object.isFrozen(view.goals)).toBe(true);
+    });
+
     it('propagates evidence-layer progress fields (lastMeaningfulProgressAt, stuckSince) through the state snapshot', () => {
         const state = runtimeState();
         state.lastMeaningfulProgressAt = 42;
