@@ -7,12 +7,14 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import {
+    buryBonesAction,
     firemakingAction,
     levelOneWoodcuttingAction,
     starterFishingAction,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
+    type BodyWorldItem,
 } from './runescape-body-routines';
 
 const FIRE_OBJECT_ID = objectIds.fire;
@@ -272,6 +274,77 @@ describe('starterFishingAction', () => {
             perception({
                 resident: { position: undefined, inventory: [item(SMALL_NET)] },
                 nearby: { npcs: [fishingSpot(101, 100)] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('buryBonesAction', () => {
+    const BONES = 526;
+    const BIG_BONES = 532;
+
+    function bonesItem(itemId: number, x: number, y: number): BodyWorldItem {
+        return { itemId, amount: 1, position: { x, y, level: 0 } };
+    }
+
+    it('returns an item_action "bury" when bones are in inventory', () => {
+        const action = buryBonesAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BONES)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'item_action',
+            slot: 0,
+            option: 'bury',
+            cause: 'prayer_bury_bones',
+        });
+    });
+
+    it('prefers inventory bury over ground pickup when both available', () => {
+        const action = buryBonesAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BONES)] },
+                nearby: { worldItems: [bonesItem(BIG_BONES, 101, 100)] },
+            }),
+        );
+        expect(action?.kind).toBe('item_action');
+    });
+
+    it('picks up bones from the ground when none are in inventory', () => {
+        const ground = bonesItem(BONES, 102, 100);
+        const action = buryBonesAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { worldItems: [ground] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: ground,
+            option: 'pick-up',
+            cause: 'prayer_pickup_bones',
+        });
+    });
+
+    it('picks the nearest of multiple ground bones', () => {
+        const near = bonesItem(BONES, 101, 100);
+        const far = bonesItem(BIG_BONES, 110, 100);
+        const action = buryBonesAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { worldItems: [far, near] },
+            }),
+        );
+        expect(action?.kind).toBe('interact');
+        expect((action as unknown as { target: BodyWorldItem }).target).toBe(near);
+    });
+
+    it('returns undefined when no bones anywhere', () => {
+        const action = buryBonesAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
             }),
         );
         expect(action).toBeUndefined();

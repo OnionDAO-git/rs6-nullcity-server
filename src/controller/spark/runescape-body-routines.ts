@@ -19,7 +19,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import { hasSmallFishingNet, hasWoodcuttingAxe, isFiremakingLog, isFishingSpot, isTinderbox } from './runescape-workflows';
+import { hasSmallFishingNet, hasWoodcuttingAxe, isBones, isFiremakingLog, isFishingSpot, isTinderbox } from './runescape-workflows';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -182,4 +182,30 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
     }
 
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
+}
+
+/**
+ * Bury bones from inventory or pick up the nearest set of bones on the
+ * ground. Returns undefined when neither path is available. Moved
+ * verbatim from the monolith (R-β slice 4).
+ */
+export function buryBonesAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const inventory = perception.resident?.inventory || [];
+    const bonesSlot = findSlot(inventory, isBones);
+    if (bonesSlot !== undefined) {
+        return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'prayer_bury_bones' };
+    }
+
+    const bones = (perception.nearby?.worldItems || [])
+        .filter(isBones)
+        .sort(
+            (a, b) =>
+                distance(perception.resident?.position || a.position, a.position) -
+                distance(perception.resident?.position || b.position, b.position),
+        )[0];
+    if (bones) {
+        return { kind: 'interact', target: bones, option: 'pick-up', cause: 'prayer_pickup_bones' };
+    }
+
+    return undefined;
 }

@@ -11,6 +11,7 @@ import {
     FIRE_OBJECT_IDS,
     INTERACTION_APPROACH_RADIUS,
     LEVEL_ONE_TREE_IDS,
+    buryBonesAction,
     distance,
     findSlot,
     firemakingAction,
@@ -1732,27 +1733,6 @@ function missingStarterFishingAction(perception: HybridPerception, missingSpotTe
         return { kind: 'say', text: 'I need a small fishing net before I can catch shrimp.' };
     }
     return { kind: 'say', text: missingSpotText };
-}
-
-function buryBonesAction(perception: HybridPerception): AgentAction | undefined {
-    const inventory = perception.resident?.inventory || [];
-    const bonesSlot = findSlot(inventory, isBones);
-    if (bonesSlot !== undefined) {
-        return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'prayer_bury_bones' };
-    }
-
-    const bones = (perception.nearby?.worldItems || [])
-        .filter(isBones)
-        .sort(
-            (a, b) =>
-                distance(perception.resident?.position || a.position, a.position) -
-                distance(perception.resident?.position || b.position, b.position),
-        )[0];
-    if (bones) {
-        return { kind: 'interact', target: bones, option: 'pick-up', cause: 'prayer_pickup_bones' };
-    }
-
-    return undefined;
 }
 
 function prayerTrainingAction(perception: HybridPerception): AgentAction | undefined {
