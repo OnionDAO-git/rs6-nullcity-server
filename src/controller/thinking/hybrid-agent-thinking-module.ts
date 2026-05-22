@@ -1341,7 +1341,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false): string {
         const here = perception.resident?.position;
-        const next = includeNextStep ? nextStepSuggestion(perception, this.options.state.resident) : undefined;
+        const next = includeNextStep ? nextStepSuggestion(perception, this.options.state.resident, this.activeGoal()) : undefined;
         const goal = summarizeGoalForSpeech(
             this.activeGoal()?.description || 'staying findable and looking for useful actions',
             Boolean(next),
@@ -1690,10 +1690,15 @@ function worldItemLike(value: unknown): WorldItem | undefined {
     };
 }
 
-function nextStepSuggestion(perception: HybridPerception, residentId?: string): string | undefined {
+function nextStepSuggestion(perception: HybridPerception, residentId?: string, goal?: ActiveGoalState): string | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
+    }
+
+    const routine = routineNextStepSuggestion(perception, here, goal);
+    if (routine) {
+        return routine;
     }
 
     const suppressFiremakingLogPickup = hasNearbyFire(perception);
@@ -1751,7 +1756,30 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string): 
     return undefined;
 }
 
+function routineNextStepSuggestion(perception: HybridPerception, here: Pos, goal?: ActiveGoalState): string | undefined {
+    if (!goal || (!isFiremakingGoal(goal) && !isWoodcuttingTrainingGoal(goal))) {
+        return undefined;
+    }
+
+    const inventory = perception.resident?.inventory || [];
+    if (isFiremakingGoal(goal) && findSlot(inventory, isTinderbox) !== undefined && findSlot(inventory, isFiremakingLog) !== undefined) {
+        return 'use tinderbox on logs.';
+    }
+
+    const tree = (perception.nearby?.objects || [])
+        .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (tree && hasWoodcuttingAxe(perception)) {
+        return `chop the tree at ${tree.position.x},${tree.position.y}.`;
+    }
+
+    return undefined;
+}
+
 function isLocalRoutineCause(cause: string, action: AgentAction): boolean {
+    if (action.kind === 'use_item_on_item') {
+        return false;
+    }
     return /woodcutting_level1_routine|firemaking_fallback|firemaking_gather_logs/i.test(`${cause} ${action.cause || ''}`);
 }
 

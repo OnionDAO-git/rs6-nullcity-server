@@ -603,7 +603,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
     });
 
-    it('breaks out of alternating stationary firemaking and woodcutting work', async () => {
+    it('uses logs before breaking out of alternating stationary firemaking and woodcutting work', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const landmark = { objectId: 879, position: { x: 3230, y: 3231, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([
@@ -665,8 +665,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'routine_loop_break' }]);
-        expect(result.cause).toBe('routine_loop_break');
+        expect(result.actions).toEqual([{ kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'firemaking_fallback' }]);
+        expect(result.cause).toBe('firemaking_fallback');
+        expect(state.cognition?.activeGoal?.id).toBe('make-fire');
     });
 
     it('does not keep repeating the same anchor move when a firemaking fallback is available', async () => {
@@ -3439,6 +3440,48 @@ describe('HybridAgentThinkingModule', () => {
             {
                 kind: 'say',
                 text: 'I am online at 3218,3201. Goal: Gather ordinary logs and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('beacons firemaking next steps before unrelated NPC chatter', async () => {
+        const guide = npc('RuneScape Guide', 3219, 3201);
+        const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather logs from a nearby ordinary tree and light a fire with the tinderbox.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                npcs: [guide],
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Gather logs from a nearby ordinary tree and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
