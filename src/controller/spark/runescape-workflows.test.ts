@@ -224,6 +224,19 @@ describe('runescape-workflows card re-export surface', () => {
         expect(ids).toEqual(expect.arrayContaining(['make-fire', 'train-woodcutting', 'safe-combat', 'train-prayer']));
     });
 
+    it('includes the G4 trade-request workflow card', () => {
+        const trade = SUPPORTED_WORKFLOWS.find(card => card.id === 'trade-request');
+        expect(trade).toBeDefined();
+        if (!trade) {
+            return;
+        }
+        expect(trade.actionKinds).toEqual(
+            expect.arrayContaining(['trade_request', 'trade_offer_item', 'trade_accept', 'trade_decline']),
+        );
+        expect(trade.knowledgeIds).toEqual(expect.arrayContaining(['skill-trading']));
+        expect(trade.measurableOutcome.toLowerCase()).toMatch(/trade|inventory|partner/);
+    });
+
     it('every workflow card has the required fields', () => {
         for (const card of SUPPORTED_WORKFLOWS) {
             const typed: WorkflowCard = card;

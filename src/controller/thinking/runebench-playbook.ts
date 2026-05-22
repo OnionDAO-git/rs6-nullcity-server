@@ -96,6 +96,22 @@ export const SUPPORTED_WORKFLOWS: WorkflowCard[] = [
         knowledgeIds: ['social-follow-codex'],
     },
     {
+        id: 'trade-request',
+        title: 'Trade with a trusted player',
+        when: 'Use when a trusted player is nearby and trade is the natural next interaction (proactive offer of a surplus item, or response to a direct "trade me" chat).',
+        nextSteps: [
+            'Verify the partner is visible, in range (≤2 tiles), and the resident is not in combat.',
+            'Issue `trade_request` addressed by residentId or playerHandle.',
+            'Once the trade window opens, `trade_offer_item` for the intended item/quantity.',
+            'When both sides have offered fairly, `trade_accept`. Otherwise `trade_decline` with a reason ("unfair", "cancelled", "no_target").',
+            'Refuse trades with strangers below standing threshold, NPC peers, or currency-shaped offers.',
+        ],
+        actionKinds: ['trade_request', 'trade_offer_item', 'trade_accept', 'trade_decline', 'say', 'move_to'],
+        measurableOutcome:
+            'a trade window opens, the offered items leave/enter the inventory on accept, or the trade closes cleanly via decline',
+        knowledgeIds: ['skill-trading', 'social-follow-codex'],
+    },
+    {
         id: 'follow-codex',
         title: 'Follow Codex',
         when: 'Use when Codex asks to meet, follow, observe, or debug the resident.',
