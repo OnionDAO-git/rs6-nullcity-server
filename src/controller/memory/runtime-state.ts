@@ -37,6 +37,7 @@ export interface CognitiveState {
     activeGoal?: ActiveGoalState;
     activeMove?: ActiveMoveState;
     followTarget?: FollowTargetState;
+    pendingCombatNarration?: PendingCombatNarrationState;
     lastBrainTick?: number;
     lastBodyTick?: number;
     lastGoalShareTick?: number;
@@ -57,6 +58,12 @@ export interface FollowTargetState {
     id?: string;
     kind?: string;
     paused?: boolean;
+    setAtTick: number;
+}
+
+export interface PendingCombatNarrationState {
+    text: string;
+    cause: string;
     setAtTick: number;
 }
 

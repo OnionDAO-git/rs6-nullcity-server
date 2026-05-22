@@ -133,6 +133,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { actions: [], cause: 'resident_busy', nooped: true };
         }
 
+        const combatNarration = this.combatNarrationAction();
+        if (combatNarration) {
+            return this.result([combatNarration.action], combatNarration.cause, 0, false);
+        }
+
         const activeFollow = this.activeFollowAction(perception as HybridPerception);
         if (activeFollow) {
             return this.result([activeFollow.action], activeFollow.cause, 0, false);
@@ -1044,7 +1049,49 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         this.rememberBodyAction(action);
+        this.queueCombatNarration(action, target);
         return { action, cause: action.cause || 'combat_reaction' };
+    }
+
+    private combatNarrationAction(): { action: AgentAction; cause: string } | undefined {
+        const pending = this.cognition().pendingCombatNarration;
+        if (!pending) {
+            return undefined;
+        }
+
+        this.cognition().pendingCombatNarration = undefined;
+        if (this.options.state.tick - pending.setAtTick > 80) {
+            return undefined;
+        }
+
+        return {
+            action: { kind: 'say', text: pending.text },
+            cause: pending.cause,
+        };
+    }
+
+    private queueCombatNarration(action: AgentAction, target: Actor): void {
+        let text: string | undefined;
+        if (target.kind === 'player') {
+            return;
+        }
+        if (action.kind === 'eat') {
+            text = `I am hurt, so I am eating before I keep fighting ${actorName(target)}.`;
+        } else if (action.kind === 'move_to' && action.cause === 'combat_retreat') {
+            text = `I am hurt and have no food, so I am retreating from ${actorName(target)}.`;
+        } else if (action.kind === 'attack' && action.cause === 'combat_retaliate') {
+            text = `${actorName(target)} attacked me, so I am fighting back.`;
+        }
+
+        if (!text) {
+            return;
+        }
+
+        this.cognition().pendingCombatNarration = {
+            text,
+            cause: 'combat_survival_narration',
+            setAtTick: this.options.state.tick,
+        };
     }
 
     private dialogueReaction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {

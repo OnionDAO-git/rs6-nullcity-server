@@ -1444,7 +1444,8 @@ describe('HybridAgentThinkingModule', () => {
     it('retreats from NPC combat when hurt and carrying no recognizable food', async () => {
         const goblin = npc('Goblin', 3219, 3201);
         const llm = scriptedLlm([]);
-        const agent = hybridAgent(llm, runtimeState());
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
 
         const result = await agent.think(
             perception({
@@ -1461,13 +1462,54 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' }]);
         expect(result.cause).toBe('combat_retreat');
+        expect(state.cognition?.pendingCombatNarration).toMatchObject({
+            text: 'I am hurt and have no food, so I am retreating from Goblin.',
+            cause: 'combat_survival_narration',
+        });
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('explains a combat retreat on the next safe tick without inference', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        const narration = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3214, 3205),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+            }),
+        );
+
+        expect(narration.actions).toEqual([{ kind: 'say', text: 'I am hurt and have no food, so I am retreating from Goblin.' }]);
+        expect(narration.cause).toBe('combat_survival_narration');
+        expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
     it('eats before retaliating when hurt and carrying food', async () => {
         const goblin = npc('Goblin', 3219, 3201);
         const llm = scriptedLlm([]);
-        const agent = hybridAgent(llm, runtimeState());
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
 
         const result = await agent.think(
             perception({
@@ -1484,6 +1526,46 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' }]);
         expect(result.cause).toBe('combat_eat_before_retaliating');
+        expect(state.cognition?.pendingCombatNarration).toMatchObject({
+            text: 'I am hurt, so I am eating before I keep fighting Goblin.',
+            cause: 'combat_survival_narration',
+        });
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('explains combat eating on the next safe tick without inference', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        const narration = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 6, max: 10 },
+                    inventory: [],
+                },
+            }),
+        );
+
+        expect(narration.actions).toEqual([{ kind: 'say', text: 'I am hurt, so I am eating before I keep fighting Goblin.' }]);
+        expect(narration.cause).toBe('combat_survival_narration');
+        expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

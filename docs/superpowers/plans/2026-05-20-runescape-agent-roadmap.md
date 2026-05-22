@@ -261,10 +261,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: local live test or simulation where dashboard shows meaningful movement and chat.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: `explore-report-5m` now seeds a local scouting goal instead of relying on Brain drift. Focused thinking test covers initial exploration movement without deep inference, and live autonomous benchmark passed (`status=passed`, `score=1`, `selectedModuleActions=3`, `positionChanged=1`, `informativeReports=1`, `trajectorySays=2`, artifact `/tmp/oniondao-explore-report-seeded-bench/bench_20260521172341_explore_report_5m.json`).
 
-- `[ ]` **F5: Combat survival personality.**
+- `[~]` **F5: Combat survival personality.**
   - Files: nervous rules, combat workflow, standard module
   - Deliverable: agent eats when hurt, attacks weak aggressors when reasonable, runs when outmatched, and explains danger.
   - Verification: combat fixture tests and one live local smoke if available.
+  - Partial 2026-05-22: survival reflexes now queue short public narration after NPC retreat/eating decisions without delaying the immediate eat or move action. Focused combat tests, typecheck, lint, build, full Jest, and autonomous `combat-prayer-10m` dry-run passed.
 
 ## Workstream G: Real Gameplay Workflows
 
@@ -432,6 +433,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[~]` **Q2 (F3): Deeper stuck recovery with help-request speech.** When no useful local recovery exists, the resident says "I'm stuck near the eastern fence — can someone open the gate?"
   - Partial 2026-05-22: implemented generic coordinate-based help request after failed recovery movement; still needs richer blocker naming and live proof.
 - `[~]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
+  - Partial 2026-05-22: queued combat narration explains low-health eating and no-food retreat on the next safe tick. Remaining gap: stronger outmatched-threat scoring and live combat proof.
 - `[~]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
