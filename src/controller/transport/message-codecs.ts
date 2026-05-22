@@ -28,9 +28,29 @@ export interface ResidentSummary {
     controllingClientId?: string;
 }
 
+/**
+ * G4 trading verbs — controller-facing typed forms.
+ *
+ * Distinct from the engine wire types in
+ * `src/engine/world/actor/resident/action/agent-action.ts`, which use
+ * `inventorySlot`+`amount`+`ActorRef` and the two-stage accept. The
+ * controller form is what brain/body code constructs; the body adapter is
+ * responsible for translating to the engine form when needed.
+ *
+ * Spec: docs/superpowers/specs/2026-05-22-smarter-behavior-design.md § G4.
+ */
+export interface TradeActionTarget {
+    residentId?: string;
+    playerHandle?: string;
+}
+
 export type AgentAction =
     | { kind: 'noop'; cause?: string }
     | { kind: 'logout'; cause?: string }
+    | { kind: 'trade_request'; cause?: string; target: TradeActionTarget }
+    | { kind: 'trade_offer_item'; cause?: string; itemId: number; quantity: number; slot?: number }
+    | { kind: 'trade_accept'; cause?: string }
+    | { kind: 'trade_decline'; cause?: string; reason?: string }
     | ({ kind: string; cause?: string } & Record<string, unknown>);
 
 export interface ActionResult {
@@ -136,6 +156,16 @@ const objectRefSchema = z.object({
     orientation: z.number().optional(),
 });
 
+/** Controller-facing trade target. See {@link TradeActionTarget}. */
+export const tradeActionTargetSchema = z
+    .object({
+        residentId: z.string().min(1).optional(),
+        playerHandle: z.string().min(1).optional(),
+    })
+    .refine(value => value.residentId !== undefined || value.playerHandle !== undefined, {
+        message: 'trade target must include residentId or playerHandle',
+    });
+
 export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('noop'), cause: z.string().optional() }),
     z.object({ kind: z.literal('logout'), cause: z.string().optional() }),
@@ -162,12 +192,31 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
     z.object({ kind: z.literal('whisper'), to: z.string().min(1), text: z.string().min(1).max(240) }),
     z.object({ kind: z.literal('dialogue_continue') }),
     z.object({ kind: z.literal('dialogue_choice'), optionIndex: z.number().int().nonnegative() }),
-    z.object({ kind: z.literal('trade_request'), target: actorRefSchema }),
-    z.object({ kind: z.literal('trade_offer_item'), inventorySlot: z.number().int().nonnegative(), amount: z.number().int().positive() }),
+    // G4: controller-side trade_request accepts the controller-facing target
+    // shape OR the legacy engine-side ActorRef. Action adapter translates.
+    z.object({
+        kind: z.literal('trade_request'),
+        cause: z.string().optional(),
+        target: z.union([tradeActionTargetSchema, actorRefSchema]),
+    }),
+    // G4: controller-side `trade_offer_item` is itemId + quantity (+ optional
+    // slot). Existing engine-side `inventorySlot` + `amount` form is still
+    // accepted via the union; adapter resolves itemId↔slot.
+    z.object({
+        kind: z.literal('trade_offer_item'),
+        cause: z.string().optional(),
+        itemId: z.number().int().positive().optional(),
+        quantity: z.number().int().positive().optional(),
+        slot: z.number().int().nonnegative().optional(),
+        inventorySlot: z.number().int().nonnegative().optional(),
+        amount: z.number().int().positive().optional(),
+    }),
     z.object({ kind: z.literal('trade_remove_item'), offerSlot: z.number().int().nonnegative(), amount: z.number().int().positive() }),
     z.object({ kind: z.literal('trade_accept_stage_1') }),
     z.object({ kind: z.literal('trade_accept_stage_2') }),
-    z.object({ kind: z.literal('trade_decline') }),
+    // G4: collapsed single-step accept verb for brain/body authoring.
+    z.object({ kind: z.literal('trade_accept'), cause: z.string().optional() }),
+    z.object({ kind: z.literal('trade_decline'), cause: z.string().optional(), reason: z.string().optional() }),
 ]) as z.ZodType<AgentAction>;
 
 export const gatewayEnvelopeSchema = z.object({
