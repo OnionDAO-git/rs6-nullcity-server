@@ -73,6 +73,8 @@ import {
 import {
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
+    fleeTarget,
+    latestCombatAttacker,
     shouldEmitPresenceBeacon,
     stuckBlockerReportAction,
     stuckHelpRequestAction,
@@ -2171,20 +2173,6 @@ function isSmallTalkIntent(command: string, fullText: string): boolean {
     );
 }
 
-function latestCombatAttacker(perception: HybridPerception): Actor | undefined {
-    for (const event of [...(perception.events || [])].reverse()) {
-        if (!['hit_taken', 'hit', 'attacked'].includes(String(event.kind || ''))) {
-            continue;
-        }
-        const attacker = actorLike(event.from);
-        if (attacker) {
-            return attacker;
-        }
-    }
-
-    return undefined;
-}
-
 function latestTradeRequest(perception: HybridPerception): Actor | undefined {
     for (const event of [...(perception.events || [])].reverse()) {
         if (event.kind !== 'trade_requested') {
@@ -2323,20 +2311,6 @@ function describeInventory(perception: HybridPerception): string {
 
     const labels = [...counts.entries()].map(([label, amount]) => (amount > 1 ? `${label} x${amount}` : label));
     return `I am carrying ${labels.join(', ')}.`;
-}
-
-function fleeTarget(perception: HybridPerception): Pos {
-    const here = perception.resident?.position || { x: 0, y: 0, level: 0 };
-    const threat = latestCombatAttacker(perception) || perception.resident?.combatTarget;
-    if (!threat) {
-        return { x: here.x + 4, y: here.y, level: here.level };
-    }
-
-    return {
-        x: here.x + Math.sign(here.x - threat.position.x || 1) * 4,
-        y: here.y + Math.sign(here.y - threat.position.y || 1) * 4,
-        level: here.level,
-    };
 }
 
 function actorName(actor: Actor): string {

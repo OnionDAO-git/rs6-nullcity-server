@@ -20,7 +20,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import { distance, type BodyPos } from './runescape-body-routines';
+import { distance, type BodyActor, type BodyPos } from './runescape-body-routines';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -41,6 +41,7 @@ export type NervousHybridPerception = {
     resident?: {
         id?: string;
         position?: BodyPos;
+        combatTarget?: BodyActor | null;
     };
     nearby?: {
         objects?: Array<{ objectId: number; position: BodyPos; orientation?: number }>;
@@ -61,7 +62,82 @@ export const FENCE_OBSTACLE_IDS: ReadonlySet<number> = new Set([objectIds.shortC
 /** Maximum tile range the stuck-recovery reflex considers when scanning for nearby obstacles. */
 export const STUCK_OBSTACLE_RANGE = 2;
 
+// --- Local typing helpers (moved verbatim from the monolith). ---
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function positionLike(value: unknown): BodyPos | undefined {
+    if (!isRecord(value) || typeof value.x !== 'number' || typeof value.y !== 'number') {
+        return undefined;
+    }
+    return { x: value.x, y: value.y, level: typeof value.level === 'number' ? value.level : 0 };
+}
+
+function actorLike(value: unknown): BodyActor | undefined {
+    if (!isRecord(value) || typeof value.id !== 'string' || typeof value.kind !== 'string') {
+        return undefined;
+    }
+    const position = positionLike(value.position);
+    if (!position || !['player', 'npc', 'resident'].includes(value.kind)) {
+        return undefined;
+    }
+    return {
+        id: value.id,
+        kind: value.kind as BodyActor['kind'],
+        name: typeof value.name === 'string' ? value.name : undefined,
+        key: typeof value.key === 'string' ? value.key : undefined,
+        position,
+        hpFraction: typeof value.hpFraction === 'number' ? value.hpFraction : undefined,
+    };
+}
+
 // --- Reflex helpers moved verbatim from the monolith. ---
+
+/**
+ * Scans the perception event log (newest → oldest) for the most recent
+ * combat-style event (`hit_taken`, `hit`, `attacked`) and extracts the
+ * attacker. Used by the survival-priority combat reflex.
+ *
+ * Moved verbatim from the monolith (R-γ).
+ */
+export function latestCombatAttacker(perception: NervousHybridPerception): BodyActor | undefined {
+    for (const event of [...(perception.events || [])].reverse()) {
+        if (!['hit_taken', 'hit', 'attacked'].includes(String(event.kind || ''))) {
+            continue;
+        }
+        const attacker = actorLike(event.from);
+        if (attacker) {
+            return attacker;
+        }
+    }
+
+    return undefined;
+}
+
+/**
+ * Compute a retreat position that moves the resident away from the latest
+ * known threat. Falls back to a default east-shifted target when no threat
+ * is identifiable. Mirrors the monolith's escape-vector heuristic
+ * (Chebyshev step of 4 tiles in the away-from-threat direction).
+ *
+ * Moved verbatim from the monolith (R-γ).
+ */
+export function fleeTarget(perception: NervousHybridPerception): BodyPos {
+    const here = perception.resident?.position || { x: 0, y: 0, level: 0 };
+    const threat = latestCombatAttacker(perception) || perception.resident?.combatTarget;
+    if (!threat) {
+        return { x: here.x + 4, y: here.y, level: here.level };
+    }
+
+    return {
+        x: here.x + Math.sign(here.x - threat.position.x || 1) * 4,
+        y: here.y + Math.sign(here.y - threat.position.y || 1) * 4,
+        level: here.level,
+    };
+}
+
 
 /**
  * Stuck-recovery: when the resident is wedged near an openable door/gate,

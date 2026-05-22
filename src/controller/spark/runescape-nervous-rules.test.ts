@@ -10,6 +10,8 @@ import {
     FENCE_OBSTACLE_IDS,
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
+    fleeTarget,
+    latestCombatAttacker,
     shouldEmitPresenceBeacon,
     stuckBlockerReportAction,
     stuckHelpRequestAction,
@@ -302,5 +304,125 @@ describe('shouldEmitPresenceBeacon', () => {
                 interval: 0,
             }),
         ).toBe(true);
+    });
+});
+
+describe('latestCombatAttacker', () => {
+    const attacker = {
+        id: 'npc:cow',
+        kind: 'npc' as const,
+        name: 'Cow',
+        position: { x: 200, y: 200, level: 0 },
+    };
+
+    it('returns the most recent hit_taken / hit / attacked attacker', () => {
+        const result = latestCombatAttacker({
+            events: [
+                { kind: 'hit', from: attacker },
+                { kind: 'spoke', from: { id: 'p:1', kind: 'player', position: { x: 0, y: 0, level: 0 } } },
+                { kind: 'hit_taken', from: attacker },
+            ],
+        });
+        expect(result?.id).toBe('npc:cow');
+        expect(result?.kind).toBe('npc');
+    });
+
+    it('returns undefined when no combat-related events are present', () => {
+        const result = latestCombatAttacker({
+            events: [{ kind: 'spoke', from: attacker }],
+        });
+        expect(result).toBeUndefined();
+    });
+
+    it('returns undefined when events is missing', () => {
+        expect(latestCombatAttacker({})).toBeUndefined();
+    });
+
+    it('walks the event list from newest to oldest and stops at the first combat event', () => {
+        // Reversal means later array entries are "newer". The first reverse-iteration
+        // combat event whose `from` is a valid actor wins.
+        const newer = { ...attacker, id: 'npc:newer' };
+        const older = { ...attacker, id: 'npc:older' };
+        const result = latestCombatAttacker({
+            events: [
+                { kind: 'hit', from: older },
+                { kind: 'attacked', from: newer },
+            ],
+        });
+        expect(result?.id).toBe('npc:newer');
+    });
+});
+
+describe('fleeTarget', () => {
+    it('returns a default east-shifted target when there is no known threat', () => {
+        const target = fleeTarget({
+            resident: { position: { x: 100, y: 100, level: 0 } },
+        });
+        expect(target).toEqual({ x: 104, y: 100, level: 0 });
+    });
+
+    it('flees away from a threat to the west (resident is east, threat is west)', () => {
+        // here.x=100, threat.x=80 → here.x - threat.x = 20 → sign = 1 → x = 100 + 4 = 104
+        // here.y=100, threat.y=100 → here.y - threat.y = 0 → sign(0||1)=1 → y = 100 + 4 = 104
+        const target = fleeTarget({
+            resident: {
+                position: { x: 100, y: 100, level: 0 },
+                combatTarget: {
+                    id: 'npc:cow',
+                    kind: 'npc',
+                    name: 'Cow',
+                    position: { x: 80, y: 100, level: 0 },
+                },
+            },
+        });
+        expect(target).toEqual({ x: 104, y: 104, level: 0 });
+    });
+
+    it('flees away from a threat to the east (resident is west, threat is east)', () => {
+        // here.x=100, threat.x=120 → here.x - threat.x = -20 → sign = -1 → x = 100 - 4 = 96
+        const target = fleeTarget({
+            resident: {
+                position: { x: 100, y: 100, level: 0 },
+                combatTarget: {
+                    id: 'npc:goblin',
+                    kind: 'npc',
+                    name: 'Goblin',
+                    position: { x: 120, y: 100, level: 0 },
+                },
+            },
+        });
+        expect(target).toEqual({ x: 96, y: 104, level: 0 });
+    });
+
+    it('returns origin-based default when the resident has no position', () => {
+        const target = fleeTarget({});
+        expect(target).toEqual({ x: 4, y: 0, level: 0 });
+    });
+
+    it('prefers attacker from events over the resident.combatTarget when both are present', () => {
+        const target = fleeTarget({
+            resident: {
+                position: { x: 100, y: 100, level: 0 },
+                combatTarget: {
+                    id: 'npc:other',
+                    kind: 'npc',
+                    name: 'Other',
+                    position: { x: 80, y: 100, level: 0 },
+                },
+            },
+            events: [
+                {
+                    kind: 'hit_taken',
+                    from: {
+                        id: 'npc:attacker',
+                        kind: 'npc',
+                        name: 'Attacker',
+                        position: { x: 120, y: 100, level: 0 },
+                    },
+                },
+            ],
+        });
+        // Event attacker is at x=120 (east of here), so retreat west → x = 96.
+        expect(target.x).toBe(96);
     });
 });
