@@ -79,7 +79,21 @@ import {
     stuckHelpRequestAction,
     stuckOpenObstacleAction,
 } from '../spark/runescape-nervous-rules';
-import { goalId, parseBrainCompletion } from '../spark/runescape-brain-planner';
+import {
+    benchmarkGoalForTask,
+    cleanTarget,
+    combatGoal,
+    explorationGoal,
+    firemakingGoal,
+    followGoal,
+    goalId,
+    parseBrainCompletion,
+    prayerGoal,
+    starterCookingGoal,
+    starterFishingCookingGoal,
+    starterFishingGoal,
+    woodcuttingGoal,
+} from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
@@ -1584,122 +1598,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 }
 
-function firemakingGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'make-fire',
-        description: 'Gather ordinary logs and light a fire with the tinderbox.',
-        steps: ['Find a level-1 ordinary Tree or Dead tree', 'Chop it for logs', 'Use tinderbox on logs', 'Say what happened'],
-        success: 'A fire appears nearby and I can still report my location.',
-        ttlTicks: 600,
-        createdAtTick: tick,
-    };
-}
-
-function woodcuttingGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'chop-level-one-tree',
-        description: 'Practice woodcutting on ordinary level-1 trees and gather logs.',
-        steps: ['Find a visible ordinary Tree or Dead tree', 'Move beside it', 'Use chop down', 'Repeat while staying findable'],
-        success: 'Logs are collected or a tree-chopping attempt is underway.',
-        ttlTicks: 600,
-        createdAtTick: tick,
-    };
-}
-
-function starterFishingGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'catch-starter-fish',
-        description: 'Catch shrimp with a small fishing net at a visible Fishing spot.',
-        steps: ['Carry a small fishing net', 'Find a Fishing spot', 'Move beside it', 'Use the net option'],
-        success: 'A net fishing attempt is underway or raw shrimp are collected.',
-        ttlTicks: 600,
-        createdAtTick: tick,
-    };
-}
-
-function starterFishingCookingGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'catch-and-cook-starter-fish',
-        description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
-        steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire', 'Use raw fish on the fire or range'],
-        success: 'Raw fish turn into cooked food or a clear blocker is explained.',
-        ttlTicks: 900,
-        createdAtTick: tick,
-    };
-}
-
-function starterCookingGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'cook-starter-fish',
-        description: 'Cook raw shrimp or anchovies on a visible fire or range.',
-        steps: ['Carry raw shrimp or anchovies', 'Find a fire or range', 'Use raw fish on the heat source'],
-        success: 'Raw fish turn into cooked food or a clear blocker is explained.',
-        ttlTicks: 450,
-        createdAtTick: tick,
-    };
-}
-
-function prayerGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'train-prayer-with-bones',
-        description: 'Pick up bones and bury them to train Prayer after safe combat.',
-        steps: ['Find bones on the ground or in inventory', 'Pick up visible bones', 'Use the bury option on carried bones'],
-        success: 'Bones are buried and Prayer gains progress.',
-        ttlTicks: 450,
-        createdAtTick: tick,
-    };
-}
-
-function combatGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'train-combat-safely',
-        description: 'Train combat on safe low-level NPCs and stop when hurt.',
-        steps: ['Find a safe Chicken, Rat, Cow, or Goblin', 'Move beside it', 'Attack when healthy', 'Eat or stop when hurt'],
-        success: 'A safe creature is attacked while Agent remains healthy enough to continue.',
-        ttlTicks: 450,
-        createdAtTick: tick,
-    };
-}
-
-function followGoal(targetName: string, tick: number): ActiveGoalState {
-    const target = cleanTarget(targetName) || 'target';
-    return {
-        id: `follow-${goalId(target) || 'target'}`,
-        description: `Follow ${target} and stay close enough to be seen.`,
-        steps: ['Watch for the target nearby', 'Move back within follow radius when they walk away', 'Stop following if told'],
-        success: `Agent remains within follow range of ${target}.`,
-        ttlTicks: 900,
-        createdAtTick: tick,
-    };
-}
-
-function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | undefined {
-    if (taskId === 'starter-fishing-5m') {
-        return starterFishingGoal(tick);
-    }
-    if (taskId === 'fishing-cooking-10m') {
-        return starterFishingCookingGoal(tick);
-    }
-    if (taskId === 'combat-prayer-10m') {
-        return combatGoal(tick);
-    }
-    if (taskId === 'explore-report-5m') {
-        return explorationGoal(tick);
-    }
-    return undefined;
-}
-
-function explorationGoal(tick: number): ActiveGoalState {
-    return {
-        id: 'scout-nearby-area',
-        description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
-        steps: ['Walk toward a nearby landmark or person', 'Report what is visible', 'Return near the anchor if I drift too far'],
-        success: 'A nearby landmark, actor, or item has been checked and I can report my location.',
-        ttlTicks: 450,
-        createdAtTick: tick,
-    };
-}
-
 function missingFiremakingToolAction(perception: HybridPerception): AgentAction {
     const inventory = perception.resident?.inventory || [];
     const hasLogs = findSlot(inventory, isFiremakingLog) !== undefined;
@@ -2289,10 +2187,6 @@ function describeInventory(perception: HybridPerception): string {
 
 function actorName(actor: Actor): string {
     return actor.name || actor.key || displayName(actor.id);
-}
-
-function cleanTarget(text: string): string {
-    return text.trim().replace(/[.!?]+$/g, '');
 }
 
 function actorLike(value: unknown): Actor | undefined {

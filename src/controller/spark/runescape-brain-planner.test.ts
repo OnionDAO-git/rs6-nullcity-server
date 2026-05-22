@@ -6,10 +6,21 @@
  */
 
 import {
+    benchmarkGoalForTask,
     brainCompletionSchema,
     brainGoalSchema,
+    cleanTarget,
+    combatGoal,
+    explorationGoal,
+    firemakingGoal,
+    followGoal,
     goalId,
     parseBrainCompletion,
+    prayerGoal,
+    starterCookingGoal,
+    starterFishingCookingGoal,
+    starterFishingGoal,
+    woodcuttingGoal,
 } from './runescape-brain-planner';
 
 describe('brainGoalSchema', () => {
@@ -110,6 +121,23 @@ describe('parseBrainCompletion', () => {
     });
 });
 
+describe('cleanTarget', () => {
+    it('trims whitespace', () => {
+        expect(cleanTarget('  Hello  ')).toBe('Hello');
+    });
+
+    it('strips trailing punctuation (.!?)', () => {
+        expect(cleanTarget('Bob!')).toBe('Bob');
+        expect(cleanTarget('Bob.')).toBe('Bob');
+        expect(cleanTarget('Bob?')).toBe('Bob');
+        expect(cleanTarget('Bob.!?')).toBe('Bob');
+    });
+
+    it('preserves embedded punctuation', () => {
+        expect(cleanTarget('  Bob the Builder! ')).toBe('Bob the Builder');
+    });
+});
+
 describe('goalId', () => {
     it('lowercases and slugifies the input description', () => {
         expect(goalId('Light a Fire!')).toBe('light-a-fire');
@@ -135,5 +163,100 @@ describe('goalId', () => {
 
     it('returns an empty string for purely non-alphanumeric input', () => {
         expect(goalId('!!!---')).toBe('');
+    });
+});
+
+describe('goal factories', () => {
+    it('firemakingGoal builds a make-fire goal', () => {
+        const g = firemakingGoal(42);
+        expect(g.id).toBe('make-fire');
+        expect(g.createdAtTick).toBe(42);
+        expect(g.ttlTicks).toBe(600);
+        expect(g.steps?.length).toBeGreaterThan(0);
+    });
+
+    it('woodcuttingGoal builds a chop-level-one-tree goal', () => {
+        const g = woodcuttingGoal(7);
+        expect(g.id).toBe('chop-level-one-tree');
+        expect(g.createdAtTick).toBe(7);
+        expect(g.ttlTicks).toBe(600);
+    });
+
+    it('starterFishingGoal builds a catch-starter-fish goal', () => {
+        const g = starterFishingGoal(0);
+        expect(g.id).toBe('catch-starter-fish');
+        expect(g.ttlTicks).toBe(600);
+    });
+
+    it('starterFishingCookingGoal builds a catch-and-cook goal', () => {
+        const g = starterFishingCookingGoal(0);
+        expect(g.id).toBe('catch-and-cook-starter-fish');
+        expect(g.ttlTicks).toBe(900);
+    });
+
+    it('starterCookingGoal builds a cook-starter-fish goal', () => {
+        const g = starterCookingGoal(0);
+        expect(g.id).toBe('cook-starter-fish');
+        expect(g.ttlTicks).toBe(450);
+    });
+
+    it('prayerGoal builds a train-prayer-with-bones goal', () => {
+        const g = prayerGoal(0);
+        expect(g.id).toBe('train-prayer-with-bones');
+        expect(g.ttlTicks).toBe(450);
+    });
+
+    it('combatGoal builds a train-combat-safely goal', () => {
+        const g = combatGoal(0);
+        expect(g.id).toBe('train-combat-safely');
+        expect(g.ttlTicks).toBe(450);
+    });
+
+    it('explorationGoal builds a scout-nearby-area goal', () => {
+        const g = explorationGoal(0);
+        expect(g.id).toBe('scout-nearby-area');
+        expect(g.ttlTicks).toBe(450);
+    });
+
+    it('followGoal builds a follow-<name> goal with cleaned target', () => {
+        const g = followGoal('  Bob the Builder!  ', 11);
+        expect(g.id).toBe('follow-bob-the-builder');
+        expect(g.description).toContain('Bob the Builder');
+        expect(g.ttlTicks).toBe(900);
+        expect(g.createdAtTick).toBe(11);
+    });
+
+    it("followGoal falls back to 'target' for empty input", () => {
+        const g = followGoal('', 0);
+        expect(g.id).toBe('follow-target');
+        expect(g.description).toContain('target');
+    });
+});
+
+describe('benchmarkGoalForTask', () => {
+    it("returns starterFishingGoal for 'starter-fishing-5m'", () => {
+        const g = benchmarkGoalForTask('starter-fishing-5m', 0);
+        expect(g?.id).toBe('catch-starter-fish');
+    });
+
+    it("returns starterFishingCookingGoal for 'fishing-cooking-10m'", () => {
+        const g = benchmarkGoalForTask('fishing-cooking-10m', 0);
+        expect(g?.id).toBe('catch-and-cook-starter-fish');
+    });
+
+    it("returns combatGoal for 'combat-prayer-10m'", () => {
+        const g = benchmarkGoalForTask('combat-prayer-10m', 0);
+        expect(g?.id).toBe('train-combat-safely');
+    });
+
+    it("returns explorationGoal for 'explore-report-5m'", () => {
+        const g = benchmarkGoalForTask('explore-report-5m', 0);
+        expect(g?.id).toBe('scout-nearby-area');
+    });
+
+    it('returns undefined for an unknown taskId', () => {
+        expect(benchmarkGoalForTask('unknown', 0)).toBeUndefined();
+        expect(benchmarkGoalForTask(null, 0)).toBeUndefined();
+        expect(benchmarkGoalForTask(undefined, 0)).toBeUndefined();
     });
 });
