@@ -27,6 +27,8 @@ Before substantial autonomy, controller, dashboard, or agent behavior work, read
 
 The roadmap is the source of truth for active task status and next work. Older plans and RuneBench design notes are background unless the roadmap explicitly points to them as active.
 
+For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk.
+
 When work maps to the roadmap, update the matching task as you start, finish, block, or defer it. For small fixes or unrelated maintenance, do not force roadmap churn; summarize clearly in the final note.
 
 Until June 1, 2026, OnionDAO work is pre-launch development. Default to building fast with good design. Track Railgun, deployment, and secure-module questions in `docs/human-decisions.md`, but do not block local gameplay, dashboard, benchmark, or module progress on them unless the decision is marked Critical.
