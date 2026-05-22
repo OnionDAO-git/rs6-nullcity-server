@@ -9,10 +9,13 @@ import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/ru
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
 import {
     FIRE_OBJECT_IDS,
+    INTERACTION_APPROACH_RADIUS,
+    LEVEL_ONE_TREE_IDS,
     distance,
     findSlot,
     firemakingAction,
     hasNearbyFire,
+    levelOneWoodcuttingAction,
 } from '../spark/runescape-body-routines';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
@@ -80,7 +83,6 @@ const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const DEFAULT_RETURN_TO_ANCHOR_EVERY_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_RADIUS = 12;
 const DEFAULT_FOLLOW_RADIUS = 2;
-const INTERACTION_APPROACH_RADIUS = 1;
 const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
 const PRAYER_TRAINING_WAYPOINTS: Pos[] = [
     { x: 3222, y: 3218, level: 0 },
@@ -106,7 +108,6 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // The monolith imports both above.
 const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
-const LEVEL_ONE_TREE_IDS = new Set([...objectIds.tree.normal.map(tree => tree.default), ...objectIds.tree.dead.map(tree => tree.default)]);
 const OPENABLE_OBSTACLE_IDS = new Set([1530, 11707, 1533, 1516, 1519, 1536, 11993, 13001, 1551, 1553, 12986, 12987]);
 const FENCE_OBSTACLE_IDS = new Set([objectIds.shortCuts.fenceNearKharidCows]);
 const STUCK_OBSTACLE_RANGE = 2;
@@ -1565,29 +1566,6 @@ function explorationGoal(tick: number): ActiveGoalState {
         ttlTicks: 450,
         createdAtTick: tick,
     };
-}
-
-function levelOneWoodcuttingAction(perception: HybridPerception): AgentAction | undefined {
-    const here = perception.resident?.position;
-    if (!here) {
-        return undefined;
-    }
-    if (!hasWoodcuttingAxe(perception)) {
-        return undefined;
-    }
-
-    const target = (perception.nearby?.objects || [])
-        .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (!target) {
-        return undefined;
-    }
-
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'woodcutting_level1_routine' };
-    }
-
-    return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
 }
 
 function starterFishingAction(perception: HybridPerception): AgentAction | undefined {

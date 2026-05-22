@@ -8,6 +8,7 @@
 import { objectIds } from '@engine/world/config/object-ids';
 import {
     firemakingAction,
+    levelOneWoodcuttingAction,
     type BodyHybridPerception,
     type BodyItem,
 } from './runescape-body-routines';
@@ -109,5 +110,91 @@ describe('firemakingAction', () => {
             targetSlot: 1,
             cause: 'firemaking_fallback',
         });
+    });
+});
+
+describe('levelOneWoodcuttingAction', () => {
+    const NORMAL_TREE = 1276;
+    const DEAD_TREE = 1282;
+    const AXE = 1351;
+
+    it('returns interact "chop down" when adjacent to a normal tree with an axe', () => {
+        const tree = { objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } };
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(AXE)] },
+                nearby: { objects: [tree] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: tree,
+            option: 'chop down',
+            cause: 'woodcutting_level1_routine',
+        });
+    });
+
+    it('moves toward the tree when out of interaction range', () => {
+        const tree = { objectId: NORMAL_TREE, position: { x: 105, y: 100, level: 0 } };
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(AXE)] },
+                nearby: { objects: [tree] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 105, y: 100, level: 0 },
+            range: 1,
+            cause: 'woodcutting_level1_routine',
+        });
+    });
+
+    it('picks the nearest of multiple trees', () => {
+        const nearTree = { objectId: NORMAL_TREE, position: { x: 102, y: 100, level: 0 } };
+        const farTree = { objectId: DEAD_TREE, position: { x: 110, y: 100, level: 0 } };
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(AXE)] },
+                nearby: { objects: [farTree, nearTree] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: nearTree.position,
+            range: 1,
+            cause: 'woodcutting_level1_routine',
+        });
+    });
+
+    it('returns undefined when no axe is carried', () => {
+        const tree = { objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } };
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [tree] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when no level-1 tree is in sight', () => {
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(AXE)] },
+                nearby: { objects: [{ objectId: 99999, position: { x: 100, y: 100, level: 0 } }] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when resident has no position', () => {
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: undefined, inventory: [item(AXE)] },
+                nearby: { objects: [{ objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } }] },
+            }),
+        );
+        expect(action).toBeUndefined();
     });
 });

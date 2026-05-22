@@ -19,7 +19,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import { isFiremakingLog, isTinderbox } from './runescape-workflows';
+import { hasWoodcuttingAxe, isFiremakingLog, isTinderbox } from './runescape-workflows';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -65,8 +65,17 @@ export type BodyHybridPerception = {
 
 // --- Constants moved verbatim from the monolith. ---
 
+/** Grid range within which an actor counts as "adjacent" for body-routine interactions. */
+export const INTERACTION_APPROACH_RADIUS = 1;
+
 /** Object IDs that count as a nearby fire suppressing repeated firemaking. */
 export const FIRE_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire]);
+
+/** Object IDs for level-1 tree species the woodcutting routine may chop. */
+export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
+    ...objectIds.tree.normal.map(tree => tree.default),
+    ...objectIds.tree.dead.map(tree => tree.default),
+]);
 
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
@@ -125,4 +134,31 @@ export function firemakingAction(perception: BodyHybridPerception): AgentAction 
     }
 
     return undefined;
+}
+
+/**
+ * Approach and chop the nearest level-1 tree when the resident is carrying
+ * a woodcutting axe. Moved verbatim from the monolith (R-β slice 2).
+ */
+export function levelOneWoodcuttingAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+    if (!hasWoodcuttingAxe(perception)) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.objects || [])
+        .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!target) {
+        return undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'woodcutting_level1_routine' };
+    }
+
+    return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
 }
