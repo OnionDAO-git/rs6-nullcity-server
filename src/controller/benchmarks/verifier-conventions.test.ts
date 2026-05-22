@@ -55,12 +55,8 @@ describe('verifier conventions', () => {
             outputDir,
         });
 
-        expect(fs.readFileSync(path.join(outputDir, 'evidence', 'trajectory', '20260521-run.jsonl'), 'utf8')).toBe(
-            '{"kind":"action"}\n',
-        );
-        expect(fs.readFileSync(path.join(outputDir, 'evidence', 'progress', '20260521-run.jsonl'), 'utf8')).toBe(
-            '{"kind":"progress"}\n',
-        );
+        expect(fs.readFileSync(path.join(outputDir, 'evidence', 'trajectory', '20260521-run.jsonl'), 'utf8')).toBe('{"kind":"action"}\n');
+        expect(fs.readFileSync(path.join(outputDir, 'evidence', 'progress', '20260521-run.jsonl'), 'utf8')).toBe('{"kind":"progress"}\n');
         expect(fs.readFileSync(path.join(outputDir, 'evidence', 'library', 'portrait.json'), 'utf8')).toBe(
             '{"residentName":"res:agent"}\n',
         );

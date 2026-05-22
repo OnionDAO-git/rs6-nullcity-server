@@ -103,9 +103,7 @@ describe('parseBrainCompletion', () => {
     });
 
     it('parses a completion with a goal object', () => {
-        const result = parseBrainCompletion(
-            '{"goal":{"id":"make-fire","description":"Light a fire."},"say":"On it."}',
-        );
+        const result = parseBrainCompletion('{"goal":{"id":"make-fire","description":"Light a fire."},"say":"On it."}');
         expect(result.goal?.id).toBe('make-fire');
         expect(result.goal?.description).toBe('Light a fire.');
         expect(result.say).toBe('On it.');

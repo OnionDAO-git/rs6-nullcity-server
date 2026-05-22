@@ -20,13 +20,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import {
-    distance,
-    explorationObjectCooldownKey,
-    isExplorationOnCooldown,
-    type BodyActor,
-    type BodyPos,
-} from './runescape-body-routines';
+import { distance, explorationObjectCooldownKey, isExplorationOnCooldown, type BodyActor, type BodyPos } from './runescape-body-routines';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -143,7 +137,6 @@ export function fleeTarget(perception: NervousHybridPerception): BodyPos {
         level: here.level,
     };
 }
-
 
 /**
  * Stuck-recovery: when the resident is wedged near an openable door/gate,

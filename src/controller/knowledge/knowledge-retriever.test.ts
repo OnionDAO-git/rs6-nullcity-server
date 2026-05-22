@@ -1,4 +1,10 @@
-import { ENGINE_KNOWLEDGE_ENTRIES, formatKnowledgeForPrompt, retrieveKnowledge, enforceKnowledgeBudget, type KnowledgeEntry } from './knowledge-retriever';
+import {
+    ENGINE_KNOWLEDGE_ENTRIES,
+    formatKnowledgeForPrompt,
+    retrieveKnowledge,
+    enforceKnowledgeBudget,
+    type KnowledgeEntry,
+} from './knowledge-retriever';
 
 describe('RuneScape knowledge retriever', () => {
     it('retrieves firemaking facts for a fire goal', () => {
@@ -42,7 +48,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(4000), // 4000 chars = 1000 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
             const large2: KnowledgeEntry = {
                 id: 'large-2',
@@ -50,7 +56,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(2400), // 2400 chars = 600 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
             const large3: KnowledgeEntry = {
                 id: 'large-3',
@@ -58,7 +64,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(800), // 800 chars = 200 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
 
             const entries = [large3, large2, large1];
@@ -84,7 +90,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(4000), // 1000 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
             const large2: KnowledgeEntry = {
                 id: 'large-2',
@@ -92,7 +98,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(2804), // 2804 chars = 701 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
             const large3: KnowledgeEntry = {
                 id: 'large-3',
@@ -100,7 +106,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(800), // 200 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
 
             const sorted = [large1, large2, large3];
@@ -122,7 +128,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(8000), // 2000 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
             const other: KnowledgeEntry = {
                 id: 'other',
@@ -130,7 +136,7 @@ describe('RuneScape knowledge retriever', () => {
                 summary: 'A'.repeat(400), // 100 tokens
                 topics: [],
                 keywords: [],
-                source: 'test'
+                source: 'test',
             };
 
             const admitted = enforceKnowledgeBudget([huge, other], 1500);

@@ -45,7 +45,11 @@ describe('TrajectoryBuilder', () => {
             actionKinds: ['say'],
         });
         builder.recordAction({ kind: 'say', text: 'I am learning.' }, 'request-1');
-        builder.recordActionResult('request-1', { status: 'success', reason: 'success', evidence: [{ source: 'derived', detail: 'chat_observed' }] });
+        builder.recordActionResult('request-1', {
+            status: 'success',
+            reason: 'success',
+            evidence: [{ source: 'derived', detail: 'chat_observed' }],
+        });
         builder.recordLegacy({ cause: 'attention_exhausted', complete: true });
         builder.endTick('legacy_complete_post_action');
 

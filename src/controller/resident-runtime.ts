@@ -295,10 +295,7 @@ export class ResidentRuntime {
         this.recordProgressEvidence(tick, delta);
     }
 
-    private recordProgressEvidence(
-        tick: number,
-        delta: { meaningful: boolean; reasons: string[]; stuckSince: number | null },
-    ): void {
+    private recordProgressEvidence(tick: number, delta: { meaningful: boolean; reasons: string[]; stuckSince: number | null }): void {
         if (!this.evidence) {
             return;
         }

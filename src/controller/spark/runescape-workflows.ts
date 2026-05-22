@@ -76,10 +76,7 @@ export function isWoodcuttingAxe(item: WorkflowItem): boolean {
 }
 
 export function isSmallFishingNet(item: WorkflowItem): boolean {
-    return (
-        SMALL_FISHING_NET_ITEM_IDS.has(item.itemId) ||
-        /\bsmall(_|\s)?fishing(_|\s)?net\b|\bsmall(_|\s)?net\b/i.test(item.key || '')
-    );
+    return SMALL_FISHING_NET_ITEM_IDS.has(item.itemId) || /\bsmall(_|\s)?fishing(_|\s)?net\b|\bsmall(_|\s)?net\b/i.test(item.key || '');
 }
 
 export function isStarterRawFish(item: WorkflowItem): boolean {

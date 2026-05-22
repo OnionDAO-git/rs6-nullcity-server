@@ -67,10 +67,7 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
             'contract',
             'You are the strategic controller for one RuneScape resident. Return only JSON matching the controller completion contract.',
         ],
-        [
-            'resident',
-            { name: input.soul.frontmatter.name, archetype: input.soul.frontmatter.archetype },
-        ],
+        ['resident', { name: input.soul.frontmatter.name, archetype: input.soul.frontmatter.archetype }],
         ['archetype', renderArchetypeDirective(input.soul.frontmatter.archetype)],
         ['voice', renderVoiceDirective(input.soul.frontmatter)],
         ['fears', renderFearsDirective(input.soul.frontmatter.fears)],

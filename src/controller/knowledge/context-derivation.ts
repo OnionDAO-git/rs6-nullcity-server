@@ -23,15 +23,12 @@ export function derivePerceptionContext(perception: any): PerceptionContext {
     }
 
     // Helper to safely extract from compressed text
-    const compressedText = typeof perception.compressed === 'string'
-        ? perception.compressed
-        : typeof perception === 'string'
-        ? perception
-        : '';
+    const compressedText =
+        typeof perception.compressed === 'string' ? perception.compressed : typeof perception === 'string' ? perception : '';
 
     if (compressedText) {
         const lowerText = compressedText.toLowerCase();
-        
+
         // NPCs
         if (lowerText.includes('chicken')) nearbyNpcKeys.push('rs:chicken');
         if (lowerText.includes('cow')) nearbyNpcKeys.push('rs:cow');
@@ -57,9 +54,9 @@ export function derivePerceptionContext(perception: any): PerceptionContext {
     // Structured perception parsing
     if (typeof perception === 'object' && perception !== null) {
         const root = perception;
-        
+
         const nearby = root.nearby && typeof root.nearby === 'object' ? root.nearby : {};
-        
+
         // NPC parsing
         if (Array.isArray(nearby.npcs)) {
             for (const npc of nearby.npcs) {
@@ -134,15 +131,34 @@ export function deriveGoalContext(goal: any): GoalContext {
     const goalId = typeof goal.id === 'string' ? goal.id : '';
     const description = typeof goal.description === 'string' ? goal.description : '';
     const steps = Array.isArray(goal.steps) ? goal.steps.join(' ') : '';
-    
+
     const textToSearch = `${goalId} ${description} ${steps}`.toLowerCase();
 
     // 23 RS Skills
     const skills = [
-        'attack', 'strength', 'defence', 'hitpoints', 'ranged', 'prayer', 'magic',
-        'cooking', 'woodcutting', 'fletching', 'fishing', 'firemaking', 'crafting',
-        'smithing', 'mining', 'herblore', 'agility', 'thieving', 'slayer',
-        'farming', 'runecrafting', 'construction', 'hunter'
+        'attack',
+        'strength',
+        'defence',
+        'hitpoints',
+        'ranged',
+        'prayer',
+        'magic',
+        'cooking',
+        'woodcutting',
+        'fletching',
+        'fishing',
+        'firemaking',
+        'crafting',
+        'smithing',
+        'mining',
+        'herblore',
+        'agility',
+        'thieving',
+        'slayer',
+        'farming',
+        'runecrafting',
+        'construction',
+        'hunter',
     ];
     for (const skill of skills) {
         if (textToSearch.includes(skill)) {
@@ -150,16 +166,19 @@ export function deriveGoalContext(goal: any): GoalContext {
             break;
         }
     }
-    
+
     // Fallback implicit mappings to skills
     if (!targetSkill) {
         if (textToSearch.includes('cook') || textToSearch.includes('shrimp')) targetSkill = 'cooking';
-        else if (textToSearch.includes('chop') || textToSearch.includes('tree') || textToSearch.includes('logs')) targetSkill = 'woodcutting';
+        else if (textToSearch.includes('chop') || textToSearch.includes('tree') || textToSearch.includes('logs'))
+            targetSkill = 'woodcutting';
         else if (textToSearch.includes('fish') || textToSearch.includes('net')) targetSkill = 'fishing';
-        else if (textToSearch.includes('burn') || textToSearch.includes('tinderbox') || textToSearch.includes('fire')) targetSkill = 'firemaking';
+        else if (textToSearch.includes('burn') || textToSearch.includes('tinderbox') || textToSearch.includes('fire'))
+            targetSkill = 'firemaking';
         else if (textToSearch.includes('mine') || textToSearch.includes('ore') || textToSearch.includes('rock')) targetSkill = 'mining';
         else if (textToSearch.includes('bury') || textToSearch.includes('bones')) targetSkill = 'prayer';
-        else if (textToSearch.includes('fight') || textToSearch.includes('attack') || textToSearch.includes('combat')) targetSkill = 'hitpoints';
+        else if (textToSearch.includes('fight') || textToSearch.includes('attack') || textToSearch.includes('combat'))
+            targetSkill = 'hitpoints';
     }
 
     // Items

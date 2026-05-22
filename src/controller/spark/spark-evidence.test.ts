@@ -41,9 +41,9 @@ describe('Spark evidence integration', () => {
         await spark.tick({ tick: 99 });
 
         const lines = readJsonl(trajectoryPath);
-        const endTick = lines.find((l) => l.kind === 'end_tick');
+        const endTick = lines.find(l => l.kind === 'end_tick');
         expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'legacy_complete' });
-        expect(lines.find((l) => l.kind === 'legacy_event')).toBeDefined();
+        expect(lines.find(l => l.kind === 'legacy_event')).toBeDefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -56,7 +56,7 @@ describe('Spark evidence integration', () => {
 
         await spark.tick({ tick: 99 });
 
-        const endTick = readJsonl(trajectoryPath).find((l) => l.kind === 'end_tick');
+        const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
         expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'attention_exhausted' });
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -85,7 +85,7 @@ describe('Spark evidence integration', () => {
 
         await spark.tick({ tick: 99 });
 
-        const endTick = readJsonl(trajectoryPath).find((l) => l.kind === 'end_tick');
+        const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
         expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'hook_noop' });
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -99,7 +99,7 @@ describe('Spark evidence integration', () => {
 
         await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
 
-        const endTick = readJsonl(trajectoryPath).find((l) => l.kind === 'end_tick');
+        const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
         expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'parse_failed' });
         expect(llm.complete).toHaveBeenCalled();
     });
@@ -167,7 +167,7 @@ describe('Spark evidence integration', () => {
         const lines = readJsonl(trajectoryPath);
 
         // Find the second end_tick line at the end of the array
-        const tick2EndTick = lines.filter((l) => l.kind === 'end_tick')[1];
+        const tick2EndTick = lines.filter(l => l.kind === 'end_tick')[1];
         expect(tick2EndTick).toMatchObject({
             kind: 'end_tick',
             reason: 'plan_continuation',
@@ -175,7 +175,7 @@ describe('Spark evidence integration', () => {
         });
 
         // Verify the recorded plan line
-        const planLine = lines.find((l) => l.kind === 'plan');
+        const planLine = lines.find(l => l.kind === 'plan');
         expect(planLine).toMatchObject({
             kind: 'plan',
             tick: 2,
@@ -216,7 +216,7 @@ describe('Spark evidence integration', () => {
 
         await spark.tick({ tick: 1, events: [] });
 
-        const endTick = readJsonl(trajectoryPath).find((l) => l.kind === 'end_tick');
+        const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
         // Endurer's observeActions may or may not complete on a logout action,
         // depending on the soul's lifespan config. The reason should be either
         // legacy_complete_post_action (if it completed) or tick_complete (if it

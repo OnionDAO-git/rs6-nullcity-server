@@ -889,9 +889,7 @@ describe('explorationAction', () => {
     });
 
     it('returns undefined when resident has no position', () => {
-        const action = explorationAction(
-            perception({ resident: { position: undefined, inventory: [] } }),
-        );
+        const action = explorationAction(perception({ resident: { position: undefined, inventory: [] } }));
         expect(action).toBeUndefined();
     });
 });

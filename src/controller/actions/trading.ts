@@ -126,9 +126,7 @@ export function makeTradeAcceptAction(options: { cause?: string } = {}): TradeAc
 }
 
 /** Construct a trade_decline action. */
-export function makeTradeDeclineAction(
-    options: { reason?: TradeDeclineReason; cause?: string } = {},
-): TradeDeclineAction & AgentAction {
+export function makeTradeDeclineAction(options: { reason?: TradeDeclineReason; cause?: string } = {}): TradeDeclineAction & AgentAction {
     const payload: TradeDeclineAction = { kind: 'trade_decline' };
     if (options.reason !== undefined) {
         payload.reason = options.reason;
@@ -199,11 +197,7 @@ export const TRADE_MAX_OFFER_VALUE = 500;
 /** Standing threshold (0..100) below which a non-handle peer is a stranger. */
 export const TRADE_STRANGER_STANDING_THRESHOLD = 25;
 
-export function canRequestTrade(
-    perception: TradePerceptionView,
-    state: TradeRuntimeView,
-    target: TradeTarget,
-): Precondition {
+export function canRequestTrade(perception: TradePerceptionView, state: TradeRuntimeView, target: TradeTarget): Precondition {
     if (state.tradeState !== 'idle') {
         return { ok: false, reason: 'already_trading' };
     }
@@ -381,9 +375,7 @@ export interface TradeSafetyTarget {
     offeredItems: ReadonlyArray<TradeInventoryItem>;
 }
 
-export type TradeSafetyResult =
-    | { ok: true; trustTier: 'trusted_handle' | 'earned_standing' }
-    | { ok: false; reason: TradeSafetyReason };
+export type TradeSafetyResult = { ok: true; trustTier: 'trusted_handle' | 'earned_standing' } | { ok: false; reason: TradeSafetyReason };
 
 export type TradeSafetyReason =
     | 'npc_not_tradable'
@@ -431,11 +423,7 @@ export function estimateItemValue(
     return unit * item.amount;
 }
 
-export function tradeSafetyPredicate(
-    target: TradeSafetyTarget,
-    perception: TradePerceptionView,
-    soul: TradeSafetySoul,
-): TradeSafetyResult {
+export function tradeSafetyPredicate(target: TradeSafetyTarget, perception: TradePerceptionView, soul: TradeSafetySoul): TradeSafetyResult {
     if (target.actor.kind === 'npc') {
         return { ok: false, reason: 'npc_not_tradable' };
     }
@@ -476,10 +464,7 @@ function isCurrencyItem(item: TradeInventoryItem): boolean {
     return false;
 }
 
-function matchesTrustedHandle(
-    actor: { name?: string; id: string },
-    trustedHandles: ReadonlyArray<string>,
-): boolean {
+function matchesTrustedHandle(actor: { name?: string; id: string }, trustedHandles: ReadonlyArray<string>): boolean {
     const name = actor.name?.toLowerCase();
     return trustedHandles.some(handle => {
         const lower = handle.toLowerCase();

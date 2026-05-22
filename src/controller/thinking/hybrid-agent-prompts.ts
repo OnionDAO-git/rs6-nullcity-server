@@ -120,14 +120,18 @@ function runtimeProgressSection(progress: RuntimeProgressPromptInput | undefined
 
 const BRAIN_ARCHETYPE_DIRECTIVES: Record<SoulArchetype, string> = {
     mentor: 'Archetype: mentor. Choose goals that let you teach or guide. Slow down to name what you are doing and why; steer attention toward residents who could learn from your example. Patience over speed.',
-    achiever: 'Archetype: achiever. Choose goals that produce a concrete, measurable step — next level, next item milestone, next quest completion. Celebrate finished steps explicitly.',
-    endurer: 'Archetype: endurer. Choose goals that keep you alive, findable, and steady. Eat before risk, return near your anchor when due, persevere through small setbacks instead of abandoning at the first failure.',
+    achiever:
+        'Archetype: achiever. Choose goals that produce a concrete, measurable step — next level, next item milestone, next quest completion. Celebrate finished steps explicitly.',
+    endurer:
+        'Archetype: endurer. Choose goals that keep you alive, findable, and steady. Eat before risk, return near your anchor when due, persevere through small setbacks instead of abandoning at the first failure.',
 };
 
 const BODY_ARCHETYPE_DIRECTIVES: Record<SoulArchetype, string> = {
     mentor: 'Archetype: mentor. When choosing between equivalent actions, prefer the one that lets you teach in chat or demonstrate a step. Patience over speed.',
-    achiever: 'Archetype: achiever. When choosing between equivalent actions, prefer the one that produces visible skill XP, an item, or a level. Drive the goal forward.',
-    endurer: 'Archetype: endurer. When choosing between equivalent actions, prefer the one that keeps you alive and findable — eat early, retreat instead of pushing, return near anchor when due. Persevere instead of abandoning.',
+    achiever:
+        'Archetype: achiever. When choosing between equivalent actions, prefer the one that produces visible skill XP, an item, or a level. Drive the goal forward.',
+    endurer:
+        'Archetype: endurer. When choosing between equivalent actions, prefer the one that keeps you alive and findable — eat early, retreat instead of pushing, return near anchor when due. Persevere instead of abandoning.',
 };
 
 function soulIdentitySection(frontmatter: SoulFrontmatter, role: 'brain' | 'body'): string {
@@ -145,25 +149,15 @@ function soulIdentitySection(frontmatter: SoulFrontmatter, role: 'brain' | 'body
     }
 
     if (frontmatter.fears && frontmatter.fears.length > 0) {
-        lines.push(
-            `Fears (avoid / be wary of, but do not freeze): ${frontmatter.fears
-                .map(item => `"${item}"`)
-                .join(', ')}.`,
-        );
+        lines.push(`Fears (avoid / be wary of, but do not freeze): ${frontmatter.fears.map(item => `"${item}"`).join(', ')}.`);
     }
 
     if (frontmatter.loves && frontmatter.loves.length > 0) {
-        lines.push(
-            `Loves (seek out or prefer when choices are equivalent): ${frontmatter.loves
-                .map(item => `"${item}"`)
-                .join(', ')}.`,
-        );
+        lines.push(`Loves (seek out or prefer when choices are equivalent): ${frontmatter.loves.map(item => `"${item}"`).join(', ')}.`);
     }
 
     if (frontmatter.goals && frontmatter.goals.length > 0) {
-        const numbered = frontmatter.goals
-            .map((goal, index) => `${index + 1}) ${goal}`)
-            .join(' | ');
+        const numbered = frontmatter.goals.map((goal, index) => `${index + 1}) ${goal}`).join(' | ');
         lines.push(
             role === 'brain'
                 ? `Long-term ambitions (pursue toward these across ticks, in priority order): ${numbered}.`
@@ -172,15 +166,11 @@ function soulIdentitySection(frontmatter: SoulFrontmatter, role: 'brain' | 'body
     }
 
     if (frontmatter.alignment && frontmatter.alignment.trim() !== '') {
-        lines.push(
-            `Alignment (how you treat other residents and humans, and behave under pressure): ${frontmatter.alignment.trim()}.`,
-        );
+        lines.push(`Alignment (how you treat other residents and humans, and behave under pressure): ${frontmatter.alignment.trim()}.`);
     }
 
     if (frontmatter.aesthetic && frontmatter.aesthetic.trim() !== '') {
-        lines.push(
-            `Aesthetic (sensory imagery / vibe to weave into chat and memos): ${frontmatter.aesthetic.trim()}.`,
-        );
+        lines.push(`Aesthetic (sensory imagery / vibe to weave into chat and memos): ${frontmatter.aesthetic.trim()}.`);
     }
 
     return lines.join('\n');

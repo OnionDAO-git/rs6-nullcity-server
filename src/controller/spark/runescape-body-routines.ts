@@ -91,17 +91,7 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
 ]);
 
 /** Object IDs that can be used as cooking heat sources by the fishing routine. */
-export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([
-    objectIds.fire,
-    114,
-    2728,
-    2729,
-    2730,
-    2731,
-    2859,
-    4172,
-    9682,
-]);
+export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 
 /** Max number of inventory slots considered "free" by the pickup routine. */
 export const MAX_INVENTORY_SLOTS = 28;
@@ -183,9 +173,7 @@ export function hasNearbyFire(perception: BodyHybridPerception): boolean {
     if (!here) {
         return false;
     }
-    return (perception.nearby?.objects || []).some(
-        object => FIRE_OBJECT_IDS.has(object.objectId) && distance(here, object.position) <= 1,
-    );
+    return (perception.nearby?.objects || []).some(object => FIRE_OBJECT_IDS.has(object.objectId) && distance(here, object.position) <= 1);
 }
 
 // --- Body-routine action helpers (moved verbatim from the monolith). ---
@@ -607,7 +595,9 @@ export function isExplorationOnCooldown(key: string, cooldowns: Record<string, n
 
 /** Stable cooldown key for an NPC the exploration routine just visited. */
 export function explorationActorCooldownKey(actor: BodyActor): string {
-    return actor.id ? `npc:${actor.id}` : `npc:${actor.key || actor.name || `${actor.position.x},${actor.position.y},${actor.position.level}`}`;
+    return actor.id
+        ? `npc:${actor.id}`
+        : `npc:${actor.key || actor.name || `${actor.position.x},${actor.position.y},${actor.position.level}`}`;
 }
 
 /** Stable cooldown key for a world object the exploration routine just visited. */

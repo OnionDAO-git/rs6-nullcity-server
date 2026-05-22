@@ -181,7 +181,9 @@ describe('ControllerHost reconcile lifecycle', () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
         const runtimeFactory = jest.fn(
-            (options: { evidence?: { sessionId: string; store: { currentSession: () => unknown }; trajectory: unknown; library?: unknown } }) => {
+            (options: {
+                evidence?: { sessionId: string; store: { currentSession: () => unknown }; trajectory: unknown; library?: unknown };
+            }) => {
                 void options;
                 return runtime;
             },
@@ -203,12 +205,10 @@ describe('ControllerHost reconcile lifecycle', () => {
     it('still starts a resident when evidence-session creation throws', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
-        const runtimeFactory = jest.fn(
-            (options: { evidence?: unknown }) => {
-                void options;
-                return runtime;
-            },
-        );
+        const runtimeFactory = jest.fn((options: { evidence?: unknown }) => {
+            void options;
+            return runtime;
+        });
         const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
         // Point the memory dir at a non-existent path on a read-only volume to force

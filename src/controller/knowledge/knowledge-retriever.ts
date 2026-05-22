@@ -183,7 +183,7 @@ export function renderKnowledgeEntry(entry: KnowledgeEntry): string {
 
 export function enforceKnowledgeBudget(
     entries: KnowledgeEntry[],
-    maxTokens: number
+    maxTokens: number,
 ): KnowledgeEntry[] & { budgetTrimmed: boolean; budgetOvershot: boolean } {
     const accepted: KnowledgeEntry[] = [];
     let currentTokens = 0;
@@ -197,7 +197,7 @@ export function enforceKnowledgeBudget(
             accepted.push(entry);
             currentTokens += entryTokens;
         } else {
-            if (currentTokens < maxTokens && (currentTokens + entryTokens - maxTokens <= 200)) {
+            if (currentTokens < maxTokens && currentTokens + entryTokens - maxTokens <= 200) {
                 accepted.push(entry);
                 currentTokens += entryTokens;
             }

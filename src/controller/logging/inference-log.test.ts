@@ -9,7 +9,7 @@ function readJsonl(filePath: string): unknown[] {
         .trim()
         .split('\n')
         .filter(Boolean)
-        .map((line) => JSON.parse(line));
+        .map(line => JSON.parse(line));
 }
 
 function tmpDir(prefix: string): string {

@@ -171,9 +171,10 @@ describe('trading.ts — preconditions', () => {
                 inCombat: false,
                 hpFraction: 1,
             };
-            expect(
-                canRequestTrade(perception, { tradeState: 'in_progress', tick: 110 }, { residentId: 'res:foo' }),
-            ).toEqual({ ok: false, reason: 'already_trading' });
+            expect(canRequestTrade(perception, { tradeState: 'in_progress', tick: 110 }, { residentId: 'res:foo' })).toEqual({
+                ok: false,
+                reason: 'already_trading',
+            });
         });
 
         it('refuses when target is out of trade range', () => {

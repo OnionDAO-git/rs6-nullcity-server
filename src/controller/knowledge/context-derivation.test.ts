@@ -24,20 +24,11 @@ describe('Context Derivation', () => {
         it('derives context from structured perception', () => {
             const perception = {
                 nearby: {
-                    npcs: [
-                        { key: 'rs:chicken', name: 'Chicken' },
-                        { name: 'Cow' },
-                    ],
-                    objects: [
-                        { key: 'tree', objectId: 1276 },
-                        { objectId: 590 },
-                    ],
+                    npcs: [{ key: 'rs:chicken', name: 'Chicken' }, { name: 'Cow' }],
+                    objects: [{ key: 'tree', objectId: 1276 }, { objectId: 590 }],
                 },
                 tile: { region: 'lumbridge' },
-                recentActions: [
-                    { kind: 'use_item_on_item' },
-                    'attack',
-                ],
+                recentActions: [{ kind: 'use_item_on_item' }, 'attack'],
             };
             const context = derivePerceptionContext(perception);
             expect(context.nearbyNpcKeys).toEqual(['rs:chicken', 'cow']);

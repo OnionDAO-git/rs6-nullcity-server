@@ -230,9 +230,7 @@ describe('runescape-workflows card re-export surface', () => {
         if (!trade) {
             return;
         }
-        expect(trade.actionKinds).toEqual(
-            expect.arrayContaining(['trade_request', 'trade_offer_item', 'trade_accept', 'trade_decline']),
-        );
+        expect(trade.actionKinds).toEqual(expect.arrayContaining(['trade_request', 'trade_offer_item', 'trade_accept', 'trade_decline']));
         expect(trade.knowledgeIds).toEqual(expect.arrayContaining(['skill-trading']));
         expect(trade.measurableOutcome.toLowerCase()).toMatch(/trade|inventory|partner/);
     });
