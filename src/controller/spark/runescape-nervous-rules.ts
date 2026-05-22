@@ -85,3 +85,30 @@ export function stuckOpenObstacleAction(
 
     return obstacle ? { kind: 'interact', target: obstacle, option: 'open', cause: 'stuck_open_obstacle' } : undefined;
 }
+
+/**
+ * Stuck-recovery: when the resident is wedged near a fence-style blocker
+ * (one we cannot open), emit a 'say' announcement so observers know the
+ * agent is stuck. The active-move target informs tie-breaking on which
+ * fence to point at, but the say-text is fence-agnostic.
+ *
+ * Moved verbatim from the monolith (R-γ).
+ */
+export function stuckBlockerReportAction(
+    perception: NervousHybridPerception,
+    here: BodyPos,
+    active: NervousActiveMoveState,
+): AgentAction | undefined {
+    const blocker = (perception.nearby?.objects || [])
+        .filter(object => FENCE_OBSTACLE_IDS.has(object.objectId) && distance(here, object.position) <= STUCK_OBSTACLE_RANGE)
+        .sort((a, b) => {
+            const nearest = distance(here, a.position) - distance(here, b.position);
+            return nearest !== 0 ? nearest : distance(active.target, a.position) - distance(active.target, b.position);
+        })[0];
+
+    if (!blocker) {
+        return undefined;
+    }
+
+    return { kind: 'say', text: 'I am stuck near a fence. I will step away and try another route.', cause: 'stuck_blocker_report' };
+}

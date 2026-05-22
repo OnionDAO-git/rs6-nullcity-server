@@ -71,9 +71,9 @@ import {
     isWoodcuttingAxe,
 } from '../spark/runescape-workflows';
 import {
-    FENCE_OBSTACLE_IDS,
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
+    stuckBlockerReportAction,
     stuckOpenObstacleAction,
 } from '../spark/runescape-nervous-rules';
 import type { AgentAction, Perception } from '../transport/message-codecs';
@@ -1839,21 +1839,6 @@ function worldItemLike(value: unknown): WorldItem | undefined {
         position,
         ownerId: typeof value.ownerId === 'string' ? value.ownerId : undefined,
     };
-}
-
-function stuckBlockerReportAction(perception: HybridPerception, here: Pos, active: ActiveMoveState): AgentAction | undefined {
-    const blocker = (perception.nearby?.objects || [])
-        .filter(object => FENCE_OBSTACLE_IDS.has(object.objectId) && distance(here, object.position) <= STUCK_OBSTACLE_RANGE)
-        .sort((a, b) => {
-            const nearest = distance(here, a.position) - distance(here, b.position);
-            return nearest !== 0 ? nearest : distance(active.target, a.position) - distance(active.target, b.position);
-        })[0];
-
-    if (!blocker) {
-        return undefined;
-    }
-
-    return { kind: 'say', text: 'I am stuck near a fence. I will step away and try another route.', cause: 'stuck_blocker_report' };
 }
 
 function stuckHelpRequestAction(here: Pos, active: ActiveMoveState): AgentAction | undefined {

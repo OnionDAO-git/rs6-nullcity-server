@@ -5,10 +5,12 @@
  * documentation of the move-verbatim contract.
  */
 
+import { objectIds } from '@engine/world/config/object-ids';
 import {
     FENCE_OBSTACLE_IDS,
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
+    stuckBlockerReportAction,
     stuckOpenObstacleAction,
     type NervousActiveMoveState,
     type NervousHybridPerception,
@@ -143,5 +145,54 @@ describe('stuckOpenObstacleAction', () => {
             activeMove({ target: { x: 120, y: 100, level: 0 } }),
         );
         expect(action?.kind === 'interact' ? action.target : undefined).toBe(targetA);
+    });
+});
+
+describe('stuckBlockerReportAction', () => {
+    const FENCE_ID = objectIds.shortCuts.fenceNearKharidCows;
+
+    it('returns a say-report when a fence blocker is within range', () => {
+        const fence = { objectId: FENCE_ID, position: { x: 101, y: 100, level: 0 } };
+        const action = stuckBlockerReportAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: { objects: [fence] },
+            }),
+            { x: 100, y: 100, level: 0 },
+            activeMove(),
+        );
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I am stuck near a fence. I will step away and try another route.',
+            cause: 'stuck_blocker_report',
+        });
+    });
+
+    it('returns undefined when no fence is nearby', () => {
+        const action = stuckBlockerReportAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: {
+                    objects: [{ objectId: 1530, position: { x: 101, y: 100, level: 0 } }],
+                },
+            }),
+            { x: 100, y: 100, level: 0 },
+            activeMove(),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when the fence is out of range', () => {
+        const action = stuckBlockerReportAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: {
+                    objects: [{ objectId: FENCE_ID, position: { x: 110, y: 100, level: 0 } }],
+                },
+            }),
+            { x: 100, y: 100, level: 0 },
+            activeMove(),
+        );
+        expect(action).toBeUndefined();
     });
 });
