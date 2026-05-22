@@ -29,6 +29,7 @@ import {
     isFiremakingLog,
     isFishingSpot,
     isSafeBoneSource,
+    isSafeCombatTarget,
     isStarterRawFish,
     isTinderbox,
 } from './runescape-workflows';
@@ -149,6 +150,11 @@ export function findSlot(items: Array<BodyItem | null>, predicate: (item: BodyIt
         }
     }
     return undefined;
+}
+
+/** Returns the first inventory slot containing a food-shaped item, or undefined. */
+export function firstFoodSlot(inventory: Array<BodyItem | null>): number | undefined {
+    return findSlot(inventory, candidate => FOOD_KEY_PATTERN.test(candidate.key || ''));
 }
 
 /**
@@ -497,4 +503,73 @@ export function combatLootOrPrayerAction(
 
     const pickup = opportunisticPickupAction(perception, undefined, COMBAT_LOOT_MAX_DISTANCE, pickupCooldowns, currentTick);
     return pickup ? actionWithCause(pickup, 'combat_loot_pickup') : undefined;
+}
+
+/** Lower number = higher-priority NPC kill choice for combat training. */
+export function combatTargetPriority(actor: BodyActor): number {
+    const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
+    if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 0;
+    }
+    if (MEDIUM_RISK_BONE_SOURCE_PATTERN.test(label)) {
+        return 1;
+    }
+    return 2;
+}
+
+/** Closest safe combat-target NPC, picked by priority then distance. */
+export function safeCombatTarget(perception: BodyHybridPerception): BodyActor | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+    return (perception.nearby?.npcs || []).filter(isSafeCombatTarget).sort((a, b) => {
+        const priority = combatTargetPriority(a) - combatTargetPriority(b);
+        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+    })[0];
+}
+
+/**
+ * Train combat against safe NPCs, eating food when low on HP and
+ * looting bones/items between fights. Moves toward a fixed waypoint
+ * when nothing is in sight. Moved verbatim from the monolith (R-β
+ * slice 9).
+ */
+export function combatTrainingAction(
+    perception: BodyHybridPerception,
+    pickupCooldowns?: Record<string, number>,
+    currentTick?: number,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    if (isLowHealth(perception)) {
+        const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+        return foodSlot === undefined
+            ? { kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' }
+            : { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_training' };
+    }
+
+    if (!perception.resident?.inCombat) {
+        const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick);
+        if (loot) {
+            return loot;
+        }
+    }
+
+    const target = safeCombatTarget(perception);
+    if (!target) {
+        const waypoint = nearestPrayerTrainingWaypoint(here);
+        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
+            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
+            : undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'combat_approach_safe_target' };
+    }
+
+    return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
 }

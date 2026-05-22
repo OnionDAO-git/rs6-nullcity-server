@@ -22,9 +22,11 @@ import {
     actionWithCause,
     buryBonesAction,
     combatLootOrPrayerAction,
+    combatTrainingAction,
     distance,
     findSlot,
     firemakingAction,
+    firstFoodSlot,
     hasNearbyFire,
     inventoryHasFreeSlot,
     isLowHealth,
@@ -38,6 +40,7 @@ import {
     pickupItemKey,
     prayerTrainingAction,
     safeBoneSourceTarget,
+    safeCombatTarget,
     starterFishingAction,
     starterFishingCookingAction,
     usefulGroundItemPriority,
@@ -1725,68 +1728,6 @@ function missingStarterFishingAction(perception: HybridPerception, missingSpotTe
     return { kind: 'say', text: missingSpotText };
 }
 
-function combatTrainingAction(
-    perception: HybridPerception,
-    pickupCooldowns?: Record<string, number>,
-    currentTick?: number,
-): AgentAction | undefined {
-    const here = perception.resident?.position;
-    if (!here) {
-        return undefined;
-    }
-
-    if (isLowHealth(perception)) {
-        const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
-        return foodSlot === undefined
-            ? { kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' }
-            : { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_training' };
-    }
-
-    if (!perception.resident?.inCombat) {
-        const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick);
-        if (loot) {
-            return loot;
-        }
-    }
-
-    const target = safeCombatTarget(perception);
-    if (!target) {
-        const waypoint = nearestPrayerTrainingWaypoint(here);
-        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
-            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
-            : undefined;
-    }
-
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'combat_approach_safe_target' };
-    }
-
-    return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
-}
-
-function safeCombatTarget(perception: HybridPerception): Actor | undefined {
-    const here = perception.resident?.position;
-    if (!here) {
-        return undefined;
-    }
-
-    return (perception.nearby?.npcs || []).filter(isSafeCombatTarget).sort((a, b) => {
-        const priority = combatTargetPriority(a) - combatTargetPriority(b);
-        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-    })[0];
-}
-
-function combatTargetPriority(actor: Actor): number {
-    const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
-    if (LOW_RISK_BONE_SOURCE_PATTERN.test(label)) {
-        return 0;
-    }
-    if (MEDIUM_RISK_BONE_SOURCE_PATTERN.test(label)) {
-        return 1;
-    }
-    return 2;
-}
-
 function isPrayerTrainingGoal(goal: ActiveGoalState): boolean {
     if (/^train-combat|^combat/i.test(goal.id)) {
         return false;
@@ -2429,10 +2370,6 @@ function actorMatchesName(actor: Actor, query: string): boolean {
     const wanted = normalizeText(cleanTarget(query));
     const names = [actor.name, actor.key, actor.id].filter((value): value is string => Boolean(value)).map(normalizeText);
     return names.some(name => name.includes(wanted) || wanted.includes(name));
-}
-
-function firstFoodSlot(inventory: Array<Item | null>): number | undefined {
-    return findSlot(inventory, item => FOOD_KEY_PATTERN.test(item.key || ''));
 }
 
 function safeTradeOfferSlot(inventory: Array<Item | null>, query?: string): number | undefined {

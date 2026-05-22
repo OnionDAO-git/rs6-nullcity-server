@@ -9,6 +9,7 @@ import { objectIds } from '@engine/world/config/object-ids';
 import {
     buryBonesAction,
     combatLootOrPrayerAction,
+    combatTrainingAction,
     firemakingAction,
     levelOneWoodcuttingAction,
     opportunisticPickupAction,
@@ -698,5 +699,96 @@ describe('combatLootOrPrayerAction', () => {
             }),
         );
         expect(action).toBeUndefined();
+    });
+});
+
+describe('combatTrainingAction', () => {
+    const COOKED_SHRIMP_KEY = 'rs:cooked_shrimp';
+
+    function combatNpc(name: string, x: number, y: number): BodyActor {
+        return {
+            id: `npc:${name}-${x}-${y}`,
+            kind: 'npc',
+            name,
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('attacks an adjacent safe combat target when healthy', () => {
+        const chicken = combatNpc('Chicken', 3220, 3220);
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [chicken] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
+    });
+
+    it('eats food when low on HP and food is carried', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 2, max: 10 },
+                    inventory: [item(7946, COOKED_SHRIMP_KEY)],
+                },
+            }),
+        );
+        expect(action).toEqual({ kind: 'eat', slot: 0, cause: 'combat_eat_before_training' });
+    });
+
+    it('says "too hurt" when low on HP and no food carried', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 2, max: 10 }, inventory: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I am too hurt to start combat without food. I need to heal or get food first.',
+        });
+    });
+
+    it('seeks a fixed waypoint when no safe target is in sight and resident is far away', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('returns undefined when resident has no position', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: undefined, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [combatNpc('Chicken', 3220, 3220)] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('moves toward a non-adjacent safe combat target', () => {
+        const chicken = combatNpc('Chicken', 3225, 3220);
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [chicken] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: chicken.position,
+            range: 1,
+            cause: 'combat_approach_safe_target',
+        });
     });
 });
