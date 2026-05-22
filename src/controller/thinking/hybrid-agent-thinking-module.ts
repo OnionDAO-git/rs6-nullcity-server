@@ -1,4 +1,3 @@
-import { z } from 'zod';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { parseCompletion } from '../llm/completion-parser';
 import type { LlmClient } from '../llm/llm-client';
@@ -80,6 +79,7 @@ import {
     stuckHelpRequestAction,
     stuckOpenObstacleAction,
 } from '../spark/runescape-nervous-rules';
+import { parseBrainCompletion } from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
@@ -1584,32 +1584,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 }
 
-const brainGoalSchema = z.object({
-    id: z.string().min(1).max(80).optional(),
-    description: z.string().min(1).max(500),
-    steps: z.array(z.string().min(1).max(200)).max(8).optional(),
-    success: z.string().min(1).max(300).optional(),
-    ttlTicks: z.number().int().positive().max(5000).optional(),
-});
-
-const brainCompletionSchema = z.object({
-    cause: z.string().max(120).optional(),
-    goal: brainGoalSchema.optional(),
-    say: z.string().max(200).optional(),
-});
-
-function parseBrainCompletion(text: string): { goal?: z.infer<typeof brainGoalSchema>; say?: string; cause?: string } {
-    if (!text.trim()) {
-        return {};
-    }
-
-    const parsed = brainCompletionSchema.safeParse(extractJson(text));
-    if (!parsed.success) {
-        return {};
-    }
-    return parsed.data;
-}
-
 function firemakingGoal(tick: number): ActiveGoalState {
     return {
         id: 'make-fire',
@@ -2426,21 +2400,6 @@ function positionLike(value: unknown): Pos | undefined {
         return undefined;
     }
     return { x: value.x, y: value.y, level: typeof value.level === 'number' ? value.level : 0 };
-}
-
-function extractJson(text: string): unknown {
-    const trimmed = text.trim();
-    if (trimmed.startsWith('{')) {
-        return JSON.parse(trimmed);
-    }
-
-    const first = trimmed.indexOf('{');
-    const last = trimmed.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-        return JSON.parse(trimmed.slice(first, last + 1));
-    }
-
-    return JSON.parse(trimmed);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
