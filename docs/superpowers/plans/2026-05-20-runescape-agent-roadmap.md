@@ -419,7 +419,7 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[~]` **P1: Retrieval improvements (perception+goal-filtered).** Token-budgeted retrieval to avoid prompt envelope bloat.
 - `[x]` **P2: Skills batch 1 — promote `feat/skill-*.md` to consumed knowledge.** ~12 already-curated skill files get promoted into `docs/runescape-skill/skills/`.
-  - *Completed: combat.md, cooking.md, crafting.md, firemaking.md, fishing.md, fletching.md, mining.md, prayer.md, smithing.md, thieving.md, woodcutting.md. Remaining: agility, construction, farming, herblore, runecrafting, slayer.*
+  - *Completed: combat.md, cooking.md, crafting.md, farming.md, firemaking.md, fishing.md, fletching.md, herblore.md, mining.md, prayer.md, runecrafting.md, smithing.md, thieving.md, woodcutting.md. Remaining: agility, construction, slayer.*
 
 
 - `[~]` **P3: Skills batch 2 — remaining skills.** Cover all 23 with per-skill mini-playbooks.
