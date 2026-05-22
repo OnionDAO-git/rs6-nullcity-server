@@ -418,8 +418,8 @@ Safe public module facade building blocks are implemented, but the public member
 **Purpose:** Expand the agent's RuneScape knowledge so residents can act intelligently across all 23 RS skills, world geography, NPC inventory, items beyond starter, and basic quest awareness. Currently `docs/runescape-skill/` covers only ~5 starter skills. Spec: `docs/superpowers/specs/2026-05-22-deeper-game-skill-knowledge-design.md`. 6 plans (P-retrieval, P-skills-batch-1/2, P-world-geography, P-npcs-items, P-quests).
 
 - `[~]` **P1: Retrieval improvements (perception+goal-filtered).** Token-budgeted retrieval to avoid prompt envelope bloat.
-- `[~]` **P2: Skills batch 1 — promote `feat/skill-*.md` to consumed knowledge.** ~12 already-curated skill files get promoted into `docs/runescape-skill/skills/`.
-  - *Completed: combat.md, woodcutting.md, firemaking.md, fletching.md. Remaining: agility, construction, cooking, crafting, farming, fishing, herblore, mining, prayer, runecrafting, slayer, smithing, thieving.*
+- `[x]` **P2: Skills batch 1 — promote `feat/skill-*.md` to consumed knowledge.** ~12 already-curated skill files get promoted into `docs/runescape-skill/skills/`.
+  - *Completed: combat.md, cooking.md, crafting.md, firemaking.md, fishing.md, fletching.md, mining.md, prayer.md, smithing.md, thieving.md, woodcutting.md. Remaining: agility, construction, farming, herblore, runecrafting, slayer.*
 
 
 - `[~]` **P3: Skills batch 2 — remaining skills.** Cover all 23 with per-skill mini-playbooks.
