@@ -1,3 +1,5 @@
+import { estimateTokens } from '../util/token-count';
+
 export interface KnowledgeEntry {
     id: string;
     title: string;
@@ -167,20 +169,50 @@ export function retrieveKnowledge(entries: KnowledgeEntry[], query: string, opti
         .slice(0, limit);
 }
 
+export function renderKnowledgeEntry(entry: KnowledgeEntry): string {
+    const sections = [
+        `- ${entry.title}: ${entry.summary}`,
+        entry.requiredItems?.length ? `  Required: ${entry.requiredItems.join(', ')}` : undefined,
+        entry.actions?.length ? `  Actions: ${entry.actions.join(', ')}` : undefined,
+        entry.successSignals?.length ? `  Success: ${entry.successSignals.join('; ')}` : undefined,
+        `  Source: ${entry.source}`,
+    ].filter(Boolean);
+
+    return sections.join('\n');
+}
+
+export function enforceKnowledgeBudget(
+    entries: KnowledgeEntry[],
+    maxTokens: number
+): KnowledgeEntry[] & { budgetTrimmed: boolean; budgetOvershot: boolean } {
+    const accepted: KnowledgeEntry[] = [];
+    let currentTokens = 0;
+
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const rendered = renderKnowledgeEntry(entry);
+        const entryTokens = estimateTokens(rendered);
+
+        if (accepted.length === 0) {
+            accepted.push(entry);
+            currentTokens += entryTokens;
+        } else {
+            if (currentTokens < maxTokens && (currentTokens + entryTokens - maxTokens <= 200)) {
+                accepted.push(entry);
+                currentTokens += entryTokens;
+            }
+        }
+    }
+
+    const result = accepted as any;
+    result.budgetTrimmed = accepted.length < entries.length;
+    result.budgetOvershot = currentTokens > maxTokens;
+    return result;
+}
+
 export function formatKnowledgeForPrompt(results: KnowledgeResult[], options: FormatKnowledgeOptions = {}): string {
     const maxChars = options.maxChars ?? 2400;
-    const renderedEntries = results.map(result => {
-        const entry = result.entry;
-        const sections = [
-            `- ${entry.title}: ${entry.summary}`,
-            entry.requiredItems?.length ? `  Required: ${entry.requiredItems.join(', ')}` : undefined,
-            entry.actions?.length ? `  Actions: ${entry.actions.join(', ')}` : undefined,
-            entry.successSignals?.length ? `  Success: ${entry.successSignals.join('; ')}` : undefined,
-            `  Source: ${entry.source}`,
-        ].filter(Boolean);
-
-        return sections.join('\n');
-    });
+    const renderedEntries = results.map(result => renderKnowledgeEntry(result.entry));
 
     return joinWholeEntries(renderedEntries, maxChars);
 }
