@@ -133,6 +133,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { actions: [], cause: 'resident_busy', nooped: true };
         }
 
+        const activeFollow = this.activeFollowAction(perception as HybridPerception);
+        if (activeFollow) {
+            return this.result([activeFollow.action], activeFollow.cause, 0, false);
+        }
+
         if (this.shouldRunBrain()) {
             const brain = await this.runBrain(perception, gameSkill);
             if (brain.action) {
@@ -633,16 +638,27 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
-    private followAction(perception: HybridPerception): AgentAction | undefined {
-        const targetName = this.behavior().followPlayer;
+    private activeFollowAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const target = this.currentFollowTarget();
+        const goal = this.activeGoal();
+        if (!target?.name || (!this.cognition().followTarget?.name && !isFollowGoal(goal))) {
+            return undefined;
+        }
+
+        const action = this.followAction(perception, 'follow_player_active');
+        return action ? { action, cause: 'follow_player_active' } : undefined;
+    }
+
+    private followAction(perception: HybridPerception, cause = 'follow_player_fallback'): AgentAction | undefined {
+        const targetState = this.currentFollowTarget();
+        const targetName = targetState?.name;
         const here = perception.resident?.position;
         if (!targetName || !here) {
             return undefined;
         }
 
         const target = (perception.nearby?.players || []).find(player => {
-            const names = [player.name, player.key, player.id].filter((value): value is string => Boolean(value)).map(normalizeText);
-            return names.some(name => name.includes(normalizeText(targetName)) || normalizeText(targetName).includes(name));
+            return (targetState?.id && player.id === targetState.id) || actorMatchesName(player, targetName);
         });
         if (!target || distance(here, target.position) <= (this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS)) {
             return undefined;
@@ -652,7 +668,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             kind: 'move_to',
             target: target.position,
             range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
-            cause: 'follow_player_fallback',
+            cause,
         };
     }
 
@@ -665,11 +681,50 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         this.cognition().lastDirectChatKey = chat.key;
         const command = addressedCommand(chat.normalizedText, this.commandPrefix());
         const here = perception.resident?.position;
-        const speakerPosition = chat.from?.position;
-        if (isFollowIntent(command, chat.normalizedText) && speakerPosition) {
-            if (here && distance(here, speakerPosition) <= (this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS)) {
+
+        if (isStopFollowingIntent(command, chat.normalizedText)) {
+            const target = this.currentFollowTarget();
+            this.clearGoalMomentum();
+            this.cognition().followTarget = { paused: true, setAtTick: this.options.state.tick };
+            if (isFollowGoal(this.cognition().activeGoal)) {
+                this.cognition().activeGoal = undefined;
+            }
+
+            return {
+                action: {
+                    kind: 'say',
+                    text: target?.name ? `I will stop following ${target.name}.` : 'I will stop following for now.',
+                },
+                cause: 'direct_chat_stop_following',
+            };
+        }
+
+        const follow = followIntent(command, chat.normalizedText);
+        if (follow) {
+            const target = follow.target ? findActorByName(perception.nearby?.players || [], follow.target) : chat.from;
+            if (!target) {
                 return {
-                    action: { kind: 'say', text: this.statusSpeech(perception, 'I am with you') },
+                    action: {
+                        kind: 'say',
+                        text: follow.target ? `I do not see ${cleanTarget(follow.target)} nearby.` : 'I need to see who to follow.',
+                    },
+                    cause: 'direct_chat_follow',
+                };
+            }
+
+            this.clearGoalMomentum();
+            this.cognition().followTarget = {
+                name: actorName(target),
+                id: target.id,
+                kind: target.kind,
+                paused: false,
+                setAtTick: this.options.state.tick,
+            };
+            this.cognition().activeGoal = followGoal(actorName(target), this.options.state.tick);
+
+            if (here && distance(here, target.position) <= (this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS)) {
+                return {
+                    action: { kind: 'say', text: this.statusSpeech(perception, `I will follow ${actorName(target)}`) },
                     cause: 'direct_chat_follow',
                 };
             }
@@ -677,7 +732,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return {
                 action: {
                     kind: 'move_to',
-                    target: speakerPosition,
+                    target: target.position,
                     range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
                     cause: 'direct_chat_follow',
                 },
@@ -1225,9 +1280,27 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return normalizeText(this.behavior().commandPrefix || displayName(this.options.soul.frontmatter.name));
     }
 
+    private currentFollowTarget(): { name?: string; id?: string; kind?: string } | undefined {
+        const target = this.cognition().followTarget;
+        if (target?.paused) {
+            return undefined;
+        }
+        if (target?.name || target?.id) {
+            return target;
+        }
+
+        const configured = this.behavior().followPlayer;
+        return configured ? { name: configured } : undefined;
+    }
+
     private isTrustedTradePartner(actor: Actor): boolean {
         const trusted = this.behavior().followPlayer;
-        return Boolean(trusted && actorMatchesName(actor, trusted));
+        const followTarget = this.currentFollowTarget();
+        return Boolean(
+            (trusted && actorMatchesName(actor, trusted)) ||
+                (followTarget?.id && actor.id === followTarget.id) ||
+                (followTarget?.name && actorMatchesName(actor, followTarget.name)),
+        );
     }
 
     private rememberPickupAttempt(action: AgentAction): void {
@@ -1418,6 +1491,18 @@ function combatGoal(tick: number): ActiveGoalState {
         steps: ['Find a safe Chicken, Rat, Cow, or Goblin', 'Move beside it', 'Attack when healthy', 'Eat or stop when hurt'],
         success: 'A safe creature is attacked while Agent remains healthy enough to continue.',
         ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
+function followGoal(targetName: string, tick: number): ActiveGoalState {
+    const target = cleanTarget(targetName) || 'target';
+    return {
+        id: `follow-${goalId(target) || 'target'}`,
+        description: `Follow ${target} and stay close enough to be seen.`,
+        steps: ['Watch for the target nearby', 'Move back within follow radius when they walk away', 'Stop following if told'],
+        success: `Agent remains within follow range of ${target}.`,
+        ttlTicks: 900,
         createdAtTick: tick,
     };
 }
@@ -1775,6 +1860,13 @@ function isStarterFishingGoal(goal: ActiveGoalState): boolean {
 
 function isFiremakingGoal(goal: ActiveGoalState): boolean {
     return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+function isFollowGoal(goal?: ActiveGoalState): boolean {
+    if (!goal) {
+        return false;
+    }
+    return /^follow-/i.test(goal.id) || /\bfollow\b/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
 function explorationAction(
@@ -2157,10 +2249,28 @@ function addressedCommand(text: string, commandPrefix: string): string {
     return text.slice(match.index + match[0].length).trim();
 }
 
-function isFollowIntent(command: string, fullText: string): boolean {
-    return (
-        /^(follow me|follow|come here|come to me|keep up|guard me|guard)\b/.test(command) ||
+function followIntent(command: string, fullText: string): { target?: string } | undefined {
+    if (
+        /^(follow me|come here|come to me|keep up|guard me)\b/.test(command) ||
+        /^(follow|guard)$/.test(command) ||
         /\b(follow me|come here|come to me)\b/.test(fullText)
+    ) {
+        return {};
+    }
+
+    const named = command.match(/^(follow|guard)\s+(.+)/);
+    if (!named) {
+        return undefined;
+    }
+
+    const target = cleanTarget(named[2]);
+    return /^me\b/.test(target) ? {} : { target };
+}
+
+function isStopFollowingIntent(command: string, fullText: string): boolean {
+    return (
+        /^(stop following|stop follow|do not follow|dont follow|don't follow|quit following|stop guarding)\b/.test(command) ||
+        /\b(stop following|do not follow me|dont follow me|don't follow me|stop guarding)\b/.test(fullText)
     );
 }
 

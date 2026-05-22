@@ -435,6 +435,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[~]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
+  - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
 
 ## Workstream R: SPARK Module Extraction (finish B2-B5)
 

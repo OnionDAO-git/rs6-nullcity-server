@@ -1220,6 +1220,98 @@ describe('HybridAgentThinkingModule', () => {
             { kind: 'move_to', target: { x: 3222, y: 3213, level: 0 }, range: 2, cause: 'direct_chat_follow' },
         ]);
         expect(result.cause).toBe('direct_chat_follow');
+        expect(state.cognition?.followTarget).toMatchObject({
+            name: 'codex',
+            id: 'player:codex',
+            kind: 'player',
+            paused: false,
+        });
+        expect(state.cognition?.activeGoal?.id).toBe('follow-codex');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps following a commanded player without waiting for Body inference', async () => {
+        const codex = player('codex', 3225, 3213);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'follow-codex',
+                description: 'Follow codex and stay close enough to be seen.',
+                createdAtTick: 1,
+            },
+            followTarget: { name: 'codex', id: 'player:codex', kind: 'player', setAtTick: 1 },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3225, y: 3213, level: 0 }, range: 2, cause: 'follow_player_active' },
+        ]);
+        expect(result.cause).toBe('follow_player_active');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('starts following a named nearby player from direct chat', async () => {
+        const codex = player('codex', 3225, 3213);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+                events: [chatFromCodex('agent follow codex', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3225, y: 3213, level: 0 }, range: 2, cause: 'direct_chat_follow' },
+        ]);
+        expect(result.cause).toBe('direct_chat_follow');
+        expect(state.cognition?.followTarget).toMatchObject({ name: 'codex', id: 'player:codex' });
+        expect(state.cognition?.activeGoal?.id).toBe('follow-codex');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('stops persistent following on direct stop-following commands', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'follow-codex',
+                description: 'Follow codex and stay close enough to be seen.',
+                createdAtTick: 1,
+            },
+            followTarget: { name: 'codex', id: 'player:codex', kind: 'player', setAtTick: 1 },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent stop following', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I will stop following codex.' }]);
+        expect(result.cause).toBe('direct_chat_stop_following');
+        expect(state.cognition?.followTarget).toMatchObject({ paused: true });
+        expect(state.cognition?.activeGoal).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
