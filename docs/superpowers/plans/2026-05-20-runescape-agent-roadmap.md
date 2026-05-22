@@ -252,6 +252,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: after repeated failed movement or unreachable target attempts, agent tries alternate target, steps back, returns to anchor, or asks for help.
   - Verification: tests simulate blocked tree/fence and assert recovery, not tiny-step loops.
   - Partial 2026-05-21: committed movement tracks stationary ticks, opens nearby doors/gates first, reports visible fence blockers once, then switches to a patrol recovery move. Remaining gap: broader alternate-path tests, help-request speech when no useful recovery exists, and live benchmark/manual proof.
+  - Partial 2026-05-22: if the patrol recovery move itself makes no visible progress, the agent now says where it is stuck and asks nearby humans to lead it or open a route instead of silently looping recovery. Focused hybrid thinking test passed. Remaining gap: live/manual proof and broader alternate-path fixtures.
 
 - `[x]` **F4: Exploration loop.**
   - Files: Brain planner, Body routines, knowledge docs
@@ -427,6 +428,7 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[~]` **Q1 (F2): Non-command small talk + clarifying questions.** Resident responds in character to public chat that's not a command; asks a clarifying question instead of guessing on ambiguous commands.
 - `[~]` **Q2 (F3): Deeper stuck recovery with help-request speech.** When no useful local recovery exists, the resident says "I'm stuck near the eastern fence — can someone open the gate?"
+  - Partial 2026-05-22: implemented generic coordinate-based help request after failed recovery movement; still needs richer blocker naming and live proof.
 - `[~]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
 - `[~]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.

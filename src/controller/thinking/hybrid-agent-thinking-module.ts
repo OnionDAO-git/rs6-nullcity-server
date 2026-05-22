@@ -514,6 +514,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                         return { action: blocker, cause: 'stuck_blocker_report' };
                     }
 
+                    const helpRequest = stuckHelpRequestAction(here, updated);
+                    if (helpRequest && !this.isRepeatedAction(helpRequest)) {
+                        cognition.activeMove = undefined;
+                        return { action: helpRequest, cause: 'stuck_help_request' };
+                    }
+
                     const recovery = {
                         kind: 'move_to',
                         target: explorationPatrolTarget(here, anchor),
@@ -1965,6 +1971,18 @@ function stuckBlockerReportAction(perception: HybridPerception, here: Pos, activ
     }
 
     return { kind: 'say', text: 'I am stuck near a fence. I will step away and try another route.', cause: 'stuck_blocker_report' };
+}
+
+function stuckHelpRequestAction(here: Pos, active: ActiveMoveState): AgentAction | undefined {
+    if (active.cause !== 'stuck_move_recovery') {
+        return undefined;
+    }
+
+    return {
+        kind: 'say',
+        text: `I am stuck near ${here.x},${here.y} trying to reach ${active.target.x},${active.target.y}. Can someone lead me or open a route?`,
+        cause: 'stuck_help_request',
+    };
 }
 
 function nextStepSuggestion(perception: HybridPerception, residentId?: string): string | undefined {

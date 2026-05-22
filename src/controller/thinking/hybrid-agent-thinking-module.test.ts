@@ -843,6 +843,89 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('stuck_move_recovery');
     });
 
+    it('asks for help when stuck movement recovery also makes no visible progress', async () => {
+        const blockedLandmark = { x: 3243, y: 3242, level: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['walk toward a nearby landmark', 'recover from blocked routes', 'ask for help if recovery fails'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3233, 3243),
+            }),
+        );
+        await agent.think(
+            perception({
+                tick: 4,
+                resident: residentAt(3233, 3243),
+            }),
+        );
+        await agent.think(
+            perception({
+                tick: 5,
+                resident: residentAt(3233, 3243),
+            }),
+        );
+        await agent.think(
+            perception({
+                tick: 6,
+                resident: residentAt(3233, 3243),
+            }),
+        );
+        const result = await agent.think(
+            perception({
+                tick: 7,
+                resident: residentAt(3233, 3243),
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am stuck near 3233,3243 trying to reach 3229,3247. Can someone lead me or open a route?',
+                cause: 'stuck_help_request',
+            },
+        ]);
+        expect(result.cause).toBe('stuck_help_request');
+    });
+
     it('tries to open a nearby door or gate before abandoning a stuck move', async () => {
         const blockedLandmark = { x: 3243, y: 3242, level: 0 };
         const door = { objectId: 1530, position: { x: 3233, y: 3244, level: 0 }, orientation: 0 };
