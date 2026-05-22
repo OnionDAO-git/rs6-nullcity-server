@@ -92,7 +92,127 @@ describe('hybrid agent prompts', () => {
         expect(prompt).toContain('stuck since tick: 40');
         expect(prompt).toContain('Do not repeat the same failed action');
     });
+
+    describe('SOUL identity injection', () => {
+        it('injects archetype directive language into the Brain prompt', () => {
+            const enduringPrompt = buildBrainPrompt({
+                soul: testSoulWith({ archetype: 'endurer' }),
+                perception: perception('Idle in Lumbridge.'),
+                commandPrefix: '!',
+            });
+            const mentorPrompt = buildBrainPrompt({
+                soul: testSoulWith({ archetype: 'mentor' }),
+                perception: perception('Idle in Lumbridge.'),
+                commandPrefix: '!',
+            });
+            const achieverPrompt = buildBrainPrompt({
+                soul: testSoulWith({ archetype: 'achiever' }),
+                perception: perception('Idle in Lumbridge.'),
+                commandPrefix: '!',
+            });
+
+            expect(enduringPrompt.toLowerCase()).toMatch(/endur|persever|survive/);
+            expect(mentorPrompt.toLowerCase()).toMatch(/teach|guid|mentor/);
+            expect(achieverPrompt.toLowerCase()).toMatch(/achiev|goal|accomplish|level/);
+        });
+
+        it('injects voice register and quirks into the Brain prompt as directive content', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({
+                    voice: {
+                        register: 'plain, measured, working-class',
+                        quirks: ['ends sentences with a slight pause', 'never says "obviously"'],
+                    },
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+            });
+
+            expect(prompt).toContain('plain, measured, working-class');
+            expect(prompt).toContain('ends sentences with a slight pause');
+            expect(prompt).toContain('never says "obviously"');
+            // Must be framed as instruction, not a JSON dump
+            expect(prompt.toLowerCase()).toMatch(/speak|tone|sound like|voice/);
+        });
+
+        it('injects voice into the Body prompt so chat actions sound in-character', () => {
+            const prompt = buildBodyPrompt({
+                soul: testSoulWith({
+                    voice: {
+                        register: 'gruff, sparse, a little rude',
+                        quirks: ['drops articles like a or the'],
+                    },
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+                visibility: { returnDue: false },
+            });
+
+            expect(prompt).toContain('gruff, sparse, a little rude');
+            expect(prompt).toContain('drops articles like a or the');
+            expect(prompt.toLowerCase()).toMatch(/voice|tone|speak/);
+        });
+
+        it('injects fears into the Brain prompt as behavior-shaping content', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({
+                    fears: ['being forgotten', 'failing in front of Codex'],
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+            });
+
+            expect(prompt).toContain('being forgotten');
+            expect(prompt).toContain('failing in front of Codex');
+            expect(prompt.toLowerCase()).toMatch(/fear|avoid|wary|protect/);
+        });
+
+        it('injects loves into the Brain prompt as preference-shaping content', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({
+                    loves: ['quiet woodcutting', 'the sound of a crackling fire'],
+                }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+            });
+
+            expect(prompt).toContain('quiet woodcutting');
+            expect(prompt).toContain('the sound of a crackling fire');
+            expect(prompt.toLowerCase()).toMatch(/love|prefer|drawn to|seek/);
+        });
+
+        it('omits identity sections cleanly when fields are absent', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({ voice: undefined, fears: undefined, loves: undefined }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+            });
+
+            // No empty "Voice:", "Fears:", "Loves:" header lines
+            expect(prompt).not.toMatch(/^Voice:\s*$/m);
+            expect(prompt).not.toMatch(/^Fears:\s*$/m);
+            expect(prompt).not.toMatch(/^Loves:\s*$/m);
+        });
+
+        it('archetype directive appears in the Body prompt so action selection respects it', () => {
+            const prompt = buildBodyPrompt({
+                soul: testSoulWith({ archetype: 'endurer' }),
+                perception: perception('Idle.'),
+                commandPrefix: '!',
+                visibility: { returnDue: false },
+            });
+
+            expect(prompt.toLowerCase()).toMatch(/endur|persever|survive/);
+        });
+    });
 });
+
+function testSoulWith(overrides: Partial<Soul['frontmatter']>): Soul {
+    return {
+        ...testSoul(),
+        frontmatter: { ...testSoul().frontmatter, ...overrides },
+    };
+}
 
 function testSoul(): Soul {
     return {
