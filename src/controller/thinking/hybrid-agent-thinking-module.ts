@@ -8,19 +8,31 @@ import type { ActiveGoalState, ActiveMoveState, RuntimeState } from '../memory/r
 import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
 import {
+    COIN_ITEM_IDS,
     COOKING_HEAT_OBJECT_IDS,
     FIRE_OBJECT_IDS,
+    FOOD_KEY_PATTERN,
     INTERACTION_APPROACH_RADIUS,
     LEVEL_ONE_TREE_IDS,
+    MAX_INVENTORY_SLOTS,
+    PICKUP_TARGET_COOLDOWN_TICKS,
     actionWithCause,
     buryBonesAction,
     distance,
     findSlot,
     firemakingAction,
     hasNearbyFire,
+    inventoryHasFreeSlot,
+    isOwnedByAnotherActor,
+    isPickupOnCooldown,
+    isUsefulGroundItem,
     levelOneWoodcuttingAction,
+    normalizeActorId,
+    opportunisticPickupAction,
+    pickupItemKey,
     starterFishingAction,
     starterFishingCookingAction,
+    usefulGroundItemPriority,
 } from '../spark/runescape-body-routines';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
@@ -101,19 +113,14 @@ const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
 const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
 const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
-const MAX_INVENTORY_SLOTS = 28;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const COMBAT_LOOT_MAX_DISTANCE = 6;
-const PICKUP_TARGET_COOLDOWN_TICKS = 120;
-const COIN_ITEM_IDS = new Set([995]);
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // Item / actor classification predicates and their constant tables now live in
 // `../spark/runescape-workflows` (Plan R-α). Body-routine action helpers and
 // their shared primitives (`distance`, `findSlot`, `hasNearbyFire`,
 // `FIRE_OBJECT_IDS`) live in `../spark/runescape-body-routines` (Plan R-β).
 // The monolith imports both above.
-const FOOD_KEY_PATTERN =
-    /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const OPENABLE_OBSTACLE_IDS = new Set([1530, 11707, 1533, 1516, 1519, 1536, 11993, 13001, 1551, 1553, 12986, 12987]);
 const FENCE_OBSTACLE_IDS = new Set([objectIds.shortCuts.fenceNearKharidCows]);
 const STUCK_OBSTACLE_RANGE = 2;
@@ -1958,98 +1965,9 @@ function explorationAction(
     return { kind: 'say', text: `I am scouting near ${here.x},${here.y} and staying findable.`, cause: 'explore_patrol' };
 }
 
-function opportunisticPickupAction(
-    perception: HybridPerception,
-    residentId?: string,
-    maxDistance?: number,
-    pickupCooldowns?: Record<string, number>,
-    currentTick = perception.tick ?? 0,
-): AgentAction | undefined {
-    const here = perception.resident?.position;
-    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
-        return undefined;
-    }
-
-    const suppressFiremakingLogPickup = hasNearbyFire(perception);
-    const item = (perception.nearby?.worldItems || [])
-        .filter(candidate => {
-            if (
-                (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
-                !isUsefulGroundItem(candidate) ||
-                isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
-                isPickupOnCooldown(candidate, pickupCooldowns, currentTick)
-            ) {
-                return false;
-            }
-            return maxDistance === undefined || distance(here, candidate.position) <= maxDistance;
-        })
-        .sort((a, b) => {
-            const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
-            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-        })[0];
-    if (!item) {
-        return undefined;
-    }
-
-    if (distance(here, item.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: item.position, range: INTERACTION_APPROACH_RADIUS, cause: 'opportunistic_pickup' };
-    }
-
-    return { kind: 'interact', target: item, option: 'pick-up', cause: 'opportunistic_pickup' };
-}
-
-function inventoryHasFreeSlot(inventory: Array<Item | null>): boolean {
-    return inventory.length < MAX_INVENTORY_SLOTS || inventory.some(item => item === null);
-}
-
-function isUsefulGroundItem(item: Item): boolean {
-    return (
-        COIN_ITEM_IDS.has(item.itemId) ||
-        /coins?/i.test(item.key || '') ||
-        isFiremakingLog(item) ||
-        isBones(item) ||
-        FOOD_KEY_PATTERN.test(item.key || '')
-    );
-}
-
-function usefulGroundItemPriority(item: Item): number {
-    if (COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '')) {
-        return 0;
-    }
-    if (FOOD_KEY_PATTERN.test(item.key || '')) {
-        return 1;
-    }
-    if (isFiremakingLog(item)) {
-        return 2;
-    }
-    if (isBones(item)) {
-        return 3;
-    }
-    return 4;
-}
-
-function isOwnedByAnotherActor(item: WorldItem, residentId?: string, perceptionResidentId?: string): boolean {
-    if (!item.ownerId) {
-        return false;
-    }
-
-    const owner = normalizeActorId(item.ownerId);
-    const residentIds = [residentId, perceptionResidentId].filter((id): id is string => Boolean(id)).map(normalizeActorId);
-    return !residentIds.includes(owner);
-}
-
-function isPickupOnCooldown(item: WorldItem, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
-    const last = cooldowns?.[pickupItemKey(item)];
-    return last !== undefined && currentTick - last < PICKUP_TARGET_COOLDOWN_TICKS;
-}
-
 function isExplorationOnCooldown(key: string, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
     const last = cooldowns?.[key];
     return last !== undefined && currentTick - last < EXPLORATION_TARGET_COOLDOWN_TICKS;
-}
-
-function pickupItemKey(item: WorldItem): string {
-    return `${item.itemId}:${item.key || ''}:${positionKey(item.position)}`;
 }
 
 function explorationActorCooldownKey(actor: Actor): string {
@@ -2123,13 +2041,6 @@ function worldItemLike(value: unknown): WorldItem | undefined {
         position,
         ownerId: typeof value.ownerId === 'string' ? value.ownerId : undefined,
     };
-}
-
-function normalizeActorId(id: string): string {
-    return id
-        .toLowerCase()
-        .replace(/^player:/, '')
-        .replace(/^resident:/, '');
 }
 
 function explorationPatrolTarget(here: Pos, anchor?: Pos): Pos {

@@ -98,6 +98,19 @@ export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([
     9682,
 ]);
 
+/** Max number of inventory slots considered "free" by the pickup routine. */
+export const MAX_INVENTORY_SLOTS = 28;
+
+/** Ticks before a pickup target is considered eligible again after a recent attempt. */
+export const PICKUP_TARGET_COOLDOWN_TICKS = 120;
+
+/** Item IDs treated as coins by the pickup routine. */
+export const COIN_ITEM_IDS: ReadonlySet<number> = new Set([995]);
+
+/** Item-key pattern matched against food-shaped ground items by the pickup routine. */
+export const FOOD_KEY_PATTERN =
+    /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
 /**
@@ -264,4 +277,113 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
     }
 
     return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };
+}
+
+// --- Opportunistic-pickup support helpers (moved verbatim from the monolith). ---
+
+/** True when the inventory has at least one free slot. */
+export function inventoryHasFreeSlot(inventory: Array<BodyItem | null>): boolean {
+    return inventory.length < MAX_INVENTORY_SLOTS || inventory.some(slot => slot === null);
+}
+
+/** True when the ground item is worth picking up. */
+export function isUsefulGroundItem(item: BodyItem): boolean {
+    return (
+        COIN_ITEM_IDS.has(item.itemId) ||
+        /coins?/i.test(item.key || '') ||
+        isFiremakingLog(item) ||
+        isBones(item) ||
+        FOOD_KEY_PATTERN.test(item.key || '')
+    );
+}
+
+/** Lower number = higher priority for opportunistic pickup. */
+export function usefulGroundItemPriority(item: BodyItem): number {
+    if (COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '')) {
+        return 0;
+    }
+    if (FOOD_KEY_PATTERN.test(item.key || '')) {
+        return 1;
+    }
+    if (isFiremakingLog(item)) {
+        return 2;
+    }
+    if (isBones(item)) {
+        return 3;
+    }
+    return 4;
+}
+
+/** Normalizes ids like `player:X` / `resident:X` to bare `x` for owner comparison. */
+export function normalizeActorId(id: string): string {
+    return id
+        .toLowerCase()
+        .replace(/^player:/, '')
+        .replace(/^resident:/, '');
+}
+
+/** True when the ground item belongs to a different actor than the resident. */
+export function isOwnedByAnotherActor(item: BodyWorldItem, residentId?: string, perceptionResidentId?: string): boolean {
+    if (!item.ownerId) {
+        return false;
+    }
+    const owner = normalizeActorId(item.ownerId);
+    const residentIds = [residentId, perceptionResidentId].filter((id): id is string => Boolean(id)).map(normalizeActorId);
+    return !residentIds.includes(owner);
+}
+
+/** Stable key uniquely identifying a ground-pickup target for cooldown tracking. */
+export function pickupItemKey(item: BodyWorldItem): string {
+    return `${item.itemId}:${item.key || ''}:${item.position.x},${item.position.y},${item.position.level}`;
+}
+
+/** True when the ground item is still inside its pickup-cooldown window. */
+export function isPickupOnCooldown(item: BodyWorldItem, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
+    const last = cooldowns?.[pickupItemKey(item)];
+    return last !== undefined && currentTick - last < PICKUP_TARGET_COOLDOWN_TICKS;
+}
+
+/**
+ * Scan for the nearest useful ground item, approach it, then pick it up.
+ * Respects firemaking-fire suppression, ownership filters, and pickup
+ * cooldowns. Moved verbatim from the monolith (R-β slice 6).
+ */
+export function opportunisticPickupAction(
+    perception: BodyHybridPerception,
+    residentId?: string,
+    maxDistance?: number,
+    pickupCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
+        return undefined;
+    }
+
+    const suppressFiremakingLogPickup = hasNearbyFire(perception);
+    const item = (perception.nearby?.worldItems || [])
+        .filter(candidate => {
+            if (
+                (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
+                !isUsefulGroundItem(candidate) ||
+                isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
+                isPickupOnCooldown(candidate, pickupCooldowns, currentTick)
+            ) {
+                return false;
+            }
+            return maxDistance === undefined || distance(here, candidate.position) <= maxDistance;
+        })
+        .sort((a, b) => {
+            const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
+    if (!item) {
+        return undefined;
+    }
+
+    if (distance(here, item.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: item.position, range: INTERACTION_APPROACH_RADIUS, cause: 'opportunistic_pickup' };
+    }
+
+    return { kind: 'interact', target: item, option: 'pick-up', cause: 'opportunistic_pickup' };
 }

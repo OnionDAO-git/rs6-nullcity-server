@@ -10,6 +10,7 @@ import {
     buryBonesAction,
     firemakingAction,
     levelOneWoodcuttingAction,
+    opportunisticPickupAction,
     starterFishingAction,
     starterFishingCookingAction,
     type BodyActor,
@@ -422,6 +423,131 @@ describe('starterFishingCookingAction', () => {
         const action = starterFishingCookingAction(
             perception({
                 resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('opportunisticPickupAction', () => {
+    const COINS = 995;
+    const BONES = 526;
+    const LOGS = 1511;
+
+    function ground(itemId: number, x: number, y: number, key?: string, ownerId?: string): BodyWorldItem {
+        return { itemId, amount: 1, position: { x, y, level: 0 }, key, ownerId };
+    }
+
+    it('returns "interact pick-up" when adjacent to a useful ground item with a free slot', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { id: 'resident:player', position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: coin,
+            option: 'pick-up',
+            cause: 'opportunistic_pickup',
+        });
+    });
+
+    it('moves toward the item when out of interaction range', () => {
+        const coin = ground(COINS, 105, 100);
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: coin.position,
+            range: 1,
+            cause: 'opportunistic_pickup',
+        });
+    });
+
+    it('prioritizes coins over food over logs over bones', () => {
+        const coin = ground(COINS, 102, 100);
+        const food = ground(99, 101, 100, 'rs:cooked_shrimp');
+        const log = ground(LOGS, 100, 100);
+        const bones = ground(BONES, 100, 101);
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [bones, log, food, coin] },
+            }),
+        );
+        // Coins win the priority tiebreaker even when further; routine moves toward them.
+        expect(action?.kind).toBe('move_to');
+        expect((action as unknown as { target: { x: number } }).target.x).toBe(102);
+    });
+
+    it('skips logs when a nearby fire is present (suppress firemaking-log pickup)', () => {
+        const log = ground(LOGS, 100, 100);
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: {
+                    worldItems: [log],
+                    objects: [{ objectId: FIRE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } }],
+                },
+            }),
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when ground item is owned by a different actor', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins', 'player:somebody-else');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { id: 'resident:mine', position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            'resident:mine',
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when ground item is on cooldown', () => {
+        const coin = ground(COINS, 100, 100);
+        const cooldowns = { [`995::100,100,0`]: 100 };
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            undefined,
+            undefined,
+            cooldowns,
+            150,
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('respects the maxDistance filter when given', () => {
+        const coin = ground(COINS, 110, 100);
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            undefined,
+            5,
+        );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when inventory is full', () => {
+        const inventory: Array<BodyItem | null> = Array.from({ length: 28 }, (_, i) => item(99 + i));
+        const coin = ground(COINS, 100, 100);
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory },
+                nearby: { worldItems: [coin] },
             }),
         );
         expect(action).toBeUndefined();
