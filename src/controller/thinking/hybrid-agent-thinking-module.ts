@@ -8,6 +8,13 @@ import type { ActiveGoalState, ActiveMoveState, RuntimeState } from '../memory/r
 import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
 import type { HybridAgentBehaviorDefinition, InferenceProfileDefinition, Soul } from '../soul/soul-schema';
 import {
+    FIRE_OBJECT_IDS,
+    distance,
+    findSlot,
+    firemakingAction,
+    hasNearbyFire,
+} from '../spark/runescape-body-routines';
+import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
     MEDIUM_RISK_BONE_SOURCE_PATTERN,
@@ -93,8 +100,10 @@ const COIN_ITEM_IDS = new Set([995]);
 const COOKING_HEAT_OBJECT_IDS = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // Item / actor classification predicates and their constant tables now live in
-// `../spark/runescape-workflows` (Plan R-α). The monolith imports them above.
-const FIRE_OBJECT_IDS = new Set([objectIds.fire]);
+// `../spark/runescape-workflows` (Plan R-α). Body-routine action helpers and
+// their shared primitives (`distance`, `findSlot`, `hasNearbyFire`,
+// `FIRE_OBJECT_IDS`) live in `../spark/runescape-body-routines` (Plan R-β).
+// The monolith imports both above.
 const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 const LEVEL_ONE_TREE_IDS = new Set([...objectIds.tree.normal.map(tree => tree.default), ...objectIds.tree.dead.map(tree => tree.default)]);
@@ -1442,30 +1451,6 @@ function parseBrainCompletion(text: string): { goal?: z.infer<typeof brainGoalSc
     return parsed.data;
 }
 
-function firemakingAction(perception: HybridPerception): AgentAction | undefined {
-    if (hasNearbyFire(perception)) {
-        return undefined;
-    }
-
-    const inventory = perception.resident?.inventory || [];
-    const tinderboxSlot = findSlot(inventory, isTinderbox);
-    const logSlot = findSlot(inventory, isFiremakingLog);
-    if (tinderboxSlot !== undefined && logSlot !== undefined) {
-        return { kind: 'use_item_on_item', itemSlot: tinderboxSlot, targetSlot: logSlot, cause: 'firemaking_fallback' };
-    }
-
-    return undefined;
-}
-
-function hasNearbyFire(perception: HybridPerception): boolean {
-    const here = perception.resident?.position;
-    if (!here) {
-        return false;
-    }
-
-    return (perception.nearby?.objects || []).some(object => FIRE_OBJECT_IDS.has(object.objectId) && distance(here, object.position) <= 1);
-}
-
 function firemakingGoal(tick: number): ActiveGoalState {
     return {
         id: 'make-fire',
@@ -1619,16 +1604,6 @@ function starterFishingAction(perception: HybridPerception): AgentAction | undef
     }
 
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
-}
-
-function findSlot(items: Array<Item | null>, predicate: (item: Item) => boolean): number | undefined {
-    for (let i = 0; i < items.length; i += 1) {
-        const item = items[i];
-        if (item && predicate(item)) {
-            return i;
-        }
-    }
-    return undefined;
 }
 
 function starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {
@@ -2665,10 +2640,6 @@ function normalizeText(text: string): string {
 
 function escapeRegExp(text: string): string {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function distance(a: Pos, b: Pos): number {
-    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
 function isMoveTo(action: AgentAction, target: Pos | undefined): boolean {
