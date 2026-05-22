@@ -1150,6 +1150,50 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('answers addressed small talk without waiting for Body inference', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('hey agent, how are you?', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am here and watching. I can follow, scout, make fires, fish, cook, trade, or train safely.',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_small_talk');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('asks for clarification on unknown addressed commands without waiting for Body inference', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent can you enchant my sword?', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I heard you. Try: agent status, follow me, explore, make fire, fish, cook, or train combat.',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_clarify');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('moves toward direct follow commands before Body inference', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();
@@ -2386,7 +2430,7 @@ describe('HybridAgentThinkingModule', () => {
                     ],
                 },
                 objects: [normalTree],
-                events: [chatFromCodex('agent make a fire', 3224, 3230)],
+                events: [chatFromCodex('agent make fire', 3224, 3230)],
             }),
         );
 

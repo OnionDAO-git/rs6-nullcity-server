@@ -941,9 +941,22 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
+        if (isSmallTalkIntent(command, chat.normalizedText)) {
+            return {
+                action: {
+                    kind: 'say',
+                    text: 'I am here and watching. I can follow, scout, make fires, fish, cook, trade, or train safely.',
+                },
+                cause: 'direct_chat_small_talk',
+            };
+        }
+
         return {
-            action: { kind: 'say', text: this.statusSpeech(perception, 'I hear you') },
-            cause: 'direct_chat_ack',
+            action: {
+                kind: 'say',
+                text: `I heard you. Try: ${this.commandPrefix()} status, follow me, explore, make fire, fish, cook, or train combat.`,
+            },
+            cause: 'direct_chat_clarify',
         };
     }
 
@@ -2135,7 +2148,13 @@ function mentionsCommandPrefix(text: string, commandPrefix: string): boolean {
 }
 
 function addressedCommand(text: string, commandPrefix: string): string {
-    return text.replace(new RegExp(`^${escapeRegExp(commandPrefix)}\\b[:,]?\\s*`, 'i'), '').trim();
+    const prefixPattern = new RegExp(`\\b${escapeRegExp(commandPrefix)}\\b[:,]?\\s*`, 'i');
+    const match = prefixPattern.exec(text);
+    if (!match) {
+        return text.trim();
+    }
+
+    return text.slice(match.index + match[0].length).trim();
 }
 
 function isFollowIntent(command: string, fullText: string): boolean {
@@ -2162,7 +2181,7 @@ function isStopIntent(command: string, fullText: string): boolean {
 function isStatusIntent(command: string, fullText: string): boolean {
     return (
         /^(status|where are you|what are you doing|what are you up to|are you working|say something|hello|hi|hey)\b/.test(command) ||
-        /\b(what are you doing|what are you up to|are you working|status|say something|hello|hi|hey)\b/.test(fullText)
+        /\b(what are you doing|what are you up to|are you working|status|say something)\b/.test(fullText)
     );
 }
 
@@ -2182,8 +2201,8 @@ function isInventoryIntent(command: string, fullText: string): boolean {
 
 function isFiremakingIntent(command: string, fullText: string): boolean {
     return (
-        /^(make a fire|light a fire|start a fire|burn logs|firemaking)\b/.test(command) ||
-        /\b(make a fire|light a fire|start a fire|firemaking)\b/.test(fullText)
+        /^(make a fire|make fire|light a fire|light fire|start a fire|burn logs|firemaking)\b/.test(command) ||
+        /\b(make a fire|make fire|light a fire|light fire|start a fire|firemaking)\b/.test(fullText)
     );
 }
 
@@ -2273,6 +2292,19 @@ function tradeOfferIntent(command: string): string | undefined {
 
 function isTradeAcceptIntent(command: string, fullText: string): boolean {
     return /^(accept trade|accept)\b/.test(command) || /\baccept trade\b/.test(fullText);
+}
+
+function isSmallTalkIntent(command: string, fullText: string): boolean {
+    if (/^(please\s+)?(can you|could you|would you|do|try|use|find|bring|get|give|equip|open|close|walk|move|run)\b/.test(command)) {
+        return false;
+    }
+
+    return (
+        command.length === 0 ||
+        /^(how are you|hello|hi|hey|thanks|thank you|good job|nice|cool)\b/.test(command) ||
+        /^(hello|hi|hey)\s+agent\b/.test(fullText) ||
+        /\b(how are you|thank you|thanks|good job|nice work)\b/.test(fullText)
+    );
 }
 
 function latestCombatAttacker(perception: HybridPerception): Actor | undefined {

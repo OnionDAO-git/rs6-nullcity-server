@@ -245,7 +245,8 @@ Safe public module facade building blocks are implemented, but the public member
   - Files: standard module Body/Brain code and tests
   - Deliverable: agent hears public chat, responds to direct commands, asks clarifying questions, and follows simple requests.
   - Verification: perception/chat tests for command prefix, direct name mention, and non-command small talk.
-  - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events. Still needs non-command small talk and clarifying-question tests.
+  - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events.
+  - Partial 2026-05-22: direct-chat fallback now distinguishes small talk from unknown addressed commands, gives a useful capability hint instead of a vague acknowledgement, and tests both paths without Body inference.
 
 - `[~]` **F3: Stuck recovery.**
   - Files: Body routine extraction files
@@ -426,12 +427,14 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Finish the behavior layer — non-command small talk, clarifying questions, deeper stuck recovery with help-request speech, combat survival personality, item trading, broader command vocabulary. Spec: `docs/superpowers/specs/2026-05-22-smarter-behavior-design.md`. 5 plans, one per sub-feature.
 
-- `[~]` **Q1 (F2): Non-command small talk + clarifying questions.** Resident responds in character to public chat that's not a command; asks a clarifying question instead of guessing on ambiguous commands.
+- `[x]` **Q1 (F2): Non-command small talk + clarifying questions.** Resident responds in character to public chat that's not a command; asks a clarifying question instead of guessing on ambiguous commands.
+  - Verified 2026-05-22: focused direct-chat tests cover addressed small talk and unknown addressed commands without Body inference.
 - `[~]` **Q2 (F3): Deeper stuck recovery with help-request speech.** When no useful local recovery exists, the resident says "I'm stuck near the eastern fence — can someone open the gate?"
   - Partial 2026-05-22: implemented generic coordinate-based help request after failed recovery movement; still needs richer blocker naming and live proof.
 - `[~]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
 - `[~]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
+  - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
 
 ## Workstream R: SPARK Module Extraction (finish B2-B5)
 
