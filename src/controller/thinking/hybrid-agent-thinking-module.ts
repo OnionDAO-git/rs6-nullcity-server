@@ -527,7 +527,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (fireAction) {
                 return { action: fireAction, cause: 'firemaking_fallback' };
             }
-            const woodcutting = actions.length === 0 ? levelOneWoodcuttingAction(perception) : undefined;
+            const explicitWoodcuttingGoalId = /woodcut|chop/i.test(goal.id);
+            const woodcutting = explicitWoodcuttingGoalId ? undefined : levelOneWoodcuttingAction(perception);
             if (woodcutting) {
                 return { action: woodcutting, cause: 'firemaking_gather_logs' };
             }

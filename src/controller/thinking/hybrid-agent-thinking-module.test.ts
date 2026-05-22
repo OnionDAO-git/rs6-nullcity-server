@@ -222,6 +222,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('firemaking_gather_logs');
     });
 
+    it('gathers logs locally for a fire goal instead of chasing a distant model target', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const farTree = { objectId: 1278, position: { x: 3241, y: 3235, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'interact', target: farTree, option: 'chop down' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'light-fire',
+                description: 'Gather logs and light a fire nearby.',
+                steps: ['get logs', 'use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                objects: [normalTree, farTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: normalTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('firemaking_gather_logs');
+    });
+
     it('does not re-light stale logs when a fresh fire is already visible nearby', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const fire = { objectId: 2732, position: { x: 3225, y: 3230, level: 0 }, orientation: 0 };
@@ -286,6 +327,34 @@ describe('HybridAgentThinkingModule', () => {
                 tick: 3,
                 resident: residentAt(3225, 3230),
                 objects: [willow, normalTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: normalTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('woodcutting_level1_routine');
+    });
+
+    it('keeps explicit woodcutting goals labeled as woodcutting when Body has no actions', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'chop-normal-tree',
+                description: 'Chop an ordinary nearby Tree to gather logs for firemaking practice.',
+                steps: ['Move beside a visible ordinary Tree or Dead tree', 'Interact with chop down'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3225, 3230),
+                objects: [normalTree],
             }),
         );
 
@@ -457,7 +526,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([{ kind: 'interact', target: tree, option: 'chop down', cause: 'woodcutting_level1_routine' }]);
-        expect(result.cause).toBe('firemaking_gather_logs');
+        expect(result.cause).toBe('woodcutting_level1_routine');
     });
 
     it('breaks out of repeated stationary woodcutting with a visible exploration move', async () => {
