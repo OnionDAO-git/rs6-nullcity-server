@@ -18,12 +18,14 @@ import {
     isCombatTrainingGoal,
     isDedicatedExplorationGoal,
     isExplorationGoal,
+    cleanSpeech,
     isFiremakingGoal,
     isFollowGoal,
     isPrayerTrainingGoal,
     isStarterFishingGoal,
     isWoodcuttingTrainingGoal,
     parseBrainCompletion,
+    summarizeGoalForSpeech,
     prayerGoal,
     starterCookingGoal,
     starterFishingCookingGoal,
@@ -126,6 +128,49 @@ describe('parseBrainCompletion', () => {
         const result = parseBrainCompletion('{"say":"Hi.","extra":"value"}');
         expect(result.say).toBe('Hi.');
         expect((result as Record<string, unknown>).extra).toBeUndefined();
+    });
+});
+
+describe('cleanSpeech', () => {
+    it('returns undefined for undefined input', () => {
+        expect(cleanSpeech(undefined)).toBeUndefined();
+    });
+
+    it('returns undefined for empty / whitespace-only input', () => {
+        expect(cleanSpeech('')).toBeUndefined();
+        expect(cleanSpeech('   ')).toBeUndefined();
+    });
+
+    it('collapses runs of whitespace into single spaces', () => {
+        expect(cleanSpeech('Hello   world\n\nthere')).toBe('Hello world there');
+    });
+
+    it('truncates output to 220 characters', () => {
+        const long = 'a'.repeat(300);
+        const result = cleanSpeech(long);
+        expect(result?.length).toBe(220);
+    });
+});
+
+describe('summarizeGoalForSpeech', () => {
+    it('returns clean text when under the max', () => {
+        expect(summarizeGoalForSpeech('Hello world.', false)).toBe('Hello world');
+    });
+
+    it('uses 160 char max when not reserving space', () => {
+        const result = summarizeGoalForSpeech('x'.repeat(200), false);
+        expect(result.endsWith('...')).toBe(true);
+        expect(result.length).toBe(160);
+    });
+
+    it('uses 96 char max when reserving space for next step', () => {
+        const result = summarizeGoalForSpeech('x'.repeat(200), true);
+        expect(result.endsWith('...')).toBe(true);
+        expect(result.length).toBe(96);
+    });
+
+    it('strips trailing sentence punctuation before truncation', () => {
+        expect(summarizeGoalForSpeech('  Hello world!!!  ', false)).toBe('Hello world');
     });
 });
 

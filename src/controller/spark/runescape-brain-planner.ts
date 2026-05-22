@@ -107,7 +107,7 @@ export function parseBrainCompletion(text: string): BrainCompletion {
     return parsed.data;
 }
 
-// --- String trim helper for follow-target names (moved verbatim from the monolith). ---
+// --- String / speech helpers (moved verbatim from the monolith). ---
 
 /**
  * Trim whitespace and strip trailing sentence punctuation from a target
@@ -116,6 +116,39 @@ export function parseBrainCompletion(text: string): BrainCompletion {
  */
 export function cleanTarget(text: string): string {
     return text.trim().replace(/[.!?]+$/g, '');
+}
+
+/**
+ * Sanitize a Brain `say` field for emission: trim, collapse internal
+ * whitespace, truncate to 220 chars. Returns undefined for empty /
+ * undefined input so callers can use `if (say) {...}` to gate emission.
+ * Mirrors the monolith's `cleanSpeech` helper.
+ */
+export function cleanSpeech(text: string | undefined): string | undefined {
+    const clean = text?.trim().replace(/\s+/g, ' ').slice(0, 220);
+    return clean || undefined;
+}
+
+/**
+ * Compact a goal description into a speech-friendly form: collapse
+ * whitespace, strip trailing sentence punctuation, truncate (with ellipsis)
+ * to either 96 or 160 chars depending on whether the caller needs to
+ * reserve space for a follow-on step. Mirrors the monolith's
+ * `summarizeGoalForSpeech` helper.
+ */
+export function summarizeGoalForSpeech(text: string, reserveSpaceForNextStep: boolean): string {
+    const clean = text
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(/[.!?]+$/g, '');
+    const max = reserveSpaceForNextStep ? 96 : 160;
+    if (clean.length <= max) {
+        return clean;
+    }
+    return `${clean
+        .slice(0, max - 3)
+        .trimEnd()
+        .replace(/[,:;.!?]+$/g, '')}...`;
 }
 
 // --- Goal factories (moved verbatim from the monolith). ---

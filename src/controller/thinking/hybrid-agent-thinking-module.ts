@@ -81,6 +81,7 @@ import {
 } from '../spark/runescape-nervous-rules';
 import {
     benchmarkGoalForTask,
+    cleanSpeech,
     cleanTarget,
     combatGoal,
     explorationGoal,
@@ -100,6 +101,7 @@ import {
     starterCookingGoal,
     starterFishingCookingGoal,
     starterFishingGoal,
+    summarizeGoalForSpeech,
     woodcuttingGoal,
 } from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
@@ -2175,26 +2177,6 @@ function actorLike(value: unknown): Actor | undefined {
         position,
         hpFraction: typeof value.hpFraction === 'number' ? value.hpFraction : undefined,
     };
-}
-
-function cleanSpeech(text: string | undefined): string | undefined {
-    const clean = text?.trim().replace(/\s+/g, ' ').slice(0, 220);
-    return clean || undefined;
-}
-
-function summarizeGoalForSpeech(text: string, reserveSpaceForNextStep: boolean): string {
-    const clean = text
-        .trim()
-        .replace(/\s+/g, ' ')
-        .replace(/[.!?]+$/g, '');
-    const max = reserveSpaceForNextStep ? 96 : 160;
-    if (clean.length <= max) {
-        return clean;
-    }
-    return `${clean
-        .slice(0, max - 3)
-        .trimEnd()
-        .replace(/[,:;.!?]+$/g, '')}...`;
 }
 
 function displayName(name: string): string {
