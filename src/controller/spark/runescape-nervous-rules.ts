@@ -112,3 +112,24 @@ export function stuckBlockerReportAction(
 
     return { kind: 'say', text: 'I am stuck near a fence. I will step away and try another route.', cause: 'stuck_blocker_report' };
 }
+
+/**
+ * Stuck-recovery escalation: when stuck-move-recovery itself has been
+ * unable to make progress, emit a 'say' help-request directed at any
+ * watching player. The active-move's cause must already be
+ * `stuck_move_recovery` for this to fire — otherwise stuck-recovery is
+ * not yet in the escalated stage.
+ *
+ * Moved verbatim from the monolith (R-γ).
+ */
+export function stuckHelpRequestAction(here: BodyPos, active: NervousActiveMoveState): AgentAction | undefined {
+    if (active.cause !== 'stuck_move_recovery') {
+        return undefined;
+    }
+
+    return {
+        kind: 'say',
+        text: `I am stuck near ${here.x},${here.y} trying to reach ${active.target.x},${active.target.y}. Can someone lead me or open a route?`,
+        cause: 'stuck_help_request',
+    };
+}

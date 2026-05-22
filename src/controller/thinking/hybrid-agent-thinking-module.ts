@@ -74,6 +74,7 @@ import {
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
     stuckBlockerReportAction,
+    stuckHelpRequestAction,
     stuckOpenObstacleAction,
 } from '../spark/runescape-nervous-rules';
 import type { AgentAction, Perception } from '../transport/message-codecs';
@@ -1838,18 +1839,6 @@ function worldItemLike(value: unknown): WorldItem | undefined {
         amount: value.amount,
         position,
         ownerId: typeof value.ownerId === 'string' ? value.ownerId : undefined,
-    };
-}
-
-function stuckHelpRequestAction(here: Pos, active: ActiveMoveState): AgentAction | undefined {
-    if (active.cause !== 'stuck_move_recovery') {
-        return undefined;
-    }
-
-    return {
-        kind: 'say',
-        text: `I am stuck near ${here.x},${here.y} trying to reach ${active.target.x},${active.target.y}. Can someone lead me or open a route?`,
-        cause: 'stuck_help_request',
     };
 }
 

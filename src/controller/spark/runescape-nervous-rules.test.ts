@@ -11,6 +11,7 @@ import {
     OPENABLE_OBSTACLE_IDS,
     STUCK_OBSTACLE_RANGE,
     stuckBlockerReportAction,
+    stuckHelpRequestAction,
     stuckOpenObstacleAction,
     type NervousActiveMoveState,
     type NervousHybridPerception,
@@ -193,6 +194,30 @@ describe('stuckBlockerReportAction', () => {
             { x: 100, y: 100, level: 0 },
             activeMove(),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('stuckHelpRequestAction', () => {
+    it("returns a help-request 'say' action when active.cause is stuck_move_recovery", () => {
+        const action = stuckHelpRequestAction(
+            { x: 100, y: 100, level: 0 },
+            activeMove({ cause: 'stuck_move_recovery', target: { x: 120, y: 100, level: 0 } }),
+        );
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I am stuck near 100,100 trying to reach 120,100. Can someone lead me or open a route?',
+            cause: 'stuck_help_request',
+        });
+    });
+
+    it('returns undefined when active.cause is not stuck_move_recovery', () => {
+        const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, activeMove({ cause: 'continue_move' }));
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when active.cause is missing', () => {
+        const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, activeMove());
         expect(action).toBeUndefined();
     });
 });
