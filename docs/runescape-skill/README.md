@@ -9,7 +9,7 @@ The controller's runtime prompt knowledge currently comes from `src/controller/k
 1. `starter-workflows.md` for basic goals the resident should attempt.
 2. `items.md` for starter tools, food, and inventory signals.
 3. `places.md` for known useful areas and visibility anchors.
-4. `skills/` for deeper per-skill workflow knowledge beyond starter. Currently: `skills/combat.md`, `skills/cooking.md`, `skills/crafting.md`, `skills/farming.md`, `skills/firemaking.md`, `skills/fishing.md`, `skills/fletching.md`, `skills/herblore.md`, `skills/mining.md`, `skills/prayer.md`, `skills/runecrafting.md`, `skills/smithing.md`, `skills/thieving.md`, `skills/trading.md`, `skills/woodcutting.md`. Add new skill files here as they're written. Each file should be agent-readable in the same prose-and-numbered-list style as `starter-workflows.md`.
+4. `skills/` for deeper per-skill workflow knowledge beyond starter. Currently: `skills/agility.md`, `skills/combat.md`, `skills/construction.md`, `skills/cooking.md`, `skills/crafting.md`, `skills/farming.md`, `skills/firemaking.md`, `skills/fishing.md`, `skills/fletching.md`, `skills/herblore.md`, `skills/mining.md`, `skills/prayer.md`, `skills/runecrafting.md`, `skills/slayer.md`, `skills/smithing.md`, `skills/thieving.md`, `skills/trading.md`, `skills/woodcutting.md`. Add new skill files here as they're written. Each file should be agent-readable in the same prose-and-numbered-list style as `starter-workflows.md`.
 5. `docs/controller-knowledge-runbook.md` for reviewing and promoting agent-suggested knowledge.
 
 ## Update Rules
