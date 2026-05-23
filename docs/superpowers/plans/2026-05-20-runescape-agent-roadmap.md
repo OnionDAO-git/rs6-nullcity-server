@@ -422,7 +422,8 @@ Safe public module facade building blocks are implemented, but the public member
   - *Completed: agility.md, combat.md, construction.md, cooking.md, crafting.md, farming.md, firemaking.md, fishing.md, fletching.md, herblore.md, mining.md, prayer.md, runecrafting.md, slayer.md, smithing.md, thieving.md, woodcutting.md. Remaining: none.*
 
 
-- `[~]` **P3: Skills batch 2 — remaining skills.** Cover all 23 with per-skill mini-playbooks.
+- `[x]` **P3: Skills batch 2 — remaining skills.** Cover all 23 with per-skill mini-playbooks.
+  - *Completed: Shipped magic.md and ranged.md, fully completing playbooks for all RuneScape skills.*
 - `[x]` **P4: World geography.** Lumbridge, Varrock, Falador, Edgeville, Al Kharid; guilds; banks; wilderness boundary; travel routes.
   - *Completed: Added 7 regional geography playbooks under places/ and replaced places.md with an index.*
 - `[x]` **P5: NPCs + items.** Combat NPCs, shopkeepers, key quest-givers; weapons/food/prayer items/tools by tier.
