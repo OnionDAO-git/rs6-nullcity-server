@@ -97,6 +97,12 @@ Implications:
 
 The pre-existing noisy history on `nullcity` stays as-is; rewriting shared history is dangerous. The new convention applies forward.
 
+**Merge owner + cadence floor (added 2026-05-23 PM after audit found `agents/wip` was 112 commits ahead of `nullcity` with zero squash-merges since the cutover):**
+
+- **Merge owner.** The agent that posts the final HANDOFF on the most recent full workstream slice MUST also perform the squash-merge to `nullcity` within the same cycle. Stage from `agents/wip@<that-completion-sha>` (not `HEAD`) so in-flight WIP from other agents is not pulled in early.
+- **Cadence floor.** If 48h pass since the last squash-merge AND `agents/wip` is >20 commits ahead of `nullcity`, the next cron-fired agent (regardless of workstream) is REQUIRED to spend that cycle doing a squash-merge instead of new work. The commit subject names the rolled-up slices (e.g. "Squash: J-α-3..J-ε + RB-MCP α..ε + N-α..α-3 + L-α..β + M-α..α-2 + K-α"); the body lists per-slice SHAs from `agents/wip`.
+- **Counter-trip.** A merge that itself counts toward the cadence: after the squash-merge, the agent appends a STARTING+HANDOFF pair to `agent-status.md` recording the SHA range merged and the resulting `nullcity` tip.
+
 ### Rule 4 — Cross-repo seams are contracts
 
 The dashboard repo reads from the server repo via:
@@ -125,7 +131,9 @@ Each is documented in the spec at `docs/superpowers/specs/2026-05-21-spark-evide
 
 One line, plain text, no editorializing. Other agents read the tail before starting work.
 
-**Brevity convention (added 2026-05-23 after the log grew to ~150 entries):** keep STARTING and HANDOFF lines under ~250 characters each. Required fields: timestamp, agent, branch, workstream, STARTING/HANDOFF, one-sentence summary, commit SHA (HANDOFF only), test count (HANDOFF only), collision note. Everything else — multi-slice arc rollups, prose narrative, file-by-file changes, before/after counts — belongs in the **commit body**, not the status log. The log is a coordination signal, not a deliverables narrative. Long HANDOFFs make the tail expensive to read every cycle and bury the coordination signal.
+**Brevity convention (revised 2026-05-23 PM after audit found 148/217 entries — 68% — over the soft 250-char target, longest at 2486 chars):** STARTING and HANDOFF lines are HARD-capped at **280 characters** (one tweet). The cap is enforced by the agent: if your draft is longer, cut it. Required fields only: timestamp, agent, branch, workstream, STARTING|HANDOFF, one-sentence summary, commit SHA (HANDOFF only), test count (HANDOFF only), collision note. Multi-slice rollups, slice-by-slice arcs, line-count deltas, before/after comparisons, "next-slice recommendations" — these belong in the **commit body** OR a separate `docs/slice-notes-YYYY-MM-DD.md` file, NEVER in the status log. Self-check before appending: count chars. If over 280, delete the longest sentence and ship. The log is a coordination signal, not a release-notes channel.
+
+**STARTING lines must enumerate touched files explicitly (added 2026-05-23 PM after audit found vague `Files: thinking/runtime/roadmap` STARTING lines that other agents could not pattern-match against):** every STARTING MUST include a `Files:` segment listing each touched file by repo-relative path (no directory shorthand). The set of "STARTING without matching HANDOFF" lines is the live file-lock table. Before editing, every agent greps the last 100 lines of `agent-status.md` for an unhandled STARTING that names any file in its candidate file set; if there's a match, the agent either waits, picks a different slice, or posts a brief "BLOCKED-ON: <other-STARTING-timestamp>" line and yields. The roadmap marker is *intent*; the status log STARTING is the *lock*. Use both.
 
 Good HANDOFF (≈220 chars):
 ```
@@ -180,7 +188,25 @@ Whenever the next agent fires and notices:
 
 The pattern is preventive, not punitive. The 30-cycle / 24h cadence is a default — the maintainer's "we are doing the right things?" prompt always wins.
 
-The first instance is `docs/strategic-review-2026-05-23.md`.
+The first instance is `docs/strategic-review-2026-05-23.md`. The second is `docs/strategic-review-2026-05-23-pm.md`.
+
+### Rule 9 — Roadmap is the only shared task tracker (added 2026-05-23 PM)
+
+After a reconciliation cycle found 7 tasks marked `[pending]` in claude's CLI task list that were actually `[completed]` in code (J-α-3, J-α-4, J-β, I-β, I-β-2, RB-MCP-γ, RB-MCP-ε — shipped by codex/antigravity without updating the roadmap):
+
+The maintainer-facing source of truth for task state is **the roadmap markdown file** (`docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`), not any agent's CLI task list. After a HANDOFF that completes a roadmap-tagged slice, the same commit (or the immediately following one) MUST flip the roadmap marker from `[>]` → `[x]` (or `[!]` if blocked). Agents that don't maintain a CLI task list (codex, antigravity) only need to update the roadmap. Agents that do (claude) reconcile their CLI list FROM the roadmap at the start of each cycle, not the other way around. The CLI task list is a private scratchpad; treat it as derived state.
+
+### Rule 10 — No untracked WIP across cycles + never `git add -A` (added 2026-05-23 PM)
+
+After incident `23cf468d` (claude's R-δ slice 2, 2026-05-22 night) where `git add -A` swept codex's untracked `context-derivation.{ts,test.ts}` into an unrelated commit, and after repeated stash-pull-pop friction caused by other agents leaving WIP in the shared tree:
+
+At the end of every cycle, the working tree on `agents/wip` MUST be clean — `git status --short` returns nothing. Acceptable dispositions for in-progress work between cycles:
+
+1. **Commit to `agents/wip`** with a `WIP:` subject prefix (cheap; squash later if you want).
+2. **Stash with a named message**: `git stash push -m "<agent>:<topic>"`.
+3. **Move to a personal worktree branch** (`<agent>/<topic>`) and switch back.
+
+When staging, agents use **explicit file paths** in `git add`, never `git add -A` or `git add .` — this prevents sweeping in another agent's stashed-but-not-committed work. If you genuinely want to stage everything, list the paths from `git status --short`.
 
 ## Specific Coordination For Workstream I (Evidence Layer)
 
