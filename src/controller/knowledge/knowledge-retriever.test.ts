@@ -40,6 +40,60 @@ describe('RuneScape knowledge retriever', () => {
         expect(formatted.length).toBeLessThanOrEqual(1000);
     });
 
+    describe('additional skill entries (magic, ranged, cooking, smithing, trading)', () => {
+        it('retrieves magic knowledge for a spellcasting query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'cast a wind strike spell with air and mind runes', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-magic-basic');
+            const magic = results.find(result => result.entry.id === 'skill-magic-basic')?.entry;
+            expect(magic?.requiredItems).toEqual(expect.arrayContaining(['rs:mind_rune']));
+            expect(magic?.actions).toEqual(expect.arrayContaining(['cast_spell']));
+            expect(magic?.successSignals?.join(' ')).toMatch(/rune/i);
+        });
+
+        it('retrieves ranged knowledge for a bow-and-arrow query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'shoot chickens with a shortbow and bronze arrows', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-ranged-basic');
+            const ranged = results.find(result => result.entry.id === 'skill-ranged-basic')?.entry;
+            expect(ranged?.requiredItems?.join(' ')).toMatch(/bow|arrow/i);
+            expect(ranged?.actions).toEqual(expect.arrayContaining(['attack']));
+        });
+
+        it('retrieves cooking knowledge for a cook-shrimp query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'cook raw shrimp on a fire to make food', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-cooking-basic');
+            const cooking = results.find(result => result.entry.id === 'skill-cooking-basic')?.entry;
+            expect(cooking?.requiredItems?.join(' ')).toMatch(/raw|fire|range/i);
+            expect(cooking?.actions?.join(' ')).toMatch(/use_item_on_item/);
+            expect(cooking?.successSignals?.join(' ')).toMatch(/cooked|cooking xp/i);
+        });
+
+        it('retrieves smithing knowledge for a smelt-bronze query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'smelt copper and tin into a bronze bar at a furnace', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-smithing-basic');
+            const smithing = results.find(result => result.entry.id === 'skill-smithing-basic')?.entry;
+            expect(smithing?.requiredItems?.join(' ')).toMatch(/copper|tin|bar|hammer/i);
+            expect(smithing?.successSignals?.join(' ')).toMatch(/bar|bronze|smithing xp/i);
+        });
+
+        it('retrieves trading knowledge for a trade-with-player query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'trade items with another player using trade request', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-trading-basic');
+            const trading = results.find(result => result.entry.id === 'skill-trading-basic')?.entry;
+            expect(trading?.actions?.join(' ')).toMatch(/trade_request|trade_offer_item|trade_accept|trade_decline/);
+            expect(trading?.successSignals?.join(' ')).toMatch(/trade window|accepted|received/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {
