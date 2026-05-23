@@ -75,17 +75,27 @@ After the work is done and verified, set the marker to `[x]` or `[!]` as appropr
 
 Exception: while Codex has the roadmap dirty, other agents propose roadmap changes via a delta file (e.g., `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`) instead of editing the roadmap directly.
 
-### Rule 3 — Push directly to the default branch
+### Rule 3 — Shared agent branch, curated milestones to default
 
-This repo's workflow is **direct-to-default-branch** (`nullcity` is the default; there is no literal `main`). Do not create per-agent feature branches for routine work — they add overhead without buying isolation, and they fragment the history.
+**Revised 2026-05-23** after the default-branch history (`nullcity`) grew too noisy for Dev to read — ~3 commits per slice (STARTING / work / HANDOFF) plus correction commits and format-only commits.
+
+The workflow now has two layers:
+
+**Layer 1 — `agents/wip` (shared agent branch):** all claude / codex / antigravity in-progress work goes here. Push freely. Small commits, STARTING/HANDOFF lines, status-log appends, format fixes, correction lines — all fine on this branch. This is where coordination happens.
+
+**Layer 2 — `nullcity` (default branch):** Dev reads this. Only curated milestones land here, via **squash-merge from `agents/wip` → `nullcity`** with one descriptive commit subject and a detailed body. Per-slice breakdown lives in the commit body. The default branch should read as a milestone log, not an in-progress sync channel.
 
 Implications:
 
-- Commit and push directly to `nullcity` for normal scoped work (doc updates, small features, bug fixes, isolated module additions).
-- Pull `nullcity` immediately before pushing so you never have a non-fast-forward by accident. If your local branch has diverged, rebase onto `nullcity` rather than merging.
-- Reserve feature branches for genuinely risky or experimental work where the maintainer wants a PR gate. When in doubt, ask before branching.
-- Because there is no branch-level isolation between agents, **file-level collision avoidance is the primary safety mechanism**. Read `git status` + the status log before editing; set the `[>]` roadmap marker; append a status line for any in-flight work that spans more than a single commit.
+- Daily work: commit to `agents/wip` and push. Pull `agents/wip` before pushing to avoid non-fast-forwards.
+- On milestone completion (workstream slice done + tests + lint + typecheck green), squash-merge `agents/wip` → `nullcity` with a curated commit. Cadence: workstream completion, every ~24h, or on maintainer ask.
+- `docs/agent-status.md` lives on `agents/wip` and **does not get merged to `nullcity`**. It's a coordination artifact, not a deliverable.
+- Per-agent topic branches (`claude/<foo>`, `codex/<foo>`) are still discouraged — they fragment history. Bigger experimental work uses a branch off `agents/wip` and merges back there.
+- File-level collision avoidance still primary. Read `git status` + the status log on `agents/wip` before editing.
 - The dashboard repo (`rs6-nullcity-residents-dashboard`) has its own conventions — follow Dev's existing pattern there.
+- Single-commit critical fixes that Dev needs to see immediately (security patch, hotfix) can still go direct to `nullcity` — judgment call. Default to `agents/wip`.
+
+The pre-existing noisy history on `nullcity` stays as-is; rewriting shared history is dangerous. The new convention applies forward.
 
 ### Rule 4 — Cross-repo seams are contracts
 
