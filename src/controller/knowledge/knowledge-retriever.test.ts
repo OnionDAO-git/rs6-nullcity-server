@@ -197,6 +197,71 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('place navigation entries (lumbridge, varrock, falador, edgeville, al-kharid, draynor, wilderness)', () => {
+        it('retrieves lumbridge-anchor entry for a lumbridge query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'walk to lumbridge castle bank and the kitchen range', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-lumbridge-anchor');
+            const place = results.find(result => result.entry.id === 'place-lumbridge-anchor')?.entry;
+            expect(place?.summary).toMatch(/3222,3218|spawn|castle/i);
+        });
+
+        it('retrieves varrock-hub entry for a varrock query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'go to varrock square and visit aubury rune shop', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-varrock-hub');
+            const place = results.find(result => result.entry.id === 'place-varrock-hub')?.entry;
+            expect(place?.summary).toMatch(/aubury|east bank|west bank|3211/i);
+        });
+
+        it('retrieves falador entry for a falador-mine query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'mine ore at the dwarven mine in falador', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-falador');
+            const place = results.find(result => result.entry.id === 'place-falador')?.entry;
+            expect(place?.summary).toMatch(/dwarven mine|mining guild|bank/i);
+        });
+
+        it('retrieves edgeville entry for a bank-altar query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'restore prayer at edgeville monastery altar', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-edgeville');
+            const place = results.find(result => result.entry.id === 'place-edgeville')?.entry;
+            expect(place?.summary).toMatch(/monastery|altar|bank/i);
+        });
+
+        it('retrieves al-kharid entry for a tanner query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'tan cowhide at the al-kharid tanner', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-al-kharid');
+            const place = results.find(result => result.entry.id === 'place-al-kharid')?.entry;
+            expect(place?.summary).toMatch(/tanner|warrior|toll/i);
+        });
+
+        it('retrieves draynor-village entry for a willow query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'chop willow trees in draynor village', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-draynor-village');
+            const place = results.find(result => result.entry.id === 'place-draynor-village')?.entry;
+            expect(place?.summary).toMatch(/willow|fishing|wise old man/i);
+        });
+
+        it('retrieves wilderness-danger entry for a wilderness query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'go to the wilderness ditch', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('place-wilderness-danger');
+            const place = results.find(result => result.entry.id === 'place-wilderness-danger')?.entry;
+            expect(place?.summary).toMatch(/PvP|ditch|DANGER|do not engage/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {

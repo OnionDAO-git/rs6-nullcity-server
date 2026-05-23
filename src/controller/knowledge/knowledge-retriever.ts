@@ -447,6 +447,83 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'Giant Rat (combat level 6, 7 HP, max hit 1, AGGRESSIVE, hits stack) is a CAUTION-tier combat target. Spawn cluster: Lumbridge cellar lower floor, Varrock sewers, some wilderness fringe lairs. Drops bones only. Engage only at combat level 8 or higher; always carry food and verify a retreat path before entering the spawn area.',
     },
+    {
+        id: 'place-lumbridge-anchor',
+        title: 'Place: Lumbridge (Default Spawn Anchor)',
+        topics: ['place', 'lumbridge', 'spawn', 'starter', 'navigation', 'visibility'],
+        keywords: ['lumbridge', 'castle', 'kitchen', 'general store', 'bobs axes', 'spawn', 'tutorial', 'church', 'altar', 'home teleport'],
+        actions: ['move_to specific coord', 'interact talk-to RuneScape Guide for orientation'],
+        successSignals: ['position lands inside town square', 'dashboard position changes', 'nearby objects show castle / general store / chapel'],
+        source: 'docs/runescape-skill/places/lumbridge.md',
+        summary:
+            'Lumbridge is the default spawn and the safest visibility anchor. Key coords: spawn 3222,3218,0; castle bank top floor 3208,3219,2; castle kitchen 3208,3213,0 (cooking range); general store 3203,3247,0 (tinderbox/pot/jug 1-4 gp); Bob\'s Brilliant Axes 3231,3203,0; Lumbridge Church 3242,3208,0 (altar restores Prayer); toll gate east 3268,3227,0 (10 gp to Al-Kharid). Use Home Teleport for free return every 5 min.',
+    },
+    {
+        id: 'place-varrock-hub',
+        title: 'Place: Varrock (Central Trading Hub)',
+        topics: ['place', 'varrock', 'bank', 'shops', 'navigation', 'rune'],
+        keywords: ['varrock', 'varrock square', 'east bank', 'west bank', 'aubury', 'lowes archery', 'horvik', 'thessalia', 'zaff', 'sawmill', 'kings palace', 'reldo'],
+        actions: ['move_to specific coord', 'interact trade with shopkeeper'],
+        successSignals: ['position lands inside city walls', 'nearby objects show bank booths / shop counters'],
+        source: 'docs/runescape-skill/places/varrock.md',
+        summary:
+            'Varrock is the central trading hub for mid-game progression. Key coords: square 3211,3424,0 (Romeo + market); east bank 3253,3420,0 (closest to Aubury); west bank 3185,3436,0; Aubury\'s Rune Shop 3253,3401,0 (Air/Water/Earth/Fire/Mind/Body runes + Rune Essence teleport); Lowe\'s Archery 3233,3424,0; Horvik\'s Armour 3229,3434,0; Zaff\'s Staves 3203,3424,0; King Roald 3220,3475,0; Reldo (library) 3211,3492,0. Avoid wilderness ditch north.',
+    },
+    {
+        id: 'place-falador',
+        title: 'Place: Falador (Mining + Crafting Hub)',
+        topics: ['place', 'falador', 'mining', 'dwarven mine', 'bank', 'navigation'],
+        keywords: ['falador', 'dwarven mine', 'mining guild', 'east bank', 'west bank', 'white knights', 'falador park', 'armour shop'],
+        actions: ['move_to specific coord', 'interact mine ore at rock'],
+        successSignals: ['position lands inside city walls', 'nearby objects show bank booths / mine ladder / shops'],
+        source: 'docs/runescape-skill/places/falador.md',
+        summary:
+            'Falador is the mining hub: Dwarven Mine entrance ladder ~3018,3450,0 (multi-tier ore from copper/tin/iron up to coal/mithril/adamant for higher levels); Mining Guild south entrance ~3017,9740,0 requires 60 Mining. Two banks: east 3013,3355,0 and west 2946,3369,0. Armour shops and White Knight headquarters on the north side. Yew trees just outside the south wall.',
+    },
+    {
+        id: 'place-edgeville',
+        title: 'Place: Edgeville (Fast Bank + Prayer Restore)',
+        topics: ['place', 'edgeville', 'bank', 'monastery', 'altar', 'prayer', 'fishing', 'wilderness-border'],
+        keywords: ['edgeville', 'bank', 'monastery', 'abbot langley', 'altar', 'prayer restore', 'yew', 'fishing', 'border'],
+        actions: ['move_to specific coord', 'interact pray at altar'],
+        successSignals: ['position lands inside town', 'prayer points restored at altar', 'bank interface opens'],
+        source: 'docs/runescape-skill/places/edgeville.md',
+        summary:
+            'Edgeville is the fastest small-town bank-and-altar pair. Bank 3094,3243,0 (closest bank to Edgeville fishing spot lobster pots and willows). Edgeville Monastery (south of town, ~3056,3484,0) has the Prayer altar that fully restores Prayer points. Yew trees just outside town to the east. Wilderness ditch is ONE TILE NORTH of bank — do not cross unless explicitly told.',
+    },
+    {
+        id: 'place-al-kharid',
+        title: 'Place: Al-Kharid (Combat + Tanner + Kebabs)',
+        topics: ['place', 'al-kharid', 'tanner', 'warrior', 'combat', 'navigation'],
+        keywords: ['al-kharid', 'al kharid', 'tanner', 'warrior', 'kebab', 'karim', 'palace', 'toll gate', 'desert'],
+        actions: ['move_to specific coord', 'interact trade tanner with cowhide', 'interact buy kebab'],
+        successSignals: ['position lands inside town', 'cowhide becomes leather / soft leather'],
+        source: 'docs/runescape-skill/places/al-kharid.md',
+        summary:
+            'Al-Kharid sits east of Lumbridge across the 10 gp toll gate (3268,3227,0). Key coords: tanner ~3273,3192,0 (tans cowhide to leather 1 gp, soft leather 3 gp); Warrior courtyard ~3290,3179,0 (level 9 warriors — combat training step); Karim\'s Kebab Shop ~3273,3179,0 (kebab eat to heal ~5 HP); palace north end. Heat damage in the desert south — avoid without waterskins.',
+    },
+    {
+        id: 'place-draynor-village',
+        title: 'Place: Draynor Village (Willows + Fishing + Quests)',
+        topics: ['place', 'draynor', 'draynor-village', 'willow', 'fishing', 'master-farmer', 'navigation'],
+        keywords: ['draynor', 'draynor village', 'willow', 'willow tree', 'fishing spot', 'master farmer', 'wise old man', 'diango', 'aggie', 'morgan'],
+        actions: ['move_to specific coord', 'interact chop willow', 'interact fish at lure spot'],
+        successSignals: ['position lands inside village', 'inventory gains rs:willow_logs or rs:raw_trout'],
+        source: 'docs/runescape-skill/places/draynor-village.md',
+        summary:
+            'Draynor Village is a 5-tile bank-to-willow run: willows ~3088,3236,0 just west of the bank 3094,3243,0. Also has Master Farmer NPC to pickpocket for herb seeds (43 Thieving). Wise Old Man house ~3088,3253,0 for mid-game quest hints. Aggie the witch brews dyes. Draynor Manor north houses Vampire Slayer quest target.',
+    },
+    {
+        id: 'place-wilderness-danger',
+        title: 'Place: Wilderness — DANGER (PvP, Item Loss)',
+        topics: ['place', 'wilderness', 'pvp', 'danger', 'no-engage', 'avoidance'],
+        keywords: ['wilderness', 'wildy', 'pvp', 'pk', 'player killer', 'ditch', 'skull', 'item loss', 'edgeville border'],
+        actions: ['NEVER move_to wilderness coords without explicit permission', 'move_to safety southward if accidentally crossed'],
+        successSignals: ['position stays SOUTH of the wilderness ditch line', 'no skull icon on player', 'no other player attacks'],
+        source: 'docs/runescape-skill/places/wilderness.md',
+        summary:
+            'The Wilderness is a PvP zone north of Edgeville / Varrock. Crossing the ditch puts you at risk of player-vs-player attack AND lose-on-death of all but 3 items (0 if skulled). DANGER: do not engage past the wilderness ditch unless the maintainer has explicitly told you. If you find yourself in wilderness, run south immediately. PvP combat level brackets restrict who can attack whom but at low levels everyone is fair game.',
+    },
 ];
 
 const STOP_WORDS = new Set([
