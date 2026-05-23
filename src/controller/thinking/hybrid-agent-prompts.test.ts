@@ -93,6 +93,32 @@ describe('hybrid agent prompts', () => {
         expect(prompt).toContain('Do not repeat the same failed action');
     });
 
+    it('injects recent Library memories into Brain and Body prompts', () => {
+        const memories = [
+            'Patron gift from alice@onion: rs:tinderbox (2026-05-22 10:00:00)',
+            'say: I promised to cook shrimp for Codex. at 2026-05-22 11:00:00',
+        ];
+        const brain = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Idle in Lumbridge.'),
+            commandPrefix: '!',
+            memories,
+        });
+        const body = buildBodyPrompt({
+            soul: testSoul(),
+            perception: perception('Idle in Lumbridge.'),
+            commandPrefix: '!',
+            memories,
+            visibility: { returnDue: false },
+        });
+
+        for (const prompt of [brain, body]) {
+            expect(prompt).toContain('Recent Library memories');
+            expect(prompt).toContain('alice@onion');
+            expect(prompt).toContain('cook shrimp for Codex');
+        }
+    });
+
     describe('SOUL identity injection', () => {
         it('injects archetype directive language into the Brain prompt', () => {
             const enduringPrompt = buildBrainPrompt({

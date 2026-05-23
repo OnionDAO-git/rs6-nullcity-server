@@ -5,6 +5,7 @@ import { NervousSystem } from '../nervous-system';
 import type { Soul } from '../soul/soul-schema';
 import { createThinkingModuleSelection, type ThinkingModule } from '../thinking';
 import { createSparkModuleTelemetry, type SparkModuleTelemetry, type SparkModuleTelemetryLogEntry } from './module-telemetry';
+import { PatronRegistry } from '../patron/patron-registry';
 import {
     resolveSparkModules,
     sparkModuleIdentity,
@@ -21,6 +22,7 @@ export interface SparkRuntimeFacetOptions {
     llm: LlmClient;
     sparkModules?: SparkModule[];
     moduleTelemetry?: (entry: SparkModuleTelemetryLogEntry) => void;
+    patronRegistry?: PatronRegistry;
 }
 
 export interface SparkRuntimeFacets {
@@ -55,7 +57,12 @@ function createNervousSelection(
     sparkModule?: SparkModuleIdentity;
     sourceModule?: SparkModule;
 } {
-    const coreNervousSystem = new NervousSystem({ soul: options.soul, state: options.state, memory: options.memory });
+    const coreNervousSystem = new NervousSystem({
+        soul: options.soul,
+        state: options.state,
+        memory: options.memory,
+        patronRegistry: options.patronRegistry,
+    });
     for (const selected of selectedModules) {
         const nervousSystem = selected.module.createNervousSystem?.({
             soul: options.soul,

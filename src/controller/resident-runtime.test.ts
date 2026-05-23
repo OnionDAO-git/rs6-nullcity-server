@@ -1005,6 +1005,109 @@ describe('ResidentRuntime modules', () => {
             }),
         );
     });
+
+    it('observes patron chat events and forwards them to library updater', async () => {
+        const state = stateFor('res:pip');
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        const observePatron = jest.fn();
+        const library = {
+            observePatron,
+        } as unknown as LibraryUpdater;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence: {
+                store: {} as any,
+                sessionId: 'session-123',
+                trajectory: {} as any,
+                library,
+            },
+            patrons: [{ handle: 'James@Onion', kind: 'patron_sponsor' }],
+        });
+
+        const patronChat = {
+            kind: 'chat' as const,
+            from: { id: 'player:james', kind: 'player' as const, name: 'James@Onion', position: { x: 3217, y: 3201, level: 0 } },
+            text: 'Hello from a patron!',
+            to: 'public',
+            ts: '2026-05-23T02:20:48Z',
+        };
+
+        runtime.onEvent(patronChat);
+
+        expect(observePatron).toHaveBeenCalledWith({
+            kind: 'patron_sponsor',
+            ts: '2026-05-23T02:20:48Z',
+            tick: 0,
+            patronHandle: 'James@Onion',
+            note: 'Hello from a patron!',
+        });
+        expect(body.observeEvent).toHaveBeenCalledWith(patronChat);
+    });
+
+    it('acknowledges patrons publicly via nervous reflex and respects cooldowns', async () => {
+        const state = stateFor('res:pip');
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(async () => ({ text: 'Thank you for sponsoring us, James@Onion!' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            patrons: [{ handle: 'James@Onion', kind: 'patron_sponsor' }],
+        });
+
+        const patronChat = {
+            kind: 'chat' as const,
+            from: { id: 'player:james', kind: 'player' as const, name: 'James@Onion', position: { x: 3217, y: 3201, level: 0 } },
+            text: 'Hello from a patron!',
+            to: 'public',
+            ts: '2026-05-23T02:20:48Z',
+        };
+
+        runtime.onEvent(patronChat);
+
+        // Process perception, expecting the nervous system to react
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'say', text: 'Thank you for sponsoring us, James@Onion!', cause: 'nervous:patron-acknowledge' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'patron-acknowledge-james@onion' }),
+        );
+
+        // Process again with another chat event from same patron, expecting NO thank you because of cooldown
+        (body.submit as jest.Mock).mockClear();
+        runtime.onEvent(patronChat);
+        await runtime.onPerception({ tick: 2, events: [] });
+
+        expect(body.submit).not.toHaveBeenCalled();
+    });
 });
 
 function stateFor(resident: string): RuntimeState {

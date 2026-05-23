@@ -356,6 +356,13 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: legacy events now append deduped `wants_unfulfilled` records for spoken wants in that life before closing the life, and portraits summarize them as "Still wanted ...". Focused evidence tests, typecheck, lint, build, full Jest suite, and `git diff --check` passed.
 
+- `[x]` **I4 (I-β): Feed Library timeline memories back into resident prompts.**
+  - Files: `src/controller/evidence/library-memories.ts`, `src/controller/memory/memory-store.ts`, `src/controller/thinking/hybrid-agent-*.ts`, `src/controller/spark/spark.ts`
+  - Deliverable: recent `library/<resident>/timeline.jsonl` events are visible to both the standard RuneScape Brain/Body prompts and the legacy prompt envelope path.
+  - Verification: red/green prompt integration tests, typecheck, lint, build, and full Jest suite.
+  - Started 2026-05-23 on `agents/wip`: wire Claude's pure Library reader into the runtime prompt paths so a resident can remember recent story/patron events instead of only writing them.
+  - Verified 2026-05-23 on `agents/wip`: `MemoryStore.retrieve()` now prepends bounded recent Library timeline memories; standard Hybrid Brain/Body prompts and the legacy SPARK envelope path render those memories. Focused red/green tests, typecheck, lint, format, build, full Jest, and `git diff --check` passed.
+
 ## Workstream J: Patron / Human-Attention Loop
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
@@ -463,6 +470,8 @@ Safe public module facade building blocks are implemented, but the public member
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
   - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
+  - Started 2026-05-23 on `agents/wip`: extend `follow-and-chat-5m` so autonomous proof must cover follow, status, wait/stop pause, and resuming follow after a new direct command.
+  - Verified 2026-05-23 on `agents/wip`: `follow-and-chat-5m` v0.2 now requires follow, status, wait-pause acknowledgement, peer movement, and resumed follow action. Live autonomous smoke passed with score 1 (`followActions=4`, `waitAcknowledgements=4`, `refollowActions=2`). Remaining gap: browser/manual human-client confirmation and unsafe-command edge fixtures.
 
 ## Workstream R: SPARK Module Extraction (finish B2-B5)
 

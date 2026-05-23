@@ -4,11 +4,13 @@ import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import { readNervousRulesMd } from './rules-md';
 import { type NervousReaction, type NervousRule, clampNervousRulePriority, evaluateNervousRules } from './rules';
+import { PatronRegistry } from '../patron/patron-registry';
 
 export interface NervousSystemOptions {
     soul: Soul;
     state: RuntimeState;
     memory: MemoryStore;
+    patronRegistry?: PatronRegistry;
 }
 
 type Item = { itemId?: number; key?: string; amount?: number };
@@ -37,6 +39,50 @@ export class NervousSystem {
                 suppressThinking: true,
                 interruptThinking: true,
             };
+        }
+
+        if (this.options.patronRegistry && Array.isArray(perception.events)) {
+            for (const event of perception.events) {
+                if (event.kind === 'chat' && typeof event.text === 'string' && event.from && typeof event.from === 'object') {
+                    const fromName = 'name' in event.from && typeof event.from.name === 'string' ? event.from.name : undefined;
+                    if (fromName) {
+                        const patronKind = this.options.patronRegistry.getKind(fromName);
+                        if (patronKind) {
+                            const cooldownKey = `patron-thank:${fromName.toLowerCase()}`;
+                            const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+                            const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
+                            if (coolingUntil <= tick) {
+                                this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+                                this.options.state.hookCooldowns[cooldownKey] = tick + 30;
+
+                                let message = `Thank you for the support, ${fromName}!`;
+                                if (patronKind === 'patron_sponsor') {
+                                    message = `Thank you for sponsoring us, ${fromName}!`;
+                                } else if (patronKind === 'patron_gift') {
+                                    message = `Thank you for the gift, ${fromName}!`;
+                                } else if (patronKind === 'patron_witness') {
+                                    message = `Thank you for witnessing this, ${fromName}!`;
+                                }
+
+                                const rule: NervousRule = {
+                                    id: `patron-acknowledge-${fromName.toLowerCase()}`,
+                                    priority: 95,
+                                    condition: { kind: 'always' },
+                                    action: { kind: 'say', text: message },
+                                    source: 'system',
+                                };
+
+                                return {
+                                    rule,
+                                    action: { kind: 'say', text: message, cause: `nervous:patron-acknowledge` },
+                                    suppressThinking: true,
+                                    interruptThinking: true,
+                                };
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         const memoryDir = this.options.memory.ensureResident(this.options.soul.frontmatter.name);

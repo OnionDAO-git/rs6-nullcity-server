@@ -1,5 +1,7 @@
 import type { LlmClient } from './llm/llm-client';
 import { ActionCoordinator } from './actions/action-coordinator';
+import { PatronConfig, PatronRegistry } from './patron/patron-registry';
+
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
@@ -57,6 +59,7 @@ export interface ResidentRuntimeOptions {
     gameSkill?: ResidentRuntimeGameSkill;
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
+    patrons?: PatronConfig[];
 }
 
 export interface ResidentRuntimeEvidence {
@@ -76,6 +79,7 @@ export class ResidentRuntime {
     private readonly nervousSourceModule?: SparkModule;
     private readonly body: ResidentBody;
     private readonly actionCoordinator: ActionCoordinator;
+    private readonly patronRegistry: PatronRegistry;
     private readonly history = new PerceptionHistory();
     private readonly memoryRouter = new MemoryRouter();
     private readonly compressor = new PerceptionCompressor();
@@ -92,9 +96,15 @@ export class ResidentRuntime {
             initialAttention(options.soul.frontmatter.attentionProfile),
             options.soul.frontmatter.legacy?.kind || options.soul.frontmatter.archetype,
         );
+        this.patronRegistry = new PatronRegistry(options.patrons || []);
         if (options.thinking) {
             this.thinking = options.thinking;
-            this.nervousSystem = new NervousSystem({ soul: options.soul, state: this.state, memory: options.memory });
+            this.nervousSystem = new NervousSystem({
+                soul: options.soul,
+                state: this.state,
+                memory: options.memory,
+                patronRegistry: this.patronRegistry,
+            });
         } else {
             const facets = createSparkRuntimeFacets({
                 soul: options.soul,
@@ -103,6 +113,7 @@ export class ResidentRuntime {
                 llm: options.llm,
                 sparkModules: options.sparkModules,
                 moduleTelemetry: entry => options.inferenceLog.append(this.name, { ...entry }),
+                patronRegistry: this.patronRegistry,
             });
             this.thinking = facets.thinking;
             this.thinkingSparkModule = facets.thinkingSparkModule;
@@ -127,13 +138,16 @@ export class ResidentRuntime {
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
-        this.history.push(perception);
-        this.body.observePerception(perception);
-        const reaction = this.nervousSystem.react(perception);
+        const nervousPerception = this.peekWithPendingEvents(perception);
+        const reaction = this.nervousSystem.react(nervousPerception);
         if (reaction) {
             if (this.deciding && reaction.interruptThinking) {
                 this.thinking.stop(`nervous:${reaction.rule.id}`);
             }
+            const decisionPerception = this.withPendingEvents(perception);
+            this.history.push(decisionPerception);
+            this.body.observePerception(decisionPerception);
+
             const attempt = await this.actionCoordinator.submit({
                 producer: 'nervous-system',
                 action: reaction.action,
@@ -147,7 +161,7 @@ export class ResidentRuntime {
                 waitForEffect: this.effectWaitFor(reaction.action),
                 ...this.evidenceCallbacks(),
             });
-            this.observeGameSkillAttempt('nervous-system', perception, undefined, attempt);
+            this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
             this.options.stateStore.save(this.state);
             if (reaction.suppressThinking) {
                 return;
@@ -155,8 +169,10 @@ export class ResidentRuntime {
         }
 
         if (this.deciding) {
-            const compressed = this.compressor.compress(perception);
-            if (this.thinking.considerInterrupt(perception)) {
+            this.history.push(perception);
+            this.body.observePerception(perception);
+            const compressed = this.compressor.compress(nervousPerception);
+            if (this.thinking.considerInterrupt(nervousPerception)) {
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'urgent_interrupt',
@@ -168,6 +184,9 @@ export class ResidentRuntime {
         }
 
         const decisionPerception = this.withPendingEvents(perception);
+        this.history.push(decisionPerception);
+        this.body.observePerception(decisionPerception);
+
         const compressed = this.compressor.compress(decisionPerception);
         const compressedPerception = { ...decisionPerception, compressed: compressed.text };
         const gameSkillContext = this.options.gameSkill?.buildContext({
@@ -230,6 +249,21 @@ export class ResidentRuntime {
         if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
             this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
         }
+        if (event.kind === 'chat' && typeof event.text === 'string' && event.from && typeof event.from === 'object') {
+            const fromName = 'name' in event.from && typeof event.from.name === 'string' ? event.from.name : undefined;
+            if (fromName) {
+                const patronKind = this.patronRegistry.getKind(fromName);
+                if (patronKind && this.evidence?.library) {
+                    this.evidence.library.observePatron({
+                        kind: patronKind,
+                        ts: typeof event.ts === 'string' ? event.ts : new Date().toISOString(),
+                        tick: this.state.tick,
+                        patronHandle: fromName,
+                        note: event.text,
+                    });
+                }
+            }
+        }
         const routed = this.memoryRouter.routeEvent(this.name, event);
         if (routed) {
             this.options.memory.write(this.name, routed.path, routed.content);
@@ -244,6 +278,14 @@ export class ResidentRuntime {
         const pending = this.pendingEvents.splice(0);
         const events = Array.isArray(perception.events) ? (perception.events as PerceptionEvent[]) : [];
         return { ...perception, events: [...events, ...pending] };
+    }
+
+    private peekWithPendingEvents(perception: Perception): Perception {
+        if (this.pendingEvents.length === 0) {
+            return perception;
+        }
+        const events = Array.isArray(perception.events) ? (perception.events as PerceptionEvent[]) : [];
+        return { ...perception, events: [...events, ...this.pendingEvents] };
     }
 
     private async withEvidenceTick(perception: Perception, run: () => Promise<void>): Promise<void> {
