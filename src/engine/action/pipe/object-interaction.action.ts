@@ -84,7 +84,7 @@ const objectInteractionActionPipe = (
 
     const walkToPlugins = matchingHooks.filter(plugin => plugin.walkTo);
 
-    if (walkToPlugins.length > 0) {
+    if (walkToPlugins.length > 0 && !player.position.withinInteractionDistance(landscapeObject, 1)) {
         player.enqueueBaseTask(new WalkToObjectPluginTask(walkToPlugins, player, landscapeObject, { objectConfig, cacheOriginal, option }));
 
         return null;

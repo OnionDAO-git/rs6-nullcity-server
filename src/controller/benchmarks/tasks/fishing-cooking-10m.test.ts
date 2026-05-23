@@ -62,6 +62,70 @@ describe('verifyFishingCooking10m', () => {
         expect(outcome.failureReason).toContain('No cooking action');
     });
 
+    it('does not treat an accepted cooking action as successful when its final effect timed out', () => {
+        const cookingAction: AgentAction = { kind: 'use_item_on', itemSlot: 1, target: fire(), cause: 'starter_fishing_cook_catch' };
+        const outcome = verifyFishingCooking10m({
+            elapsedMs: 120_000,
+            actions: [
+                attempt({ kind: 'interact', target: fishingSpot(), option: 'net', cause: 'starter_fishing_net' }),
+                attempt(cookingAction),
+                attempt(cookingAction, undefined, undefined, 'timeout'),
+            ],
+            perceptions: [
+                perception({ inventory: [item(303, 'rs:small_fishing_net')], npcs: [fishingSpot()], objects: [fire()] }),
+                perception({
+                    inventory: [item(303, 'rs:small_fishing_net'), item(317, 'rs:raw_shrimp')],
+                    npcs: [fishingSpot()],
+                    objects: [fire()],
+                }),
+            ],
+            events: [],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.metrics?.successfulCookingActions).toBe(0);
+        expect(outcome.failureReason).toContain('No successful cooking action');
+    });
+
+    it('accepts independent fish and cook evidence when a final action observer times out', () => {
+        const netAction: AgentAction = { kind: 'interact', target: fishingSpot(), option: 'net', cause: 'starter_fishing_net' };
+        const cookingAction: AgentAction = { kind: 'use_item_on', itemSlot: 1, target: fire(), cause: 'starter_fishing_cook_catch' };
+        const outcome = verifyFishingCooking10m({
+            elapsedMs: 120_000,
+            actions: [
+                attempt(netAction),
+                attempt(netAction, undefined, undefined, 'timeout'),
+                attempt(cookingAction),
+                attempt(cookingAction, undefined, undefined, 'success'),
+            ],
+            perceptions: [
+                perception({
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    npcs: [fishingSpot()],
+                    objects: [fire()],
+                    skills: { fishing: { xp: 0 }, cooking: { xp: 0 } },
+                }),
+                perception({
+                    inventory: [item(303, 'rs:small_fishing_net'), item(317, 'rs:raw_shrimp')],
+                    npcs: [fishingSpot()],
+                    objects: [fire()],
+                    skills: { fishing: { xp: 10 }, cooking: { xp: 0 } },
+                }),
+                perception({
+                    inventory: [item(303, 'rs:small_fishing_net'), item(315, 'rs:shrimp')],
+                    npcs: [fishingSpot()],
+                    objects: [fire()],
+                    skills: { fishing: { xp: 10 }, cooking: { xp: 30 } },
+                }),
+            ],
+            events: [],
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics?.successfulNetActions).toBe(1);
+        expect(outcome.metrics?.successfulCookingActions).toBe(1);
+    });
+
     it('does not pass when fish was externally supplied instead of caught and cooked', () => {
         const outcome = verifyFishingCooking10m({
             elapsedMs: 120_000,
@@ -166,8 +230,9 @@ function attempt(
     action: AgentAction,
     sparkModule?: typeof STANDARD_MODULE,
     result?: ActionResult,
-): { action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult } {
-    return { action, sparkModule, result };
+    finalStatus?: string,
+): { action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult; finalStatus?: string } {
+    return { action, sparkModule, result, finalStatus };
 }
 
 function perception(overrides: {

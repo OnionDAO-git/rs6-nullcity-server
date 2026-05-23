@@ -477,7 +477,11 @@ describe('RuneScape knowledge retriever', () => {
 
     describe('additional skill entries (crafting, runecrafting, fletching)', () => {
         it('retrieves the crafting entry for a cowhide leather query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'tan cowhide into leather and craft a body with needle and thread', { limit: 4 });
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'tan cowhide into leather and craft a body with needle and thread',
+                { limit: 4 },
+            );
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('skill-crafting-basic');
@@ -497,7 +501,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the fletching entry for an unstrung bow query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'use knife on logs to fletch an unstrung bow then add bowstring', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'use knife on logs to fletch an unstrung bow then add bowstring', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('skill-fletching-basic');

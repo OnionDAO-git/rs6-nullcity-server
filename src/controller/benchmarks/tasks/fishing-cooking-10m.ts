@@ -198,10 +198,9 @@ export function verifyFishingCooking10m(input: FishingCooking10mVerificationInpu
 }
 
 function fishingCookingMetrics(input: FishingCooking10mVerificationInput): Record<string, number> {
-    const netActions = input.actions.filter(attempt => isNetFishingAction(attempt.action));
-    const cookingActions = input.actions.filter(attempt => isCookingAction(attempt.action));
-    const successfulNetActions = netActions.filter(isSuccessfulAttempt);
-    const successfulCookingActions = cookingActions.filter(isSuccessfulAttempt);
+    const actions = effectiveActionAttempts(input.actions);
+    const netActions = actions.filter(attempt => isNetFishingAction(attempt.action));
+    const cookingActions = actions.filter(attempt => isCookingAction(attempt.action));
     const rawFishGainedValue = rawFishGained(input.perceptions) ? 1 : 0;
     const rawFishReceivedEvents = allEvents(input).filter(isRawStarterFishReceivedEvent).length;
     const fishingXpIncreasedValue = skillXpIncreased(input.perceptions, 'fishing') ? 1 : 0;
@@ -211,13 +210,15 @@ function fishingCookingMetrics(input: FishingCooking10mVerificationInput): Recor
     const cookingSuccessEvents = allEvents(input).filter(isCookingSuccessEvent).length;
     const rawFishEvidence = rawFishGainedValue || rawFishReceivedEvents || fishingXpIncreasedValue ? 1 : 0;
     const cookingSuccess = cookedFishGainedValue || cookedFishReceivedEvents || cookingXpIncreasedValue || cookingSuccessEvents ? 1 : 0;
+    const successfulNetActionCount = netActions.filter(attempt => isSuccessfulAttempt(attempt) || rawFishEvidence > 0).length;
+    const successfulCookingActionCount = cookingActions.filter(attempt => isSuccessfulAttempt(attempt) || cookingSuccess > 0).length;
     const externalFishSupplyActions = input.actions.filter(attempt => isExternalFishSupplyAction(attempt.action)).length;
     return {
-        actionsAttempted: input.actions.length,
+        actionsAttempted: actions.length,
         netActions: netActions.length,
-        successfulNetActions: successfulNetActions.length,
+        successfulNetActions: successfulNetActionCount,
         cookingActions: cookingActions.length,
-        successfulCookingActions: successfulCookingActions.length,
+        successfulCookingActions: successfulCookingActionCount,
         rawFishGained: rawFishGainedValue,
         rawFishReceivedEvents,
         fishingXpIncreased: fishingXpIncreasedValue,
@@ -231,9 +232,49 @@ function fishingCookingMetrics(input: FishingCooking10mVerificationInput): Recor
         smallNetPresent: input.perceptions.some(perception => inventory(perception).some(isSmallFishingNetItem)) ? 1 : 0,
         fishingSpotObserved: input.perceptions.some(perception => nearbyNpcs(perception).some(isNetCapableFishingSpot)) ? 1 : 0,
         heatSourceObserved: input.perceptions.some(perception => nearbyObjects(perception).some(isHeatSourceObject)) ? 1 : 0,
-        orderedActionChain: orderedActionChain(input.actions, isNetFishingAction, isCookingAction) ? 1 : 0,
+        orderedActionChain: orderedActionChain(actions, isNetFishingAction, isCookingAction) ? 1 : 0,
         unsafeLoops: repeatedWorkflowLoop([...netActions, ...cookingActions]) ? 1 : 0,
     };
+}
+
+function effectiveActionAttempts(actions: FishingCooking10mActionAttempt[]): FishingCooking10mActionAttempt[] {
+    const effective: FishingCooking10mActionAttempt[] = [];
+    const requestIndexes = new Map<string, number>();
+    for (const attempt of actions) {
+        const requestId = stringField(attempt as unknown as Record<string, unknown>, 'requestId');
+        if (requestId) {
+            const existing = requestIndexes.get(requestId);
+            if (existing !== undefined) {
+                effective[existing] = { ...effective[existing], ...attempt };
+                continue;
+            }
+            requestIndexes.set(requestId, effective.length);
+            effective.push(attempt);
+            continue;
+        }
+
+        if (attempt.finalStatus) {
+            const key = workflowActionKey(attempt.action);
+            const existing = findLastUnfinalizedAttemptIndex(effective, key);
+            if (existing !== undefined) {
+                effective[existing] = { ...effective[existing], ...attempt };
+                continue;
+            }
+        }
+
+        effective.push(attempt);
+    }
+    return effective;
+}
+
+function findLastUnfinalizedAttemptIndex(actions: FishingCooking10mActionAttempt[], key: string): number | undefined {
+    for (let index = actions.length - 1; index >= 0; index -= 1) {
+        const attempt = actions[index];
+        if (!attempt.finalStatus && workflowActionKey(attempt.action) === key) {
+            return index;
+        }
+    }
+    return undefined;
 }
 
 function selectedModuleActionAttempts(
