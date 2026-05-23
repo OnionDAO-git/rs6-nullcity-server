@@ -513,6 +513,26 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('meta entries (goal selection and progression priorities)', () => {
+        it('retrieves the goal-selection entry for a what-should-I-do query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what should I do now when I have no goal and the world is quiet', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('meta-goal-selection');
+            const entry = results.find(result => result.entry.id === 'meta-goal-selection')?.entry;
+            expect(entry?.summary).toMatch(/idle|scout|abandon|3 failures|player request/i);
+        });
+
+        it('retrieves the early-progression entry for a starter-resident query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'I am a fresh resident what should I train first in what order', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('meta-early-progression');
+            const entry = results.find(result => result.entry.id === 'meta-early-progression')?.entry;
+            expect(entry?.summary).toMatch(/woodcutting|firemaking|cooking|combat|prayer|order/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {

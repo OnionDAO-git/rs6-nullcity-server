@@ -1106,6 +1106,28 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'Fletching crafts bows + arrows. Bow chain: rs:knife on rs:logs → unstrung bow; rs:bowstring on unstrung bow → strung bow. Arrow chain: rs:knife on rs:logs → 15 arrow shafts; rs:feather on shafts → headless arrows; bronze/iron/etc. arrowtips on headless arrows → finished arrows (15 per craft). Log tiers: normal (level 1) → oak (15) → willow (30) → maple (45) → yew (60) → magic (75). Self-supplies Ranged ammo and bows; pair with Woodcutting.',
     },
+    {
+        id: 'meta-goal-selection',
+        title: 'Meta: Goal Selection (Idle Default, Abandon Triggers, Switch Rules)',
+        topics: ['meta', 'goal', 'selection', 'idle', 'abandon', 'switch', 'planning'],
+        keywords: ['idle', 'no goal', 'what to do', 'pick goal', 'choose goal', 'abandon goal', 'switch goal', 'stuck', 'goal selection', 'when to abandon', 'quiet'],
+        actions: ['default to scout-area patrol when idle (presence beacon every ~30s)', 'say acknowledgment + offer to help when player visible', 'abandon goal after 3 consecutive failures on the same action', 'switch goal on inventory full / skill milestone / direct player request'],
+        successSignals: ['no idle stretch longer than ~30 ticks without action or chat', 'failed goals get logged with reason and a new goal is picked', 'player-issued task always preempts current goal within 2 ticks'],
+        source: 'docs/runescape-skill/starter-workflows.md; src/controller/thinking/runebench-playbook.ts',
+        summary:
+            'Default behavior when idle (no active goal): scout the area in short patrol steps, greet visible players, never stand still for >30 ticks. Abandon current goal when: (1) the same action fails 3 times in a row, (2) the target is blocked / unreachable, (3) a food/HP crisis forces survival priority, (4) a player directly requests something else (player request preempts within 2 ticks). Switch goal when inventory is full (bank or sell first), when a skill milestone is reached (e.g., Woodcutting 5 → try Firemaking), or when the current goal has produced no progress in 5+ minutes.',
+    },
+    {
+        id: 'meta-early-progression',
+        title: 'Meta: Early Progression (Recommended Order For Fresh Residents)',
+        topics: ['meta', 'progression', 'starter', 'order', 'training', 'curriculum'],
+        keywords: ['progression', 'starter resident', 'first goals', 'training order', 'curriculum', 'levels 1 to 5', 'beginner', 'where to start', 'what to train first'],
+        actions: ['follow the numbered curriculum in the summary below', 'log skill milestones in trajectory.jsonl', 'celebrate milestones publicly via say'],
+        successSignals: ['Woodcutting, Firemaking, Fishing, Cooking, and Combat all reach level 5 within first hour', 'inventory has a tinderbox, hatchet, and 3+ cooked food at all times', 'Prayer level rises from buried bones in tandem with combat'],
+        source: 'docs/runescape-skill/starter-workflows.md; docs/runescape-skill/items.md',
+        summary:
+            'Recommended training order for a fresh resident: (1) verify starter kit — tinderbox, bronze hatchet, small fishing net (if not present, route to Lumbridge General Store 3203,3247,0 + Bob\'s Axes 3231,3203,0); (2) Woodcutting 1→5 chopping ordinary Trees near Lumbridge; (3) Firemaking 1→5 lighting the logs you just chopped (workflow-woodcutting-firemaking-chain); (4) Fishing 1→5 catching shrimp at Lumbridge swamp 3242,3151; (5) Cooking 1→5 cooking shrimp on your own fire (workflow-fishing-cooking-chain); (6) Combat 1→5 fighting chickens in Lumbridge farm 3232,3299 + burying bones for Prayer XP (workflow-combat-prayer-chain); (7) once safe at all five basics, explore one of: Mining (Lumbridge swamp tin/copper), Smithing (Lumbridge furnace), or visit Varrock for shops + Aubury teleport. Avoid wilderness until combat 30+.',
+    },
 ];
 
 const STOP_WORDS = new Set([
