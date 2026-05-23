@@ -13,7 +13,8 @@ The controller's runtime prompt knowledge currently comes from `src/controller/k
 5. `quests/` for canonical starter-quest walkthroughs. Currently: `quests/cooks-assistant.md`, `quests/restless-ghost.md`, `quests/romeo-and-juliet.md`. Same prose-and-numbered-list agent-readable style as the skill files. Add new quest files here as they're written.
 6. `npcs.md` for indexing regional NPC playbooks and documenting core heuristics for dialogue/shops/banking.
 7. `monsters.md` for combat-target reference (chicken/cow/goblin/giant rat/dark wizard/highwayman/hill giant) with HP, max hit, drops, training viability, and avoid-list.
-8. `docs/controller-knowledge-runbook.md` for reviewing and promoting agent-suggested knowledge.
+8. `economy.md` for currency, banking, early gp sources, sell-vs-drop rules, trade pricing, and starter wealth milestones.
+9. `docs/controller-knowledge-runbook.md` for reviewing and promoting agent-suggested knowledge.
 
 ## Update Rules
 
