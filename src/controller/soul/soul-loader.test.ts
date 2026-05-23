@@ -30,4 +30,35 @@ describe('SoulLoader', () => {
 
         expect(loader.listResidentNames()).toEqual(['res:agent']);
     });
+
+    describe('named heroes (M-α + M-α-2)', () => {
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        it('loads res:wise-old-man with heroProfile populated', () => {
+            const soul = loader.load('res:wise-old-man');
+            expect(soul.frontmatter.heroProfile?.tier).toBe('hero');
+            expect(soul.frontmatter.heroProfile?.publicName).toBe('The Wise Old Man');
+            expect(soul.frontmatter.heroProfile?.anchor).toEqual([3088, 3253, 0]);
+        });
+
+        it('loads res:hans with heroProfile + unaligned faction affinity', () => {
+            const soul = loader.load('res:hans');
+            expect(soul.frontmatter.heroProfile?.tier).toBe('hero');
+            expect(soul.frontmatter.heroProfile?.publicName).toBe('Hans');
+            expect(soul.frontmatter.factionAffinity?.unaligned).toBe(80);
+        });
+
+        it('loads res:father-aereck with Saradomin-dominant faction affinity', () => {
+            const soul = loader.load('res:father-aereck');
+            expect(soul.frontmatter.heroProfile?.tier).toBe('hero');
+            expect(soul.frontmatter.heroProfile?.publicName).toBe('Father Aereck');
+            expect(soul.frontmatter.factionAffinity?.saradomin).toBe(70);
+            expect(soul.frontmatter.factionAffinity?.guthix).toBe(10);
+        });
+
+        it('lists all three heroes among the starter resident names', () => {
+            const names = loader.listResidentNames();
+            expect(names).toEqual(expect.arrayContaining(['res:wise-old-man', 'res:hans', 'res:father-aereck']));
+        });
+    });
 });
