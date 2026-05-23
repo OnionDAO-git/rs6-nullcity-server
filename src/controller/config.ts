@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
+import { PatronConfig } from './patron/patron-registry';
 
 export interface ControllerConfig {
     controller: {
@@ -36,6 +37,7 @@ export interface ControllerConfig {
     llm: {
         endpoints: Record<string, LlmEndpointConfig>;
     };
+    patrons?: PatronConfig[];
 }
 
 export type KnowledgeStorageMode = 'ephemeral' | 'persistent-volume' | 'external-store';
@@ -125,6 +127,7 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
         llm: {
             endpoints: readLlmEndpoints(readPath(source, ['llm', 'endpoints'])),
         },
+        patrons: readPatronArray(source.patrons),
     };
 
     return config;
@@ -268,4 +271,21 @@ function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readPatronArray(value: unknown): PatronConfig[] {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+    const patrons: PatronConfig[] = [];
+    for (const item of value) {
+        if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+            const handle = typeof item.handle === 'string' ? item.handle : '';
+            const kind = typeof item.kind === 'string' ? item.kind : '';
+            if (handle && (kind === 'patron_gift' || kind === 'patron_witness' || kind === 'patron_sponsor')) {
+                patrons.push({ handle, kind });
+            }
+        }
+    }
+    return patrons;
 }

@@ -205,6 +205,7 @@ export class ControllerHost {
             gameSkill: this.gameSkill,
             sparkModules: this.sparkModules,
             evidence: this.tryCreateRuntimeEvidence(soul),
+            patrons: this.config.patrons,
         };
         this.runtimes.set(
             soul.frontmatter.name,
