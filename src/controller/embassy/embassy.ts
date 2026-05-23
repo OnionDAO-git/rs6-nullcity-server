@@ -93,24 +93,61 @@ export interface EmbassyContext {
 }
 
 /**
+ * Optional inputs to {@link deriveEmbassyContext}: a pre-loaded schedule
+ * and a wall-clock `now` used to evaluate it. Wired in production by
+ * {@link ControllerHost}, which loads the schedule once at startup and
+ * passes `new Date()` per perception build.
+ */
+export interface DeriveEmbassyContextOptions {
+    schedule?: import('./embassy-schedule').EmbassyEventSchedule;
+    now?: Date;
+}
+
+/**
  * Compute the embassy context from a perception payload. Tolerant of the
  * loose Perception shape (key/value bag); reads `resident.position` if
  * present, returns `isInside=false` defensively otherwise.
  *
- * `eventActive` reads `perception.embassyEventActive` (or
- * `perception.eventActive` for older shape compatibility) as a top-level
- * boolean. Both default to false.
+ * `eventActive` is the OR of two independent sources:
+ *   1. `perception.embassyEventActive` (or `perception.eventActive` for
+ *      older shape compatibility) as a top-level boolean — lets the
+ *      runtime or an MCP operator force the flag on for staging.
+ *   2. `isEmbassyEventActiveAt(options.schedule, options.now)` when both
+ *      are supplied — the production path during the IRL event window.
+ *
+ * Either source can flip the flag; neither can override the other off.
+ * Both default to false so a missing schedule + missing perception flag
+ * means `eventActive=false` (the safe posture for a flag that changes
+ * Brain greeting behavior).
  */
-export function deriveEmbassyContext(perception: unknown, region: EmbassyRegion = EMBASSY_REGION): EmbassyContext {
+export function deriveEmbassyContext(
+    perception: unknown,
+    region: EmbassyRegion = EMBASSY_REGION,
+    options: DeriveEmbassyContextOptions = {},
+): EmbassyContext {
     const out: EmbassyContext = { isInside: false, eventActive: false, regionId: region.id };
+
+    // Schedule-driven event-active (path 2): independent of perception
+    // shape, so compute up front. Lazy-import to avoid a hard module
+    // dependency cycle in non-event environments.
+    if (options.schedule && options.now) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { isEmbassyEventActiveAt } = require('./embassy-schedule') as typeof import('./embassy-schedule');
+        if (isEmbassyEventActiveAt(options.schedule, options.now)) {
+            out.eventActive = true;
+        }
+    }
+
     if (!perception || typeof perception !== 'object') {
         return out;
     }
     const root = perception as Record<string, unknown>;
 
+    // Perception-flag event-active (path 1): OR with whatever the
+    // schedule said. A `true` from either source stays `true`.
     const eventActive = root.embassyEventActive ?? root.eventActive;
-    if (typeof eventActive === 'boolean') {
-        out.eventActive = eventActive;
+    if (typeof eventActive === 'boolean' && eventActive) {
+        out.eventActive = true;
     }
 
     const resident = root.resident;

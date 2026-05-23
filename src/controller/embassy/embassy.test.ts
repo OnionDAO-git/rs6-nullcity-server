@@ -163,4 +163,53 @@ describe('deriveEmbassyContext (N-α-2)', () => {
         const perception = { resident: { position: { x: 3243, y: 3209 } } };
         expect(deriveEmbassyContext(perception).isInside).toBe(true);
     });
+
+    describe('schedule + now (EVENT-D1c)', () => {
+        const chicagoSchedule = {
+            activeWindows: [
+                { startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'OnionDAO Chicago 2026' },
+            ],
+        };
+
+        it('flips eventActive=true when now falls inside a scheduled window, even without a perception flag', () => {
+            const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } } };
+            const ctx = deriveEmbassyContext(perception, EMBASSY_REGION, {
+                schedule: chicagoSchedule,
+                now: new Date('2026-06-01T20:00:00.000Z'),
+            });
+            expect(ctx.eventActive).toBe(true);
+            expect(ctx.isInside).toBe(true);
+        });
+
+        it('keeps eventActive=false when now is outside every scheduled window', () => {
+            const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } } };
+            const ctx = deriveEmbassyContext(perception, EMBASSY_REGION, {
+                schedule: chicagoSchedule,
+                now: new Date('2026-05-23T12:00:00.000Z'),
+            });
+            expect(ctx.eventActive).toBe(false);
+        });
+
+        it('ORs the perception flag with the schedule (either source can flip it true)', () => {
+            const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } }, embassyEventActive: true };
+            const ctx = deriveEmbassyContext(perception, EMBASSY_REGION, {
+                schedule: chicagoSchedule,
+                now: new Date('2026-05-23T12:00:00.000Z'), // outside schedule
+            });
+            expect(ctx.eventActive).toBe(true); // perception flag wins
+        });
+
+        it('preserves the existing behavior when no schedule option is passed', () => {
+            const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } } };
+            const ctx = deriveEmbassyContext(perception);
+            expect(ctx.eventActive).toBe(false);
+        });
+
+        it('handles an undefined-now defensively (treats as not-in-window, never throws)', () => {
+            const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } } };
+            // Passing schedule without now → falls back to no-schedule semantics.
+            const ctx = deriveEmbassyContext(perception, EMBASSY_REGION, { schedule: chicagoSchedule });
+            expect(ctx.eventActive).toBe(false);
+        });
+    });
 });
