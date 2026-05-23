@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Null City Embassy — Wall</title>
+    <style>
+        :root {
+            --ink: #f5ecd6;
+            --bg: #0f0a05;
+            --bg-card: #1a120a;
+            --bg-card-fresh: #2a1f10;
+            --edge: #4f3a1c;
+            --accent: #d49b4a;
+            --death: #c14a3a;
+            --celebrate: #6aa64f;
+            --civic: #6a8fc4;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: 'Georgia', 'Times New Roman', serif;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        body {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+        }
+        header {
+            text-align: center;
+            padding: 1.5rem 1rem 0.75rem;
+            border-bottom: 1px solid var(--edge);
+        }
+        header h1 {
+            margin: 0;
+            font-size: 2rem;
+            font-weight: normal;
+            font-variant: small-caps;
+            letter-spacing: 0.15em;
+        }
+        header .subtitle {
+            opacity: 0.65;
+            font-style: italic;
+            font-size: 0.95rem;
+            margin-top: 0.3rem;
+        }
+        main {
+            overflow: hidden;
+            padding: 1.5rem 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.85rem;
+        }
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--edge);
+            border-radius: 4px;
+            padding: 1rem 1.25rem;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 0.85rem 1rem;
+            align-items: baseline;
+            transition: background 600ms ease-out, opacity 600ms ease-out;
+            opacity: 0.85;
+        }
+        .card.fresh {
+            background: var(--bg-card-fresh);
+            opacity: 1;
+        }
+        .card .kind {
+            font-size: 0.78rem;
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+            padding: 0.15rem 0.55rem;
+            border-radius: 2px;
+            white-space: nowrap;
+        }
+        .card .kind.standing { background: var(--celebrate); color: var(--bg); }
+        .card .kind.epitaph  { background: var(--death);    color: var(--ink); }
+        .card .kind.civic    { background: var(--civic);    color: var(--bg); }
+        .card .subject {
+            font-size: 1.1rem;
+            line-height: 1.35;
+        }
+        .card .ts {
+            font-size: 0.85rem;
+            opacity: 0.55;
+            white-space: nowrap;
+            font-variant: tabular-nums;
+        }
+        .card .recipient {
+            grid-column: 2 / 3;
+            font-size: 0.85rem;
+            opacity: 0.6;
+            font-style: italic;
+        }
+        .card .from {
+            grid-column: 3 / 4;
+            font-size: 0.85rem;
+            opacity: 0.55;
+            text-align: right;
+        }
+        footer {
+            border-top: 1px solid var(--edge);
+            padding: 0.75rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            opacity: 0.85;
+        }
+        footer .deaths {
+            color: var(--death);
+            font-variant: small-caps;
+            letter-spacing: 0.08em;
+        }
+        footer .asof {
+            opacity: 0.6;
+            font-variant: tabular-nums;
+        }
+        .empty {
+            opacity: 0.45;
+            text-align: center;
+            padding: 4rem 1rem;
+            font-style: italic;
+        }
+        .error {
+            color: #ffcccc;
+            background: rgba(120, 30, 30, 0.45);
+            border: 1px solid var(--death);
+            padding: 0.85rem 1.25rem;
+            border-radius: 2px;
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Null City Embassy</h1>
+        <div class="subtitle">letters between residents and their patrons</div>
+    </header>
+    <main id="cards"><div class="empty">Loading…</div></main>
+    <footer>
+        <span><span class="deaths" id="deaths">— deaths today</span></span>
+        <span class="asof" id="asof">—</span>
+    </footer>
+    <script>
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            // Polling interval (ms). Default 5 seconds.
+            const intervalMs = Math.max(1000, Number(params.get('intervalMs')) || 5000);
+            // Maximum cards to render. Default 8.
+            const maxCards = Math.max(1, Number(params.get('limit')) || 8);
+            // API base — override when wall page is served from a different
+            // origin than the controller HTTP server.
+            const apiBase = params.get('api') || '/v1/wall/snapshot';
+
+            const cardsElement = document.getElementById('cards');
+            const deathsElement = document.getElementById('deaths');
+            const asofElement = document.getElementById('asof');
+
+            // Track which letters we've already shown so newly-arrived ones
+            // can pulse on first render.
+            const seen = new Set();
+            let firstFetchDone = false;
+
+            function letterKey(letter) {
+                return String(letter.kind) + '|' + String(letter.recipient) + '|' + String(letter.dispatchedAt);
+            }
+
+            function classifyKind(kind) {
+                switch (kind) {
+                    case 'standing_tier_crossed': return 'standing';
+                    case 'epitaph': return 'epitaph';
+                    case 'civic_milestone': return 'civic';
+                    default: return 'standing';
+                }
+            }
+
+            function renderCard(letter) {
+                const card = document.createElement('article');
+                card.className = 'card';
+                const key = letterKey(letter);
+                if (!seen.has(key) && firstFetchDone) {
+                    card.classList.add('fresh');
+                    setTimeout(function () { card.classList.remove('fresh'); }, 8000);
+                }
+                seen.add(key);
+
+                const kind = document.createElement('span');
+                kind.className = 'kind ' + classifyKind(letter.kind);
+                kind.textContent = String(letter.kind || '').replace(/_/g, ' ');
+                card.appendChild(kind);
+
+                const subject = document.createElement('span');
+                subject.className = 'subject';
+                subject.textContent = String(letter.subject || '(no subject)');
+                card.appendChild(subject);
+
+                const ts = document.createElement('span');
+                ts.className = 'ts';
+                ts.textContent = formatTs(letter.dispatchedAt);
+                card.appendChild(ts);
+
+                const recipient = document.createElement('span');
+                recipient.className = 'recipient';
+                recipient.textContent = 'for ' + String(letter.recipient || '?');
+                card.appendChild(recipient);
+
+                const from = document.createElement('span');
+                from.className = 'from';
+                from.textContent = 'from ' + String(letter.senderResident || '?');
+                card.appendChild(from);
+
+                return card;
+            }
+
+            function formatTs(iso) {
+                if (!iso) return '';
+                try {
+                    const d = new Date(iso);
+                    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } catch (_) {
+                    return iso;
+                }
+            }
+
+            function pluralize(n, word) {
+                return n + ' ' + word + (n === 1 ? '' : 's');
+            }
+
+            function render(payload) {
+                const letters = Array.isArray(payload && payload.letters) ? payload.letters : (payload && payload.recentLetters) || [];
+                const deathsToday = (payload && typeof payload.deathsToday === 'number') ? payload.deathsToday : 0;
+                const asOf = (payload && payload.asOf) ? payload.asOf : '';
+
+                deathsElement.textContent = pluralize(deathsToday, 'death') + ' today';
+                asofElement.textContent = 'as of ' + formatTs(asOf);
+
+                const slice = letters.slice(0, maxCards);
+                if (slice.length === 0) {
+                    cardsElement.replaceChildren();
+                    const empty = document.createElement('div');
+                    empty.className = 'empty';
+                    empty.textContent = 'No letters yet. Walk the embassy and find a resident to support.';
+                    cardsElement.appendChild(empty);
+                    return;
+                }
+
+                cardsElement.replaceChildren();
+                slice.forEach(function (letter) {
+                    cardsElement.appendChild(renderCard(letter));
+                });
+            }
+
+            function showError(message) {
+                cardsElement.replaceChildren();
+                const err = document.createElement('div');
+                err.className = 'error';
+                err.textContent = 'Wall offline: ' + message;
+                cardsElement.appendChild(err);
+            }
+
+            function poll() {
+                fetch(apiBase, { cache: 'no-store' })
+                    .then(function (response) {
+                        if (!response.ok) {
+                            throw new Error('endpoint returned ' + response.status);
+                        }
+                        return response.json();
+                    })
+                    .then(function (payload) {
+                        render(payload);
+                        firstFetchDone = true;
+                    })
+                    .catch(function (error) {
+                        showError(error.message || String(error));
+                    });
+            }
+
+            poll();
+            setInterval(poll, intervalMs);
+        })();
+    </script>
+</body>
+</html>
