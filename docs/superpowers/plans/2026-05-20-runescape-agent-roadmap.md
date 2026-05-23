@@ -314,6 +314,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Success metric: test covers trade request, offer, accept, and decline.
   - Started 2026-05-23 on `agents/wip`: Codex is adding a dedicated benchmark/verifier so the scattered G4 action tests become a repeatable proof of visible trading behavior.
   - Verified 2026-05-23 on `agents/wip`: `trading-giving-5m` now covers request, safe item offer, two-stage accept, unsafe decline, CLI registration, and live autonomous proof against the local server (`score=1`, run `bench_20260523092537_trading_giving_5m`).
+  - Verified 2026-05-23 on `agents/wip`: fresh dashboard-visible autonomous `trading-giving-5m` proof passed (`runId=bench_20260523134244_trading_giving_5m`, `score=1`, `duration=40s`, `selectedModuleActions=20`, `selectedModuleInferences=10`, `peerTradeCommands=2`, `tradeRequests=4`, `safeItemOffers=2`, `acceptStage1=2`, `acceptStage2=2`, `unsafeDeclines=2`, `tradeCompletedEvents=1`, `tradeCancelledEvents=1`). Dashboard API and browser detail showed pass status, trade metrics, module identity, and action evidence.
 
 - `[~]` **G5: Follow and command loop.**
   - Deliverable: agent follows configured player, responds to "agent come here", "agent make fire", "agent stop", "agent status".
