@@ -715,6 +715,101 @@ describe('GameSkillService', () => {
         expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'trade-request' }));
     });
 
+    it('attributes direct help speech to follow-codex instead of commands named inside the help text', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Follow Codex and answer direct commands.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-help-say',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'Try: follow me, status, look around, inventory, make fire, fish, cook, fight safely, bury bones, trade me, offer logs, wait, stop.',
+                    cause: 'direct_chat_help',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'follow-codex',
+                proposedChange: expect.objectContaining({
+                    targetId: 'follow-codex',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-prayer' }));
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'trade-request' }));
+    });
+
+    it('attributes direct wait speech to follow-codex instead of visible skilling workflows', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Follow Codex and wait for direct commands.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-wait-say',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'I will pause here and wait for a new goal.',
+                    cause: 'direct_chat_stop',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'follow-codex',
+                proposedChange: expect.objectContaining({
+                    targetId: 'follow-codex',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+    });
+
     it('attributes woodcutting status speech to woodcutting instead of firemaking', () => {
         const append = jest.fn();
         const service = new GameSkillService({

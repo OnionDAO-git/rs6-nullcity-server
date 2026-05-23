@@ -1342,7 +1342,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.cognition().activeGoal = undefined;
             this.pauseDirectChatActivity();
             return {
-                action: { kind: 'say', text: 'I will pause here and wait for a new goal.' },
+                action: { kind: 'say', text: 'I will pause here and wait for a new goal.', cause: 'direct_chat_stop' },
                 cause: 'direct_chat_stop',
             };
         }
@@ -1351,6 +1351,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return {
                 action: { kind: 'say', text: this.statusSpeech(perception, 'I am online') },
                 cause: 'direct_chat_status',
+            };
+        }
+
+        if (isHelpIntent(command, chat.normalizedText)) {
+            return {
+                action: { kind: 'say', text: helpSpeech(), cause: 'direct_chat_help' },
+                cause: 'direct_chat_help',
             };
         }
 
@@ -2456,6 +2463,13 @@ function isStatusIntent(command: string, fullText: string): boolean {
     );
 }
 
+function isHelpIntent(command: string, fullText: string): boolean {
+    return (
+        /^(help|commands|what can you do|what should i say|what can i ask|what do you know how to do)\b/.test(command) ||
+        /\b(what can you do|what should i say|what can i ask|what do you know how to do)\b/.test(fullText)
+    );
+}
+
 function isLookIntent(command: string, fullText: string): boolean {
     return (
         /^(what do you see|look|look around|suggest|actions|what can we do|what is nearby)\b/.test(command) ||
@@ -2954,6 +2968,7 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isReturnHomeIntent(command, fullText) ||
         isStopIntent(command, fullText) ||
         isStatusIntent(command, fullText) ||
+        isHelpIntent(command, fullText) ||
         isLookIntent(command, fullText) ||
         isInventoryIntent(command, fullText) ||
         Boolean(pickupIntent(command)) ||
@@ -2974,4 +2989,8 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isFiremakingIntent(command, fullText) ||
         isSmallTalkIntent(command, fullText)
     );
+}
+
+function helpSpeech(): string {
+    return 'Try: follow me, status, look around, inventory, make fire, fish, cook, fight safely, bury bones, trade me, offer logs, wait, stop.';
 }

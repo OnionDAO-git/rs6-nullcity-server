@@ -323,6 +323,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: agent follows configured player, responds to "agent come here", "agent make fire", "agent stop", "agent status".
   - Success metric: local browser test with human client can see movement or chat within 10 seconds.
   - Partial 2026-05-21: `follow-and-chat-5m` proves the standard module reacts to a benchmark peer's exact per-run "agent follow me" prompt, moves, then answers that peer's "agent status" prompt in autonomous mode. Still needs browser/manual human-client confirmation and broader command-loop benchmark coverage.
+  - Verified 2026-05-23 on `agents/wip`: added direct "help / what can you do" command discovery and upgraded `follow-and-chat-5m` to v0.3 requiring help response evidence. Fresh autonomous live run passed (`runId=bench_20260523145618_follow_and_chat_5m`, `score=1`, `helpCommands=2`, `helpResponses=4`, `stuckProgressTicks=0`), with `direct_chat_help`/`direct_chat_stop` action causes preserved for attribution. Remaining gap: browser/manual human-client confirmation.
 
 ## Workstream H: Railgun And OnionDAO Operations
 

@@ -11,6 +11,7 @@ describe('verifyFollowAndChat5m', () => {
             actions: [
                 attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
                 attempt({ kind: 'say', text: 'I am online at 3228,3230. Goal: Follow Codex.', cause: 'direct_chat_status' }),
+                attempt({ kind: 'say', text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.' }),
                 attempt({ kind: 'say', text: 'I will pause here and wait for a new goal.' }),
                 attempt({ kind: 'move_to', target: { x: 3234, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
             ],
@@ -22,16 +23,18 @@ describe('verifyFollowAndChat5m', () => {
             ],
             events: commandLoopEvents(),
             refollowText: 'agent follow me again',
-            waitCommandAfterActionIndex: 2,
-            refollowCommandAfterActionIndex: 3,
+            helpCommandAfterActionIndex: 2,
+            waitCommandAfterActionIndex: 3,
+            refollowCommandAfterActionIndex: 4,
         });
 
         expect(outcome.status).toBe('passed');
         expect(outcome.score).toBe(1);
         expect(outcome.metrics?.followCommands).toBe(2);
         expect(outcome.metrics?.followActions).toBe(2);
-        expect(outcome.metrics?.chatResponses).toBe(2);
+        expect(outcome.metrics?.chatResponses).toBe(3);
         expect(outcome.metrics?.statusResponses).toBe(1);
+        expect(outcome.metrics?.helpResponses).toBe(1);
         expect(outcome.metrics?.waitAcknowledgements).toBe(1);
         expect(outcome.metrics?.refollowActions).toBe(1);
     });
@@ -42,12 +45,14 @@ describe('verifyFollowAndChat5m', () => {
             actions: [
                 attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
                 attempt({ kind: 'say', text: 'I am online at 3228,3230. Goal: Follow Codex.', cause: 'direct_chat_status' }),
+                attempt({ kind: 'say', text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.' }),
             ],
             perceptions: [
                 perception({ position: { x: 3225, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
                 perception({ position: { x: 3228, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] }),
             ],
-            events: [chat('agent follow me', 3229, 3230), chat('agent status', 3229, 3230)],
+            events: [chat('agent follow me', 3229, 3230), chat('agent status', 3229, 3230), chat('agent help', 3229, 3230)],
+            helpCommandAfterActionIndex: 2,
         });
 
         expect(outcome.status).toBe('failed');
@@ -62,6 +67,7 @@ describe('verifyFollowAndChat5m', () => {
             actions: [
                 attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'body_step' }),
                 attempt({ kind: 'say', text: 'I am online at 3228,3230. I am with you.', cause: 'direct_chat_status' }),
+                attempt({ kind: 'say', text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.' }),
                 attempt({ kind: 'say', text: 'I will pause here and wait for a new goal.' }),
                 attempt({ kind: 'move_to', target: { x: 3234, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
             ],
@@ -72,8 +78,9 @@ describe('verifyFollowAndChat5m', () => {
             ],
             events: commandLoopEvents(),
             refollowText: 'agent follow me again',
-            waitCommandAfterActionIndex: 2,
-            refollowCommandAfterActionIndex: 3,
+            helpCommandAfterActionIndex: 2,
+            waitCommandAfterActionIndex: 3,
+            refollowCommandAfterActionIndex: 4,
         });
 
         expect(outcome.status).toBe('passed');
@@ -152,14 +159,16 @@ describe('verifyFollowAndChat5m', () => {
             actions: [
                 attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
                 attempt({ kind: 'say', text: 'status: I am with you', cause: 'direct_chat_status' }),
+                attempt({ kind: 'say', text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.' }),
                 attempt({ kind: 'say', text: 'I will pause here and wait for a new goal.' }),
                 attempt({ kind: 'move_to', target: { x: 3234, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
             ],
             perceptions: [perception({ position: { x: 3225, y: 3230, level: 0 }, players: [player('Codex', 3229, 3230)] })],
             events: [...commandLoopEvents(), arrived()],
             refollowText: 'agent follow me again',
-            waitCommandAfterActionIndex: 2,
-            refollowCommandAfterActionIndex: 3,
+            helpCommandAfterActionIndex: 2,
+            waitCommandAfterActionIndex: 3,
+            refollowCommandAfterActionIndex: 4,
         });
 
         expect(outcome.status).toBe('passed');
@@ -231,6 +240,7 @@ describe('verifyFollowAndChat5m', () => {
         const submitAction = jest.fn();
         const followText = 'agent follow me benchmark res:bmk_follow';
         const statusText = 'agent status benchmark res:bmk_follow';
+        const helpText = 'agent help benchmark res:bmk_follow';
         const waitText = 'agent wait benchmark res:bmk_follow';
         const refollowText = 'agent follow me again benchmark res:bmk_follow';
         const actionAttempts: Array<{ action: AgentAction; sparkModule?: typeof STANDARD_MODULE }> = [];
@@ -253,6 +263,19 @@ describe('verifyFollowAndChat5m', () => {
                 events.push(chat(statusText, 3229, 3230, 'res:bmk_codex', 'resident'));
                 actionAttempts.push(
                     attempt({ kind: 'say', text: 'I am online at 3228,3230.', cause: 'direct_chat_status' }, STANDARD_MODULE),
+                );
+            }
+            if (action.kind === 'say' && action.text === helpText) {
+                events.push(chat(helpText, 3229, 3230, 'res:bmk_codex', 'resident'));
+                actionAttempts.push(
+                    attempt(
+                        {
+                            kind: 'say',
+                            text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.',
+                            cause: 'direct_chat_help',
+                        },
+                        STANDARD_MODULE,
+                    ),
                 );
             }
             if (action.kind === 'say' && action.text === waitText) {
@@ -289,6 +312,7 @@ describe('verifyFollowAndChat5m', () => {
         const outcome = await task.runAutonomous?.(context);
 
         expect(submitPeerAction).toHaveBeenCalledWith('codex', expect.objectContaining({ kind: 'say', text: followText }));
+        expect(submitPeerAction).toHaveBeenCalledWith('codex', expect.objectContaining({ kind: 'say', text: helpText }));
         expect(submitAction).not.toHaveBeenCalled();
         expect(outcome?.status).toBe('passed');
     });
@@ -346,6 +370,7 @@ function commandLoopEvents(): PerceptionEvent[] {
     return [
         chat('agent follow me', 3229, 3230),
         chat('agent status', 3229, 3230),
+        chat('agent help', 3229, 3230),
         chat('agent wait', 3229, 3230),
         chat('agent follow me again', 3234, 3230),
     ];

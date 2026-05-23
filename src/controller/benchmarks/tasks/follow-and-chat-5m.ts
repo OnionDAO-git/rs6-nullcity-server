@@ -2,7 +2,7 @@ import type { AgentAction, Perception, PerceptionEvent } from '../../transport/m
 import type { BenchmarkTask, BenchmarkTaskOutcome } from '../benchmark-runner';
 
 export const FOLLOW_AND_CHAT_5M_TASK_ID = 'follow-and-chat-5m';
-export const FOLLOW_AND_CHAT_5M_TASK_VERSION = '0.2.0';
+export const FOLLOW_AND_CHAT_5M_TASK_VERSION = '0.3.0';
 export const FOLLOW_AND_CHAT_5M_BUDGET_MS = 5 * 60 * 1000;
 
 const START_POSITION = { x: 3225, y: 3230, level: 0 };
@@ -12,6 +12,7 @@ const FOLLOW_RANGE = 2;
 const DEFAULT_PEER_ID = 'player:codex';
 const DEFAULT_FOLLOW_TEXT = 'agent follow me';
 const DEFAULT_STATUS_TEXT = 'agent status';
+const DEFAULT_HELP_TEXT = 'agent help';
 const DEFAULT_WAIT_TEXT = 'agent wait';
 const DEFAULT_REFOLLOW_TEXT = 'agent follow me again';
 
@@ -28,9 +29,11 @@ export interface FollowAndChat5mVerificationInput {
     peerId?: string;
     followText?: string;
     statusText?: string;
+    helpText?: string;
     waitText?: string;
     refollowText?: string;
     statusResponseAfterActionIndex?: number;
+    helpCommandAfterActionIndex?: number;
     waitCommandAfterActionIndex?: number;
     refollowCommandAfterActionIndex?: number;
 }
@@ -80,6 +83,18 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
             actions.push({ action: reportAction });
             await context.submitAction(reportAction);
 
+            await context.submitPeerAction('codex', { kind: 'say', text: stimulus.helpText, cause: 'benchmark_follow_and_chat_5m_peer' });
+            context.recordSummary('Benchmark peer asked the agent for help.');
+            const helpCommandAfterActionIndex = actions.length;
+
+            const helpAction: AgentAction = {
+                kind: 'say',
+                text: 'Try: follow me, status, look around, inventory, make fire, fish, fight safely, trade me, stop.',
+                cause: 'benchmark_follow_and_chat_5m',
+            };
+            actions.push({ action: helpAction });
+            await context.submitAction(helpAction);
+
             await context.submitPeerAction('codex', { kind: 'say', text: stimulus.waitText, cause: 'benchmark_follow_and_chat_5m_peer' });
             context.recordSummary('Benchmark peer asked the agent to wait.');
             const waitCommandAfterActionIndex = actions.length;
@@ -123,6 +138,7 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                     events: [...context.events()],
                     ...stimulus,
                     statusResponseAfterActionIndex,
+                    helpCommandAfterActionIndex,
                     waitCommandAfterActionIndex,
                     refollowCommandAfterActionIndex,
                 });
@@ -139,6 +155,7 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                 events: [...context.events()],
                 ...stimulus,
                 statusResponseAfterActionIndex,
+                helpCommandAfterActionIndex,
                 waitCommandAfterActionIndex,
                 refollowCommandAfterActionIndex,
             });
@@ -146,11 +163,13 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
         runAutonomous: async context => {
             const startedAt = now();
             let askedStatus = false;
+            let askedHelp = false;
             let askedWait = false;
             let movedPeerForRefollow = false;
             let askedRefollow = false;
             let peerMoveStartedAt: number | undefined;
             let statusResponseAfterActionIndex: number | undefined;
+            let helpCommandAfterActionIndex: number | undefined;
             let waitCommandAfterActionIndex: number | undefined;
             let refollowCommandAfterActionIndex: number | undefined;
             const stimulus = benchmarkStimulus(context);
@@ -166,6 +185,7 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                     events: [...context.events()],
                     ...stimulus,
                     statusResponseAfterActionIndex,
+                    helpCommandAfterActionIndex,
                     waitCommandAfterActionIndex,
                     refollowCommandAfterActionIndex,
                 });
@@ -179,7 +199,17 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                     context.recordSummary('Benchmark peer asked for status after follow evidence.');
                     askedStatus = true;
                 }
-                if (askedStatus && !askedWait && outcome.metrics?.statusResponses) {
+                if (askedStatus && !askedHelp && outcome.metrics?.statusResponses) {
+                    helpCommandAfterActionIndex = actions.length;
+                    await context.submitPeerAction('codex', {
+                        kind: 'say',
+                        text: stimulus.helpText,
+                        cause: 'benchmark_follow_and_chat_5m_peer',
+                    });
+                    context.recordSummary('Benchmark peer asked the autonomous agent for help.');
+                    askedHelp = true;
+                }
+                if (askedHelp && !askedWait && outcome.metrics?.helpResponses) {
                     waitCommandAfterActionIndex = actions.length;
                     await context.submitPeerAction('codex', {
                         kind: 'say',
@@ -228,6 +258,7 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                 events: [...context.events()],
                 ...stimulus,
                 statusResponseAfterActionIndex,
+                helpCommandAfterActionIndex,
                 waitCommandAfterActionIndex,
                 refollowCommandAfterActionIndex,
             });
@@ -300,6 +331,24 @@ export function verifyFollowAndChat5m(input: FollowAndChat5mVerificationInput): 
         };
     }
 
+    if (metrics.helpCommands === 0) {
+        return {
+            status: 'failed',
+            score: 0.82,
+            metrics,
+            failureReason: 'No benchmark peer help command was observed after the status response',
+        };
+    }
+
+    if (metrics.helpResponses === 0) {
+        return {
+            status: 'failed',
+            score: 0.84,
+            metrics,
+            failureReason: 'No help or command-list response was spoken after the benchmark help command',
+        };
+    }
+
     if (metrics.waitCommands === 0) {
         return {
             status: 'failed',
@@ -340,7 +389,7 @@ export function verifyFollowAndChat5m(input: FollowAndChat5mVerificationInput): 
         status: 'passed',
         score: 1,
         metrics,
-        summaries: ['follow-and-chat-5m observed follow, status, wait-pause, and resumed follow behavior.'],
+        summaries: ['follow-and-chat-5m observed follow, status, help, wait-pause, and resumed follow behavior.'],
     };
 }
 
@@ -360,7 +409,10 @@ function followAndChatMetrics(input: FollowAndChat5mVerificationInput): Record<s
     const firstFollowActionIndex = input.actions.findIndex(attempt => isFollowAction(attempt.action, followCommandEvents));
     const statusResponseStartIndex =
         input.statusResponseAfterActionIndex ?? (firstFollowActionIndex === -1 ? input.actions.length : firstFollowActionIndex + 1);
-    const actionsAfterStatusPrompt = input.actions.slice(statusResponseStartIndex);
+    const statusResponseEndIndex = input.helpCommandAfterActionIndex ?? input.actions.length;
+    const actionsAfterStatusPrompt = input.actions.slice(statusResponseStartIndex, statusResponseEndIndex);
+    const helpResponseStartIndex = input.helpCommandAfterActionIndex ?? input.actions.length;
+    const actionsAfterHelpPrompt = input.actions.slice(helpResponseStartIndex);
     const waitResponseStartIndex = input.waitCommandAfterActionIndex ?? input.actions.length;
     const actionsAfterWaitPrompt = input.actions.slice(waitResponseStartIndex);
     const refollowActionStartIndex = input.refollowCommandAfterActionIndex ?? input.actions.length;
@@ -369,11 +421,13 @@ function followAndChatMetrics(input: FollowAndChat5mVerificationInput): Record<s
         actionsAttempted: input.actions.length,
         followCommands: followCommandEvents.length,
         statusCommands: peerChatEvents.filter(event => isStatusChat(event, input)).length,
+        helpCommands: peerChatEvents.filter(event => isHelpChat(event, input)).length,
         waitCommands: peerChatEvents.filter(event => isWaitChat(event, input)).length,
         refollowCommands: refollowCommandEvents.length,
         followActions: followActions.length,
         chatResponses: input.actions.filter(attempt => isSayAction(attempt.action)).length,
         statusResponses: actionsAfterStatusPrompt.filter(attempt => isStatusResponseAction(attempt.action)).length,
+        helpResponses: actionsAfterHelpPrompt.filter(attempt => isHelpResponseAction(attempt.action)).length,
         waitAcknowledgements: actionsAfterWaitPrompt.filter(attempt => isWaitAcknowledgementAction(attempt.action)).length,
         refollowActions:
             refollowCommandEvents.length > 0
@@ -452,6 +506,11 @@ function isStatusChat(event: PerceptionEvent, input: FollowAndChat5mVerification
     return text === normalizeText(input.statusText || DEFAULT_STATUS_TEXT);
 }
 
+function isHelpChat(event: PerceptionEvent, input: FollowAndChat5mVerificationInput): boolean {
+    const text = normalizeText(stringField(event, 'text') || '');
+    return text === normalizeText(input.helpText || DEFAULT_HELP_TEXT);
+}
+
 function isWaitChat(event: PerceptionEvent, input: FollowAndChat5mVerificationInput): boolean {
     const text = normalizeText(stringField(event, 'text') || '');
     return text === normalizeText(input.waitText || DEFAULT_WAIT_TEXT);
@@ -467,6 +526,13 @@ function isWaitAcknowledgementAction(action: AgentAction): boolean {
         return false;
     }
     return /\b(pause|wait|waiting|still here|hold position|stopping)\b/i.test(action.text);
+}
+
+function isHelpResponseAction(action: AgentAction): boolean {
+    if (!isSayAction(action)) {
+        return false;
+    }
+    return /\b(follow me|make fire|trade me|commands|try:|status)\b/i.test(action.text);
 }
 
 function benchmarkPeerChatEvents(input: FollowAndChat5mVerificationInput): PerceptionEvent[] {
@@ -576,6 +642,7 @@ function benchmarkStimulus(context: Parameters<BenchmarkTask['run']>[0]): {
     peerId: string;
     followText: string;
     statusText: string;
+    helpText: string;
     waitText: string;
     refollowText: string;
 } {
@@ -585,6 +652,7 @@ function benchmarkStimulus(context: Parameters<BenchmarkTask['run']>[0]): {
         peerId: peerResident ? `resident:${peerResident}` : DEFAULT_PEER_ID,
         followText: `${DEFAULT_FOLLOW_TEXT} ${nonce}`,
         statusText: `${DEFAULT_STATUS_TEXT} ${nonce}`,
+        helpText: `${DEFAULT_HELP_TEXT} ${nonce}`,
         waitText: `${DEFAULT_WAIT_TEXT} ${nonce}`,
         refollowText: `${DEFAULT_REFOLLOW_TEXT} ${nonce}`,
     };

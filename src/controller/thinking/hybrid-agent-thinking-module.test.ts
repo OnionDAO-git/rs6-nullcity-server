@@ -1927,7 +1927,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I will pause here and wait for a new goal.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I will pause here and wait for a new goal.', cause: 'direct_chat_stop' }]);
         expect(result.cause).toBe('direct_chat_stop');
         expect(state.cognition?.activeGoal).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
@@ -2660,6 +2660,31 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'say', text: 'I am carrying tinderbox, logs x3.' }]);
         expect(result.cause).toBe('direct_chat_inventory');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('answers direct help commands with visible capabilities without inference', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent what can you do?', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions[0]).toEqual(
+            expect.objectContaining({
+                kind: 'say',
+                text: expect.stringContaining('follow me'),
+            }),
+        );
+        expect(String((result.actions[0] as any).text)).toContain('make fire');
+        expect(String((result.actions[0] as any).text)).toContain('status');
+        expect(String((result.actions[0] as any).text)).toContain('trade');
+        expect(result.cause).toBe('direct_chat_help');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

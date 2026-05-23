@@ -227,6 +227,9 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
     const combined = `${kind} ${option} ${text} ${cause} ${targetText(target)}`.toLowerCase();
     const words = combined.replace(/[_:-]+/g, ' ');
 
+    if (kind === 'say' && /\bdirect chat (help|status|wait|stop|follow)\b|\bfollow listen hold\b|\bpresence beacon\b/.test(words)) {
+        return 'follow-codex';
+    }
     if (kind === 'item_action' && /\bbury\b/.test(option)) {
         return 'train-prayer';
     }
