@@ -9,13 +9,7 @@ describe('RoutineRunner', () => {
         });
 
         it('exposes all five RB-MCP-α + δ routines: make_fire, chop_tree, bury_bones, safe_combat, follow_player', () => {
-            expect(Object.keys(ROUTINE_CATALOG).sort()).toEqual([
-                'bury_bones',
-                'chop_tree',
-                'follow_player',
-                'make_fire',
-                'safe_combat',
-            ]);
+            expect(Object.keys(ROUTINE_CATALOG).sort()).toEqual(['bury_bones', 'chop_tree', 'follow_player', 'make_fire', 'safe_combat']);
         });
 
         it('each routine entry has a Zod paramSchema', () => {
@@ -29,9 +23,7 @@ describe('RoutineRunner', () => {
         describe('per-routine param validation (RB-MCP-δ)', () => {
             it('chop_tree accepts empty params and optional targetCoord', () => {
                 expect(() => ROUTINE_CATALOG.chop_tree.paramSchema.parse({})).not.toThrow();
-                expect(() =>
-                    ROUTINE_CATALOG.chop_tree.paramSchema.parse({ targetCoord: { x: 3220, y: 3218, level: 0 } }),
-                ).not.toThrow();
+                expect(() => ROUTINE_CATALOG.chop_tree.paramSchema.parse({ targetCoord: { x: 3220, y: 3218, level: 0 } })).not.toThrow();
             });
 
             it('chop_tree rejects targetCoord with negative level', () => {
@@ -215,6 +207,29 @@ describe('RoutineRunner', () => {
 
             expect(result.status).toBe('completed');
             expect(result.trajectoryHints).toEqual(expect.arrayContaining(['tinderbox_used']));
+        });
+    });
+
+    describe('routine context', () => {
+        it('passes the routine id and parsed params into runtime ticks', async () => {
+            const runtime = mockRuntime();
+            runtime.tick = jest.fn().mockResolvedValueOnce('completed');
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const result = await runner.run({
+                resident: 'res:agent',
+                routine: 'follow_player',
+                params: { player: 'Codex', distance: 2 },
+                maxTicks: 10,
+            });
+
+            expect(result.status).toBe('completed');
+            expect(runtime.tick).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    routineId: 'follow_player',
+                    params: { player: 'Codex', distance: 2 },
+                }),
+            );
         });
     });
 });

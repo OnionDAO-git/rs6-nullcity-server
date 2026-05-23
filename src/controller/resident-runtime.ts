@@ -576,7 +576,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
 
         // Determine active routine action via routine dispatch table.
         let action: AgentAction | undefined;
-        switch (this.activeRoutineId) {
+        const activeRoutineId = ctx.routineId || this.activeRoutineId;
+        switch (activeRoutineId) {
             case 'make_fire':
                 action = firemakingAction(perception);
                 if (!action && hasNearbyFire(perception)) {
@@ -597,9 +598,20 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 action = combatTrainingAction(perception);
                 break;
             case 'follow_player': {
-                const target = pickFollowTarget(perception);
+                const params = followPlayerParams(ctx.params);
+                const target = pickFollowTarget(perception, params.player);
                 if (target) {
-                    action = { kind: 'move_to', target: { x: target.x, y: target.y, level: target.level ?? 0 } };
+                    const current = perceptionPosition(perception);
+                    const followDistance = params.distance ?? 3;
+                    if (current && chebyshevDistance(current, target) <= followDistance) {
+                        return 'completed';
+                    }
+                    action = {
+                        kind: 'move_to',
+                        target: { x: target.x, y: target.y, level: target.level ?? 0 },
+                        range: followDistance,
+                        cause: 'routine:follow_player',
+                    };
                 }
                 break;
             }
@@ -628,7 +640,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 tick: this.state.tick,
                 attention_after: this.state.attention,
                 source: 'routine',
-                routineId: this.activeRoutineId,
+                routineId: activeRoutineId,
             },
             waitForEffect: this.effectWaitFor(action),
             ...this.evidenceCallbacks(),
@@ -658,13 +670,19 @@ interface Position {
     level?: number;
 }
 
+interface FollowPlayerParams {
+    player?: string;
+    distance?: number;
+}
+
 /**
- * Pick the nearest visible player from the perception payload to follow.
+ * Pick the named visible player from the perception payload to follow, or
+ * the nearest visible player when the routine was called without a name.
  * Loose typing — perception shapes vary across gateway versions; we read
  * defensively and bail to undefined when nothing usable is found. Used by
  * the `follow_player` routine (RB-MCP-δ).
  */
-function pickFollowTarget(perception: unknown): Position | undefined {
+function pickFollowTarget(perception: unknown, playerName?: string): Position | undefined {
     if (!perception || typeof perception !== 'object') {
         return undefined;
     }
@@ -676,18 +694,62 @@ function pickFollowTarget(perception: unknown): Position | undefined {
     if (!Array.isArray(players) || players.length === 0) {
         return undefined;
     }
+    const root = perception as Record<string, unknown>;
+    const residentPos = perceptionPosition(root as Perception);
+    const parsedPlayers: Array<{ name?: string; id?: string; position: Position }> = [];
     for (const player of players) {
         if (player && typeof player === 'object') {
+            const playerRecord = player as Record<string, unknown>;
             const position = (player as Record<string, unknown>).position;
             if (position && typeof position === 'object') {
                 const pos = position as Record<string, unknown>;
                 if (typeof pos.x === 'number' && typeof pos.y === 'number') {
-                    return { x: pos.x, y: pos.y, level: typeof pos.level === 'number' ? pos.level : 0 };
+                    parsedPlayers.push({
+                        id: typeof playerRecord.id === 'string' ? playerRecord.id : undefined,
+                        name: typeof playerRecord.name === 'string' ? playerRecord.name : undefined,
+                        position: { x: pos.x, y: pos.y, level: typeof pos.level === 'number' ? pos.level : 0 },
+                    });
                 }
             }
         }
     }
-    return undefined;
+    const normalizedTarget = normalizeName(playerName);
+    if (normalizedTarget) {
+        const exact = parsedPlayers.find(
+            player => normalizeName(player.name) === normalizedTarget || normalizeName(player.id) === normalizedTarget,
+        );
+        if (exact) {
+            return exact.position;
+        }
+        const partial = parsedPlayers.find(
+            player => normalizeName(player.name)?.includes(normalizedTarget) || normalizeName(player.id)?.includes(normalizedTarget),
+        );
+        return partial?.position;
+    }
+
+    return parsedPlayers
+        .sort((a, b) => (residentPos ? chebyshevDistance(a.position, residentPos) - chebyshevDistance(b.position, residentPos) : 0))
+        .at(0)?.position;
+}
+
+function followPlayerParams(params: unknown): FollowPlayerParams {
+    const recordValue = record(params);
+    return {
+        player: typeof recordValue.player === 'string' ? recordValue.player : undefined,
+        distance: typeof recordValue.distance === 'number' ? recordValue.distance : undefined,
+    };
+}
+
+function normalizeName(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
+function chebyshevDistance(a: Position, b: Position): number {
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
 function perceptionWaitToEffect(

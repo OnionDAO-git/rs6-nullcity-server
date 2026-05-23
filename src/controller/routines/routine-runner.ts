@@ -40,6 +40,10 @@ export interface RunRoutineResponse {
 export interface RoutineContext {
     /** Tick index within the routine run, starting at 0. */
     tickIndex: number;
+    /** Whitelisted routine currently owning the runtime tick. */
+    routineId: string;
+    /** Parsed, schema-validated params for this routine run. */
+    params: unknown;
     /** Caller's AbortSignal; impl should respect it. */
     signal: AbortSignal;
     /** Total maxTicks budget. */
@@ -194,7 +198,7 @@ export class RoutineRunner {
                 return preempted(tickIndex, 'aborted', hints, effectEvidenceCount);
             }
 
-            const ctx: RoutineContext = { tickIndex, signal, maxTicks };
+            const ctx: RoutineContext = { tickIndex, routineId: entry.id, params: parsedParams.data, signal, maxTicks };
             let outcome: RoutineTickOutcome;
             try {
                 outcome = await entry.impl(runtime, parsedParams.data, ctx);

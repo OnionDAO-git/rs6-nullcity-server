@@ -222,15 +222,15 @@ function renderAlignmentDirective(alignment: string | undefined): string {
 const FACTION_DIRECTIVES: Record<FactionName, string> = {
     saradomin:
         'You lean Saradominist. Speak of justice, protection of the weak, and the order light brings. Decline thefts and cruelty even when convenient.',
-    guthix:
-        'You lean Guthixian. Balance is the value above all others. Resist extremes — favor patience, listening, and small acts that keep the city stable.',
-    zamorak:
-        'You lean Zamorakian. Power is earned through risk; weakness embarrasses. Welcome contests and challenges. Refuse to coddle.',
+    guthix: 'You lean Guthixian. Balance is the value above all others. Resist extremes — favor patience, listening, and small acts that keep the city stable.',
+    zamorak: 'You lean Zamorakian. Power is earned through risk; weakness embarrasses. Welcome contests and challenges. Refuse to coddle.',
     unaligned:
         'You are explicitly unaligned. Decline faction-flavored arguments; redirect to specifics. Friends are friends; faction is not a reason.',
 };
 
-function renderFactionDirective(affinity: { saradomin?: number; guthix?: number; zamorak?: number; unaligned?: number } | undefined): string {
+function renderFactionDirective(
+    affinity: { saradomin?: number; guthix?: number; zamorak?: number; unaligned?: number } | undefined,
+): string {
     const dominant = dominantFaction(affinity);
     if (!dominant) {
         return '';

@@ -200,10 +200,7 @@ describe('validateSoulFrontmatter modules', () => {
         });
 
         it('back-compat: soul without factionAffinity still parses', () => {
-            const frontmatter = validateSoulFrontmatter(
-                { name: 'res:agent', archetype: 'endurer' },
-                '/tmp/agent.md',
-            );
+            const frontmatter = validateSoulFrontmatter({ name: 'res:agent', archetype: 'endurer' }, '/tmp/agent.md');
             expect(frontmatter.factionAffinity).toBeUndefined();
         });
     });

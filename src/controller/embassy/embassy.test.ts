@@ -1,11 +1,4 @@
-import {
-    EMBASSY_REGION,
-    embassyCenter,
-    embassyContainsAny,
-    isInsideEmbassy,
-    type EmbassyRegion,
-    type Coord3,
-} from './embassy';
+import { EMBASSY_REGION, embassyCenter, embassyContainsAny, isInsideEmbassy, type EmbassyRegion, type Coord3 } from './embassy';
 
 describe('EMBASSY_REGION', () => {
     it('defaults to a 10x10 tile cluster in the Lumbridge churchyard at level 0', () => {

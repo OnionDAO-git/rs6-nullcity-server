@@ -1108,6 +1108,60 @@ describe('ResidentRuntime modules', () => {
 
         expect(body.submit).not.toHaveBeenCalled();
     });
+
+    it('uses follow_player routine params to target the named nearby player at requested distance', async () => {
+        const state = stateFor('res:pip');
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'routine-follow-1' })),
+            getLatestPerceptionSeq: jest.fn(() => 0),
+            getLatestPerception: jest.fn(() => undefined),
+            waitForPerception: jest.fn(async () => ({
+                ok: true,
+                observation: { value: { resident: { position: { x: 3208, y: 3200, level: 0 } } } },
+            })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            body,
+        });
+        runtime.activeRoutineId = 'follow_player';
+
+        const tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 2 },
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: {
+                players: [
+                    { id: 'player:near', kind: 'player', name: 'Nearby', position: { x: 3201, y: 3200, level: 0 } },
+                    { id: 'player:james', kind: 'player', name: 'James', position: { x: 3208, y: 3200, level: 0 } },
+                ],
+            },
+            events: [],
+        });
+
+        await expect(tickPromise).resolves.toBe('completed');
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'move_to', target: { x: 3208, y: 3200, level: 0 }, range: 2, cause: 'routine:follow_player' },
+            expect.objectContaining({ source: 'routine', routineId: 'follow_player' }),
+        );
+    });
 });
 
 function stateFor(resident: string): RuntimeState {
