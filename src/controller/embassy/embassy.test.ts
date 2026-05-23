@@ -1,4 +1,12 @@
-import { EMBASSY_REGION, embassyCenter, embassyContainsAny, isInsideEmbassy, type EmbassyRegion, type Coord3 } from './embassy';
+import {
+    EMBASSY_REGION,
+    deriveEmbassyContext,
+    embassyCenter,
+    embassyContainsAny,
+    isInsideEmbassy,
+    type Coord3,
+    type EmbassyRegion,
+} from './embassy';
 
 describe('EMBASSY_REGION', () => {
     it('defaults to a 10x10 tile cluster in the Lumbridge churchyard at level 0', () => {
@@ -94,5 +102,65 @@ describe('embassyContainsAny', () => {
 
     it('returns false for an empty list', () => {
         expect(embassyContainsAny([])).toBe(false);
+    });
+});
+
+describe('deriveEmbassyContext (N-α-2)', () => {
+    it('returns isInside=false / eventActive=false / regionId for malformed perception', () => {
+        expect(deriveEmbassyContext(null)).toEqual({ isInside: false, eventActive: false, regionId: 'lumbridge-churchyard' });
+        expect(deriveEmbassyContext('not-an-object')).toEqual({ isInside: false, eventActive: false, regionId: 'lumbridge-churchyard' });
+        expect(deriveEmbassyContext({})).toEqual({ isInside: false, eventActive: false, regionId: 'lumbridge-churchyard' });
+    });
+
+    it('returns isInside=true when resident.position is inside the embassy', () => {
+        const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } } };
+        const ctx = deriveEmbassyContext(perception);
+        expect(ctx.isInside).toBe(true);
+        expect(ctx.eventActive).toBe(false);
+    });
+
+    it('returns isInside=false for position on a different level', () => {
+        const perception = { resident: { position: { x: 3243, y: 3209, level: 1 } } };
+        expect(deriveEmbassyContext(perception).isInside).toBe(false);
+    });
+
+    it('returns isInside=false for position outside the embassy bounds (Varrock)', () => {
+        const perception = { resident: { position: { x: 3211, y: 3424, level: 0 } } };
+        expect(deriveEmbassyContext(perception).isInside).toBe(false);
+    });
+
+    it('reads top-level embassyEventActive boolean', () => {
+        const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } }, embassyEventActive: true };
+        const ctx = deriveEmbassyContext(perception);
+        expect(ctx.isInside).toBe(true);
+        expect(ctx.eventActive).toBe(true);
+    });
+
+    it('falls back to top-level eventActive for older perception shape', () => {
+        const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } }, eventActive: true };
+        expect(deriveEmbassyContext(perception).eventActive).toBe(true);
+    });
+
+    it('ignores non-boolean eventActive values', () => {
+        const perception = { resident: { position: { x: 3243, y: 3209, level: 0 } }, embassyEventActive: 'yes' };
+        expect(deriveEmbassyContext(perception).eventActive).toBe(false);
+    });
+
+    it('accepts a custom region argument', () => {
+        const alt: EmbassyRegion = {
+            id: 'varrock-museum',
+            level: 0,
+            x: { min: 3250, max: 3260 },
+            y: { min: 3440, max: 3450 },
+        };
+        const perception = { resident: { position: { x: 3255, y: 3445, level: 0 } } };
+        const ctx = deriveEmbassyContext(perception, alt);
+        expect(ctx.isInside).toBe(true);
+        expect(ctx.regionId).toBe('varrock-museum');
+    });
+
+    it('defaults missing position.level to 0', () => {
+        const perception = { resident: { position: { x: 3243, y: 3209 } } };
+        expect(deriveEmbassyContext(perception).isInside).toBe(true);
     });
 });

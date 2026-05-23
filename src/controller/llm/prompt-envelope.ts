@@ -1,3 +1,4 @@
+import { deriveEmbassyContext } from '../embassy/embassy';
 import { dominantFaction, type FactionName, type Soul, type SoulArchetype, type SoulFrontmatter } from '../soul/soul-schema';
 import type { AgentAction } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
@@ -26,6 +27,7 @@ type EnvelopeSection =
     | 'alignment'
     | 'aesthetic'
     | 'faction'
+    | 'embassy'
     | 'soul'
     | 'beliefs'
     | 'legacy'
@@ -49,6 +51,7 @@ const defaultCaps: Record<EnvelopeSection, number> = {
     alignment: 200,
     aesthetic: 160,
     faction: 200,
+    embassy: 200,
     soul: 1200,
     beliefs: 400,
     legacy: 320,
@@ -78,6 +81,7 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
         ['alignment', renderAlignmentDirective(input.soul.frontmatter.alignment)],
         ['aesthetic', renderAestheticDirective(input.soul.frontmatter.aesthetic)],
         ['faction', renderFactionDirective(input.soul.frontmatter.factionAffinity)],
+        ['embassy', renderEmbassyDirective(deriveEmbassyContext(input.perception))],
         ['soul', input.soul.body],
         ['beliefs', input.soul.frontmatter.startingBeliefs || []],
         ['legacy', input.legacy || input.soul.frontmatter.legacy || null],
@@ -251,6 +255,25 @@ function renderAestheticDirective(aesthetic: string | undefined): string {
         'resident feels recognisable across ticks. Imagery, not stage directions.',
         `- ${aesthetic.trim()}`,
     ].join('\n');
+}
+
+function renderEmbassyDirective(ctx: { isInside: boolean; eventActive: boolean; regionId: string }): string {
+    if (!ctx.isInside) {
+        return '';
+    }
+    const lines: string[] = [
+        `Embassy: you are inside the ${ctx.regionId} embassy region. This is the OnionDAO civic ground where patrons and`,
+        'visiting humans may appear. Speak with civic courtesy; greet newcomers; reference the place by name when it fits.',
+        'Help with directions to the reception clerk or faction kiosks when asked. Do not lure humans away from the embassy',
+        'unless they explicitly ask.',
+    ];
+    if (ctx.eventActive) {
+        lines.push(
+            'Event active: real humans are visiting right now. Prioritise greeting them by name when names are surfaced,',
+            'leave space for them to speak, and remember small details about them in memos so a future you can recognise them.',
+        );
+    }
+    return lines.join('\n');
 }
 
 function outputContract(): unknown {

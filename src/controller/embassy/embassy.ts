@@ -78,3 +78,54 @@ export function embassyContainsAny(coords: readonly Coord3[], region: EmbassyReg
     }
     return false;
 }
+
+/**
+ * The derived embassy view the Brain sees in its prompt. `isInside` is
+ * computed from the resident's current position; `eventActive` is read
+ * from the optional `eventActive` flag attached to perception (set by the
+ * OnionDAO event scheduler — defaults false until N-β event-day wiring).
+ */
+export interface EmbassyContext {
+    isInside: boolean;
+    eventActive: boolean;
+    /** The region the resident is being checked against (for log/debug). */
+    regionId: string;
+}
+
+/**
+ * Compute the embassy context from a perception payload. Tolerant of the
+ * loose Perception shape (key/value bag); reads `resident.position` if
+ * present, returns `isInside=false` defensively otherwise.
+ *
+ * `eventActive` reads `perception.embassyEventActive` (or
+ * `perception.eventActive` for older shape compatibility) as a top-level
+ * boolean. Both default to false.
+ */
+export function deriveEmbassyContext(perception: unknown, region: EmbassyRegion = EMBASSY_REGION): EmbassyContext {
+    const out: EmbassyContext = { isInside: false, eventActive: false, regionId: region.id };
+    if (!perception || typeof perception !== 'object') {
+        return out;
+    }
+    const root = perception as Record<string, unknown>;
+
+    const eventActive = root.embassyEventActive ?? root.eventActive;
+    if (typeof eventActive === 'boolean') {
+        out.eventActive = eventActive;
+    }
+
+    const resident = root.resident;
+    if (!resident || typeof resident !== 'object') {
+        return out;
+    }
+    const position = (resident as Record<string, unknown>).position;
+    if (!position || typeof position !== 'object') {
+        return out;
+    }
+    const pos = position as Record<string, unknown>;
+    if (typeof pos.x !== 'number' || typeof pos.y !== 'number') {
+        return out;
+    }
+    const level = typeof pos.level === 'number' ? pos.level : 0;
+    out.isInside = isInsideEmbassy({ x: pos.x, y: pos.y, level }, region);
+    return out;
+}
