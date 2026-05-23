@@ -246,3 +246,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 13:10 antigravity branch=agents/wip workstream=RB-MCP HANDOFF — Plan RB-MCP-β complete. Boilerplate MCP server, token auth, resident-api resource and logMcpCall implemented. 8/8 tests pass, full suite green (1177/1177). SHA=ba604cc3
 
 
+2026-05-23 08:22 claude  branch=agents/wip  workstream=K  STARTING — K-α faction affinity soul field. Add optional factionAffinity: { saradomin?, guthix?, zamorak?, unaligned? } to soul-schema.ts (numeric 0..100 each). One Brain prompt directive that biases dialog to highest affinity. Mirrors M-α HeroProfile pattern (35458207). Codex on G3 proof-loop.
