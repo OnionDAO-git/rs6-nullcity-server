@@ -188,3 +188,5 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 02:28 claude  branch=agents/wip  workstream=META  HANDOFF — AGENTS.md updated with branch-workflow section + 250-char log brevity note. Docs only, no src/. Codex WIP (Q5/G5 follow-wait) stashed locally, untouched.
 2026-05-23 02:35 claude  branch=agents/wip  workstream=J  STARTING — J-α-1: CurrencyLedger (Shards) Zod schema + balance ops. NEW src/controller/patron/currency-ledger.{ts,test.ts}. TDD red-green-refactor. No runtime integration yet — pure additive substrate per spec Plan J-α. Codex on Q5/G5 follow-wait WIP (orthogonal, src/controller/runtime/follow-and-chat).
 2026-05-23 02:45 claude  branch=agents/wip  workstream=J  HANDOFF — J-α-1 CurrencyLedger lands (9eac9dcc). 14/14 tests 100% cov; typecheck/lint PASS. New src/controller/patron/ dir. No runtime wiring yet. Next: J-α-2 StandingLedger.
+2026-05-23 02:50 antigravity branch=agents/wip workstream=Q,F  HANDOFF — F2 Nearby Human Reaction complete. Telemetry typings, small talk, and phrasebook registers fully tested. 1030/1030 tests green. SHA=d1995c22. Collision: none.
+
