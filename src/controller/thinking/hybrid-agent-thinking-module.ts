@@ -760,6 +760,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (action?.kind === 'move_to' && typeof action.range === 'number') {
             return undefined;
         }
+        if (action && shouldLetInteractionPipelineApproach(action)) {
+            return undefined;
+        }
         const here = perception.resident?.position;
         const interactionTarget = action ? actionTargetPosition(action) : undefined;
         const moveTarget = action ? objectTileMoveTarget(action, perception) : undefined;
@@ -2096,6 +2099,13 @@ function pickupActionWorldItem(action: AgentAction): WorldItem | undefined {
     }
 
     return worldItemLike(candidate.target);
+}
+
+function shouldLetInteractionPipelineApproach(action: AgentAction): boolean {
+    if (action.kind === 'attack') {
+        return true;
+    }
+    return Boolean(pickupActionWorldItem(action));
 }
 
 function worldItemLike(value: unknown): WorldItem | undefined {

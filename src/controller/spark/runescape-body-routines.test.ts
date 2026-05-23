@@ -490,7 +490,7 @@ describe('opportunisticPickupAction', () => {
         });
     });
 
-    it('moves toward the item when out of interaction range', () => {
+    it('clicks the item when out of interaction range so the game can walk and pick it up', () => {
         const coin = ground(COINS, 105, 100);
         const action = opportunisticPickupAction(
             perception({
@@ -499,9 +499,9 @@ describe('opportunisticPickupAction', () => {
             }),
         );
         expect(action).toEqual({
-            kind: 'move_to',
-            target: coin.position,
-            range: 1,
+            kind: 'interact',
+            target: coin,
+            option: 'pick-up',
             cause: 'opportunistic_pickup',
         });
     });
@@ -517,9 +517,9 @@ describe('opportunisticPickupAction', () => {
                 nearby: { worldItems: [bones, log, food, coin] },
             }),
         );
-        // Coins win the priority tiebreaker even when further; routine moves toward them.
-        expect(action?.kind).toBe('move_to');
-        expect((action as unknown as { target: { x: number } }).target.x).toBe(102);
+        // Coins win the priority tiebreaker even when further; the game interaction task handles the walk.
+        expect(action?.kind).toBe('interact');
+        expect((action as unknown as { target: { position: { x: number } } }).target.position.x).toBe(102);
     });
 
     it('skips logs when a nearby fire is present (suppress firemaking-log pickup)', () => {
@@ -640,7 +640,7 @@ describe('prayerTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' });
     });
 
-    it('moves toward a far-away safe bone source NPC', () => {
+    it('clicks a far-away safe bone source NPC so the combat task can follow it', () => {
         const chicken = safeNpc('Chicken', 3225, 3220);
         const action = prayerTrainingAction(
             perception({
@@ -648,12 +648,7 @@ describe('prayerTrainingAction', () => {
                 nearby: { npcs: [chicken] },
             }),
         );
-        expect(action).toEqual({
-            kind: 'move_to',
-            target: chicken.position,
-            range: 1,
-            cause: 'prayer_approach_safe_bone_source',
-        });
+        expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' });
     });
 
     it('prefers low-risk bone source over a higher-risk one even when slightly farther', () => {
@@ -665,8 +660,8 @@ describe('prayerTrainingAction', () => {
                 nearby: { npcs: [goblin, chicken] },
             }),
         );
-        expect(action?.kind).toBe('move_to');
-        expect((action as unknown as { target: { x: number } }).target.x).toBe(3222);
+        expect(action?.kind).toBe('attack');
+        expect((action as unknown as { target: { position: { x: number } } }).target.position.x).toBe(3222);
     });
 
     it('returns a move-to-waypoint when no safe source nearby and far from waypoint', () => {
@@ -821,7 +816,7 @@ describe('combatTrainingAction', () => {
         expect(action).toBeUndefined();
     });
 
-    it('moves toward a non-adjacent safe combat target', () => {
+    it('clicks a non-adjacent safe combat target so the combat task can follow it', () => {
         const chicken = combatNpc('Chicken', 3225, 3220);
         const action = combatTrainingAction(
             perception({
@@ -829,12 +824,7 @@ describe('combatTrainingAction', () => {
                 nearby: { npcs: [chicken] },
             }),
         );
-        expect(action).toEqual({
-            kind: 'move_to',
-            target: chicken.position,
-            range: 1,
-            cause: 'combat_approach_safe_target',
-        });
+        expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
     });
 });
 

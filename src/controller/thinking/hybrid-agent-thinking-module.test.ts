@@ -2109,7 +2109,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: chicken.position, range: 1, cause: 'combat_approach_safe_target' }]);
+        expect(result.actions).toEqual([{ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' }]);
         expect(result.cause).toBe('direct_chat_train_combat');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -2144,7 +2144,7 @@ describe('HybridAgentThinkingModule', () => {
 
     it('loots useful drops before attacking the next safe combat target', async () => {
         const rat = npc('Rat', 3219, 3201);
-        const bones = { itemId: 526, key: 'rs:bones', amount: 1, position: { x: 3218, y: 3201, level: 0 } };
+        const bones = { itemId: 526, key: 'rs:bones', amount: 1, position: { x: 3222, y: 3201, level: 0 } };
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
         state.cognition = {
@@ -2633,7 +2633,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: goblin.position, range: 1, cause: 'prayer_approach_safe_bone_source' }]);
+        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'prayer_attack_safe_bone_source' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -2653,9 +2653,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'move_to', target: chicken.position, range: 1, cause: 'prayer_approach_safe_bone_source' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -3019,7 +3017,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: logs.position, range: 1, cause: 'opportunistic_pickup' }]);
+        expect(result.actions).toEqual([{ kind: 'interact', target: logs, option: 'pick-up', cause: 'opportunistic_pickup' }]);
         expect(result.cause).toBe('opportunistic_pickup');
     });
 

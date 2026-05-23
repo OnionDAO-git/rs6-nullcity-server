@@ -441,10 +441,6 @@ export function opportunisticPickupAction(
         return undefined;
     }
 
-    if (distance(here, item.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: item.position, range: INTERACTION_APPROACH_RADIUS, cause: 'opportunistic_pickup' };
-    }
-
     return { kind: 'interact', target: item, option: 'pick-up', cause: 'opportunistic_pickup' };
 }
 
@@ -515,10 +511,6 @@ export function prayerTrainingAction(perception: BodyHybridPerception): AgentAct
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
             ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'prayer_seek_safe_bone_source' }
             : undefined;
-    }
-
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'prayer_approach_safe_bone_source' };
     }
 
     return { kind: 'attack', target, cause: 'prayer_attack_safe_bone_source' };
@@ -603,10 +595,6 @@ export function combatTrainingAction(
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
             ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
             : undefined;
-    }
-
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'combat_approach_safe_target' };
     }
 
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
