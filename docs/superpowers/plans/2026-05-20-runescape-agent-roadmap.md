@@ -262,6 +262,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: perception/chat tests for command prefix, direct name mention, and non-command small talk.
   - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events.
   - Partial 2026-05-22: direct-chat fallback now distinguishes small talk from unknown addressed commands, gives a useful capability hint instead of a vague acknowledgement, and tests both paths without Body inference.
+  - Verified 2026-05-23 on `agents/wip`: fresh autonomous `follow-and-chat-5m` live benchmark passed (`runId=bench_20260523121235_follow_and_chat_5m`, `score=1`, `selectedModuleActions=10`, `selectedModuleInferences=5`, `movedTowardSpeaker=1`, `statusResponses=2`, `waitAcknowledgements=4`, `stuckProgressTicks=0`). Dashboard benchmark detail showed pass status, leaderboard, move/say evidence, metrics, and the follow/status/wait/resume summary.
 
 - `[x]` **F3: Stuck recovery.**
   - Files: Body routine extraction files
