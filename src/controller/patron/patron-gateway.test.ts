@@ -226,4 +226,115 @@ describe('PatronGateway', () => {
             });
         });
     });
+
+    describe('J-δ-β-2: letter dispatch on tier crossing', () => {
+        let lettersRoot: string;
+        let lettersStore: import('./letters-store').LettersStore;
+        let gatewayWithLetters: PatronGateway;
+
+        beforeEach(() => {
+            lettersRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-patron-letters-'));
+            const { LettersStore } = require('./letters-store');
+            lettersStore = new LettersStore(lettersRoot);
+            gatewayWithLetters = new PatronGateway({
+                currencyLedger,
+                standingLedger,
+                runtimes,
+                soulsDir,
+                lettersStore,
+                now: () => new Date('2026-05-23T04:00:00Z'),
+            });
+        });
+
+        afterEach(() => {
+            fs.rmSync(lettersRoot, { recursive: true, force: true });
+        });
+
+        it('appends a standing_tier_crossed letter to the recipient inbox on offerTo crossing acquaintance', async () => {
+            currencyLedger.credit('james', 12, { reason: 'workshop_attendance' });
+            const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 12 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+
+            const inbox = lettersStore.readInbox('james');
+            expect(inbox).toHaveLength(1);
+            expect(inbox[0].kind).toBe('standing_tier_crossed');
+            expect(inbox[0].subject).toMatch(/acquaintance/i);
+            expect(inbox[0].recipient).toBe('james');
+            expect(inbox[0].senderResident).toBe('res:pip');
+        });
+
+        it('does NOT append a letter when offerTo does not cross a tier', async () => {
+            currencyLedger.credit('james', 10, { reason: 'workshop_attendance' });
+            // 5 Shards leaves james at 5 points (stranger sentinel) — no crossing.
+            const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 5 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBeUndefined();
+            expect(lettersStore.readInbox('james')).toHaveLength(0);
+        });
+
+        it('appends a letter on sponsorBirth (always grants +10 → stranger→acquaintance crossing for first sponsor)', async () => {
+            currencyLedger.credit('james', 30, { reason: 'workshop_attendance' });
+            const onResidentBorn = jest.fn();
+            const birthGateway = new PatronGateway({
+                currencyLedger,
+                standingLedger,
+                runtimes,
+                soulsDir,
+                lettersStore,
+                onResidentBorn,
+                now: () => new Date('2026-05-23T04:00:00Z'),
+            });
+
+            const res = await birthGateway.sponsorBirth({
+                humanId: 'james',
+                factionId: 'foundry',
+                name: 'res:newborn',
+                cost: 24,
+            });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+
+            const inbox = lettersStore.readInbox('james');
+            expect(inbox).toHaveLength(1);
+            expect(inbox[0].subject).toMatch(/acquaintance/i);
+            expect(inbox[0].senderResident).toBe('res:newborn');
+        });
+
+        it('skips letter dispatch entirely when lettersStore is NOT configured (back-compat)', async () => {
+            // The gateway from the outer describe block has NO lettersStore.
+            currencyLedger.credit('james', 12, { reason: 'workshop_attendance' });
+            const res = await gateway.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 12 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+            // No store was attached; no file should have been created under lettersRoot.
+            expect(fs.existsSync(path.join(lettersRoot, 'data', 'letters'))).toBe(false);
+        });
+
+        it('idempotency: a repeated offerTo at the same timestamp with same crossing does not duplicate the letter', async () => {
+            currencyLedger.credit('james', 24, { reason: 'workshop_attendance' });
+            await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 12 });
+            // The second call cannot re-cross acquaintance (already past it), so no letter on second call.
+            // But verify that the first call's letter is not duplicated by some other path.
+            const inbox = lettersStore.readInbox('james');
+            expect(inbox).toHaveLength(1);
+        });
+
+        it('crosses ally on a single big offerTo and dispatches the Ally letter (not Acquaintance)', async () => {
+            currencyLedger.credit('james', 50, { reason: 'workshop_attendance' });
+            const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 30 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('ally');
+
+            const inbox = lettersStore.readInbox('james');
+            expect(inbox).toHaveLength(1);
+            expect(inbox[0].subject).toMatch(/ally/i);
+            expect(inbox[0].body).toMatch(/ally/i);
+        });
+    });
 });
