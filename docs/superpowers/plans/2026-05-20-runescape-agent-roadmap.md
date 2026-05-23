@@ -244,6 +244,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: trade request/offer/accept/decline attempts generate review suggestions against a trading workflow, not the first visible starter workflow.
   - Verification: focused knowledge tests plus typecheck, lint, format, build, and live autonomous `trading-giving-5m` smoke.
   - Verified 2026-05-23 on `agents/wip`: added trade workflow availability, trade/follow/woodcutting speech attribution, and focused regression coverage. `typecheck`, `lint`, `format`, `build`, focused knowledge+trading tests, and live autonomous `trading-giving-5m` passed (`score=1`, artifact `/tmp/oniondao-trading-giving-bench-e6-final/bench_20260523095325_trading_giving_5m.json`) with suggestions attributed to `follow-codex`, `train-woodcutting`, and `trade-request` instead of `make-fire`.
+  - Verified follow-up 2026-05-23 on `agents/wip`: live trading proof exposed stale follow-mode chatter and make-fire/exploration-attributed movement during a trade wait. The fix holds follow/listen mode without Brain/Body drift and keeps direct trade approaches tied to `trade-request`; fresh autonomous `trading-giving-5m` passed with no woodcutting/explore/stuck lines in trajectory.
 
 ## Workstream F: Human-Like Behavior Layer
 
@@ -263,6 +264,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events.
   - Partial 2026-05-22: direct-chat fallback now distinguishes small talk from unknown addressed commands, gives a useful capability hint instead of a vague acknowledgement, and tests both paths without Body inference.
   - Verified 2026-05-23 on `agents/wip`: fresh autonomous `follow-and-chat-5m` live benchmark passed (`runId=bench_20260523121235_follow_and_chat_5m`, `score=1`, `selectedModuleActions=10`, `selectedModuleInferences=5`, `movedTowardSpeaker=1`, `statusResponses=2`, `waitAcknowledgements=4`, `stuckProgressTicks=0`). Dashboard benchmark detail showed pass status, leaderboard, move/say evidence, metrics, and the follow/status/wait/resume summary.
+  - Verified follow-up 2026-05-23 on `agents/wip`: follow/listen mode now keeps the resident on the human-visible follow goal instead of letting Brain announce unrelated skilling goals or Body explore while waiting. Focused regressions cover visible and temporarily missing follow targets with zero inference.
 
 - `[x]` **F3: Stuck recovery.**
   - Files: Body routine extraction files
@@ -315,6 +317,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Started 2026-05-23 on `agents/wip`: Codex is adding a dedicated benchmark/verifier so the scattered G4 action tests become a repeatable proof of visible trading behavior.
   - Verified 2026-05-23 on `agents/wip`: `trading-giving-5m` now covers request, safe item offer, two-stage accept, unsafe decline, CLI registration, and live autonomous proof against the local server (`score=1`, run `bench_20260523092537_trading_giving_5m`).
   - Verified 2026-05-23 on `agents/wip`: fresh dashboard-visible autonomous `trading-giving-5m` proof passed (`runId=bench_20260523134244_trading_giving_5m`, `score=1`, `duration=40s`, `selectedModuleActions=20`, `selectedModuleInferences=10`, `peerTradeCommands=2`, `tradeRequests=4`, `safeItemOffers=2`, `acceptStage1=2`, `acceptStage2=2`, `unsafeDeclines=2`, `tradeCompletedEvents=1`, `tradeCancelledEvents=1`). Dashboard API and browser detail showed pass status, trade metrics, module identity, and action evidence.
+  - Verified follow-up 2026-05-23 on `agents/wip`: a fresh live run first timed out because the resident moved toward a trade speaker, forgot the trade command, then wandered/stuck. Pending direct-trade memory now completes `move_to -> trade_request`; rerun `bench_20260523142857_trading_giving_5m` passed (`score=1`, `stuckProgressTicks=0`, `safeItemOffers=2`, `acceptStage1=2`, `acceptStage2=2`, `unsafeDeclines=2`).
 
 - `[~]` **G5: Follow and command loop.**
   - Deliverable: agent follows configured player, responds to "agent come here", "agent make fire", "agent stop", "agent status".

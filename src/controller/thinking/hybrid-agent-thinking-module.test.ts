@@ -1686,6 +1686,92 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('stays in follow/listen mode instead of letting Brain announce an unrelated skilling goal', async () => {
+        const codex = { id: 'resident:res:bmk_codex', kind: 'resident', name: 'Codex', position: { x: 3225, y: 3230, level: 0 } };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: {
+                        id: 'chop-level-one-tree',
+                        description: 'Practice woodcutting on ordinary level-1 trees and gather logs.',
+                    },
+                    say: 'Chopping down a tree for logs.',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'follow-codex',
+                description: 'Follow codex and stay close enough to be seen.',
+                createdAtTick: 1,
+            },
+            followTarget: { name: 'Codex', id: 'resident:res:bmk_codex', kind: 'resident', setAtTick: 1 },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            lastGoalShareTick: 20,
+            lastPresenceBeaconTick: 20,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 60,
+                resident: residentAt(3225, 3230),
+                players: [codex],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            expect.objectContaining({
+                kind: 'say',
+                text: expect.stringContaining('Goal: Follow codex and stay close enough to be seen.'),
+            }),
+        ]);
+        expect(JSON.stringify(result.actions)).not.toContain('Chopping down a tree');
+        expect(result.cause).toBe('presence_beacon');
+        expect(state.cognition?.activeGoal?.id).toBe('follow-codex');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('waits in follow/listen mode when the followed actor is temporarily not visible', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: { id: 'scout', description: 'Scout around for something else to do.' },
+                    say: 'I am going to scout nearby.',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'follow-codex',
+                description: 'Follow codex and stay close enough to be seen.',
+                createdAtTick: 1,
+            },
+            followTarget: { name: 'Codex', id: 'resident:res:bmk_codex', kind: 'resident', setAtTick: 1 },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            lastGoalShareTick: 55,
+            lastPresenceBeaconTick: 55,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 60,
+                resident: residentAt(3225, 3230),
+                players: [],
+            }),
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('follow_listen_hold');
+        expect(state.cognition?.activeGoal?.id).toBe('follow-codex');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('starts following a named nearby player from direct chat', async () => {
         const codex = player('codex', 3225, 3213);
         const llm = scriptedLlm([]);
@@ -2350,6 +2436,35 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: codex.position, range: 1, cause: 'direct_chat_trade' }]);
         expect(result.cause).toBe('direct_chat_trade');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('remembers an approached direct trade command and sends the request after arrival', async () => {
+        const codex = player('codex', 3225, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const approach = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+                events: [chatFromCodex('agent trade me', 3225, 3201)],
+            }),
+        );
+        const request = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3225, 3201),
+                players: [codex],
+            }),
+        );
+
+        expect(approach.actions).toEqual([{ kind: 'move_to', target: codex.position, range: 1, cause: 'direct_chat_trade' }]);
+        expect(request.actions).toEqual([{ kind: 'trade_request', target: codex, cause: 'direct_chat_trade' }]);
+        expect(request.cause).toBe('direct_chat_trade');
+        expect(state.cognition?.pendingDirectTrade).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

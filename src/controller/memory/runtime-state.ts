@@ -37,6 +37,7 @@ export interface CognitiveState {
     activeGoal?: ActiveGoalState;
     activeMove?: ActiveMoveState;
     followTarget?: FollowTargetState;
+    pendingDirectTrade?: PendingDirectTradeState;
     pendingCombatNarration?: PendingCombatNarrationState;
     lastBrainTick?: number;
     lastBodyTick?: number;
@@ -66,6 +67,19 @@ export interface FollowTargetState {
     id?: string;
     kind?: string;
     paused?: boolean;
+    setAtTick: number;
+}
+
+export interface PendingDirectTradeState {
+    target: {
+        id: string;
+        kind: string;
+        name?: string;
+        key?: string;
+        position: { x: number; y: number; level: number };
+        hpFraction?: number;
+        combatLevel?: number;
+    };
     setAtTick: number;
 }
 

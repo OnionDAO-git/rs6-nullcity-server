@@ -216,6 +216,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return this.result([trade.action], trade.cause, 0, false);
         }
 
+        const pendingDirectTrade = this.pendingDirectTradeAction(perception as HybridPerception);
+        if (pendingDirectTrade) {
+            return this.result([pendingDirectTrade.action], pendingDirectTrade.cause, 0, false);
+        }
+
         if ((perception as HybridPerception).resident?.busy) {
             return { actions: [], cause: 'resident_busy', nooped: true };
         }
@@ -228,6 +233,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const activeFollow = this.activeFollowAction(perception as HybridPerception);
         if (activeFollow) {
             return this.result([activeFollow.action], activeFollow.cause, 0, false);
+        }
+
+        const followHold = this.followListenHoldAction(perception as HybridPerception);
+        if (followHold) {
+            return this.result(followHold.actions, followHold.cause, 0, followHold.nooped);
         }
 
         if (this.shouldRunBrain()) {
@@ -850,6 +860,21 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return action ? { action, cause: 'follow_player_active' } : undefined;
     }
 
+    private followListenHoldAction(perception: HybridPerception): { actions: AgentAction[]; cause: string; nooped: boolean } | undefined {
+        const goal = this.activeGoal();
+        const targetState = this.currentFollowTarget();
+        if (!goal || !isFollowGoal(goal) || !targetState?.name) {
+            return undefined;
+        }
+
+        const beacon = this.presenceBeaconAction(perception);
+        if (beacon) {
+            return { actions: [beacon], cause: 'presence_beacon', nooped: false };
+        }
+
+        return { actions: [], cause: 'follow_listen_hold', nooped: true };
+    }
+
     private followAction(perception: HybridPerception, cause = 'follow_player_fallback'): AgentAction | undefined {
         const targetState = this.currentFollowTarget();
         const targetName = targetState?.name;
@@ -871,6 +896,67 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
             cause,
         };
+    }
+
+    private pendingDirectTradeAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const pending = this.cognition().pendingDirectTrade;
+        if (!pending) {
+            return undefined;
+        }
+        if (this.options.state.tick - pending.setAtTick > 80) {
+            this.cognition().pendingDirectTrade = undefined;
+            return undefined;
+        }
+        if (perception.resident?.activeTrade) {
+            this.cognition().pendingDirectTrade = undefined;
+            return undefined;
+        }
+
+        const here = perception.resident?.position;
+        const target = this.resolvePendingDirectTradeTarget(perception, pending.target);
+        if (!here || !target) {
+            return undefined;
+        }
+        if (distance(here, target.position) > 1) {
+            return {
+                action: { kind: 'move_to', target: target.position, range: 1, cause: 'direct_chat_trade' },
+                cause: 'direct_chat_trade',
+            };
+        }
+
+        this.cognition().pendingDirectTrade = undefined;
+        return { action: { kind: 'trade_request', target, cause: 'direct_chat_trade' }, cause: 'direct_chat_trade' };
+    }
+
+    private rememberPendingDirectTrade(target: Actor | undefined): void {
+        if (!target || target.kind === 'npc') {
+            return;
+        }
+        this.cognition().pendingDirectTrade = {
+            target: {
+                id: target.id,
+                kind: target.kind,
+                name: target.name,
+                key: target.key,
+                position: target.position,
+                hpFraction: target.hpFraction,
+                combatLevel: target.combatLevel,
+            },
+            setAtTick: this.options.state.tick,
+        };
+    }
+
+    private resolvePendingDirectTradeTarget(
+        perception: HybridPerception,
+        pending: NonNullable<ReturnType<HybridAgentThinkingModule['cognition']>['pendingDirectTrade']>['target'],
+    ): Actor | undefined {
+        const visible = (perception.nearby?.players || []).find(
+            actor => actor.id === pending.id || actorMatchesName(actor, pending.name || pending.id),
+        );
+        if (visible) {
+            return visible;
+        }
+        return actorLike(pending);
     }
 
     private isChatRateLimited(): boolean {
@@ -1385,8 +1471,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         if (isTradeIntent(command, chat.normalizedText)) {
             this.resumeManualPause();
+            const action = tradeRequestOrApproach(perception, chat.from, 'direct_chat_trade');
+            if (action?.kind === 'move_to') {
+                this.rememberPendingDirectTrade(chat.from);
+            } else if (action?.kind === 'trade_request') {
+                this.cognition().pendingDirectTrade = undefined;
+            }
             return {
-                action: tradeRequestOrApproach(perception, chat.from, 'direct_chat_trade') || {
+                action: action || {
                     kind: 'say',
                     text: 'I need to see you nearby before I can trade.',
                 },
