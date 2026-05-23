@@ -627,6 +627,66 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'Bankers stand behind bank booths in every major town. Right-click the Banker NPC and choose `Bank` to immediately open the bank interface (bypasses chat). Free service. Key banker coords: Lumbridge Castle top floor 3208,3219,2; Varrock east 3253,3420,0; Varrock west 3185,3436,0; Falador east 3013,3355,0; Falador west 2946,3369,0; Edgeville 3094,3243,0; Draynor 3094,3243,0; Al-Kharid ~3270,3167,0. Use to deposit valuables before risky combat or retrieve stored items.',
     },
+    {
+        id: 'items-food-overview',
+        title: 'Items: Food And Heal Values',
+        topics: ['items', 'food', 'heal', 'cooking', 'combat-survival'],
+        keywords: ['food', 'heal', 'hitpoints', 'hp', 'shrimp', 'anchovies', 'sardine', 'trout', 'salmon', 'tuna', 'lobster', 'swordfish', 'bread', 'cake', 'eat'],
+        requiredItems: ['cooked food in inventory'],
+        actions: ['item_action eat', 'move_to fishing spot then cook on fire/range'],
+        successSignals: ['HP increases by food heal value', 'food leaves inventory', 'eat animation plays'],
+        source: 'docs/runescape-skill/items.md § Food; docs/runescape-skill/skills/cooking.md',
+        summary:
+            'Cooked food heals HP. Common heal values: cooked shrimp 3, anchovies 1 (eat several), sardine 4, trout 7, salmon 9, tuna 10, lobster 12, swordfish 14, bread 5, cake 4 per bite (3 bites = 12 HP, 1 slot). NEVER engage combat without at least 3 food in inventory; eat when HP drops below 50%. Burnt items have no heal value — discard.',
+    },
+    {
+        id: 'items-rune-overview',
+        title: 'Items: Runes And Magic Costs',
+        topics: ['items', 'runes', 'magic', 'rune-shop', 'runecrafting'],
+        keywords: ['rune', 'runes', 'air rune', 'water rune', 'earth rune', 'fire rune', 'mind rune', 'chaos rune', 'death rune', 'law rune', 'blood rune', 'nature rune', 'cosmic rune', 'body rune'],
+        requiredItems: ['runes matching the target spell recipe'],
+        actions: ['interact trade with Aubury Varrock for elemental + mind/body', 'craft runes via Runecrafting at altars', 'item_action equip staff to save matching elemental rune'],
+        successSignals: ['runes appear in inventory (stack 1 slot each)', 'spell casts succeed without "not enough runes" error'],
+        source: 'docs/runescape-skill/items.md § Runes; docs/runescape-skill/skills/magic.md; docs/runescape-skill/skills/runecrafting.md',
+        summary:
+            'Runes are stackable single-slot magic consumables. Categories: elemental (Air, Water, Earth, Fire) at cheapest cost; Mind for Strike tier; Chaos for Bolt; Death for Blast; Blood for Wave; Law for teleports; Nature for alchemy; Cosmic for jewelry enchanting. Aubury Varrock (3253,3401,0) sells elemental + Mind/Body. Self-supply via Runecrafting at altars after the Rune Mysteries quest. Wielding a matching elemental staff (Air Staff, Water Staff, etc.) provides unlimited matching runes free.',
+    },
+    {
+        id: 'items-tool-overview',
+        title: 'Items: Starter Tools And Replacement Sources',
+        topics: ['items', 'tools', 'general-store', 'starter', 'recovery'],
+        keywords: ['tool', 'tools', 'tinderbox', 'pot', 'jug', 'bucket', 'bowl', 'hammer', 'spade', 'needle', 'chisel', 'shears', 'knife', 'lost tool', 'replacement', 'general store'],
+        requiredItems: ['coins for purchase (1-6 gp per starter tool)'],
+        actions: ['move_to Lumbridge General Store 3203,3247,0', 'interact trade with Shopkeeper or Shop Assistant'],
+        successSignals: ['shop interface opens', 'inventory gains requested tool', 'coin count drops by listed price'],
+        source: 'docs/runescape-skill/items.md § Starter Tools; data/config/shops/lumbridge-general-store.json',
+        summary:
+            'The Lumbridge General Store (3203,3247,0) is the canonical recovery anchor for lost tools. Prices: tinderbox 1 gp, pot 1 gp, jug 1 gp, shears 1 gp, hammer 1 gp, bucket 2 gp, spade 3 gp, bowl 4 gp, needle (crafting shops) 1 gp, chisel (crafting shops) 1 gp, knife 6 gp. Always restocks. For hatchets see Bob\'s Brilliant Axes (3231,3203,0). For fishing nets see fishing shops or Wydin Port Sarim.',
+    },
+    {
+        id: 'items-armor-tier-overview',
+        title: 'Items: Armor Tiers (Bronze → Rune)',
+        topics: ['items', 'armor', 'armour', 'defence', 'tier', 'progression'],
+        keywords: ['armor', 'armour', 'helmet', 'helm', 'chainbody', 'platebody', 'platelegs', 'kiteshield', 'square shield', 'bronze', 'iron', 'steel', 'mithril', 'adamant', 'rune', 'defence level'],
+        requiredItems: ['matching Defence level (Steel 5, Mithril 20, Adamant 30, Rune 40)', 'coins or smithing/drop source for the gear'],
+        actions: ['interact trade with Horvik Varrock 3229,3434,0', 'item_action equip from inventory'],
+        successSignals: ['armor appears in equip slot', 'defence bonus reflected in equipment screen'],
+        source: 'docs/runescape-skill/items.md § Armour By Tier; docs/runescape-skill/skills/smithing.md',
+        summary:
+            'Armor tiers: bronze (level 1) → iron (1) → steel (5 Defence) → mithril (20) → adamant (30) → rune (40). Pieces per tier: full helm, chainbody (lighter), platebody (heavier, no female restriction in 2006), platelegs, kiteshield, square shield. Horvik\'s Armour Shop in Varrock (3229,3434,0) sells bronze through steel. Higher tiers come from smithing your own bars or buying from other players.',
+    },
+    {
+        id: 'items-weapon-tier-overview',
+        title: 'Items: Weapon Tiers + Scimitar Recommendation',
+        topics: ['items', 'weapons', 'scimitar', 'attack', 'tier', 'progression'],
+        keywords: ['weapon', 'sword', 'scimitar', 'dagger', 'longsword', 'mace', 'battleaxe', 'spear', 'halberd', 'bronze', 'iron', 'steel', 'mithril', 'adamant', 'rune', 'attack level'],
+        requiredItems: ['matching Attack level (Steel 5, Mithril 20, Adamant 30, Rune 40)'],
+        actions: ['interact trade with Varrock Sword Shop or smith from bar', 'item_action equip weapon'],
+        successSignals: ['weapon appears in equip slot', 'attack bonus reflected in equipment screen', 'attack speed visible during combat'],
+        source: 'docs/runescape-skill/items.md § Weapons By Tier; docs/runescape-skill/skills/combat.md',
+        summary:
+            'Weapon tiers: bronze (Attack level 1) → iron (1) → steel (5 Attack) → mithril (20) → adamant (30) → rune (40). **Scimitar is the recommended melee weapon at every tier** — fast attack speed (4-tick) beats slashing alternatives (sword 5-tick, longsword 6-tick, battleaxe 7-tick) for DPS at all training levels. Iron scimitar at Varrock Sword Shop for ~50 gp is a cheap level-1-to-5 upgrade.',
+    },
 ];
 
 const STOP_WORDS = new Set([

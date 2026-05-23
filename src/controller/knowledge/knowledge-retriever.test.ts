@@ -319,6 +319,53 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('item-category cross-cutting entries (food, runes, tools, armor, weapons)', () => {
+        it('retrieves the items-food-overview entry for a heal query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what food heals the most hitpoints in combat', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('items-food-overview');
+            const food = results.find(result => result.entry.id === 'items-food-overview')?.entry;
+            expect(food?.summary).toMatch(/shrimp|lobster|swordfish|trout/i);
+        });
+
+        it('retrieves the items-rune-overview entry for a rune query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'where to buy chaos runes air runes for casting', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('items-rune-overview');
+            const rune = results.find(result => result.entry.id === 'items-rune-overview')?.entry;
+            expect(rune?.summary).toMatch(/aubury|chaos|elemental|runecrafting/i);
+        });
+
+        it('retrieves the items-tool-overview entry for a tinderbox-recovery query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'lost my tinderbox where to buy a replacement tool', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('items-tool-overview');
+            const tool = results.find(result => result.entry.id === 'items-tool-overview')?.entry;
+            expect(tool?.summary).toMatch(/general store|lumbridge|tinderbox|hammer/i);
+        });
+
+        it('retrieves the items-armor-tier-overview entry for an armor query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what defence level do I need for steel platebody armor', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('items-armor-tier-overview');
+            const armor = results.find(result => result.entry.id === 'items-armor-tier-overview')?.entry;
+            expect(armor?.summary).toMatch(/bronze|steel|mithril|adamant|rune/i);
+        });
+
+        it('retrieves the items-weapon-tier-overview entry for a scimitar query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'which weapon should I use as my main melee weapon a scimitar', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('items-weapon-tier-overview');
+            const weapon = results.find(result => result.entry.id === 'items-weapon-tier-overview')?.entry;
+            expect(weapon?.summary).toMatch(/scimitar|attack speed|bronze|steel|rune/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {
