@@ -199,7 +199,9 @@ describe('RuneScape knowledge retriever', () => {
 
     describe('place navigation entries (lumbridge, varrock, falador, edgeville, al-kharid, draynor, wilderness)', () => {
         it('retrieves lumbridge-anchor entry for a lumbridge query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'walk to lumbridge castle bank and the kitchen range', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'walk to lumbridge castle bank and the kitchen range', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('place-lumbridge-anchor');

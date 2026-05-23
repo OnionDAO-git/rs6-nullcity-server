@@ -21,6 +21,8 @@
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
 import { distance, explorationObjectCooldownKey, isExplorationOnCooldown, type BodyActor, type BodyPos } from './runescape-body-routines';
+import type { Soul } from '../soul/soul-schema';
+import { pickPhrase } from '../soul/phrasebook';
 
 // --- Shared structural types matching the monolith's local definitions. ---
 
@@ -44,6 +46,7 @@ export type NervousHybridPerception = {
         combatTarget?: BodyActor | null;
     };
     nearby?: {
+        npcs?: BodyActor[];
         objects?: Array<{ objectId: number; position: BodyPos; orientation?: number }>;
     };
     events?: Array<Record<string, unknown>>;
@@ -247,14 +250,96 @@ export function shouldEmitPresenceBeacon(input: PresenceBeaconTiming): boolean {
  *
  * Moved verbatim from the monolith (R-γ).
  */
-export function stuckHelpRequestAction(here: BodyPos, active: NervousActiveMoveState): AgentAction | undefined {
+export function getCardinalDirection(from: BodyPos, to: BodyPos): string {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    if (Math.abs(dx) > Math.abs(dy)) {
+        return dx > 0 ? 'east' : 'west';
+    } else {
+        return dy > 0 ? 'north' : 'south';
+    }
+}
+
+export function stuckHelpRequestAction(
+    here: BodyPos,
+    active: NervousActiveMoveState,
+    perception?: NervousHybridPerception,
+    soul?: Soul,
+): AgentAction | undefined {
     if (active.cause !== 'stuck_move_recovery') {
         return undefined;
     }
 
+    let reason:
+        | 'blocked_by_obstacle'
+        | 'blocked_by_npc'
+        | 'blocked_by_unreachable_target'
+        | 'path_to_goal_unknown'
+        | 'repeated_movement_failure' = 'blocked_by_obstacle';
+    let blockerName = 'obstacle';
+    let direction = 'forward';
+
+    if (perception) {
+        if (perception.nearby?.npcs && perception.nearby.npcs.length > 0) {
+            const nearbyNpc = perception.nearby.npcs.find(npc => npc.position && distance(here, npc.position) <= 1.5);
+            if (nearbyNpc) {
+                reason = 'blocked_by_npc';
+                blockerName = nearbyNpc.name || 'someone';
+                direction = getCardinalDirection(here, nearbyNpc.position);
+            }
+        }
+
+        if (reason !== 'blocked_by_npc') {
+            const nearbyObjects = perception.nearby?.objects || [];
+            const fence = nearbyObjects.find(
+                obj => FENCE_OBSTACLE_IDS.has(obj.objectId) && distance(here, obj.position) <= STUCK_OBSTACLE_RANGE,
+            );
+            const door = nearbyObjects.find(
+                obj => OPENABLE_OBSTACLE_IDS.has(obj.objectId) && distance(here, obj.position) <= STUCK_OBSTACLE_RANGE,
+            );
+
+            if (fence) {
+                reason = 'blocked_by_obstacle';
+                blockerName = 'fence';
+                direction = getCardinalDirection(here, fence.position);
+            } else if (door) {
+                reason = 'blocked_by_obstacle';
+                blockerName = 'gate';
+                direction = getCardinalDirection(here, door.position);
+            } else {
+                reason = 'repeated_movement_failure';
+                blockerName = 'path';
+                direction = getCardinalDirection(here, active.target);
+            }
+        }
+    } else {
+        direction = getCardinalDirection(here, active.target);
+        reason = 'repeated_movement_failure';
+    }
+
+    let text = `I am stuck near ${here.x},${here.y} trying to reach ${active.target.x},${active.target.y}. Can someone lead me or open a route?`;
+    let voiceSource: 'phrasebook' | 'scripted' = 'scripted';
+
+    if (soul) {
+        const situation = `stuck_help_request.${reason}${reason === 'blocked_by_obstacle' ? '.' + blockerName : ''}`;
+        const seed = `${soul.frontmatter.name}_stuck_${perception?.tick ?? 0}`;
+        text = pickPhrase({
+            soul,
+            situation,
+            seed,
+            params: {
+                direction,
+                blockerName,
+            },
+        });
+        voiceSource = 'phrasebook';
+    }
+
     return {
         kind: 'say',
-        text: `I am stuck near ${here.x},${here.y} trying to reach ${active.target.x},${active.target.y}. Can someone lead me or open a route?`,
+        text,
         cause: 'stuck_help_request',
+        voiceSource,
+        helpRequestReason: reason,
     };
 }

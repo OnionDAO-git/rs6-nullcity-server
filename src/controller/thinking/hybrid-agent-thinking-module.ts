@@ -648,7 +648,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
                 if (typeof this.options.state.stuckSince === 'number') {
                     if (active.cause === 'stuck_move_recovery') {
-                        const helpRequest = stuckHelpRequestAction(here, updated);
+                        const helpRequest = stuckHelpRequestAction(here, updated, perception, this.options.soul);
                         if (helpRequest && !this.isRepeatedAction(helpRequest)) {
                             cognition.activeMove = undefined;
                             return { action: helpRequest, cause: 'stuck_help_request' };
@@ -705,7 +705,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: blocker, cause: 'stuck_blocker_report' };
         }
 
-        const helpRequest = stuckHelpRequestAction(here, active);
+        const helpRequest = stuckHelpRequestAction(here, active, perception, this.options.soul);
         if (helpRequest && !this.isRepeatedAction(helpRequest)) {
             this.cognition().activeMove = undefined;
             return { action: helpRequest, cause: 'stuck_help_request' };

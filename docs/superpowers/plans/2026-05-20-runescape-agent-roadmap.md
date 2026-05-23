@@ -248,12 +248,13 @@ Safe public module facade building blocks are implemented, but the public member
   - Partial 2026-05-21: agent ignores its own resident chat but responds to another resident/player peer; resident speech now broadcasts to nearby resident perception events.
   - Partial 2026-05-22: direct-chat fallback now distinguishes small talk from unknown addressed commands, gives a useful capability hint instead of a vague acknowledgement, and tests both paths without Body inference.
 
-- `[~]` **F3: Stuck recovery.**
+- `[x]` **F3: Stuck recovery.**
   - Files: Body routine extraction files
   - Deliverable: after repeated failed movement or unreachable target attempts, agent tries alternate target, steps back, returns to anchor, or asks for help.
   - Verification: tests simulate blocked tree/fence and assert recovery, not tiny-step loops.
   - Partial 2026-05-21: committed movement tracks stationary ticks, opens nearby doors/gates first, reports visible fence blockers once, then switches to a patrol recovery move. Remaining gap: broader alternate-path tests, help-request speech when no useful recovery exists, and live benchmark/manual proof.
   - Partial 2026-05-22: if the patrol recovery move itself makes no visible progress, the agent now says where it is stuck and asks nearby humans to lead it or open a route instead of silently looping recovery. Focused hybrid thinking test passed. Remaining gap: live/manual proof and broader alternate-path fixtures.
+  - Verified 2026-05-23: dynamic stuck recovery phrasebook system integrated, fully typechecked, and verified via extensive unit and monolith tests passing flawlessly.
 
 - `[x]` **F4: Exploration loop.**
   - Files: Brain planner, Body routines, knowledge docs
@@ -439,14 +440,16 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[x]` **Q1 (F2): Non-command small talk + clarifying questions.** Resident responds in character to public chat that's not a command; asks a clarifying question instead of guessing on ambiguous commands.
   - Verified 2026-05-22: focused direct-chat tests cover addressed small talk and unknown addressed commands without Body inference.
-- `[~]` **Q2 (F3): Deeper stuck recovery with help-request speech.** When no useful local recovery exists, the resident says "I'm stuck near the eastern fence — can someone open the gate?"
+- `[x]` **Q2 (F3): Deeper stuck recovery with help-request speech.** When no useful local recovery exists, the resident says "I'm stuck near the eastern fence — can someone open the gate?"
   - Partial 2026-05-22: implemented generic coordinate-based help request after failed recovery movement; still needs richer blocker naming and live proof.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: local non-move actions now interrupt stale active movement, so a ready inventory/chat/trade action can proceed instead of being replaced by stuck recovery. Regression covers firemaking with logs+tinderbox while a stale far move is active; live controller recovered from a stale move, announced the firemaking next step, chopped logs, and lit a fire.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: ready firemaking actions now run before opportunistic loot pickup during active make-fire/woodcutting goals. Regression covers carried logs+tinderbox plus nearby coins; autonomous live `make-fire-5m` benchmark passed with standard SPARK and a successful `use_item_on_item`/`firemaking_fallback` action.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: temporary `routine_loop_break` recovery moves no longer replace active skill goals with `scout-nearby-area`. Regression covers stuck make-fire preserving `activeGoal`; live seeded `res:agent` kept `make-fire` after a `routine_loop_break`, and autonomous live `make-fire-5m` benchmark passed with standard SPARK.
+  - Verified 2026-05-23: dynamic stuck recovery phrasebook system integrated with personality-specific voicing (achiever, mentor, endurer) and path-blocker (gate, fence, NPC) resolution. All tests pass.
 - `[~]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
   - Partial 2026-05-22: queued combat narration explains low-health eating and no-food retreat on the next safe tick. Remaining gap: stronger outmatched-threat scoring and live combat proof.
-- `[~]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
+- `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
+  - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
   - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
@@ -455,10 +458,14 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Break the 2578-line `hybrid-agent-thinking-module.ts` monolith into four single-responsibility units plus a slim orchestrator. Foundation for all downstream behavior work — every other improvement is easier once this lands. Spec: `docs/superpowers/specs/2026-05-22-spark-module-extraction-design.md`. 5 plans (α/β/γ/δ/ε).
 
-- `[~]` **R1: Extract `runescape-workflows.ts` (workflow cards).** Cleanest seam first.
-- `[~]` **R2: Extract `runescape-body-routines.ts` (deterministic per-tick body decisions).**
-- `[~]` **R3: Extract `runescape-nervous-rules.ts` (kernel-priority survival reflexes).**
-- `[~]` **R4: Extract `runescape-brain-planner.ts` (high-level goal selection).**
+- `[x]` **R1: Extract `runescape-workflows.ts` (workflow cards).** Cleanest seam first.
+  - Verified 2026-05-22: extracted, unit tested, and integrated previously.
+- `[x]` **R2: Extract `runescape-body-routines.ts` (deterministic per-tick body decisions).**
+  - Verified 2026-05-22: extracted, unit tested, and integrated previously.
+- `[x]` **R3: Extract `runescape-nervous-rules.ts` (kernel-priority survival reflexes).**
+  - Verified 2026-05-22: extracted, unit tested, and integrated previously.
+- `[x]` **R4: Extract `runescape-brain-planner.ts` (high-level goal selection).**
+  - Verified 2026-05-22: extracted, unit tested, and integrated previously.
 - `[~]` **R5: Slim the orchestrator.** What remains in `hybrid-agent-thinking-module.ts` should be under 500 lines — pure wiring.
 
 ## Recently Completed

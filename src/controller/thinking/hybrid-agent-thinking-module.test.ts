@@ -1163,8 +1163,10 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am stuck near 3233,3237 trying to reach 3230,3238. Can someone lead me or open a route?',
+                text: 'Stuck here trying to head west. Can someone clear a path?',
                 cause: 'stuck_help_request',
+                voiceSource: 'phrasebook',
+                helpRequestReason: 'repeated_movement_failure',
             },
         ]);
         expect(result.cause).toBe('stuck_help_request');
@@ -1339,8 +1341,10 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am stuck near 3233,3243 trying to reach 3230,3243. Can someone lead me or open a route?',
+                text: 'I keep getting turned around trying to go west. Could someone lead me?',
                 cause: 'stuck_help_request',
+                voiceSource: 'phrasebook',
+                helpRequestReason: 'repeated_movement_failure',
             },
         ]);
         expect(result.cause).toBe('stuck_help_request');

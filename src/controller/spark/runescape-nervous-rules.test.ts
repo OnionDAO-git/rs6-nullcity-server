@@ -20,6 +20,7 @@ import {
     type NervousActiveMoveState,
     type NervousHybridPerception,
 } from './runescape-nervous-rules';
+import type { Soul } from '../soul/soul-schema';
 
 function perception(overrides: Partial<NervousHybridPerception> = {}): NervousHybridPerception {
     return {
@@ -227,6 +228,8 @@ describe('stuckHelpRequestAction', () => {
             kind: 'say',
             text: 'I am stuck near 100,100 trying to reach 120,100. Can someone lead me or open a route?',
             cause: 'stuck_help_request',
+            voiceSource: 'scripted',
+            helpRequestReason: 'repeated_movement_failure',
         });
     });
 
@@ -238,6 +241,132 @@ describe('stuckHelpRequestAction', () => {
     it('returns undefined when active.cause is missing', () => {
         const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, activeMove());
         expect(action).toBeUndefined();
+    });
+
+    it('uses phrasebook voicing and records helpRequestReason when a soul is provided (F3-T4)', () => {
+        const soul: Soul = {
+            frontmatter: {
+                name: 'res:agent',
+                archetype: 'achiever',
+                voice: { register: 'achiever' },
+            },
+            body: '',
+            sourcePath: 'test.md',
+        };
+
+        const active = activeMove({ cause: 'stuck_move_recovery', target: { x: 100, y: 102, level: 0 } });
+        const p = perception({
+            nearby: {
+                objects: [{ objectId: objectIds.shortCuts.fenceNearKharidCows, position: { x: 100, y: 101, level: 0 } }],
+            },
+        });
+
+        const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, active, p, soul) as any;
+        expect(action).toBeDefined();
+        expect(action?.kind).toBe('say');
+        expect(action?.voiceSource).toBe('phrasebook');
+        expect(action?.helpRequestReason).toBe('blocked_by_obstacle');
+        expect(action?.text).toContain('fence');
+        expect(action?.text).toContain('north');
+    });
+
+    it('resolves gate and direction when blocked by openable door/gate', () => {
+        const soul: Soul = {
+            frontmatter: {
+                name: 'res:agent',
+                archetype: 'achiever',
+                voice: { register: 'achiever' },
+            },
+            body: '',
+            sourcePath: 'test.md',
+        };
+
+        const active = activeMove({ cause: 'stuck_move_recovery', target: { x: 98, y: 100, level: 0 } });
+        const p = perception({
+            nearby: {
+                objects: [{ objectId: 1530, position: { x: 99, y: 100, level: 0 } }],
+            },
+        });
+
+        const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, active, p, soul) as any;
+        expect(action?.helpRequestReason).toBe('blocked_by_obstacle');
+        expect(action?.text).toMatch(/door|gate/);
+        expect(action?.text).toContain('west');
+    });
+
+    it('identifies and names nearby blocking NPC (blocked_by_npc)', () => {
+        const soul: Soul = {
+            frontmatter: {
+                name: 'res:agent',
+                archetype: 'achiever',
+                voice: { register: 'achiever' },
+            },
+            body: '',
+            sourcePath: 'test.md',
+        };
+
+        const active = activeMove({ cause: 'stuck_move_recovery', target: { x: 100, y: 98, level: 0 } });
+        const p = perception({
+            nearby: {
+                npcs: [{ id: 'npc-1', name: 'Guard', position: { x: 100, y: 99, level: 0 } } as any],
+            },
+        });
+
+        const action = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, active, p, soul) as any;
+        expect(action?.helpRequestReason).toBe('blocked_by_npc');
+        expect(action?.text).toContain('Guard');
+        expect(action?.text).toContain('south');
+    });
+
+    it('supports different voice.register phrasings (F3-T8)', () => {
+        const achieverSoul: Soul = {
+            frontmatter: {
+                name: 'res:agent',
+                archetype: 'achiever',
+                voice: { register: 'achiever' },
+            },
+            body: '',
+            sourcePath: 'test.md',
+        };
+
+        const mentorSoul: Soul = {
+            frontmatter: {
+                name: 'res:agent',
+                archetype: 'mentor',
+                voice: { register: 'mentor' },
+            },
+            body: '',
+            sourcePath: 'test.md',
+        };
+
+        const endurerSoul: Soul = {
+            frontmatter: {
+                name: 'res:agent',
+                archetype: 'endurer',
+                voice: { register: 'endurer' },
+            },
+            body: '',
+            sourcePath: 'test.md',
+        };
+
+        const active = activeMove({ cause: 'stuck_move_recovery', target: { x: 100, y: 102, level: 0 } });
+        const p = perception({
+            nearby: {
+                objects: [{ objectId: objectIds.shortCuts.fenceNearKharidCows, position: { x: 100, y: 101, level: 0 } }],
+            },
+        });
+
+        const achieverAction = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, active, p, achieverSoul) as any;
+        const mentorAction = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, active, p, mentorSoul) as any;
+        const endurerAction = stuckHelpRequestAction({ x: 100, y: 100, level: 0 }, active, p, endurerSoul) as any;
+
+        expect(achieverAction?.text).not.toEqual(mentorAction?.text);
+        expect(achieverAction?.text).not.toEqual(endurerAction?.text);
+        expect(mentorAction?.text).not.toEqual(endurerAction?.text);
+
+        expect(achieverAction?.text).toContain('training');
+        expect(mentorAction?.text).toMatch(/stands in our way|Patience is key/);
+        expect(endurerAction?.text).toMatch(/barrier|holding me back|Still standing/);
     });
 });
 
