@@ -976,6 +976,42 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'When a player addresses you by name (e.g., "res:agent, what are you doing?"), acknowledge within 2 ticks. Pattern: answer the specific question if you can, OR say "checking — one moment" + provide the answer within 5 ticks. Silence after a direct mention reads as ignoring; that breaks the social contract with patrons + observers. If you cannot answer (broken goal, unknown player), say so explicitly rather than going silent.',
     },
+    {
+        id: 'skill-crafting-basic',
+        title: 'Skill: Crafting',
+        topics: ['crafting', 'leather', 'cowhide', 'gems', 'jewelry', 'starter'],
+        keywords: ['craft', 'crafting', 'cowhide', 'leather', 'soft leather', 'needle', 'thread', 'tan', 'tanner', 'chisel', 'gem', 'sapphire', 'emerald', 'ruby', 'diamond', 'jewelry', 'amulet', 'ring'],
+        requiredItems: ['rs:needle + rs:thread for leather crafting', 'rs:chisel for gem cutting', 'rs:cowhide (tanned to rs:leather at Al-Kharid tanner 3273,3192,0 for 1 gp)', 'cut gem + gold bar + jewelry mould for amulets/rings'],
+        actions: ['interact trade with tanner (cowhide → leather)', 'item_action use_item_on_item (needle on leather for body/gloves/boots)', 'item_action use_item_on_item (chisel on uncut gem)'],
+        successSignals: ['leather appears in inventory after tanning', 'leather body / gloves / boots appear after needle use', 'cut gem appears after chisel use', 'crafting XP changes'],
+        source: 'src/plugins/skills/crafting/*; docs/runescape-skill/skills/crafting.md',
+        summary:
+            'Crafting has two main paths. Leather: get rs:cowhide from cows → tan at Al-Kharid tanner (3273,3192,0) for 1 gp → use rs:needle + rs:thread on leather to craft body/gloves/boots/chaps. Gems: use rs:chisel on uncut sapphire/emerald/ruby/diamond to cut → combine cut gem with gold bar + jewelry mould at furnace for amulets/rings. Trains alongside cow combat (combo training).',
+    },
+    {
+        id: 'skill-runecrafting-basic',
+        title: 'Skill: Runecrafting',
+        topics: ['runecrafting', 'runes', 'altars', 'rune-essence', 'magic-supply'],
+        keywords: ['runecraft', 'runecrafting', 'rune essence', 'altar', 'air altar', 'water altar', 'earth altar', 'fire altar', 'mind altar', 'body altar', 'talisman', 'tiara', 'aubury teleport', 'rune mysteries'],
+        requiredItems: ['rs:rune_essence (mined at Rune Essence mine via Aubury 3253,3401,0 or Sedridor Wizards Tower basement)', 'matching talisman or tiara for each altar (air, mind, water, etc.)'],
+        actions: ['interact talk-to Aubury Varrock 3253,3401,0 → teleport to Rune Essence mine', 'interact mine essence rocks', 'move_to matching altar', 'interact use essence on altar (craft runes)'],
+        successSignals: ['rune essence in inventory after mining', 'crafted runes appear in inventory after altar use', 'runecrafting XP changes'],
+        source: 'src/plugins/skills/runecrafting/*; docs/runescape-skill/skills/runecrafting.md',
+        summary:
+            'Runecrafting self-supplies magic runes. Complete Rune Mysteries quest to unlock Aubury\'s teleport (Varrock 3253,3401,0) or Sedridor (Wizards Tower basement) to the Rune Essence mine. Mine rs:rune_essence with any pickaxe. Walk to the matching altar (Air altar near Falador, Mind altar near Goblin Village, etc.) and use essence on altar to craft runes. Higher Runecrafting levels craft multiple runes per essence (2-rune at 11, 3-rune at 22, etc.). Trains slowly but eliminates rune purchase cost for Magic training.',
+    },
+    {
+        id: 'skill-fletching-basic',
+        title: 'Skill: Fletching',
+        topics: ['fletching', 'bow', 'arrow', 'crossbow', 'ranged-supply', 'starter'],
+        keywords: ['fletch', 'fletching', 'knife', 'logs', 'bowstring', 'unstrung bow', 'shortbow', 'longbow', 'arrow shaft', 'feather', 'headless arrow', 'arrowtip', 'arrow', 'oak bow', 'willow bow', 'yew bow', 'magic bow'],
+        requiredItems: ['rs:knife (6 gp at general store)', 'rs:logs (normal/oak/willow/maple/yew/magic)', 'rs:bowstring (spun from flax at spinning wheel)', 'rs:feather (drops from chickens) for arrows', 'rs:bronze_arrowtips (smith from bronze bar)'],
+        actions: ['item_action use_item_on_item (knife on logs → unstrung bow OR arrow shafts)', 'item_action use_item_on_item (bowstring on unstrung bow → strung bow)', 'item_action use_item_on_item (feather on arrow shafts → headless arrows)', 'item_action use_item_on_item (arrowtip on headless arrow → finished arrow)'],
+        successSignals: ['unstrung bow appears in inventory', 'strung bow ready to equip', 'arrow shafts / headless arrows / finished arrows appear', 'fletching XP changes'],
+        source: 'src/plugins/skills/fletching/*; docs/runescape-skill/skills/fletching.md',
+        summary:
+            'Fletching crafts bows + arrows. Bow chain: rs:knife on rs:logs → unstrung bow; rs:bowstring on unstrung bow → strung bow. Arrow chain: rs:knife on rs:logs → 15 arrow shafts; rs:feather on shafts → headless arrows; bronze/iron/etc. arrowtips on headless arrows → finished arrows (15 per craft). Log tiers: normal (level 1) → oak (15) → willow (30) → maple (45) → yew (60) → magic (75). Self-supplies Ranged ammo and bows; pair with Woodcutting.',
+    },
 ];
 
 const STOP_WORDS = new Set([

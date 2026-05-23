@@ -475,6 +475,38 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('additional skill entries (crafting, runecrafting, fletching)', () => {
+        it('retrieves the crafting entry for a cowhide leather query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'tan cowhide into leather and craft a body with needle and thread', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-crafting-basic');
+            const entry = results.find(result => result.entry.id === 'skill-crafting-basic')?.entry;
+            expect(entry?.requiredItems?.join(' ')).toMatch(/cowhide|leather|needle|thread|chisel/i);
+            expect(entry?.successSignals?.join(' ')).toMatch(/leather|crafting xp|gem|jewelry/i);
+        });
+
+        it('retrieves the runecrafting entry for an essence query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'craft air runes from rune essence at an altar', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-runecrafting-basic');
+            const entry = results.find(result => result.entry.id === 'skill-runecrafting-basic')?.entry;
+            expect(entry?.requiredItems?.join(' ')).toMatch(/rune essence|talisman/i);
+            expect(entry?.summary).toMatch(/altar|aubury|teleport|essence/i);
+        });
+
+        it('retrieves the fletching entry for an unstrung bow query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'use knife on logs to fletch an unstrung bow then add bowstring', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('skill-fletching-basic');
+            const entry = results.find(result => result.entry.id === 'skill-fletching-basic')?.entry;
+            expect(entry?.requiredItems?.join(' ')).toMatch(/knife|logs|bowstring|feathers/i);
+            expect(entry?.successSignals?.join(' ')).toMatch(/unstrung|bow|arrow|fletching xp/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {
