@@ -171,4 +171,45 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             });
         });
     });
+
+    describe('GET /v1/wall/snapshot (EVENT-D6)', () => {
+        it('returns 404 when lettersRoot is not configured (wall disabled)', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const wallUrl = server.url.replace('/v1/inbox', '/v1/wall/snapshot');
+            const response = await get(wallUrl);
+            expect(response.status).toBe(404);
+        });
+
+        it('returns a snapshot JSON when lettersRoot is configured', async () => {
+            seedLetter('alice@onion', 'Welcome', '2026-05-23T15:00:00.000Z');
+            seedLetter('bob@onion', 'You are now Ally', '2026-05-23T15:30:00.000Z');
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                lettersRoot: tmp,
+                now: () => new Date('2026-05-23T16:00:00.000Z'),
+            });
+            const wallUrl = server.url.replace('/v1/inbox', '/v1/wall/snapshot');
+            const response = await get(wallUrl);
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { recentLetters: unknown[]; deathsToday: number; asOf: string };
+            expect(payload.recentLetters).toHaveLength(2);
+            expect(payload.deathsToday).toBe(0);
+            expect(payload.asOf).toBe('2026-05-23T16:00:00.000Z');
+        });
+
+        it('honors auth on the wall route the same way as the inbox route', async () => {
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                lettersRoot: tmp,
+                auth: { bearerToken: 'wall-secret' },
+            });
+            const wallUrl = server.url.replace('/v1/inbox', '/v1/wall/snapshot');
+            const unauthed = await get(wallUrl);
+            expect(unauthed.status).toBe(401);
+            const authed = await get(wallUrl, { Authorization: 'Bearer wall-secret' });
+            expect(authed.status).toBe(200);
+        });
+    });
 });

@@ -1,6 +1,7 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
 import type { LettersStore } from '../patron/letters-store';
+import { buildWallSnapshot } from './wall-snapshot';
 
 /**
  * Read-only HTTP server exposing a human's letter inbox as JSON
@@ -22,6 +23,7 @@ import type { LettersStore } from '../patron/letters-store';
  * ControllerHost passed into PatronGateway in EVENT-D1a.
  */
 export const DEFAULT_LETTERS_PATH = '/v1/inbox';
+export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -34,9 +36,19 @@ export interface LettersHttpServerOptions {
     port: number;
     /** Bind address. Defaults to 127.0.0.1 (local-network only). */
     host?: string;
-    /** Route path. Defaults to {@link DEFAULT_LETTERS_PATH}. */
+    /** Inbox route path. Defaults to {@link DEFAULT_LETTERS_PATH}. */
     path?: string;
     auth?: LettersHttpAuthOptions;
+    /**
+     * When set, enables the wall ticker route {@link wallPath} that
+     * returns a snapshot of recent letters across all patrons. Should
+     * be the same root the store writes to (`config.memory.dir`).
+     */
+    lettersRoot?: string;
+    /** Wall ticker route path. Defaults to {@link DEFAULT_WALL_PATH}. */
+    wallPath?: string;
+    /** Test injection for `now` used by the wall snapshot. */
+    now?: () => Date;
 }
 
 export interface StartedLettersHttpServer {
@@ -46,10 +58,11 @@ export interface StartedLettersHttpServer {
 
 export async function startLettersHttpServer(options: LettersHttpServerOptions): Promise<StartedLettersHttpServer> {
     const routePath = normalizePath(options.path || DEFAULT_LETTERS_PATH);
+    const wallRoutePath = normalizePath(options.wallPath || DEFAULT_WALL_PATH);
     const bindHost = options.host || '127.0.0.1';
 
     const server = http.createServer((request, response) => {
-        handle(request, response, options, routePath).catch(error => {
+        handle(request, response, options, routePath, wallRoutePath).catch(error => {
             if (!response.headersSent) {
                 writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
             } else if (!response.writableEnded) {
@@ -84,9 +97,13 @@ async function handle(
     response: ServerResponse,
     options: LettersHttpServerOptions,
     routePath: string,
+    wallRoutePath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
-    if (url.pathname !== routePath) {
+    const isInboxRoute = url.pathname === routePath;
+    const isWallRoute = url.pathname === wallRoutePath && options.lettersRoot !== undefined;
+
+    if (!isInboxRoute && !isWallRoute) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
@@ -102,6 +119,14 @@ async function handle(
             writeJson(response, 401, { error: 'Unauthorized' });
             return;
         }
+    }
+
+    if (isWallRoute) {
+        const now = options.now ? options.now() : new Date();
+        // lettersRoot guaranteed non-undefined here by the isWallRoute check above.
+        const snapshot = buildWallSnapshot(options.lettersRoot as string, { now });
+        writeJson(response, 200, snapshot);
+        return;
     }
 
     const human = url.searchParams.get('human');
