@@ -12,7 +12,8 @@ The controller's runtime prompt knowledge currently comes from `src/controller/k
 4. `skills/` for deeper per-skill workflow knowledge beyond starter. Currently: `skills/agility.md`, `skills/combat.md`, `skills/construction.md`, `skills/cooking.md`, `skills/crafting.md`, `skills/farming.md`, `skills/firemaking.md`, `skills/fishing.md`, `skills/fletching.md`, `skills/herblore.md`, `skills/magic.md`, `skills/mining.md`, `skills/prayer.md`, `skills/ranged.md`, `skills/runecrafting.md`, `skills/slayer.md`, `skills/smithing.md`, `skills/thieving.md`, `skills/trading.md`, `skills/woodcutting.md`. Add new skill files here as they're written. Each file should be agent-readable in the same prose-and-numbered-list style as `starter-workflows.md`.
 5. `quests/` for canonical starter-quest walkthroughs. Currently: `quests/cooks-assistant.md`, `quests/restless-ghost.md`, `quests/romeo-and-juliet.md`. Same prose-and-numbered-list agent-readable style as the skill files. Add new quest files here as they're written.
 6. `npcs.md` for indexing regional NPC playbooks and documenting core heuristics for dialogue/shops/banking.
-7. `docs/controller-knowledge-runbook.md` for reviewing and promoting agent-suggested knowledge.
+7. `monsters.md` for combat-target reference (chicken/cow/goblin/giant rat/dark wizard/highwayman/hill giant) with HP, max hit, drops, training viability, and avoid-list.
+8. `docs/controller-knowledge-runbook.md` for reviewing and promoting agent-suggested knowledge.
 
 ## Update Rules
 
