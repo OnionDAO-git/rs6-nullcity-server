@@ -1,6 +1,8 @@
 import type { LlmClient } from './llm/llm-client';
 import { ActionCoordinator } from './actions/action-coordinator';
 import { PatronConfig, PatronRegistry } from './patron/patron-registry';
+import { RoutineCapableRuntime, RoutineContext, RoutinePreemptionReason, RoutineTickOutcome } from './routines/routine-runner';
+import { firemakingAction, hasNearbyFire } from './spark/runescape-body-routines';
 
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
@@ -69,8 +71,16 @@ export interface ResidentRuntimeEvidence {
     library?: LibraryUpdater;
 }
 
-export class ResidentRuntime {
+interface PerceptionArrival {
+    perception: Perception;
+    preemption?: { preempted: RoutinePreemptionReason };
+}
+
+export class ResidentRuntime implements RoutineCapableRuntime {
     readonly name: string;
+    _lastHints?: string[];
+    activeRoutineId?: string;
+    private nextPerceptionResolver?: (arrival: PerceptionArrival) => void;
     private readonly state: RuntimeState;
     private readonly thinking: ThinkingModule;
     private readonly thinkingSparkModule?: SparkModuleIdentity;
@@ -151,6 +161,44 @@ export class ResidentRuntime {
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
+        if (this.nextPerceptionResolver) {
+            const resolve = this.nextPerceptionResolver;
+            this.nextPerceptionResolver = undefined;
+
+            const nervousPerception = this.peekWithPendingEvents(perception);
+            const reaction = this.nervousSystem.react(nervousPerception);
+            if (reaction) {
+                const decisionPerception = this.withPendingEvents(perception);
+                this.history.push(decisionPerception);
+                this.body.observePerception(decisionPerception);
+
+                const attempt = await this.actionCoordinator.submit({
+                    producer: 'nervous-system',
+                    action: reaction.action,
+                    metadata: {
+                        tick: this.state.tick,
+                        attention_after: this.state.attention,
+                        source: 'nervous-system',
+                        ruleId: reaction.rule.id,
+                        sparkModule: reaction.sparkModule,
+                    },
+                    waitForEffect: this.effectWaitFor(reaction.action),
+                    ...this.evidenceCallbacks(),
+                });
+                this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+                this.options.stateStore.save(this.state);
+
+                resolve({
+                    perception,
+                    preemption: { preempted: mapNervousRuleId(reaction.rule.id) },
+                });
+                return;
+            }
+
+            resolve({ perception });
+            return;
+        }
+
         const nervousPerception = this.peekWithPendingEvents(perception);
         const reaction = this.nervousSystem.react(nervousPerception);
         if (reaction) {
@@ -489,6 +537,81 @@ export class ResidentRuntime {
         }
         this.options.stateStore.save(this.state);
     }
+
+    async tick(ctx: RoutineContext): Promise<RoutineTickOutcome> {
+        this._lastHints = [];
+
+        let abortHandler: (() => void) | undefined;
+        const arrivalPromise = new Promise<PerceptionArrival>(resolve => {
+            this.nextPerceptionResolver = resolve;
+
+            abortHandler = () => {
+                if (this.nextPerceptionResolver === resolve) {
+                    this.nextPerceptionResolver = undefined;
+                    resolve({
+                        perception: {} as any,
+                        preemption: { preempted: 'aborted' },
+                    });
+                }
+            };
+            ctx.signal.addEventListener('abort', abortHandler);
+        });
+
+        const arrival = await arrivalPromise;
+        if (abortHandler) {
+            ctx.signal.removeEventListener('abort', abortHandler);
+        }
+
+        if (arrival.preemption) {
+            return arrival.preemption;
+        }
+
+        const perception = arrival.perception;
+
+        // Determine active routine action
+        let action: AgentAction | undefined;
+        if (this.activeRoutineId === 'make_fire') {
+            action = firemakingAction(perception);
+        }
+
+        if (!action) {
+            // Check if fire is already nearby (completed)
+            if (this.activeRoutineId === 'make_fire' && hasNearbyFire(perception)) {
+                return 'completed';
+            }
+            return 'no_progress';
+        }
+
+        // Populate hints
+        if (action.kind === 'use_item_on_item') {
+            this._lastHints.push('tinderbox_used');
+        }
+
+        // Submit action
+        const attempt = await this.actionCoordinator.submit({
+            producer: 'active-routine',
+            action,
+            metadata: {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'routine',
+                routineId: this.activeRoutineId,
+            },
+            waitForEffect: this.effectWaitFor(action),
+            ...this.evidenceCallbacks(),
+        });
+
+        if (attempt.finalStatus === 'success') {
+            return 'completed';
+        }
+        if (attempt.finalStatus === 'accepted') {
+            return 'progress';
+        }
+        if (attempt.finalStatus === 'cancelled_before_submit' || attempt.finalStatus === 'interrupted_after_submit') {
+            return { preempted: 'aborted' };
+        }
+        return 'no_progress';
+    }
 }
 
 interface ResidentRuntimeActionCallbacks {
@@ -773,4 +896,20 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
 
 function record(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function mapNervousRuleId(ruleId: string): RoutinePreemptionReason {
+    if (ruleId.includes('eat') || ruleId.includes('low-health') || ruleId.includes('hurt')) {
+        return 'nervous_eat_when_hurt';
+    }
+    if (ruleId.includes('flee') || ruleId.includes('outmatched') || ruleId.includes('runaway')) {
+        return 'nervous_flee_when_outmatched';
+    }
+    if (ruleId.includes('death') || ruleId.includes('dead')) {
+        return 'nervous_death';
+    }
+    if (ruleId.includes('help')) {
+        return 'nervous_help_request';
+    }
+    return 'aborted';
 }

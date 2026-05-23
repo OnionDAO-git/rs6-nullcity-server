@@ -152,6 +152,10 @@ export class ControllerHost {
         return list;
     }
 
+    public getRuntime(name: string): ResidentRuntime | undefined {
+        return this.runtimes.get(name);
+    }
+
     async reconcile(): Promise<void> {
         if (this.reconcileInFlight) {
             this.reconcileQueued = true;

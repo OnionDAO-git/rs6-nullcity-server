@@ -125,6 +125,94 @@ describe('ControllerMcpServer', () => {
         });
     });
 
+    describe('run_routine tool', () => {
+        const logFilePath = path.join(process.cwd(), 'data', 'mcp-call-log.jsonl');
+
+        beforeEach(async () => {
+            mockHost.getRuntime = jest.fn();
+            try {
+                await fs.promises.unlink(logFilePath);
+            } catch {}
+        });
+
+        afterEach(async () => {
+            try {
+                await fs.promises.unlink(logFilePath);
+            } catch {}
+        });
+
+        it('is registered under name run_routine with correct properties', () => {
+            const mcpServer = serverInstance.createServer();
+            const registeredTools = (mcpServer as any)._registeredTools;
+            expect(registeredTools).toBeDefined();
+
+            const tool = registeredTools.run_routine;
+            expect(tool).toBeDefined();
+            expect(tool.description).toBe('Execute a whitelisted routine for a resident');
+            expect(tool.inputSchema).toBeDefined();
+        });
+
+        it('returns status=rejected when resident is not found', async () => {
+            mockHost.getRuntime.mockReturnValue(undefined);
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_routine;
+
+            const result = await tool.handler({
+                resident: 'res:nobody',
+                routine: 'make_fire',
+            });
+
+            expect(result.content).toBeDefined();
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('rejected');
+            expect(parsed.lastError).toBe('resident_not_found');
+
+            // Verify call log was appended
+            expect(fs.existsSync(logFilePath)).toBe(true);
+            const logContent = await fs.promises.readFile(logFilePath, 'utf8');
+            const parsedLog = JSON.parse(logContent);
+            expect(parsedLog.resident).toBe('res:nobody');
+            expect(parsedLog.routine).toBe('make_fire');
+            expect(parsedLog.status).toBe('rejected');
+        });
+
+        it('executes make_fire routine successfully when resident is registered', async () => {
+            const mockRuntime: any = {
+                tick: jest.fn().mockResolvedValue('completed'),
+                activeRoutineId: undefined,
+                _lastHints: [],
+            };
+            mockHost.getRuntime.mockReturnValue(mockRuntime);
+
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_routine;
+
+            const result = await tool.handler({
+                resident: 'res:agent',
+                routine: 'make_fire',
+                maxTicks: 100,
+            });
+
+            expect(result.content).toBeDefined();
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('completed');
+            expect(parsed.ticksUsed).toBe(1);
+
+            // Verify activeRoutineId lifecycle
+            expect(mockRuntime.tick).toHaveBeenCalled();
+            expect(mockRuntime.activeRoutineId).toBeUndefined();
+
+            // Verify call log
+            expect(fs.existsSync(logFilePath)).toBe(true);
+            const logContent = await fs.promises.readFile(logFilePath, 'utf8');
+            const parsedLog = JSON.parse(logContent);
+            expect(parsedLog.resident).toBe('res:agent');
+            expect(parsedLog.routine).toBe('make_fire');
+            expect(parsedLog.status).toBe('completed');
+            expect(parsedLog.ticksUsed).toBe(1);
+        });
+    });
+
     describe('logMcpCall', () => {
         const logFilePath = path.join(process.cwd(), 'data', 'mcp-call-log.jsonl');
 

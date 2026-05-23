@@ -6,6 +6,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { ControllerHost } from '../controller-host';
+import { z } from 'zod';
+import { RoutineRunner, type RoutineCapableRuntime, type RunRoutineResponse } from '../routines/routine-runner';
 
 export interface McpCallLogEntry {
     operator: string;
@@ -69,6 +71,73 @@ export class ControllerMcpServer {
                             text: JSON.stringify(residents, null, 2),
                         },
                     ],
+                };
+            },
+        );
+
+        // Register run_routine tool
+        server.tool(
+            'run_routine',
+            'Execute a whitelisted routine for a resident',
+            {
+                resident: z.string().describe('The name of the resident'),
+                routine: z.string().describe('The routine whitelisted in the catalog (e.g. make_fire)'),
+                params: z.any().optional().describe('Optional parameters for the routine'),
+                maxTicks: z.number().optional().describe('Optional maximum ticks budget'),
+            },
+            async ({ resident, routine, params, maxTicks }) => {
+                const residentRuntime = this.host.getRuntime(resident);
+                if (!residentRuntime) {
+                    const result = {
+                        status: 'rejected' as const,
+                        ticksUsed: 0,
+                        effectEvidenceCount: 0,
+                        lastError: 'resident_not_found' as const,
+                    };
+                    await logMcpCall({
+                        operator: 'default-operator',
+                        resident,
+                        routine,
+                        paramsHash: params ? JSON.stringify(params) : '{}',
+                        status: result.status,
+                        ticksUsed: result.ticksUsed,
+                        lastError: result.lastError,
+                    });
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify(result) }],
+                    };
+                }
+
+                const runtimes = new Map<string, RoutineCapableRuntime>();
+                runtimes.set(resident, residentRuntime);
+
+                const runner = new RoutineRunner({ runtimes });
+
+                let response: RunRoutineResponse;
+                try {
+                    residentRuntime.activeRoutineId = routine;
+                    response = await runner.run({
+                        resident,
+                        routine,
+                        params,
+                        maxTicks,
+                    });
+                } finally {
+                    residentRuntime.activeRoutineId = undefined;
+                }
+
+                await logMcpCall({
+                    operator: 'default-operator',
+                    resident,
+                    routine,
+                    paramsHash: params ? JSON.stringify(params) : '{}',
+                    status: response.status,
+                    ticksUsed: response.ticksUsed,
+                    lastError: response.lastError,
+                });
+
+                return {
+                    content: [{ type: 'text', text: JSON.stringify(response) }],
                 };
             },
         );
