@@ -153,7 +153,9 @@ describe('RuneScape knowledge retriever', () => {
 
     describe('monster combat-target entries (chicken, cow, goblin, giant-rat)', () => {
         it('retrieves the chicken monster entry for a chicken-farming query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'attack chickens in lumbridge farm for feathers and bones', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'attack chickens in lumbridge farm for feathers and bones', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('monster-chicken-starter');
@@ -163,7 +165,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the cow monster entry for a cowhide query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'kill cows in lumbridge cow field for cowhide and raw beef', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'kill cows in lumbridge cow field for cowhide and raw beef', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('monster-cow-starter');
@@ -172,7 +176,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the goblin monster entry for a goblin-village query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'fight goblins in goblin village for bronze loot and bones', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'fight goblins in goblin village for bronze loot and bones', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('monster-goblin-starter');
