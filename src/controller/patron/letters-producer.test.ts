@@ -1,4 +1,13 @@
-import { type Letter, type StandingTierLetterInput, letterSchema, produceStandingTierLetter } from './letters-producer';
+import {
+    type CivicAchievementLetterInput,
+    type EpitaphLetterInput,
+    type Letter,
+    type StandingTierLetterInput,
+    letterSchema,
+    produceCivicAchievementLetter,
+    produceEpitaphLetter,
+    produceStandingTierLetter,
+} from './letters-producer';
 
 describe('produceStandingTierLetter', () => {
     const baseInput: StandingTierLetterInput = {
@@ -74,16 +83,144 @@ describe('produceStandingTierLetter', () => {
         expect(letter!.senderResident).toBe('res:agent');
     });
 
-    describe('non-standing-tier kinds are not produced by this slice (TODO J-δ-β / J-δ-γ)', () => {
-        it('does not export produceEpitaphLetter yet', () => {
-            const mod = require('./letters-producer') as Record<string, unknown>;
-            expect(mod.produceEpitaphLetter).toBeUndefined();
-        });
+});
 
-        it('does not export produceCivicAchievementLetter yet', () => {
-            const mod = require('./letters-producer') as Record<string, unknown>;
-            expect(mod.produceCivicAchievementLetter).toBeUndefined();
-        });
+describe('produceEpitaphLetter (J-δ-γ)', () => {
+    const baseInput: EpitaphLetterInput = {
+        humanId: 'alice@onion',
+        faction: 'embassy',
+        residentName: 'res:fern',
+        residentArchetype: 'mentor',
+        livedTicks: 1240,
+        bestSkill: { name: 'firemaking', level: 22 },
+        causeOfDeath: 'goblin (level 5) in lumbridge swamp',
+        ts: '2026-05-23T11:00:00.000Z',
+        // Sibling-flagship sender override for hero deaths (J-δ-3 hook).
+        senderResident: 'res:wise-old-man',
+    };
+
+    it('returns a Letter with kind=epitaph', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.kind).toBe('epitaph');
+    });
+
+    it('addresses the human by id and routes to the human-id recipient', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.recipient).toBe('alice@onion');
+        expect(letter.body).toMatch(/alice@onion/);
+    });
+
+    it('uses the optional senderResident override (sibling flagship for hero deaths)', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.senderResident).toBe('res:wise-old-man');
+    });
+
+    it('falls back to residentName as sender when no senderResident override is given', () => {
+        const letter = produceEpitaphLetter({ ...baseInput, senderResident: undefined });
+        expect(letter.senderResident).toBe('res:fern');
+    });
+
+    it('mentions the deceased resident by name in subject + body', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.subject).toMatch(/res:fern/);
+        expect(letter.body).toMatch(/res:fern/);
+    });
+
+    it('mentions the faction, lived-ticks, best-skill, and cause-of-death in the body', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.body).toMatch(/embassy/);
+        expect(letter.body).toMatch(/1240/);
+        expect(letter.body).toMatch(/firemaking/);
+        expect(letter.body).toMatch(/22/);
+        expect(letter.body).toMatch(/goblin/);
+    });
+
+    it('handles missing bestSkill gracefully (no NaN, no "undefined" leak)', () => {
+        const letter = produceEpitaphLetter({ ...baseInput, bestSkill: undefined });
+        expect(letter.body).not.toMatch(/undefined/);
+        expect(letter.body).not.toMatch(/NaN/);
+    });
+
+    it('handles missing causeOfDeath as "circumstances unknown"', () => {
+        const letter = produceEpitaphLetter({ ...baseInput, causeOfDeath: undefined });
+        expect(letter.body).toMatch(/unknown|unrecorded|not.* recorded/i);
+    });
+
+    it('delivers to web-inbox + in-game-scroll + lanyard-card (epitaphs travel widely)', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(expect.arrayContaining(['web-inbox', 'in-game-scroll', 'lanyard-card']));
+        expect(letter.deliveryChannels).toHaveLength(3);
+    });
+
+    it('uses the supplied ts as dispatchedAt', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(letter.dispatchedAt).toBe(baseInput.ts);
+    });
+
+    it('round-trips through letterSchema', () => {
+        const letter = produceEpitaphLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceCivicAchievementLetter (J-δ-γ)', () => {
+    const baseInput: CivicAchievementLetterInput = {
+        humanId: 'alice@onion',
+        faction: 'embassy',
+        residentName: 'res:fern',
+        achievementKind: 'first_quest_completed',
+        achievementDetail: 'Cook’s Assistant — flour and milk delivered to Lumbridge Castle.',
+        ts: '2026-05-23T11:00:00.000Z',
+    };
+
+    it('returns a Letter with kind=civic_milestone', () => {
+        const letter = produceCivicAchievementLetter(baseInput);
+        expect(letter.kind).toBe('civic_milestone');
+    });
+
+    it('addresses the human and mentions the resident + faction + achievement detail', () => {
+        const letter = produceCivicAchievementLetter(baseInput);
+        expect(letter.recipient).toBe('alice@onion');
+        expect(letter.body).toMatch(/alice@onion/);
+        expect(letter.body).toMatch(/res:fern/);
+        expect(letter.body).toMatch(/embassy/);
+        expect(letter.body).toMatch(/Cook.s Assistant/);
+    });
+
+    it('subject names the achievement kind in human-readable form', () => {
+        const letter = produceCivicAchievementLetter(baseInput);
+        // first_quest_completed → "First Quest Completed" or similar
+        expect(letter.subject).toMatch(/quest/i);
+    });
+
+    it('delivers to web-inbox + lanyard-card (achievements are share-worthy but not as solemn as epitaphs)', () => {
+        const letter = produceCivicAchievementLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(expect.arrayContaining(['web-inbox', 'lanyard-card']));
+        expect(letter.deliveryChannels).not.toContain('in-game-scroll');
+    });
+
+    it('sender defaults to the residentName when no override given', () => {
+        const letter = produceCivicAchievementLetter(baseInput);
+        expect(letter.senderResident).toBe('res:fern');
+    });
+
+    it('supports different achievementKind variants (firemaking_level_25, faction_oath, embassy_visit)', () => {
+        const kinds: CivicAchievementLetterInput['achievementKind'][] = [
+            'firemaking_level_25',
+            'faction_oath',
+            'embassy_visit',
+        ];
+        for (const k of kinds) {
+            const letter = produceCivicAchievementLetter({ ...baseInput, achievementKind: k });
+            expect(letter.kind).toBe('civic_milestone');
+            expect(letter.subject.length).toBeGreaterThan(0);
+            expect(letter.body.length).toBeGreaterThan(0);
+        }
+    });
+
+    it('round-trips through letterSchema', () => {
+        const letter = produceCivicAchievementLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
     });
 });
 

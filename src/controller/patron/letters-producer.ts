@@ -140,3 +140,154 @@ function renderTierBody(ctx: TierBodyContext): string {
 function capitalize(s: string): string {
     return s.length === 0 ? s : s[0].toUpperCase() + s.slice(1);
 }
+
+// ---------------------------------------------------------------------------
+// J-δ-γ: epitaph + civic milestone letter producers.
+//
+// These travel through the same Letter shape + dispatcher (J-δ-β-2) so the
+// inbox + scroll + lanyard delivery channels already work end-to-end. The
+// runtime hooks that CALL these producers — legacy_event → epitaph cascade
+// (J-δ-2) and milestone detectors — are separate slices.
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceEpitaphLetter}. */
+export interface EpitaphLetterInput {
+    /** humanId of the patron receiving the death notice. */
+    humanId: string;
+    /** Faction the deceased resident served. */
+    faction: string;
+    /** Name of the deceased resident. */
+    residentName: string;
+    /** Archetype label (mentor / achiever / endurer). Used in body framing. */
+    residentArchetype: string;
+    /** Total ticks lived. */
+    livedTicks: number;
+    /** Highest skill at time of death, if any. */
+    bestSkill?: { name: string; level: number };
+    /** Short cause-of-death string, or omitted to mean "circumstances unrecorded". */
+    causeOfDeath?: string;
+    /** ISO timestamp of dispatch (usually the death tick). */
+    ts: string;
+    /**
+     * Optional sibling-flagship override (J-δ-3 hero death: a surviving
+     * flagship in the same faction speaks for the deceased). Defaults to
+     * the deceased {@link residentName} themselves when omitted (the
+     * resident "speaks" via their own legacy_event echo, addressed to
+     * their patron).
+     */
+    senderResident?: string;
+}
+
+/**
+ * Generate an epitaph letter for a deceased resident's patron. Pure
+ * function; no I/O. The dispatcher (J-δ-β) routes the returned Letter
+ * via web-inbox, in-game-scroll, and the IRL lanyard-card channel —
+ * epitaphs travel widely because they are the moment a human's emotional
+ * relationship to the city is built.
+ */
+export function produceEpitaphLetter(input: EpitaphLetterInput): Letter {
+    const sender = input.senderResident && input.senderResident.length > 0 ? input.senderResident : input.residentName;
+    const subject = `On the passing of ${input.residentName}`;
+    const body = renderEpitaphBody(input);
+    return {
+        kind: 'epitaph',
+        recipient: input.humanId,
+        senderResident: sender,
+        subject,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox', 'in-game-scroll', 'lanyard-card'],
+    };
+}
+
+function renderEpitaphBody(input: EpitaphLetterInput): string {
+    const skillLine =
+        input.bestSkill && input.bestSkill.name.length > 0
+            ? `Their hands were best at ${input.bestSkill.name}; they reached level ${input.bestSkill.level} before the end.`
+            : 'They left no single craft as their mark — their hands tried many small things.';
+    const causeLine =
+        input.causeOfDeath && input.causeOfDeath.length > 0
+            ? `The cause was ${input.causeOfDeath}.`
+            : 'The circumstances are unrecorded; the city saw them last as a quiet outline at dusk.';
+    return [
+        `${input.humanId},`,
+        '',
+        `${input.residentName} has died.`,
+        '',
+        `They served ${input.faction} for ${input.livedTicks} tick${input.livedTicks === 1 ? '' : 's'} — a life measured in the small currency of attention rather than the large one of years.`,
+        '',
+        skillLine,
+        causeLine,
+        '',
+        `Your patronage stayed with them through it. That mattered, in a way the registers don't quite know how to write down. We are writing it down here.`,
+        '',
+        '— Embassy Clerk',
+    ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+
+/** Kinds of civic milestone an achievement letter can announce. */
+export type CivicAchievementKind =
+    | 'first_quest_completed'
+    | 'firemaking_level_25'
+    | 'faction_oath'
+    | 'embassy_visit';
+
+/** Input for {@link produceCivicAchievementLetter}. */
+export interface CivicAchievementLetterInput {
+    humanId: string;
+    faction: string;
+    residentName: string;
+    achievementKind: CivicAchievementKind;
+    /** Free-form one-line detail (quest name, skill milestone description, etc.). */
+    achievementDetail: string;
+    ts: string;
+    /** Optional sender override; defaults to {@link residentName}. */
+    senderResident?: string;
+}
+
+/**
+ * Generate a civic milestone letter — quest completion, skill milestone,
+ * faction oath, embassy visit, etc. Lighter than an epitaph: web-inbox
+ * + lanyard-card only (no in-game-scroll — the resident is still alive
+ * and can tell their own story in-world).
+ */
+export function produceCivicAchievementLetter(input: CivicAchievementLetterInput): Letter {
+    const sender = input.senderResident && input.senderResident.length > 0 ? input.senderResident : input.residentName;
+    const headline = headlineForAchievement(input.achievementKind);
+    const subject = `${input.residentName}: ${headline}`;
+    const body = [
+        `${input.humanId},`,
+        '',
+        `${input.residentName} (${input.faction}) just reached a milestone the city wants you to know about:`,
+        '',
+        `${headline}. ${input.achievementDetail}`,
+        '',
+        `Patrons are who residents work for; we record this so your support is visible alongside the act.`,
+        '',
+        '— Embassy Clerk',
+    ].join('\n');
+    return {
+        kind: 'civic_milestone',
+        recipient: input.humanId,
+        senderResident: sender,
+        subject,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox', 'lanyard-card'],
+    };
+}
+
+function headlineForAchievement(kind: CivicAchievementKind): string {
+    switch (kind) {
+        case 'first_quest_completed':
+            return 'First quest completed';
+        case 'firemaking_level_25':
+            return 'Firemaking reached level 25';
+        case 'faction_oath':
+            return 'Sworn a faction oath';
+        case 'embassy_visit':
+            return 'Walked the embassy floor';
+    }
+}
