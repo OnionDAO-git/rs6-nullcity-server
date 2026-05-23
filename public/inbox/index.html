@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Null City Embassy — Inbox</title>
+    <style>
+        :root {
+            --ink: #2a1d0e;
+            --vellum: #f5ecd6;
+            --vellum-edge: #d9c89e;
+            --accent: #8a3324;
+            --seal: #4f2e1a;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            background: #1a120a;
+            color: var(--ink);
+            font-family: 'Georgia', 'Times New Roman', serif;
+            min-height: 100vh;
+        }
+        header {
+            text-align: center;
+            padding: 2rem 1rem 0.5rem;
+            color: var(--vellum);
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+        }
+        header h1 { margin: 0; font-size: 1.5rem; font-weight: normal; }
+        header .who {
+            display: block;
+            margin-top: 0.4rem;
+            font-style: italic;
+            opacity: 0.8;
+            font-variant: normal;
+            letter-spacing: 0;
+        }
+        main {
+            max-width: 42rem;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        .letter {
+            background: var(--vellum);
+            border: 1px solid var(--vellum-edge);
+            border-radius: 2px;
+            margin: 1.25rem 0;
+            padding: 1.5rem 1.75rem;
+            box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35),
+                        inset 0 0 60px rgba(180, 140, 70, 0.05);
+        }
+        .letter .meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--seal);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.5rem;
+            opacity: 0.75;
+        }
+        .letter h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1.2rem;
+            font-weight: normal;
+            border-bottom: 1px solid var(--vellum-edge);
+            padding-bottom: 0.5rem;
+        }
+        .letter pre {
+            white-space: pre-wrap;
+            font-family: inherit;
+            font-size: 1rem;
+            line-height: 1.55;
+            margin: 0;
+        }
+        .empty, .error {
+            text-align: center;
+            color: var(--vellum);
+            opacity: 0.7;
+            padding: 4rem 1rem;
+            font-style: italic;
+        }
+        .error {
+            color: #ffcccc;
+            background: rgba(120, 30, 30, 0.4);
+            padding: 1rem;
+            border-radius: 2px;
+            margin: 1rem 0;
+        }
+        @media print {
+            html, body { background: #fff; color: #000; }
+            header { color: #000; }
+            .letter {
+                page-break-inside: avoid;
+                box-shadow: none;
+                border: 1px solid #999;
+                margin: 0.5rem 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Null City Embassy — Inbox</h1>
+        <span class="who" id="who">…</span>
+    </header>
+    <main>
+        <div id="content" class="empty">Loading letters…</div>
+    </main>
+    <script>
+        (function () {
+            // Resolve handle from ?human=... or from the last path segment.
+            const params = new URLSearchParams(window.location.search);
+            const handle = params.get('human') || decodeURIComponent(
+                (window.location.pathname.split('/').filter(Boolean).pop() || '')
+            );
+
+            const whoElement = document.getElementById('who');
+            const contentElement = document.getElementById('content');
+
+            if (!handle) {
+                whoElement.textContent = '(no handle)';
+                contentElement.className = 'error';
+                contentElement.textContent = 'Add ?human=<your-handle> to the URL.';
+                return;
+            }
+            whoElement.textContent = handle;
+
+            // The inbox endpoint may be on a different port from this static
+            // page (the controller spins up an HTTP listener on a configured
+            // port). Allow override via ?api=http://host:port/v1/inbox.
+            const apiBase = params.get('api') || '/v1/inbox';
+            const url = apiBase + '?human=' + encodeURIComponent(handle);
+
+            fetch(url)
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('inbox endpoint returned ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(function (payload) {
+                    const letters = (payload && payload.letters) || [];
+                    if (letters.length === 0) {
+                        contentElement.className = 'empty';
+                        contentElement.textContent = 'No letters yet. Walk the embassy and find a resident to support.';
+                        return;
+                    }
+                    contentElement.className = '';
+                    // Use replaceChildren([]) to safely clear without touching innerHTML.
+                    contentElement.replaceChildren();
+                    letters.forEach(function (letter) {
+                        contentElement.appendChild(renderLetter(letter));
+                    });
+                })
+                .catch(function (error) {
+                    contentElement.className = 'error';
+                    contentElement.textContent = 'Could not load inbox: ' + (error.message || error);
+                });
+
+            // renderLetter builds each letter via DOM APIs only — textContent
+            // for all user-supplied strings. No innerHTML anywhere. Letter
+            // bodies are JSON from the server, but we treat every field as
+            // untrusted to keep this page XSS-safe even if the upstream
+            // letter-producer ever templates user-supplied text.
+            function renderLetter(letter) {
+                const article = document.createElement('article');
+                article.className = 'letter';
+
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                const left = document.createElement('span');
+                left.textContent = String(letter.kind || '').replace(/_/g, ' ');
+                const right = document.createElement('span');
+                right.textContent = formatDate(letter.dispatchedAt);
+                meta.appendChild(left);
+                meta.appendChild(right);
+                article.appendChild(meta);
+
+                const subject = document.createElement('h2');
+                subject.textContent = String(letter.subject || '(no subject)');
+                article.appendChild(subject);
+
+                const body = document.createElement('pre');
+                body.textContent = String(letter.body || '');
+                article.appendChild(body);
+
+                return article;
+            }
+
+            function formatDate(iso) {
+                if (!iso) return '';
+                try {
+                    const d = new Date(iso);
+                    return d.toLocaleString();
+                } catch (_) {
+                    return iso;
+                }
+            }
+        })();
+    </script>
+</body>
+</html>
