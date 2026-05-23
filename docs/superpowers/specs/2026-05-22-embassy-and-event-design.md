@@ -208,16 +208,16 @@ Reuses v2's print queue infrastructure if available (decision N6).
 
 ### 5. Mortician's Ribbon Civic Achievement (N5)
 
-**Maintainer decision: N (threshold).** Recommend N = 3 for first edition.
+**Threshold N = 1** (canonical from OnionDAO Notion `Narrative V2` — see Open Questions resolution below). The earlier "N = 3 for first edition" draft is superseded; one witnessed death is enough. rs6 may tune up later if the first-edition rate feels too easy.
 
-A civic achievement bestowed by the Embassy NPC on humans who witness N resident deaths. "Witnessing" means: the human had at least one chat interaction (any direction) with the resident during the resident's life.
+A civic achievement bestowed by the Embassy NPC on humans who witness a resident death. "Witnessing" means: the human had at least one chat interaction (any direction) with the resident during the resident's life.
 
 ```ts
 export const MORTICIANS_RIBBON = {
     id: 'morticians_ribbon',
     name: "Mortician's Ribbon",
-    description: "Witnessed the deaths of {N} residents.",
-    triggerCount: 3,                     // tunable
+    description: "Witnessed the death of {N} resident(s).",
+    triggerCount: 1,                     // canonical Notion value; was 3 in earlier draft
     kind: 'civic',                       // not buyable; bestowed
     inGameRepresentation: 'cape',        // RuneScape cape with custom color
     inGameColor: '#660000',              // somber red

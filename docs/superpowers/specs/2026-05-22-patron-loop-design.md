@@ -38,7 +38,7 @@ This spec defines the **eight mechanics** that turn a passing player into a patr
 - TypeScript, Node 24+, existing repo conventions.
 - Must not break `[A1]`–`[A7]` SPARK facade contracts. Patron event emission is kernel-adjacent, not module-adjacent. Reviewed modules can READ patron events from the trajectory but cannot emit them.
 - Must coexist with Codex's existing benchmark / runtime work. Patron emission is event-driven from in-world gateway interactions, not from spark.tick.
-- Currency is rs6-flavored; do NOT call it "Shards" in user-facing text (that's v2's term). Maintainer to name; until then, this spec uses `<CURRENCY>` placeholder.
+- **Currency is canonically `Shards`** (from OnionDAO Notion `Narrative V2` + `Onion DAO 2026 Guide`). Earlier draft of this spec used a `<CURRENCY>` placeholder pending maintainer naming; the Open Questions section below resolved this to `Shards` and `src/controller/patron/currency-ledger.ts` (commit `9eac9dcc`) shipped with `CURRENCY_NAME = 'Shards'`. Remaining `<CURRENCY>` references in this spec body are historical and should be read as `Shards`. Description from Notion: *"the embassy's official unit of attention"*, stored on the badge as ESP-NOW packets in the IRL layer, non-transferable between humans.
 - Patron events feed the **existing** Evidence Layer `patron` line kind (already in schemas). This spec defines the producers, not the consumers (consumers live in Workstream I — Library — and Workstream D — Dashboard).
 
 ---
@@ -131,6 +131,24 @@ export interface CurrencyLedgerEntry {
 
 Ledger is append-only. `HumanCurrencyBalance` is a denormalised cache updated in the same tx as the ledger insert (v2 invariant — keep it).
 
+#### Vocabulary cross-walk (resolves event-kind drift across v2 / spec ledger / library)
+
+Three vocabularies are in play. To avoid confusion they are explicitly mapped here. **The library `PatronEvent.kind` (column 3) is canonical** — it's what reaches the resident's portrait and what humans see in their letters; everything else is internal accounting.
+
+| v2 canonical primitive    | Spec `CurrencyLedger.reason` (debit) | Library `PatronEvent.kind` | In-world verb (chathead)          |
+|---------------------------|--------------------------------------|----------------------------|-----------------------------------|
+| `shardsOffered`           | `mercy_infusion`                     | `patron_gift`              | "Offer to <resident>" (J2)        |
+| `birth_sponsorship`       | `birth_sponsorship`                  | `patron_sponsor`           | "Sponsor a new resident" (J6)     |
+| `mercy_infusion` (legacy) | `mercy_infusion`                     | `patron_gift`              | (alias of "Offer to") (J2)        |
+| `parcel_ratification`     | `patron_witness`                     | `patron_witness`           | "Bear witness at landmark" (J5)   |
+| `shardsOffered` (gift)    | `patron_gift`                        | `patron_gift`              | "Send gift" (J8)                  |
+
+Notes:
+- Both "Offer to" (J2) and "Send gift" (J8) emit `library.PatronEvent.kind = 'patron_gift'` even though their ledger reasons differ. From the patron's letter and the resident's portrait, both feel like gifts — the ledger distinguishes them for accounting, not for storytelling.
+- v2's `parcel_ratification` is rebranded "Bear witness at landmark" in rs6 for RuneScape flavor; the storytelling stays "I was here when this resident did something memorable."
+- `src/controller/evidence/library-updater.ts` `PatronEvent.kind` is currently typed as `'patron_gift' | 'patron_witness' | 'patron_sponsor'` (3 values). The 4 v2 primitives reduce to these 3 library kinds via the table above.
+- Stage transitions: nothing emits a `mercy_infusion` library kind directly — the gateway calls `observePatron({ kind: 'patron_gift', ... })` and the ledger entry records `reason: 'mercy_infusion'` for the corresponding human debit.
+
 ### 2. `PatronGateway` (J2, J6, plus J5/J8 emission)
 
 `src/controller/patron/patron-gateway.ts` (NEW).
@@ -185,20 +203,20 @@ All four emit through the **existing** `TrajectoryBuilder.recordPatron()` method
 
 ### 3. Standing tier system (J3)
 
-Standing is per `(humanId, factionId)` pair. Tier thresholds (canonical v2 values until K finalizes):
+Standing is per `(humanId, factionId)` pair. The OnionDAO Notion `Narrative V2` "Design Notes & Open Questions" section defines **three named tiers** (`Acquaintance`, `Ally`, `Officer`) at thresholds 10 / 30 / 75 Shards. The implementation row at 0 points is the implicit "no standing yet" state — call it `stranger` internally as a sentinel, but **do not surface `stranger` in user-facing copy or letters** (Notion canon does not name it).
 
 ```ts
 export const STANDING_TIERS = [
-    { name: 'stranger', minPoints: 0 },
-    { name: 'acquaintance', minPoints: 10 },
-    { name: 'ally', minPoints: 30 },
-    { name: 'officer', minPoints: 75 },
+    { name: 'stranger', minPoints: 0 },      // internal sentinel; never shown to humans
+    { name: 'acquaintance', minPoints: 10 }, // canonical Notion tier 1
+    { name: 'ally', minPoints: 30 },         // canonical Notion tier 2
+    { name: 'officer', minPoints: 75 },      // canonical Notion tier 3
 ] as const;
 
 export type StandingTier = typeof STANDING_TIERS[number]['name'];
 ```
 
-Maintainer decision (Workstream K): the rs6 names may diverge from v2's `stranger/acquaintance/ally/officer`. Until K decides, use the v2 labels.
+The Open Questions section below confirms the three named tiers + threshold values as canonical-from-Notion. The sentinel + named-tiers split lets `currentTier()` return a non-null value for every (human, faction) pair while keeping `LettersProducer` from emitting "you reached Stranger!" copy.
 
 `StandingLedger` (NEW, `src/controller/patron/standing-ledger.ts`) tracks per-pair points with append-only entries + denormalised cache, same pattern as currency ledger.
 
