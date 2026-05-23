@@ -777,6 +777,73 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'Weapon tiers: bronze (Attack level 1) → iron (1) → steel (5 Attack) → mithril (20) → adamant (30) → rune (40). **Scimitar is the recommended melee weapon at every tier** — fast attack speed (4-tick) beats slashing alternatives (sword 5-tick, longsword 6-tick, battleaxe 7-tick) for DPS at all training levels. Iron scimitar at Varrock Sword Shop for ~50 gp is a cheap level-1-to-5 upgrade.',
     },
+    {
+        id: 'workflow-woodcutting-firemaking-chain',
+        title: 'Workflow: Woodcutting → Firemaking Chain',
+        topics: ['workflow', 'chain', 'woodcutting', 'firemaking', 'fire', 'starter'],
+        keywords: ['chop logs and light fire', 'make fire from tree', 'chop then light', 'log chain', 'firemaking chain', 'tree to fire'],
+        requiredItems: ['hatchet/axe in inventory or equipped', 'tinderbox in inventory'],
+        actions: [
+            'move_to nearby Tree or Dead tree',
+            'interact option "chop down" or "chop"',
+            'item_action use_item_on_item (tinderbox on logs)',
+            'repeat: chop next log → light next fire (inventory of 28 logs = 28 fires)',
+        ],
+        successSignals: [
+            'inventory gains rs:logs after each successful chop (woodcutting XP)',
+            'fire object appears nearby after tinderbox use (firemaking XP)',
+            'logs leave inventory as each fire is lit',
+        ],
+        source: 'docs/runescape-skill/starter-workflows.md § Make A Fire; docs/runescape-skill/skills/firemaking.md; docs/runescape-skill/skills/woodcutting.md',
+        summary:
+            'End-to-end chain: (1) move next to a Tree or Dead tree, (2) interact `chop down` to fill inventory with rs:logs, (3) use_item_on_item with tinderbox on a log to light a fire (rs:logs leaves inventory, fire object appears), (4) chain — light all logs in one spot for batched Firemaking XP. Stop when inventory empties or HP / energy drops too low. Burns BOTH skills in one loop; ideal level 1-15 starter goal.',
+    },
+    {
+        id: 'workflow-fishing-cooking-chain',
+        title: 'Workflow: Fishing → Cooking Chain',
+        topics: ['workflow', 'chain', 'fishing', 'cooking', 'food', 'starter'],
+        keywords: ['catch and cook', 'fish then cook', 'shrimp chain', 'food chain', 'raw to cooked', 'fishing cooking loop'],
+        requiredItems: ['rs:small_fishing_net (or rs:fishing_rod + bait)', 'nearby fire OR cooking range (Lumbridge Castle kitchen 3208,3213,0)'],
+        actions: [
+            'move_to a net-capable fishing spot (Lumbridge swamp 3242,3151 or Draynor)',
+            'interact "net" or "lure" on fishing spot',
+            'move_to nearby fire or Lumbridge kitchen range',
+            'item_action use raw shrimp on fire/range (cook)',
+            'repeat: fish → cook → eat or bank',
+        ],
+        successSignals: [
+            'inventory gains rs:raw_shrimps (fishing XP)',
+            'raw item becomes cooked equivalent (cooking XP)',
+            'inventory has edible food ready for combat',
+        ],
+        source: 'docs/runescape-skill/starter-workflows.md § Catch Shrimp + Make A Fire; docs/runescape-skill/skills/fishing.md; docs/runescape-skill/skills/cooking.md',
+        summary:
+            'End-to-end chain: (1) walk to a net fishing spot with small fishing net equipped, (2) interact `net` to catch raw shrimp (or anchovies), (3) walk to a fire (your own from woodcutting chain) or Lumbridge Castle Kitchen 3208,3213,0, (4) use raw food on fire/range to cook. Burnt items have no heal value; discard. This chain produces combat food — always keep 3+ cooked food before any fight.',
+    },
+    {
+        id: 'workflow-combat-prayer-chain',
+        title: 'Workflow: Combat → Loot → Prayer Chain',
+        topics: ['workflow', 'chain', 'combat', 'prayer', 'bones', 'loot', 'starter'],
+        keywords: ['kill loot bury', 'combat prayer chain', 'fight then bury', 'bones prayer xp', 'cow chicken goblin prayer'],
+        requiredItems: ['weapon (bronze scimitar minimum)', 'food (3+ cooked items)', 'inventory space for bones'],
+        actions: [
+            'move_to safe monster (chicken/cow/goblin per monster-*-starter entries)',
+            'interact attack target',
+            'item_action eat food when HP drops below 50%',
+            'item_action loot bones after kill (inventory gains rs:bones)',
+            'item_action bury (Prayer XP per bone)',
+            'repeat: next target → kill → loot → bury',
+        ],
+        successSignals: [
+            'combat XP changes after each hit (Attack/Strength/Defence/Hitpoints)',
+            'inventory gains rs:bones from each kill',
+            'Prayer XP changes after each bury',
+            'HP never drops below safe threshold (food eaten in time)',
+        ],
+        source: 'docs/runescape-skill/starter-workflows.md § Combat + Bury Bones; docs/runescape-skill/skills/combat.md; docs/runescape-skill/skills/prayer.md',
+        summary:
+            'End-to-end chain: (1) approach safe monster (chicken 3HP / cow 8HP / goblin 5-12HP), (2) attack and let auto-retaliate fight, (3) eat food if HP drops below 50%, (4) loot bones after kill, (5) bury bones for Prayer XP. Loops cleanly: 28 inventory slots can hold ~25 bones + 3 food. Burying converts each bone to 4.5 Prayer XP. Combine with combat-safe-basic + prayer-basic entries for full training context.',
+    },
 ];
 
 const STOP_WORDS = new Set([

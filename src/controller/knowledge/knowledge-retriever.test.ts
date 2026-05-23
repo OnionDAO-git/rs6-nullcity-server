@@ -34,13 +34,18 @@ describe('RuneScape knowledge retriever', () => {
     });
 
     it('formats compact source-labeled prompt context', () => {
-        const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'chop tree and light logs', { limit: 2 });
-        const formatted = formatKnowledgeForPrompt(results, { maxChars: 1000 });
+        // Bumped limit from 2 → 3 and maxChars from 1000 → 2000 after slice 7 added
+        // workflow-woodcutting-firemaking-chain, which now outranks skill-firemaking-basic for
+        // "chop tree and light logs" (it matches both "chop" and "light") and is also longer
+        // than the per-skill entries (richer multi-step action list). Both individual skill
+        // entries should still surface in the top 3 within the larger character budget.
+        const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'chop tree and light logs', { limit: 4 });
+        const formatted = formatKnowledgeForPrompt(results, { maxChars: 3500 });
 
         expect(formatted).toContain('Skill: Woodcutting');
         expect(formatted).toContain('Skill: Firemaking');
         expect(formatted).toContain('Source:');
-        expect(formatted.length).toBeLessThanOrEqual(1000);
+        expect(formatted.length).toBeLessThanOrEqual(3500);
     });
 
     describe('additional skill entries (magic, ranged, cooking, smithing, trading)', () => {
@@ -367,6 +372,37 @@ describe('RuneScape knowledge retriever', () => {
             expect(ids).toContain('items-weapon-tier-overview');
             const weapon = results.find(result => result.entry.id === 'items-weapon-tier-overview')?.entry;
             expect(weapon?.summary).toMatch(/scimitar|attack speed|bronze|steel|rune/i);
+        });
+    });
+
+    describe('multi-skill workflow chain entries (woodcutting+firemaking, fishing+cooking, combat+prayer)', () => {
+        it('retrieves the woodcutting+firemaking chain entry for a make-fire-from-scratch query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'chop a tree then light the logs on fire end-to-end', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('workflow-woodcutting-firemaking-chain');
+            const chain = results.find(result => result.entry.id === 'workflow-woodcutting-firemaking-chain')?.entry;
+            expect(chain?.actions?.join(' ')).toMatch(/chop|use_item_on_item|tinderbox/i);
+            expect(chain?.summary).toMatch(/chop.*log.*fire|tinderbox|chain/i);
+        });
+
+        it('retrieves the fishing+cooking chain entry for a catch-and-cook query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'catch raw shrimp then cook them for food', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('workflow-fishing-cooking-chain');
+            const chain = results.find(result => result.entry.id === 'workflow-fishing-cooking-chain')?.entry;
+            expect(chain?.summary).toMatch(/shrimp|cook|fire|range/i);
+        });
+
+        it('retrieves the combat+prayer chain entry for a kill-loot-bury query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'kill chickens then loot and bury bones for prayer xp', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('workflow-combat-prayer-chain');
+            const chain = results.find(result => result.entry.id === 'workflow-combat-prayer-chain')?.entry;
+            expect(chain?.actions?.join(' ')).toMatch(/attack|item_action.*bury|loot/i);
+            expect(chain?.summary).toMatch(/bones|prayer xp|combat|loot/i);
         });
     });
 
