@@ -74,4 +74,90 @@ describe('validateSoulFrontmatter modules', () => {
             body: { model: 'resident-body-model' },
         });
     });
+
+    describe('heroProfile (M-α)', () => {
+        it('accepts a hero soul with tier=hero, publicName, signatureAction, and anchor', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:wise-old-man',
+                    archetype: 'mentor',
+                    heroProfile: {
+                        tier: 'hero',
+                        publicName: 'The Wise Old Man',
+                        signatureAction: 'advises on quests with a sigh',
+                        anchor: [3088, 3253, 0],
+                    },
+                },
+                '/tmp/wise-old-man.md',
+            );
+
+            expect(frontmatter.heroProfile?.tier).toBe('hero');
+            expect(frontmatter.heroProfile?.publicName).toBe('The Wise Old Man');
+            expect(frontmatter.heroProfile?.signatureAction).toBe('advises on quests with a sigh');
+            expect(frontmatter.heroProfile?.anchor).toEqual([3088, 3253, 0]);
+        });
+
+        it('accepts a novice tier without an anchor', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:apprentice',
+                    archetype: 'achiever',
+                    heroProfile: {
+                        tier: 'novice',
+                        publicName: 'A Hopeful Apprentice',
+                        signatureAction: 'asks for help often',
+                    },
+                },
+                '/tmp/apprentice.md',
+            );
+
+            expect(frontmatter.heroProfile?.tier).toBe('novice');
+            expect(frontmatter.heroProfile?.anchor).toBeUndefined();
+        });
+
+        it('accepts a soul without heroProfile (back-compat: existing souls still load)', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:agent',
+                    archetype: 'endurer',
+                },
+                '/tmp/agent.md',
+            );
+            expect(frontmatter.heroProfile).toBeUndefined();
+        });
+
+        it('rejects an unknown heroProfile.tier value', () => {
+            expect(() =>
+                validateSoulFrontmatter(
+                    {
+                        name: 'res:bad',
+                        archetype: 'achiever',
+                        heroProfile: {
+                            tier: 'legend' as any,
+                            publicName: 'Bad',
+                            signatureAction: 'x',
+                        },
+                    },
+                    '/tmp/bad.md',
+                ),
+            ).toThrow('Invalid soul frontmatter');
+        });
+
+        it('rejects heroProfile with empty publicName or signatureAction', () => {
+            expect(() =>
+                validateSoulFrontmatter(
+                    {
+                        name: 'res:bad',
+                        archetype: 'achiever',
+                        heroProfile: {
+                            tier: 'hero',
+                            publicName: '',
+                            signatureAction: 'x',
+                        },
+                    },
+                    '/tmp/bad.md',
+                ),
+            ).toThrow();
+        });
+    });
 });

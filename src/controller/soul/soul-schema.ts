@@ -6,6 +6,34 @@ import { agentActionSchema } from '../transport/message-codecs';
 
 export type SoulArchetype = 'mentor' | 'achiever' | 'endurer';
 export type DecayCurve = 'gentle' | 'standard' | 'steep';
+export type HeroTier = 'hero' | 'novice' | 'background';
+
+/**
+ * Optional designation of a resident as a public-facing named character
+ * ("hero"), a learning resident ("novice"), or unnamed scenery
+ * ("background"). Hero residents are anchored to specific places, receive
+ * patron interactions preferentially, and route epitaph letters through
+ * sibling flagships in the same faction when they die (J-δ-3).
+ *
+ * See `docs/superpowers/specs/2026-05-22-hero-residents-design.md` and
+ * `docs/null-city-foundation-audit.md` § M-α.
+ */
+export interface HeroProfile {
+    tier: HeroTier;
+    /** Human-recognisable name shown in dashboard + portrait + letters. */
+    publicName: string;
+    /**
+     * A short canonical phrase the resident does/says memorably, used by
+     * the dashboard ticker and the in-portrait blurb. e.g. "advises on
+     * quests with a sigh", "always carries a tinderbox".
+     */
+    signatureAction: string;
+    /**
+     * Optional anchor coord the resident gravitates back to between
+     * autonomous goals. Format `[x, y, level]` matching engine convention.
+     */
+    anchor?: [number, number, number];
+}
 
 export interface SoulFrontmatter {
     name: string;
@@ -59,6 +87,7 @@ export interface SoulFrontmatter {
     spawnPosition?: unknown;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
+    heroProfile?: HeroProfile;
 }
 
 export interface Soul {
@@ -262,6 +291,14 @@ export const soulFrontmatterSchema = z
         spawnPosition: z.unknown().optional(),
         initialInventory: z.array(initialContainerItemSchema).max(28).optional(),
         initialEquipment: z.array(initialContainerItemSchema).max(14).optional(),
+        heroProfile: z
+            .object({
+                tier: z.enum(['hero', 'novice', 'background']),
+                publicName: z.string().min(1),
+                signatureAction: z.string().min(1),
+                anchor: z.tuple([z.number().int(), z.number().int(), z.number().int().min(0)]).optional(),
+            })
+            .optional(),
     })
     .strict();
 
