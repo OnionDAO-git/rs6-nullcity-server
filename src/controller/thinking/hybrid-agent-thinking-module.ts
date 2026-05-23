@@ -625,6 +625,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const cognition = this.cognition();
         const active = cognition.activeMove;
         if (active) {
+            if (action && shouldInterruptActiveMove(action)) {
+                cognition.activeMove = undefined;
+                return undefined;
+            }
             if (distance(here, active.target) <= (active.range ?? 0)) {
                 cognition.activeMove = undefined;
             } else {
@@ -1812,6 +1816,10 @@ function sameMoveIntent(action: AgentAction, active: ActiveMoveState): boolean {
     const target = positionLike(action.target);
     const range = typeof action.range === 'number' ? action.range : 0;
     return Boolean(target && positionsEqual(target, active.target) && range === (active.range ?? 0));
+}
+
+function shouldInterruptActiveMove(action: AgentAction): boolean {
+    return /^(say|use_item_on_item|item_action|trade_request|trade_offer_item|trade_accept|trade_decline)$/.test(action.kind);
 }
 
 function moveIntentAction(active: ActiveMoveState, cause: string): AgentAction {

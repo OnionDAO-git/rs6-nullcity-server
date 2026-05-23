@@ -991,6 +991,58 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeMove?.target).toEqual(guide.position);
     });
 
+    it('lets local firemaking interrupt a stale stuck move', async () => {
+        const blockedLandmark = { x: 3243, y: 3242, level: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: blockedLandmark, range: 1, cause: 'approach_interaction_target' }],
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 80;
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather logs from a nearby ordinary tree and light a fire with the tinderbox.',
+                steps: ['Use tinderbox on logs once logs are in inventory.'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+            activeMove: {
+                target: blockedLandmark,
+                range: 1,
+                cause: 'approach_interaction_target',
+                startedAtTick: 92,
+                lastTick: 99,
+                lastPositionKey: '3231,3238,0',
+                stationaryCount: 0,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: {
+                    ...residentAt(3231, 3238),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                    ],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'use_item_on_item', itemSlot: 0, targetSlot: 2, cause: 'firemaking_fallback' }]);
+        expect(result.cause).toBe('firemaking_fallback');
+        expect(state.cognition?.activeMove).toBeUndefined();
+    });
+
     it('asks for help when progress evidence says a recovery move is also stuck', async () => {
         const recoveryTarget = { x: 3230, y: 3238, level: 0 };
         const llm = scriptedLlm([
