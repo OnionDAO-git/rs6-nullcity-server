@@ -1,4 +1,5 @@
-import { deriveEmbassyContext } from '../embassy/embassy';
+import { EMBASSY_REGION, deriveEmbassyContext } from '../embassy/embassy';
+import { currentEmbassySchedule } from '../embassy/embassy-schedule-host';
 import { dominantFaction, type FactionName, type Soul, type SoulArchetype, type SoulFrontmatter } from '../soul/soul-schema';
 import type { AgentAction } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
@@ -81,7 +82,15 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
         ['alignment', renderAlignmentDirective(input.soul.frontmatter.alignment)],
         ['aesthetic', renderAestheticDirective(input.soul.frontmatter.aesthetic)],
         ['faction', renderFactionDirective(input.soul.frontmatter.factionAffinity)],
-        ['embassy', renderEmbassyDirective(deriveEmbassyContext(input.perception))],
+        [
+            'embassy',
+            renderEmbassyDirective(
+                deriveEmbassyContext(input.perception, EMBASSY_REGION, {
+                    schedule: currentEmbassySchedule(),
+                    now: new Date(),
+                }),
+            ),
+        ],
         ['soul', input.soul.body],
         ['beliefs', input.soul.frontmatter.startingBeliefs || []],
         ['legacy', input.legacy || input.soul.frontmatter.legacy || null],
