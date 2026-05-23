@@ -19,6 +19,7 @@ import type { ActionResult, AgentAction, CreateResidentPayload, Perception, Perc
 import type {
     BenchmarkAutonomousRuntime,
     BenchmarkAutonomousRuntimeContext,
+    BenchmarkMemorySeed,
     BenchmarkRecordedActionAttempt,
     BenchmarkRecordedInferenceRequest,
 } from './benchmark-runner';
@@ -44,6 +45,10 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
     async start(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
         this.context = context;
         this.runDirs = createRunDirs(context);
+        const seededMemories = seedBenchmarkMemories(this.runDirs.memory, context.resident, context.task.memorySeeds || []);
+        if (seededMemories > 0) {
+            context.recordSummary(`Seeded ${seededMemories} benchmark Library memories.`);
+        }
         this.gameSkill = this.createGameSkill(context);
         this.runtime = new ResidentRuntime({
             soul: createBenchmarkSoul(context),
@@ -277,6 +282,19 @@ function createRunDirs(context: BenchmarkAutonomousRuntimeContext): BenchmarkRun
         logging: path.join(root, 'logs'),
         knowledge: path.join(root, 'knowledge'),
     };
+}
+
+function seedBenchmarkMemories(memoryRoot: string, resident: string, seeds: BenchmarkMemorySeed[]): number {
+    const timelineSeeds = seeds.filter(seed => seed.kind === 'library_timeline');
+    if (timelineSeeds.length === 0) {
+        return 0;
+    }
+    const timelineDir = path.join(memoryRoot, 'library', residentSlug(resident));
+    fs.mkdirSync(timelineDir, { recursive: true });
+    const timelinePath = path.join(timelineDir, 'timeline.jsonl');
+    const lines = timelineSeeds.map(seed => JSON.stringify(seed.event));
+    fs.appendFileSync(timelinePath, `${lines.join('\n')}\n`);
+    return timelineSeeds.length;
 }
 
 function matchesResident(residentId: string, resident: string): boolean {

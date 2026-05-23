@@ -133,6 +133,19 @@ export class ResidentRuntime {
         this.options.stateStore.save(this.state);
     }
 
+    getState(): RuntimeState {
+        return this.state;
+    }
+
+    getEvidence(): ResidentRuntimeEvidence | undefined {
+        return this.evidence;
+    }
+
+    incrementAttention(amount: number): void {
+        this.state.attention = Math.max(0, this.state.attention + amount);
+        this.options.stateStore.save(this.state);
+    }
+
     async onPerception(perception: Perception): Promise<void> {
         return this.withEvidenceTick(perception, () => this.handlePerception(perception));
     }

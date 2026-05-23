@@ -96,6 +96,43 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
 
         await driver.stop('test_complete');
     });
+
+    it('seeds benchmark Library memories before constructing the autonomous resident runtime', async () => {
+        const context = benchmarkContext({
+            task: {
+                id: 'memory-recall-3m',
+                version: '0.1.0',
+                timeoutMs: 5000,
+                memorySeeds: [
+                    {
+                        kind: 'library_timeline',
+                        event: {
+                            kind: 'patron_gift',
+                            patronHandle: 'alice@onion',
+                            artifact: 'rs:tinderbox',
+                            ts: '2026-05-23T03:00:00.000Z',
+                        },
+                    },
+                ],
+                run: jest.fn(),
+            } as never,
+        });
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: new FakeGateway() as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        const runtimeOptions = (ResidentRuntime as jest.Mock).mock.calls.at(-1)?.[0];
+        const memories = runtimeOptions.memory.retrieve(context.resident, 'alice tinderbox', 4);
+        expect(memories.join('\n')).toContain('alice@onion');
+        expect(memories.join('\n')).toContain('rs:tinderbox');
+
+        await driver.stop('test_complete');
+    });
 });
 
 class FakeGateway extends EventEmitter {
@@ -104,7 +141,7 @@ class FakeGateway extends EventEmitter {
     }
 }
 
-function benchmarkContext(): BenchmarkAutonomousRuntimeContext {
+function benchmarkContext(overrides: Partial<BenchmarkAutonomousRuntimeContext> = {}): BenchmarkAutonomousRuntimeContext {
     return {
         resident: 'res:bmk_fire',
         task: { id: 'make-fire-5m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },
@@ -114,6 +151,7 @@ function benchmarkContext(): BenchmarkAutonomousRuntimeContext {
         recordInferenceRequest: jest.fn(),
         recordArtifactPath: jest.fn(),
         recordSummary: jest.fn(),
+        ...overrides,
     };
 }
 

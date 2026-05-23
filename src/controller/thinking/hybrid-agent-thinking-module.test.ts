@@ -4226,6 +4226,75 @@ describe('HybridAgentThinkingModule', () => {
             expect(result.voiceSource).toBe('inference');
         });
 
+        it('F2-T1b: Small talk prompt includes recent Library memories so the resident can answer recall questions.', async () => {
+            const llm = scriptedLlm([{ text: 'Alice gave me a tinderbox, and I promised Codex shrimp.' }]);
+            const state = runtimeState();
+            const agent = hybridAgent(
+                llm,
+                state,
+                soul(),
+                memory([
+                    'Patron gift from alice@onion: rs:tinderbox (2026-05-23 03:00:00)',
+                    'story_note: I promised to cook shrimp for Codex at 2026-05-23 03:01:00',
+                ]),
+            );
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'what do you remember about alice and my shrimp?',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions).toEqual([
+                { kind: 'say', text: 'Alice gave me a tinderbox, and I promised Codex shrimp.', voiceSource: 'inference' },
+            ]);
+            const prompt = llm.complete.mock.calls[0]?.[0].prompt;
+            expect(prompt).toContain('Recent Library memories');
+            expect(prompt).toContain('alice@onion');
+            expect(prompt).toContain('promised to cook shrimp for Codex');
+        });
+
+        it('F2-T1c: Small talk converts JSON-like memory echo into a natural recall line.', async () => {
+            const llm = scriptedLlm([
+                {
+                    text: '{ "archetype": "endurer", "voice": "default", "memories": [ "Patron gift from alice@onion: rs:tinderbox (2026-05-23 03:00:00)", "story_note: I promised to cook shrimp for Codex at 2026-05-23 03:01:00" ] }',
+                },
+            ]);
+            const agent = hybridAgent(
+                llm,
+                runtimeState(),
+                soul(),
+                memory([
+                    'Patron gift from alice@onion: rs:tinderbox (2026-05-23 03:00:00)',
+                    'story_note: I promised to cook shrimp for Codex after practicing fishing. at 2026-05-23 03:01:00',
+                ]),
+            );
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [{ kind: 'chat', from: peer, text: 'what do you remember about alice and my shrimp?', to: 'public' }],
+                }),
+            );
+
+            const text = String((result.actions[0] as any).text);
+            expect(text).not.toContain('{');
+            expect(text).not.toContain('..');
+            expect(text.toLowerCase()).toContain('alice');
+            expect(text.toLowerCase()).toContain('tinderbox');
+            expect(text.toLowerCase()).toContain('shrimp');
+        });
+
         it('F2-T2: Player says "agent go" within earshot. Assert: clarifying question with voiceSource: "phrasebook".', async () => {
             const llm = scriptedLlm([]);
             const state = runtimeState();
@@ -4503,11 +4572,11 @@ describe('HybridAgentThinkingModule', () => {
     });
 });
 
-function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul()): HybridAgentThinkingModule {
+function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), memoryStore = memory()): HybridAgentThinkingModule {
     return new HybridAgentThinkingModule({
         soul: agentSoul,
         state,
-        memory: memory(),
+        memory: memoryStore,
         llm: llm as unknown as LlmClient,
     });
 }
@@ -4569,10 +4638,10 @@ function runtimeState(): RuntimeState {
     };
 }
 
-function memory(): MemoryStore {
+function memory(retrieved: string[] = []): MemoryStore {
     return {
         ensureResident: jest.fn(() => '/tmp/agent-memory'),
-        retrieve: jest.fn(() => []),
+        retrieve: jest.fn(() => retrieved),
         write: jest.fn(),
         upsertIndexPatch: jest.fn(),
     } as unknown as MemoryStore;

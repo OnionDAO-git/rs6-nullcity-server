@@ -363,6 +363,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Started 2026-05-23 on `agents/wip`: wire Claude's pure Library reader into the runtime prompt paths so a resident can remember recent story/patron events instead of only writing them.
   - Verified 2026-05-23 on `agents/wip`: `MemoryStore.retrieve()` now prepends bounded recent Library timeline memories; standard Hybrid Brain/Body prompts and the legacy SPARK envelope path render those memories. Focused red/green tests, typecheck, lint, format, build, full Jest, and `git diff --check` passed.
 
+- `[>]` **I5: Prove Library memory recall through a benchmark.**
+  - Files: `src/controller/benchmarks/**`, `src/controller/thinking/hybrid-agent-thinking-module.ts`
+  - Deliverable: autonomous benchmark seeds prior Library events, asks the resident a normal nearby-player question, and verifies the resident recalls the seeded person/item/promise in public chat.
+  - Verification: red/green benchmark verifier + CLI tests, focused thinking prompt test, dry-run, typecheck, lint, build, and full Jest suite when no parallel WIP tests are active.
+  - Started 2026-05-23 on `agents/wip`: add a `memory-recall-3m` task and ensure non-command chat replies can see Library memories.
+
 ## Workstream J: Patron / Human-Attention Loop
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
