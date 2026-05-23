@@ -518,6 +518,16 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-22: extracted, unit tested, and integrated previously.
 - `[~]` **R5: Slim the orchestrator.** What remains in `hybrid-agent-thinking-module.ts` should be under 500 lines — pure wiring.
 
+## Workstream RB-MCP: Controller MCP Routine Facade
+
+- `[x]` **Plan RB-MCP-α — RoutineRunner skeleton (NO MCP yet)**
+- `[x]` **Plan RB-MCP-β — MCP server boilerplate + token auth**
+- `[x]` **Plan RB-MCP-γ — Wire run_routine tool to RoutineRunner**
+- `[x]` **Plan RB-MCP-δ — Routine catalog expansion**
+- `[x]` **Plan RB-MCP-ε — `run_workflow_card` + resources**
+  - Verified 2026-05-23 on `agents/wip`: Exposed the `run_workflow_card` tool and registered three core resources (`workflow_cards`, `observe_resident_progress`, and `observe_resident_trajectory`) in `ControllerMcpServer`. All unit and integration tests passed cleanly (1318/1318).
+  - Hardened 2026-05-23 on `agents/wip`: workflow-card resource entries now expose explicit MCP runnable metadata, resident progress/trajectory resource URIs encode names like `res:agent`, and `follow-codex` carries default `follow_player` params. Validation passed with focused MCP tests (`25/25`), typecheck, lint, format, build, diffcheck, full Jest (`1321/1321`), and a disposable HTTP MCP proof that read workflow/progress/trajectory resources and completed `run_workflow_card follow-codex`.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
@@ -534,6 +544,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-23 on `agents/wip`: RB-MCP routine context now passes validated params into runtime ticks, and `follow_player` uses `player` + `distance` to target the named visible player instead of silently chasing the nearest player. Focused routine/runtime/MCP tests, typecheck, lint, format, build, full Jest, diff check, and fresh live `follow-and-chat-5m` proof passed (`runId=bench_20260523151912_follow_and_chat_5m`, `score=1`); copied artifact to ignored `data/benchmarks/` for dashboard inspection.
   - Verified 2026-05-23 on `agents/wip`: hardened RB-MCP routine-param behavior for `chop_tree`, `safe_combat`, and stable `follow_player` so target movement/attacks report progress instead of premature completion, named combat targets are honored, low-HP safe combat preempts, and follow only completes after five in-range ticks. Validation passed with typecheck, lint, format, build, diffcheck, full Jest (`1290/1290`), live autonomous `combat-prayer-10m` (`runId=bench_20260523155157_combat_prayer_10m`, `score=1`, `actionsAttempted=18`, `attackActions=6`, `pickupBonesActions=2`, `buryActions=2`, `prayerSuccess=1`, `deathEvents=0`), and dashboard API/browser artifact smoke.
   - Verified 2026-05-23 on `agents/wip`: operator-facing RB-MCP `run_routine` now has a controller HTTP launch surface (`--mcp-http-port`, `CONTROLLER_MCP_HTTP_PORT`, default path `/controller/mcp`) and SDK-client smoke coverage. Validation passed with focused config/MCP tests (`22/22`), typecheck, lint, format, build, diffcheck, full Jest (`1310/1310`), reviewer rework for startup-error cleanup/response guards, and live disposable-controller proof: MCP client called `run_routine make_fire` on `res:bmk_mcp_mpik3dpe` over HTTP, routine returned `status=completed`, `ticksUsed=1`, `trajectoryHints=["tinderbox_used"]`, and the MCP call log recorded operator `codex-live-proof` with a `sha256:` params hash.
+  - Verified 2026-05-23 on `agents/wip`: RB-MCP `run_workflow_card` and observer resources are now operator-readable over the HTTP MCP surface. Disposable SDK proof read `workflow-cards://current`, `resident-progress://res%3Aagent`, `resident-trajectory://res%3Aagent`, then ran `follow-codex` through `run_workflow_card`; the routine dispatched `follow_player` with `{player:"Codex",distance:3}` and returned `status=completed`.
 
 ## Agent Update Protocol
 

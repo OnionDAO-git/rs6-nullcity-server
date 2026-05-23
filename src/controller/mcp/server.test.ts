@@ -338,6 +338,364 @@ describe('ControllerMcpServer', () => {
             expect(parsed.ts).toBeDefined();
         });
     });
+
+    describe('Plan RB-MCP-ε workflow_cards resource', () => {
+        it('registers the workflow_cards://current resource with MCP run metadata', async () => {
+            const mcpServer = serverInstance.createServer();
+            const registeredResources = (mcpServer as any)._registeredResources;
+            expect(registeredResources).toBeDefined();
+
+            const resource = registeredResources['workflow-cards://current'];
+            expect(resource).toBeDefined();
+            expect(resource.name).toBe('workflow_cards');
+            expect(resource.metadata?.mimeType).toBe('application/json');
+
+            const readResult = await resource.readCallback(new URL('workflow-cards://current'));
+            expect(readResult.contents).toBeDefined();
+            expect(readResult.contents.length).toBe(1);
+
+            const parsed = JSON.parse(readResult.contents[0].text);
+            expect(parsed).toBeInstanceOf(Array);
+            expect(parsed.find((card: any) => card.id === 'make-fire')).toEqual(
+                expect.objectContaining({
+                    title: 'Make fire',
+                    mcp: { runnable: true, routine: 'make_fire' },
+                }),
+            );
+            expect(parsed.find((card: any) => card.id === 'follow-codex')).toEqual(
+                expect.objectContaining({
+                    mcp: { runnable: true, routine: 'follow_player', defaultParams: { player: 'Codex', distance: 3 } },
+                }),
+            );
+            expect(parsed.find((card: any) => card.id === 'explore-locally')).toEqual(
+                expect.objectContaining({
+                    mcp: { runnable: false, unsupportedReason: 'routine_not_whitelisted' },
+                }),
+            );
+        });
+    });
+
+    describe('Plan RB-MCP-ε observe_resident_progress and observe_resident_trajectory resources', () => {
+        const fakeProgressPath = path.join(process.cwd(), 'data', 'fake-progress.jsonl');
+        const fakeTrajectoryPath = path.join(process.cwd(), 'data', 'fake-trajectory.jsonl');
+
+        beforeEach(async () => {
+            try {
+                await fs.promises.unlink(fakeProgressPath);
+            } catch {}
+            try {
+                await fs.promises.unlink(fakeTrajectoryPath);
+            } catch {}
+        });
+
+        afterEach(async () => {
+            try {
+                await fs.promises.unlink(fakeProgressPath);
+            } catch {}
+            try {
+                await fs.promises.unlink(fakeTrajectoryPath);
+            } catch {}
+        });
+
+        it('registers templates and reads tailed active progress/trajectory lines', async () => {
+            // Write dummy progress and trajectory lines
+            await fs.promises.writeFile(fakeProgressPath, JSON.stringify({ tick: 1, meaningful: true, reasons: ['level_up'] }) + '\n');
+            await fs.promises.writeFile(fakeTrajectoryPath, JSON.stringify({ tick: 1, action: { kind: 'move_to' } }) + '\n');
+
+            const mockEvidence = {
+                store: {
+                    currentSession: jest.fn().mockReturnValue({
+                        progressPath: fakeProgressPath,
+                        trajectoryPath: fakeTrajectoryPath,
+                    }),
+                },
+            };
+            const mockRuntime = {
+                getEvidence: jest.fn().mockReturnValue(mockEvidence),
+            };
+            mockHost.getRuntime = jest.fn().mockReturnValue(mockRuntime);
+
+            const mcpServer = serverInstance.createServer();
+            const registeredResourceTemplates = (mcpServer as any)._registeredResourceTemplates;
+            expect(registeredResourceTemplates).toBeDefined();
+
+            // Progress template resource
+            const progressTemplate = registeredResourceTemplates.observe_resident_progress;
+            expect(progressTemplate).toBeDefined();
+            expect(progressTemplate.resourceTemplate.uriTemplate.toString()).toBe('resident-progress://{residentName}');
+            const progressList = await (progressTemplate.resourceTemplate as any)._callbacks.list();
+            expect(progressList.resources[0].uri).toBe('resident-progress://res%3Aagent');
+
+            const progressResult = await progressTemplate.readCallback(new URL('resident-progress://res%3Aagent'), {
+                residentName: 'res%3Aagent',
+            });
+            expect(progressResult.contents).toBeDefined();
+            const progressData = JSON.parse(progressResult.contents[0].text);
+            expect(progressData.length).toBe(1);
+            expect(progressData[0].reasons).toEqual(['level_up']);
+            expect(mockHost.getRuntime).toHaveBeenCalledWith('res:agent');
+
+            // Trajectory template resource
+            const trajectoryTemplate = registeredResourceTemplates.observe_resident_trajectory;
+            expect(trajectoryTemplate).toBeDefined();
+            expect(trajectoryTemplate.resourceTemplate.uriTemplate.toString()).toBe('resident-trajectory://{residentName}');
+            const trajectoryList = await (trajectoryTemplate.resourceTemplate as any)._callbacks.list();
+            expect(trajectoryList.resources[0].uri).toBe('resident-trajectory://res%3Aagent');
+
+            const trajectoryResult = await trajectoryTemplate.readCallback(new URL('resident-trajectory://res%3Aagent'), {
+                residentName: 'res%3Aagent',
+            });
+            expect(trajectoryResult.contents).toBeDefined();
+            const trajectoryData = JSON.parse(trajectoryResult.contents[0].text);
+            expect(trajectoryData.length).toBe(1);
+            expect(trajectoryData[0].action.kind).toBe('move_to');
+        });
+
+        it('returns empty array when no active session exists', async () => {
+            const mockRuntime = {
+                getEvidence: jest.fn().mockReturnValue(undefined),
+            };
+            mockHost.getRuntime = jest.fn().mockReturnValue(mockRuntime);
+
+            const mcpServer = serverInstance.createServer();
+            const progressTemplate = (mcpServer as any)._registeredResourceTemplates.observe_resident_progress;
+
+            const progressResult = await progressTemplate.readCallback(new URL('resident-progress://res-agent'), {
+                residentName: 'res:agent',
+            });
+            const progressData = JSON.parse(progressResult.contents[0].text);
+            expect(progressData).toEqual([]);
+        });
+
+        it('serves workflow and resident observer resources through the SDK Streamable HTTP transport', async () => {
+            jest.restoreAllMocks();
+            process.env.CONTROLLER_MCP_TOKENS = 'operator-token';
+            await fs.promises.writeFile(fakeProgressPath, JSON.stringify({ tick: 2, meaningful: true, reasons: ['near_player'] }) + '\n');
+            await fs.promises.writeFile(fakeTrajectoryPath, JSON.stringify({ tick: 2, action: { kind: 'move_to' } }) + '\n');
+
+            const mockEvidence = {
+                store: {
+                    currentSession: jest.fn().mockReturnValue({
+                        progressPath: fakeProgressPath,
+                        trajectoryPath: fakeTrajectoryPath,
+                    }),
+                },
+            };
+            const mockRuntime = {
+                getEvidence: jest.fn().mockReturnValue(mockEvidence),
+            };
+            mockHost.getRuntime = jest.fn().mockReturnValue(mockRuntime);
+
+            const started = await startControllerMcpHttpServer(mockHost, { port: 0, path: '/controller/mcp' });
+            const client = new Client({ name: 'jest-controller-resource-client', version: '0.0.0' });
+
+            try {
+                await client.connect(
+                    new StreamableHTTPClientTransport(new URL(started.url), {
+                        requestInit: { headers: { Authorization: 'Bearer operator-token' } },
+                    }),
+                );
+
+                const cardsResult = await client.readResource({ uri: 'workflow-cards://current' });
+                const cards = JSON.parse(resourceText(cardsResult.contents[0]));
+                expect(cards.find((card: any) => card.id === 'follow-codex').mcp).toEqual({
+                    runnable: true,
+                    routine: 'follow_player',
+                    defaultParams: { player: 'Codex', distance: 3 },
+                });
+
+                const progressResult = await client.readResource({ uri: 'resident-progress://res%3Aagent' });
+                const progress = JSON.parse(resourceText(progressResult.contents[0]));
+                expect(progress).toEqual([expect.objectContaining({ tick: 2, reasons: ['near_player'] })]);
+
+                const trajectoryResult = await client.readResource({ uri: 'resident-trajectory://res%3Aagent' });
+                const trajectory = JSON.parse(resourceText(trajectoryResult.contents[0]));
+                expect(trajectory).toEqual([expect.objectContaining({ tick: 2, action: { kind: 'move_to' } })]);
+                expect(mockHost.getRuntime).toHaveBeenCalledWith('res:agent');
+            } finally {
+                await client.close();
+                await closeControllerMcpHttpServer(started.server);
+            }
+        });
+    });
+
+    describe('Plan RB-MCP-ε run_workflow_card tool', () => {
+        const logFilePath = path.join(process.cwd(), 'data', 'mcp-call-log.jsonl');
+
+        beforeEach(async () => {
+            mockHost.getRuntime = jest.fn();
+            try {
+                await fs.promises.unlink(logFilePath);
+            } catch {}
+        });
+
+        afterEach(async () => {
+            try {
+                await fs.promises.unlink(logFilePath);
+            } catch {}
+        });
+
+        it('is registered under name run_workflow_card with correct properties', () => {
+            const mcpServer = serverInstance.createServer();
+            const registeredTools = (mcpServer as any)._registeredTools;
+            expect(registeredTools.run_workflow_card).toBeDefined();
+            expect(registeredTools.run_workflow_card.description).toBe('Execute a whitelisted workflow card for a resident');
+        });
+
+        it('rejects with resident_not_found if resident is missing', async () => {
+            mockHost.getRuntime.mockReturnValue(undefined);
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_workflow_card;
+
+            const result = await tool.handler({
+                resident: 'res:nobody',
+                cardId: 'make-fire',
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('rejected');
+            expect(parsed.lastError).toBe('resident_not_found');
+        });
+
+        it('rejects with routine_not_whitelisted if cardId is not mapped or supported', async () => {
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_workflow_card;
+
+            const result = await tool.handler({
+                resident: 'res:agent',
+                cardId: 'unsupported-card',
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('rejected');
+            expect(parsed.lastError).toBe('routine_not_whitelisted');
+        });
+
+        it('rejects with routine_not_whitelisted if cardId is supported but does not have a mapped routine', async () => {
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_workflow_card;
+
+            const result = await tool.handler({
+                resident: 'res:agent',
+                cardId: 'explore-locally',
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('rejected');
+            expect(parsed.lastError).toBe('routine_not_whitelisted');
+        });
+
+        it('executes mapped workflow card successfully when resident is registered', async () => {
+            const mockRuntime: any = {
+                tick: jest.fn().mockResolvedValue('completed'),
+                activeRoutineId: undefined,
+                _lastHints: [],
+            };
+            mockHost.getRuntime.mockReturnValue(mockRuntime);
+
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_workflow_card;
+
+            const result = await tool.handler({
+                resident: 'res:agent',
+                cardId: 'make-fire',
+                maxTicks: 100,
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('completed');
+            expect(parsed.ticksUsed).toBe(1);
+
+            // Verify activeRoutineId lifecycle and mapping
+            expect(mockRuntime.tick).toHaveBeenCalled();
+            expect(mockRuntime.activeRoutineId).toBeUndefined();
+        });
+
+        it('uses default params for workflow cards backed by parameterized routines', async () => {
+            const mockRuntime: any = {
+                tick: jest.fn().mockResolvedValue('completed'),
+                activeRoutineId: undefined,
+                _lastHints: [],
+            };
+            mockHost.getRuntime.mockReturnValue(mockRuntime);
+
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.run_workflow_card;
+
+            const result = await tool.handler({
+                resident: 'res:agent',
+                cardId: 'follow-codex',
+                maxTicks: 10,
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed.status).toBe('completed');
+            expect(mockRuntime.tick).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    routineId: 'follow_player',
+                    params: { player: 'Codex', distance: 3 },
+                }),
+            );
+            expect(mockRuntime.activeRoutineId).toBeUndefined();
+        });
+
+        it('serves run_workflow_card through the SDK Streamable HTTP transport', async () => {
+            jest.restoreAllMocks();
+            process.env.CONTROLLER_MCP_TOKENS = 'operator-token';
+            process.env.CONTROLLER_MCP_OPERATOR_FOR_operator_token = 'operator-codex';
+
+            const mockRuntime: any = {
+                tick: jest.fn().mockResolvedValue('completed'),
+                activeRoutineId: undefined,
+                _lastHints: ['follow_card_completed'],
+            };
+            mockHost.getRuntime.mockReturnValue(mockRuntime);
+
+            const started = await startControllerMcpHttpServer(mockHost, { port: 0, path: '/controller/mcp' });
+            const client = new Client({ name: 'jest-controller-workflow-card-client', version: '0.0.0' });
+
+            try {
+                await client.connect(
+                    new StreamableHTTPClientTransport(new URL(started.url), {
+                        requestInit: { headers: { Authorization: 'Bearer operator-token' } },
+                    }),
+                );
+
+                const result = await client.callTool({
+                    name: 'run_workflow_card',
+                    arguments: { resident: 'res:agent', cardId: 'follow-codex', maxTicks: 10 },
+                });
+
+                const content = result.content as Array<{ type: string; text?: string }>;
+                const parsed = JSON.parse(content[0].text || '{}');
+                expect(parsed).toEqual(
+                    expect.objectContaining({
+                        status: 'completed',
+                        ticksUsed: 1,
+                        effectEvidenceCount: 1,
+                        trajectoryHints: ['follow_card_completed'],
+                    }),
+                );
+                expect(mockRuntime.tick).toHaveBeenCalledWith(
+                    expect.objectContaining({
+                        routineId: 'follow_player',
+                        params: { player: 'Codex', distance: 3 },
+                    }),
+                );
+
+                const logContent = await fs.promises.readFile(logFilePath, 'utf8');
+                const parsedLog = JSON.parse(logContent);
+                expect(parsedLog.operator).toBe('operator-codex');
+                expect(parsedLog.routine).toBe('follow-codex');
+                expect(parsedLog.paramsHash).toMatch(/^sha256:/);
+                expect(parsedLog.paramsHash).not.toBe('sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a');
+                expect(parsedLog.status).toBe('completed');
+            } finally {
+                await client.close();
+                await closeControllerMcpHttpServer(started.server);
+            }
+        });
+    });
 });
 
 function httpGet(url: string): Promise<{ status: number; body: string }> {
@@ -351,4 +709,11 @@ function httpGet(url: string): Promise<{ status: number; body: string }> {
             response.on('end', () => resolve({ status: response.statusCode || 0, body }));
         }).on('error', reject);
     });
+}
+
+function resourceText(content: { text?: string; blob?: string }): string {
+    if (typeof content.text === 'string') {
+        return content.text;
+    }
+    throw new Error('Expected text resource content');
 }
