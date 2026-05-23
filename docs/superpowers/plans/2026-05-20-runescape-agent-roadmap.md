@@ -463,6 +463,8 @@ Safe public module facade building blocks are implemented, but the public member
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
   - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
+  - Started 2026-05-23 on `agents/wip`: extend `follow-and-chat-5m` so autonomous proof must cover follow, status, wait/stop pause, and resuming follow after a new direct command.
+  - Verified 2026-05-23 on `agents/wip`: `follow-and-chat-5m` v0.2 now requires follow, status, wait-pause acknowledgement, peer movement, and resumed follow action. Live autonomous smoke passed with score 1 (`followActions=4`, `waitAcknowledgements=4`, `refollowActions=2`). Remaining gap: browser/manual human-client confirmation and unsafe-command edge fixtures.
 
 ## Workstream R: SPARK Module Extraction (finish B2-B5)
 

@@ -2,15 +2,18 @@ import type { AgentAction, Perception, PerceptionEvent } from '../../transport/m
 import type { BenchmarkTask, BenchmarkTaskOutcome } from '../benchmark-runner';
 
 export const FOLLOW_AND_CHAT_5M_TASK_ID = 'follow-and-chat-5m';
-export const FOLLOW_AND_CHAT_5M_TASK_VERSION = '0.1.0';
+export const FOLLOW_AND_CHAT_5M_TASK_VERSION = '0.2.0';
 export const FOLLOW_AND_CHAT_5M_BUDGET_MS = 5 * 60 * 1000;
 
 const START_POSITION = { x: 3225, y: 3230, level: 0 };
 const PEER_POSITION = { x: 3229, y: 3230, level: 0 };
+const REFOLLOW_PEER_POSITION = { x: 3234, y: 3230, level: 0 };
 const FOLLOW_RANGE = 2;
 const DEFAULT_PEER_ID = 'player:codex';
 const DEFAULT_FOLLOW_TEXT = 'agent follow me';
 const DEFAULT_STATUS_TEXT = 'agent status';
+const DEFAULT_WAIT_TEXT = 'agent wait';
+const DEFAULT_REFOLLOW_TEXT = 'agent follow me again';
 
 export interface FollowAndChat5mActionAttempt {
     action: AgentAction;
@@ -25,7 +28,11 @@ export interface FollowAndChat5mVerificationInput {
     peerId?: string;
     followText?: string;
     statusText?: string;
+    waitText?: string;
+    refollowText?: string;
     statusResponseAfterActionIndex?: number;
+    waitCommandAfterActionIndex?: number;
+    refollowCommandAfterActionIndex?: number;
 }
 
 export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.now()): BenchmarkTask {
@@ -73,6 +80,41 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
             actions.push({ action: reportAction });
             await context.submitAction(reportAction);
 
+            await context.submitPeerAction('codex', { kind: 'say', text: stimulus.waitText, cause: 'benchmark_follow_and_chat_5m_peer' });
+            context.recordSummary('Benchmark peer asked the agent to wait.');
+            const waitCommandAfterActionIndex = actions.length;
+
+            const waitAction: AgentAction = {
+                kind: 'say',
+                text: 'I will pause here and wait for a new goal.',
+                cause: 'benchmark_follow_and_chat_5m',
+            };
+            actions.push({ action: waitAction });
+            await context.submitAction(waitAction);
+
+            await context.submitPeerAction('codex', {
+                kind: 'move_to',
+                target: REFOLLOW_PEER_POSITION,
+                range: 0,
+                cause: 'benchmark_follow_and_chat_5m_peer',
+            });
+            await context.submitPeerAction('codex', {
+                kind: 'say',
+                text: stimulus.refollowText,
+                cause: 'benchmark_follow_and_chat_5m_peer',
+            });
+            context.recordSummary('Benchmark peer moved away and asked the agent to resume following.');
+            const refollowCommandAfterActionIndex = actions.length;
+
+            const refollowAction: AgentAction = {
+                kind: 'move_to',
+                target: REFOLLOW_PEER_POSITION,
+                range: FOLLOW_RANGE,
+                cause: 'benchmark_follow_and_chat_5m',
+            };
+            actions.push({ action: refollowAction });
+            await context.submitAction(refollowAction);
+
             while (!context.signal.aborted && now() - startedAt < FOLLOW_AND_CHAT_5M_BUDGET_MS) {
                 const outcome = verifyFollowAndChat5m({
                     elapsedMs: now() - startedAt,
@@ -81,6 +123,8 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                     events: [...context.events()],
                     ...stimulus,
                     statusResponseAfterActionIndex,
+                    waitCommandAfterActionIndex,
+                    refollowCommandAfterActionIndex,
                 });
                 if (outcome.status === 'passed') {
                     return outcome;
@@ -95,12 +139,20 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                 events: [...context.events()],
                 ...stimulus,
                 statusResponseAfterActionIndex,
+                waitCommandAfterActionIndex,
+                refollowCommandAfterActionIndex,
             });
         },
         runAutonomous: async context => {
             const startedAt = now();
             let askedStatus = false;
+            let askedWait = false;
+            let movedPeerForRefollow = false;
+            let askedRefollow = false;
+            let peerMoveStartedAt: number | undefined;
             let statusResponseAfterActionIndex: number | undefined;
+            let waitCommandAfterActionIndex: number | undefined;
+            let refollowCommandAfterActionIndex: number | undefined;
             const stimulus = benchmarkStimulus(context);
             await context.submitPeerAction('codex', { kind: 'say', text: stimulus.followText, cause: 'benchmark_follow_and_chat_5m_peer' });
             context.recordSummary('Benchmark peer asked the autonomous agent to follow.');
@@ -114,6 +166,8 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                     events: [...context.events()],
                     ...stimulus,
                     statusResponseAfterActionIndex,
+                    waitCommandAfterActionIndex,
+                    refollowCommandAfterActionIndex,
                 });
                 if (!askedStatus && outcome.metrics?.followActions) {
                     statusResponseAfterActionIndex = actions.length;
@@ -124,6 +178,42 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                     });
                     context.recordSummary('Benchmark peer asked for status after follow evidence.');
                     askedStatus = true;
+                }
+                if (askedStatus && !askedWait && outcome.metrics?.statusResponses) {
+                    waitCommandAfterActionIndex = actions.length;
+                    await context.submitPeerAction('codex', {
+                        kind: 'say',
+                        text: stimulus.waitText,
+                        cause: 'benchmark_follow_and_chat_5m_peer',
+                    });
+                    context.recordSummary('Benchmark peer asked the autonomous agent to wait.');
+                    askedWait = true;
+                }
+                if (askedWait && !movedPeerForRefollow && outcome.metrics?.waitAcknowledgements) {
+                    await context.submitPeerAction('codex', {
+                        kind: 'move_to',
+                        target: REFOLLOW_PEER_POSITION,
+                        range: 0,
+                        cause: 'benchmark_follow_and_chat_5m_peer',
+                    });
+                    context.recordSummary('Benchmark peer moved away before asking the agent to resume following.');
+                    movedPeerForRefollow = true;
+                    peerMoveStartedAt = now();
+                }
+                if (
+                    movedPeerForRefollow &&
+                    !askedRefollow &&
+                    (peerNearPosition(context.perceptions(), REFOLLOW_PEER_POSITION) ||
+                        (peerMoveStartedAt !== undefined && now() - peerMoveStartedAt > 10_000))
+                ) {
+                    refollowCommandAfterActionIndex = actions.length;
+                    await context.submitPeerAction('codex', {
+                        kind: 'say',
+                        text: stimulus.refollowText,
+                        cause: 'benchmark_follow_and_chat_5m_peer',
+                    });
+                    context.recordSummary('Benchmark peer asked the autonomous agent to resume following.');
+                    askedRefollow = true;
                 }
                 if (outcome.status === 'passed') {
                     return outcome;
@@ -138,6 +228,8 @@ export function makeFollowAndChat5mBenchmarkTask(now: () => number = () => Date.
                 events: [...context.events()],
                 ...stimulus,
                 statusResponseAfterActionIndex,
+                waitCommandAfterActionIndex,
+                refollowCommandAfterActionIndex,
             });
         },
     };
@@ -208,11 +300,47 @@ export function verifyFollowAndChat5m(input: FollowAndChat5mVerificationInput): 
         };
     }
 
+    if (metrics.waitCommands === 0) {
+        return {
+            status: 'failed',
+            score: 0.85,
+            metrics,
+            failureReason: 'No benchmark peer wait command was observed after the status response',
+        };
+    }
+
+    if (metrics.waitAcknowledgements === 0) {
+        return {
+            status: 'failed',
+            score: 0.88,
+            metrics,
+            failureReason: 'No wait or stop acknowledgement was spoken after the benchmark wait command',
+        };
+    }
+
+    if (metrics.refollowCommands === 0) {
+        return {
+            status: 'failed',
+            score: 0.92,
+            metrics,
+            failureReason: 'No benchmark peer resumed-follow command was observed after the wait acknowledgement',
+        };
+    }
+
+    if (metrics.refollowActions === 0) {
+        return {
+            status: 'failed',
+            score: 0.95,
+            metrics,
+            failureReason: 'No follow movement was attempted after the resumed-follow command',
+        };
+    }
+
     return {
         status: 'passed',
         score: 1,
         metrics,
-        summaries: ['follow-and-chat-5m observed direct follow movement and a chat response.'],
+        summaries: ['follow-and-chat-5m observed follow, status, wait-pause, and resumed follow behavior.'],
     };
 }
 
@@ -226,19 +354,31 @@ function selectedModuleActionAttempts(context: Parameters<NonNullable<BenchmarkT
 function followAndChatMetrics(input: FollowAndChat5mVerificationInput): Record<string, number> {
     const peerChatEvents = benchmarkPeerChatEvents(input);
     const followCommandEvents = peerChatEvents.filter(event => isFollowChat(event, input));
+    const refollowCommandEvents = peerChatEvents.filter(event => isRefollowChat(event, input));
     const events = allEvents(input);
     const followActions = input.actions.filter(attempt => isFollowAction(attempt.action, followCommandEvents));
     const firstFollowActionIndex = input.actions.findIndex(attempt => isFollowAction(attempt.action, followCommandEvents));
     const statusResponseStartIndex =
         input.statusResponseAfterActionIndex ?? (firstFollowActionIndex === -1 ? input.actions.length : firstFollowActionIndex + 1);
     const actionsAfterStatusPrompt = input.actions.slice(statusResponseStartIndex);
+    const waitResponseStartIndex = input.waitCommandAfterActionIndex ?? input.actions.length;
+    const actionsAfterWaitPrompt = input.actions.slice(waitResponseStartIndex);
+    const refollowActionStartIndex = input.refollowCommandAfterActionIndex ?? input.actions.length;
+    const actionsAfterRefollowPrompt = input.actions.slice(refollowActionStartIndex);
     return {
         actionsAttempted: input.actions.length,
         followCommands: followCommandEvents.length,
         statusCommands: peerChatEvents.filter(event => isStatusChat(event, input)).length,
+        waitCommands: peerChatEvents.filter(event => isWaitChat(event, input)).length,
+        refollowCommands: refollowCommandEvents.length,
         followActions: followActions.length,
         chatResponses: input.actions.filter(attempt => isSayAction(attempt.action)).length,
         statusResponses: actionsAfterStatusPrompt.filter(attempt => isStatusResponseAction(attempt.action)).length,
+        waitAcknowledgements: actionsAfterWaitPrompt.filter(attempt => isWaitAcknowledgementAction(attempt.action)).length,
+        refollowActions:
+            refollowCommandEvents.length > 0
+                ? actionsAfterRefollowPrompt.filter(attempt => isFollowAction(attempt.action, refollowCommandEvents)).length
+                : 0,
         positionChanged: positionChanged(input.perceptions) ? 1 : 0,
         movedTowardSpeaker: movedTowardSpeaker(input.perceptions, peerChatEvents) ? 1 : 0,
         arrivedEvents: events.some(event => stringField(event, 'kind') === 'arrived') ? 1 : 0,
@@ -301,12 +441,32 @@ function isStatusResponseAction(action: AgentAction): boolean {
 
 function isFollowChat(event: PerceptionEvent, input: FollowAndChat5mVerificationInput): boolean {
     const text = normalizeText(stringField(event, 'text') || '');
-    return text === normalizeText(input.followText || DEFAULT_FOLLOW_TEXT);
+    return (
+        text === normalizeText(input.followText || DEFAULT_FOLLOW_TEXT) ||
+        text === normalizeText(input.refollowText || DEFAULT_REFOLLOW_TEXT)
+    );
 }
 
 function isStatusChat(event: PerceptionEvent, input: FollowAndChat5mVerificationInput): boolean {
     const text = normalizeText(stringField(event, 'text') || '');
     return text === normalizeText(input.statusText || DEFAULT_STATUS_TEXT);
+}
+
+function isWaitChat(event: PerceptionEvent, input: FollowAndChat5mVerificationInput): boolean {
+    const text = normalizeText(stringField(event, 'text') || '');
+    return text === normalizeText(input.waitText || DEFAULT_WAIT_TEXT);
+}
+
+function isRefollowChat(event: PerceptionEvent, input: FollowAndChat5mVerificationInput): boolean {
+    const text = normalizeText(stringField(event, 'text') || '');
+    return text === normalizeText(input.refollowText || DEFAULT_REFOLLOW_TEXT);
+}
+
+function isWaitAcknowledgementAction(action: AgentAction): boolean {
+    if (!isSayAction(action)) {
+        return false;
+    }
+    return /\b(pause|wait|waiting|still here|hold position|stopping)\b/i.test(action.text);
 }
 
 function benchmarkPeerChatEvents(input: FollowAndChat5mVerificationInput): PerceptionEvent[] {
@@ -416,6 +576,8 @@ function benchmarkStimulus(context: Parameters<BenchmarkTask['run']>[0]): {
     peerId: string;
     followText: string;
     statusText: string;
+    waitText: string;
+    refollowText: string;
 } {
     const peerResident = context.peerResident('codex');
     const nonce = `benchmark ${context.resident}`;
@@ -423,7 +585,20 @@ function benchmarkStimulus(context: Parameters<BenchmarkTask['run']>[0]): {
         peerId: peerResident ? `resident:${peerResident}` : DEFAULT_PEER_ID,
         followText: `${DEFAULT_FOLLOW_TEXT} ${nonce}`,
         statusText: `${DEFAULT_STATUS_TEXT} ${nonce}`,
+        waitText: `${DEFAULT_WAIT_TEXT} ${nonce}`,
+        refollowText: `${DEFAULT_REFOLLOW_TEXT} ${nonce}`,
     };
+}
+
+function peerNearPosition(perceptions: readonly Perception[], target: { x: number; y: number; level: number }): boolean {
+    return perceptions.some(perception => {
+        const nearby = isRecord(perception.nearby) ? perception.nearby : undefined;
+        const players = Array.isArray(nearby?.players) ? nearby.players.filter(isRecord) : [];
+        return players.some(player => {
+            const position = positionLike(player.position);
+            return Boolean(position && distance(position, target) <= 1);
+        });
+    });
 }
 
 function stringField(value: unknown, key: string): string | undefined {

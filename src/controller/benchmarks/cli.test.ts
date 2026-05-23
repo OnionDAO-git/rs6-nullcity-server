@@ -115,7 +115,7 @@ describe('benchmark CLI', () => {
         });
 
         expect(exitCode).toBe(0);
-        expect(writes.join('')).toContain('"task":{"id":"follow-and-chat-5m","version":"0.1.0"');
+        expect(writes.join('')).toContain('"task":{"id":"follow-and-chat-5m","version":"0.2.0"');
     });
 
     it('can dry-run the woodcutting-firemaking benchmark task', async () => {
