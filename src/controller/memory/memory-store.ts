@@ -1,12 +1,14 @@
 import { spawnSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { readRecentLibraryMemories } from '../evidence/library-memories';
 import type { IndexPatch, MemoWrite, ProposedVariable } from '../llm/completion-parser';
 import type { HookDefinition } from '../spark/hooks';
 import { readHooksMd, retireHooksMd, upsertHooksMd } from './hooks-md';
 import { residentSlug } from './runtime-state';
 
 const templateNames = ['geography.md', 'social.md', 'items.md', 'skills.md', 'monsters.md', 'events.md'];
+const libraryMemoryLimit = 4;
 
 export class MemoryStore {
     private warnedAboutQmd = false;
@@ -36,6 +38,8 @@ export class MemoryStore {
     retrieve(resident: string, query: string, limit = 6): string[] {
         const root = this.ensureResident(resident);
         const excerpts: string[] = [];
+        excerpts.push(...readRecentLibraryMemories(this.memoryRoot, resident, libraryMemoryLimit));
+
         const index = this.readIfExists(path.join(root, 'INDEX.md'));
         if (index) {
             excerpts.push(index);
@@ -48,7 +52,7 @@ export class MemoryStore {
 
         const qmd = this.queryQmd(resident, query, limit);
         excerpts.push(...qmd);
-        return excerpts.filter(Boolean).slice(0, limit + 2);
+        return excerpts.filter(Boolean).slice(0, limit + 2 + libraryMemoryLimit);
     }
 
     write(resident: string, relativePath: string, content: string, mode: 'append' | 'replace' = 'append'): string {

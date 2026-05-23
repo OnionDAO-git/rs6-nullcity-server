@@ -11,6 +11,7 @@ export interface BrainPromptInput {
     commandPrefix: string;
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
     progress?: RuntimeProgressPromptInput;
+    memories?: string[];
 }
 
 export interface BodyPromptInput {
@@ -20,6 +21,7 @@ export interface BodyPromptInput {
     commandPrefix: string;
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
     progress?: RuntimeProgressPromptInput;
+    memories?: string[];
     visibility: {
         anchor?: { x: number; y: number; level: number };
         returnDue: boolean;
@@ -48,6 +50,7 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         brainPlaybookPrompt(),
         input.gameSkill?.brainSection || '',
         runtimeProgressSection(input.progress, 'brain'),
+        memorySection(input.memories, 'brain'),
         soulIdentitySection(input.soul.frontmatter, 'brain'),
         'Return JSON only with this shape:',
         '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars"}',
@@ -75,6 +78,7 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         bodyPlaybookPrompt(),
         input.gameSkill?.bodySection || '',
         runtimeProgressSection(input.progress, 'body'),
+        memorySection(input.memories, 'body'),
         soulIdentitySection(input.soul.frontmatter, 'body'),
         input.visibility.returnDue && input.visibility.anchor
             ? `Visibility rule: Agent is due to return near ${JSON.stringify(input.visibility.anchor)} so Codex can find him. Prefer moving there unless a chat command or survival need is more important.`
@@ -89,6 +93,9 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         .join('\n');
 }
 
+const MAX_PROMPT_MEMORIES = 6;
+const MAX_PROMPT_MEMORY_CHARS = 360;
+
 function summarizePerception(perception: Perception): string {
     const compressed = typeof perception.compressed === 'string' ? perception.compressed : undefined;
     if (compressed) {
@@ -96,6 +103,28 @@ function summarizePerception(perception: Perception): string {
     }
 
     return JSON.stringify(perception, null, 2).slice(0, 12000);
+}
+
+function memorySection(memories: string[] | undefined, role: 'brain' | 'body'): string {
+    const lines = (memories || [])
+        .map(memory => memory.trim())
+        .filter(Boolean)
+        .slice(0, MAX_PROMPT_MEMORIES)
+        .map(memory => `- ${oneLine(memory).slice(0, MAX_PROMPT_MEMORY_CHARS)}`);
+    if (lines.length === 0) {
+        return '';
+    }
+    return [
+        'Recent Library memories and resident notes:',
+        role === 'brain'
+            ? 'Use these as continuity: keep promises, remember patrons/players, and bias goal choice toward unfinished story threads.'
+            : 'Use these as continuity: if you speak or act, respect recent promises, patrons, and unfinished player requests.',
+        ...lines,
+    ].join('\n');
+}
+
+function oneLine(value: string): string {
+    return value.replace(/\s+/g, ' ').trim();
 }
 
 function runtimeProgressSection(progress: RuntimeProgressPromptInput | undefined, role: 'brain' | 'body'): string {

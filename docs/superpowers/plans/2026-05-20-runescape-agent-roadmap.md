@@ -356,6 +356,13 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: focused evidence tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: legacy events now append deduped `wants_unfulfilled` records for spoken wants in that life before closing the life, and portraits summarize them as "Still wanted ...". Focused evidence tests, typecheck, lint, build, full Jest suite, and `git diff --check` passed.
 
+- `[x]` **I4 (I-β): Feed Library timeline memories back into resident prompts.**
+  - Files: `src/controller/evidence/library-memories.ts`, `src/controller/memory/memory-store.ts`, `src/controller/thinking/hybrid-agent-*.ts`, `src/controller/spark/spark.ts`
+  - Deliverable: recent `library/<resident>/timeline.jsonl` events are visible to both the standard RuneScape Brain/Body prompts and the legacy prompt envelope path.
+  - Verification: red/green prompt integration tests, typecheck, lint, build, and full Jest suite.
+  - Started 2026-05-23 on `agents/wip`: wire Claude's pure Library reader into the runtime prompt paths so a resident can remember recent story/patron events instead of only writing them.
+  - Verified 2026-05-23 on `agents/wip`: `MemoryStore.retrieve()` now prepends bounded recent Library timeline memories; standard Hybrid Brain/Body prompts and the legacy SPARK envelope path render those memories. Focused red/green tests, typecheck, lint, format, build, full Jest, and `git diff --check` passed.
+
 ## Workstream J: Patron / Human-Attention Loop
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.

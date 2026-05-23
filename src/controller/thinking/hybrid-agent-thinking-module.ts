@@ -184,6 +184,7 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 const EARSHOT_TILES = 8;
 const CHAT_REPLIES_PER_WINDOW = 3;
 const WINDOW_TICKS = 10;
+const PROMPT_MEMORY_RETRIEVAL_LIMIT = 6;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
@@ -272,6 +273,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             commandPrefix: this.commandPrefix(),
             gameSkill,
             progress: this.progressPromptInput(),
+            memories: this.promptMemories(perception, 'brain'),
         });
         const response = await this.options.llm.complete({
             endpoint: this.endpointFor(behavior.brain),
@@ -316,6 +318,31 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return { cause: parsed.cause || 'brain_goal', envelopeTokens: estimateTokens(prompt), nooped: response.nooped && !parsed.goal };
     }
 
+    private promptMemories(perception: Perception, role: 'brain' | 'body'): string[] {
+        try {
+            return this.options.memory.retrieve(
+                this.options.soul.frontmatter.name,
+                this.memoryRetrievalQuery(perception, role),
+                PROMPT_MEMORY_RETRIEVAL_LIMIT,
+            );
+        } catch {
+            return [];
+        }
+    }
+
+    private memoryRetrievalQuery(perception: Perception, role: 'brain' | 'body'): string {
+        const goal = this.activeGoal()?.description || 'no active goal';
+        const compressed =
+            typeof perception.compressed === 'string'
+                ? perception.compressed
+                : JSON.stringify({
+                      tick: (perception as HybridPerception).tick,
+                      events: (perception as HybridPerception).events,
+                      resident: (perception as HybridPerception).resident,
+                  });
+        return `${role} active goal: ${goal}\n${compressed}`.slice(0, 512);
+    }
+
     private async runBody(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         const behavior = this.behavior();
         const visibility = this.visibilityStatus(perception);
@@ -326,6 +353,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             commandPrefix: this.commandPrefix(),
             gameSkill,
             progress: this.progressPromptInput(),
+            memories: this.promptMemories(perception, 'body'),
             visibility,
         });
         const response = await this.options.llm.complete({

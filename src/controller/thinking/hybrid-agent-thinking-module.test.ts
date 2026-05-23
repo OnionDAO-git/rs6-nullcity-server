@@ -1,6 +1,9 @@
 import { objectIds } from '@engine/world/config/object-ids';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
-import type { MemoryStore } from '../memory/memory-store';
+import { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
@@ -48,6 +51,58 @@ describe('HybridAgentThinkingModule', () => {
         expect(bodyRequest.prompt).toContain('Walk outside, stay visible to Codex');
         expect(bodyRequest.prompt).toContain('AgentAction tool surface');
         expect(bodyRequest.prompt).toContain('Workflow cards');
+    });
+
+    it('threads retrieved Library memories into both Brain and Body LLM prompts', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: {
+                        id: 'cook-for-codex',
+                        description: 'Cook shrimp for Codex because I promised it earlier.',
+                        steps: ['remember the promise', 'catch shrimp', 'cook shrimp'],
+                    },
+                }),
+            },
+            {
+                text: JSON.stringify({
+                    cause: 'body_step',
+                    actions: [{ kind: 'say', text: 'I remember the shrimp promise.' }],
+                }),
+            },
+        ]);
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hybrid-library-memory-'));
+        const timelineDir = path.join(memoryRoot, 'library', 'res-agent');
+        fs.mkdirSync(timelineDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(timelineDir, 'timeline.jsonl'),
+            [
+                JSON.stringify({
+                    kind: 'patron_gift',
+                    patronHandle: 'alice@onion',
+                    artifact: 'rs:tinderbox',
+                    ts: '2026-05-22T10:00:00.000Z',
+                }),
+                JSON.stringify({ kind: 'say', note: 'I promised to cook shrimp for Codex.', ts: '2026-05-22T11:00:00.000Z' }),
+            ].join('\n') + '\n',
+        );
+        const residentMemory = new MemoryStore(memoryRoot, '');
+        const retrieveSpy = jest.spyOn(residentMemory, 'retrieve');
+        const agent = hybridAgent(llm, runtimeState(), soul(), residentMemory);
+
+        try {
+            await agent.think(perception({ tick: 1 }));
+
+            expect(llm.complete).toHaveBeenCalledTimes(2);
+            expect(llm.complete.mock.calls[0][0].prompt).toContain('alice@onion');
+            expect(llm.complete.mock.calls[0][0].prompt).toContain('cook shrimp for Codex');
+            expect(llm.complete.mock.calls[1][0].prompt).toContain('alice@onion');
+            expect(llm.complete.mock.calls[1][0].prompt).toContain('cook shrimp for Codex');
+            expect(retrieveSpy).toHaveBeenCalledWith('res:agent', expect.stringContaining('brain'), expect.any(Number));
+            expect(retrieveSpy).toHaveBeenCalledWith('res:agent', expect.stringContaining('body'), expect.any(Number));
+        } finally {
+            fs.rmSync(memoryRoot, { recursive: true, force: true });
+        }
     });
 
     it('clears stale committed movement when the Brain switches goals', async () => {
@@ -4601,11 +4656,11 @@ describe('HybridAgentThinkingModule', () => {
     });
 });
 
-function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul()): HybridAgentThinkingModule {
+function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), residentMemory = memory()): HybridAgentThinkingModule {
     return new HybridAgentThinkingModule({
         soul: agentSoul,
         state,
-        memory: memory(),
+        memory: residentMemory,
         llm: llm as unknown as LlmClient,
     });
 }
@@ -4667,10 +4722,10 @@ function runtimeState(): RuntimeState {
     };
 }
 
-function memory(): MemoryStore {
+function memory(retrieved: string[] = []): MemoryStore {
     return {
         ensureResident: jest.fn(() => '/tmp/agent-memory'),
-        retrieve: jest.fn(() => []),
+        retrieve: jest.fn(() => retrieved),
         write: jest.fn(),
         upsertIndexPatch: jest.fn(),
     } as unknown as MemoryStore;
