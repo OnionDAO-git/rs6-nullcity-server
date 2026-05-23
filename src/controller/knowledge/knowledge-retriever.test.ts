@@ -537,6 +537,26 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('economy entries (coin handling and early gp sources)', () => {
+        it('retrieves the coin-handling entry for a banking-threshold query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'when should I bank my coins how much gp to carry', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('economy-coin-handling');
+            const entry = results.find(result => result.entry.id === 'economy-coin-handling')?.entry;
+            expect(entry?.summary).toMatch(/1k|bank|recovery cushion|wilderness/i);
+        });
+
+        it('retrieves the early-gp-sources entry for a starter-money query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'how do I earn starter gp as a new resident', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('economy-early-gp-sources');
+            const entry = results.find(result => result.entry.id === 'economy-early-gp-sources')?.entry;
+            expect(entry?.summary).toMatch(/chicken|cow|cowhide|highwayman|feather|tanner/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {

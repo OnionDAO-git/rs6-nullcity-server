@@ -1167,6 +1167,29 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             "Recommended training order for a fresh resident: (1) verify starter kit — tinderbox, bronze hatchet, small fishing net (if not present, route to Lumbridge General Store 3203,3247,0 + Bob's Axes 3231,3203,0); (2) Woodcutting 1→5 chopping ordinary Trees near Lumbridge; (3) Firemaking 1→5 lighting the logs you just chopped (workflow-woodcutting-firemaking-chain); (4) Fishing 1→5 catching shrimp at Lumbridge swamp 3242,3151; (5) Cooking 1→5 cooking shrimp on your own fire (workflow-fishing-cooking-chain); (6) Combat 1→5 fighting chickens in Lumbridge farm 3232,3299 + burying bones for Prayer XP (workflow-combat-prayer-chain); (7) once safe at all five basics, explore one of: Mining (Lumbridge swamp tin/copper), Smithing (Lumbridge furnace), or visit Varrock for shops + Aubury teleport. Avoid wilderness until combat 30+.",
     },
+    {
+        id: 'economy-coin-handling',
+        title: 'Economy: Coin Handling (Bank Thresholds + Wilderness Risk)',
+        topics: ['economy', 'coins', 'bank', 'wilderness', 'risk-management'],
+        keywords: ['coins', 'gp', 'gold', 'bank', 'banking', 'threshold', 'cushion', 'wilderness', 'risk', 'lose items', 'death'],
+        actions: ['interact bank when carrying >1k gp not needed for current goal', 'keep 100 gp recovery cushion in inventory at all times', 'NEVER move_to wilderness with valuables', 'item_action examine to verify coin count'],
+        successSignals: ['inventory holds ≤1k gp during normal play', 'bank balance grows over time without spike-and-loss patterns', '100 gp cushion always available for shop replacement after death'],
+        source: 'docs/runescape-skill/economy.md § Bank Basics + Failure Modes; docs/runescape-skill/places/wilderness.md',
+        summary:
+            'Bank coins above 1k gp threshold whenever near a banker (8 bank coords in npc-banker-overview entry). Keep a 100 gp recovery cushion in inventory at all times so a death + respawn at Lumbridge can buy replacement tinderbox / pot / jug / hammer from the General Store. NEVER move_to wilderness coords with valuables — death there can lose ALL items (with skull) or all but 3 (without). Quest items survive death; coins do not.',
+    },
+    {
+        id: 'economy-early-gp-sources',
+        title: 'Economy: Early Gp Sources (Tier 1 Methods)',
+        topics: ['economy', 'starter-gp', 'tier-1', 'cowhide', 'feather', 'highwayman'],
+        keywords: ['earn gp', 'starter gp', 'first gp', 'cowhide', 'feather', 'tanner', 'highwayman', 'chicken farm', 'cow farm', 'leather profit'],
+        requiredItems: ['bronze weapon for any combat-based gp', 'no special tools for chicken / cow looting'],
+        actions: ['attack chickens for rs:feather drops', 'attack cows for rs:cowhide → tan at Al-Kharid tanner 3273,3192,0 for 1 gp/hide → sell soft leather', 'attack highwayman south of Falador for rs:coins drops 5-25 gp/kill'],
+        successSignals: ['rs:coins count rises in inventory', 'feather stacks accumulate for fletching or sale', 'cowhide → soft leather chain produces 5 gp/hide profit'],
+        source: 'docs/runescape-skill/economy.md § Early Gp Sources Tier 1; docs/runescape-skill/monsters.md § Chicken / Cow / Highwayman',
+        summary:
+            'Starter gp sources (Tier 1, expected rate 1-10 gp/min): (1) Chicken farming at Lumbridge farm 3232,3299 for rs:feather drops (5 gp / 100 feathers to fletchers; also hoardable for Fletching arrows); (2) Cow farming at Lumbridge cow field 3253,3275 for rs:cowhide → walk to Al-Kharid tanner 3273,3192,0 for 1 gp/hide tan → sell soft leather (~5 gp/hide net profit); (3) Highwayman drops south of Falador on Port Sarim road (combat level 6, 5-25 gp per kill, requires bronze weapon + 3+ cooked food). Loop until 100 gp recovery cushion + initial 1k bank threshold reached.',
+    },
 ];
 
 const STOP_WORDS = new Set([
