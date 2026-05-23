@@ -1,9 +1,4 @@
-import {
-    type Letter,
-    type StandingTierLetterInput,
-    letterSchema,
-    produceStandingTierLetter,
-} from './letters-producer';
+import { type Letter, type StandingTierLetterInput, letterSchema, produceStandingTierLetter } from './letters-producer';
 
 describe('produceStandingTierLetter', () => {
     const baseInput: StandingTierLetterInput = {
@@ -74,7 +69,7 @@ describe('produceStandingTierLetter', () => {
         expect(parsed.kind).toBe('standing_tier_crossed');
     });
 
-    it("the Letter shape names the senderResident explicitly so future slices can route via a sibling flagship (J-δ-3 / hero deaths)", () => {
+    it('the Letter shape names the senderResident explicitly so future slices can route via a sibling flagship (J-δ-3 / hero deaths)', () => {
         const letter = produceStandingTierLetter(baseInput);
         expect(letter!.senderResident).toBe('res:agent');
     });

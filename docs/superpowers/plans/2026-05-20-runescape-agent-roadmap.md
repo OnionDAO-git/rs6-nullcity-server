@@ -297,9 +297,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Success metric: prayer XP/level evidence or action success event.
   - Verified 2026-05-21 on `nullcity`: `combat-prayer-10m` live autonomous smoke proved safe goblin combat, bones pickup, burial, Prayer XP, and survival under `onion.runescape.standard`.
 
-- `[ ]` **G4: Trading/giving items.**
+- `[x]` **G4: Trading/giving items.**
   - Deliverable: request trade, offer simple item, accept/decline safely, describe trade state.
   - Success metric: test covers trade request, offer, accept, and decline.
+  - Started 2026-05-23 on `agents/wip`: Codex is adding a dedicated benchmark/verifier so the scattered G4 action tests become a repeatable proof of visible trading behavior.
+  - Verified 2026-05-23 on `agents/wip`: `trading-giving-5m` now covers request, safe item offer, two-stage accept, unsafe decline, CLI registration, and live autonomous proof against the local server (`score=1`, run `bench_20260523092537_trading_giving_5m`).
 
 - `[~]` **G5: Follow and command loop.**
   - Deliverable: agent follows configured player, responds to "agent come here", "agent make fire", "agent stop", "agent status".
