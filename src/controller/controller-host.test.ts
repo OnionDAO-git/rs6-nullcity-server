@@ -1,6 +1,10 @@
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { ControllerConfig } from './config';
 import { ControllerHost, type ControllerHostOptions } from './controller-host';
+import { LettersStore } from './patron/letters-store';
 import type { LlmClient } from './llm/llm-client';
 import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
@@ -328,6 +332,77 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(gameSkill.flush).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('ControllerHost patron wiring (EVENT-D1a)', () => {
+    let tmpMemory: string;
+
+    beforeEach(() => {
+        tmpMemory = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-patron-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpMemory, { recursive: true, force: true });
+    });
+
+    it('constructs PatronGateway with a LettersStore rooted at memory.dir', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+
+        expect(host.patronGateway).toBeDefined();
+
+        // The wired lettersStore is what makes tier-crossing letters
+        // actually reach disk. Without it, dispatchTierLetter early-returns
+        // and every letter the gateway produces lands in /dev/null.
+        const wiredStore = lettersStoreOf(host.patronGateway);
+        expect(wiredStore).toBeInstanceOf(LettersStore);
+    });
+
+    it('round-trips a Letter through the wired LettersStore at the same memory.dir', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+
+        // Write a synthetic letter via the wired store and read it back via
+        // a fresh LettersStore at the same root. This proves the gateway and
+        // any external consumer (HTTP inbox endpoint, dashboard) read from
+        // the same on-disk location.
+        const wiredStore = lettersStoreOf(host.patronGateway);
+        expect(wiredStore).toBeDefined();
+        wiredStore!.append({
+            kind: 'standing_tier_crossed',
+            recipient: 'alice@onion',
+            senderResident: 'res:fern',
+            subject: 'You are now Acquaintance of embassy',
+            body: 'alice@onion, welcome. — Embassy Clerk',
+            dispatchedAt: '2026-05-23T13:00:00.000Z',
+            deliveryChannels: ['web-inbox'],
+        });
+
+        const reader = new LettersStore(tmpMemory);
+        const inbox = reader.readInbox('alice@onion');
+        expect(inbox).toHaveLength(1);
+        expect(inbox[0].kind).toBe('standing_tier_crossed');
+        expect(inbox[0].recipient).toBe('alice@onion');
+    });
+
+    it('preserves dependency-injected PatronGateway when caller provides one', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const custom = { offerTo: jest.fn() } as unknown as ControllerHostOptions['patronGateway'];
+        const host = new ControllerHost(cfg, { ...dependencies(gateway), patronGateway: custom });
+        expect(host.patronGateway).toBe(custom);
+    });
+});
+
+// Type-cast helper mirroring the runtimeCount() pattern below — reaches
+// into the gateway's private options to verify the wiring we care about.
+function lettersStoreOf(gateway: ControllerHost['patronGateway']): LettersStore | undefined {
+    return (gateway as unknown as { options: { lettersStore?: LettersStore } }).options.lettersStore;
+}
 
 function dependencies(gateway: FakeGateway): ControllerHostOptions {
     const state = new Map<string, RuntimeState>();

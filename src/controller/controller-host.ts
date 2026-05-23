@@ -16,6 +16,7 @@ import { PatronStore } from './patron/patron-store';
 import { PatronGateway } from './patron/patron-gateway';
 import { CurrencyLedger } from './patron/currency-ledger';
 import { StandingLedger } from './patron/standing-ledger';
+import { LettersStore } from './patron/letters-store';
 
 export interface ControllerHostOptions {
     once?: boolean;
@@ -99,6 +100,11 @@ export class ControllerHost {
         this.patronStore = options.patronStore || new PatronStore(config.memory.dir);
         this.currencyLedger = this.patronStore.loadCurrency();
         this.standingLedger = this.patronStore.loadStanding();
+        // EVENT-D1a: wire LettersStore rooted at memory.dir so every
+        // tier-crossing offer/sponsor/witness/gift produces a Letter that
+        // actually reaches disk. Prior to this wiring, PatronGateway was
+        // constructed without a lettersStore and dispatchTierLetter
+        // early-returned on every call — letters dropped on the floor.
         this.patronGateway =
             options.patronGateway ||
             new PatronGateway({
@@ -106,6 +112,7 @@ export class ControllerHost {
                 standingLedger: this.standingLedger,
                 runtimes: this.runtimes,
                 soulsDir: config.souls.dir,
+                lettersStore: new LettersStore(config.memory.dir),
             });
         this.bindGatewayEvents();
     }
