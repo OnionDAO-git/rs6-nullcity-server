@@ -166,9 +166,7 @@ describe('deriveEmbassyContext (N-α-2)', () => {
 
     describe('schedule + now (EVENT-D1c)', () => {
         const chicagoSchedule = {
-            activeWindows: [
-                { startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'OnionDAO Chicago 2026' },
-            ],
+            activeWindows: [{ startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'OnionDAO Chicago 2026' }],
         };
 
         it('flips eventActive=true when now falls inside a scheduled window, even without a perception flag', () => {

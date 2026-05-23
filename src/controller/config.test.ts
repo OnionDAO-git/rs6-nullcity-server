@@ -216,13 +216,7 @@ describe('controller config', () => {
         );
 
         expect(
-            parseControllerArgs([
-                '--letters-http-port',
-                '43601',
-                '--letters-http-host=127.0.0.1',
-                '--letters-http-path',
-                '/v1/inbox',
-            ]),
+            parseControllerArgs(['--letters-http-port', '43601', '--letters-http-host=127.0.0.1', '--letters-http-path', '/v1/inbox']),
         ).toEqual(
             expect.objectContaining({
                 lettersHttpPort: 43601,

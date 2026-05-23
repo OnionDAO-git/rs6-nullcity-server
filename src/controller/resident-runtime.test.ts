@@ -63,6 +63,45 @@ describe('ResidentRuntime modules', () => {
         ]);
     });
 
+    it('remembers target_not_found failures so thinking can avoid stale targets', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-target-failure-'));
+        const state = stateFor('res:pip');
+        state.tick = 22;
+        const staleTree = { objectId: 1278, position: { x: 3213, y: 3238, level: 0 }, orientation: 1 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'interact', target: staleTree, option: 'chop down', cause: 'woodcutting_level1_routine' }],
+                cause: 'woodcutting_level1_routine',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: false, reason: 'target_not_found', requestId: 'request-stale-tree' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception({ tick: 22, events: [] });
+
+        expect(state.cognition?.targetFailureCooldowns).toEqual({
+            'object:1278:3213,3238,0': 22,
+        });
+    });
+
     it('writes runtime progress evidence and updates progress state from perceptions', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-'));
@@ -203,6 +242,95 @@ describe('ResidentRuntime modules', () => {
                 voice: { quotes: [expect.objectContaining({ text: 'I want to find a tree.', tag: 'mentions_want' })] },
             }),
         );
+    });
+
+    it('uses the action watchdog to recover from a hung effect wait', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-action-watchdog-'));
+        const state = stateFor('res:pip');
+        const thinking: ThinkingModule = {
+            think: jest
+                .fn()
+                .mockResolvedValueOnce({
+                    actions: [{ kind: 'say', text: 'Still working.', cause: 'watchdog-test' }],
+                    cause: 'watchdog-test',
+                    nooped: false,
+                })
+                .mockResolvedValueOnce({ actions: [], cause: 'recovered', nooped: true }),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-watchdog' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(() => new Promise(() => undefined)),
+        } as unknown as ResidentBody;
+        const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog,
+            thinking,
+            body,
+            watchdog: { actionMs: 5 },
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+        await runtime.onPerception({ tick: 2, events: [] });
+
+        expect(inferenceLog.append).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({ cause: 'action_watchdog_timeout', actionKind: 'say', timeoutMs: 5 }),
+        );
+        expect(thinking.think).toHaveBeenCalledTimes(2);
+    });
+
+    it('uses the thinking watchdog to recover from a hung inference call', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-thinking-watchdog-'));
+        const state = stateFor('res:pip');
+        const thinking: ThinkingModule = {
+            think: jest
+                .fn()
+                .mockImplementationOnce(() => new Promise(() => undefined))
+                .mockResolvedValueOnce({ actions: [], cause: 'recovered', nooped: true }),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+        const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog,
+            thinking,
+            body,
+            watchdog: { thinkingMs: 5 },
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+        await runtime.onPerception({ tick: 2, events: [] });
+
+        expect(thinking.stop).toHaveBeenCalledWith('thinking_watchdog_timeout');
+        expect(inferenceLog.append).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({ cause: 'thinking_watchdog_timeout', timeoutMs: 5 }),
+        );
+        expect(thinking.think).toHaveBeenCalledTimes(2);
     });
 
     it('uses a selected SPARK module for thinking and logs module identity', async () => {
@@ -616,6 +744,7 @@ describe('ResidentRuntime modules', () => {
 
         const firstTick = runtime.onPerception({ tick: 1, resident: { position: { x: 1, y: 1, level: 0 } }, events: [] });
         await Promise.resolve();
+        expect(await settlesWithin(firstTick, 5)).toBe(false);
 
         await runtime.onPerception({ tick: 2, resident: { position: { x: 4, y: 5, level: 0 } }, events: [] });
         await firstTick;

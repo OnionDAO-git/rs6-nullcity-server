@@ -3,11 +3,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { LettersStore } from '../patron/letters-store';
-import {
-    closeLettersHttpServer,
-    type LettersHttpAuthOptions,
-    startLettersHttpServer,
-} from './letters-http-server';
+import { closeLettersHttpServer, type LettersHttpAuthOptions, startLettersHttpServer } from './letters-http-server';
 
 function get(url: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string; contentType?: string }> {
     return new Promise((resolve, reject) => {

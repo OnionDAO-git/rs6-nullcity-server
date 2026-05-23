@@ -1,5 +1,5 @@
 import type { LlmClient } from './llm/llm-client';
-import { ActionCoordinator } from './actions/action-coordinator';
+import { ActionCoordinator, type ActionCoordinatorSubmitInput } from './actions/action-coordinator';
 import { PatronConfig, PatronRegistry } from './patron/patron-registry';
 import { RoutineCapableRuntime, RoutineContext, RoutinePreemptionReason, RoutineTickOutcome } from './routines/routine-runner';
 import {
@@ -37,11 +37,15 @@ import type { Soul } from './soul/soul-schema';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import { initialAttention } from './spark/attention';
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
-import type { ThinkingModule } from './thinking';
+import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import type { AgentAction, Perception, PerceptionEvent } from './transport/message-codecs';
 
 const MAX_PENDING_EVENTS = 50;
+const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
+const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
+const SAY_ACTION_WATCHDOG_MS = 10_000;
+const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
 
 export interface ResidentRuntimeGameSkill {
     buildContext(input: GameSkillContextInput): GameSkillContext;
@@ -70,6 +74,10 @@ export interface ResidentRuntimeOptions {
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
     patrons?: PatronConfig[];
+    watchdog?: {
+        thinkingMs?: number;
+        actionMs?: number;
+    };
 }
 
 export interface ResidentRuntimeEvidence {
@@ -182,7 +190,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 this.history.push(decisionPerception);
                 this.body.observePerception(decisionPerception);
 
-                const attempt = await this.actionCoordinator.submit({
+                const attempt = await this.submitActionWithWatchdog({
                     producer: 'nervous-system',
                     action: reaction.action,
                     metadata: {
@@ -219,7 +227,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.history.push(decisionPerception);
             this.body.observePerception(decisionPerception);
 
-            const attempt = await this.actionCoordinator.submit({
+            const attempt = await this.submitActionWithWatchdog({
                 producer: 'nervous-system',
                 action: reaction.action,
                 metadata: {
@@ -268,7 +276,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         });
         this.deciding = true;
         try {
-            const result = await this.thinking.think(compressedPerception, gameSkillContext);
+            const result = await this.thinkWithWatchdog(compressedPerception, gameSkillContext);
             this.recordEvidence(trajectory =>
                 trajectory.recordDecision({
                     cause: result.cause,
@@ -293,7 +301,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             });
 
             for (const action of result.actions) {
-                const attempt = await this.actionCoordinator.submit({
+                const attempt = await this.submitActionWithWatchdog({
                     producer: 'body',
                     action,
                     metadata: {
@@ -306,11 +314,89 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     ...this.evidenceCallbacks(),
                 });
                 this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
+                this.rememberTargetFailure(attempt);
             }
         } finally {
             this.options.stateStore.save(this.state);
             this.deciding = false;
         }
+    }
+
+    private async thinkWithWatchdog(perception: Perception, gameSkillContext: GameSkillContext | undefined): Promise<ThoughtResult> {
+        const timeoutMs = this.options.watchdog?.thinkingMs ?? DEFAULT_THINKING_WATCHDOG_MS;
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<ThoughtResult>(resolve => {
+            timer = setTimeout(() => {
+                this.thinking.stop('thinking_watchdog_timeout');
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    cause: 'thinking_watchdog_timeout',
+                    timeoutMs,
+                    sparkModule: this.thinkingSparkModule,
+                });
+                resolve({
+                    actions: [],
+                    syntheticEvents: [],
+                    cause: 'thinking_watchdog_timeout',
+                    envelopeTokens: 0,
+                    nooped: true,
+                });
+            }, timeoutMs);
+        });
+        try {
+            return await Promise.race([this.thinking.think(perception, gameSkillContext), timeout]);
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
+    private async submitActionWithWatchdog(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        const timeoutMs = this.actionWatchdogTimeoutMs(input.action);
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<ActionAttempt>(resolve => {
+            timer = setTimeout(() => {
+                const attempt =
+                    this.actionCoordinator.cancelCurrent('action_watchdog_timeout') ||
+                    fallbackTimedOutAttempt(this.name, input, 'action_watchdog_timeout');
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    cause: 'action_watchdog_timeout',
+                    actionKind: input.action.kind,
+                    timeoutMs,
+                    sparkModule: this.thinkingSparkModule,
+                });
+                resolve(attempt);
+            }, timeoutMs);
+        });
+        try {
+            return await Promise.race([this.actionCoordinator.submit(input), timeout]);
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
+    private actionWatchdogTimeoutMs(action: AgentAction): number {
+        if (this.options.watchdog?.actionMs !== undefined) {
+            return Math.max(1, this.options.watchdog.actionMs);
+        }
+        if (action.kind === 'say') {
+            return SAY_ACTION_WATCHDOG_MS;
+        }
+        if (action.kind === 'move_to' && isPosition(action.target)) {
+            const latestPerception = this.body.getLatestPerception();
+            return (
+                movementEffectTimeoutMs(latestPerception ? perceptionPosition(latestPerception) : undefined, action.target) +
+                ACTION_EFFECT_WATCHDOG_GRACE_MS
+            );
+        }
+        if (waitsForPerceptionEffect(action.kind) && supportsPerceptionEffectWait(this.body)) {
+            return actionEffectTimeoutMs(action, this.body.getLatestPerception()) + ACTION_EFFECT_WATCHDOG_GRACE_MS;
+        }
+        return ACK_ONLY_ACTION_WATCHDOG_MS;
     }
 
     onEvent(event: PerceptionEvent): void {
@@ -469,6 +555,26 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 cause: 'game_skill_observe_failed',
                 error: error instanceof Error ? error.message : String(error),
             });
+        }
+    }
+
+    private rememberTargetFailure(attempt: ActionAttempt): void {
+        const key = actionTargetFailureKey(attempt.action);
+        if (!key) {
+            return;
+        }
+
+        const cognition = (this.state.cognition ||= {});
+        if (attempt.finalStatus === 'failure' && attempt.finalReason === 'target_not_found') {
+            cognition.targetFailureCooldowns = {
+                ...(cognition.targetFailureCooldowns || {}),
+                [key]: this.state.tick,
+            };
+            return;
+        }
+
+        if (attempt.finalStatus === 'success' && cognition.targetFailureCooldowns?.[key] !== undefined) {
+            delete cognition.targetFailureCooldowns[key];
         }
     }
 
@@ -1200,6 +1306,50 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
         default:
             return eventRecord.kind === 'message' || text.length > 0;
     }
+}
+
+function fallbackTimedOutAttempt(resident: string, input: ActionCoordinatorSubmitInput, reason: string): ActionAttempt {
+    return {
+        attemptId: `attempt-watchdog-${Date.now()}`,
+        resident,
+        producer: input.producer,
+        action: input.action,
+        submittedAt: new Date().toISOString(),
+        cause: input.cause,
+        goalId: input.goalId,
+        routineRunId: input.routineRunId,
+        traceId: input.traceId,
+        evidence: [],
+        finalStatus: 'timeout',
+        finalReason: reason,
+        metadata: input.metadata,
+    };
+}
+
+function actionTargetFailureKey(action: AgentAction): string | undefined {
+    const actionRecord = record(action);
+    const target = actionRecord.target;
+    if (!target || typeof target !== 'object') {
+        return undefined;
+    }
+    const targetRecord = record(target);
+    const position = record(targetRecord.position);
+    const level = typeof position.level === 'number' ? position.level : 0;
+    const coordinate =
+        typeof position.x === 'number' && typeof position.y === 'number' ? `${position.x},${position.y},${level}` : undefined;
+    if (!coordinate) {
+        return undefined;
+    }
+    if (typeof targetRecord.objectId === 'number') {
+        return `object:${targetRecord.objectId}:${coordinate}`;
+    }
+    if (typeof targetRecord.itemId === 'number') {
+        return `item:${targetRecord.itemId}:${coordinate}`;
+    }
+    if (typeof targetRecord.id === 'string') {
+        return `actor:${targetRecord.id}:${coordinate}`;
+    }
+    return `target:${coordinate}`;
 }
 
 function record(value: unknown): Record<string, unknown> {

@@ -34,14 +34,14 @@ describe('ResidentRegistry', () => {
         rmSync(playerSaveDir, { recursive: true, force: true });
     });
 
-    it('normalizes and validates only strict resident names', () => {
+    it('normalizes and validates strict resident names, including soul-style hyphens', () => {
         expect(normalizeResidentName('res:test_bot')).toBe('res:test_bot');
         expect(isValidResidentName('res:test_bot')).toBe(true);
+        expect(isValidResidentName('res:test-bot')).toBe(true);
         expect(isValidResidentName('Res:test_bot')).toBe(false);
         expect(isValidResidentName('player')).toBe(false);
         expect(isValidResidentName('res:')).toBe(false);
         expect(isValidResidentName('res:test bot')).toBe(false);
-        expect(isValidResidentName('res:test-bot')).toBe(false);
         expect(isValidResidentName('res:test/bot')).toBe(false);
         expect(isValidResidentName(`res:${'a'.repeat(21)}`)).toBe(false);
     });
@@ -53,6 +53,7 @@ describe('ResidentRegistry', () => {
         expect(() => registry.create('test_bot')).toThrow('EBAD_NAME');
         expect(() => registry.create('Res:test_bot')).toThrow('EBAD_NAME');
         expect(() => registry.create('res:test bot')).toThrow('EBAD_NAME');
+        expect(() => registry.create('res:test/bot')).toThrow('EBAD_NAME');
     });
 
     it('rejects resident creation when a real player save already owns the reserved name', () => {

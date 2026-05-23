@@ -1,6 +1,6 @@
 import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { parseCompletion } from '../llm/completion-parser';
-import type { LlmClient } from '../llm/llm-client';
+import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { ActiveGoalState, ActiveMoveState, RuntimeState } from '../memory/runtime-state';
 import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/rules-md';
@@ -175,6 +175,8 @@ const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
 const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
+const WORLD_TICK_RESET_DRIFT = 10_000;
+const TARGET_FAILURE_COOLDOWN_TICKS = 600;
 // Item / actor classification predicates and their constant tables now live in
 // `../spark/runescape-workflows` (Plan R-α). Body-routine action helpers and
 // their shared primitives (`distance`, `findSlot`, `hasNearbyFire`,
@@ -188,89 +190,148 @@ const MAX_PROMPT_MEMORIES = 6;
 const MAX_PROMPT_MEMORY_CHARS = 360;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
+    private nextThinkId = 0;
+    private readonly activeThinkIds = new Set<number>();
+    private readonly cancelledThinkIds = new Map<number, string>();
+    private readonly inflightCompletions = new Map<number, AbortController>();
+
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
 
     async think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
-        this.advanceTick(perception);
-        this.ensureCognition();
-        this.cognition().tickTelemetry = undefined;
-        this.ensureBenchmarkGoal();
+        const thinkId = ++this.nextThinkId;
+        this.activeThinkIds.add(thinkId);
+        try {
+            this.advanceTick(perception);
+            this.ensureCognition();
+            this.cognition().tickTelemetry = undefined;
+            this.ensureBenchmarkGoal();
 
-        const directChat = await this.directChatAction(perception as HybridPerception);
-        if (directChat) {
-            return this.result([directChat.action], directChat.cause, 0, false);
-        }
-
-        const combat = this.combatReaction(perception as HybridPerception);
-        if (combat) {
-            return this.result(combat.actions, combat.cause, 0, false);
-        }
-
-        const dialogue = this.dialogueReaction(perception as HybridPerception);
-        if (dialogue) {
-            return this.result([dialogue.action], dialogue.cause, 0, false);
-        }
-
-        const trade = this.tradeReaction(perception as HybridPerception);
-        if (trade) {
-            return this.result([trade.action], trade.cause, 0, false);
-        }
-
-        const pendingDirectTrade = this.pendingDirectTradeAction(perception as HybridPerception);
-        if (pendingDirectTrade) {
-            return this.result([pendingDirectTrade.action], pendingDirectTrade.cause, 0, false);
-        }
-
-        if ((perception as HybridPerception).resident?.busy) {
-            return { actions: [], cause: 'resident_busy', nooped: true };
-        }
-
-        const combatNarration = this.combatNarrationAction();
-        if (combatNarration) {
-            return this.result([combatNarration.action], combatNarration.cause, 0, false);
-        }
-
-        const activeFollow = this.activeFollowAction(perception as HybridPerception);
-        if (activeFollow) {
-            return this.result([activeFollow.action], activeFollow.cause, 0, false);
-        }
-
-        const followHold = this.followListenHoldAction(perception as HybridPerception);
-        if (followHold) {
-            return this.result(followHold.actions, followHold.cause, 0, followHold.nooped);
-        }
-
-        if (this.shouldRunBrain()) {
-            const brain = await this.runBrain(perception, gameSkill);
-            if (brain.action) {
-                return this.result([brain.action], brain.cause, brain.envelopeTokens, brain.nooped);
+            const directChat = await this.directChatAction(perception as HybridPerception, thinkId);
+            const directChatCancellation = this.cancelledResult(thinkId);
+            if (directChatCancellation) {
+                return directChatCancellation;
             }
-        }
+            if (directChat) {
+                return this.result([directChat.action], directChat.cause, 0, false);
+            }
 
-        if (!this.shouldRunBody()) {
-            return this.result([], 'body_wait', 0, true);
-        }
+            const combat = this.combatReaction(perception as HybridPerception);
+            if (combat) {
+                return this.result(combat.actions, combat.cause, 0, false);
+            }
 
-        const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
-        if (presenceBeacon) {
-            return this.result([presenceBeacon], 'presence_beacon', 0, false);
-        }
+            const dialogue = this.dialogueReaction(perception as HybridPerception);
+            if (dialogue) {
+                return this.result([dialogue.action], dialogue.cause, 0, false);
+            }
 
-        const bodyResult = await this.runBody(perception, gameSkill);
-        return this.result(bodyResult.actions, bodyResult.cause || 'body_step', bodyResult.envelopeTokens || 0, bodyResult.nooped);
+            const trade = this.tradeReaction(perception as HybridPerception);
+            if (trade) {
+                return this.result([trade.action], trade.cause, 0, false);
+            }
+
+            const pendingDirectTrade = this.pendingDirectTradeAction(perception as HybridPerception);
+            if (pendingDirectTrade) {
+                return this.result([pendingDirectTrade.action], pendingDirectTrade.cause, 0, false);
+            }
+
+            if ((perception as HybridPerception).resident?.busy) {
+                return { actions: [], cause: 'resident_busy', nooped: true };
+            }
+
+            const combatNarration = this.combatNarrationAction();
+            if (combatNarration) {
+                return this.result([combatNarration.action], combatNarration.cause, 0, false);
+            }
+
+            const activeFollow = this.activeFollowAction(perception as HybridPerception);
+            if (activeFollow) {
+                return this.result([activeFollow.action], activeFollow.cause, 0, false);
+            }
+
+            const followHold = this.followListenHoldAction(perception as HybridPerception);
+            if (followHold) {
+                return this.result(followHold.actions, followHold.cause, 0, followHold.nooped);
+            }
+
+            if (this.shouldRunBrain()) {
+                const brain = await this.runBrain(perception, gameSkill, thinkId);
+                const brainCancellation = this.cancelledResult(thinkId);
+                if (brainCancellation) {
+                    return brainCancellation;
+                }
+                if (brain.action) {
+                    return this.result([brain.action], brain.cause, brain.envelopeTokens, brain.nooped);
+                }
+            }
+
+            if (!this.shouldRunBody()) {
+                return this.result([], 'body_wait', 0, true);
+            }
+
+            const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
+            if (presenceBeacon) {
+                return this.result([presenceBeacon], 'presence_beacon', 0, false);
+            }
+
+            const bodyResult = await this.runBody(perception, gameSkill, thinkId);
+            const bodyCancellation = this.cancelledResult(thinkId);
+            if (bodyCancellation) {
+                return bodyCancellation;
+            }
+            return this.result(bodyResult.actions, bodyResult.cause || 'body_step', bodyResult.envelopeTokens || 0, bodyResult.nooped);
+        } finally {
+            this.activeThinkIds.delete(thinkId);
+            this.cancelledThinkIds.delete(thinkId);
+            this.inflightCompletions.delete(thinkId);
+        }
     }
 
     considerInterrupt(_perception: Perception): boolean {
         return false;
     }
 
-    stop(_cause: string): void {
-        // Hybrid MVP performs one awaited inference at a time and keeps no abort controller.
+    stop(cause: string): void {
+        for (const thinkId of this.activeThinkIds) {
+            this.cancelledThinkIds.set(thinkId, cause);
+            this.inflightCompletions.get(thinkId)?.abort(cause);
+        }
+    }
+
+    private async complete(thinkId: number, request: Omit<LlmRequest, 'signal'>): Promise<LlmResponse> {
+        const cancelled = this.cancelledThinkIds.get(thinkId);
+        if (cancelled) {
+            return { text: '', nooped: true, cancelledBy: cancelled };
+        }
+        const controller = new AbortController();
+        this.inflightCompletions.set(thinkId, controller);
+        try {
+            return await this.options.llm.complete({ ...request, signal: controller.signal });
+        } finally {
+            if (this.inflightCompletions.get(thinkId) === controller) {
+                this.inflightCompletions.delete(thinkId);
+            }
+        }
+    }
+
+    private cancelledResult(thinkId: number): ThoughtResult | undefined {
+        const cause = this.cancelledThinkIds.get(thinkId);
+        if (!cause) {
+            return undefined;
+        }
+        return {
+            actions: [],
+            syntheticEvents: [],
+            cause,
+            envelopeTokens: 0,
+            nooped: true,
+        };
     }
 
     private async runBrain(
         perception: Perception,
         gameSkill?: GameSkillContext,
+        thinkId = this.nextThinkId,
     ): Promise<{ action?: AgentAction; cause: string; envelopeTokens: number; nooped: boolean }> {
         const behavior = this.behavior();
         const prompt = buildBrainPrompt({
@@ -282,7 +343,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             progress: this.progressPromptInput(),
             memories: this.promptMemories(perception as HybridPerception, 'brain'),
         });
-        const response = await this.options.llm.complete({
+        const response = await this.complete(thinkId, {
             endpoint: this.endpointFor(behavior.brain),
             prompt,
             temperature: this.temperatureFor(behavior.brain, 0.7),
@@ -325,20 +386,26 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return { cause: parsed.cause || 'brain_goal', envelopeTokens: estimateTokens(prompt), nooped: response.nooped && !parsed.goal };
     }
 
-    private async runBody(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
+    private async runBody(perception: Perception, gameSkill?: GameSkillContext, thinkId = this.nextThinkId): Promise<ThoughtResult> {
+        const bodyPerception = this.perceptionWithoutFailedTargets(perception as HybridPerception);
         const behavior = this.behavior();
-        const visibility = this.visibilityStatus(perception);
+        const visibility = this.visibilityStatus(bodyPerception);
+        const preInference = this.preInferenceBodyAction(bodyPerception, visibility);
+        if (preInference) {
+            return preInference;
+        }
+
         const prompt = buildBodyPrompt({
             soul: this.options.soul,
-            perception,
+            perception: bodyPerception,
             activeGoal: this.activeGoal(),
             commandPrefix: this.commandPrefix(),
             gameSkill,
             progress: this.progressPromptInput(),
-            memories: this.promptMemories(perception as HybridPerception, 'body'),
+            memories: this.promptMemories(bodyPerception, 'body'),
             visibility,
         });
-        const response = await this.options.llm.complete({
+        const response = await this.complete(thinkId, {
             endpoint: this.endpointFor(behavior.body),
             prompt,
             temperature: this.temperatureFor(behavior.body, 0.15),
@@ -351,19 +418,19 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const parsed = parseCompletion(response.text);
         let actions = parsed.ok ? parsed.actions.filter(action => action.kind !== 'noop').slice(0, 1) : [];
         let cause = parsed.ok ? parsed.cause || 'body_step' : parsed.cause || 'body_parse_failed';
-        const routine = this.goalRoutineOverride(actions, perception as HybridPerception);
+        const routine = this.goalRoutineOverride(actions, bodyPerception);
         if (routine) {
-            const loopBreak = this.routineLoopBreakAction(routine.action, routine.cause, perception as HybridPerception, visibility.anchor);
+            const loopBreak = this.routineLoopBreakAction(routine.action, routine.cause, bodyPerception, visibility.anchor);
             actions = [loopBreak?.action || routine.action];
             cause = loopBreak?.cause || routine.cause;
         }
-        const approach = this.approachDistantInteraction(actions, perception as HybridPerception);
+        const approach = this.approachDistantInteraction(actions, bodyPerception);
         if (approach) {
             actions = [approach.action];
             cause = approach.cause;
         }
         const stabilizeMove = () => {
-            const stableMove = this.stabilizedMoveAction(actions[0], perception as HybridPerception, visibility.anchor);
+            const stableMove = this.stabilizedMoveAction(actions[0], bodyPerception, visibility.anchor);
             if (stableMove) {
                 actions = [stableMove.action];
                 cause = stableMove.cause;
@@ -374,7 +441,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const modelSuggestedAction = actions.length > 0;
         actions = this.suppressRepeatedActions(actions);
         if (actions.length === 0 && !modelSuggestedAction) {
-            const fallback = this.nonRepeatedFallbackAction(perception, visibility);
+            const fallback = this.nonRepeatedFallbackAction(bodyPerception, visibility);
             if (fallback) {
                 actions = [fallback.action];
                 cause = fallback.cause;
@@ -382,7 +449,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
         if (actions.length === 0 && modelSuggestedAction) {
-            const fallback = this.nonRepeatedFallbackAction(perception, { ...visibility, returnDue: false });
+            const fallback = this.nonRepeatedFallbackAction(bodyPerception, { ...visibility, returnDue: false });
             if (fallback) {
                 actions = [fallback.action];
                 cause = fallback.cause;
@@ -398,6 +465,126 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             cause,
             envelopeTokens: estimateTokens(prompt),
             nooped: response.nooped || actions.length === 0,
+        };
+    }
+
+    private perceptionWithoutFailedTargets(perception: HybridPerception): HybridPerception {
+        const cooldowns = this.cognition().targetFailureCooldowns;
+        if (!cooldowns || Object.keys(cooldowns).length === 0) {
+            return perception;
+        }
+
+        const keepTarget = (target: unknown): boolean => {
+            const key = targetFailureKey(target);
+            if (!key) {
+                return true;
+            }
+            const failedAt = cooldowns[key];
+            return failedAt === undefined || this.options.state.tick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS;
+        };
+
+        const nearby = perception.nearby || {};
+        return {
+            ...perception,
+            nearby: {
+                ...nearby,
+                objects: (nearby.objects || []).filter(keepTarget),
+                worldItems: (nearby.worldItems || []).filter(keepTarget),
+                npcs: (nearby.npcs || []).filter(keepTarget),
+                players: (nearby.players || []).filter(keepTarget),
+            },
+        };
+    }
+
+    private preInferenceBodyAction(
+        perception: HybridPerception,
+        visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
+    ): ThoughtResult | undefined {
+        const routine = this.goalRoutineOverride([], perception);
+        if (routine) {
+            const loopBreak = this.routineLoopBreakAction(routine.action, routine.cause, perception, visibility.anchor);
+            return this.preInferenceResult(loopBreak?.action || routine.action, loopBreak?.cause || routine.cause, perception, visibility);
+        }
+
+        const activeMove = this.stabilizedMoveAction(undefined, perception, visibility.anchor);
+        if (activeMove) {
+            return this.preInferenceResult(activeMove.action, activeMove.cause, perception, visibility);
+        }
+
+        const coordinateMove = this.goalCoordinateMoveAction(perception);
+        if (coordinateMove) {
+            return this.preInferenceResult(coordinateMove.action, coordinateMove.cause, perception, visibility);
+        }
+
+        if (typeof this.options.state.stuckSince === 'number') {
+            const exploratory = explorationAction(
+                perception,
+                visibility.anchor,
+                this.options.state.resident,
+                this.pickupCooldowns(),
+                this.options.state.tick,
+                this.explorationCooldowns(),
+            );
+            if (exploratory) {
+                return this.preInferenceResult(
+                    actionWithCause(exploratory, 'stuck_pre_inference_explore'),
+                    'stuck_pre_inference_explore',
+                    perception,
+                    visibility,
+                );
+            }
+        }
+
+        return undefined;
+    }
+
+    private preInferenceResult(
+        action: AgentAction,
+        cause: string,
+        perception: HybridPerception,
+        visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
+    ): ThoughtResult | undefined {
+        let actions = [action];
+        let resultCause = cause;
+        const stabilized = this.stabilizedMoveAction(actions[0], perception, visibility.anchor);
+        if (stabilized) {
+            actions = [stabilized.action];
+            resultCause = stabilized.cause;
+        }
+
+        actions = this.suppressRepeatedActions(actions);
+        if (actions.length === 0) {
+            return undefined;
+        }
+        this.cognition().lastBodyTick = this.options.state.tick;
+        return {
+            actions,
+            cause: resultCause,
+            envelopeTokens: 0,
+            nooped: false,
+        };
+    }
+
+    private goalCoordinateMoveAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        const here = perception.resident?.position;
+        if (!goal || !here) {
+            return undefined;
+        }
+
+        const goalText = `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`;
+        if (!/move|walk|go to|travel|tree|chop|wood|logs|fish|combat|attack|bone|bury/i.test(goalText)) {
+            return undefined;
+        }
+
+        const target = firstGoalCoordinate(goalText, here.level);
+        if (!target || distance(here, target) <= 1) {
+            return undefined;
+        }
+
+        return {
+            action: { kind: 'move_to', target, range: 1, cause: 'goal_coordinate_move' },
+            cause: 'goal_coordinate_move',
         };
     }
 
@@ -553,7 +740,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: opportunity, cause: 'opportunistic_pickup' };
         }
 
-        if (isDedicatedExplorationGoal(goal)) {
+        if (actions.length > 0 && isDedicatedExplorationGoal(goal)) {
             const explorationOverride = this.explorationRoutineOverride(actions, perception);
             if (explorationOverride) {
                 return { action: explorationOverride, cause: 'exploration_fallback' };
@@ -658,6 +845,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const cognition = this.cognition();
         const active = cognition.activeMove;
         if (active) {
+            if (active.lastTick === this.options.state.tick) {
+                if (
+                    action?.kind === 'move_to' &&
+                    !sameMoveIntent(action, active) &&
+                    this.options.state.tick - active.startedAtTick < MOVE_COMMIT_TICKS
+                ) {
+                    return { action: moveIntentAction(active, 'continue_move'), cause: 'continue_move' };
+                }
+                return undefined;
+            }
+
             if (action && shouldInterruptActiveMove(action)) {
                 cognition.activeMove = undefined;
                 return undefined;
@@ -994,7 +1192,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         this.cognition().manualPauseSinceTick = undefined;
     }
 
-    private async nonCommandChatReaction(perception: HybridPerception): Promise<{ action: AgentAction; cause: string } | undefined> {
+    private async nonCommandChatReaction(
+        perception: HybridPerception,
+        thinkId: number,
+    ): Promise<{ action: AgentAction; cause: string } | undefined> {
         const events = perception.events || [];
         const resident = perception.resident;
         if (!resident || !resident.position) {
@@ -1058,7 +1259,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 .filter(Boolean)
                 .join('\n');
 
-            const response = await this.options.llm.complete({
+            const response = await this.complete(thinkId, {
                 endpoint: this.endpointFor(this.behavior().brain),
                 prompt,
                 temperature: this.temperatureFor(this.behavior().brain, 0.7),
@@ -1194,10 +1395,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
-    private async directChatAction(perception: HybridPerception): Promise<{ action: AgentAction; cause: string } | undefined> {
+    private async directChatAction(
+        perception: HybridPerception,
+        thinkId: number,
+    ): Promise<{ action: AgentAction; cause: string } | undefined> {
         const chat = latestAddressedChat(perception, this.commandPrefix(), this.cognition().lastDirectChatKey);
         if (!chat) {
-            return await this.nonCommandChatReaction(perception);
+            return await this.nonCommandChatReaction(perception, thinkId);
         }
 
         this.cognition().lastDirectChatKey = chat.key;
@@ -2123,7 +2327,24 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private advanceTick(perception: Perception): void {
         const perceptionTick = typeof perception.tick === 'number' ? perception.tick : 0;
+        if (perceptionTick > 0 && this.options.state.tick - perceptionTick > WORLD_TICK_RESET_DRIFT) {
+            this.resetClockSensitiveCognition(perceptionTick);
+            this.options.state.tick = perceptionTick;
+            return;
+        }
         this.options.state.tick = Math.max(this.options.state.tick + 1, perceptionTick);
+    }
+
+    private resetClockSensitiveCognition(perceptionTick: number): void {
+        const cognition = this.cognition();
+        const followTarget = cognition.followTarget ? { ...cognition.followTarget, setAtTick: perceptionTick } : undefined;
+        this.options.state.cognition = {
+            followTarget,
+        };
+        this.options.state.lastMeaningfulProgressAt = undefined;
+        this.options.state.stuckSince = undefined;
+        this.options.state.budgets.lastTick = undefined;
+        this.options.state.budgets.requestsThisTick = undefined;
     }
 
     private result(actions: AgentAction[], cause: string, envelopeTokens: number, nooped: boolean): ThoughtResult {
@@ -2360,6 +2581,50 @@ function moveIntentAction(active: ActiveMoveState, cause: string): AgentAction {
         range: active.range ?? 0,
         cause,
     };
+}
+
+function firstGoalCoordinate(text: string, fallbackLevel: number): Pos | undefined {
+    const patterns = [
+        /x\s*[:=]\s*(\d{3,5})\D{0,24}y\s*[:=]\s*(\d{3,5})(?:\D{0,24}(?:level|z)\s*[:=]\s*(\d+))?/i,
+        /(?:at|to|near|toward|target)?\s*(\d{3,5})\s*,\s*(\d{3,5})(?:\s*,\s*(?:level|z)?\s*(\d+))?/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = pattern.exec(text);
+        if (!match) {
+            continue;
+        }
+        const x = Number(match[1]);
+        const y = Number(match[2]);
+        const level = match[3] === undefined ? fallbackLevel : Number(match[3]);
+        if (Number.isInteger(x) && Number.isInteger(y) && Number.isInteger(level) && x >= 1000 && y >= 1000) {
+            return { x, y, level };
+        }
+    }
+
+    return undefined;
+}
+
+function targetFailureKey(target: unknown): string | undefined {
+    if (!isRecord(target)) {
+        return undefined;
+    }
+    const targetRecord = target;
+    const position = positionLike(targetRecord.position);
+    if (!position) {
+        return undefined;
+    }
+    const coordinate = positionKey(position);
+    if (typeof targetRecord.objectId === 'number') {
+        return `object:${targetRecord.objectId}:${coordinate}`;
+    }
+    if (typeof targetRecord.itemId === 'number') {
+        return `item:${targetRecord.itemId}:${coordinate}`;
+    }
+    if (typeof targetRecord.id === 'string') {
+        return `actor:${targetRecord.id}:${coordinate}`;
+    }
+    return `target:${coordinate}`;
 }
 
 function positionKey(position: Pos): string {

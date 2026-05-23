@@ -54,6 +54,7 @@ export interface CognitiveState {
     lastExplorationReportTick?: number;
     pickupCooldowns?: Record<string, number>;
     explorationCooldowns?: Record<string, number>;
+    targetFailureCooldowns?: Record<string, number>;
     consecutiveNonCombatTicks?: number;
     combatEpisodeActive?: boolean;
     combatEpisodeNarrated?: boolean;

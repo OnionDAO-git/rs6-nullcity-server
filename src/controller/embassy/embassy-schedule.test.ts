@@ -46,9 +46,7 @@ describe('isEmbassyEventActiveAt', () => {
 
     it('returns false defensively when a window has startsAt >= endsAt (skips malformed windows)', () => {
         const bogus: EmbassyEventSchedule = {
-            activeWindows: [
-                { startsAt: '2026-06-01T20:00:00.000Z', endsAt: '2026-06-01T18:00:00.000Z', label: 'inverted' },
-            ],
+            activeWindows: [{ startsAt: '2026-06-01T20:00:00.000Z', endsAt: '2026-06-01T18:00:00.000Z', label: 'inverted' }],
         };
         expect(isEmbassyEventActiveAt(bogus, at('2026-06-01T19:00:00.000Z'))).toBe(false);
     });
@@ -120,9 +118,7 @@ describe('loadEmbassyEventSchedule', () => {
         fs.writeFileSync(
             file,
             JSON.stringify({
-                activeWindows: [
-                    { startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'Chicago' },
-                ],
+                activeWindows: [{ startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'Chicago' }],
             }),
         );
         const sched = loadEmbassyEventSchedule(file);
