@@ -82,7 +82,6 @@ describe('produceStandingTierLetter', () => {
         const letter = produceStandingTierLetter(baseInput);
         expect(letter!.senderResident).toBe('res:agent');
     });
-
 });
 
 describe('produceEpitaphLetter (J-δ-γ)', () => {
@@ -205,11 +204,7 @@ describe('produceCivicAchievementLetter (J-δ-γ)', () => {
     });
 
     it('supports different achievementKind variants (firemaking_level_25, faction_oath, embassy_visit)', () => {
-        const kinds: CivicAchievementLetterInput['achievementKind'][] = [
-            'firemaking_level_25',
-            'faction_oath',
-            'embassy_visit',
-        ];
+        const kinds: CivicAchievementLetterInput['achievementKind'][] = ['firemaking_level_25', 'faction_oath', 'embassy_visit'];
         for (const k of kinds) {
             const letter = produceCivicAchievementLetter({ ...baseInput, achievementKind: k });
             expect(letter.kind).toBe('civic_milestone');

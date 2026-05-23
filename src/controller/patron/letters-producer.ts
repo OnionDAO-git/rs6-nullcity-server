@@ -228,11 +228,7 @@ function renderEpitaphBody(input: EpitaphLetterInput): string {
 // ---------------------------------------------------------------------------
 
 /** Kinds of civic milestone an achievement letter can announce. */
-export type CivicAchievementKind =
-    | 'first_quest_completed'
-    | 'firemaking_level_25'
-    | 'faction_oath'
-    | 'embassy_visit';
+export type CivicAchievementKind = 'first_quest_completed' | 'firemaking_level_25' | 'faction_oath' | 'embassy_visit';
 
 /** Input for {@link produceCivicAchievementLetter}. */
 export interface CivicAchievementLetterInput {

@@ -1,10 +1,5 @@
 import { EVIDENCE_SCHEMA_VERSION, type TrajectoryLine, trajectoryLineSchema } from './schemas';
-import {
-    MOMENT_KINDS,
-    type MomentKind,
-    MomentLabeler,
-    type MomentLine,
-} from './moment-labeler';
+import { MOMENT_KINDS, type MomentKind, MomentLabeler, type MomentLine } from './moment-labeler';
 
 /**
  * Lightweight trajectory-builder stub. Real TrajectoryBuilder requires an
