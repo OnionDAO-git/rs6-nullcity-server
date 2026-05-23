@@ -7,7 +7,7 @@ import { LlmClient } from './llm/llm-client';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryStore } from './memory/memory-store';
-import { residentSlug, RuntimeStateStore } from './memory/runtime-state';
+import { residentSlug, RuntimeStateStore, type RuntimeState } from './memory/runtime-state';
 import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
 import { SoulLoader } from './soul/soul-loader';
 import { standardSparkModules, type SparkModule } from './spark';
@@ -139,6 +139,17 @@ export class ControllerHost {
             console.error('[controller-host] patron ledger persist failed during shutdown', error);
         }
         this.gateway.close();
+    }
+
+    public listResidents(): { name: string; state: RuntimeState }[] {
+        const list: { name: string; state: RuntimeState }[] = [];
+        for (const [name, runtime] of this.runtimes.entries()) {
+            list.push({
+                name,
+                state: runtime.getState(),
+            });
+        }
+        return list;
     }
 
     async reconcile(): Promise<void> {

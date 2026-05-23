@@ -242,3 +242,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 07:44 codex  branch=agents/wip  workstream=G2/proof-loop  HANDOFF — fresh fishing/cooking proof passed; dashboard detail shows net/cooking evidence. SHA=n/a proof-only. Tests: live score=1 + dashboard smoke. Collision: none.
 2026-05-23 07:52 claude  branch=agents/wip  workstream=L  STARTING — L-α LoreBus skeleton. NEW src/controller/lore/lore-bus.{ts,test.ts}. LoreEvent Zod schema (kind, ts, source resident, payload, optional visibility radius). LoreBus class with publish/subscribe/unsubscribe + in-memory event log. NO reflex wiring this slice (L-α-2). Codex idle.
 2026-05-23 08:00 claude  branch=agents/wip  workstream=L  HANDOFF — L-α LoreBus skeleton lands (af77a4cc). 18/18 tests 100% line cov; typecheck/lint PASS. LoreEvent Zod schema + publish/subscribe/unsubscribe + kind filter + proximity filter (cross-level dropped; min(event radius, sub maxDist) effective) + error-isolated fan-out + capped event log. Next: L-α-2 fire_lit reflex.
+2026-05-23 13:00 antigravity branch=agents/wip workstream=RB-MCP STARTING — Plan RB-MCP-β: MCP server boilerplate + token auth. Files: src/controller/controller-host.ts, src/controller/mcp/server.ts, server.test.ts.
+2026-05-23 13:10 antigravity branch=agents/wip workstream=RB-MCP HANDOFF — Plan RB-MCP-β complete. Boilerplate MCP server, token auth, resident-api resource and logMcpCall implemented. 8/8 tests pass, full suite green (1177/1177). SHA=ba604cc3
+
+
