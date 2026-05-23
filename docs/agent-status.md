@@ -250,5 +250,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 08:32 claude  branch=agents/wip  workstream=K  HANDOFF — K-α factionAffinity + Brain directive lands (f029f5f8). 59/59 tests (schema+envelope coherence regression); typecheck/lint PASS. New FactionAffinity + dominantFaction helper; prompt envelope renders per-faction directive when dominant>0. Mirrors M-α pattern.
 2026-05-23 13:30 antigravity branch=agents/wip workstream=Q STARTING — committing interaction pipeline approach modifications. Files: src/controller/spark/runescape-body-routines.ts, src/controller/thinking/hybrid-agent-thinking-module.ts
 2026-05-23 13:40 antigravity branch=agents/wip workstream=Q HANDOFF — interaction pipeline approach improvements committed. 1177/1177 tests green. SHA=7ca9c599
-
-
+2026-05-23 13:35 codex  branch=agents/wip  workstream=G3/proof-loop  HANDOFF — verified e72bfcff live; combat/prayer dashboard shows attack/pickup/bury/Prayer. Tests: 61+135+live score=1. Collision: Antigravity committed fix.

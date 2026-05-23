@@ -307,6 +307,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: bury bones from inventory or safe defeated enemies.
   - Success metric: prayer XP/level evidence or action success event.
   - Verified 2026-05-21 on `nullcity`: `combat-prayer-10m` live autonomous smoke proved safe goblin combat, bones pickup, burial, Prayer XP, and survival under `onion.runescape.standard`.
+  - Verified 2026-05-23 on `agents/wip`: initial fresh rerun timed out after walking to bones without picking them up; the interaction-pipeline approach fix (`e72bfcff`) made Body click distant loot and combat targets directly. Fresh autonomous `combat-prayer-10m` then passed (`runId=bench_20260523132944_combat_prayer_10m`, `score=1`, `duration=1m38s`, `selectedModuleActions=28`, `selectedModuleInferences=12`, `safeAttackActions=12`, `pickupBonesActions=2`, `buryActions=2`, `prayerXpIncreased=1`, `deathEvents=0`). Dashboard detail showed pass status plus attack, pickup, bury, and Prayer metrics.
 
 - `[x]` **G4: Trading/giving items.**
   - Deliverable: request trade, offer simple item, accept/decline safely, describe trade state.
