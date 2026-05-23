@@ -109,6 +109,7 @@ import type { AgentAction, Perception } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
 import type { ThinkingModule, ThoughtResult } from './thinking-module';
+import { pickPhrase } from '../soul/phrasebook';
 
 export interface HybridAgentThinkingModuleOptions {
     soul: Soul;
@@ -120,7 +121,15 @@ export interface HybridAgentThinkingModuleOptions {
 type Pos = { x: number; y: number; level: number };
 type Item = { itemId: number; key?: string; amount: number };
 type WorldItem = Item & { position: Pos; ownerId?: string };
-type Actor = { id: string; kind: 'player' | 'npc' | 'resident'; name?: string; key?: string; position: Pos; hpFraction?: number };
+type Actor = {
+    id: string;
+    kind: 'player' | 'npc' | 'resident';
+    name?: string;
+    key?: string;
+    position: Pos;
+    hpFraction?: number;
+    combatLevel?: number;
+};
 type ActiveTrade = {
     partner?: Actor;
     ours?: Item[];
@@ -134,6 +143,7 @@ type HybridPerception = {
         id?: string;
         position?: Pos;
         hp?: { current?: number; max?: number };
+        combatLevel?: number;
         inCombat?: boolean;
         combatTarget?: Actor | null;
         busy?: boolean;
@@ -187,7 +197,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const combat = this.combatReaction(perception as HybridPerception);
         if (combat) {
-            return this.result([combat.action], combat.cause, 0, false);
+            return this.result(combat.actions, combat.cause, 0, false);
         }
 
         const dialogue = this.dialogueReaction(perception as HybridPerception);
@@ -1198,26 +1208,68 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
-    private combatReaction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
-        const target = latestCombatAttacker(perception) || perception.resident?.combatTarget || undefined;
+    private combatReaction(perception: HybridPerception): { actions: AgentAction[]; cause: string } | undefined {
+        const cognition = this.cognition();
+        const inCombat = !!perception.resident?.inCombat;
+
+        // Track episode status
+        if (inCombat) {
+            cognition.consecutiveNonCombatTicks = 0;
+            if (!cognition.combatEpisodeActive) {
+                cognition.combatEpisodeActive = true;
+                cognition.combatEpisodeNarrated = false;
+                cognition.combatEndCelebrated = false;
+            }
+        } else {
+            if (cognition.combatEpisodeActive) {
+                cognition.consecutiveNonCombatTicks = (cognition.consecutiveNonCombatTicks || 0) + 1;
+                if (cognition.consecutiveNonCombatTicks >= 3) {
+                    cognition.combatEpisodeActive = false;
+                    if (!cognition.combatEndCelebrated) {
+                        cognition.combatEndCelebrated = true;
+                        const text = pickPhrase({
+                            soul: this.options.soul,
+                            situation: 'combat_decision.kill_celebration',
+                            seed: `${this.options.state.tick}`,
+                        });
+                        return { actions: [{ kind: 'say', text }], cause: 'combat_kill_celebration' };
+                    }
+                }
+            }
+        }
+
+        const visibleAggressors = getVisibleAggressors(perception);
+        let target: Actor | undefined;
+        if (visibleAggressors.length > 0) {
+            const here = perception.resident?.position;
+            target = here ? selectPreferredAggressor(visibleAggressors, here) : visibleAggressors[0];
+        } else {
+            target = latestCombatAttacker(perception) || perception.resident?.combatTarget || undefined;
+        }
+
         if (!target) {
             return undefined;
         }
 
+        const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
         let action: AgentAction;
         if (target.kind === 'player') {
             action = {
                 kind: 'say',
                 text: `${actorName(target)} is attacking me. Tell me "${this.commandPrefix()} attack ${actorName(target)}" if I should fight back.`,
             };
-        } else if (isLowHealth(perception) && firstFoodSlot(perception.resident?.inventory || []) === undefined) {
-            action = { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' };
         } else if (isLowHealth(perception)) {
-            const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
             action =
                 foodSlot === undefined
                     ? { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' }
                     : { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_retaliating' };
+        } else if (
+            !isSafeCombatTarget(target) ||
+            (target.combatLevel !== undefined &&
+                perception.resident?.combatLevel !== undefined &&
+                target.combatLevel > perception.resident.combatLevel + 5)
+        ) {
+            action = { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' };
         } else {
             action = { kind: 'attack', target, cause: 'combat_retaliate' };
         }
@@ -1227,8 +1279,21 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         this.rememberBodyAction(action);
-        this.queueCombatNarration(action, target);
-        return { action, cause: action.cause || 'combat_reaction' };
+
+        const resultActions = [action];
+        if (target.kind !== 'player' && !cognition.combatEpisodeNarrated) {
+            cognition.combatEpisodeNarrated = true;
+            const decision = classifyCombatDecision(perception, target, foodSlot);
+            const text = pickPhrase({
+                soul: this.options.soul,
+                situation: `combat_decision.${decision}`,
+                seed: `${this.options.state.tick}`,
+                params: { targetName: actorName(target) },
+            });
+            resultActions.push({ kind: 'say', text });
+        }
+
+        return { actions: resultActions, cause: action.cause || 'combat_reaction' };
     }
 
     private combatNarrationAction(): { action: AgentAction; cause: string } | undefined {
@@ -2218,6 +2283,7 @@ function actorLike(value: unknown): Actor | undefined {
         key: typeof value.key === 'string' ? value.key : undefined,
         position,
         hpFraction: typeof value.hpFraction === 'number' ? value.hpFraction : undefined,
+        combatLevel: typeof value.combatLevel === 'number' ? value.combatLevel : undefined,
     };
 }
 
@@ -2282,4 +2348,71 @@ function positionLike(value: unknown): Pos | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getVisibleAggressors(perception: HybridPerception): Actor[] {
+    const attackers = new Set<string>();
+    for (const event of perception.events || []) {
+        if (['hit_taken', 'hit', 'attacked'].includes(String(event.kind || ''))) {
+            const attacker = actorLike(event.from);
+            if (attacker) {
+                attackers.add(attacker.id);
+            }
+        }
+    }
+    const nearbyActors = [...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])];
+    return nearbyActors.filter(actor => attackers.has(actor.id));
+}
+
+function selectPreferredAggressor(aggressors: Actor[], residentPos: Pos): Actor {
+    if (aggressors.length === 0) {
+        throw new Error('selectPreferredAggressor called with empty aggressors array');
+    }
+    const sorted = [...aggressors].sort((a, b) => {
+        const hpA = a.hpFraction !== undefined ? a.hpFraction : 1.0;
+        const hpB = b.hpFraction !== undefined ? b.hpFraction : 1.0;
+        if (hpA !== hpB) {
+            return hpA - hpB;
+        }
+
+        const lvlA = a.combatLevel !== undefined ? a.combatLevel : 0;
+        const lvlB = b.combatLevel !== undefined ? b.combatLevel : 0;
+        if (lvlA !== lvlB) {
+            return lvlA - lvlB;
+        }
+
+        const distA = distance(a.position, residentPos);
+        const distB = distance(b.position, residentPos);
+        return distA - distB;
+    });
+    return sorted[0];
+}
+
+function classifyCombatDecision(
+    perception: HybridPerception,
+    target: Actor,
+    foodSlot: number | undefined,
+): 'retaliate_confident' | 'retaliate_after_eat' | 'retreat_outmatched' | 'retreat_low_hp' {
+    const ownHpFraction = (perception.resident?.hp?.current || 0) / (perception.resident?.hp?.max || 1);
+    const targetHpFraction = target.hpFraction !== undefined ? target.hpFraction : 1.0;
+    const ownCombatLevel = perception.resident?.combatLevel || 1;
+    const targetCombatLevel = target.combatLevel || 1;
+
+    if (ownHpFraction < 0.15 || (ownHpFraction <= 0.3 && foodSlot === undefined)) {
+        return 'retreat_low_hp';
+    }
+
+    if (ownHpFraction < 0.3 || !isSafeCombatTarget(target) || targetCombatLevel > ownCombatLevel + 5) {
+        return 'retreat_outmatched';
+    }
+
+    if (ownHpFraction >= 0.3 && ownHpFraction <= 0.6 && foodSlot !== undefined) {
+        return 'retaliate_after_eat';
+    }
+
+    if (ownHpFraction > 0.6 && targetHpFraction < ownHpFraction && isSafeCombatTarget(target)) {
+        return 'retaliate_confident';
+    }
+
+    return 'retaliate_confident';
 }

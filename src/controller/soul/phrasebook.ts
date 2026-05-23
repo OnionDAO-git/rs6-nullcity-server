@@ -48,6 +48,21 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
             'My path to the {direction} seems blocked! Anyone heading that way who can help?',
             'I keep failing to move {direction}! Could someone guide me?',
         ],
+        'combat_decision.retaliate_confident': [
+            "I can take {targetName} easily! Let's get this XP.",
+            "You're no match for me, {targetName}!",
+            "Time to level up. Let's go!",
+        ],
+        'combat_decision.retaliate_after_eat': [
+            "Just need a quick bite, then you're down, {targetName}!",
+            'Eating up to stay in the game. Now, where were we?',
+        ],
+        'combat_decision.retreat_outmatched': [
+            'Whoa, {targetName} is too strong! I need to retreat and train more.',
+            "This is inefficient, I'm outmatched here! Running!",
+        ],
+        'combat_decision.retreat_low_hp': ["My health is too low! I've got to run!", 'Need to survive! Fallback!'],
+        'combat_decision.kill_celebration': ['Down. Another victory!', 'Down. Easy XP.'],
     },
     mentor: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -75,6 +90,23 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
             'The path to the {direction} seems difficult. Could a kind soul show the way?',
             'We are finding it hard to make progress to the {direction}. Assistance would be a blessing.',
         ],
+        'combat_decision.retaliate_confident': [
+            'Let us see how {targetName} fares against structured technique.',
+            'An excellent opportunity to practice our defense against {targetName}.',
+        ],
+        'combat_decision.retaliate_after_eat': [
+            'First, we nourish ourselves. Then, we continue the lesson.',
+            'A wise warrior always replenishes their strength. Let us resume.',
+        ],
+        'combat_decision.retreat_outmatched': [
+            'Discretion is the better part of valor. {targetName} is too formidable right now.',
+            'We are not yet prepared for a foe like {targetName}. Let us withdraw.',
+        ],
+        'combat_decision.retreat_low_hp': [
+            'Our strength is spent. We must retreat to fight another day.',
+            'A tactical withdrawal is necessary. Safety first.',
+        ],
+        'combat_decision.kill_celebration': ['Down. A lesson well learned.', 'Down. Peace returns.'],
     },
     endurer: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -102,6 +134,17 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
             'Path to the {direction} is blocked or broken. Anyone heading that way?',
             'Stuck here trying to head {direction}. Can someone clear a path?',
         ],
+        'combat_decision.retaliate_confident': [
+            'You think you can break me, {targetName}? Think again.',
+            "I've survived worse than {targetName}. Let's get this over with.",
+        ],
+        'combat_decision.retaliate_after_eat': ["Just eating to keep going. I won't fall here.", "A bit of food, and I'm ready for more."],
+        'combat_decision.retreat_outmatched': [
+            'No point throwing my life away. {targetName} is too much today.',
+            'Tough break... I have to pull back.',
+        ],
+        'combat_decision.retreat_low_hp': ['Barely hanging on... need to run!', 'Too close to the edge. Retreating!'],
+        'combat_decision.kill_celebration': ['Down. Still standing.', 'Down. I survived.'],
     },
     default: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -129,6 +172,11 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
             'I keep getting blocked trying to go {direction}. Can someone help?',
             'Stuck trying to head {direction}.',
         ],
+        'combat_decision.retaliate_confident': ['Attacking {targetName}!', 'I can defeat {targetName}!'],
+        'combat_decision.retaliate_after_eat': ['Eating food to heal, then attacking!', 'Healing up to fight.'],
+        'combat_decision.retreat_outmatched': ['Retreating! {targetName} is too strong.', 'This is too dangerous, running away!'],
+        'combat_decision.retreat_low_hp': ['Low health! Running away!', 'Too weak to fight! Retreating!'],
+        'combat_decision.kill_celebration': ['Down.'],
     },
 };
 

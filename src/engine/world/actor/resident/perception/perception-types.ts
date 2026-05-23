@@ -16,7 +16,9 @@ export interface Perception {
         readonly position: { x: number; y: number; level: number };
         readonly hp: { current: number; max: number };
         readonly skills: Record<string, { level: number; xp: number }>;
+        readonly combatLevel: number;
         readonly inCombat: boolean;
+
         readonly combatTarget: ActorRef | null;
         readonly busy: boolean;
         readonly inventory: ReadonlyArray<ItemRef | null>;

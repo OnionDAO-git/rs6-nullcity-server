@@ -1860,7 +1860,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'combat_retaliate' }]);
+        expect(result.actions).toEqual([
+            { kind: 'attack', target: goblin, cause: 'combat_retaliate' },
+            { kind: 'say', text: 'You think you can break me, Goblin? Think again.' },
+        ]);
         expect(result.cause).toBe('combat_retaliate');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -1884,12 +1887,12 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' }]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' },
+            { kind: 'say', text: 'Barely hanging on... need to run!' },
+        ]);
         expect(result.cause).toBe('combat_retreat');
-        expect(state.cognition?.pendingCombatNarration).toMatchObject({
-            text: 'I am hurt and have no food, so I am retreating from Goblin.',
-            cause: 'combat_survival_narration',
-        });
+        expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -1897,9 +1900,18 @@ describe('HybridAgentThinkingModule', () => {
         const goblin = npc('Goblin', 3219, 3201);
         const llm = scriptedLlm([]);
         const state = runtimeState();
+        state.cognition = {
+            lastBrainTick: 2,
+            activeGoal: {
+                id: 'dummy-goal',
+                description: 'Keep exploring',
+                createdAtTick: 1,
+                ttlTicks: 1000,
+            },
+        };
         const agent = hybridAgent(llm, state);
 
-        await agent.think(
+        const result = await agent.think(
             perception({
                 tick: 2,
                 resident: {
@@ -1912,6 +1924,12 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' },
+            { kind: 'say', text: 'Barely hanging on... need to run!' },
+        ]);
+
+        state.cognition!.lastBodyTick = 3;
         const narration = await agent.think(
             perception({
                 tick: 3,
@@ -1923,8 +1941,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(narration.actions).toEqual([{ kind: 'say', text: 'I am hurt and have no food, so I am retreating from Goblin.' }]);
-        expect(narration.cause).toBe('combat_survival_narration');
+        expect(narration.actions).toEqual([]);
         expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -1948,12 +1965,12 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' }]);
+        expect(result.actions).toEqual([
+            { kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' },
+            { kind: 'say', text: "Just eating to keep going. I won't fall here." },
+        ]);
         expect(result.cause).toBe('combat_eat_before_retaliating');
-        expect(state.cognition?.pendingCombatNarration).toMatchObject({
-            text: 'I am hurt, so I am eating before I keep fighting Goblin.',
-            cause: 'combat_survival_narration',
-        });
+        expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -1961,9 +1978,18 @@ describe('HybridAgentThinkingModule', () => {
         const goblin = npc('Goblin', 3219, 3201);
         const llm = scriptedLlm([]);
         const state = runtimeState();
+        state.cognition = {
+            lastBrainTick: 2,
+            activeGoal: {
+                id: 'dummy-goal',
+                description: 'Keep exploring',
+                createdAtTick: 1,
+                ttlTicks: 1000,
+            },
+        };
         const agent = hybridAgent(llm, state);
 
-        await agent.think(
+        const result = await agent.think(
             perception({
                 tick: 2,
                 resident: {
@@ -1976,6 +2002,12 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
+        expect(result.actions).toEqual([
+            { kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' },
+            { kind: 'say', text: "Just eating to keep going. I won't fall here." },
+        ]);
+
+        state.cognition!.lastBodyTick = 3;
         const narration = await agent.think(
             perception({
                 tick: 3,
@@ -1987,8 +2019,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(narration.actions).toEqual([{ kind: 'say', text: 'I am hurt, so I am eating before I keep fighting Goblin.' }]);
-        expect(narration.cause).toBe('combat_survival_narration');
+        expect(narration.actions).toEqual([]);
         expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -2194,7 +2225,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'combat_retaliate' }]);
+        expect(result.actions).toEqual([
+            { kind: 'attack', target: rat, cause: 'combat_retaliate' },
+            { kind: 'say', text: "I've survived worse than Rat. Let's get this over with." },
+        ]);
         expect(result.cause).toBe('combat_retaliate');
     });
 
@@ -3724,6 +3758,398 @@ describe('HybridAgentThinkingModule', () => {
         expect(text.length).toBeLessThanOrEqual(220);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('F5-T1 (Confident Retaliation): HP 95%, attacked by chicken. Assert attack + say with combat_decision.retaliate_confident phrasing.', async () => {
+        const chickenTarget = npc('Chicken', 3219, 3201);
+        chickenTarget.combatLevel = 1;
+        chickenTarget.hpFraction = 1.0;
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 95, max: 100 },
+                    combatLevel: 10,
+                },
+                npcs: [chickenTarget],
+                events: [{ kind: 'hit_taken', from: chickenTarget }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'attack', target: chickenTarget, cause: 'combat_retaliate' },
+            { kind: 'say', text: 'You think you can break me, Chicken? Think again.' },
+        ]);
+        expect(result.cause).toBe('combat_retaliate');
+    });
+
+    it('F5-T2 (Eat & Retaliate): HP 40%, food slot present, attacked by cow. Assert eat + say with combat_decision.retaliate_after_eat.', async () => {
+        const cowTarget = npc('Cow', 3219, 3201);
+        cowTarget.combatLevel = 2;
+        cowTarget.hpFraction = 1.0;
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 40, max: 100 },
+                    combatLevel: 10,
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [cowTarget],
+                events: [{ kind: 'hit_taken', from: cowTarget }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' },
+            { kind: 'say', text: "Just eating to keep going. I won't fall here." },
+        ]);
+        expect(result.cause).toBe('combat_eat_before_retaliating');
+    });
+
+    it('F5-T3 (Low HP Retreat): HP 20%, no food, attacked by goblin. Assert move_to flee target + say with combat_decision.retreat_low_hp.', async () => {
+        const goblinTarget = npc('Goblin', 3219, 3201);
+        goblinTarget.combatLevel = 2;
+        goblinTarget.hpFraction = 1.0;
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 20, max: 100 },
+                    combatLevel: 10,
+                    inventory: [],
+                },
+                npcs: [goblinTarget],
+                events: [{ kind: 'hit_taken', from: goblinTarget }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' },
+            { kind: 'say', text: 'Barely hanging on... need to run!' },
+        ]);
+        expect(result.cause).toBe('combat_retreat');
+    });
+
+    it('F5-T4 (Outmatched Retreat): HP 80%, attacked by Greater Demon (unsafe). Assert move_to flee target + say with combat_decision.retreat_outmatched.', async () => {
+        const demonTarget = npc('Greater Demon', 3219, 3201);
+        demonTarget.combatLevel = 20;
+        demonTarget.hpFraction = 1.0;
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 80, max: 100 },
+                    combatLevel: 10,
+                },
+                npcs: [demonTarget],
+                events: [{ kind: 'hit_taken', from: demonTarget }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3214, y: 3205, level: 0 }, cause: 'combat_retreat' },
+            { kind: 'say', text: 'No point throwing my life away. Greater Demon is too much today.' },
+        ]);
+        expect(result.cause).toBe('combat_retreat');
+    });
+
+    it('F5-T5 (Aggressor Selection): Selects weakest visible aggressor based on HP fraction, combat level, and distance.', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        goblin.combatLevel = 2;
+        goblin.hpFraction = 1.0;
+
+        const chickenB = npc('Chicken', 3219, 3202);
+        chickenB.id = 'npc:chicken_b';
+        chickenB.combatLevel = 1;
+        chickenB.hpFraction = 0.5;
+
+        const chickenC = npc('Chicken', 3219, 3203);
+        chickenC.id = 'npc:chicken_c';
+        chickenC.combatLevel = 1;
+        chickenC.hpFraction = 0.5;
+
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 10, max: 10 },
+                    combatLevel: 10,
+                },
+                npcs: [goblin, chickenB, chickenC],
+                events: [
+                    { kind: 'hit_taken', from: goblin },
+                    { kind: 'hit_taken', from: chickenB },
+                    { kind: 'hit_taken', from: chickenC },
+                ],
+            }),
+        );
+
+        expect(result.actions[0]).toEqual({ kind: 'attack', target: chickenB, cause: 'combat_retaliate' });
+    });
+
+    it('F5-T6 (Episode Deduplication): Assert narration is only emitted on tick 1, and subsequent consecutive combat ticks do not repeat narration.', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        goblin.combatLevel = 2;
+        goblin.hpFraction = 1.0;
+
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        // Tick 2: Initial attack, should narrate
+        const result1 = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 10, max: 10 },
+                    combatLevel: 10,
+                    inCombat: true,
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        expect(result1.actions).toEqual([
+            { kind: 'attack', target: goblin, cause: 'combat_retaliate' },
+            { kind: 'say', text: 'You think you can break me, Goblin? Think again.' },
+        ]);
+        expect(state.cognition?.combatEpisodeNarrated).toBe(true);
+
+        // Tick 3: consecutive combat tick, change Goblin HP fraction slightly to bypass repeated action check
+        const goblinHurt = { ...goblin, hpFraction: 0.9 };
+        state.cognition!.lastBodyTick = 2; // Advance thinking tick
+
+        const result2 = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 10, max: 10 },
+                    combatLevel: 10,
+                    inCombat: true,
+                },
+                npcs: [goblinHurt],
+                events: [{ kind: 'hit_taken', from: goblinHurt }],
+            }),
+        );
+
+        // Should attack but NOT say any narration phrase since combatEpisodeNarrated is true
+        expect(result2.actions).toEqual([{ kind: 'attack', target: goblinHurt, cause: 'combat_retaliate' }]);
+    });
+
+    it('F5-T7 (Episode Cooldown & Reset): Combat ends, then attacked again. Assert new narration emits.', async () => {
+        const goblin = npc('Goblin', 3219, 3201);
+        goblin.combatLevel = 2;
+        goblin.hpFraction = 1.0;
+
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        // Tick 2: Combat starts
+        const result1 = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 10, max: 10 },
+                    combatLevel: 10,
+                    inCombat: true,
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+        expect(result1.actions).toContainEqual({ kind: 'say', text: 'You think you can break me, Goblin? Think again.' });
+
+        // Ticks 3, 4, 5: Not in combat (3 ticks total)
+        for (let t = 3; t <= 5; t++) {
+            state.cognition!.lastBodyTick = t - 1;
+            await agent.think(
+                perception({
+                    tick: t,
+                    resident: {
+                        ...residentAt(3218, 3201),
+                        inCombat: false,
+                    },
+                }),
+            );
+        }
+
+        expect(state.cognition?.combatEpisodeActive).toBe(false);
+        expect(state.cognition?.combatEndCelebrated).toBe(true);
+
+        // Clear the body action backoff key so tick 6 doesn't trigger repeat action backoff
+        state.cognition!.lastBodyActionKey = undefined;
+
+        // Tick 6: Attacked again
+        state.cognition!.lastBodyTick = 5;
+        const result2 = await agent.think(
+            perception({
+                tick: 6,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 10, max: 10 },
+                    combatLevel: 10,
+                    inCombat: true,
+                },
+                npcs: [goblin],
+                events: [{ kind: 'hit_taken', from: goblin }],
+            }),
+        );
+
+        expect(result2.actions).toEqual([
+            { kind: 'attack', target: goblin, cause: 'combat_retaliate' },
+            { kind: 'say', text: 'You think you can break me, Goblin? Think again.' },
+        ]);
+    });
+
+    it('F5-T8 (Kill Celebration): Combat ends. Assert say with "Down. I survived." is scheduled.', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            combatEpisodeActive: true,
+            consecutiveNonCombatTicks: 0,
+            combatEndCelebrated: false,
+        };
+        const agent = hybridAgent(llm, state);
+
+        // Tick 3: non-combat tick 1
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: { ...residentAt(3218, 3201), inCombat: false },
+            }),
+        );
+        expect(state.cognition.combatEndCelebrated).toBe(false);
+
+        // Tick 4: non-combat tick 2
+        state.cognition.lastBodyTick = 3;
+        await agent.think(
+            perception({
+                tick: 4,
+                resident: { ...residentAt(3218, 3201), inCombat: false },
+            }),
+        );
+        expect(state.cognition.combatEndCelebrated).toBe(false);
+
+        // Tick 5: non-combat tick 3 -> triggers celebration
+        state.cognition.lastBodyTick = 4;
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                resident: { ...residentAt(3218, 3201), inCombat: false },
+            }),
+        );
+
+        expect(state.cognition.combatEndCelebrated).toBe(true);
+        expect(state.cognition.combatEpisodeActive).toBe(false);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'Down. I survived.' }]);
+    });
+
+    it('F5-T9 (Voice Registers): Achiever vs. Endurer vs. Mentor registers result in different phrasings.', async () => {
+        const chickenTarget = npc('Chicken', 3219, 3201);
+        chickenTarget.combatLevel = 1;
+        chickenTarget.hpFraction = 1.0;
+
+        const llm = scriptedLlm([]);
+
+        // Achiever
+        const soulAchiever = soul();
+        soulAchiever.frontmatter.archetype = 'achiever';
+        const stateAchiever = runtimeState();
+        const agentAchiever = hybridAgent(llm, stateAchiever, soulAchiever);
+
+        const resultAchiever = await agentAchiever.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 95, max: 100 },
+                    combatLevel: 10,
+                },
+                npcs: [chickenTarget],
+                events: [{ kind: 'hit_taken', from: chickenTarget }],
+            }),
+        );
+        expect(resultAchiever.actions).toContainEqual({
+            kind: 'say',
+            text: "Time to level up. Let's go!",
+        });
+
+        // Mentor
+        const soulMentor = soul();
+        soulMentor.frontmatter.archetype = 'mentor';
+        const stateMentor = runtimeState();
+        const agentMentor = hybridAgent(llm, stateMentor, soulMentor);
+
+        const resultMentor = await agentMentor.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 95, max: 100 },
+                    combatLevel: 10,
+                },
+                npcs: [chickenTarget],
+                events: [{ kind: 'hit_taken', from: chickenTarget }],
+            }),
+        );
+        expect(resultMentor.actions).toContainEqual({
+            kind: 'say',
+            text: 'Let us see how Chicken fares against structured technique.',
+        });
+
+        // Endurer
+        const soulEndurer = soul();
+        soulEndurer.frontmatter.archetype = 'endurer';
+        const stateEndurer = runtimeState();
+        const agentEndurer = hybridAgent(llm, stateEndurer, soulEndurer);
+
+        const resultEndurer = await agentEndurer.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 95, max: 100 },
+                    combatLevel: 10,
+                },
+                npcs: [chickenTarget],
+                events: [{ kind: 'hit_taken', from: chickenTarget }],
+            }),
+        );
+        expect(resultEndurer.actions).toContainEqual({
+            kind: 'say',
+            text: 'You think you can break me, Chicken? Think again.',
+        });
     });
 });
 

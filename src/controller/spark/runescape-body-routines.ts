@@ -53,6 +53,7 @@ export type BodyActor = {
     key?: string;
     position: BodyPos;
     hpFraction?: number;
+    combatLevel?: number;
 };
 
 /** Perception bundle — matches monolith's local `HybridPerception` shape (subset used by body routines). */
@@ -62,6 +63,7 @@ export type BodyHybridPerception = {
         id?: string;
         position?: BodyPos;
         hp?: { current?: number; max?: number };
+        combatLevel?: number;
         inCombat?: boolean;
         combatTarget?: BodyActor | null;
         busy?: boolean;

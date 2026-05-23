@@ -43,6 +43,7 @@ export type NervousHybridPerception = {
     resident?: {
         id?: string;
         position?: BodyPos;
+        combatLevel?: number;
         combatTarget?: BodyActor | null;
     };
     nearby?: {
@@ -93,6 +94,7 @@ function actorLike(value: unknown): BodyActor | undefined {
         key: typeof value.key === 'string' ? value.key : undefined,
         position,
         hpFraction: typeof value.hpFraction === 'number' ? value.hpFraction : undefined,
+        combatLevel: typeof value.combatLevel === 'number' ? value.combatLevel : undefined,
     };
 }
 

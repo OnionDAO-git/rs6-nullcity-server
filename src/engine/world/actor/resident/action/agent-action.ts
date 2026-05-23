@@ -16,6 +16,7 @@ export interface ActorRef {
     name?: string;
     position: Required<Pos>;
     hpFraction?: number;
+    combatLevel?: number;
 }
 
 export interface ItemRef {
@@ -122,6 +123,7 @@ export const ActorRefSchema = z.object({
     name: z.string().optional(),
     position: PosSchema.required({ level: true }),
     hpFraction: z.number().min(0).max(1).optional(),
+    combatLevel: z.number().int().nonnegative().optional(),
 });
 
 export const ItemRefSchema = z.object({

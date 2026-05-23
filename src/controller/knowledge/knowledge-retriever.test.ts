@@ -348,7 +348,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the items-armor-tier-overview entry for an armor query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what defence level do I need for steel platebody armor', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what defence level do I need for steel platebody armor', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('items-armor-tier-overview');
@@ -357,7 +359,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the items-weapon-tier-overview entry for a scimitar query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'which weapon should I use as my main melee weapon a scimitar', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'which weapon should I use as my main melee weapon a scimitar', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('items-weapon-tier-overview');

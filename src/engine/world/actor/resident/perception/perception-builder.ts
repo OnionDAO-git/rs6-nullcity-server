@@ -45,6 +45,7 @@ const actorRef = (actor: Actor): ActorRef => {
         name: actor.type === 'player' ? asPlayer.username : asNpc.name,
         position: { x: actor.position.x, y: actor.position.y, level: actor.position.level },
         hpFraction: maxHp <= 0 ? 0 : hp / maxHp,
+        combatLevel: actor.type === 'player' ? asPlayer.skills.getCombatLevel() : asNpc.combatLevel,
     };
 };
 
@@ -117,7 +118,9 @@ export class PerceptionBuilder {
                         },
                     ]),
                 ),
+                combatLevel: player.skills.getCombatLevel(),
                 inCombat: player.inCombat,
+
                 combatTarget,
                 busy: player.busy,
                 inventory: player.inventory.items.map(itemRef),

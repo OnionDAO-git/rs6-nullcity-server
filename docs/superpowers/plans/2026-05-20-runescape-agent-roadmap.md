@@ -189,6 +189,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: list benchmark artifacts, filter by module/task, and inspect run timeline.
   - Verification: fixture artifacts render correctly.
   - Verified 2026-05-22 in `rs6-nullcity-residents-dashboard`: added benchmark artifact list/detail BFF endpoints, shared read models, `/benchmarks` and `/benchmarks/:runId` dashboard views, and fixture coverage for malformed-file skipping plus newest-first ordering. Validation passed with `bun test packages/server/src/runtime.test.ts`, `bun run typecheck`, `bun run check`, `bun run build`, `git diff --check`, and live API smokes against `http://127.0.0.1:8892/api/benchmarks` plus a detail artifact.
+  - Verified 2026-05-22 in `rs6-nullcity-residents-dashboard`: benchmark detail evidence now renders structured action attempts with final status, effect-evidence count, source, cause, and module identity above the raw artifact. Browser smoke against a fixture action-effect benchmark showed the `SUCCESS use item on item 1 EFFECT` row, and focused dashboard tests/typechecks passed.
 
 - `[x]` **D4: Add module leaderboard.**
   - Files: dashboard benchmark components
@@ -262,11 +263,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: local live test or simulation where dashboard shows meaningful movement and chat.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: `explore-report-5m` now seeds a local scouting goal instead of relying on Brain drift. Focused thinking test covers initial exploration movement without deep inference, and live autonomous benchmark passed (`status=passed`, `score=1`, `selectedModuleActions=3`, `positionChanged=1`, `informativeReports=1`, `trajectorySays=2`, artifact `/tmp/oniondao-explore-report-seeded-bench/bench_20260521172341_explore_report_5m.json`).
 
-- `[~]` **F5: Combat survival personality.**
+- `[x]` **F5: Combat survival personality.**
   - Files: nervous rules, combat workflow, standard module
   - Deliverable: agent eats when hurt, attacks weak aggressors when reasonable, runs when outmatched, and explains danger.
   - Verification: combat fixture tests and one live local smoke if available.
-  - Partial 2026-05-22: survival reflexes now queue short public narration after NPC retreat/eating decisions without delaying the immediate eat or move action. Focused combat tests, typecheck, lint, build, full Jest, and autonomous `combat-prayer-10m` dry-run passed.
+  - Verified 2026-05-23: fully implemented with exposed combatLevel, weakest aggressor selection (lowest HP, lowest combat level, closest Chebyshev distance), decision classification (retaliate_confident, retaliate_after_eat, retreat_outmatched, retreat_low_hp), episode deduplication, and kill celebration. Tested F5-T1 through F5-T9 targeting all registers (achiever, mentor, endurer, default) successfully.
+
 
 ## Workstream G: Real Gameplay Workflows
 
@@ -448,8 +450,8 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-23: dynamic stuck recovery phrasebook system integrated with personality-specific voicing (achiever, mentor, endurer) and path-blocker (gate, fence, NPC) resolution. All tests pass.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: progress evidence state now records `lastMeaningfulProgressAt` and `stuckSince` on the resident runtime clock when persisted `state.tick` is ahead of gateway perception ticks. Regression covers the clock mismatch that made recent progress look ancient in Brain/Body prompts; autonomous real-gateway `make-fire-5m` benchmark passed with standard SPARK after the fix.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: make-fire autonomous benchmark verifier now consumes selected-module final action-effect evidence from the runtime, so a completed tinderbox/logs action can end the task promptly instead of waiting for later perception proof and accumulating stale stuck ticks. Focused red/green tests cover verifier and runtime evidence plumbing; live autonomous `make-fire-5m` passed in 45s with `successfulActionEffects=1`, `finalStatus=success`, and `effectEvidenceCount=1` on the firemaking action.
-- `[~]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
-  - Partial 2026-05-22: queued combat narration explains low-health eating and no-food retreat on the next safe tick. Remaining gap: stronger outmatched-threat scoring and live combat proof.
+- `[x]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
+  - Verified 2026-05-23: fully implemented and verified under full Jest coverage. Target selection prioritizes weakest visible aggressor using lowest hpFraction, lowest combatLevel, and closest Chebyshev distance. Combat decisions are classified (retaliate_confident, retaliate_after_eat, retreat_outmatched, retreat_low_hp), and character voicing matches the registered soul archetype. Action-effect survival (eating/retreating) takes precedence over speech, with robust safety and deduplication logic verified.
 - `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
   - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
 - `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
