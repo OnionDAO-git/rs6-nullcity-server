@@ -1,9 +1,4 @@
-import {
-    ROUTINE_CATALOG,
-    type RoutineContext,
-    type RunRoutineRequest,
-    RoutineRunner,
-} from './routine-runner';
+import { ROUTINE_CATALOG, type RoutineContext, type RunRoutineRequest, RoutineRunner } from './routine-runner';
 
 describe('RoutineRunner', () => {
     describe('ROUTINE_CATALOG shape', () => {
@@ -29,7 +24,7 @@ describe('RoutineRunner', () => {
             });
         }
 
-        it("rejects when the resident is not registered (status=rejected, lastError=resident_not_found)", async () => {
+        it('rejects when the resident is not registered (status=rejected, lastError=resident_not_found)', async () => {
             const runner = makeRunner();
             const result = await runner.run({ resident: 'res:nobody', routine: 'make_fire' });
             expect(result.status).toBe('rejected');
@@ -37,7 +32,7 @@ describe('RoutineRunner', () => {
             expect(result.ticksUsed).toBe(0);
         });
 
-        it("rejects when the routine is not in the catalog (status=rejected, lastError=routine_not_whitelisted)", async () => {
+        it('rejects when the routine is not in the catalog (status=rejected, lastError=routine_not_whitelisted)', async () => {
             const runner = new RoutineRunner({ runtimes: new Map([['res:agent', mockRuntime()]]) });
             const result = await runner.run({
                 resident: 'res:agent',
@@ -55,7 +50,7 @@ describe('RoutineRunner', () => {
             expect(tooBig.lastError).toBe('maxticks_out_of_range');
         });
 
-        it("accepts default maxTicks (200) when not provided", async () => {
+        it('accepts default maxTicks (200) when not provided', async () => {
             const runtime = mockRuntime();
             runtime.tick = jest.fn().mockResolvedValue('completed');
             const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });

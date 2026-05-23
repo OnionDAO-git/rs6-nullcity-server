@@ -386,13 +386,18 @@ Safe public module facade building blocks are implemented, but the public member
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
 
 - `[ ]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
-- `[ ]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
-- `[ ]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
+- `[x]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
+  - *Completed: Implemented in PatronGateway.offerTo to deduct player shards, boost resident attention, and log standing points.*
+- `[x]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
+  - *Completed: StandingLedger implemented with canonical thresholds (Stranger/Acquaintance/Ally/Officer).*
 - `[ ]` **J4: Letters system.** Four canonical kinds (`standing | epitaph | civic | broadcast`). In-game scroll/postbag delivery + web inbox parity. Denormalised sender snapshot preserved post-death.
-- `[ ]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
-- `[ ]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
+- `[x]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
+  - *Completed: Landmark witnessing implemented via witnessAt on PatronGateway, logging patron actions to library timeline.*
+- `[x]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
+  - *Completed: Birth sponsorship implemented via sponsorBirth in PatronGateway with three-part debits and 24h cooldown validation.*
 - `[ ]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
-- `[ ]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
+- `[x]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
+  - *Completed: Integrated in PatronGateway to record all actions to both the trajectory builder and the library timeline.*
 
 ## Workstream K: Factions Adapted For Runescape
 
@@ -485,7 +490,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-22 by Codex live smoke: autonomous real-gateway `combat-prayer-10m` passed in 96s with `safeAttackActions=6`, `survivalActions=2`, `pickupBonesActions=2`, `buryActions=2`, `prayerXpIncreased=1`, `deathEvents=0`, and visible dashboard evidence for attack, retreat, loot, and bury actions.
 - `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
   - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
-- `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
+- `[x]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
   - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
   - Started 2026-05-23 on `agents/wip`: extend `follow-and-chat-5m` so autonomous proof must cover follow, status, wait/stop pause, and resuming follow after a new direct command.

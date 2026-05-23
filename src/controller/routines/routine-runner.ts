@@ -204,12 +204,7 @@ function reject(reason: RoutineRejectionReason): RunRoutineResponse {
     return { status: 'rejected', ticksUsed: 0, effectEvidenceCount: 0, lastError: reason };
 }
 
-function preempted(
-    ticksUsed: number,
-    reason: RoutinePreemptionReason,
-    hints: string[],
-    effectEvidenceCount: number,
-): RunRoutineResponse {
+function preempted(ticksUsed: number, reason: RoutinePreemptionReason, hints: string[], effectEvidenceCount: number): RunRoutineResponse {
     return {
         status: 'preempted',
         ticksUsed,

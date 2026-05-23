@@ -1,10 +1,5 @@
 import { CurrencyLedger } from './currency-ledger';
-import {
-    CheckInTracker,
-    DAILY_CHECK_IN_SHARDS,
-    REFERRAL_BONUS_SHARDS,
-    type CheckInResult,
-} from './check-in-tracker';
+import { CheckInTracker, DAILY_CHECK_IN_SHARDS, REFERRAL_BONUS_SHARDS, type CheckInResult } from './check-in-tracker';
 
 describe('CheckInTracker', () => {
     describe('canonical reward sizes (Notion Narrative V2)', () => {

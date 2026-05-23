@@ -69,11 +69,7 @@ export class CheckInTracker {
     }
 
     /** Rehydrate from a previously-snapshotted state. */
-    static fromSnapshot(
-        ledger: CurrencyLedger,
-        snapshot: CheckInTrackerSnapshot,
-        options: CheckInTrackerOptions = {},
-    ): CheckInTracker {
+    static fromSnapshot(ledger: CurrencyLedger, snapshot: CheckInTrackerSnapshot, options: CheckInTrackerOptions = {}): CheckInTracker {
         const tracker = new CheckInTracker(ledger, options);
         for (const [humanId, dates] of Object.entries(snapshot.checkInDates)) {
             tracker.checkInDates.set(humanId, new Set(dates));
@@ -99,10 +95,7 @@ export class CheckInTracker {
         return { credited: true, shards: DAILY_CHECK_IN_SHARDS };
     }
 
-    recordWorkshopAttendance(
-        humanId: string,
-        options: RecordWorkshopAttendanceOptions = {},
-    ): RecordWorkshopAttendanceResult {
+    recordWorkshopAttendance(humanId: string, options: RecordWorkshopAttendanceOptions = {}): RecordWorkshopAttendanceResult {
         const { referredBy } = options;
         if (!referredBy || referredBy === humanId) {
             return { referralCredited: false };
