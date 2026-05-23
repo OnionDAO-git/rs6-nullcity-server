@@ -351,6 +351,25 @@ export function isOwnedByAnotherActor(item: BodyWorldItem, residentId?: string, 
     return !residentIds.includes(owner);
 }
 
+/** True when the ground item belongs to the resident. */
+export function isOwnedByResident(item: BodyWorldItem, residentId?: string, perceptionResidentId?: string): boolean {
+    if (!item.ownerId) {
+        return false;
+    }
+    const owner = normalizeActorId(item.ownerId);
+    const residentIds = [residentId, perceptionResidentId].filter((id): id is string => Boolean(id)).map(normalizeActorId);
+    return residentIds.includes(owner);
+}
+
+/**
+ * Self-owned logs commonly appear for a tick after lighting a fire, but
+ * the pickup target is already gone by the time the action reaches the
+ * engine. Chopping a fresh tree is more reliable than chasing them.
+ */
+export function isStaleSelfOwnedLog(item: BodyWorldItem, residentId?: string, perceptionResidentId?: string): boolean {
+    return isFiremakingLog(item) && isOwnedByResident(item, residentId, perceptionResidentId);
+}
+
 /** Stable key uniquely identifying a ground-pickup target for cooldown tracking. */
 export function pickupItemKey(item: BodyWorldItem): string {
     return `${item.itemId}:${item.key || ''}:${item.position.x},${item.position.y},${item.position.level}`;
@@ -384,6 +403,7 @@ export function opportunisticPickupAction(
         .filter(candidate => {
             if (
                 (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
+                isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) ||
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
                 isPickupOnCooldown(candidate, pickupCooldowns, currentTick)

@@ -504,6 +504,18 @@ describe('opportunisticPickupAction', () => {
         expect(action).toBeUndefined();
     });
 
+    it('skips self-owned logs because they are usually stale after firemaking', () => {
+        const log = ground(LOGS, 100, 100, 'rs:logs', 'player:res:agent');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { id: 'resident:res:agent', position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [log] },
+            }),
+            'res:agent',
+        );
+        expect(action).toBeUndefined();
+    });
+
     it('returns undefined when ground item is owned by a different actor', () => {
         const coin = ground(COINS, 100, 100, 'rs:coins', 'player:somebody-else');
         const action = opportunisticPickupAction(

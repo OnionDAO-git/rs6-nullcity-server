@@ -37,6 +37,7 @@ import {
     isLowHealth,
     isOwnedByAnotherActor,
     isPickupOnCooldown,
+    isStaleSelfOwnedLog,
     isUsefulGroundItem,
     itemLabel,
     levelOneWoodcuttingAction,
@@ -1706,6 +1707,7 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string, g
         .filter(
             candidate =>
                 !(suppressFiremakingLogPickup && isFiremakingLog(candidate)) &&
+                !isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) &&
                 isUsefulGroundItem(candidate) &&
                 !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id),
         )

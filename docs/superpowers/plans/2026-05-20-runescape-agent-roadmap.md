@@ -275,6 +275,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: find level-appropriate tree, chop logs, make fire, repeat safely.
   - Success metric: produces at least one fire from self-chopped logs in benchmark or live test.
   - Verified 2026-05-21 on `nullcity`: autonomous `woodcutting-firemaking-10m` passed (`status=passed`, `score=1`, artifact `/tmp/oniondao-wood-fire-bench-post-stale-log-fix/bench_20260521072605_woodcutting_firemaking_10m.json`). This pass also suppresses stale fire-adjacent log pickups and stale "Next: pick up logs" beacons after firemaking consumes the logs.
+  - Verified follow-up 2026-05-22 on `codex/q-stuck-recovery`: self-owned `rs:logs` are now treated as stale pickup bait in Body routines and presence-beacon next-step suggestions. Focused tests cover both paths, and a live controller loop moved to a tree, chopped, lit a fire, then resumed fresh woodcutting instead of chasing the consumed self-owned logs.
 
 - `[x]` **G2: Fishing plus cooking loop.**
   - Deliverable: find fishing spot, use small net, catch shrimp, cook on range/fire when available.

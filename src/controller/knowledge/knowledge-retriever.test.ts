@@ -74,7 +74,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves smithing knowledge for a smelt-bronze query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'smelt copper and tin into a bronze bar at a furnace', { limit: 2 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'smelt copper and tin into a bronze bar at a furnace', {
+                limit: 2,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('skill-smithing-basic');
@@ -84,7 +86,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves trading knowledge for a trade-with-player query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'trade items with another player using trade request', { limit: 2 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'trade items with another player using trade request', {
+                limit: 2,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('skill-trading-basic');
