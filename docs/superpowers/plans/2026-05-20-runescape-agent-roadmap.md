@@ -187,6 +187,9 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: humans can see active goal, recent action, evidence, final status, and failure reason.
   - Verification: Playwright/browser inspection with `res:agent`.
   - Partial 2026-05-21 on `nullcity`: resident detail Spark Activity now surfaces Thinking/Nervous/Body state, current goal, recent inference/action/feed, and explicitly distinguishes gateway-online residents that are still waiting for controller runtime state. Dashboard spawn now writes controller-discoverable SOUL files for autonomous residents, and the controller discovers valid SOUL files from `souls.dir` during reconcile.
+  - Partial 2026-05-23 in `rs6-nullcity-residents-dashboard`: dashboard defaults now read controller runtime/log roots from `data/controller/*` and write default souls to the controller-discoverable starter-souls directory, so a local default launch surfaces resident runtime state without env overrides. Activity labels now render trade request/offer/accept/decline as human-readable actions. Verified with dashboard tests, typecheck, check, build, a temp API smoke showing `residentsWithRuntime=5`, and browser smoke at `/residents/res%3Aagent` showing SPARK Activity, runtime active, active goal, and module identity.
+  - Partial 2026-05-23 in `rs6-nullcity-residents-dashboard`: resident runtime API now summarizes controller `evidence/progress/*.jsonl`, and the resident SPARK Activity Body panel shows `Progress` as either current progress, no-progress, or stuck ticks with last meaningful progress reasons. Verified with dashboard tests, typecheck, check, build, temp API smoke for `res:agent` (`stuckTicks=98`), and browser smoke showing `Progress stuck 98 ticks`.
+  - Partial 2026-05-23 in `rs6-nullcity-residents-dashboard`: progress row is now freshness-aware, so old evidence for an offline resident renders as `offline; last ...` with sample age rather than implying current activity. Verified with activity regression, dashboard tests, typecheck, check, build, and browser smoke showing `Progress offline; last stuck 98 ticks 9h ago`.
 
 - `[x]` **D3: Add benchmark run list and detail pages.**
   - Files: dashboard benchmark routes/components
@@ -235,6 +238,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: combat, prayer, follow, fishing, firemaking, and woodcutting attempts are suggested against the workflow that produced the action, not whichever visible workflow sorts first.
   - Verification: focused knowledge tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: normalized action causes before classification, kept combat movement and prayer-driven attacks under `safe-combat`, kept bury-bones under `train-prayer`, and preserved follow attribution. Focused knowledge tests, typecheck, lint, build, and full Jest suite passed.
+
+- `[x]` **E6: Trade-aware knowledge suggestion attribution.**
+  - Files: `src/controller/knowledge/game-skill-context.ts`, `src/controller/knowledge/game-skill-context.test.ts`
+  - Deliverable: trade request/offer/accept/decline attempts generate review suggestions against a trading workflow, not the first visible starter workflow.
+  - Verification: focused knowledge tests plus typecheck, lint, format, build, and live autonomous `trading-giving-5m` smoke.
+  - Verified 2026-05-23 on `agents/wip`: added trade workflow availability, trade/follow/woodcutting speech attribution, and focused regression coverage. `typecheck`, `lint`, `format`, `build`, focused knowledge+trading tests, and live autonomous `trading-giving-5m` passed (`score=1`, artifact `/tmp/oniondao-trading-giving-bench-e6-final/bench_20260523095325_trading_giving_5m.json`) with suggestions attributed to `follow-codex`, `train-woodcutting`, and `trade-request` instead of `make-fire`.
 
 ## Workstream F: Human-Like Behavior Layer
 
@@ -297,9 +306,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Success metric: prayer XP/level evidence or action success event.
   - Verified 2026-05-21 on `nullcity`: `combat-prayer-10m` live autonomous smoke proved safe goblin combat, bones pickup, burial, Prayer XP, and survival under `onion.runescape.standard`.
 
-- `[ ]` **G4: Trading/giving items.**
+- `[x]` **G4: Trading/giving items.**
   - Deliverable: request trade, offer simple item, accept/decline safely, describe trade state.
   - Success metric: test covers trade request, offer, accept, and decline.
+  - Started 2026-05-23 on `agents/wip`: Codex is adding a dedicated benchmark/verifier so the scattered G4 action tests become a repeatable proof of visible trading behavior.
+  - Verified 2026-05-23 on `agents/wip`: `trading-giving-5m` now covers request, safe item offer, two-stage accept, unsafe decline, CLI registration, and live autonomous proof against the local server (`score=1`, run `bench_20260523092537_trading_giving_5m`).
 
 - `[~]` **G5: Follow and command loop.**
   - Deliverable: agent follows configured player, responds to "agent come here", "agent make fire", "agent stop", "agent status".
@@ -363,24 +374,30 @@ Safe public module facade building blocks are implemented, but the public member
   - Started 2026-05-23 on `agents/wip`: wire Claude's pure Library reader into the runtime prompt paths so a resident can remember recent story/patron events instead of only writing them.
   - Verified 2026-05-23 on `agents/wip`: `MemoryStore.retrieve()` now prepends bounded recent Library timeline memories; standard Hybrid Brain/Body prompts and the legacy SPARK envelope path render those memories. Focused red/green tests, typecheck, lint, format, build, full Jest, and `git diff --check` passed.
 
-- `[>]` **I5: Prove Library memory recall through a benchmark.**
+- `[x]` **I5: Prove Library memory recall through a benchmark.**
   - Files: `src/controller/benchmarks/**`, `src/controller/thinking/hybrid-agent-thinking-module.ts`
   - Deliverable: autonomous benchmark seeds prior Library events, asks the resident a normal nearby-player question, and verifies the resident recalls the seeded person/item/promise in public chat.
   - Verification: red/green benchmark verifier + CLI tests, focused thinking prompt test, dry-run, typecheck, lint, build, and full Jest suite when no parallel WIP tests are active.
   - Started 2026-05-23 on `agents/wip`: add a `memory-recall-3m` task and ensure non-command chat replies can see Library memories.
+  - Verified 2026-05-23 on `agents/wip`: `memory-recall-3m` seeds Library memories, prompts normal nearby-player recall chat, rejects JSON-like prompt echo, and passed live autonomous score=1. Format, lint, typecheck, build, full Jest 1092/1092, and `git diff --check` passed.
 
 ## Workstream J: Patron / Human-Attention Loop
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
 
 - `[ ]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
-- `[ ]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
-- `[ ]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
+- `[x]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
+  - *Completed: Implemented in PatronGateway.offerTo to deduct player shards, boost resident attention, and log standing points.*
+- `[x]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
+  - *Completed: StandingLedger implemented with canonical thresholds (Stranger/Acquaintance/Ally/Officer).*
 - `[ ]` **J4: Letters system.** Four canonical kinds (`standing | epitaph | civic | broadcast`). In-game scroll/postbag delivery + web inbox parity. Denormalised sender snapshot preserved post-death.
-- `[ ]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
-- `[ ]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
+- `[x]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
+  - *Completed: Landmark witnessing implemented via witnessAt on PatronGateway, logging patron actions to library timeline.*
+- `[x]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
+  - *Completed: Birth sponsorship implemented via sponsorBirth in PatronGateway with three-part debits and 24h cooldown validation.*
 - `[ ]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
-- `[ ]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
+- `[x]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
+  - *Completed: Integrated in PatronGateway to record all actions to both the trajectory builder and the library timeline.*
 
 ## Workstream K: Factions Adapted For Runescape
 
@@ -473,7 +490,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-22 by Codex live smoke: autonomous real-gateway `combat-prayer-10m` passed in 96s with `safeAttackActions=6`, `survivalActions=2`, `pickupBonesActions=2`, `buryActions=2`, `prayerXpIncreased=1`, `deathEvents=0`, and visible dashboard evidence for attack, retreat, loot, and bury actions.
 - `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
   - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
-- `[~]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
+- `[x]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.
   - Partial 2026-05-22: direct `make fire` alias is covered; unknown addressed commands now get a polite supported-action hint.
   - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
   - Started 2026-05-23 on `agents/wip`: extend `follow-and-chat-5m` so autonomous proof must cover follow, status, wait/stop pause, and resuming follow after a new direct command.
@@ -505,6 +522,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
   - Benchmark proof is now visible in the dashboard; the next proof-loop slice should make new autonomous benchmark runs easier to launch/compare from a single operator command or dashboard action.
   - Human-like next slice: finish F3 help-request behavior when no recovery move exists, then build a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
+  - Verified 2026-05-23 on `agents/wip`: fresh autonomous `make-fire-5m` live benchmark passed against the running game (`runId=bench_20260523114243_make_fire_5m`, `score=1`, `selectedModuleActions=4`, `selectedModuleInferences=2`, `successfulActionEffects=1`, `firesObserved=1`). The dashboard benchmark detail page showed the run, pass status, leaderboard row, metrics, and `use_item_on_item` evidence after the artifact was copied into ignored `data/benchmarks/`.
 
 ## Agent Update Protocol
 

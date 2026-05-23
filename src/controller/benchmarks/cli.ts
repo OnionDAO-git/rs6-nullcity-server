@@ -17,6 +17,7 @@ import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
+import { TRADING_GIVING_5M_TASK_ID, makeTradingGiving5mBenchmarkTask } from './tasks/trading-giving-5m';
 import { WOODCUTTING_FIREMAKING_10M_TASK_ID, makeWoodcuttingFiremaking10mBenchmarkTask } from './tasks/woodcutting-firemaking-10m';
 
 export interface BenchmarkCliOptions {
@@ -45,6 +46,7 @@ const CORE_TASK_IDS = [
     FISHING_COOKING_10M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
+    TRADING_GIVING_5M_TASK_ID,
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
@@ -230,6 +232,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === MEMORY_RECALL_3M_TASK_ID) {
         return makeMemoryRecall3mBenchmarkTask();
+    }
+    if (taskId === TRADING_GIVING_5M_TASK_ID) {
+        return makeTradingGiving5mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }

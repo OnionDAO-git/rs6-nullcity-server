@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { CurrencyLedger } from './currency-ledger';
+import { produceStandingTierLetter } from './letters-producer';
+import type { LettersStore } from './letters-store';
 import { StandingLedger, StandingTier } from './standing-ledger';
 import { ResidentRuntime } from '../resident-runtime';
 
@@ -37,6 +39,14 @@ export interface PatronGatewayOptions {
     standingLedger: StandingLedger;
     runtimes: Map<string, ResidentRuntime>;
     soulsDir?: string;
+    /**
+     * Optional inbox dispatcher. When present, every verb that crosses a
+     * standing tier (J-α-2 StandingLedger.recordSupport returns tierCrossed)
+     * also produces a {@link Letter} via {@link produceStandingTierLetter}
+     * and appends it to the recipient's inbox. Letters whose tier is the
+     * `stranger` sentinel are skipped (per `isUserFacingTier`).
+     */
+    lettersStore?: LettersStore;
     onResidentBorn?: (name: string) => void | Promise<void>;
     now?: () => Date;
 }
@@ -78,6 +88,16 @@ export class PatronGateway {
         const faction = (runtime.getState() as any).faction || 'embassy';
         const standingResult = this.options.standingLedger.recordSupport(req.humanId, faction, req.amount, {
             reason: 'mercy_infusion',
+            ts: nowString,
+        });
+
+        // 3a. Letter dispatch on tier crossing (J-δ-β-2).
+        this.dispatchTierLetter({
+            humanId: req.humanId,
+            faction,
+            residentName: req.residentName,
+            tierCrossed: standingResult.tierCrossed,
+            amount: req.amount,
             ts: nowString,
         });
 
@@ -161,6 +181,17 @@ export class PatronGateway {
         // Record standing (+10 standing points, instantly making them an acquaintance)
         const standingResult = this.options.standingLedger.recordSupport(req.humanId, req.factionId, 10, {
             reason: 'birth_sponsorship',
+            ts: nowString,
+        });
+
+        // Letter dispatch on tier crossing (J-δ-β-2). Birth always grants +10,
+        // which crosses stranger→acquaintance for first-time sponsors.
+        this.dispatchTierLetter({
+            humanId: req.humanId,
+            faction: req.factionId,
+            residentName: req.name,
+            tierCrossed: standingResult.tierCrossed,
+            amount: 10,
             ts: nowString,
         });
 
@@ -249,5 +280,35 @@ export class PatronGateway {
 
     private resolveTime(): Date {
         return this.options.now ? this.options.now() : new Date();
+    }
+
+    /**
+     * Produce + append a standing-tier letter for a verb that returned a
+     * tierCrossed outcome. No-op when lettersStore is not configured or when
+     * no threshold was crossed; produceStandingTierLetter additionally
+     * returns null for the `stranger` sentinel so that path is also covered.
+     */
+    private dispatchTierLetter(input: {
+        humanId: string;
+        faction: string;
+        residentName: string;
+        tierCrossed: StandingTier | null;
+        amount: number;
+        ts: string;
+    }): void {
+        if (!this.options.lettersStore || !input.tierCrossed) {
+            return;
+        }
+        const letter = produceStandingTierLetter({
+            humanId: input.humanId,
+            faction: input.faction,
+            residentName: input.residentName,
+            tierCrossed: input.tierCrossed,
+            amount: input.amount,
+            ts: input.ts,
+        });
+        if (letter) {
+            this.options.lettersStore.append(letter);
+        }
     }
 }

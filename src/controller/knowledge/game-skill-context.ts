@@ -221,9 +221,10 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
     const action = record(attempt.action);
     const kind = textField(action.kind);
     const option = textField(action.option);
+    const text = textField(action.text);
     const cause = `${textField(action.cause)} ${textField(attempt.cause)}`.trim();
     const target = record(action.target);
-    const combined = `${kind} ${option} ${cause} ${targetText(target)}`.toLowerCase();
+    const combined = `${kind} ${option} ${text} ${cause} ${targetText(target)}`.toLowerCase();
     const words = combined.replace(/[_:-]+/g, ' ');
 
     if (kind === 'item_action' && /\bbury\b/.test(option)) {
@@ -244,8 +245,14 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
     if (/\bfiremaking\b|\bmake fire\b|\btinderbox\b|\bwoodcutting chain firemaking\b|\bfiremaking fallback\b/.test(words)) {
         return 'make-fire';
     }
-    if (/\bwoodcutting\b|\bchop\b|\bchop down\b/.test(words)) {
+    if (/\bwoodcutting\b|\bchop\b|\bchopping\b|\bchop down\b|\btree for logs\b/.test(words)) {
         return 'train-woodcutting';
+    }
+    if (
+        /^trade_/.test(kind) ||
+        /\btrade\b|\btrading\b|\btrade request\b|\btrade offer\b|\btrade accept\b|\btrade decline\b|\bdirect chat trade\b/.test(words)
+    ) {
+        return 'trade-request';
     }
     if (/\bfollow\b|\bfollow codex\b|\bcodex\b/.test(words)) {
         return 'follow-codex';
@@ -278,6 +285,7 @@ function evaluateWorkflows(goalText: string, perceptionText: string, facts: Perc
         evaluateFishing(relevanceText, evidenceText, facts),
         evaluatePrayer(relevanceText, evidenceText, facts),
         evaluateSafeCombat(relevanceText, evidenceText, facts),
+        evaluateTrading(relevanceText, evidenceText, facts),
         evaluateFollow(relevanceText, evidenceText, facts),
     ].filter((availability): availability is WorkflowAvailability => Boolean(availability));
 }
@@ -454,6 +462,46 @@ function evaluateSafeCombat(relevanceText: string, evidenceText: string, facts: 
     );
 }
 
+function evaluateTrading(relevanceText: string, evidenceText: string, facts: PerceptionFacts): WorkflowAvailability | undefined {
+    if (!/\btrade\b|\btrading\b|\boffer\b|trade_request|trade_offer|trade_accept|trade_decline/.test(relevanceText)) {
+        return undefined;
+    }
+
+    if (facts.hpFraction !== undefined && facts.hpFraction <= 0.2) {
+        return availability('trade-request', 'unsafe', 'Health is too low to safely handle a trade.', 'heal or retreat before trading', [
+            `hp fraction ${facts.hpFraction.toFixed(2)}`,
+        ]);
+    }
+
+    if (facts.activeTradeVisible || /active trade|trade_opened|trade_offer_updated|trade_accept/.test(evidenceText)) {
+        return availability(
+            'trade-request',
+            'can_do_now',
+            'A trade window is open or updating.',
+            'offer a safe item, accept fair terms, or decline unsafe terms',
+            ['active trade state visible'],
+        );
+    }
+
+    if (facts.tradeTargetVisible || /trade_request/.test(evidenceText)) {
+        return availability(
+            'trade-request',
+            'can_do_now',
+            'A tradable player or resident is visible.',
+            'trade_request the visible target, then offer, accept, or decline safely',
+            ['visible trade target'],
+        );
+    }
+
+    return availability(
+        'trade-request',
+        'missing_target',
+        'Trading needs a visible player or resident target.',
+        'move near the player first',
+        ['trade intent observed'],
+    );
+}
+
 function evaluateFollow(relevanceText: string, evidenceText: string, facts: PerceptionFacts): WorkflowAvailability | undefined {
     if (!/codex|follow|find|visible|where|meet/.test(relevanceText)) {
         return undefined;
@@ -569,6 +617,8 @@ interface PerceptionFacts {
     treeVisible: boolean;
     fishingSpotVisible: boolean;
     safeCombatTargetVisible: boolean;
+    tradeTargetVisible: boolean;
+    activeTradeVisible: boolean;
     codexVisible: boolean;
 }
 
@@ -586,6 +636,7 @@ function extractPerceptionFacts(perception: Perception): PerceptionFacts {
     const equipment = inventoryFacts(resident.equipment);
     const nearby = record(root.nearby);
     const availableActions = Array.isArray(root.availableActions) ? root.availableActions : [];
+    const nearbyPlayers = Array.isArray(nearby.players) ? nearby.players : [];
     const nearbyText = JSON.stringify(nearby).toLowerCase();
     const actionText = JSON.stringify(availableActions).toLowerCase();
     const hp = record(resident.hp);
@@ -613,6 +664,8 @@ function extractPerceptionFacts(perception: Perception): PerceptionFacts {
         treeVisible: /chop down|chop/.test(actionText) || /\b(tree|dead tree)\b/.test(nearbyText),
         fishingSpotVisible: /fishing spot/.test(nearbyText) || (/interact/.test(actionText) && /\bnet\b/.test(actionText)),
         safeCombatTargetVisible: /\b(chicken|cow|goblin|giant rat|rat)\b/.test(nearbyText),
+        tradeTargetVisible: nearbyPlayers.length > 0 || /trade_request/.test(actionText),
+        activeTradeVisible: Object.keys(record(resident.activeTrade)).length > 0,
         codexVisible: /\bcodex\b/.test(nearbyText),
     };
 
@@ -622,6 +675,8 @@ function extractPerceptionFacts(perception: Perception): PerceptionFacts {
         facts.treeVisible ? 'visible tree action' : '',
         facts.fishingSpotVisible ? 'visible fishing spot action' : '',
         facts.safeCombatTargetVisible ? 'visible safe combat target' : '',
+        facts.tradeTargetVisible ? 'visible trade target' : '',
+        facts.activeTradeVisible ? 'active trade window' : '',
         facts.codexVisible ? 'visible codex player' : '',
     ]
         .filter(Boolean)
