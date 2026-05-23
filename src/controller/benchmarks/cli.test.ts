@@ -165,6 +165,17 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"combat-prayer-10m","version":"0.1.0"');
     });
 
+    it('can dry-run the memory-recall benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'memory-recall-3m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"memory-recall-3m","version":"0.1.0"');
+    });
+
     it('writes reward convention artifacts after a benchmark run', async () => {
         const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-cli-reward-'));
         const writes: string[] = [];
@@ -253,12 +264,12 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(7);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(8);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":7');
-        expect(output).toContain('"passed":7');
-        expect(output).toContain('"averageScore":0.9285714285714286');
+        expect(output).toContain('"total":8');
+        expect(output).toContain('"passed":8');
+        expect(output).toContain('"averageScore":0.9375');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);

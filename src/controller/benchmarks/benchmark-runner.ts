@@ -53,12 +53,18 @@ export interface BenchmarkTaskPeer extends Omit<CreateResidentPayload, 'name'> {
     id: string;
 }
 
+export interface BenchmarkMemorySeed {
+    kind: 'library_timeline';
+    event: Record<string, unknown>;
+}
+
 export interface BenchmarkTask {
     id: string;
     version: string;
     timeoutMs: number;
     resident?: Omit<CreateResidentPayload, 'name'>;
     peers?: BenchmarkTaskPeer[];
+    memorySeeds?: BenchmarkMemorySeed[];
     run(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
     runAutonomous?(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
 }

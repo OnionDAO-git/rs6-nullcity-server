@@ -184,6 +184,8 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 const EARSHOT_TILES = 8;
 const CHAT_REPLIES_PER_WINDOW = 3;
 const WINDOW_TICKS = 10;
+const MAX_PROMPT_MEMORIES = 6;
+const MAX_PROMPT_MEMORY_CHARS = 360;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
@@ -268,6 +270,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             commandPrefix: this.commandPrefix(),
             gameSkill,
             progress: this.progressPromptInput(),
+            memories: this.promptMemories(perception as HybridPerception, 'brain'),
         });
         const response = await this.options.llm.complete({
             endpoint: this.endpointFor(behavior.brain),
@@ -322,6 +325,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             commandPrefix: this.commandPrefix(),
             gameSkill,
             progress: this.progressPromptInput(),
+            memories: this.promptMemories(perception as HybridPerception, 'body'),
             visibility,
         });
         const response = await this.options.llm.complete({
@@ -951,14 +955,16 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return undefined;
             }
 
+            const memories = this.promptMemories(perception, 'body');
             const prompt = [
                 `You are the RuneScape resident ${this.options.soul.frontmatter.display || this.options.soul.frontmatter.name}.`,
                 `Your character archetype is ${this.options.soul.frontmatter.archetype || 'default'}.`,
                 `Your voice register is ${this.options.soul.frontmatter.voice?.register || 'default'}.`,
                 this.options.soul.body ? `Character notes:\n${this.options.soul.body}` : '',
+                this.promptMemorySection(memories, 'body'),
                 `A player nearby said: "${event.text}".`,
-                `Reply to them in character. Keep it brief, under 160 characters, and fit your voice register and archetype.`,
-                `Do not include any JSON or markdown. Just output the plain text reply.`,
+                `Reply to them in character as one normal public chat sentence under 160 characters.`,
+                `Do not include JSON, fields, markdown, arrays, or labels. Do not echo this prompt. Output only the chat text.`,
             ]
                 .filter(Boolean)
                 .join('\n');
@@ -972,7 +978,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 ...(this.modelFor(this.behavior().brain) ? { model: this.modelFor(this.behavior().brain) } : {}),
             });
 
-            const replyText = cleanSpeech(response.text);
+            const replyText = this.cleanSmallTalkReply(response.text, normalizedText, memories);
             if (!replyText) {
                 return undefined;
             }
@@ -1808,6 +1814,62 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
+    private promptMemories(perception: HybridPerception, role: 'brain' | 'body'): string[] {
+        const goal = this.activeGoal();
+        const eventText = (perception.events || [])
+            .map(event => (typeof event.text === 'string' ? event.text : ''))
+            .filter(Boolean)
+            .slice(-3)
+            .join(' ');
+        const nearbyActors = [
+            ...(perception.nearby?.players || []),
+            ...(perception.nearby?.npcs || []),
+            ...(perception.nearby?.worldItems || []),
+        ]
+            .map(actor => ('name' in actor ? actor.name : undefined) || actor.key || '')
+            .filter(Boolean)
+            .slice(0, 8)
+            .join(' ');
+        const query = [role, goal?.description, ...(goal?.steps || []), eventText, nearbyActors].filter(Boolean).join(' ') || role;
+        try {
+            return this.options.memory
+                .retrieve(this.options.soul.frontmatter.name, query, MAX_PROMPT_MEMORIES)
+                .map(memory => memory.trim())
+                .filter(Boolean)
+                .slice(0, MAX_PROMPT_MEMORIES);
+        } catch {
+            return [];
+        }
+    }
+
+    private promptMemorySection(memories: string[], role: 'brain' | 'body'): string {
+        const lines = memories
+            .map(memory => `- ${memory.replace(/\s+/g, ' ').trim().slice(0, MAX_PROMPT_MEMORY_CHARS)}`)
+            .filter(line => line.length > 2);
+        if (lines.length === 0) {
+            return '';
+        }
+        return [
+            'Recent Library memories and resident notes:',
+            role === 'brain'
+                ? 'Use these as continuity: keep promises, remember patrons/players, and bias goal choice toward unfinished story threads.'
+                : 'Use these as continuity: if you speak or act, respect recent promises, patrons, and unfinished player requests.',
+            ...lines,
+        ].join('\n');
+    }
+
+    private cleanSmallTalkReply(text: string | undefined, normalizedQuestion: string, memories: string[]): string | undefined {
+        const structuredText = extractStructuredChatReply(text);
+        const clean = cleanSpeech(structuredText || text);
+        if (clean && !looksLikeStructuredEcho(clean)) {
+            return clean;
+        }
+        if (/\b(remember|memory|memories|recall)\b/.test(normalizedQuestion)) {
+            return memoryRecallFallback(memories);
+        }
+        return undefined;
+    }
+
     private shouldShareGoal(): boolean {
         const interval = this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;
         if (interval <= 0) {
@@ -2581,6 +2643,80 @@ function actorLike(value: unknown): Actor | undefined {
 
 function displayName(name: string): string {
     return name.replace(/^res:/i, '');
+}
+
+function extractStructuredChatReply(text: string | undefined): string | undefined {
+    const raw = text?.trim();
+    if (!raw) {
+        return undefined;
+    }
+    const candidate = raw
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/```\s*$/i, '')
+        .trim();
+    if (!candidate.startsWith('{') && !candidate.startsWith('[')) {
+        return undefined;
+    }
+
+    try {
+        const parsed = JSON.parse(candidate) as unknown;
+        return structuredReplyValue(parsed);
+    } catch {
+        return undefined;
+    }
+}
+
+function structuredReplyValue(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        return value.map(structuredReplyValue).find((candidate): candidate is string => !!candidate);
+    }
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    for (const key of ['reply', 'say', 'text', 'message']) {
+        if (typeof value[key] === 'string') {
+            return value[key];
+        }
+    }
+    return undefined;
+}
+
+function looksLikeStructuredEcho(text: string): boolean {
+    const sample = text.trim().slice(0, 180);
+    return sample.startsWith('{') || sample.startsWith('[') || /"memories"\s*:/.test(sample) || /"archetype"\s*:/.test(sample);
+}
+
+function memoryRecallFallback(memories: string[]): string | undefined {
+    const lines = memories.map(memory => memory.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const gift = lines.find(line => /patron gift from/i.test(line));
+    const promise = lines.find(line => /\b(promise|promised|shrimp|codex)\b/i.test(line));
+    const parts: string[] = [];
+
+    const giftMatch = gift?.match(/patron gift from\s+([^:]+):\s*([^()]+)/i);
+    if (giftMatch) {
+        parts.push(`${giftMatch[1].trim()} gave me ${giftMatch[2].trim().replace(/^rs:/i, '')}`);
+    } else if (gift) {
+        parts.push(gift.replace(/\s*\([^)]*\)\s*$/g, ''));
+    }
+
+    if (promise) {
+        const promiseText = promise
+            .replace(/^story_note:\s*/i, '')
+            .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+            .replace(/\s*\([^)]*\)\s*$/g, '')
+            .trim();
+        if (promiseText) {
+            parts.push(promiseText.replace(/^i\s+/i, 'I ').replace(/[.!?]+$/g, ''));
+        }
+    }
+
+    if (parts.length === 0) {
+        return undefined;
+    }
+    return cleanSpeech(`I remember ${parts.join(', and ')}.`);
 }
 
 function normalizeText(text: string): string {

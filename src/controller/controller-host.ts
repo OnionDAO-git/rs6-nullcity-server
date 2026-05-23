@@ -12,6 +12,10 @@ import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGame
 import { SoulLoader } from './soul/soul-loader';
 import { standardSparkModules, type SparkModule } from './spark';
 import { GatewayClient } from './transport/gateway-client';
+import { PatronStore } from './patron/patron-store';
+import { PatronGateway } from './patron/patron-gateway';
+import { CurrencyLedger } from './patron/currency-ledger';
+import { StandingLedger } from './patron/standing-ledger';
 
 export interface ControllerHostOptions {
     once?: boolean;
@@ -26,6 +30,8 @@ export interface ControllerHostOptions {
     gameSkill?: ResidentRuntimeGameSkill;
     sparkModules?: SparkModule[];
     runtimeFactory?: (options: ConstructorParameters<typeof ResidentRuntime>[0]) => ResidentRuntime;
+    patronStore?: PatronStore;
+    patronGateway?: PatronGateway;
 }
 
 export class ControllerHost {
@@ -48,6 +54,10 @@ export class ControllerHost {
     private reconcileInFlight?: Promise<void>;
     private reconcileQueued = false;
     private readonly inFlightPerceptions = new Set<Promise<void>>();
+    public readonly patronStore: PatronStore;
+    public readonly patronGateway: PatronGateway;
+    private readonly currencyLedger: CurrencyLedger;
+    private readonly standingLedger: StandingLedger;
 
     constructor(
         private readonly config: ControllerConfig,
@@ -86,6 +96,17 @@ export class ControllerHost {
                       })
                     : undefined,
             });
+        this.patronStore = options.patronStore || new PatronStore(config.memory.dir);
+        this.currencyLedger = this.patronStore.loadCurrency();
+        this.standingLedger = this.patronStore.loadStanding();
+        this.patronGateway =
+            options.patronGateway ||
+            new PatronGateway({
+                currencyLedger: this.currencyLedger,
+                standingLedger: this.standingLedger,
+                runtimes: this.runtimes,
+                soulsDir: config.souls.dir,
+            });
         this.bindGatewayEvents();
     }
 
@@ -109,6 +130,14 @@ export class ControllerHost {
         this.stopAllRuntimes('controller_stop');
         await this.drainInFlightPerceptions();
         await this.gameSkill.flush?.();
+        // Persist patron balance and standing states on shutdown defensively
+        try {
+            this.patronStore.saveCurrency(this.currencyLedger);
+            this.patronStore.saveStanding(this.standingLedger);
+        } catch (error) {
+            // eslint-disable-next-line no-console
+            console.error('[controller-host] patron ledger persist failed during shutdown', error);
+        }
         this.gateway.close();
     }
 

@@ -104,6 +104,15 @@ export class TrajectoryBuilder {
         return this.append('legacy_event', { event });
     }
 
+    recordPatron(fields: {
+        patronKind: 'patron_gift' | 'patron_witness' | 'patron_sponsor';
+        patronHandle: string;
+        artifact?: string;
+        note?: string;
+    }): TrajectoryLine {
+        return this.append('patron', fields);
+    }
+
     endTick(reason: EndTickReason): TrajectoryLine {
         return this.append('end_tick', { reason });
     }
