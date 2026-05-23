@@ -170,6 +170,12 @@ export const tradeActionTargetSchema = z
         message: 'trade target must include residentId or playerHandle',
     });
 
+const actionMetadataFields = {
+    cause: z.string().optional(),
+    voiceSource: z.enum(['phrasebook', 'inference', 'scripted']).optional(),
+    helpRequestReason: z.string().optional(),
+};
+
 export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('noop'), cause: z.string().optional() }),
     z.object({ kind: z.literal('logout'), cause: z.string().optional() }),
@@ -192,8 +198,8 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
     }),
     z.object({ kind: z.literal('drop'), slot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('eat'), slot: z.number().int().nonnegative() }),
-    z.object({ kind: z.literal('say'), text: z.string().min(1).max(240) }),
-    z.object({ kind: z.literal('whisper'), to: z.string().min(1), text: z.string().min(1).max(240) }),
+    z.object({ kind: z.literal('say'), text: z.string().min(1).max(240), ...actionMetadataFields }),
+    z.object({ kind: z.literal('whisper'), to: z.string().min(1), text: z.string().min(1).max(240), ...actionMetadataFields }),
     z.object({ kind: z.literal('dialogue_continue') }),
     z.object({ kind: z.literal('dialogue_choice'), optionIndex: z.number().int().nonnegative() }),
     // G4: controller-side trade_request accepts the controller-facing target

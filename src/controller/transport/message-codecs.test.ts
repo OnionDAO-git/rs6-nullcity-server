@@ -119,6 +119,19 @@ describe('agentActionSchema — G4 trading verbs', () => {
         });
     });
 
+    describe('action metadata', () => {
+        it('preserves voiceSource and helpRequestReason on say actions', () => {
+            const action: AgentAction = {
+                kind: 'say',
+                text: 'I need help getting unstuck.',
+                voiceSource: 'phrasebook',
+                helpRequestReason: 'blocked_by_obstacle',
+            };
+
+            expect(agentActionSchema.parse(action)).toEqual(action);
+        });
+    });
+
     it('round-trips all four G4 verbs through JSON without dropping fields', () => {
         const verbs: AgentAction[] = [
             { kind: 'trade_request', cause: 'a', target: { residentId: 'res:foo', playerHandle: 'codex' } },

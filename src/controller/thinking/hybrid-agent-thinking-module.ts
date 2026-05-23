@@ -214,6 +214,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return this.result([trade.action], trade.cause, 0, false);
         }
 
+        if (this.isManuallyPaused()) {
+            return this.result([], 'direct_chat_pause_hold', 0, true);
+        }
+
         if ((perception as HybridPerception).resident?.busy) {
             return { actions: [], cause: 'resident_busy', nooped: true };
         }
@@ -1102,6 +1106,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private async directChatAction(perception: HybridPerception): Promise<{ action: AgentAction; cause: string } | undefined> {
         const chat = latestAddressedChat(perception, this.commandPrefix(), this.cognition().lastDirectChatKey);
         if (!chat) {
+            if (perception.resident?.inCombat) {
+                this.cognition().tickTelemetry = {
+                    chat_reply_emitted: false,
+                    chat_reply_kind: 'polite_decline',
+                    refusalReason: 'busy_higher_priority_goal',
+                };
+                return undefined;
+            }
             return await this.nonCommandChatReaction(perception);
         }
 
