@@ -878,6 +878,39 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'On non-wilderness death: respawn at Lumbridge spawn 3222,3218,0; keep 3 most valuable items, lose all others (gravestone mechanics may apply in some configurations). On wilderness death with skull: lose ALL items. Reclaim path: (1) bank check at Lumbridge Castle bank 3208,3219,2 for stored items, (2) Bobs Brilliant Axes 3231,3203,0 for hatchet replacement (~16gp bronze), (3) Lumbridge General Store 3203,3247,0 for tinderbox/pot/jug/bucket/hammer (1-4gp each), (4) resume original goal once tools restored.',
     },
+    {
+        id: 'communication-public-chat-rules',
+        title: 'Communication: Public Chat Rules (When To Speak)',
+        topics: ['communication', 'social', 'public-chat', 'narration', 'silence'],
+        keywords: ['public chat', 'speak', 'say', 'chat', 'narrate', 'announce', 'when to speak', 'silence', 'spam'],
+        actions: ['say (only when one of the four conditions below is true)', 'remain silent otherwise'],
+        successSignals: ['chat history contains only relevant messages', 'no spam / no low-content "hi" / no redundant narration', 'players can follow what the resident is doing from chat alone'],
+        source: 'docs/runescape-skill/skills/combat.md § When To Ask For Help; src/controller/spark/runescape-nervous-rules.ts (presence beacon)',
+        summary:
+            'Speak publicly in exactly four conditions: (1) status query from a player ("what are you doing?") — answer with goal + next action + nearest landmark; (2) blocker encountered (no food / gate locked / stuck) — report so a helper can intervene; (3) major completion (quest done / level milestone) — share the achievement; (4) help needed (use the help-request-pattern entry). Otherwise stay silent. Never say "hi"/"hello"/redundant narration of every action; that is spam and crowds out signal.',
+    },
+    {
+        id: 'communication-help-request-pattern',
+        title: 'Communication: Help Request Pattern (Actionable Phrasing)',
+        topics: ['communication', 'help', 'request', 'trade', 'phrasing'],
+        keywords: ['help request', 'ask for help', 'phrasing', 'specific', 'actionable', 'sell', 'trade help', 'need item'],
+        actions: ['say "Need <count> <item> — anyone selling for <gp>?"', 'wait 2-3 ticks for response', 'if no response after 10 ticks, retry with simpler phrasing'],
+        successSignals: ['another player responds with trade offer', 'trade interface opens after agreement', 'help request completes (item received)'],
+        source: 'docs/runescape-skill/skills/combat.md § When To Ask For Help; docs/runescape-skill/skills/trading.md',
+        summary:
+            'A good help request is actionable, specific, and includes payment willingness. Pattern: "Need <count> <item> — anyone selling for <gp>?" Examples: "Need 10 cooked shrimp — anyone selling for 50gp each?" / "Need a bronze hatchet — anyone have a spare?" / "Lost in Falador — can someone show me to the bank?". Do NOT say vague things like "Im hungry" or "I need food" — those force the helper to guess what you want. Always pair help requests with willingness-to-pay or a clear blocker.',
+    },
+    {
+        id: 'communication-respond-to-mention',
+        title: 'Communication: Respond To Mention (Acknowledge Quickly)',
+        topics: ['communication', 'mention', 'respond', 'social', 'codex', 'visibility'],
+        keywords: ['mention', 'mentioned', 'addressed', 'name', 'respond', 'acknowledge', 'codex', 'player talked'],
+        actions: ['detect player name in incoming chat events', 'say acknowledgment within 2 ticks', 'answer the specific question OR say "checking" + return with answer within 5 ticks'],
+        successSignals: ['chat shows your acknowledgment after the mention', 'no >5 tick delay between mention and response', 'player sees that you noticed them'],
+        source: 'docs/runescape-skill/skills/combat.md § When To Ask For Help; src/controller/thinking/hybrid-agent-thinking-module.ts (mention detection)',
+        summary:
+            'When a player addresses you by name (e.g., "res:agent, what are you doing?"), acknowledge within 2 ticks. Pattern: answer the specific question if you can, OR say "checking — one moment" + provide the answer within 5 ticks. Silence after a direct mention reads as ignoring; that breaks the social contract with patrons + observers. If you cannot answer (broken goal, unknown player), say so explicitly rather than going silent.',
+    },
 ];
 
 const STOP_WORDS = new Set([

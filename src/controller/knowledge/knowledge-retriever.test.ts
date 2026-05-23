@@ -437,6 +437,36 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('communication entries (public chat, help requests, mention response)', () => {
+        it('retrieves the public-chat-rules entry for a chat-etiquette query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'when should I speak publicly in chat as a resident', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('communication-public-chat-rules');
+            const entry = results.find(result => result.entry.id === 'communication-public-chat-rules')?.entry;
+            expect(entry?.actions?.join(' ')).toMatch(/say/i);
+            expect(entry?.summary).toMatch(/status|blocker|completion|help|spam|not|silence/i);
+        });
+
+        it('retrieves the help-request-pattern entry for a help query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'how do I ask for help from other players for items', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('communication-help-request-pattern');
+            const entry = results.find(result => result.entry.id === 'communication-help-request-pattern')?.entry;
+            expect(entry?.summary).toMatch(/actionable|specific|item|count|selling/i);
+        });
+
+        it('retrieves the respond-to-mention entry for a mention query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'a player mentioned me by name in chat what do I do', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('communication-respond-to-mention');
+            const entry = results.find(result => result.entry.id === 'communication-respond-to-mention')?.entry;
+            expect(entry?.summary).toMatch(/acknowledge|2 ticks|name|mention|checking/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {
