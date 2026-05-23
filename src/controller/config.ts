@@ -53,6 +53,9 @@ export interface ControllerCliOptions {
     configPath: string;
     once: boolean;
     logEnvelope: boolean;
+    mcpHttpPort?: number;
+    mcpHttpHost: string;
+    mcpHttpPath: string;
 }
 
 const DEFAULT_CONFIG_PATH = 'controller.yml';
@@ -61,6 +64,9 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
     let configPath = process.env.CONTROLLER_CONFIG || DEFAULT_CONFIG_PATH;
     let once = false;
     let logEnvelope = false;
+    let mcpHttpPort = readOptionalPort(process.env.CONTROLLER_MCP_HTTP_PORT, 'CONTROLLER_MCP_HTTP_PORT');
+    let mcpHttpHost = process.env.CONTROLLER_MCP_HTTP_HOST || '127.0.0.1';
+    let mcpHttpPath = process.env.CONTROLLER_MCP_HTTP_PATH || '/controller/mcp';
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
@@ -68,6 +74,33 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
             once = true;
         } else if (arg === '--log-envelope') {
             logEnvelope = true;
+        } else if (arg === '--mcp-http-port') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a port`);
+            }
+            mcpHttpPort = readOptionalPort(next, arg);
+            i += 1;
+        } else if (arg.startsWith('--mcp-http-port=')) {
+            mcpHttpPort = readOptionalPort(arg.slice('--mcp-http-port='.length), '--mcp-http-port');
+        } else if (arg === '--mcp-http-host') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a host`);
+            }
+            mcpHttpHost = next;
+            i += 1;
+        } else if (arg.startsWith('--mcp-http-host=')) {
+            mcpHttpHost = arg.slice('--mcp-http-host='.length);
+        } else if (arg === '--mcp-http-path') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a path`);
+            }
+            mcpHttpPath = next;
+            i += 1;
+        } else if (arg.startsWith('--mcp-http-path=')) {
+            mcpHttpPath = arg.slice('--mcp-http-path='.length);
         } else if (arg === '--config' || arg === '-c') {
             const next = argv[i + 1];
             if (!next) {
@@ -80,7 +113,7 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
         }
     }
 
-    return { configPath, once, logEnvelope };
+    return { configPath, once, logEnvelope, mcpHttpPort, mcpHttpHost, mcpHttpPath };
 }
 
 export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): ControllerConfig {
@@ -219,6 +252,17 @@ function readOptionalResolvedPath(baseDir: string, value: unknown): string | und
 
 function readNumber(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function readOptionalPort(value: string | undefined, label: string): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+    const port = Number(value);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new Error(`${label} must be an integer port between 0 and 65535`);
+    }
+    return port;
 }
 
 function readBoolean(value: unknown, fallback: boolean): boolean {

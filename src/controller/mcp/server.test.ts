@@ -1,9 +1,14 @@
 import * as fs from 'fs';
+import * as http from 'http';
+import type { AddressInfo } from 'net';
 import * as path from 'path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ControllerMcpServer, logMcpCall } from './server';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { closeControllerMcpHttpServer, startControllerMcpHttpServer } from './http-server';
 
 describe('ControllerMcpServer', () => {
     let mockHost: any;
@@ -208,8 +213,91 @@ describe('ControllerMcpServer', () => {
             const parsedLog = JSON.parse(logContent);
             expect(parsedLog.resident).toBe('res:agent');
             expect(parsedLog.routine).toBe('make_fire');
+            expect(parsedLog.paramsHash).toMatch(/^sha256:/);
             expect(parsedLog.status).toBe('completed');
             expect(parsedLog.ticksUsed).toBe(1);
+        });
+
+        it('serves run_routine through the SDK Streamable HTTP transport with bearer auth', async () => {
+            jest.restoreAllMocks();
+            process.env.CONTROLLER_MCP_TOKENS = 'operator-token';
+            process.env.CONTROLLER_MCP_OPERATOR_FOR_operator_token = 'operator-codex';
+
+            const mockRuntime: any = {
+                tick: jest.fn().mockResolvedValue('completed'),
+                activeRoutineId: undefined,
+                _lastHints: ['routine completed in smoke'],
+            };
+            mockHost.getRuntime.mockReturnValue(mockRuntime);
+
+            const started = await startControllerMcpHttpServer(mockHost, { port: 0, path: '/controller/mcp' });
+            const client = new Client({ name: 'jest-controller-mcp-client', version: '0.0.0' });
+
+            try {
+                await client.connect(
+                    new StreamableHTTPClientTransport(new URL(started.url), {
+                        requestInit: { headers: { Authorization: 'Bearer operator-token' } },
+                    }),
+                );
+
+                const result = await client.callTool({
+                    name: 'run_routine',
+                    arguments: { resident: 'res:agent', routine: 'make_fire', maxTicks: 10 },
+                });
+
+                const content = result.content as Array<{ type: string; text?: string }>;
+                const parsed = JSON.parse(content[0].text || '{}');
+                expect(parsed).toEqual(
+                    expect.objectContaining({
+                        status: 'completed',
+                        ticksUsed: 1,
+                        effectEvidenceCount: 1,
+                    }),
+                );
+                expect(parsed.trajectoryHints).toEqual(['routine completed in smoke']);
+
+                const logContent = await fs.promises.readFile(logFilePath, 'utf8');
+                const parsedLog = JSON.parse(logContent);
+                expect(parsedLog.operator).toBe('operator-codex');
+                expect(parsedLog.status).toBe('completed');
+                expect(parsedLog.paramsHash).toMatch(/^sha256:/);
+            } finally {
+                await client.close();
+                await closeControllerMcpHttpServer(started.server);
+            }
+        });
+
+        it('returns 404 for non-MCP controller HTTP paths', async () => {
+            jest.restoreAllMocks();
+            process.env.CONTROLLER_MCP_TOKENS = 'operator-token';
+
+            const started = await startControllerMcpHttpServer(mockHost, { port: 0, path: '/controller/mcp' });
+            try {
+                const address = started.server.address() as AddressInfo;
+                const response = await httpGet(`http://127.0.0.1:${address.port}/not-mcp`);
+                expect(response.status).toBe(404);
+                expect(response.body).toContain('Not Found');
+            } finally {
+                await closeControllerMcpHttpServer(started.server);
+            }
+        });
+
+        it('does not write a second response when transport handling fails after headers are sent', async () => {
+            jest.restoreAllMocks();
+            jest.spyOn(ControllerMcpServer.prototype, 'handleHttp').mockImplementation(async (_request, response) => {
+                response.writeHead(202, { 'Content-Type': 'text/plain' });
+                response.write('partial');
+                throw new Error('transport failed after write');
+            });
+
+            const started = await startControllerMcpHttpServer(mockHost, { port: 0, path: '/controller/mcp' });
+            try {
+                const response = await httpGet(started.url);
+                expect(response.status).toBe(202);
+                expect(response.body).toBe('partial');
+            } finally {
+                await closeControllerMcpHttpServer(started.server);
+            }
         });
     });
 
@@ -251,3 +339,16 @@ describe('ControllerMcpServer', () => {
         });
     });
 });
+
+function httpGet(url: string): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+        http.get(url, response => {
+            let body = '';
+            response.setEncoding('utf8');
+            response.on('data', chunk => {
+                body += chunk;
+            });
+            response.on('end', () => resolve({ status: response.statusCode || 0, body }));
+        }).on('error', reject);
+    });
+}

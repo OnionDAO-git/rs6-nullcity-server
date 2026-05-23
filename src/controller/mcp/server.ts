@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import type { IncomingMessage, ServerResponse } from 'http';
 import * as path from 'path';
@@ -48,7 +48,7 @@ export class ControllerMcpServer {
     /**
      * Creates a new McpServer instance and registers resources and tools.
      */
-    public createServer(): McpServer {
+    public createServer(operator = 'default-operator'): McpServer {
         const server = new McpServer({
             name: 'oniondao-controller-mcp',
             version: '1.0.0',
@@ -95,10 +95,10 @@ export class ControllerMcpServer {
                         lastError: 'resident_not_found' as const,
                     };
                     await logMcpCall({
-                        operator: 'default-operator',
+                        operator,
                         resident,
                         routine,
-                        paramsHash: params ? JSON.stringify(params) : '{}',
+                        paramsHash: hashParams(params),
                         status: result.status,
                         ticksUsed: result.ticksUsed,
                         lastError: result.lastError,
@@ -127,10 +127,10 @@ export class ControllerMcpServer {
                 }
 
                 await logMcpCall({
-                    operator: 'default-operator',
+                    operator,
                     resident,
                     routine,
-                    paramsHash: params ? JSON.stringify(params) : '{}',
+                    paramsHash: hashParams(params),
                     status: response.status,
                     ticksUsed: response.ticksUsed,
                     lastError: response.lastError,
@@ -185,11 +185,23 @@ export class ControllerMcpServer {
             return;
         }
 
-        const _operator = process.env[`CONTROLLER_MCP_OPERATOR_FOR_${token}`] || 'default-operator';
+        const operator =
+            process.env[`CONTROLLER_MCP_OPERATOR_FOR_${token}`] ||
+            process.env[`CONTROLLER_MCP_OPERATOR_FOR_${operatorTokenEnvSuffix(token)}`] ||
+            'default-operator';
 
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-        const server = this.createServer();
+        const server = this.createServer(operator);
         await server.connect(transport);
         await transport.handleRequest(request, response);
     }
+}
+
+function hashParams(params: unknown): string {
+    const raw = JSON.stringify(params ?? {});
+    return `sha256:${createHash('sha256').update(raw).digest('hex')}`;
+}
+
+function operatorTokenEnvSuffix(token: string): string {
+    return token.replace(/[^A-Za-z0-9_]/g, '_');
 }

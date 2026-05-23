@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { loadControllerConfig, productionConfigIssues, sanitizedControllerConfigSummary } from './config';
+import { loadControllerConfig, parseControllerArgs, productionConfigIssues, sanitizedControllerConfigSummary } from './config';
 
 describe('controller config', () => {
     const originalEnv = { ...process.env };
@@ -173,5 +173,32 @@ describe('controller config', () => {
         expect(summary).toContain('residents=1');
         expect(summary).not.toContain('secret-token');
         expect(summary).not.toContain('sk-secret');
+    });
+
+    it('parses optional controller MCP HTTP flags and env defaults', () => {
+        process.env.CONTROLLER_MCP_HTTP_PORT = '43597';
+        process.env.CONTROLLER_MCP_HTTP_HOST = '127.0.0.2';
+        process.env.CONTROLLER_MCP_HTTP_PATH = '/mcp/env';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                mcpHttpPort: 43597,
+                mcpHttpHost: '127.0.0.2',
+                mcpHttpPath: '/mcp/env',
+            }),
+        );
+
+        expect(parseControllerArgs(['--mcp-http-port', '43600', '--mcp-http-host=127.0.0.1', '--mcp-http-path', '/mcp/test'])).toEqual(
+            expect.objectContaining({
+                mcpHttpPort: 43600,
+                mcpHttpHost: '127.0.0.1',
+                mcpHttpPath: '/mcp/test',
+            }),
+        );
+    });
+
+    it('rejects invalid controller MCP HTTP ports', () => {
+        expect(() => parseControllerArgs(['--mcp-http-port', 'nope'])).toThrow('--mcp-http-port must be an integer port');
+        expect(() => parseControllerArgs(['--mcp-http-port=70000'])).toThrow('--mcp-http-port must be an integer port');
     });
 });

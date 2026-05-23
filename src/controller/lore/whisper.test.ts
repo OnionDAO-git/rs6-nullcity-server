@@ -1,11 +1,5 @@
 import { LoreBus, type LoreEvent } from './lore-bus';
-import {
-    WHISPER_LORE_KIND,
-    WHISPER_DEFAULT_RADIUS_TILES,
-    publishWhisper,
-    type WhisperInput,
-    whisperInboxFor,
-} from './whisper';
+import { WHISPER_LORE_KIND, WHISPER_DEFAULT_RADIUS_TILES, publishWhisper, type WhisperInput, whisperInboxFor } from './whisper';
 
 function makeBus() {
     return new LoreBus({ now: () => new Date('2026-05-23T11:45:00.000Z') });
