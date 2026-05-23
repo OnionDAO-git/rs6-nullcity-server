@@ -284,15 +284,19 @@ export class ResidentRuntime {
     private observeRuntimeProgress(tick: number, perception: Perception): void {
         const delta = this.progressTracker.observe(progressSnapshotFromPerception(tick, perception));
         if (delta.meaningful) {
-            this.state.lastMeaningfulProgressAt = tick;
+            this.state.lastMeaningfulProgressAt = this.runtimeProgressTick(tick);
             this.state.stuckSince = undefined;
         } else if (delta.stuckSince !== null) {
-            this.state.stuckSince = delta.stuckSince;
+            this.state.stuckSince = this.runtimeProgressTick(delta.stuckSince);
         } else {
             this.state.stuckSince = undefined;
         }
 
         this.recordProgressEvidence(tick, delta);
+    }
+
+    private runtimeProgressTick(observedTick: number): number {
+        return Math.max(this.state.tick, observedTick);
     }
 
     private recordProgressEvidence(tick: number, delta: { meaningful: boolean; reasons: string[]; stuckSince: number | null }): void {

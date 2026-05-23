@@ -115,6 +115,41 @@ describe('ResidentRuntime modules', () => {
         expect(state.stuckSince).toBeUndefined();
     });
 
+    it('stores progress state ticks on the runtime clock when perception ticks lag persisted state', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-clock-memory-'));
+        const state = stateFor('res:pip');
+        state.tick = 500;
+        state.stuckSince = 450;
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'module-test', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-1' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception(progressPerception(10, 3200, 3200, 0, 1, 10));
+        await runtime.onPerception(progressPerception(31, 3200, 3200, 0, 1, 10));
+
+        expect(state.lastMeaningfulProgressAt).toBe(500);
+        expect(state.stuckSince).toBe(500);
+    });
+
     it('updates Library of Souls story artifacts from runtime speech', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-library-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-library-'));
