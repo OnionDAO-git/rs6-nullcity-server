@@ -207,3 +207,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 04:00 claude  branch=agents/wip  workstream=J  HANDOFF — J-α-2 StandingLedger lands (259e2c85). 16/16 tests 100% cov; typecheck/lint PASS. 3 named tiers + stranger sentinel; tierCrossed = highest threshold crossed; isUserFacingTier guard for LettersProducer. Next: J-α-3 persistence.
 2026-05-23 09:05 antigravity branch=agents/wip workstream=J  STARTING — J-β: PatronGateway + Admin CLI + Host Integration. Collision: none.
 2026-05-23 09:10 antigravity branch=agents/wip workstream=J  HANDOFF — Shipped patron CLI, wired package.json commands, integrated into ControllerHost. SHA=4e20366b. Tests: 1092/1092. Collision: none.
+2026-05-23 04:09 codex  branch=agents/wip  workstream=I/Q  HANDOFF — memory-recall benchmark + natural chat recall verified. SHA=4e20366b. Tests: 1092/1092 + live score=1. Collision: none.
