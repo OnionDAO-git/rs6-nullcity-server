@@ -418,7 +418,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Expand the agent's RuneScape knowledge so residents can act intelligently across all 23 RS skills, world geography, NPC inventory, items beyond starter, and basic quest awareness. Currently `docs/runescape-skill/` covers only ~5 starter skills. Spec: `docs/superpowers/specs/2026-05-22-deeper-game-skill-knowledge-design.md`. 6 plans (P-retrieval, P-skills-batch-1/2, P-world-geography, P-npcs-items, P-quests).
 
-- `[~]` **P1: Retrieval improvements (perception+goal-filtered).** Token-budgeted retrieval to avoid prompt envelope bloat.
+- `[x]` **P1: Retrieval improvements (perception+goal-filtered).** Token-budgeted retrieval to avoid prompt envelope bloat.
+  - *Completed: Implemented perception + goal filter context scoring boosts (1.5x and 3.0x respectively) and enforced token budgets for retrieved knowledge entries.*
 - `[x]` **P2: Skills batch 1 — promote `feat/skill-*.md` to consumed knowledge.** ~12 already-curated skill files get promoted into `docs/runescape-skill/skills/`.
   - *Completed: agility.md, combat.md, construction.md, cooking.md, crafting.md, farming.md, firemaking.md, fishing.md, fletching.md, herblore.md, mining.md, prayer.md, runecrafting.md, slayer.md, smithing.md, thieving.md, woodcutting.md. Remaining: none.*
 

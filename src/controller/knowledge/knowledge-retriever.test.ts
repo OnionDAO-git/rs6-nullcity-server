@@ -111,7 +111,11 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the restless-ghost quest entry for a ghost-skull query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'investigate the haunted graveyard ghost skull in lumbridge church', { limit: 2 });
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'investigate the haunted graveyard ghost skull in lumbridge church',
+                { limit: 2 },
+            );
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('quest-restless-ghost');
@@ -121,7 +125,11 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the romeo-and-juliet quest entry for a romeo-juliet query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'deliver romeos message to juliet in varrock and brew cadava potion', { limit: 2 });
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'deliver romeos message to juliet in varrock and brew cadava potion',
+                { limit: 2 },
+            );
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('quest-romeo-and-juliet');
@@ -131,7 +139,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the quests-starter-overview entry for a generic quest query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'how do quests work in runescape how do I start a quest', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'how do quests work in runescape how do I start a quest', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('quests-starter-overview');
@@ -247,6 +257,86 @@ describe('RuneScape knowledge retriever', () => {
             expect(admitted.map(e => e.id)).toEqual(['huge']);
             expect(admitted.budgetTrimmed).toBe(true);
             expect(admitted.budgetOvershot).toBe(true);
+        });
+    });
+
+    describe('relevance boosts and budget integration in retrieveKnowledge', () => {
+        const dummyEntries: KnowledgeEntry[] = [
+            {
+                id: 'skill-woodcutting-basic',
+                title: 'Skill: Woodcutting',
+                summary: 'Chop down trees.',
+                topics: ['woodcutting', 'tree'],
+                keywords: ['chop', 'logs', 'axe'],
+                source: 'test',
+                requiredItems: ['rs:bronze_axe'],
+                actions: ['chop'],
+            },
+            {
+                id: 'skill-firemaking-basic',
+                title: 'Skill: Firemaking',
+                summary: 'Lightcampfires.',
+                topics: ['firemaking'],
+                keywords: ['burn', 'fire', 'tinderbox'],
+                source: 'test',
+                requiredItems: ['rs:tinderbox'],
+                actions: ['light'],
+            },
+        ];
+
+        it('applies 1.5x boost for perception context matches', () => {
+            // Under normal circumstances, 'tree' query matches woodcutting topic (score 8 + base)
+            const normalResults = retrieveKnowledge(dummyEntries, 'tree', { minScore: 1 });
+            expect(normalResults[0].entry.id).toBe('skill-woodcutting-basic');
+            const baseScore = normalResults[0].score;
+
+            // With matching perception context (e.g. nearbyObjectKeys containing 'tree')
+            const boostedResults = retrieveKnowledge(dummyEntries, 'tree', {
+                minScore: 1,
+                perceptionContext: {
+                    nearbyNpcKeys: [],
+                    nearbyObjectKeys: ['tree'],
+                    recentActionKinds: [],
+                },
+            });
+            expect(boostedResults[0].entry.id).toBe('skill-woodcutting-basic');
+            expect(boostedResults[0].score).toBeCloseTo(baseScore * 1.5);
+        });
+
+        it('applies 3.0x boost for goal context matches', () => {
+            const normalResults = retrieveKnowledge(dummyEntries, 'tinderbox', { minScore: 1 });
+            expect(normalResults[0].entry.id).toBe('skill-firemaking-basic');
+            const baseScore = normalResults[0].score;
+
+            // With matching goal context (e.g. targetItem matching 'rs:tinderbox')
+            const boostedResults = retrieveKnowledge(dummyEntries, 'tinderbox', {
+                minScore: 1,
+                goalContext: {
+                    targetItem: 'rs:tinderbox',
+                },
+            });
+            expect(boostedResults[0].entry.id).toBe('skill-firemaking-basic');
+            expect(boostedResults[0].score).toBeCloseTo(baseScore * 3.0);
+        });
+
+        it('supports robust prefix stripping matches (rs:tinderbox -> tinderbox)', () => {
+            const boostedResults = retrieveKnowledge(dummyEntries, 'tinderbox', {
+                minScore: 1,
+                goalContext: {
+                    targetItem: 'tinderbox', // prefix-less matches prefix-ful requiredItem rs:tinderbox / id
+                },
+            });
+            // Should match 'skill-firemaking-basic' since it contains 'tinderbox' keyword/id
+            expect(boostedResults.length).toBeGreaterThan(0);
+        });
+
+        it('enforces token budget filtering and attaches metadata properties to results', () => {
+            const results = retrieveKnowledge(dummyEntries, 'tree or campfire firemaking woodcutting', {
+                minScore: 1,
+                tokenBudget: 15, // very small budget so it trims
+            });
+            expect(results.length).toBeLessThan(dummyEntries.length);
+            expect((results as any).budgetTrimmed).toBe(true);
         });
     });
 });

@@ -9,6 +9,7 @@ import {
     retrieveKnowledge,
 } from './knowledge-retriever';
 import { type KnowledgeSuggestion, knowledgeSuggestionDedupKey } from './suggestions';
+import { derivePerceptionContext, deriveGoalContext } from './context-derivation';
 
 export type WorkflowAvailabilityStatus = 'can_do_now' | 'missing_item' | 'missing_target' | 'unsafe' | 'blocked' | 'not_relevant';
 
@@ -76,9 +77,16 @@ export class GameSkillService {
                     `${availability.workflowId} ${availability.status} ${availability.reason} ${availability.nextActionHint || ''}`,
             )
             .join('\n');
+
+        const perceptionContext = derivePerceptionContext(input.perception);
+        const goalContext = deriveGoalContext(input.activeGoal);
+
         const knowledgeResults = retrieveKnowledge(this.entries, [goalText, perceptionText, availabilityText].join('\n'), {
             limit: 5,
             minScore: 4,
+            perceptionContext,
+            goalContext,
+            tokenBudget: 1500,
         });
         const knowledge = formatKnowledgeForPrompt(knowledgeResults, { maxChars: 1600 });
         const availability = renderAvailability(workflowAvailability);

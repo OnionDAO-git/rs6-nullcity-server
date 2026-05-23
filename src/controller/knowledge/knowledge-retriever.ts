@@ -1,4 +1,5 @@
 import { estimateTokens } from '../util/token-count';
+import type { PerceptionContext, GoalContext } from './context-derivation';
 
 export interface KnowledgeEntry {
     id: string;
@@ -21,6 +22,9 @@ export interface KnowledgeResult {
 export interface RetrieveKnowledgeOptions {
     limit?: number;
     minScore?: number;
+    perceptionContext?: PerceptionContext;
+    goalContext?: GoalContext;
+    tokenBudget?: number;
 }
 
 export interface FormatKnowledgeOptions {
@@ -269,21 +273,50 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         id: 'quests-starter-overview',
         title: 'Quests: Starter Overview',
         topics: ['quests', 'starter', 'progression', 'rewards'],
-        keywords: ['quest', 'quests', 'quest log', 'quest journal', 'quest tab', 'quest point', 'qp', 'start a quest', 'how do quests work', 'reward', 'objective'],
+        keywords: [
+            'quest',
+            'quests',
+            'quest log',
+            'quest journal',
+            'quest tab',
+            'quest point',
+            'qp',
+            'start a quest',
+            'how do quests work',
+            'reward',
+            'objective',
+        ],
         actions: ['interact', 'talk-to quest-giver NPC', 'item_action use required item'],
-        successSignals: ['quest log updates with next step', 'quest journal shows new progress line', 'quest tab marks quest in-progress (yellow) or complete (green)', 'reward XP / items / quest points granted on completion'],
+        successSignals: [
+            'quest log updates with next step',
+            'quest journal shows new progress line',
+            'quest tab marks quest in-progress (yellow) or complete (green)',
+            'reward XP / items / quest points granted on completion',
+        ],
         source: 'docs/runescape-skill/quests/; src/plugins/quests/*',
         summary:
-            'Quests are NPC-driven side objectives that grant XP, items, and quest points. Start a quest by talking to its quest-giver NPC (often marked with a yellow `!` icon). Quest log (interface tab) shows in-progress steps; talk to NPCs again to advance. Three starter quests are documented: Cook\'s Assistant (Lumbridge), The Restless Ghost (Lumbridge Church), and Romeo & Juliet (Varrock).',
+            "Quests are NPC-driven side objectives that grant XP, items, and quest points. Start a quest by talking to its quest-giver NPC (often marked with a yellow `!` icon). Quest log (interface tab) shows in-progress steps; talk to NPCs again to advance. Three starter quests are documented: Cook's Assistant (Lumbridge), The Restless Ghost (Lumbridge Church), and Romeo & Juliet (Varrock).",
     },
     {
         id: 'quest-cooks-assistant',
         title: "Quest: Cook's Assistant",
         topics: ['quest', 'cooks-assistant', 'cooking', 'lumbridge', 'starter'],
         keywords: ["cook's assistant", 'cook', 'flour', 'egg', 'milk', 'cake', 'lumbridge kitchen', 'duke', 'birthday'],
-        requiredItems: ['rs:pot_of_flour (Lumbridge windmill grind wheat)', 'rs:egg (from chicken coop east of Lumbridge)', 'rs:bucket_of_milk (Lumbridge cow field, bucket on cow)'],
-        actions: ['interact talk-to Cook', 'move_to Lumbridge Castle Kitchen 3208,3213,0', 'item_action use on player to gather, then trade to Cook'],
-        successSignals: ['Cook dialog accepts each ingredient', 'quest log advances', 'quest completes for 300 cooking XP + permanent kitchen range access'],
+        requiredItems: [
+            'rs:pot_of_flour (Lumbridge windmill grind wheat)',
+            'rs:egg (from chicken coop east of Lumbridge)',
+            'rs:bucket_of_milk (Lumbridge cow field, bucket on cow)',
+        ],
+        actions: [
+            'interact talk-to Cook',
+            'move_to Lumbridge Castle Kitchen 3208,3213,0',
+            'item_action use on player to gather, then trade to Cook',
+        ],
+        successSignals: [
+            'Cook dialog accepts each ingredient',
+            'quest log advances',
+            'quest completes for 300 cooking XP + permanent kitchen range access',
+        ],
         source: 'docs/runescape-skill/quests/cooks-assistant.md; src/plugins/quests/cooks-assistant/*',
         summary:
             "Cook's Assistant is the easiest Lumbridge starter quest. Talk to the Cook in Lumbridge Castle Kitchen (3208,3213,0). Bring him flour (windmill), egg (chicken coop), and milk (bucket on cow). Reward: 300 Cooking XP + always-on kitchen range access for higher cooking success rate.",
@@ -292,10 +325,36 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         id: 'quest-restless-ghost',
         title: 'Quest: The Restless Ghost',
         topics: ['quest', 'restless-ghost', 'prayer', 'lumbridge', 'starter', 'ghostspeak'],
-        keywords: ['restless ghost', 'ghost', 'haunted', 'graveyard', 'skull', 'father aereck', 'father urhney', 'lumbridge church', 'wizards tower', 'ghostspeak amulet', 'altar'],
-        requiredItems: ['rs:ghostspeak_amulet (from Father Urhney in swamp west of Lumbridge)', 'ghost skull (from haunted coffin in Lumbridge graveyard)'],
-        actions: ['interact talk-to Father Aereck', 'move_to Lumbridge Church 3242,3208,0', 'move_to Father Urhney 3147,3175,0 (Wizards Tower swamp)', 'interact open coffin in graveyard', 'item_action place skull on altar'],
-        successSignals: ['Father Aereck dialog progresses', 'inventory gains Ghostspeak Amulet', 'inventory gains ghost skull', 'quest completes for 1125 Prayer XP + retain Ghostspeak Amulet'],
+        keywords: [
+            'restless ghost',
+            'ghost',
+            'haunted',
+            'graveyard',
+            'skull',
+            'father aereck',
+            'father urhney',
+            'lumbridge church',
+            'wizards tower',
+            'ghostspeak amulet',
+            'altar',
+        ],
+        requiredItems: [
+            'rs:ghostspeak_amulet (from Father Urhney in swamp west of Lumbridge)',
+            'ghost skull (from haunted coffin in Lumbridge graveyard)',
+        ],
+        actions: [
+            'interact talk-to Father Aereck',
+            'move_to Lumbridge Church 3242,3208,0',
+            'move_to Father Urhney 3147,3175,0 (Wizards Tower swamp)',
+            'interact open coffin in graveyard',
+            'item_action place skull on altar',
+        ],
+        successSignals: [
+            'Father Aereck dialog progresses',
+            'inventory gains Ghostspeak Amulet',
+            'inventory gains ghost skull',
+            'quest completes for 1125 Prayer XP + retain Ghostspeak Amulet',
+        ],
         source: 'docs/runescape-skill/quests/restless-ghost.md; src/plugins/quests/restless-ghost/*',
         summary:
             'The Restless Ghost is a Lumbridge starter quest that rewards Prayer XP and the permanent Ghostspeak Amulet (lets you talk to all ghosts). Talk to Father Aereck at Lumbridge Church, then Father Urhney in the swamp west of Lumbridge for the amulet. Find the ghost in the graveyard, recover its skull from a coffin, and place it on the altar.',
@@ -305,9 +364,24 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         title: 'Quest: Romeo & Juliet',
         topics: ['quest', 'romeo-and-juliet', 'varrock', 'starter'],
         keywords: ['romeo', 'juliet', 'father lawrence', 'apothecary', 'cadava berries', 'cadava potion', 'varrock', 'message', 'love'],
-        requiredItems: ['rs:cadava_berries (from cadava bush southeast of Varrock)', "rs:message (from Romeo)", 'rs:cadava_potion (Apothecary brews from berries)'],
-        actions: ['interact talk-to Romeo', 'move_to Varrock Square 3211,3424,0', 'move_to Juliet 3158,3425,0 (west of Varrock)', 'move_to Father Lawrence 3254,3482,0 (Varrock Church)', 'move_to Apothecary 3194,3404,0', 'item_action use cadava potion on Juliet'],
-        successSignals: ['Romeo, Juliet, Father Lawrence, and Apothecary dialogs all advance correctly', 'inventory passes through message → berries → potion', 'quest completes for 5 quest points'],
+        requiredItems: [
+            'rs:cadava_berries (from cadava bush southeast of Varrock)',
+            'rs:message (from Romeo)',
+            'rs:cadava_potion (Apothecary brews from berries)',
+        ],
+        actions: [
+            'interact talk-to Romeo',
+            'move_to Varrock Square 3211,3424,0',
+            'move_to Juliet 3158,3425,0 (west of Varrock)',
+            'move_to Father Lawrence 3254,3482,0 (Varrock Church)',
+            'move_to Apothecary 3194,3404,0',
+            'item_action use cadava potion on Juliet',
+        ],
+        successSignals: [
+            'Romeo, Juliet, Father Lawrence, and Apothecary dialogs all advance correctly',
+            'inventory passes through message → berries → potion',
+            'quest completes for 5 quest points',
+        ],
         source: 'docs/runescape-skill/quests/romeo-and-juliet.md; src/plugins/quests/romeo-and-juliet/*',
         summary:
             'Romeo & Juliet is a Varrock starter quest worth 5 quest points (no XP). Romeo at Varrock Square asks you to deliver a message to Juliet west of Varrock. After Father Lawrence proposes a fake-death plan, the Apothecary brews a cadava potion from berries you collect southeast of Varrock; give the potion to Juliet to complete.',
@@ -344,6 +418,93 @@ const STOP_WORDS = new Set([
     'with',
 ]);
 
+function cleanId(val: string): string {
+    return val
+        .toLowerCase()
+        .replace(/^(rs:|npc:|player:)/, '')
+        .trim();
+}
+
+function matchesValue(key: string, val: string): boolean {
+    const ck = cleanId(key);
+    const cv = cleanId(val);
+    if (!ck || !cv) {
+        return false;
+    }
+    return ck === cv || cv.includes(ck) || ck.includes(cv);
+}
+
+function matchesAny(key: string, vals: string[] | undefined): boolean {
+    if (!vals) {
+        return false;
+    }
+    return vals.some(val => matchesValue(key, val));
+}
+
+function checkPerceptionMatch(entry: KnowledgeEntry, context: PerceptionContext): boolean {
+    const keysToCheck: string[] = [];
+    if (context.nearbyNpcKeys) {
+        keysToCheck.push(...context.nearbyNpcKeys);
+    }
+    if (context.nearbyObjectKeys) {
+        keysToCheck.push(...context.nearbyObjectKeys);
+    }
+    if (context.currentRegion) {
+        keysToCheck.push(context.currentRegion);
+    }
+    if (context.recentActionKinds) {
+        keysToCheck.push(...context.recentActionKinds);
+    }
+
+    for (const key of keysToCheck) {
+        if (matchesValue(key, entry.id)) {
+            return true;
+        }
+        if (matchesAny(key, entry.topics)) {
+            return true;
+        }
+        if (matchesAny(key, entry.keywords)) {
+            return true;
+        }
+        if (matchesAny(key, entry.requiredItems)) {
+            return true;
+        }
+        if (matchesAny(key, entry.actions)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function checkGoalMatch(entry: KnowledgeEntry, context: GoalContext): boolean {
+    const keysToCheck: string[] = [];
+    if (context.targetSkill) {
+        keysToCheck.push(context.targetSkill);
+    }
+    if (context.targetItem) {
+        keysToCheck.push(context.targetItem);
+    }
+    if (context.targetPlace) {
+        keysToCheck.push(context.targetPlace);
+    }
+    if (context.targetQuest) {
+        keysToCheck.push(context.targetQuest);
+    }
+
+    for (const key of keysToCheck) {
+        if (matchesValue(key, entry.id)) {
+            return true;
+        }
+        if (matchesAny(key, entry.topics)) {
+            return true;
+        }
+        if (matchesAny(key, entry.keywords)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 export function retrieveKnowledge(entries: KnowledgeEntry[], query: string, options: RetrieveKnowledgeOptions = {}): KnowledgeResult[] {
     const limit = options.limit ?? 4;
     const minScore = options.minScore ?? 1;
@@ -352,11 +513,42 @@ export function retrieveKnowledge(entries: KnowledgeEntry[], query: string, opti
         return [];
     }
 
-    return entries
-        .map(entry => scoreEntry(entry, terms))
+    let scoredResults = entries.map(entry => {
+        const result = scoreEntry(entry, terms);
+        let score = result.score;
+        if (options.perceptionContext && checkPerceptionMatch(entry, options.perceptionContext)) {
+            score *= 1.5;
+        }
+        if (options.goalContext && checkGoalMatch(entry, options.goalContext)) {
+            score *= 3.0;
+        }
+        return {
+            ...result,
+            score,
+        };
+    });
+
+    scoredResults = scoredResults
         .filter(result => result.score >= minScore)
-        .sort((a, b) => b.score - a.score || a.entry.title.localeCompare(b.entry.title))
-        .slice(0, limit);
+        .sort((a, b) => b.score - a.score || a.entry.title.localeCompare(b.entry.title));
+
+    if (options.tokenBudget !== undefined) {
+        const sortedEntries = scoredResults.map(r => r.entry);
+        const budgetedEntries = enforceKnowledgeBudget(sortedEntries, options.tokenBudget);
+        const budgetedSet = new Set(budgetedEntries.map(e => e.id));
+        const filteredResults = scoredResults.filter(r => budgetedSet.has(r.entry.id));
+        const limitedResults = filteredResults.slice(0, limit);
+        const finalResults = limitedResults as any;
+        finalResults.budgetTrimmed = budgetedEntries.budgetTrimmed;
+        finalResults.budgetOvershot = budgetedEntries.budgetOvershot;
+        return finalResults;
+    }
+
+    const limitedResults = scoredResults.slice(0, limit);
+    const finalResults = limitedResults as any;
+    finalResults.budgetTrimmed = false;
+    finalResults.budgetOvershot = false;
+    return finalResults;
 }
 
 export function renderKnowledgeEntry(entry: KnowledgeEntry): string {
