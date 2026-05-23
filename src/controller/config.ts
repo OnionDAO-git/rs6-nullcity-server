@@ -56,6 +56,10 @@ export interface ControllerCliOptions {
     mcpHttpPort?: number;
     mcpHttpHost: string;
     mcpHttpPath: string;
+    /** Letters inbox HTTP port (EVENT-D2c). Server is only started when this is set. */
+    lettersHttpPort?: number;
+    lettersHttpHost: string;
+    lettersHttpPath: string;
 }
 
 const DEFAULT_CONFIG_PATH = 'controller.yml';
@@ -67,6 +71,9 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
     let mcpHttpPort = readOptionalPort(process.env.CONTROLLER_MCP_HTTP_PORT, 'CONTROLLER_MCP_HTTP_PORT');
     let mcpHttpHost = process.env.CONTROLLER_MCP_HTTP_HOST || '127.0.0.1';
     let mcpHttpPath = process.env.CONTROLLER_MCP_HTTP_PATH || '/controller/mcp';
+    let lettersHttpPort = readOptionalPort(process.env.CONTROLLER_LETTERS_HTTP_PORT, 'CONTROLLER_LETTERS_HTTP_PORT');
+    let lettersHttpHost = process.env.CONTROLLER_LETTERS_HTTP_HOST || '127.0.0.1';
+    let lettersHttpPath = process.env.CONTROLLER_LETTERS_HTTP_PATH || '/v1/inbox';
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
@@ -101,6 +108,33 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
             i += 1;
         } else if (arg.startsWith('--mcp-http-path=')) {
             mcpHttpPath = arg.slice('--mcp-http-path='.length);
+        } else if (arg === '--letters-http-port') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a port`);
+            }
+            lettersHttpPort = readOptionalPort(next, arg);
+            i += 1;
+        } else if (arg.startsWith('--letters-http-port=')) {
+            lettersHttpPort = readOptionalPort(arg.slice('--letters-http-port='.length), '--letters-http-port');
+        } else if (arg === '--letters-http-host') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a host`);
+            }
+            lettersHttpHost = next;
+            i += 1;
+        } else if (arg.startsWith('--letters-http-host=')) {
+            lettersHttpHost = arg.slice('--letters-http-host='.length);
+        } else if (arg === '--letters-http-path') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a path`);
+            }
+            lettersHttpPath = next;
+            i += 1;
+        } else if (arg.startsWith('--letters-http-path=')) {
+            lettersHttpPath = arg.slice('--letters-http-path='.length);
         } else if (arg === '--config' || arg === '-c') {
             const next = argv[i + 1];
             if (!next) {
@@ -113,7 +147,17 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
         }
     }
 
-    return { configPath, once, logEnvelope, mcpHttpPort, mcpHttpHost, mcpHttpPath };
+    return {
+        configPath,
+        once,
+        logEnvelope,
+        mcpHttpPort,
+        mcpHttpHost,
+        mcpHttpPath,
+        lettersHttpPort,
+        lettersHttpHost,
+        lettersHttpPath,
+    };
 }
 
 export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): ControllerConfig {

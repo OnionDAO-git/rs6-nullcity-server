@@ -201,4 +201,54 @@ describe('controller config', () => {
         expect(() => parseControllerArgs(['--mcp-http-port', 'nope'])).toThrow('--mcp-http-port must be an integer port');
         expect(() => parseControllerArgs(['--mcp-http-port=70000'])).toThrow('--mcp-http-port must be an integer port');
     });
+
+    it('parses optional letters HTTP flags and env defaults (EVENT-D2c)', () => {
+        process.env.CONTROLLER_LETTERS_HTTP_PORT = '43598';
+        process.env.CONTROLLER_LETTERS_HTTP_HOST = '127.0.0.3';
+        process.env.CONTROLLER_LETTERS_HTTP_PATH = '/letters/env';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                lettersHttpPort: 43598,
+                lettersHttpHost: '127.0.0.3',
+                lettersHttpPath: '/letters/env',
+            }),
+        );
+
+        expect(
+            parseControllerArgs([
+                '--letters-http-port',
+                '43601',
+                '--letters-http-host=127.0.0.1',
+                '--letters-http-path',
+                '/v1/inbox',
+            ]),
+        ).toEqual(
+            expect.objectContaining({
+                lettersHttpPort: 43601,
+                lettersHttpHost: '127.0.0.1',
+                lettersHttpPath: '/v1/inbox',
+            }),
+        );
+    });
+
+    it('defaults letters HTTP host to 127.0.0.1 and path to /v1/inbox when env unset (EVENT-D2c)', () => {
+        delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
+        delete process.env.CONTROLLER_LETTERS_HTTP_HOST;
+        delete process.env.CONTROLLER_LETTERS_HTTP_PATH;
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                lettersHttpPort: undefined,
+                lettersHttpHost: '127.0.0.1',
+                lettersHttpPath: '/v1/inbox',
+            }),
+        );
+    });
+
+    it('rejects invalid letters HTTP ports (EVENT-D2c)', () => {
+        delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
+        expect(() => parseControllerArgs(['--letters-http-port', 'nope'])).toThrow('--letters-http-port must be an integer port');
+        expect(() => parseControllerArgs(['--letters-http-port=70000'])).toThrow('--letters-http-port must be an integer port');
+    });
 });
