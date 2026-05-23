@@ -247,3 +247,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 
 
 2026-05-23 08:22 claude  branch=agents/wip  workstream=K  STARTING — K-α faction affinity soul field. Add optional factionAffinity: { saradomin?, guthix?, zamorak?, unaligned? } to soul-schema.ts (numeric 0..100 each). One Brain prompt directive that biases dialog to highest affinity. Mirrors M-α HeroProfile pattern (35458207). Codex on G3 proof-loop.
+2026-05-23 08:32 claude  branch=agents/wip  workstream=K  HANDOFF — K-α factionAffinity + Brain directive lands (f029f5f8). 59/59 tests (schema+envelope coherence regression); typecheck/lint PASS. New FactionAffinity + dominantFaction helper; prompt envelope renders per-faction directive when dominant>0. Mirrors M-α pattern.
