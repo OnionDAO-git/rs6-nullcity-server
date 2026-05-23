@@ -406,6 +406,37 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('survival and death/recovery entries', () => {
+        it('retrieves the eat-when-hurt entry for a low-HP query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'my hitpoints are getting low in combat should I eat food', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('survival-eat-when-hurt');
+            const entry = results.find(result => result.entry.id === 'survival-eat-when-hurt')?.entry;
+            expect(entry?.actions?.join(' ')).toMatch(/item_action eat|eat/i);
+            expect(entry?.summary).toMatch(/50%|threshold|highest-heal|food/i);
+        });
+
+        it('retrieves the flee-when-outmatched entry for an unsafe-combat query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'aggressor too strong I am out of food should I flee', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('survival-flee-when-outmatched');
+            const entry = results.find(result => result.entry.id === 'survival-flee-when-outmatched')?.entry;
+            expect(entry?.actions?.join(' ')).toMatch(/move_to|run|retreat/i);
+            expect(entry?.summary).toMatch(/lumbridge|embassy|safe|narrate|20%/i);
+        });
+
+        it('retrieves the death-and-recovery entry for a respawn query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'I died how do I recover my items and continue the goal', { limit: 4 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('death-and-recovery');
+            const entry = results.find(result => result.entry.id === 'death-and-recovery')?.entry;
+            expect(entry?.summary).toMatch(/lumbridge|respawn|3 items|general store|bob/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {

@@ -844,6 +844,40 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'End-to-end chain: (1) approach safe monster (chicken 3HP / cow 8HP / goblin 5-12HP), (2) attack and let auto-retaliate fight, (3) eat food if HP drops below 50%, (4) loot bones after kill, (5) bury bones for Prayer XP. Loops cleanly: 28 inventory slots can hold ~25 bones + 3 food. Burying converts each bone to 4.5 Prayer XP. Combine with combat-safe-basic + prayer-basic entries for full training context.',
     },
+    {
+        id: 'survival-eat-when-hurt',
+        title: 'Survival: Eat When Hurt (HP Threshold Rules)',
+        topics: ['survival', 'combat-survival', 'food', 'eat', 'hp', 'reflex'],
+        keywords: ['eat', 'hurt', 'low hp', 'low hitpoints', 'health dropping', 'eat food', 'heal up', 'hp threshold'],
+        requiredItems: ['cooked food in inventory (3+ before any combat)'],
+        actions: ['item_action eat (highest-heal food in inventory first)', 'continue fight if HP >60% after eat', 'transition to flee if HP <20% after eat'],
+        successSignals: ['HP increases by food heal value (shrimp 3, trout 7, lobster 12, swordfish 14)', 'food slot empties', 'eat animation plays', 'eating does NOT interrupt auto-retaliate'],
+        source: 'docs/runescape-skill/skills/combat.md § Eat And Heal; docs/runescape-skill/items.md § Food',
+        summary:
+            'HP threshold rules: HP > 60% → keep fighting. HP 30-60% → finish current swing then eat. HP < 30% → eat immediately mid-swing. HP < 20% → eat AND prepare to flee (see survival-flee-when-outmatched). Always eat the highest-heal food in inventory first (swordfish 14 > lobster 12 > tuna 10 > salmon 9 > trout 7 > sardine 4 > shrimp 3). Eating takes 1 tick and does NOT interrupt auto-retaliate. NEVER engage combat without 3+ cooked food.',
+    },
+    {
+        id: 'survival-flee-when-outmatched',
+        title: 'Survival: Flee When Outmatched (Retreat Protocol)',
+        topics: ['survival', 'flee', 'retreat', 'combat-survival', 'safety', 'narration'],
+        keywords: ['flee', 'retreat', 'run', 'escape', 'unsafe', 'outmatched', 'too strong', 'aggressor', 'safespot', 'lumbridge bank', 'embassy'],
+        actions: ['move_to nearest safe POI (Lumbridge bank 3208,3219,2 / embassy atrium / Edgeville bank)', 'toggle run mode if energy >30%', 'say "Retreating — too strong / out of food / low HP" publicly', 'item_action eat last food during retreat if needed'],
+        successSignals: ['position moves away from aggressor', 'combat ends (no more attack animations)', 'safe POI reached', 'memory entry logged so Brain does not re-engage immediately'],
+        source: 'docs/runescape-skill/skills/combat.md § Run When Outmatched; src/controller/spark/runescape-nervous-rules.ts',
+        summary:
+            'Trigger conditions: HP < 20%, no food left, OR unexpected aggressor of much higher level (combat level > 2× yours). Action: click far away toward a known safe POI (Lumbridge bank, Edgeville bank, embassy atrium, faction home). Run mode if energy > 30%. Narrate publicly during retreat ("Retreating — too strong" or "Retreating — out of food") so Brain logs the encounter and does not re-engage. Combat survival reflex landed in commit 2bedd776 (Q3-F5 personality).',
+    },
+    {
+        id: 'death-and-recovery',
+        title: 'Death And Recovery (Respawn + Reclaim Path)',
+        topics: ['death', 'respawn', 'recovery', 'reclaim', 'starter'],
+        keywords: ['death', 'died', 'respawn', 'lost items', 'recover', 'reclaim', 'gravestone', 'lumbridge spawn'],
+        actions: ['move_to Lumbridge spawn 3222,3218,0 (automatic on death)', 'interact talk-to RuneScape Guide for orientation if disoriented', 'move_to Bobs Brilliant Axes 3231,3203,0 to replace hatchet', 'move_to Lumbridge General Store 3203,3247,0 to replace tinderbox/pot/jug/hammer', 'interact bank if items were deposited before risky activity'],
+        successSignals: ['respawn animation completes at Lumbridge spawn', 'inventory shows 3 retained items + nothing else', 'shops restock visible to player', 'resumed goal evidence in trajectory.jsonl'],
+        source: 'docs/runescape-skill/items.md § Recovery Heuristics; docs/runescape-skill/places/lumbridge.md',
+        summary:
+            'On non-wilderness death: respawn at Lumbridge spawn 3222,3218,0; keep 3 most valuable items, lose all others (gravestone mechanics may apply in some configurations). On wilderness death with skull: lose ALL items. Reclaim path: (1) bank check at Lumbridge Castle bank 3208,3219,2 for stored items, (2) Bobs Brilliant Axes 3231,3203,0 for hatchet replacement (~16gp bronze), (3) Lumbridge General Store 3203,3247,0 for tinderbox/pot/jug/bucket/hammer (1-4gp each), (4) resume original goal once tools restored.',
+    },
 ];
 
 const STOP_WORDS = new Set([
