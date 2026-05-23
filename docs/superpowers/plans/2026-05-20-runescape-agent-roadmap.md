@@ -517,6 +517,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
   - Benchmark proof is now visible in the dashboard; the next proof-loop slice should make new autonomous benchmark runs easier to launch/compare from a single operator command or dashboard action.
   - Human-like next slice: finish F3 help-request behavior when no recovery move exists, then build a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.
+  - Verified 2026-05-23 on `agents/wip`: fresh autonomous `make-fire-5m` live benchmark passed against the running game (`runId=bench_20260523114243_make_fire_5m`, `score=1`, `selectedModuleActions=4`, `selectedModuleInferences=2`, `successfulActionEffects=1`, `firesObserved=1`). The dashboard benchmark detail page showed the run, pass status, leaderboard row, metrics, and `use_item_on_item` evidence after the artifact was copied into ignored `data/benchmarks/`.
 
 ## Agent Update Protocol
 
