@@ -98,6 +98,49 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('quest entries (cooks-assistant, restless-ghost, romeo-and-juliet, overview)', () => {
+        it('retrieves the cooks-assistant quest entry for a flour-and-egg query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'help the cook with flour eggs and milk for cake', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('quest-cooks-assistant');
+            const quest = results.find(result => result.entry.id === 'quest-cooks-assistant')?.entry;
+            expect(quest?.requiredItems?.join(' ')).toMatch(/flour|egg|milk/i);
+            expect(quest?.actions?.join(' ')).toMatch(/interact|talk-to/i);
+            expect(quest?.successSignals?.join(' ')).toMatch(/300 cooking xp|cooking xp|quest complete/i);
+        });
+
+        it('retrieves the restless-ghost quest entry for a ghost-skull query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'investigate the haunted graveyard ghost skull in lumbridge church', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('quest-restless-ghost');
+            const quest = results.find(result => result.entry.id === 'quest-restless-ghost')?.entry;
+            expect(quest?.requiredItems?.join(' ')).toMatch(/ghostspeak amulet|skull/i);
+            expect(quest?.successSignals?.join(' ')).toMatch(/1125 prayer xp|prayer xp|quest complete/i);
+        });
+
+        it('retrieves the romeo-and-juliet quest entry for a romeo-juliet query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'deliver romeos message to juliet in varrock and brew cadava potion', { limit: 2 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('quest-romeo-and-juliet');
+            const quest = results.find(result => result.entry.id === 'quest-romeo-and-juliet')?.entry;
+            expect(quest?.requiredItems?.join(' ')).toMatch(/cadava berries|cadava potion|message/i);
+            expect(quest?.successSignals?.join(' ')).toMatch(/5 quest points|quest points|quest complete/i);
+        });
+
+        it('retrieves the quests-starter-overview entry for a generic quest query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'how do quests work in runescape how do I start a quest', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('quests-starter-overview');
+            const overview = results.find(result => result.entry.id === 'quests-starter-overview')?.entry;
+            expect(overview?.actions?.join(' ')).toMatch(/talk|interact/i);
+            expect(overview?.successSignals?.join(' ')).toMatch(/quest log|quest journal|quest tab/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {
