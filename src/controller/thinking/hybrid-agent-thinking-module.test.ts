@@ -1611,10 +1611,11 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I heard you. Try: agent status, follow me, explore, make fire, fish, cook, or train combat.',
+                text: 'Do not understand.',
+                voiceSource: 'phrasebook',
             },
         ]);
-        expect(result.cause).toBe('direct_chat_clarify');
+        expect(result.cause).toBe('direct_chat_decline_unknown_command');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -2082,8 +2083,14 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am too hurt to attack without food. I need to heal or retreat first.' }]);
-        expect(result.cause).toBe('direct_chat_attack');
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'HP too low to fight.',
+                voiceSource: 'phrasebook',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_decline_low_hp');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -3208,8 +3215,14 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I need a small fishing net before I can catch shrimp.' }]);
-        expect(result.cause).toBe('direct_chat_fish');
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'Cannot do that without a small fishing net.',
+                voiceSource: 'phrasebook',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_decline_missing_tool');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -4183,6 +4196,309 @@ describe('HybridAgentThinkingModule', () => {
         expect(resultEndurer.actions).toContainEqual({
             kind: 'say',
             text: 'You think you can break me, Chicken? Think again.',
+        });
+    });
+
+    describe('F2: Nearby human reaction', () => {
+        it('F2-T1: Player says "what a nice day" within earshot. Assert: small talk reply with voiceSource: "inference".', async () => {
+            const llm = scriptedLlm([{ text: 'Yes, it is indeed a beautiful day.' }]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202); // 2 tiles away (within earshot)
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'what a nice day',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions).toEqual([{ kind: 'say', text: 'Yes, it is indeed a beautiful day.', voiceSource: 'inference' }]);
+            expect(result.chat_reply_emitted).toBe(true);
+            expect(result.chat_reply_kind).toBe('small_talk');
+            expect(result.voiceSource).toBe('inference');
+        });
+
+        it('F2-T2: Player says "agent go" within earshot. Assert: clarifying question with voiceSource: "phrasebook".', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'agent go',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions[0].kind).toBe('say');
+            const text = String((result.actions[0] as any).text);
+            expect(text.toLowerCase()).toContain('go');
+            expect(result.actions[0].voiceSource).toBe('phrasebook');
+            expect(result.chat_reply_emitted).toBe(true);
+            expect(result.chat_reply_kind).toBe('clarifying_question');
+            expect(result.voiceSource).toBe('phrasebook');
+        });
+
+        it('F2-T3: Player says "agent make fire" while resident has no tinderbox. Assert: decline say mentions tinderbox and refusalReason: "missing_tool" in telemetry.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        inventory: [], // Empty inventory
+                    },
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'agent make fire',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions[0].kind).toBe('say');
+            const text = String((result.actions[0] as any).text);
+            expect(text.toLowerCase()).toContain('tinderbox');
+            expect(result.actions[0].voiceSource).toBe('phrasebook');
+            expect(result.chat_reply_emitted).toBe(true);
+            expect(result.chat_reply_kind).toBe('polite_decline');
+            expect(result.refusalReason).toBe('missing_tool');
+        });
+
+        it('F2-T4: Player says "agent make fire" while resident is mid-combat. Assert: NO say reply emitted, combat wins, refusalReason: "busy_higher_priority_goal".', async () => {
+            const chickenTarget = npc('Chicken', 3201, 3201);
+            chickenTarget.combatLevel = 1;
+            chickenTarget.hpFraction = 1.0;
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        hp: { current: 10, max: 10 },
+                        combatLevel: 10,
+                        inCombat: true,
+                    },
+                    npcs: [chickenTarget],
+                    events: [
+                        { kind: 'hit_taken', from: chickenTarget },
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'agent make fire',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            // Expect ONLY combat actions, no say action from direct chat!
+            expect(result.actions).toEqual([
+                { kind: 'attack', target: chickenTarget, cause: 'combat_retaliate' },
+                { kind: 'say', text: 'You think you can break me, Chicken? Think again.' },
+            ]);
+            expect(result.chat_reply_emitted).toBe(false);
+            expect(result.chat_reply_kind).toBe('polite_decline');
+            expect(result.refusalReason).toBe('busy_higher_priority_goal');
+        });
+
+        it('F2-T5: Player says "what a nice day" but CHAT_REPLIES_PER_WINDOW is exhausted. Assert: no say action, chat_reply_suppressed: "rate_limited".', async () => {
+            const llm = scriptedLlm([{ text: 'Nice day!' }]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            // Setup rates: push three replies at tick 1
+            const ticks = [1, 1, 1];
+            state.cognition = {
+                chatReplyTicks: ticks,
+                activeGoal: { id: 'catch-starter-fish', description: 'catch fish', createdAtTick: 2 },
+                lastBrainTick: 2,
+                lastBodyTick: 999,
+            };
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'what a nice day',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.chat_reply_emitted).toBe(false);
+            expect(result.chat_reply_suppressed).toBe('rate_limited');
+        });
+
+        it('F2-T6: Player says "what a nice day" but inference budget is exhausted. Assert: no say action, chat_reply_suppressed: "budget_exhausted".', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            // Exhaust minute budget
+            state.budgets.requestsThisMinute = 1000;
+            state.budgets.minuteStartedAt = new Date().toISOString();
+
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'what a nice day',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions).toEqual([]);
+            expect(result.chat_reply_emitted).toBe(false);
+            expect(result.chat_reply_suppressed).toBe('budget_exhausted');
+        });
+
+        it('F2-T7: Player says "what a nice day" at 12 tiles distance. Assert: no reply.', async () => {
+            const llm = scriptedLlm([{ text: 'Nice day!' }]);
+            const state = runtimeState();
+            state.cognition = {
+                activeGoal: { id: 'catch-starter-fish', description: 'catch fish', createdAtTick: 2 },
+                lastBrainTick: 2,
+                lastBodyTick: 999,
+            };
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3212, 3200); // 12 tiles away (out of earshot)
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [
+                        {
+                            kind: 'chat',
+                            from: peer,
+                            text: 'what a nice day',
+                            to: 'public',
+                        },
+                    ],
+                }),
+            );
+
+            expect(result.actions).toEqual([]);
+        });
+
+        it('F2-T8: Voice preservation: different voice registers result in different phrasings.', async () => {
+            const llm = scriptedLlm([]);
+            const peer = player('codex', 3202, 3202);
+
+            // Achiever
+            const soulAchiever = soul();
+            soulAchiever.frontmatter.archetype = 'achiever';
+            const agentAchiever = hybridAgent(llm, runtimeState(), soulAchiever);
+            const resAchiever = await agentAchiever.think(
+                perception({
+                    tick: 2,
+                    events: [{ kind: 'chat', from: peer, text: 'agent go', to: 'public' }],
+                }),
+            );
+            const txtAchiever = String((resAchiever.actions[0] as any).text);
+
+            // Mentor
+            const soulMentor = soul();
+            soulMentor.frontmatter.archetype = 'mentor';
+            const agentMentor = hybridAgent(llm, runtimeState(), soulMentor);
+            const resMentor = await agentMentor.think(
+                perception({
+                    tick: 2,
+                    events: [{ kind: 'chat', from: peer, text: 'agent go', to: 'public' }],
+                }),
+            );
+            const txtMentor = String((resMentor.actions[0] as any).text);
+
+            expect(txtAchiever).not.toBe(txtMentor);
+            expect(txtAchiever).toContain('Go where');
+            expect(txtMentor).toContain('Where should we walk');
+        });
+
+        it('F2-INT: A 5-tick sequence: idle -> peer says "nice day" -> idle -> peer asks ambiguous command -> idle.', async () => {
+            const llm = scriptedLlm([{ text: 'Indeed it is!' }]);
+            const state = runtimeState();
+            state.cognition = {
+                activeGoal: { id: 'catch-starter-fish', description: 'catch fish', createdAtTick: 1 },
+                lastBrainTick: 999,
+                lastBodyTick: 999,
+            };
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            // Tick 1: Idle
+            const res1 = await agent.think(perception({ tick: 1 }));
+            expect(res1.actions).toEqual([]);
+
+            // Tick 2: Peer says "nice day"
+            const res2 = await agent.think(
+                perception({
+                    tick: 2,
+                    events: [{ kind: 'chat', from: peer, text: 'nice day', to: 'public' }],
+                }),
+            );
+            expect(res2.actions[0]).toEqual({
+                kind: 'say',
+                text: 'Indeed it is!',
+                voiceSource: 'inference',
+            });
+
+            // Tick 3: Idle
+            const res3 = await agent.think(perception({ tick: 3 }));
+            expect(res3.actions).toEqual([]);
+
+            // Tick 4: Peer asks ambiguous command "agent give"
+            const res4 = await agent.think(
+                perception({
+                    tick: 4,
+                    events: [{ kind: 'chat', from: peer, text: 'agent give', to: 'public' }],
+                }),
+            );
+            expect(res4.actions[0].kind).toBe('say');
+            expect((res4.actions[0] as any).text).toContain('Give what');
+            expect(res4.actions[0].voiceSource).toBe('phrasebook');
+
+            // Tick 5: Idle
+            const res5 = await agent.think(perception({ tick: 5 }));
+            expect(res5.actions).toEqual([]);
         });
     });
 });

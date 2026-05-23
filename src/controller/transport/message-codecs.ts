@@ -44,14 +44,18 @@ export interface TradeActionTarget {
     playerHandle?: string;
 }
 
-export type AgentAction =
+export type AgentAction = (
     | { kind: 'noop'; cause?: string }
     | { kind: 'logout'; cause?: string }
     | { kind: 'trade_request'; cause?: string; target: TradeActionTarget }
     | { kind: 'trade_offer_item'; cause?: string; itemId: number; quantity: number; slot?: number }
     | { kind: 'trade_accept'; cause?: string }
     | { kind: 'trade_decline'; cause?: string; reason?: string }
-    | ({ kind: string; cause?: string } & Record<string, unknown>);
+    | ({ kind: string; cause?: string } & Record<string, unknown>)
+) & {
+    voiceSource?: 'phrasebook' | 'inference' | 'scripted';
+    helpRequestReason?: string;
+};
 
 export interface ActionResult {
     ok: boolean;

@@ -63,6 +63,13 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         ],
         'combat_decision.retreat_low_hp': ["My health is too low! I've got to run!", 'Need to survive! Fallback!'],
         'combat_decision.kill_celebration': ['Down. Another victory!', 'Down. Easy XP.'],
+        'ambiguity.go': ['Go where? I need a target.', 'Which way? Give me a location.'],
+        'ambiguity.make': ['Make what? Tell me the item.', 'What do you want me to make?'],
+        'ambiguity.give': ['Give what? I have: {inventory}.', 'Which item to give? I have {inventory}.'],
+        'polite_decline.missing_tool': ['I cannot do that without a {tool}!'],
+        'polite_decline.low_hp': ['My HP is too low for this.'],
+        'polite_decline.busy_higher_priority_goal': ['I am too busy right now.'],
+        'polite_decline.unknown_command': ['Unknown command.'],
     },
     mentor: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -107,6 +114,13 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
             'A tactical withdrawal is necessary. Safety first.',
         ],
         'combat_decision.kill_celebration': ['Down. A lesson well learned.', 'Down. Peace returns.'],
+        'ambiguity.go': ['Where should we walk?'],
+        'ambiguity.make': ['What should we construct?'],
+        'ambiguity.give': ['Give what? I carry: {inventory}.'],
+        'polite_decline.missing_tool': ['A wise adventurer needs a {tool} first.'],
+        'polite_decline.low_hp': ['We must heal before engaging in combat.'],
+        'polite_decline.busy_higher_priority_goal': ['I am currently occupied with a crucial task.'],
+        'polite_decline.unknown_command': ['That is not a lesson I can teach.'],
     },
     endurer: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -145,6 +159,13 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         ],
         'combat_decision.retreat_low_hp': ['Barely hanging on... need to run!', 'Too close to the edge. Retreating!'],
         'combat_decision.kill_celebration': ['Down. Still standing.', 'Down. I survived.'],
+        'ambiguity.go': ['Go where? Tell me where.'],
+        'ambiguity.make': ['Make what? Tell me.'],
+        'ambiguity.give': ['Give what? I only have: {inventory}.'],
+        'polite_decline.missing_tool': ['Cannot do that without a {tool}.'],
+        'polite_decline.low_hp': ['HP too low to fight.'],
+        'polite_decline.busy_higher_priority_goal': ['Busy right now.'],
+        'polite_decline.unknown_command': ['Do not understand.'],
     },
     default: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -177,6 +198,13 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'combat_decision.retreat_outmatched': ['Retreating! {targetName} is too strong.', 'This is too dangerous, running away!'],
         'combat_decision.retreat_low_hp': ['Low health! Running away!', 'Too weak to fight! Retreating!'],
         'combat_decision.kill_celebration': ['Down.'],
+        'ambiguity.go': ['Go where?'],
+        'ambiguity.make': ['Make what?'],
+        'ambiguity.give': ['Give what? I have: {inventory}.'],
+        'polite_decline.missing_tool': ['I need a {tool} before I can catch shrimp.'],
+        'polite_decline.low_hp': ['My health is too low to fight right now.'],
+        'polite_decline.busy_higher_priority_goal': ['I am busy with a higher priority goal.'],
+        'polite_decline.unknown_command': ['I do not understand that command.'],
     },
 };
 
