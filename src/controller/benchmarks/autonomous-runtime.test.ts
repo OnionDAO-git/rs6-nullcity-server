@@ -42,6 +42,60 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
 
         await driver.stop('test_complete');
     });
+
+    it('records final action effect evidence from runtime attempts for autonomous task verifiers', async () => {
+        const context = benchmarkContext();
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: new FakeGateway() as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+        const runtimeOptions = (ResidentRuntime as jest.Mock).mock.calls.at(-1)?.[0];
+
+        runtimeOptions.gameSkill.observeAttempt({
+            resident: context.resident,
+            producer: 'body',
+            perception: { tick: 7, events: [] },
+            attempt: {
+                attemptId: 'attempt-1',
+                resident: context.resident,
+                producer: 'body',
+                action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'woodcutting_chain_firemaking' },
+                submittedAt: '2026-05-23T02:20:00.000Z',
+                requestId: 'request-1',
+                evidence: [
+                    {
+                        source: 'perception',
+                        detail: {
+                            kind: 'action_effect_observed',
+                            actionKind: 'use_item_on_item',
+                            changed: ['inventory', 'nearbyWorldItems'],
+                        },
+                    },
+                ],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(context.recordActionAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                requestId: 'request-1',
+                action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'woodcutting_chain_firemaking' },
+                finalStatus: 'success',
+                evidence: expect.arrayContaining([
+                    expect.objectContaining({
+                        detail: expect.objectContaining({ kind: 'action_effect_observed' }),
+                    }),
+                ]),
+                sparkModule: context.module,
+            }),
+        );
+
+        await driver.stop('test_complete');
+    });
 });
 
 class FakeGateway extends EventEmitter {

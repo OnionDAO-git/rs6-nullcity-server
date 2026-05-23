@@ -298,6 +298,17 @@ describe('BenchmarkRunner', () => {
                     result: { ok: true },
                     source: 'thinking',
                     sparkModule: module,
+                    finalStatus: 'success',
+                    evidence: [
+                        {
+                            source: 'perception',
+                            detail: {
+                                kind: 'action_effect_observed',
+                                actionKind: 'use_item_on_item',
+                                changed: ['inventory', 'nearbyWorldItems'],
+                            },
+                        },
+                    ],
                 });
                 context.recordSummary('Autonomous runtime produced make-fire evidence.');
             }),
@@ -340,6 +351,8 @@ describe('BenchmarkRunner', () => {
                 requestId: 'auto-action-1',
                 actionKind: 'use_item_on_item',
                 source: 'thinking',
+                finalStatus: 'success',
+                effectEvidenceCount: 1,
                 sparkModule: module,
             }),
         ]);

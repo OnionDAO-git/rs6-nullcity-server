@@ -1,4 +1,5 @@
 import { objectIds } from '../../../engine/world/config/object-ids';
+import type { ActionEvidence, ActionFinalStatus } from '../../actions/action-attempt';
 import type { AgentAction, Perception, PerceptionEvent } from '../../transport/message-codecs';
 import type { BenchmarkTask, BenchmarkTaskOutcome } from '../benchmark-runner';
 
@@ -11,7 +12,8 @@ const LOG_ITEM_IDS = new Set([1511, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 
 export interface MakeFire5mActionAttempt {
     action: AgentAction;
-    finalStatus?: string;
+    finalStatus?: ActionFinalStatus;
+    evidence?: ActionEvidence[];
 }
 
 export interface MakeFire5mVerificationInput {
@@ -105,7 +107,7 @@ export function verifyMakeFire5m(input: MakeFire5mVerificationInput): BenchmarkT
         };
     }
 
-    if (metrics.successEvents > 0 || (metrics.logsConsumed > 0 && metrics.firesObserved > 0)) {
+    if (metrics.successfulActionEffects > 0 || metrics.successEvents > 0 || (metrics.logsConsumed > 0 && metrics.firesObserved > 0)) {
         return {
             status: 'passed',
             score: 1,
@@ -136,6 +138,7 @@ function makeFireMetrics(input: MakeFire5mVerificationInput): Record<string, num
     return {
         actionsAttempted: input.actions.length,
         firemakingActions: firemakingActions.length,
+        successfulActionEffects: firemakingActions.some(successfulFiremakingEffect) ? 1 : 0,
         logsConsumed: logsConsumed(input.perceptions) ? 1 : 0,
         firesObserved: input.perceptions.some(perception => hasNearbyFire(perception)) ? 1 : 0,
         successEvents:
@@ -151,6 +154,23 @@ function selectedModuleActionAttempts(context: Parameters<NonNullable<BenchmarkT
     return context.actionAttempts().filter(attempt => {
         const module = attempt.sparkModule;
         return module?.id === context.module.id && module.version === context.module.version;
+    });
+}
+
+function successfulFiremakingEffect(attempt: MakeFire5mActionAttempt): boolean {
+    if (attempt.finalStatus !== 'success') {
+        return false;
+    }
+    return (attempt.evidence || []).some(evidence => {
+        const detail = isRecord(evidence.detail) ? evidence.detail : {};
+        if (detail.kind !== 'action_effect_observed') {
+            return false;
+        }
+        if (detail.actionKind !== 'use_item_on_item' && detail.actionKind !== 'use_item_on') {
+            return false;
+        }
+        const changed = Array.isArray(detail.changed) ? detail.changed : [];
+        return changed.includes('inventory') || changed.includes('nearbyWorldItems') || changed.includes('events');
     });
 }
 

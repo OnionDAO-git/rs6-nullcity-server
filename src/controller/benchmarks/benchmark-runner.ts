@@ -1,4 +1,5 @@
 import fs from 'fs';
+import type { ActionEvidence, ActionFinalStatus } from '../actions/action-attempt';
 import type { SparkModuleIdentity } from '../spark';
 import type { SubmittedActionAck } from '../transport/gateway-client';
 import type { ActionResult, AgentAction, CreateResidentPayload, Perception, PerceptionEvent } from '../transport/message-codecs';
@@ -68,6 +69,9 @@ export interface BenchmarkRecordedActionAttempt {
     result?: ActionResult;
     source?: string;
     sparkModule?: SparkModuleIdentity;
+    finalStatus?: ActionFinalStatus;
+    finalReason?: string;
+    evidence?: ActionEvidence[];
 }
 
 export interface BenchmarkRecordedInferenceRequest {
@@ -525,8 +529,22 @@ function actionAttemptEvidence(
         source: attempt.source,
         cause: actionCause(attempt.action),
         ok: typeof attempt.result?.ok === 'boolean' ? attempt.result.ok : undefined,
+        finalStatus: attempt.finalStatus,
+        finalReason: attempt.finalReason,
+        evidenceCount: attempt.evidence?.length,
+        effectEvidenceCount: actionEffectEvidenceCount(attempt.evidence),
         sparkModule: attempt.sparkModule,
     };
+}
+
+function actionEffectEvidenceCount(evidence: ActionEvidence[] | undefined): number | undefined {
+    if (!evidence) {
+        return undefined;
+    }
+    return evidence.filter(item => {
+        const detail = isRecord(item.detail) ? item.detail : {};
+        return detail.kind === 'action_effect_observed';
+    }).length;
 }
 
 function requestIdFromResult(result: ActionResult | undefined): string | undefined {

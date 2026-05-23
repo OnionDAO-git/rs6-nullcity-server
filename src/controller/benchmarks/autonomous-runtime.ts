@@ -44,7 +44,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
     async start(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
         this.context = context;
         this.runDirs = createRunDirs(context);
-        this.gameSkill = this.createGameSkill();
+        this.gameSkill = this.createGameSkill(context);
         this.runtime = new ResidentRuntime({
             soul: createBenchmarkSoul(context),
             gateway: this.options.gateway,
@@ -96,9 +96,9 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         };
     }
 
-    private createGameSkill(): ResidentRuntimeGameSkill {
+    private createGameSkill(context: BenchmarkAutonomousRuntimeContext): ResidentRuntimeGameSkill {
         const knowledgeRoot = this.runDirs?.knowledge || this.options.config.knowledge.dir;
-        return new GameSkillService({
+        const service = new GameSkillService({
             controllerId: `${this.options.config.gateway.controllerId}:benchmark`,
             instanceId: this.options.config.controller.instanceId,
             entries: createDefaultGameSkillEntries(this.options.config.knowledge.runebenchWikiDir),
@@ -112,6 +112,24 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
                   })
                 : undefined,
         });
+        return {
+            buildContext: input => service.buildContext(input),
+            observeAttempt: event => {
+                const attempt = event.attempt;
+                context.recordActionAttempt({
+                    requestId: attempt.requestId,
+                    action: attempt.action,
+                    result: attempt.ackResult,
+                    source: event.producer,
+                    sparkModule: this.options.module,
+                    finalStatus: attempt.finalStatus,
+                    finalReason: attempt.finalReason,
+                    evidence: attempt.evidence,
+                });
+                service.observeAttempt(event);
+            },
+            flush: () => service.flush?.() ?? Promise.resolve(),
+        };
     }
 
     private bindGatewayEvents(context: BenchmarkAutonomousRuntimeContext): void {

@@ -269,7 +269,9 @@ describe('RuneScape knowledge retriever', () => {
 
     describe('NPC entries (cook, father-aereck, aubury, runescape-guide, banker-overview)', () => {
         it('retrieves the cook entry for a quest-giver query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'talk to the cook in lumbridge castle kitchen for the quest', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'talk to the cook in lumbridge castle kitchen for the quest', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('npc-cook-lumbridge');
@@ -287,7 +289,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the aubury entry for a rune-shop query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'buy runes from aubury in varrock or teleport to rune essence', { limit: 3 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'buy runes from aubury in varrock or teleport to rune essence', {
+                limit: 3,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('npc-aubury-varrock');

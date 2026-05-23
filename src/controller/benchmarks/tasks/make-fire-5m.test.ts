@@ -34,6 +34,33 @@ describe('verifyMakeFire5m', () => {
         expect(outcome.metrics?.successEvents).toBe(1);
     });
 
+    it('passes when a firemaking action resolves with observed effect evidence', () => {
+        const outcome = verifyMakeFire5m({
+            elapsedMs: 35_000,
+            actions: [
+                {
+                    action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'woodcutting_chain_firemaking' },
+                    finalStatus: 'success',
+                    evidence: [
+                        {
+                            source: 'perception',
+                            detail: {
+                                kind: 'action_effect_observed',
+                                actionKind: 'use_item_on_item',
+                                changed: ['inventory', 'nearbyWorldItems'],
+                            },
+                        },
+                    ],
+                },
+            ],
+            perceptions: [perception({ inventory: [item(590, 'rs:tinderbox'), item(1511, 'rs:logs')], objects: [] })],
+            events: [],
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics?.successfulActionEffects).toBe(1);
+    });
+
     it('times out when the budget is exceeded before success', () => {
         const outcome = verifyMakeFire5m({
             elapsedMs: 301_000,
