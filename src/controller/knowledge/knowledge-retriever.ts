@@ -386,6 +386,54 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'Romeo & Juliet is a Varrock starter quest worth 5 quest points (no XP). Romeo at Varrock Square asks you to deliver a message to Juliet west of Varrock. After Father Lawrence proposes a fake-death plan, the Apothecary brews a cadava potion from berries you collect southeast of Varrock; give the potion to Juliet to complete.',
     },
+    {
+        id: 'monster-chicken-starter',
+        title: 'Monster: Chicken (Combat Level 1)',
+        topics: ['monster', 'chicken', 'combat', 'starter', 'feathers', 'lumbridge'],
+        keywords: ['chicken', 'chickens', 'lumbridge farm', 'feather', 'feathers', 'raw chicken', 'starter combat', 'easy kill'],
+        requiredItems: ['no weapon required (fists work); bronze weapon faster'],
+        actions: ['attack', 'item_action loot feathers bones raw chicken'],
+        successSignals: ['target dies in 1-3 hits', 'inventory gains rs:feather + rs:raw_chicken + rs:bones', 'combat XP changes (Attack/Strength/Defence + Hitpoints)'],
+        source: 'docs/runescape-skill/monsters.md § Chicken; data/config/npcs/chicken.json',
+        summary:
+            'Chicken (combat level 1, 3 HP, max hit 1, passive) is the safest starter combat target. Spawn cluster: Lumbridge farm coop around 3232,3299 and Falador farm. Drops feathers (stackable, useful for fletching arrows), raw chicken (cook for 3 HP heal), and bones (bury for Prayer XP). Train Attack/Strength/Defence here from level 1-5.',
+    },
+    {
+        id: 'monster-cow-starter',
+        title: 'Monster: Cow (Combat Level 2)',
+        topics: ['monster', 'cow', 'combat', 'starter', 'cowhide', 'crafting', 'lumbridge'],
+        keywords: ['cow', 'cows', 'cowhide', 'raw beef', 'cow field', 'lumbridge cow field', 'leather', 'tanner', 'starter combat'],
+        requiredItems: ['bronze weapon recommended (any tier works)'],
+        actions: ['attack', 'item_action loot cowhide raw beef bones'],
+        successSignals: ['target dies in 4-8 hits', 'inventory gains rs:cowhide + rs:raw_beef + rs:bones', 'combat XP changes'],
+        source: 'docs/runescape-skill/monsters.md § Cow; data/config/npcs/cow.json',
+        summary:
+            'Cow (combat level 2, 8 HP, max hit 1, passive) is the best combo starter target. Spawn cluster: Lumbridge cow field east of the castle around 3253,3275 and Falador cow field. Drops cowhide (tan at Al-Kharid tanner for leather → craft into armour), raw beef (cook for 3 HP heal), and bones. Train Combat 1-10 plus Crafting via leather chain.',
+    },
+    {
+        id: 'monster-goblin-starter',
+        title: 'Monster: Goblin (Combat Level 2-5)',
+        topics: ['monster', 'goblin', 'combat', 'starter', 'bronze', 'goblin village', 'lumbridge'],
+        keywords: ['goblin', 'goblins', 'goblin village', 'bronze dagger', 'bronze spear', 'copper ore', 'aggressive monster'],
+        requiredItems: ['bronze or iron weapon', 'food (3+ cooked shrimp for safety)'],
+        actions: ['attack', 'item_action loot bronze gear coins bones', 'move_to retreat if HP drops'],
+        successSignals: ['target dies in 5-10 hits', 'inventory gains rs:bronze_dagger / rs:bronze_spear / rs:copper_ore / coins / rs:bones', 'combat XP changes'],
+        source: 'docs/runescape-skill/monsters.md § Goblin; data/config/npcs/goblin.json',
+        summary:
+            'Goblin (combat level 2-5, 5-12 HP, max hit 1-2, AGGRESSIVE to low-level players) is the mid-starter combat target. Spawn cluster: Lumbridge goblin houses (south of castle) and Goblin Village around 2956,3500 north of Falador. Drops bronze gear (dagger/spear), copper ore, coin piles, and bones. Avoid level 5 goblins until your combat is at least 4; carry food.',
+    },
+    {
+        id: 'monster-giant-rat-caution',
+        title: 'Monster: Giant Rat (Combat Level 6) — CAUTION',
+        topics: ['monster', 'giant-rat', 'combat', 'caution', 'aggressive', 'lumbridge cellar'],
+        keywords: ['giant rat', 'giant rats', 'lumbridge cellar', 'sewers', 'aggressive rat', 'mid-tier combat'],
+        requiredItems: ['steel weapon recommended', 'food (5+ cooked shrimp or trout)', 'combat level 8+ before engaging'],
+        actions: ['attack', 'item_action eat when HP < 50%', 'move_to retreat if HP < 30%'],
+        successSignals: ['target dies in 6-10 hits', 'inventory gains rs:bones', 'combat XP changes', 'HP never drops below safe threshold'],
+        source: 'docs/runescape-skill/monsters.md § Giant Rat; data/config/npcs/giant_rat.json',
+        summary:
+            'Giant Rat (combat level 6, 7 HP, max hit 1, AGGRESSIVE, hits stack) is a CAUTION-tier combat target. Spawn cluster: Lumbridge cellar lower floor, Varrock sewers, some wilderness fringe lairs. Drops bones only. Engage only at combat level 8 or higher; always carry food and verify a retreat path before entering the spawn area.',
+    },
 ];
 
 const STOP_WORDS = new Set([

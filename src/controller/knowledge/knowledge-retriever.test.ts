@@ -151,6 +151,46 @@ describe('RuneScape knowledge retriever', () => {
         });
     });
 
+    describe('monster combat-target entries (chicken, cow, goblin, giant-rat)', () => {
+        it('retrieves the chicken monster entry for a chicken-farming query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'attack chickens in lumbridge farm for feathers and bones', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('monster-chicken-starter');
+            const chicken = results.find(result => result.entry.id === 'monster-chicken-starter')?.entry;
+            expect(chicken?.successSignals?.join(' ')).toMatch(/feather|bones|combat xp/i);
+            expect(chicken?.actions?.join(' ')).toMatch(/attack/i);
+        });
+
+        it('retrieves the cow monster entry for a cowhide query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'kill cows in lumbridge cow field for cowhide and raw beef', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('monster-cow-starter');
+            const cow = results.find(result => result.entry.id === 'monster-cow-starter')?.entry;
+            expect(cow?.successSignals?.join(' ')).toMatch(/cowhide|raw beef|bones/i);
+        });
+
+        it('retrieves the goblin monster entry for a goblin-village query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'fight goblins in goblin village for bronze loot and bones', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('monster-goblin-starter');
+            const goblin = results.find(result => result.entry.id === 'monster-goblin-starter')?.entry;
+            expect(goblin?.successSignals?.join(' ')).toMatch(/bronze|coins|bones/i);
+        });
+
+        it('retrieves the giant-rat caution entry for a giant rat query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'fight a giant rat in the lumbridge cellar', { limit: 3 });
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('monster-giant-rat-caution');
+            const rat = results.find(result => result.entry.id === 'monster-giant-rat-caution')?.entry;
+            expect(rat?.summary).toMatch(/aggressive|combat 8|caution/i);
+            expect(rat?.successSignals?.join(' ')).toMatch(/bones/i);
+        });
+    });
+
     describe('knowledge token budget and overshoot enforcement', () => {
         it('admits within overshoot budget (correct sorting order)', () => {
             const large1: KnowledgeEntry = {
