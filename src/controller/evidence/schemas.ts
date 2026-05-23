@@ -25,6 +25,7 @@ export const trajectoryLineKindSchema = z.enum([
     'legacy_event',
     'say',
     'patron',
+    'moment',
     'error',
 ]);
 
