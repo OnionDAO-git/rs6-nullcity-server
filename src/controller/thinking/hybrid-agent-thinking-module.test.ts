@@ -432,6 +432,40 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeGoal?.id).toBe('make-fire');
     });
 
+    it('lights carried logs before chasing nearby loot during an active firemaking goal', async () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 25, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                steps: ['Find a tree', 'Chop it', 'Use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                    ],
+                },
+                worldItems: [coins],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'firemaking_fallback' }]);
+        expect(result.cause).toBe('firemaking_fallback');
+    });
+
     it('briefly picks up useful nearby items during routine skill work', async () => {
         const coins = { itemId: 995, key: 'rs:coins', amount: 12, position: { x: 3218, y: 3200, level: 0 } };
         const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };

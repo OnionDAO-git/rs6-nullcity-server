@@ -485,6 +485,23 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
 
+        const fireGoalLike = /fire|burn|logs|tinderbox|light/i.test(goalText);
+        if (isWoodcuttingTrainingGoal(goal) && !isFiremakingGoal(goal)) {
+            const fireAction = firemakingAction(perception);
+            if (fireAction) {
+                this.clearGoalMomentum();
+                this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
+                return { action: actionWithCause(fireAction, 'woodcutting_chain_firemaking'), cause: 'woodcutting_chain_firemaking' };
+            }
+        }
+
+        if (fireGoalLike) {
+            const fireAction = firemakingAction(perception);
+            if (fireAction) {
+                return { action: fireAction, cause: 'firemaking_fallback' };
+            }
+        }
+
         const opportunity = opportunisticPickupAction(
             perception,
             this.options.state.resident,
@@ -514,20 +531,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
 
-        if (isWoodcuttingTrainingGoal(goal) && !isFiremakingGoal(goal)) {
-            const fireAction = firemakingAction(perception);
-            if (fireAction) {
-                this.clearGoalMomentum();
-                this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
-                return { action: actionWithCause(fireAction, 'woodcutting_chain_firemaking'), cause: 'woodcutting_chain_firemaking' };
-            }
-        }
-
-        if (/fire|burn|logs|tinderbox|light/i.test(goalText)) {
-            const fireAction = firemakingAction(perception);
-            if (fireAction) {
-                return { action: fireAction, cause: 'firemaking_fallback' };
-            }
+        if (fireGoalLike) {
             const explicitWoodcuttingGoalId = /woodcut|chop/i.test(goal.id);
             const woodcutting = explicitWoodcuttingGoalId ? undefined : levelOneWoodcuttingAction(perception);
             if (woodcutting) {
