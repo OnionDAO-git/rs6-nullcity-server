@@ -50,7 +50,7 @@ export class Position {
     public withinInteractionDistance(target: LandscapeObject | Position, minimumDistance?: number): boolean;
     public withinInteractionDistance(target: LandscapeObject | Position, minimumDistance: number = 1): boolean {
         if (target instanceof Position) {
-            return this.distanceBetween(target) <= minimumDistance;
+            return this.tileDistanceBetween(target) <= minimumDistance;
         } else {
             const definition = filestore.configStore.objectStore.getObject(target.objectId);
 
@@ -71,7 +71,7 @@ export class Position {
             }
 
             if (width === 1 && height === 1) {
-                return this.distanceBetween(new Position(occupantX, occupantY, target.level)) <= minimumDistance;
+                return this.tileDistanceBetween(new Position(occupantX, occupantY, target.level)) <= minimumDistance;
             } else {
                 if (target.orientation === 1 || target.orientation === 3) {
                     const off = width;
@@ -81,7 +81,7 @@ export class Position {
 
                 for (let x = occupantX; x < occupantX + width; x++) {
                     for (let y = occupantY; y < occupantY + height; y++) {
-                        if (this.distanceBetween(new Position(x, y, target.level)) <= minimumDistance) {
+                        if (this.tileDistanceBetween(new Position(x, y, target.level)) <= minimumDistance) {
                             return true;
                         }
                     }
@@ -144,6 +144,10 @@ export class Position {
 
     public distanceBetween(other: Position): number {
         return Math.abs(Math.sqrt((this.x - other.x) * (this.x - other.x) + (this.y - other.y) * (this.y - other.y)));
+    }
+
+    private tileDistanceBetween(other: Position): number {
+        return Math.max(Math.abs(this.x - other.x), Math.abs(this.y - other.y));
     }
 
     public fromDirection(direction: number): Position {

@@ -244,6 +244,10 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
         return undefined;
     }
 
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'starter_fishing_approach' };
+    }
+
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
 }
 

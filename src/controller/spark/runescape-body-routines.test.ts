@@ -223,7 +223,7 @@ describe('starterFishingAction', () => {
     }
 
     it('returns an "interact net" action when carrying a small net and a fishing spot is nearby', () => {
-        const spot = fishingSpot(102, 100);
+        const spot = fishingSpot(101, 100);
         const action = starterFishingAction(
             perception({
                 resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -235,6 +235,23 @@ describe('starterFishingAction', () => {
             target: spot,
             option: 'net',
             cause: 'starter_fishing_net',
+        });
+    });
+
+    it('moves into interaction range before netting a distant fishing spot', () => {
+        const spot = fishingSpot(102, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: spot.position,
+            range: 1,
+            cause: 'starter_fishing_approach',
         });
     });
 

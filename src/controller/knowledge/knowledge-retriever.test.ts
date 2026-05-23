@@ -396,7 +396,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the combat+prayer chain entry for a kill-loot-bury query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'kill chickens then loot and bury bones for prayer xp', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'kill chickens then loot and bury bones for prayer xp', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('workflow-combat-prayer-chain');
@@ -408,7 +410,9 @@ describe('RuneScape knowledge retriever', () => {
 
     describe('survival and death/recovery entries', () => {
         it('retrieves the eat-when-hurt entry for a low-HP query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'my hitpoints are getting low in combat should I eat food', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'my hitpoints are getting low in combat should I eat food', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('survival-eat-when-hurt');
@@ -418,7 +422,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the flee-when-outmatched entry for an unsafe-combat query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'aggressor too strong I am out of food should I flee', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'aggressor too strong I am out of food should I flee', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('survival-flee-when-outmatched');
@@ -428,7 +434,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the death-and-recovery entry for a respawn query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'I died how do I recover my items and continue the goal', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'I died how do I recover my items and continue the goal', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('death-and-recovery');

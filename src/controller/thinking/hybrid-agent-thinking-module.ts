@@ -495,7 +495,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
 
-        const fireGoalLike = /fire|burn|logs|tinderbox|light/i.test(goalText);
         if (isWoodcuttingTrainingGoal(goal) && !isFiremakingGoal(goal)) {
             const fireAction = firemakingAction(perception);
             if (fireAction) {
@@ -505,6 +504,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
 
+        if (isStarterFishingGoal(goal)) {
+            const cookingAction = starterFishingCookingAction(perception);
+            if (cookingAction) {
+                return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
+            }
+            const fishingAction = starterFishingAction(perception);
+            if (fishingAction) {
+                return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
+            }
+        }
+
+        const fireGoalLike = /fire|burn|logs|tinderbox|light/i.test(goalText);
         if (fireGoalLike) {
             const fireAction = firemakingAction(perception);
             if (fireAction) {
@@ -527,17 +538,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const explorationOverride = this.explorationRoutineOverride(actions, perception);
             if (explorationOverride) {
                 return { action: explorationOverride, cause: 'exploration_fallback' };
-            }
-        }
-
-        if (isStarterFishingGoal(goal)) {
-            const cookingAction = starterFishingCookingAction(perception);
-            if (cookingAction) {
-                return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
-            }
-            const fishingAction = starterFishingAction(perception);
-            if (fishingAction) {
-                return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
             }
         }
 
@@ -749,9 +749,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     ): { action: AgentAction; cause: string } | undefined {
         const action = actions[0];
         if (action?.kind === 'move_to' && typeof action.range === 'number') {
-            return undefined;
-        }
-        if (action?.kind === 'interact' && action.cause === 'starter_fishing_net') {
             return undefined;
         }
         const here = perception.resident?.position;

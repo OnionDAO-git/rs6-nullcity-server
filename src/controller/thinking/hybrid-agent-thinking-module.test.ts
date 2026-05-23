@@ -3237,7 +3237,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('uses net on a visible starter fishing spot so the interaction task can path', async () => {
+    it('moves into range of a visible starter fishing spot before netting', async () => {
         const fishingSpot = npc('Fishing spot', 3224, 3201);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
@@ -3264,8 +3264,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
-        expect(result.cause).toBe('starter_fishing_net');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
+        expect(result.cause).toBe('starter_fishing_approach');
     });
 
     it('cooks raw starter fish on a visible fire before continuing the starter fishing loop', async () => {
@@ -3366,8 +3366,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
-        expect(result.cause).toBe('starter_fishing_net');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
+        expect(result.cause).toBe('starter_fishing_approach');
         expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
         expect(llm.complete).toHaveBeenCalledTimes(1);
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
@@ -3413,6 +3413,40 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeGoal?.id).toBe('catch-and-cook-starter-fish');
         expect(llm.complete).toHaveBeenCalledTimes(1);
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
+    it('does not pre-light the only cooking fire before catching fish for the fishing-cooking benchmark', async () => {
+        const fishingSpot = npc('Fishing spot', 3241, 3242);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3240, 3244),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                    ],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
+        expect(result.cause).toBe('starter_fishing_approach');
     });
 
     it('seeds combat prayer as the active benchmark goal without initial Brain drift', async () => {

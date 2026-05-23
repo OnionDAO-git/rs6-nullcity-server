@@ -82,7 +82,7 @@ const npcInteractionActionPipe = (
 
     const walkToPlugins = matchingHooks.filter(plugin => plugin.walkTo);
 
-    if (walkToPlugins.length > 0) {
+    if (walkToPlugins.length > 0 && !player.position.withinInteractionDistance(npc.position, 1)) {
         player.enqueueBaseTask(new WalkToActorPluginTask(walkToPlugins, player, 'npc', npc, { option }));
 
         return null;
