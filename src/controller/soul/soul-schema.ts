@@ -18,6 +18,51 @@ export type HeroTier = 'hero' | 'novice' | 'background';
  * See `docs/superpowers/specs/2026-05-22-hero-residents-design.md` and
  * `docs/null-city-foundation-audit.md` § M-α.
  */
+/**
+ * Optional faction-affinity scores per major RuneScape religious / political
+ * faction, each 0..100. The dominant affinity (highest non-zero value) is
+ * surfaced in Brain prompts as a flavor directive: a Saradomin-aligned
+ * resident speaks of justice and protection; Guthix of balance; Zamorak of
+ * power and risk. `unaligned` is the explicit "no faction" choice.
+ *
+ * Per the DRIFT-reconciled K spec, this is currently the only mechanical
+ * faction signal — combat-permission tables and territory shifts are
+ * deferred to post-event K work. See
+ * `docs/superpowers/specs/2026-05-22-rs6-factions-design.md`.
+ */
+export interface FactionAffinity {
+    saradomin?: number;
+    guthix?: number;
+    zamorak?: number;
+    unaligned?: number;
+}
+
+export type FactionName = keyof FactionAffinity;
+
+/**
+ * Pick the faction with the highest affinity score, with `unaligned` used
+ * as a tie-breaker only when no other faction is strictly higher. Returns
+ * `null` if every score is undefined or zero.
+ */
+export function dominantFaction(affinity: FactionAffinity | undefined): FactionName | null {
+    if (!affinity) {
+        return null;
+    }
+    let best: FactionName | null = null;
+    let bestScore = 0;
+    for (const faction of ['saradomin', 'guthix', 'zamorak', 'unaligned'] as const) {
+        const score = affinity[faction];
+        if (typeof score !== 'number' || score <= 0) {
+            continue;
+        }
+        if (score > bestScore) {
+            best = faction;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
 export interface HeroProfile {
     tier: HeroTier;
     /** Human-recognisable name shown in dashboard + portrait + letters. */
@@ -88,6 +133,7 @@ export interface SoulFrontmatter {
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
     heroProfile?: HeroProfile;
+    factionAffinity?: FactionAffinity;
 }
 
 export interface Soul {
@@ -297,6 +343,14 @@ export const soulFrontmatterSchema = z
                 publicName: z.string().min(1),
                 signatureAction: z.string().min(1),
                 anchor: z.tuple([z.number().int(), z.number().int(), z.number().int().min(0)]).optional(),
+            })
+            .optional(),
+        factionAffinity: z
+            .object({
+                saradomin: z.number().min(0).max(100).optional(),
+                guthix: z.number().min(0).max(100).optional(),
+                zamorak: z.number().min(0).max(100).optional(),
+                unaligned: z.number().min(0).max(100).optional(),
             })
             .optional(),
     })

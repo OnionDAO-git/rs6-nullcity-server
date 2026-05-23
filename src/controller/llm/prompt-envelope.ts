@@ -1,4 +1,4 @@
-import type { Soul, SoulArchetype, SoulFrontmatter } from '../soul/soul-schema';
+import { dominantFaction, type FactionName, type Soul, type SoulArchetype, type SoulFrontmatter } from '../soul/soul-schema';
 import type { AgentAction } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 
@@ -25,6 +25,7 @@ type EnvelopeSection =
     | 'goals'
     | 'alignment'
     | 'aesthetic'
+    | 'faction'
     | 'soul'
     | 'beliefs'
     | 'legacy'
@@ -47,6 +48,7 @@ const defaultCaps: Record<EnvelopeSection, number> = {
     goals: 320,
     alignment: 200,
     aesthetic: 160,
+    faction: 200,
     soul: 1200,
     beliefs: 400,
     legacy: 320,
@@ -75,6 +77,7 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
         ['goals', renderGoalsDirective(input.soul.frontmatter.goals)],
         ['alignment', renderAlignmentDirective(input.soul.frontmatter.alignment)],
         ['aesthetic', renderAestheticDirective(input.soul.frontmatter.aesthetic)],
+        ['faction', renderFactionDirective(input.soul.frontmatter.factionAffinity)],
         ['soul', input.soul.body],
         ['beliefs', input.soul.frontmatter.startingBeliefs || []],
         ['legacy', input.legacy || input.soul.frontmatter.legacy || null],
@@ -213,6 +216,29 @@ function renderAlignmentDirective(alignment: string | undefined): string {
         'Alignment: shapes how you treat other residents and humans, and how you behave under pressure. Apply this when you',
         'choose to help, ignore, deceive, defend, or trust someone.',
         `- ${alignment.trim()}`,
+    ].join('\n');
+}
+
+const FACTION_DIRECTIVES: Record<FactionName, string> = {
+    saradomin:
+        'You lean Saradominist. Speak of justice, protection of the weak, and the order light brings. Decline thefts and cruelty even when convenient.',
+    guthix:
+        'You lean Guthixian. Balance is the value above all others. Resist extremes — favor patience, listening, and small acts that keep the city stable.',
+    zamorak:
+        'You lean Zamorakian. Power is earned through risk; weakness embarrasses. Welcome contests and challenges. Refuse to coddle.',
+    unaligned:
+        'You are explicitly unaligned. Decline faction-flavored arguments; redirect to specifics. Friends are friends; faction is not a reason.',
+};
+
+function renderFactionDirective(affinity: { saradomin?: number; guthix?: number; zamorak?: number; unaligned?: number } | undefined): string {
+    const dominant = dominantFaction(affinity);
+    if (!dominant) {
+        return '';
+    }
+    return [
+        'Faction affinity: a quiet bias on how you frame help, conflict, and praise. Surface it through phrasing, not slogans.',
+        `- Dominant: ${dominant}`,
+        FACTION_DIRECTIVES[dominant],
     ].join('\n');
 }
 

@@ -160,4 +160,81 @@ describe('validateSoulFrontmatter modules', () => {
             ).toThrow();
         });
     });
+
+    describe('factionAffinity + dominantFaction (K-α)', () => {
+        it('accepts a soul with partial affinity scores', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:fern',
+                    archetype: 'mentor',
+                    factionAffinity: { saradomin: 60, guthix: 25 },
+                },
+                '/tmp/fern.md',
+            );
+            expect(frontmatter.factionAffinity?.saradomin).toBe(60);
+            expect(frontmatter.factionAffinity?.guthix).toBe(25);
+            expect(frontmatter.factionAffinity?.zamorak).toBeUndefined();
+        });
+
+        it('rejects a score outside 0..100', () => {
+            expect(() =>
+                validateSoulFrontmatter(
+                    {
+                        name: 'res:bad',
+                        archetype: 'achiever',
+                        factionAffinity: { saradomin: 150 },
+                    },
+                    '/tmp/bad.md',
+                ),
+            ).toThrow();
+            expect(() =>
+                validateSoulFrontmatter(
+                    {
+                        name: 'res:bad',
+                        archetype: 'achiever',
+                        factionAffinity: { saradomin: -1 },
+                    },
+                    '/tmp/bad.md',
+                ),
+            ).toThrow();
+        });
+
+        it('back-compat: soul without factionAffinity still parses', () => {
+            const frontmatter = validateSoulFrontmatter(
+                { name: 'res:agent', archetype: 'endurer' },
+                '/tmp/agent.md',
+            );
+            expect(frontmatter.factionAffinity).toBeUndefined();
+        });
+    });
+});
+
+describe('dominantFaction', () => {
+    const { dominantFaction } = require('./soul-schema') as typeof import('./soul-schema');
+
+    it('returns null when affinity is undefined', () => {
+        expect(dominantFaction(undefined)).toBeNull();
+    });
+
+    it('returns null when all scores are zero or undefined', () => {
+        expect(dominantFaction({})).toBeNull();
+        expect(dominantFaction({ saradomin: 0, guthix: 0 })).toBeNull();
+    });
+
+    it('returns the faction with the strictly highest score', () => {
+        expect(dominantFaction({ saradomin: 60, guthix: 25 })).toBe('saradomin');
+        expect(dominantFaction({ saradomin: 10, zamorak: 80 })).toBe('zamorak');
+        expect(dominantFaction({ guthix: 100 })).toBe('guthix');
+    });
+
+    it('first-listed faction wins on tie (saradomin > guthix > zamorak > unaligned)', () => {
+        // 'first listed' = iteration order in dominantFaction.
+        expect(dominantFaction({ saradomin: 50, guthix: 50 })).toBe('saradomin');
+        expect(dominantFaction({ guthix: 50, zamorak: 50 })).toBe('guthix');
+    });
+
+    it('respects unaligned only when no other faction strictly exceeds it', () => {
+        expect(dominantFaction({ unaligned: 80 })).toBe('unaligned');
+        expect(dominantFaction({ saradomin: 81, unaligned: 80 })).toBe('saradomin');
+    });
 });
