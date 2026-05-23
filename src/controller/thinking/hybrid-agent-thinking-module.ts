@@ -206,7 +206,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.cognition().tickTelemetry = undefined;
             this.ensureBenchmarkGoal();
 
-            const directChat = await this.directChatAction(perception as HybridPerception, thinkId);
+            const directChat = await this.directChatAction(perception as HybridPerception, thinkId, { includeSmallTalk: false });
             const directChatCancellation = this.cancelledResult(thinkId);
             if (directChatCancellation) {
                 return directChatCancellation;
@@ -254,6 +254,31 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return this.result(followHold.actions, followHold.cause, 0, followHold.nooped);
             }
 
+            if (this.shouldRunBody()) {
+                const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
+                if (presenceBeacon) {
+                    return this.result([presenceBeacon], 'presence_beacon', 0, false);
+                }
+
+                const bodyPerception = this.perceptionWithoutFailedTargets(perception as HybridPerception);
+                const visibility = this.visibilityStatus(bodyPerception);
+                const preInference = this.preInferenceBodyAction(bodyPerception, visibility);
+                if (preInference) {
+                    return this.result(preInference.actions, preInference.cause || 'body_step', 0, preInference.nooped);
+                }
+            }
+
+            if (!this.activeGoal() || !this.shouldRunBody()) {
+                const smallTalk = await this.directChatAction(perception as HybridPerception, thinkId, { includeSmallTalk: true });
+                const smallTalkCancellation = this.cancelledResult(thinkId);
+                if (smallTalkCancellation) {
+                    return smallTalkCancellation;
+                }
+                if (smallTalk) {
+                    return this.result([smallTalk.action], smallTalk.cause, 0, false);
+                }
+            }
+
             if (this.shouldRunBrain()) {
                 const brain = await this.runBrain(perception, gameSkill, thinkId);
                 const brainCancellation = this.cancelledResult(thinkId);
@@ -267,11 +292,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             if (!this.shouldRunBody()) {
                 return this.result([], 'body_wait', 0, true);
-            }
-
-            const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
-            if (presenceBeacon) {
-                return this.result([presenceBeacon], 'presence_beacon', 0, false);
             }
 
             const bodyResult = await this.runBody(perception, gameSkill, thinkId);
@@ -517,6 +537,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (typeof this.options.state.stuckSince === 'number') {
+            const here = perception.resident?.position;
             const exploratory = explorationAction(
                 perception,
                 visibility.anchor,
@@ -525,9 +546,20 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 this.options.state.tick,
                 this.explorationCooldowns(),
             );
-            if (exploratory) {
+            const recovery =
+                exploratory && isStuckRecoveryAction(exploratory)
+                    ? exploratory
+                    : here
+                      ? {
+                            kind: 'move_to' as const,
+                            target: explorationPatrolTarget(here, visibility.anchor, this.options.state.tick),
+                            range: 1,
+                            cause: 'stuck_pre_inference_explore',
+                        }
+                      : undefined;
+            if (recovery) {
                 return this.preInferenceResult(
-                    actionWithCause(exploratory, 'stuck_pre_inference_explore'),
+                    actionWithCause(recovery, 'stuck_pre_inference_explore'),
                     'stuck_pre_inference_explore',
                     perception,
                     visibility,
@@ -1398,10 +1430,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private async directChatAction(
         perception: HybridPerception,
         thinkId: number,
+        options: { includeSmallTalk?: boolean } = {},
     ): Promise<{ action: AgentAction; cause: string } | undefined> {
         const chat = latestAddressedChat(perception, this.commandPrefix(), this.cognition().lastDirectChatKey);
         if (!chat) {
-            return await this.nonCommandChatReaction(perception, thinkId);
+            return options.includeSmallTalk ? await this.nonCommandChatReaction(perception, thinkId) : undefined;
         }
 
         this.cognition().lastDirectChatKey = chat.key;
@@ -2550,6 +2583,10 @@ function routineLoopFamily(cause: string, action: AgentAction): string {
 
 function isConcreteExplorationOverride(action: AgentAction): boolean {
     return /explore_talk_to_npc|opportunistic_pickup|explore_visible_item/i.test(String(action.cause || ''));
+}
+
+function isStuckRecoveryAction(action: AgentAction): boolean {
+    return /explore_talk_to_npc|explore_visible_object|explore_patrol/i.test(String(action.cause || ''));
 }
 
 function modelActionTarget(action: AgentAction): Pos | undefined {

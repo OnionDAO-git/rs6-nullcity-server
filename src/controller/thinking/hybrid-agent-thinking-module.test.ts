@@ -241,6 +241,99 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('does not let slow small talk inference starve an overdue routine action', async () => {
+        const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('small talk should wait')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather logs from a nearby ordinary tree and light a fire with the tinderbox.',
+                steps: ['Chop a tree for logs.', 'Use tinderbox on logs.'],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 10,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                objects: [tree],
+                events: [{ kind: 'chat', from: player('codex', 3218, 3200), text: 'nice day', to: 'public' }],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: tree, option: 'chop down', cause: 'woodcutting_level1_routine' }]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('runs deterministic body routines before due Brain inference when a useful action is available', async () => {
+        const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('brain should wait')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather logs from a nearby ordinary tree and light a fire with the tinderbox.',
+                steps: ['Chop a tree for logs.', 'Use tinderbox on logs.'],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 200,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: tree, option: 'chop down', cause: 'woodcutting_level1_routine' }]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('moves while stuck instead of farming the same opportunistic pickup as recovery', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('brain should wait')));
+        const state = runtimeState();
+        state.stuckSince = 5;
+        state.cognition = {
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+        const coins = { itemId: 995, key: 'rs:coins', amount: 25, position: { x: 3211, y: 3240, level: 0 } };
+
+        const result = await agent.think(
+            perception({
+                tick: 10,
+                resident: residentAt(3211, 3246),
+                worldItems: [coins],
+            }),
+        );
+
+        expect(result.actions).toEqual([expect.objectContaining({ kind: 'move_to', range: 1, cause: 'stuck_pre_inference_explore' })]);
+        expect(result.actions).not.toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
     it('keeps Agent findable by falling back to the visibility anchor when Body inference noops', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
