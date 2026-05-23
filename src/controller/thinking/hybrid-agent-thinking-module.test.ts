@@ -3324,7 +3324,7 @@ describe('HybridAgentThinkingModule', () => {
             perception({
                 tick: 3,
                 resident: {
-                    ...residentAt(3218, 3201),
+                    ...residentAt(3209, 3213),
                     inventory: [
                         { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
                         { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },

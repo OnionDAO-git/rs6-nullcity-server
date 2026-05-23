@@ -623,6 +623,52 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).toHaveBeenCalledTimes(1);
     });
 
+    it('uses a generous movement evidence timeout for distant move_to actions', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-long-move-timeout-test-'));
+        const state = stateFor('res:pip');
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target: { x: 3208, y: 3213, level: 0 }, range: 4, cause: 'starter_fishing_find_range' }],
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(async () => ({ ok: false, reason: 'timeout' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3240, y: 3244, level: 0 } },
+            events: [],
+        });
+
+        expect(body.waitForPerception).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ timeoutMs: 90_000 }));
+    });
+
     it('waits for item action effect evidence before marking the attempt successful', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-item-effect-test-'));
         const state = stateFor('res:pip');
@@ -692,8 +738,18 @@ describe('ResidentRuntime modules', () => {
             resident: {
                 inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }, null],
             },
+            nearby: { objects: [] },
+            events: [{ kind: 'item_lost', item: { itemId: 1511, key: 'rs:logs', amount: 1 } }],
+        });
+        expect(await settlesWithin(firstTick, 5)).toBe(false);
+
+        await runtime.onPerception({
+            tick: 4,
+            resident: {
+                inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }, null],
+            },
             nearby: { objects: [{ objectId: 2732, position: { x: 3200, y: 3200, level: 0 } }] },
-            events: [{ kind: 'message', text: 'The fire catches and the logs begin to burn.' }],
+            events: [{ kind: 'fire_lit', position: { x: 3200, y: 3200, level: 0 } }],
         });
         await firstTick;
 

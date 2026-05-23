@@ -364,11 +364,13 @@ export class ResidentRuntime {
             const target = action.target;
             const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
             const afterSeq = this.body.getLatestPerceptionSeq();
+            const latestPerception = this.body.getLatestPerception();
+            const timeoutMs = movementEffectTimeoutMs(latestPerception ? perceptionPosition(latestPerception) : undefined, target);
             return async signal =>
                 perceptionWaitToEffect(
                     await this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
                         afterSeq,
-                        timeoutMs: 5000,
+                        timeoutMs,
                         signal,
                     }),
                     perception => ({
@@ -398,11 +400,12 @@ export class ResidentRuntime {
         if (waitsForPerceptionEffect(action.kind) && supportsPerceptionEffectWait(this.body)) {
             const before = this.body.getLatestPerception();
             const afterSeq = this.body.getLatestPerceptionSeq();
+            const timeoutMs = actionEffectTimeoutMs(action, before);
             return async signal =>
                 perceptionWaitToEffect(
                     await this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
                         afterSeq,
-                        timeoutMs: 5000,
+                        timeoutMs,
                         signal,
                     }),
                     perception => ({
@@ -492,6 +495,14 @@ function positionMatches(position: Position | undefined, target: Position, range
     );
 }
 
+function movementEffectTimeoutMs(position: Position | undefined, target: Position): number {
+    if (!position) {
+        return 5000;
+    }
+    const distance = Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y));
+    return Math.max(5000, Math.min(120000, (distance + 4) * 2500));
+}
+
 function isPosition(value: unknown): value is Position {
     const recordValue = record(value);
     return typeof recordValue.x === 'number' && typeof recordValue.y === 'number';
@@ -565,7 +576,55 @@ function stringReason(reason: unknown): string | undefined {
 }
 
 function actionEffectObserved(action: AgentAction, before: Perception | undefined, after: Perception): boolean {
+    if (isFiremakingUseItemOnItemAction(action, before)) {
+        return firemakingEffectObserved(after);
+    }
     return changedEffectSections(before, after, action).length > 0 || eventSummaries(after, action).length > 0;
+}
+
+function actionEffectTimeoutMs(action: AgentAction, before: Perception | undefined): number {
+    return isFiremakingUseItemOnItemAction(action, before) ? 15000 : 5000;
+}
+
+function isFiremakingUseItemOnItemAction(action: AgentAction, perception: Perception | undefined): boolean {
+    if (action.kind !== 'use_item_on_item') {
+        return false;
+    }
+    const actionRecord = record(action);
+    if (typeof actionRecord.itemSlot !== 'number' || typeof actionRecord.targetSlot !== 'number') {
+        return false;
+    }
+    const source = inventoryItemAt(perception, actionRecord.itemSlot);
+    const target = inventoryItemAt(perception, actionRecord.targetSlot);
+    return (isTinderboxItem(source) && isLogItem(target)) || (isLogItem(source) && isTinderboxItem(target));
+}
+
+function inventoryItemAt(perception: Perception | undefined, slot: number): Record<string, unknown> | undefined {
+    const resident = record(record(perception).resident);
+    const inventory = Array.isArray(resident.inventory) ? resident.inventory : [];
+    return record(inventory[slot]);
+}
+
+function isTinderboxItem(item: Record<string, unknown> | undefined): boolean {
+    return item?.itemId === 590 || item?.key === 'rs:tinderbox';
+}
+
+function isLogItem(item: Record<string, unknown> | undefined): boolean {
+    return item?.itemId === 1511 || (typeof item?.key === 'string' && /(^|:)logs$/.test(item.key));
+}
+
+function firemakingEffectObserved(perception: Perception): boolean {
+    const nearby = record(record(perception).nearby);
+    const objects = Array.isArray(nearby.objects) ? nearby.objects : [];
+    if (objects.some(object => record(object).objectId === 2732)) {
+        return true;
+    }
+    const events = Array.isArray(perception.events) ? perception.events : [];
+    return events.some(event => {
+        const eventRecord = record(event);
+        const text = typeof eventRecord.text === 'string' ? eventRecord.text.toLowerCase() : '';
+        return eventRecord.kind === 'fire_lit' || /fire catches|logs begin to burn/.test(text);
+    });
 }
 
 function effectState(perception: Perception | undefined, action?: AgentAction): Record<string, unknown> {
@@ -637,6 +696,9 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
     const eventRecord = record(event);
     if (eventRecord.kind === 'chat') {
         return false;
+    }
+    if (eventRecord.kind === 'fire_lit') {
+        return true;
     }
     const text = typeof eventRecord.text === 'string' ? eventRecord.text.toLowerCase() : '';
     switch (action?.kind) {

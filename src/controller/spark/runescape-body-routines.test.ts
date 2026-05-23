@@ -12,6 +12,7 @@ import {
     combatTrainingAction,
     explorationAction,
     firemakingAction,
+    LUMBRIDGE_CASTLE_RANGE,
     levelOneWoodcuttingAction,
     opportunisticPickupAction,
     prayerTrainingAction,
@@ -430,13 +431,27 @@ describe('starterFishingCookingAction', () => {
     it('says when raw fish are carried but no heat source and no firemaking tools', () => {
         const action = starterFishingCookingAction(
             perception({
-                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                resident: { position: { x: 3209, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
             }),
         );
         expect(action).toEqual({
             kind: 'say',
             text: 'I have raw fish now. I need a fire or range to cook it.',
             cause: 'starter_fishing_missing_heat',
+        });
+    });
+
+    it('walks toward Lumbridge Castle range when raw fish are carried without visible heat or logs', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3240, y: 3244, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_RANGE,
+            range: 4,
+            cause: 'starter_fishing_find_range',
         });
     });
 

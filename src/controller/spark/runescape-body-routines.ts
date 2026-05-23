@@ -95,6 +95,12 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
 /** Object IDs that can be used as cooking heat sources by the fishing routine. */
 export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 
+/** Lumbridge Castle kitchen range fallback for raw starter fish when no local fire is available. */
+export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
+
+/** Range within which the resident should stop walking and report missing heat. */
+export const COOKING_RANGE_APPROACH_RADIUS = 4;
+
 /** Max number of inventory slots considered "free" by the pickup routine. */
 export const MAX_INVENTORY_SLOTS = 28;
 
@@ -299,6 +305,15 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
     const fireAction = firemakingAction(perception);
     if (fireAction) {
         return actionWithCause(fireAction, 'starter_fishing_make_cooking_fire');
+    }
+
+    if (here && distance(here, LUMBRIDGE_CASTLE_RANGE) > COOKING_RANGE_APPROACH_RADIUS) {
+        return {
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_RANGE,
+            range: COOKING_RANGE_APPROACH_RADIUS,
+            cause: 'starter_fishing_find_range',
+        };
     }
 
     return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };

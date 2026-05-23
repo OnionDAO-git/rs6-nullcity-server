@@ -421,8 +421,11 @@ function isCookingSuccessEvent(event: PerceptionEvent): boolean {
     if (kind === 'xp_gained' && stringField(event, 'skill') === 'cooking') {
         return true;
     }
+    if (kind === 'chat' && isRecord(event.from)) {
+        return false;
+    }
     const text = stringField(event, 'text') || stringField(event, 'message') || '';
-    return /successfully cook|cooking xp|cook(ed)? the/i.test(text);
+    return /successfully cook|cooking xp|you (?:successfully )?cook(?:ed)? the/i.test(text);
 }
 
 function skillXpIncreased(perceptions: Perception[], skill: string): boolean {

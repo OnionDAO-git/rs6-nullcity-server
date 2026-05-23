@@ -515,7 +515,9 @@ describe('RuneScape knowledge retriever', () => {
 
     describe('meta entries (goal selection and progression priorities)', () => {
         it('retrieves the goal-selection entry for a what-should-I-do query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what should I do now when I have no goal and the world is quiet', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'what should I do now when I have no goal and the world is quiet', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('meta-goal-selection');
@@ -524,7 +526,9 @@ describe('RuneScape knowledge retriever', () => {
         });
 
         it('retrieves the early-progression entry for a starter-resident query', () => {
-            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'I am a fresh resident what should I train first in what order', { limit: 4 });
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'I am a fresh resident what should I train first in what order', {
+                limit: 4,
+            });
 
             const ids = results.map(result => result.entry.id);
             expect(ids).toContain('meta-early-progression');

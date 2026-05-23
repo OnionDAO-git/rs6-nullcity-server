@@ -87,6 +87,40 @@ describe('verifyFishingCooking10m', () => {
         expect(outcome.failureReason).toContain('No successful cooking action');
     });
 
+    it('does not treat resident chat about cooking as cooked-food evidence', () => {
+        const cookingAction: AgentAction = { kind: 'use_item_on', itemSlot: 1, target: fire(), cause: 'starter_fishing_cook_catch' };
+        const outcome = verifyFishingCooking10m({
+            elapsedMs: 120_000,
+            actions: [
+                attempt({ kind: 'interact', target: fishingSpot(), option: 'net', cause: 'starter_fishing_net' }),
+                attempt(cookingAction),
+                attempt(cookingAction, undefined, undefined, 'timeout'),
+            ],
+            perceptions: [
+                perception({ inventory: [item(303, 'rs:small_fishing_net')], npcs: [fishingSpot()], objects: [fire()] }),
+                perception({
+                    inventory: [item(303, 'rs:small_fishing_net'), item(317, 'rs:raw_shrimp')],
+                    npcs: [fishingSpot()],
+                    objects: [fire()],
+                    skills: { cooking: { xp: 0 } },
+                }),
+            ],
+            events: [
+                {
+                    kind: 'chat',
+                    from: { id: 'resident:res:bmk_agent', kind: 'resident' },
+                    text: 'Goal: catch shrimp, then cook the catch.',
+                },
+                { kind: 'chat', from: { id: 'resident:res:bmk_agent', kind: 'resident' }, text: 'I need a fire or range to cook it.' },
+            ],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.metrics?.cookingSuccessEvents).toBe(0);
+        expect(outcome.metrics?.successfulCookingActions).toBe(0);
+        expect(outcome.failureReason).toContain('No successful cooking action');
+    });
+
     it('accepts independent fish and cook evidence when a final action observer times out', () => {
         const netAction: AgentAction = { kind: 'interact', target: fishingSpot(), option: 'net', cause: 'starter_fishing_net' };
         const cookingAction: AgentAction = { kind: 'use_item_on', itemSlot: 1, target: fire(), cause: 'starter_fishing_cook_catch' };
