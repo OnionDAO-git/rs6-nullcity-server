@@ -47,11 +47,14 @@ async function main(): Promise<void> {
             // LettersStore is filesystem-rooted at memory.dir — a fresh
             // instance here shares the same files PatronGateway writes to via
             // the EVENT-D1a wiring in controller-host.ts.
+            // EVENT-D6: passing lettersRoot enables the /v1/wall/snapshot
+            // route on the same server for the venue wall ticker.
             lettersHttpServer = await startLettersHttpServer({
                 store: new LettersStore(config.memory.dir),
                 port: args.lettersHttpPort,
                 host: args.lettersHttpHost,
                 path: args.lettersHttpPath,
+                lettersRoot: config.memory.dir,
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
         }
