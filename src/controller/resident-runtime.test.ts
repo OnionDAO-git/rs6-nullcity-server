@@ -1156,11 +1156,343 @@ describe('ResidentRuntime modules', () => {
             events: [],
         });
 
-        await expect(tickPromise).resolves.toBe('completed');
+        await expect(tickPromise).resolves.toBe('progress');
         expect(body.submit).toHaveBeenCalledWith(
             { kind: 'move_to', target: { x: 3208, y: 3200, level: 0 }, range: 2, cause: 'routine:follow_player' },
             expect.objectContaining({ source: 'routine', routineId: 'follow_player' }),
         );
+    });
+
+    it('runs chop_tree routine to move toward targetCoord when far, or chop if close/not provided', async () => {
+        const state = stateFor('res:pip');
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'chop-1' })),
+            getLatestPerceptionSeq: jest.fn(() => 0),
+            getLatestPerception: jest.fn(() => undefined),
+            waitForPerception: jest.fn(async () => ({
+                ok: true,
+                observation: { value: { resident: { position: { x: 3200, y: 3200, level: 0 } } } },
+            })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            body,
+        });
+
+        // Test 1: Far away from targetCoord
+        let tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'chop_tree',
+            params: { targetCoord: { x: 3205, y: 3205, level: 0 } },
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { objects: [] },
+            events: [],
+        });
+
+        await expect(tickPromise).resolves.toBe('progress');
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'move_to', target: { x: 3205, y: 3205, level: 0 }, range: 1, cause: 'routine:chop_tree' },
+            expect.objectContaining({ source: 'routine', routineId: 'chop_tree' }),
+        );
+
+        // Test 2: Close to targetCoord (within distance 1)
+        (body.submit as jest.Mock).mockClear();
+        tickPromise = runtime.tick({
+            tickIndex: 1,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'chop_tree',
+            params: { targetCoord: { x: 3201, y: 3200, level: 0 } },
+        });
+
+        await runtime.onPerception({
+            tick: 2,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [{ itemId: 1351, key: 'rs:bronze axe', amount: 1 }] },
+            nearby: { objects: [{ objectId: 1276, key: 'rs:tree', position: { x: 3201, y: 3200, level: 0 } }] },
+            events: [],
+        });
+
+        await expect(tickPromise).resolves.toBe('completed');
+        expect(body.submit).toHaveBeenCalledWith(
+            {
+                kind: 'interact',
+                option: 'chop down',
+                target: expect.objectContaining({ objectId: 1276 }),
+                cause: 'woodcutting_level1_routine',
+            },
+            expect.objectContaining({ source: 'routine', routineId: 'chop_tree' }),
+        );
+    });
+
+    it('runs safe_combat routine to preempt when HP <= 30%, and tracks kills to complete', async () => {
+        const state = stateFor('res:pip');
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'combat-1' })),
+            getLatestPerceptionSeq: jest.fn(() => 0),
+            getLatestPerception: jest.fn(() => undefined),
+            waitForPerception: jest.fn(async () => ({
+                ok: true,
+                observation: { value: { resident: { position: { x: 3200, y: 3200, level: 0 } } } },
+            })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            body,
+        });
+
+        // Test 1: HP preemption at <= 30% (e.g., HP 3/10)
+        let tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'safe_combat',
+            params: { killCount: 2 },
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { hp: { current: 3, max: 10 }, position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { npcs: [{ id: 'npc:1', name: 'Goblin', position: { x: 3201, y: 3200, level: 0 } }] },
+            events: [],
+        });
+
+        await expect(tickPromise).resolves.toEqual({ preempted: 'nervous_eat_when_hurt' });
+        expect(body.submit).not.toHaveBeenCalled();
+
+        // Test 2: Target params select the requested NPC instead of the first visible safe target.
+        (body.submit as jest.Mock).mockClear();
+        tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'safe_combat',
+            params: { target: { kind: 'npc', name: 'cow' }, killCount: 1 },
+        });
+
+        await runtime.onPerception({
+            tick: 2,
+            resident: { hp: { current: 8, max: 10 }, position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: {
+                npcs: [
+                    { id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3201, y: 3200, level: 0 } },
+                    { id: 'npc:cow', kind: 'npc', name: 'Cow', position: { x: 3202, y: 3200, level: 0 } },
+                ],
+            },
+            events: [],
+        });
+
+        await expect(tickPromise).resolves.toBe('progress');
+        expect(body.submit).toHaveBeenCalledWith(
+            {
+                kind: 'attack',
+                target: expect.objectContaining({ id: 'npc:cow', name: 'Cow' }),
+                cause: 'routine:safe_combat',
+            },
+            expect.objectContaining({ source: 'routine', routineId: 'safe_combat' }),
+        );
+
+        // Test 3: Defeat logging and completion when killsObserved >= killCount (e.g. 1).
+        (body.submit as jest.Mock).mockClear();
+        tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'safe_combat',
+            params: { killCount: 1 },
+        });
+
+        await runtime.onPerception({
+            tick: 3,
+            resident: { hp: { current: 8, max: 10 }, position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { npcs: [{ id: 'npc:1', name: 'Goblin', position: { x: 3201, y: 3200, level: 0 } }] },
+            events: [{ kind: 'death', text: 'Goblin dies.' }],
+        });
+
+        await expect(tickPromise).resolves.toBe('completed');
+        expect(body.submit).not.toHaveBeenCalled();
+    });
+
+    it('runs follow_player routine and only completes after 5 consecutive ticks within distance', async () => {
+        const state = stateFor('res:pip');
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'follow-1' })),
+            getLatestPerceptionSeq: jest.fn(() => 0),
+            getLatestPerception: jest.fn(() => undefined),
+            waitForPerception: jest.fn(async () => ({
+                ok: true,
+                observation: { value: { resident: { position: { x: 3200, y: 3200, level: 0 } } } },
+            })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            body,
+        });
+
+        // Tick 0: fresh run starts the stable-follow counter.
+        let tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Tick 1: 2nd consecutive tick in range
+        tickPromise = runtime.tick({
+            tickIndex: 1,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 2,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Tick 2: Out of range tick -> resets counter to 0 and treats movement as progress.
+        tickPromise = runtime.tick({
+            tickIndex: 2,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 3,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3208, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Let's simulate 5 consecutive ticks in range (consecutive ticks 1 to 5)
+        // Tick 1:
+        tickPromise = runtime.tick({
+            tickIndex: 0,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 4,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Tick 2:
+        tickPromise = runtime.tick({
+            tickIndex: 1,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 5,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Tick 3:
+        tickPromise = runtime.tick({
+            tickIndex: 2,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 6,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Tick 4:
+        tickPromise = runtime.tick({
+            tickIndex: 3,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 7,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('progress');
+
+        // Tick 5: consecutive 5th tick -> completes!
+        tickPromise = runtime.tick({
+            tickIndex: 4,
+            maxTicks: 10,
+            signal: new AbortController().signal,
+            routineId: 'follow_player',
+            params: { player: 'James', distance: 3 },
+        });
+        await runtime.onPerception({
+            tick: 8,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+            nearby: { players: [{ id: 'player:james', name: 'James', position: { x: 3202, y: 3200, level: 0 } }] },
+            events: [],
+        });
+        await expect(tickPromise).resolves.toBe('completed');
     });
 });
 

@@ -6,7 +6,9 @@ import {
     buryBonesAction,
     combatTrainingAction,
     firemakingAction,
+    firstFoodSlot,
     hasNearbyFire,
+    isLowHealth,
     levelOneWoodcuttingAction,
 } from './spark/runescape-body-routines';
 
@@ -86,6 +88,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     readonly name: string;
     _lastHints?: string[];
     activeRoutineId?: string;
+    private followSuccessTicks = 0;
+    private killsObserved = 0;
     private nextPerceptionResolver?: (arrival: PerceptionArrival) => void;
     private readonly state: RuntimeState;
     private readonly thinking: ThinkingModule;
@@ -574,6 +578,11 @@ export class ResidentRuntime implements RoutineCapableRuntime {
 
         const perception = arrival.perception;
 
+        if (ctx.tickIndex === 0) {
+            this.killsObserved = 0;
+            this.followSuccessTicks = 0;
+        }
+
         // Determine active routine action via routine dispatch table.
         let action: AgentAction | undefined;
         const activeRoutineId = ctx.routineId || this.activeRoutineId;
@@ -584,9 +593,27 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     return 'completed';
                 }
                 break;
-            case 'chop_tree':
-                action = levelOneWoodcuttingAction(perception);
+            case 'chop_tree': {
+                const params = chopTreeParams(ctx.params);
+                if (params.targetCoord) {
+                    const here = perceptionPosition(perception);
+                    if (here) {
+                        const dist = chebyshevDistance(here, params.targetCoord);
+                        if (dist > 1) {
+                            action = {
+                                kind: 'move_to',
+                                target: { x: params.targetCoord.x, y: params.targetCoord.y, level: params.targetCoord.level ?? 0 },
+                                range: 1,
+                                cause: 'routine:chop_tree',
+                            };
+                        }
+                    }
+                }
+                if (!action) {
+                    action = levelOneWoodcuttingAction(perception);
+                }
                 break;
+            }
             case 'bury_bones':
                 action = buryBonesAction(perception);
                 if (!action) {
@@ -594,18 +621,76 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     return 'completed';
                 }
                 break;
-            case 'safe_combat':
-                action = combatTrainingAction(perception);
+            case 'safe_combat': {
+                const params = safeCombatParams(ctx.params);
+                const resident = record(perception.resident);
+
+                // Check HP limit (stay > 30%)
+                const hp = record(resident.hp);
+                const currentHp = typeof hp.current === 'number' ? hp.current : undefined;
+                const maxHp = typeof hp.max === 'number' ? hp.max : undefined;
+                if (currentHp !== undefined && maxHp !== undefined && maxHp > 0) {
+                    if (currentHp / maxHp <= 0.3) {
+                        this.killsObserved = 0;
+                        return { preempted: 'nervous_eat_when_hurt' };
+                    }
+                }
+
+                // Check kill count completion
+                const events = Array.isArray(perception.events) ? perception.events : [];
+                for (const event of events) {
+                    const text = typeof event.text === 'string' ? event.text.toLowerCase() : '';
+                    if (event.kind === 'death' || /defeat|dies/.test(text)) {
+                        this.killsObserved += 1;
+                    }
+                }
+
+                const killCount = params.killCount ?? 1;
+                if (this.killsObserved >= killCount) {
+                    this.killsObserved = 0;
+                    return 'completed';
+                }
+
+                // Eat food if low health
+                if (isLowHealth(perception)) {
+                    const inventory = Array.isArray(resident.inventory) ? resident.inventory : [];
+                    const foodSlot = firstFoodSlot(inventory);
+                    if (foodSlot !== undefined) {
+                        action = { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_training' };
+                    } else {
+                        return 'no_progress';
+                    }
+                }
+
+                if (!action) {
+                    const targetNpc = pickSafeCombatTarget(perception, params.target);
+                    if (targetNpc) {
+                        action = { kind: 'attack', target: targetNpc, cause: 'routine:safe_combat' };
+                    } else {
+                        action = combatTrainingAction(perception);
+                    }
+                }
                 break;
+            }
             case 'follow_player': {
                 const params = followPlayerParams(ctx.params);
                 const target = pickFollowTarget(perception, params.player);
-                if (target) {
-                    const current = perceptionPosition(perception);
-                    const followDistance = params.distance ?? 3;
-                    if (current && chebyshevDistance(current, target) <= followDistance) {
+                if (!target) {
+                    this.followSuccessTicks = 0;
+                    return 'no_progress';
+                }
+
+                const current = perceptionPosition(perception);
+                const followDistance = params.distance ?? 3;
+                if (current && chebyshevDistance(current, target) <= followDistance) {
+                    this.followSuccessTicks += 1;
+                    if (this.followSuccessTicks >= 5) {
+                        this.followSuccessTicks = 0;
                         return 'completed';
                     }
+                    return 'progress';
+                } else {
+                    this.followSuccessTicks = 0;
                     action = {
                         kind: 'move_to',
                         target: { x: target.x, y: target.y, level: target.level ?? 0 },
@@ -647,7 +732,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         });
 
         if (attempt.finalStatus === 'success') {
-            return 'completed';
+            return routineSuccessOutcome(activeRoutineId, action);
         }
         if (attempt.finalStatus === 'accepted') {
             return 'progress';
@@ -673,6 +758,25 @@ interface Position {
 interface FollowPlayerParams {
     player?: string;
     distance?: number;
+}
+
+interface RoutineCoord {
+    x: number;
+    y: number;
+    level?: number;
+}
+
+interface ChopTreeParams {
+    targetCoord?: RoutineCoord;
+}
+
+interface SafeCombatParams {
+    target?: {
+        kind?: 'npc' | 'player';
+        name?: string;
+        coord?: RoutineCoord;
+    };
+    killCount?: number;
 }
 
 /**
@@ -738,6 +842,83 @@ function followPlayerParams(params: unknown): FollowPlayerParams {
         player: typeof recordValue.player === 'string' ? recordValue.player : undefined,
         distance: typeof recordValue.distance === 'number' ? recordValue.distance : undefined,
     };
+}
+
+function chopTreeParams(params: unknown): ChopTreeParams {
+    const targetCoord = coordParam(record(params).targetCoord);
+    return targetCoord ? { targetCoord } : {};
+}
+
+function safeCombatParams(params: unknown): SafeCombatParams {
+    const value = record(params);
+    const target = record(value.target);
+    return {
+        target:
+            Object.keys(target).length > 0
+                ? {
+                      kind: target.kind === 'npc' || target.kind === 'player' ? target.kind : undefined,
+                      name: typeof target.name === 'string' ? target.name : undefined,
+                      coord: coordParam(target.coord),
+                  }
+                : undefined,
+        killCount: typeof value.killCount === 'number' ? value.killCount : undefined,
+    };
+}
+
+function pickSafeCombatTarget(perception: Perception, target: SafeCombatParams['target']): Record<string, unknown> | undefined {
+    if (!target || target.kind === 'player') {
+        return undefined;
+    }
+    const npcs = record(record(perception).nearby).npcs;
+    if (!Array.isArray(npcs)) {
+        return undefined;
+    }
+    const targetName = normalizeName(target.name);
+    return npcs.find(npc => {
+        const actor = record(npc);
+        const position = coordParam(actor.position);
+        if (targetName) {
+            const actorName = normalizeName(actor.name);
+            const actorKey = normalizeName(actor.key);
+            const actorId = normalizeName(actor.id);
+            if (actorName !== targetName && actorKey !== targetName && actorId !== targetName) {
+                return false;
+            }
+        }
+        if (target.coord) {
+            return position ? sameCoord(position, target.coord) : false;
+        }
+        return true;
+    });
+}
+
+function coordParam(value: unknown): RoutineCoord | undefined {
+    const recordValue = record(value);
+    if (typeof recordValue.x !== 'number' || typeof recordValue.y !== 'number') {
+        return undefined;
+    }
+    return {
+        x: recordValue.x,
+        y: recordValue.y,
+        level: typeof recordValue.level === 'number' ? recordValue.level : undefined,
+    };
+}
+
+function sameCoord(a: RoutineCoord, b: RoutineCoord): boolean {
+    return a.x === b.x && a.y === b.y && (a.level === b.level || a.level === undefined || b.level === undefined);
+}
+
+function routineSuccessOutcome(routineId: string | undefined, action: AgentAction): RoutineTickOutcome {
+    if (routineId === 'safe_combat') {
+        return 'progress';
+    }
+    if (routineId === 'follow_player') {
+        return 'progress';
+    }
+    if (routineId === 'chop_tree' && action.kind === 'move_to') {
+        return 'progress';
+    }
+    return 'completed';
 }
 
 function normalizeName(value: unknown): string | undefined {

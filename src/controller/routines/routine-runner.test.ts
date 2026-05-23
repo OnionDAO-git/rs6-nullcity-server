@@ -210,6 +210,63 @@ describe('RoutineRunner', () => {
         });
     });
 
+    describe('expanded routine validations', () => {
+        it('validates chop_tree params', async () => {
+            const runtime = mockRuntime();
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const badParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'chop_tree',
+                params: { targetCoord: { x: 'bad', y: 3200 } } as any,
+            });
+            expect(badParams.status).toBe('rejected');
+            expect(badParams.lastError).toBe('params_invalid');
+
+            runtime.tick = jest.fn().mockResolvedValueOnce('completed');
+            const goodParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'chop_tree',
+                params: { targetCoord: { x: 3200, y: 3200, level: 0 } },
+            });
+            expect(goodParams.status).toBe('completed');
+        });
+
+        it('validates safe_combat params and handles execution', async () => {
+            const runtime = mockRuntime();
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const badParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'safe_combat',
+                params: { killCount: 0 },
+            });
+            expect(badParams.status).toBe('rejected');
+            expect(badParams.lastError).toBe('params_invalid');
+
+            runtime.tick = jest.fn().mockResolvedValueOnce('completed');
+            const goodParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'safe_combat',
+                params: { target: { kind: 'npc', name: 'Goblin' }, killCount: 5 },
+            });
+            expect(goodParams.status).toBe('completed');
+        });
+
+        it('validates follow_player params', async () => {
+            const runtime = mockRuntime();
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const badParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'follow_player',
+                params: { player: '', distance: -1 },
+            });
+            expect(badParams.status).toBe('rejected');
+            expect(badParams.lastError).toBe('params_invalid');
+        });
+    });
+
     describe('routine context', () => {
         it('passes the routine id and parsed params into runtime ticks', async () => {
             const runtime = mockRuntime();
