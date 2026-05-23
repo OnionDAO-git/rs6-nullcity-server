@@ -29,13 +29,15 @@ import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
 import type { MemoryStore } from './memory/memory-store';
-import { type RuntimeState, RuntimeStateStore } from './memory/runtime-state';
+import { type RuntimeState, RuntimeStateStore, markDeceased } from './memory/runtime-state';
 import { NervousSystem } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
-import type { Soul } from './soul/soul-schema';
+import { type Soul, dominantFaction } from './soul/soul-schema';
+import { LettersStore } from './patron/letters-store';
+import { buildEpitaphDispatchRequests, dispatchEpitaphs, type DeceasedResidentSummary } from './patron/epitaph-dispatcher';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
-import { initialAttention } from './spark/attention';
+import { initialAttention, spendAttention } from './spark/attention';
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
 import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
@@ -179,13 +181,59 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
-        if (this.nextPerceptionResolver) {
-            const resolve = this.nextPerceptionResolver;
-            this.nextPerceptionResolver = undefined;
+        this.state.attention = spendAttention(
+            this.state.attention,
+            this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
+        );
+
+        if (this.state.attention <= 0 && !this.state.deceased) {
+            markDeceased(this.state, 'attention_exhausted');
+        }
+
+        try {
+            if (this.nextPerceptionResolver) {
+                const resolve = this.nextPerceptionResolver;
+                this.nextPerceptionResolver = undefined;
+
+                const nervousPerception = this.peekWithPendingEvents(perception);
+                const reaction = this.nervousSystem.react(nervousPerception);
+                if (reaction) {
+                    const decisionPerception = this.withPendingEvents(perception);
+                    this.history.push(decisionPerception);
+                    this.body.observePerception(decisionPerception);
+
+                    const attempt = await this.submitActionWithWatchdog({
+                        producer: 'nervous-system',
+                        action: reaction.action,
+                        metadata: {
+                            tick: this.state.tick,
+                            attention_after: this.state.attention,
+                            source: 'nervous-system',
+                            ruleId: reaction.rule.id,
+                            sparkModule: reaction.sparkModule,
+                        },
+                        waitForEffect: this.effectWaitFor(reaction.action),
+                        ...this.evidenceCallbacks(),
+                    });
+                    this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+
+                    resolve({
+                        perception,
+                        preemption: { preempted: mapNervousRuleId(reaction.rule.id) },
+                    });
+                    return;
+                }
+
+                resolve({ perception });
+                return;
+            }
 
             const nervousPerception = this.peekWithPendingEvents(perception);
             const reaction = this.nervousSystem.react(nervousPerception);
             if (reaction) {
+                if (this.deciding && reaction.interruptThinking) {
+                    this.thinking.stop(`nervous:${reaction.rule.id}`);
+                }
                 const decisionPerception = this.withPendingEvents(perception);
                 this.history.push(decisionPerception);
                 this.body.observePerception(decisionPerception);
@@ -204,121 +252,86 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     ...this.evidenceCallbacks(),
                 });
                 this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
-                this.options.stateStore.save(this.state);
+                if (reaction.suppressThinking) {
+                    return;
+                }
+            }
 
-                resolve({
-                    perception,
-                    preemption: { preempted: mapNervousRuleId(reaction.rule.id) },
-                });
+            if (this.deciding) {
+                this.history.push(perception);
+                this.body.observePerception(perception);
+                const compressed = this.compressor.compress(nervousPerception);
+                if (this.thinking.considerInterrupt(nervousPerception)) {
+                    this.options.inferenceLog.append(this.name, {
+                        tick: this.state.tick,
+                        cause: 'urgent_interrupt',
+                        perception_tokens: compressed.text.length,
+                        sparkModule: this.thinkingSparkModule,
+                    });
+                }
                 return;
             }
 
-            resolve({ perception });
-            return;
-        }
-
-        const nervousPerception = this.peekWithPendingEvents(perception);
-        const reaction = this.nervousSystem.react(nervousPerception);
-        if (reaction) {
-            if (this.deciding && reaction.interruptThinking) {
-                this.thinking.stop(`nervous:${reaction.rule.id}`);
-            }
             const decisionPerception = this.withPendingEvents(perception);
             this.history.push(decisionPerception);
             this.body.observePerception(decisionPerception);
 
-            const attempt = await this.submitActionWithWatchdog({
-                producer: 'nervous-system',
-                action: reaction.action,
-                metadata: {
-                    tick: this.state.tick,
-                    attention_after: this.state.attention,
-                    source: 'nervous-system',
-                    ruleId: reaction.rule.id,
-                    sparkModule: reaction.sparkModule,
-                },
-                waitForEffect: this.effectWaitFor(reaction.action),
-                ...this.evidenceCallbacks(),
+            const compressed = this.compressor.compress(decisionPerception);
+            const compressedPerception = { ...decisionPerception, compressed: compressed.text };
+            const gameSkillContext = this.options.gameSkill?.buildContext({
+                resident: this.name,
+                tick: this.state.tick,
+                activeGoal: this.state.cognition?.activeGoal,
+                perception: compressedPerception,
             });
-            this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
-            this.options.stateStore.save(this.state);
-            if (reaction.suppressThinking) {
-                return;
-            }
-        }
-
-        if (this.deciding) {
-            this.history.push(perception);
-            this.body.observePerception(perception);
-            const compressed = this.compressor.compress(nervousPerception);
-            if (this.thinking.considerInterrupt(nervousPerception)) {
+            this.deciding = true;
+            try {
+                const result = await this.thinkWithWatchdog(compressedPerception, gameSkillContext);
+                this.recordEvidence(trajectory =>
+                    trajectory.recordDecision({
+                        cause: result.cause,
+                        moduleId: this.thinkingSparkModule?.id,
+                        moduleVersion: this.thinkingSparkModule?.version,
+                        promptTokens: result.envelopeTokens,
+                        actionKinds: result.actions.map(action => action.kind),
+                    }),
+                );
+                for (const event of result.syntheticEvents || []) {
+                    this.history.push(event);
+                }
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
-                    cause: 'urgent_interrupt',
-                    perception_tokens: compressed.text.length,
+                    envelope_tokens: result.envelopeTokens || 0,
+                    actions_emitted: result.actions.length,
+                    synthetic_events: result.syntheticEvents?.length || 0,
+                    parse_ok: true,
+                    cause: result.cause,
+                    nooped: result.nooped,
                     sparkModule: this.thinkingSparkModule,
                 });
-            }
-            return;
-        }
 
-        const decisionPerception = this.withPendingEvents(perception);
-        this.history.push(decisionPerception);
-        this.body.observePerception(decisionPerception);
-
-        const compressed = this.compressor.compress(decisionPerception);
-        const compressedPerception = { ...decisionPerception, compressed: compressed.text };
-        const gameSkillContext = this.options.gameSkill?.buildContext({
-            resident: this.name,
-            tick: this.state.tick,
-            activeGoal: this.state.cognition?.activeGoal,
-            perception: compressedPerception,
-        });
-        this.deciding = true;
-        try {
-            const result = await this.thinkWithWatchdog(compressedPerception, gameSkillContext);
-            this.recordEvidence(trajectory =>
-                trajectory.recordDecision({
-                    cause: result.cause,
-                    moduleId: this.thinkingSparkModule?.id,
-                    moduleVersion: this.thinkingSparkModule?.version,
-                    promptTokens: result.envelopeTokens,
-                    actionKinds: result.actions.map(action => action.kind),
-                }),
-            );
-            for (const event of result.syntheticEvents || []) {
-                this.history.push(event);
-            }
-            this.options.inferenceLog.append(this.name, {
-                tick: this.state.tick,
-                envelope_tokens: result.envelopeTokens || 0,
-                actions_emitted: result.actions.length,
-                synthetic_events: result.syntheticEvents?.length || 0,
-                parse_ok: true,
-                cause: result.cause,
-                nooped: result.nooped,
-                sparkModule: this.thinkingSparkModule,
-            });
-
-            for (const action of result.actions) {
-                const attempt = await this.submitActionWithWatchdog({
-                    producer: 'body',
-                    action,
-                    metadata: {
-                        tick: this.state.tick,
-                        attention_after: this.state.attention,
-                        source: 'thinking',
-                        sparkModule: this.thinkingSparkModule,
-                    },
-                    waitForEffect: this.effectWaitFor(action),
-                    ...this.evidenceCallbacks(),
-                });
-                this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
-                this.rememberTargetFailure(attempt);
+                for (const action of result.actions) {
+                    const attempt = await this.submitActionWithWatchdog({
+                        producer: 'body',
+                        action,
+                        metadata: {
+                            tick: this.state.tick,
+                            attention_after: this.state.attention,
+                            source: 'thinking',
+                            sparkModule: this.thinkingSparkModule,
+                        },
+                        waitForEffect: this.effectWaitFor(action),
+                        ...this.evidenceCallbacks(),
+                    });
+                    this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
+                    this.rememberTargetFailure(attempt);
+                }
+            } finally {
+                this.deciding = false;
             }
         } finally {
+            this.checkDeceasedAndDispatchEpitaphs(perception);
             this.options.stateStore.save(this.state);
-            this.deciding = false;
         }
     }
 
@@ -575,6 +588,35 @@ export class ResidentRuntime implements RoutineCapableRuntime {
 
         if (attempt.finalStatus === 'success' && cognition.targetFailureCooldowns?.[key] !== undefined) {
             delete cognition.targetFailureCooldowns[key];
+        }
+    }
+
+    private checkDeceasedAndDispatchEpitaphs(perception: Perception): void {
+        if (this.state.deceased && !this.state.deceased.processed) {
+            this.state.deceased.processed = true;
+            const library = this.evidence?.library;
+            const patronHandles = library ? library.getPatronHandles() : [];
+            const root = record(perception);
+            const residentObj = record(root.resident);
+            const bestSkill = findBestSkill(residentObj.skills);
+            const summary: DeceasedResidentSummary = {
+                residentName: this.name,
+                residentArchetype: this.options.soul.frontmatter.archetype,
+                residentFaction: dominantFaction(this.options.soul.frontmatter.factionAffinity) || 'unaligned',
+                livedTicks: this.state.tick,
+                bestSkill,
+                causeOfDeath: this.state.deceased.cause,
+                deceasedAt: this.state.deceased.date,
+                deceasedTick: this.state.deceased.tick,
+            };
+            const lettersStoreDir = this.evidence?.store.root;
+            if (lettersStoreDir) {
+                const store = new LettersStore(lettersStoreDir);
+                const letters = buildEpitaphDispatchRequests(summary, patronHandles);
+                if (letters.length > 0) {
+                    dispatchEpitaphs(letters, store);
+                }
+            }
         }
     }
 
@@ -1370,4 +1412,34 @@ function mapNervousRuleId(ruleId: string): RoutinePreemptionReason {
         return 'nervous_help_request';
     }
     return 'aborted';
+}
+
+function xpToLevel(xp: number): number {
+    const xpTable: number[] = [0, 0];
+    let points = 0;
+    for (let lvl = 1; lvl < 120; lvl++) {
+        points += Math.floor(lvl + 300 * 2 ** (lvl / 7));
+        xpTable.push(Math.floor(points / 4));
+    }
+    let level = 1;
+    for (let lvl = 1; lvl < xpTable.length; lvl++) {
+        if (xp >= xpTable[lvl]) {
+            level = lvl;
+        } else {
+            break;
+        }
+    }
+    return level;
+}
+
+function findBestSkill(skillsValue: unknown): { name: string; level: number } | undefined {
+    const xpMap = xpBySkill(skillsValue);
+    let bestSkill: { name: string; level: number } | undefined;
+    for (const [skillName, xp] of Object.entries(xpMap)) {
+        const level = xpToLevel(xp);
+        if (!bestSkill || level > bestSkill.level) {
+            bestSkill = { name: skillName, level };
+        }
+    }
+    return bestSkill;
 }

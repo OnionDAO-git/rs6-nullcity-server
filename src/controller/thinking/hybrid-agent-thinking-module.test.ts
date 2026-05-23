@@ -38,6 +38,157 @@ describe('HybridAgentThinkingModule', () => {
         expect(complete).toHaveBeenCalledTimes(1);
     });
 
+    it('seeds a local exploration goal after a Brain watchdog timeout on an expired goal', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(
+            request =>
+                new Promise(resolve => {
+                    capturedSignal = request.signal;
+                    request.signal?.addEventListener('abort', () =>
+                        resolve({
+                            text: '',
+                            nooped: true,
+                            cancelledBy: String(request.signal?.reason || 'aborted'),
+                        }),
+                    );
+                }),
+        );
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                ttlTicks: 10,
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 20,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const thinking = agent.think(perception({ tick: 50 }));
+        for (let i = 0; i < 5 && !capturedSignal; i += 1) {
+            await Promise.resolve();
+        }
+        expect(capturedSignal).toBeDefined();
+
+        agent.stop('thinking_watchdog_timeout');
+        const result = await thinking;
+
+        expect(result.nooped).toBe(true);
+        expect(result.cause).toBe('thinking_watchdog_timeout');
+        expect(state.cognition?.lastBrainTick).toBe(50);
+        expect(state.cognition?.brainBackoffUntilTick).toBe(650);
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'scout-nearby-area',
+                createdAtTick: 50,
+            }),
+        );
+    });
+
+    it('does not retry Brain inference while watchdog backoff is active', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
+            throw new Error('Brain should be backed off');
+        });
+        const state = runtimeState();
+        state.tick = 119;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                ttlTicks: 450,
+                createdAtTick: 50,
+            },
+            lastBrainTick: 50,
+            brainBackoffUntilTick: 650,
+            lastBodyTick: 120,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(perception({ tick: 120 }));
+
+        expect(result.nooped).toBe(true);
+        expect(result.cause).toBe('body_wait');
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('uses local exploration movement before Body inference while Brain is backed off', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
+            throw new Error('Body inference should not gate local exploration');
+        });
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                ttlTicks: 450,
+                createdAtTick: 50,
+            },
+            lastBrainTick: 50,
+            brainBackoffUntilTick: 650,
+            lastBodyTick: 119,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(perception({ tick: 120, resident: residentAt(3200, 3200) }));
+
+        expect(result.cause).toBe('exploration_fallback');
+        expect(result.actions).toEqual([
+            expect.objectContaining({
+                kind: 'move_to',
+                cause: 'explore_patrol',
+            }),
+        ]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('refreshes a local exploration goal when the current goal would expire during Brain backoff', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(
+            request =>
+                new Promise(resolve => {
+                    capturedSignal = request.signal;
+                    request.signal?.addEventListener('abort', () =>
+                        resolve({
+                            text: '',
+                            nooped: true,
+                            cancelledBy: String(request.signal?.reason || 'aborted'),
+                        }),
+                    );
+                }),
+        );
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                ttlTicks: 100,
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 20,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const thinking = agent.think(perception({ tick: 50 }));
+        for (let i = 0; i < 5 && !capturedSignal; i += 1) {
+            await Promise.resolve();
+        }
+        expect(capturedSignal).toBeDefined();
+
+        agent.stop('thinking_watchdog_timeout');
+        await thinking;
+
+        expect(state.cognition?.brainBackoffUntilTick).toBe(650);
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'scout-nearby-area',
+                createdAtTick: 50,
+            }),
+        );
+    });
+
     it('uses deep-thinking Brain inference to set and announce a goal, then no-thinking Body inference to act', async () => {
         const llm = scriptedLlm([
             {

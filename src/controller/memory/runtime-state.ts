@@ -30,6 +30,7 @@ export interface RuntimeState {
         date: string;
         tick: number;
         cause: string;
+        processed?: boolean;
     };
 }
 
@@ -40,6 +41,7 @@ export interface CognitiveState {
     pendingDirectTrade?: PendingDirectTradeState;
     pendingCombatNarration?: PendingCombatNarrationState;
     lastBrainTick?: number;
+    brainBackoffUntilTick?: number;
     lastBodyTick?: number;
     lastGoalShareTick?: number;
     lastAnchorReturnTick?: number;

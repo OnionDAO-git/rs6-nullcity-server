@@ -11,6 +11,7 @@ import type { InferenceLog } from './logging/inference-log';
 import type { MemoryStore } from './memory/memory-store';
 import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
+import { LettersStore } from './patron/letters-store';
 import { ResidentRuntime, type ResidentRuntimeGameSkill } from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
@@ -1622,6 +1623,123 @@ describe('ResidentRuntime modules', () => {
             events: [],
         });
         await expect(tickPromise).resolves.toBe('completed');
+    });
+
+    it('triggers epitaph building and dispatching on onPerception when state.deceased is set, and marks it processed', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-deceased-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-deceased-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot);
+
+        const state = stateFor('res:pip');
+        state.deceased = {
+            date: '2026-05-23T16:00:00.000Z',
+            tick: 100,
+            cause: 'killed by guard',
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            evidence: {
+                store,
+                sessionId: 'session-1',
+                trajectory: {
+                    beginTick: jest.fn(),
+                    endTick: jest.fn(),
+                    recordDecision: jest.fn(),
+                } as unknown as TrajectoryBuilder,
+                library: {
+                    getPatronHandles: jest.fn(() => ['patron:alice', 'patron:bob']),
+                } as unknown as LibraryUpdater,
+            },
+        });
+
+        await runtime.onPerception({
+            tick: 101,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [],
+                skills: {
+                    woodcutting: { xp: 1000 },
+                    firemaking: { xp: 5000 },
+                },
+            },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        expect(state.deceased.processed).toBe(true);
+
+        const lettersStore = new LettersStore(evidenceRoot);
+        const aliceLetters = lettersStore.readInbox('patron:alice');
+        const bobLetters = lettersStore.readInbox('patron:bob');
+
+        expect(aliceLetters).toHaveLength(1);
+        expect(bobLetters).toHaveLength(1);
+        expect(aliceLetters[0].kind).toBe('epitaph');
+        expect(aliceLetters[0].body).toContain('res:pip');
+        expect(aliceLetters[0].body).toContain('killed by guard');
+        expect(aliceLetters[0].body).toContain('firemaking');
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+        fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    });
+
+    it('decays attention per perception tick and marks deceased when attention is exhausted', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-attention-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 1.0;
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 1.0, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [],
+                skills: {},
+            },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        expect(state.attention).toBe(0);
+        expect(state.deceased).toBeDefined();
+        expect(state.deceased?.cause).toBe('attention_exhausted');
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
     });
 });
 

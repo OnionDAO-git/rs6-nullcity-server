@@ -1,11 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import {
-    buildEpitaphDispatchRequests,
-    dispatchEpitaphs,
-    type DeceasedResidentSummary,
-} from './epitaph-dispatcher';
+import { buildEpitaphDispatchRequests, dispatchEpitaphs, type DeceasedResidentSummary } from './epitaph-dispatcher';
 import { LettersStore } from './letters-store';
 
 const summary = (overrides: Partial<DeceasedResidentSummary> = {}): DeceasedResidentSummary => ({

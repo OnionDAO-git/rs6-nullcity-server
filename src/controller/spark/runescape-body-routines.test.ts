@@ -893,6 +893,22 @@ describe('explorationAction', () => {
         expect(action?.cause).toBe('explore_patrol');
     });
 
+    it('avoids recently visited patrol targets while scouting', () => {
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            5,
+            { 'patrol:103,100,0': 0 },
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: { x: 100, y: 103, level: 0 }, range: 1, cause: 'explore_patrol' });
+    });
+
     it('skips an NPC that is on exploration cooldown', () => {
         const guide = npc('RuneScape Guide', 100, 100);
         const action = explorationAction(

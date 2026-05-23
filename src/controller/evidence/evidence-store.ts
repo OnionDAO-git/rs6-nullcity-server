@@ -32,7 +32,7 @@ export class EvidenceStore {
 
     constructor(
         private readonly residentName: string,
-        private readonly root: string,
+        public readonly root: string,
         options: EvidenceStoreOptions = {},
     ) {
         this.maxSessions = options.maxSessions ?? 8;

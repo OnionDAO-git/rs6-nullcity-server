@@ -10,10 +10,7 @@ function timelineDir(root: string, slug: string): string {
 function writeTimeline(root: string, slug: string, lines: unknown[]): void {
     const dir = timelineDir(root, slug);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-        path.join(dir, 'timeline.jsonl'),
-        lines.map(line => JSON.stringify(line)).join('\n') + '\n',
-    );
+    fs.writeFileSync(path.join(dir, 'timeline.jsonl'), lines.map(line => JSON.stringify(line)).join('\n') + '\n');
 }
 
 describe('extractPatronHandlesFromTimeline (EVENT-D4-bridge)', () => {
@@ -48,9 +45,7 @@ describe('extractPatronHandlesFromTimeline (EVENT-D4-bridge)', () => {
 
     describe('single patron', () => {
         it('returns the patron handle exactly once for a single patron_witness event', () => {
-            writeTimeline(root, 'res-fern', [
-                { kind: 'patron_witness', patronHandle: 'alice@onion', ts: '2026-05-23T10:00:00.000Z' },
-            ]);
+            writeTimeline(root, 'res-fern', [{ kind: 'patron_witness', patronHandle: 'alice@onion', ts: '2026-05-23T10:00:00.000Z' }]);
             expect(extractPatronHandlesFromTimeline(root, 'res:fern')).toEqual(['alice@onion']);
         });
 
@@ -71,11 +66,7 @@ describe('extractPatronHandlesFromTimeline (EVENT-D4-bridge)', () => {
                 { kind: 'patron_gift', patronHandle: 'bob@onion' },
                 { kind: 'patron_witness', patronHandle: 'carol@onion' },
             ]);
-            expect(extractPatronHandlesFromTimeline(root, 'res:fern')).toEqual([
-                'alice@onion',
-                'bob@onion',
-                'carol@onion',
-            ]);
+            expect(extractPatronHandlesFromTimeline(root, 'res:fern')).toEqual(['alice@onion', 'bob@onion', 'carol@onion']);
         });
 
         it('dedupes case-insensitively and preserves the first-seen casing', () => {
@@ -137,9 +128,7 @@ describe('extractPatronHandlesFromTimeline (EVENT-D4-bridge)', () => {
             fs.mkdirSync(dir, { recursive: true });
             fs.writeFileSync(
                 path.join(dir, 'timeline.jsonl'),
-                '\n\n' +
-                    JSON.stringify({ kind: 'patron_witness', patronHandle: 'alice@onion' }) +
-                    '\n\n',
+                '\n\n' + JSON.stringify({ kind: 'patron_witness', patronHandle: 'alice@onion' }) + '\n\n',
             );
             expect(extractPatronHandlesFromTimeline(root, 'res:fern')).toEqual(['alice@onion']);
         });
@@ -152,9 +141,7 @@ describe('extractPatronHandlesFromTimeline (EVENT-D4-bridge)', () => {
         });
 
         it('handles a slug with multiple colons and special chars', () => {
-            writeTimeline(root, 'res-father-aereck', [
-                { kind: 'patron_witness', patronHandle: 'alice@onion' },
-            ]);
+            writeTimeline(root, 'res-father-aereck', [{ kind: 'patron_witness', patronHandle: 'alice@onion' }]);
             expect(extractPatronHandlesFromTimeline(root, 'res:father-aereck')).toEqual(['alice@onion']);
         });
     });

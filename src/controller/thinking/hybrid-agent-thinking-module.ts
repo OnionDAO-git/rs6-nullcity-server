@@ -27,6 +27,7 @@ import {
     explorationActorCooldownKey,
     explorationItemCooldownKey,
     explorationObjectCooldownKey,
+    explorationPatrolCooldownKey,
     explorationPatrolTarget,
     findSlot,
     firemakingAction,
@@ -163,6 +164,7 @@ type HybridPerception = {
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
+const BRAIN_TIMEOUT_BACKOFF_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_EVERY_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_RADIUS = 12;
 const DEFAULT_FOLLOW_RADIUS = 2;
@@ -339,6 +341,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (!cause) {
             return undefined;
         }
+        if (cause === 'thinking_watchdog_timeout') {
+            this.applyBrainTimeoutFallback();
+        }
         return {
             actions: [],
             syntheticEvents: [],
@@ -346,6 +351,20 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             envelopeTokens: 0,
             nooped: true,
         };
+    }
+
+    private applyBrainTimeoutFallback(): void {
+        const cognition = this.cognition();
+        cognition.lastBrainTick = this.options.state.tick;
+        cognition.brainBackoffUntilTick = this.options.state.tick + BRAIN_TIMEOUT_BACKOFF_TICKS;
+        const goal = this.activeGoal();
+        if (goal && !goalExpiresBefore(goal, cognition.brainBackoffUntilTick)) {
+            return;
+        }
+
+        this.clearGoalMomentum();
+        cognition.activeGoal = explorationGoal(this.options.state.tick);
+        cognition.lastGoalShareTick = undefined;
     }
 
     private async runBrain(
@@ -375,6 +394,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const parsed = parseBrainCompletion(response.text);
         this.applyBrainSideEffects(response.text);
         this.cognition().lastBrainTick = this.options.state.tick;
+        this.cognition().brainBackoffUntilTick = undefined;
 
         if (parsed.goal) {
             const cognition = this.cognition();
@@ -565,6 +585,30 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     visibility,
                 );
             }
+        }
+
+        const cognition = this.cognition();
+        const brainBackedOff =
+            typeof cognition.brainBackoffUntilTick === 'number' && this.options.state.tick < cognition.brainBackoffUntilTick;
+        const goal = this.activeGoal();
+        const explore =
+            brainBackedOff && goal && isExplorationGoal(goal)
+                ? explorationAction(
+                      perception,
+                      visibility.anchor,
+                      this.options.state.resident,
+                      this.pickupCooldowns(),
+                      this.options.state.tick,
+                      this.explorationCooldowns(),
+                  )
+                : undefined;
+        if (explore) {
+            return this.preInferenceResult(
+                explore,
+                explore.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback',
+                perception,
+                visibility,
+            );
         }
 
         return undefined;
@@ -2130,8 +2174,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private shouldRunBrain(): boolean {
-        const goal = this.activeGoal();
         const cognition = this.cognition();
+        if (typeof cognition.brainBackoffUntilTick === 'number' && this.options.state.tick < cognition.brainBackoffUntilTick) {
+            return false;
+        }
+
+        const goal = this.activeGoal();
         if (!goal || this.goalExpired(goal)) {
             return true;
         }
@@ -2392,6 +2440,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 }
 
+function goalExpiresBefore(goal: ActiveGoalState, tick: number): boolean {
+    return goal.ttlTicks !== undefined && goal.createdAtTick + goal.ttlTicks < tick;
+}
+
 function missingFiremakingToolAction(perception: HybridPerception): AgentAction {
     const inventory = perception.resident?.inventory || [];
     const hasLogs = findSlot(inventory, isFiremakingLog) !== undefined;
@@ -2418,6 +2470,11 @@ function explorationCooldownKeyFromAction(action: AgentAction): string | undefin
     }
     if (!('target' in action) || !isRecord(action.target)) {
         return undefined;
+    }
+
+    const directPosition = positionLike(action.target);
+    if (directPosition) {
+        return explorationPatrolCooldownKey(directPosition);
     }
 
     const actor = actorLike(action.target);

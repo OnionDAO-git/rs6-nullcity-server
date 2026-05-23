@@ -639,6 +639,11 @@ export function explorationItemCooldownKey(item: BodyWorldItem): string {
     return `item:${pickupItemKey(item)}`;
 }
 
+/** Stable cooldown key for a local patrol tile the exploration routine just visited. */
+export function explorationPatrolCooldownKey(position: BodyPos): string {
+    return `patrol:${position.x},${position.y},${position.level}`;
+}
+
 /** Patrol-step direction set used by both exploration patrol and stuck recovery. */
 export function localPatrolDirections(step: number): Array<{ dx: number; dy: number }> {
     return [
@@ -659,10 +664,22 @@ export function patrolDirectionIndex(here: BodyPos, currentTick: number, length:
 }
 
 /** Returns the next patrol step away from `here`. The anchor parameter is currently ignored. */
-export function explorationPatrolTarget(here: BodyPos, _anchor?: BodyPos, currentTick = 0): BodyPos {
+export function explorationPatrolTarget(
+    here: BodyPos,
+    _anchor?: BodyPos,
+    currentTick = 0,
+    explorationCooldowns?: Record<string, number>,
+): BodyPos {
     const directions = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE);
-    const direction = directions[patrolDirectionIndex(here, currentTick, directions.length)];
-    return { x: here.x + direction.dx, y: here.y + direction.dy, level: here.level };
+    const startIndex = patrolDirectionIndex(here, currentTick, directions.length);
+    const candidates = directions.map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }));
+    for (let offset = 0; offset < candidates.length; offset += 1) {
+        const candidate = candidates[(startIndex + offset) % candidates.length];
+        if (!isExplorationOnCooldown(explorationPatrolCooldownKey(candidate), explorationCooldowns, currentTick)) {
+            return candidate;
+        }
+    }
+    return candidates[startIndex];
 }
 
 /** Returns a patrol step that increases distance from the blocked target. Used by stuck recovery. */
@@ -724,7 +741,7 @@ export function explorationAction(
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
 
-        const patrol = explorationPatrolTarget(here, anchor, currentTick);
+        const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns);
         if (distance(here, patrol) > 1) {
             return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
         }
@@ -746,7 +763,7 @@ export function explorationAction(
         return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
     }
 
-    const patrol = explorationPatrolTarget(here, anchor, currentTick);
+    const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns);
     if (distance(here, patrol) > 1) {
         return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
     }

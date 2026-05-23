@@ -292,6 +292,18 @@ export class LibraryUpdater {
         fs.renameSync(tmpPath, filePath);
     }
 
+    getPatronHandles(): string[] {
+        const timeline = this.readTimeline();
+        const handles = new Set<string>();
+        for (const event of timeline) {
+            const handle = event.patronHandle;
+            if (typeof handle === 'string' && handle.trim().length > 0) {
+                handles.add(handle);
+            }
+        }
+        return Array.from(handles);
+    }
+
     private schedulePortraitRegeneration(): void {
         void this.regeneratePortrait();
     }
