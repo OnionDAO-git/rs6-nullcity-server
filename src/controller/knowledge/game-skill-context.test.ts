@@ -22,7 +22,12 @@ describe('GameSkillService', () => {
         );
         expect(context.bodySection).toContain('can_do_now');
         expect(context.bodySection).toContain('use_item_on_item');
-        expect(context.bodySection).toContain('Skill: Firemaking');
+        // Either the per-skill entry or the new multi-skill workflow chain entry
+        // is acceptable firemaking grounding for the LLM. Both reach the prompt via
+        // ENGINE_KNOWLEDGE_ENTRIES; the workflow chain often outranks the per-skill
+        // entry for "tinderbox + logs" queries because it captures the end-to-end
+        // sequence the resident actually needs to execute.
+        expect(context.bodySection).toMatch(/Skill: Firemaking|Workflow: Woodcutting → Firemaking Chain/);
     });
 
     it('reports missing logs but visible tree as a preparation hint', () => {
