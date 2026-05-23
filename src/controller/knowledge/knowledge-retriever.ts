@@ -552,6 +552,61 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'The Wilderness is a PvP zone north of Edgeville / Varrock. Crossing the ditch puts you at risk of player-vs-player attack AND lose-on-death of all but 3 items (0 if skulled). DANGER: do not engage past the wilderness ditch unless the maintainer has explicitly told you. If you find yourself in wilderness, run south immediately. PvP combat level brackets restrict who can attack whom but at low levels everyone is fair game.',
     },
+    {
+        id: 'npc-cook-lumbridge',
+        title: "NPC: Cook (Lumbridge Castle Kitchen)",
+        topics: ['npc', 'cook', 'lumbridge', 'quest', 'cooks-assistant', 'cooking'],
+        keywords: ['cook', 'lumbridge cook', 'castle kitchen', 'cooks assistant', 'flour', 'egg', 'milk', 'duke birthday cake'],
+        actions: ['move_to Lumbridge Castle Kitchen 3208,3213,0', 'interact talk-to Cook'],
+        successSignals: ['Cook dialog opens', 'quest log advances on each delivered ingredient', 'quest completes for 300 cooking XP'],
+        source: 'docs/runescape-skill/npcs/lumbridge.md § Cook; docs/runescape-skill/quests/cooks-assistant.md',
+        summary:
+            "The Cook stands inside Lumbridge Castle Kitchen at 3208,3213,0. He is the quest-giver for Cook's Assistant — bring him a pot of flour, an egg, and a bucket of milk for the Duke's birthday cake. Reward: 300 Cooking XP and always-on access to the castle range (higher cooking success). Always approach him with `talk-to`, never `attack`.",
+    },
+    {
+        id: 'npc-father-aereck',
+        title: 'NPC: Father Aereck (Lumbridge Church)',
+        topics: ['npc', 'father-aereck', 'lumbridge', 'quest', 'restless-ghost', 'prayer'],
+        keywords: ['father aereck', 'aereck', 'lumbridge church', 'restless ghost', 'ghost quest', 'haunted graveyard'],
+        actions: ['move_to Lumbridge Church 3242,3208,0', 'interact talk-to Father Aereck'],
+        successSignals: ['Father Aereck dialog opens', 'quest log starts Restless Ghost', 'altar in same church restores Prayer points'],
+        source: 'docs/runescape-skill/npcs/lumbridge.md § Father Aereck; docs/runescape-skill/quests/restless-ghost.md',
+        summary:
+            'Father Aereck stands inside Lumbridge Church at 3242,3208,0. He is the quest-giver for The Restless Ghost. After talking to him, walk to Father Urhney in the swamp west of Lumbridge (3147,3175,0) for the Ghostspeak Amulet. Reward: 1125 Prayer XP plus permanent Ghostspeak Amulet (lets you talk to all ghosts). The church altar nearby restores Prayer points.',
+    },
+    {
+        id: 'npc-aubury-varrock',
+        title: 'NPC: Aubury (Varrock Rune Shop + Rune Essence Teleport)',
+        topics: ['npc', 'aubury', 'varrock', 'magic', 'runes', 'runecrafting', 'teleport'],
+        keywords: ['aubury', 'rune shop', 'varrock rune', 'air rune', 'water rune', 'earth rune', 'fire rune', 'mind rune', 'body rune', 'rune essence', 'teleport rune essence'],
+        actions: ['move_to Varrock Rune Shop 3253,3401,0', 'interact talk-to Aubury for teleport', 'interact trade with Aubury for runes'],
+        successSignals: ['rune shop interface opens with elemental + low-level runes', 'teleport completes to Rune Essence mine'],
+        source: 'docs/runescape-skill/npcs/varrock.md § Aubury; docs/runescape-skill/skills/magic.md',
+        summary:
+            'Aubury runs the Varrock Rune Shop at 3253,3401,0 (east-central Varrock). He sells elemental runes (Air, Water, Earth, Fire, Mind, Body) at low per-rune prices. He also teleports the player to the Rune Essence mine after the Rune Mysteries quest — the fastest path to Runecrafting essence supply. Vital NPC for any Magic, Runecrafting, or low-tier combat-spell route.',
+    },
+    {
+        id: 'npc-runescape-guide',
+        title: 'NPC: RuneScape Guide (Lumbridge Spawn)',
+        topics: ['npc', 'runescape-guide', 'tutorial', 'lumbridge', 'spawn', 'orientation'],
+        keywords: ['runescape guide', 'guide', 'tutorial', 'orientation', 'spawn npc', 'how do i play'],
+        actions: ['move_to Lumbridge spawn 3222,3218,0', 'interact talk-to RuneScape Guide'],
+        successSignals: ['tutorial dialog opens', 'next-step hints appear in dialog box'],
+        source: 'docs/runescape-skill/npcs/lumbridge.md § RuneScape Guide',
+        summary:
+            'The RuneScape Guide stands at the Lumbridge spawn (3222,3218,0). Right-click → `talk-to` for orientation dialog: "Where am I?", "What should I do?", "How do I play?". Useful for new residents who need a basic orientation hook or for residents that lost their way and want anchor-point context. He never attacks and never asks for items.',
+    },
+    {
+        id: 'npc-banker-overview',
+        title: 'NPC: Banker (Generic Pattern Across All Banks)',
+        topics: ['npc', 'banker', 'bank', 'deposit', 'withdraw', 'storage'],
+        keywords: ['banker', 'bank', 'deposit', 'withdraw', 'bank booth', 'bank interface', 'bank vault'],
+        actions: ['move_to nearest bank coord', 'interact right-click Banker → Bank', 'interact right-click Banker → talk-to (alternative)'],
+        successSignals: ['bank interface opens with full inventory + bank tab', 'inventory items can be deposited or withdrawn freely', 'no gp cost'],
+        source: 'docs/runescape-skill/npcs/{lumbridge,varrock,draynor-and-wizards-tower}.md § Banker',
+        summary:
+            'Bankers stand behind bank booths in every major town. Right-click the Banker NPC and choose `Bank` to immediately open the bank interface (bypasses chat). Free service. Key banker coords: Lumbridge Castle top floor 3208,3219,2; Varrock east 3253,3420,0; Varrock west 3185,3436,0; Falador east 3013,3355,0; Falador west 2946,3369,0; Edgeville 3094,3243,0; Draynor 3094,3243,0; Al-Kharid ~3270,3167,0. Use to deposit valuables before risky combat or retrieve stored items.',
+    },
 ];
 
 const STOP_WORDS = new Set([
