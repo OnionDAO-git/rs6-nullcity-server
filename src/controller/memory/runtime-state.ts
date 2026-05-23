@@ -45,6 +45,7 @@ export interface CognitiveState {
     lastBodyActionKey?: string;
     lastBodyActionTick?: number;
     lastDirectChatKey?: string;
+    manualPauseSinceTick?: number;
     lastPresenceBeaconTick?: number;
     routineLoopKey?: string;
     routineLoopCount?: number;
@@ -56,6 +57,8 @@ export interface CognitiveState {
     combatEpisodeActive?: boolean;
     combatEpisodeNarrated?: boolean;
     combatEndCelebrated?: boolean;
+    tickTelemetry?: Record<string, any>;
+    chatReplyTicks?: number[];
 }
 
 export interface FollowTargetState {

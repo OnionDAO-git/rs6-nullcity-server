@@ -110,6 +110,7 @@ import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
 import type { ThinkingModule, ThoughtResult } from './thinking-module';
 import { pickPhrase } from '../soul/phrasebook';
+import { admitInference } from '../llm/budgets';
 
 export interface HybridAgentThinkingModuleOptions {
     soul: Soul;
@@ -180,7 +181,9 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // `FIRE_OBJECT_IDS`) live in `../spark/runescape-body-routines` (Plan R-β).
 // The monolith imports both above.
 // `OPENABLE_OBSTACLE_IDS`, `FENCE_OBSTACLE_IDS`, `STUCK_OBSTACLE_RANGE`, and
-// `stuckOpenObstacleAction` now live in `../spark/runescape-nervous-rules` (Plan R-γ).
+const EARSHOT_TILES = 8;
+const CHAT_REPLIES_PER_WINDOW = 3;
+const WINDOW_TICKS = 10;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
@@ -188,9 +191,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     async think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         this.advanceTick(perception);
         this.ensureCognition();
+        this.cognition().tickTelemetry = undefined;
         this.ensureBenchmarkGoal();
 
-        const directChat = this.directChatAction(perception as HybridPerception);
+        const directChat = await this.directChatAction(perception as HybridPerception);
         if (directChat) {
             return this.result([directChat.action], directChat.cause, 0, false);
         }
@@ -232,7 +236,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (!this.shouldRunBody()) {
-            return { actions: [], cause: 'body_wait', nooped: true };
+            return this.result([], 'body_wait', 0, true);
         }
 
         const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
@@ -240,7 +244,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return this.result([presenceBeacon], 'presence_beacon', 0, false);
         }
 
-        return this.runBody(perception, gameSkill);
+        const bodyResult = await this.runBody(perception, gameSkill);
+        return this.result(bodyResult.actions, bodyResult.cause || 'body_step', bodyResult.envelopeTokens || 0, bodyResult.nooped);
     }
 
     considerInterrupt(_perception: Perception): boolean {
@@ -861,15 +866,294 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
-    private directChatAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+    private isChatRateLimited(): boolean {
+        const cognition = this.cognition() as any;
+        if (!cognition.chatReplyTicks) {
+            cognition.chatReplyTicks = [];
+        }
+        const currentTick = this.options.state.tick;
+        cognition.chatReplyTicks = cognition.chatReplyTicks.filter((tick: number) => tick > currentTick - WINDOW_TICKS);
+        return cognition.chatReplyTicks.length >= CHAT_REPLIES_PER_WINDOW;
+    }
+
+    private recordChatReplyEmit(): void {
+        const cognition = this.cognition() as any;
+        if (!cognition.chatReplyTicks) {
+            cognition.chatReplyTicks = [];
+        }
+        cognition.chatReplyTicks.push(this.options.state.tick);
+    }
+
+    private isManuallyPaused(): boolean {
+        return this.cognition().manualPauseSinceTick !== undefined;
+    }
+
+    private pauseDirectChatActivity(): void {
+        const cognition = this.cognition();
+        cognition.manualPauseSinceTick = this.options.state.tick;
+        const target = cognition.followTarget;
+        cognition.followTarget = target
+            ? { ...target, paused: true, setAtTick: this.options.state.tick }
+            : { paused: true, setAtTick: this.options.state.tick };
+    }
+
+    private resumeManualPause(): void {
+        this.cognition().manualPauseSinceTick = undefined;
+    }
+
+    private async nonCommandChatReaction(perception: HybridPerception): Promise<{ action: AgentAction; cause: string } | undefined> {
+        const events = perception.events || [];
+        const resident = perception.resident;
+        if (!resident || !resident.position) {
+            return undefined;
+        }
+
+        for (let index = events.length - 1; index >= 0; index -= 1) {
+            const event = events[index];
+            if (event.kind !== 'chat' || typeof event.text !== 'string') {
+                continue;
+            }
+
+            const from = actorLike(event.from);
+            if (!from || isSelfActor(from, perception)) {
+                continue;
+            }
+
+            const normalizedText = normalizeText(event.text);
+            if (mentionsCommandPrefix(normalizedText, this.commandPrefix())) {
+                continue;
+            }
+
+            if (!from.position || from.position.level !== resident.position.level) {
+                continue;
+            }
+
+            const dx = from.position.x - resident.position.x;
+            const dy = from.position.y - resident.position.y;
+            if (dx * dx + dy * dy > 64) {
+                continue;
+            }
+
+            if (this.isChatRateLimited()) {
+                this.cognition().tickTelemetry = {
+                    chat_reply_emitted: false,
+                    chat_reply_suppressed: 'rate_limited',
+                };
+                return undefined;
+            }
+
+            const budgetDecision = admitInference(this.options.state);
+            if (!budgetDecision.ok) {
+                this.cognition().tickTelemetry = {
+                    chat_reply_emitted: false,
+                    chat_reply_suppressed: 'budget_exhausted',
+                };
+                return undefined;
+            }
+
+            const prompt = [
+                `You are the RuneScape resident ${this.options.soul.frontmatter.display || this.options.soul.frontmatter.name}.`,
+                `Your character archetype is ${this.options.soul.frontmatter.archetype || 'default'}.`,
+                `Your voice register is ${this.options.soul.frontmatter.voice?.register || 'default'}.`,
+                this.options.soul.body ? `Character notes:\n${this.options.soul.body}` : '',
+                `A player nearby said: "${event.text}".`,
+                `Reply to them in character. Keep it brief, under 160 characters, and fit your voice register and archetype.`,
+                `Do not include any JSON or markdown. Just output the plain text reply.`,
+            ]
+                .filter(Boolean)
+                .join('\n');
+
+            const response = await this.options.llm.complete({
+                endpoint: this.endpointFor(this.behavior().brain),
+                prompt,
+                temperature: this.temperatureFor(this.behavior().brain, 0.7),
+                thinking: this.behavior().brain?.thinking ?? true,
+                priority: 5,
+                ...(this.modelFor(this.behavior().brain) ? { model: this.modelFor(this.behavior().brain) } : {}),
+            });
+
+            const replyText = cleanSpeech(response.text);
+            if (!replyText) {
+                return undefined;
+            }
+
+            this.recordChatReplyEmit();
+
+            const action: AgentAction = {
+                kind: 'say',
+                text: replyText,
+                voiceSource: 'inference',
+            };
+
+            this.cognition().tickTelemetry = {
+                chat_reply_emitted: true,
+                chat_reply_kind: 'small_talk',
+                voiceSource: 'inference',
+            };
+
+            return {
+                action,
+                cause: 'non_command_small_talk',
+            };
+        }
+
+        return undefined;
+    }
+
+    private clarifyingQuestionReaction(
+        perception: HybridPerception,
+        commandLower: string,
+    ): { action: AgentAction; cause: string } | undefined {
+        if (this.isChatRateLimited()) {
+            this.cognition().tickTelemetry = {
+                chat_reply_emitted: false,
+                chat_reply_suppressed: 'rate_limited',
+            };
+            return undefined;
+        }
+
+        let params: Record<string, string> | undefined;
+        if (commandLower === 'give') {
+            const items = (perception.resident?.inventory || [])
+                .filter((item): item is Item => item !== null)
+                .map(item => itemLabel(item))
+                .join(', ');
+            params = { inventory: items || 'nothing' };
+        }
+
+        const text = pickPhrase({
+            soul: this.options.soul,
+            situation: `ambiguity.${commandLower}`,
+            seed: `${this.options.state.tick}`,
+            params,
+        });
+
+        this.recordChatReplyEmit();
+
+        const action: AgentAction = {
+            kind: 'say',
+            text,
+            voiceSource: 'phrasebook',
+        };
+
+        this.cognition().tickTelemetry = {
+            chat_reply_emitted: true,
+            chat_reply_kind: 'clarifying_question',
+            voiceSource: 'phrasebook',
+        };
+
+        return {
+            action,
+            cause: `direct_chat_clarify_ambiguous_${commandLower}`,
+        };
+    }
+
+    private politeDeclineReaction(
+        perception: HybridPerception,
+        refusalReason: string,
+        missingTool?: string,
+    ): { action: AgentAction; cause: string } | undefined {
+        if (this.isChatRateLimited()) {
+            this.cognition().tickTelemetry = {
+                chat_reply_emitted: false,
+                chat_reply_suppressed: 'rate_limited',
+            };
+            return undefined;
+        }
+
+        let text = '';
+        if (refusalReason === 'missing_tool') {
+            text = pickPhrase({
+                soul: this.options.soul,
+                situation: 'polite_decline.missing_tool',
+                seed: `${this.options.state.tick}`,
+                params: { tool: missingTool || 'tool' },
+            });
+        } else {
+            text = pickPhrase({
+                soul: this.options.soul,
+                situation: `polite_decline.${refusalReason}`,
+                seed: `${this.options.state.tick}`,
+                params: { prefix: this.commandPrefix() },
+            });
+        }
+
+        this.recordChatReplyEmit();
+
+        const action: AgentAction = {
+            kind: 'say',
+            text,
+            voiceSource: 'phrasebook',
+        };
+
+        this.cognition().tickTelemetry = {
+            chat_reply_emitted: true,
+            chat_reply_kind: 'polite_decline',
+            refusalReason,
+            voiceSource: 'phrasebook',
+        };
+
+        return {
+            action,
+            cause: `direct_chat_decline_${refusalReason}`,
+        };
+    }
+
+    private async directChatAction(perception: HybridPerception): Promise<{ action: AgentAction; cause: string } | undefined> {
         const chat = latestAddressedChat(perception, this.commandPrefix(), this.cognition().lastDirectChatKey);
         if (!chat) {
-            return undefined;
+            return await this.nonCommandChatReaction(perception);
         }
 
         this.cognition().lastDirectChatKey = chat.key;
         const command = addressedCommand(chat.normalizedText, this.commandPrefix());
         const here = perception.resident?.position;
+
+        if (perception.resident?.inCombat) {
+            this.cognition().tickTelemetry = {
+                chat_reply_emitted: false,
+                chat_reply_kind: 'polite_decline',
+                refusalReason: 'busy_higher_priority_goal',
+            };
+            return undefined;
+        }
+
+        const commandLower = command.toLowerCase().trim();
+
+        if (commandLower === 'go' || commandLower === 'make' || commandLower === 'give') {
+            return this.clarifyingQuestionReaction(perception, commandLower);
+        }
+
+        let refusalReason: string | undefined;
+        let missingTool: string | undefined;
+
+        if (isFiremakingIntent(command, chat.normalizedText)) {
+            const hasTinderbox = findSlot(perception.resident?.inventory || [], isTinderbox) !== undefined;
+            if (!hasTinderbox) {
+                refusalReason = 'missing_tool';
+                missingTool = 'tinderbox';
+            }
+        } else if (isWoodcuttingIntent(command, chat.normalizedText)) {
+            if (!hasWoodcuttingAxe(perception)) {
+                refusalReason = 'missing_tool';
+                missingTool = 'axe';
+            }
+        } else if (isStarterFishingIntent(command, chat.normalizedText)) {
+            if (!hasSmallFishingNet(perception)) {
+                refusalReason = 'missing_tool';
+                missingTool = 'small fishing net';
+            }
+        } else if (attackIntent(command)) {
+            if (isLowHealth(perception)) {
+                refusalReason = 'low_hp';
+            }
+        } else if (!isRecognizedCommand(command, chat.normalizedText)) {
+            refusalReason = 'unknown_command';
+        }
+
+        if (refusalReason) {
+            return this.politeDeclineReaction(perception, refusalReason, missingTool);
+        }
 
         if (isStopFollowingIntent(command, chat.normalizedText)) {
             const target = this.currentFollowTarget();
@@ -902,6 +1186,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
 
             this.clearGoalMomentum();
+            this.resumeManualPause();
             this.cognition().followTarget = {
                 name: actorName(target),
                 id: target.id,
@@ -938,6 +1223,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 };
             }
 
+            this.resumeManualPause();
             if (here && distance(here, anchor) <= (this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS)) {
                 return {
                     action: { kind: 'say', text: this.statusSpeech(perception, 'I am already near home') },
@@ -957,7 +1243,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isStopIntent(command, chat.normalizedText)) {
+            this.clearGoalMomentum();
             this.cognition().activeGoal = undefined;
+            this.pauseDirectChatActivity();
             return {
                 action: { kind: 'say', text: 'I will pause here and wait for a new goal.' },
                 cause: 'direct_chat_stop',
@@ -987,6 +1275,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const pickup = pickupIntent(command);
         if (pickup) {
+            this.resumeManualPause();
             const item = pickup.query
                 ? findWorldItem(perception.nearby?.worldItems || [], pickup.query)
                 : (perception.nearby?.worldItems || [])[0];
@@ -1003,6 +1292,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const drop = dropIntent(command);
         if (drop) {
+            this.resumeManualPause();
             const slot = drop.query
                 ? findSlot(perception.resident?.inventory || [], item => itemMatchesQuery(item, drop.query!))
                 : undefined;
@@ -1017,6 +1307,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isPrayerTrainingIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = prayerGoal(this.options.state.tick);
             return {
                 action: prayerTrainingAction(perception) || {
@@ -1028,6 +1319,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isBuryBonesIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = prayerGoal(this.options.state.tick);
             return {
                 action: buryBonesAction(perception) || {
@@ -1039,6 +1331,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isCombatTrainingIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = combatGoal(this.options.state.tick);
             return {
                 action: combatTrainingAction(perception) || {
@@ -1051,6 +1344,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const talk = talkIntent(command);
         if (talk) {
+            this.resumeManualPause();
             const target = findActorByName(perception.nearby?.npcs || [], talk);
             return {
                 action: target
@@ -1062,16 +1356,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const attack = attackIntent(command);
         if (attack) {
-            if (isLowHealth(perception)) {
-                const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
-                return {
-                    action:
-                        foodSlot === undefined
-                            ? { kind: 'say', text: 'I am too hurt to attack without food. I need to heal or retreat first.' }
-                            : { kind: 'eat', slot: foodSlot, cause: 'direct_chat_eat_before_attack' },
-                    cause: 'direct_chat_attack',
-                };
-            }
+            this.resumeManualPause();
             const target = findActorByName([...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])], attack);
             return {
                 action: target
@@ -1082,6 +1367,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isRetreatIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             return {
                 action: { kind: 'move_to', target: fleeTarget(perception), cause: 'direct_chat_retreat' },
                 cause: 'direct_chat_retreat',
@@ -1089,6 +1375,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isTradeIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             return {
                 action: tradeRequestOrApproach(perception, chat.from, 'direct_chat_trade') || {
                     kind: 'say',
@@ -1100,6 +1387,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const tradeOffer = tradeOfferIntent(command);
         if (tradeOffer) {
+            this.resumeManualPause();
             const slot = safeTradeOfferSlot(perception.resident?.inventory || [], tradeOffer);
             return {
                 action:
@@ -1116,6 +1404,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isTradeAcceptIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             return {
                 action: tradeAcceptAction(perception.resident?.activeTrade) || {
                     kind: 'say',
@@ -1126,6 +1415,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isExploreIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = explorationGoal(this.options.state.tick);
             return {
                 action: explorationAction(
@@ -1144,6 +1434,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isFiremakingIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = firemakingGoal(this.options.state.tick);
             const action = firemakingAction(perception) || levelOneWoodcuttingAction(perception);
             return {
@@ -1153,6 +1444,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isCookingIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = starterCookingGoal(this.options.state.tick);
             return {
                 action: starterFishingCookingAction(perception) || {
@@ -1164,6 +1456,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isStarterFishingIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = starterFishingGoal(this.options.state.tick);
             return {
                 action:
@@ -1174,6 +1467,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isWoodcuttingIntent(command, chat.normalizedText)) {
+            this.resumeManualPause();
             this.cognition().activeGoal = woodcuttingGoal(this.options.state.tick);
             return {
                 action: levelOneWoodcuttingAction(perception) || {
@@ -1196,13 +1490,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             };
         }
 
-        return {
-            action: {
-                kind: 'say',
-                text: `I heard you. Try: ${this.commandPrefix()} status, follow me, explore, make fire, fish, cook, or train combat.`,
-            },
-            cause: 'direct_chat_clarify',
-        };
+        return undefined;
     }
 
     private combatReaction(perception: HybridPerception): { actions: AgentAction[]; cause: string } | undefined {
@@ -1675,7 +1963,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private result(actions: AgentAction[], cause: string, envelopeTokens: number, nooped: boolean): ThoughtResult {
-        return { actions, cause, envelopeTokens, nooped: nooped || actions.length === 0 };
+        const telemetry = this.cognition().tickTelemetry;
+        return {
+            actions,
+            cause,
+            envelopeTokens,
+            nooped: nooped || actions.length === 0,
+            ...telemetry,
+        };
     }
 }
 
@@ -2412,4 +2707,33 @@ function classifyCombatDecision(
     }
 
     return 'retaliate_confident';
+}
+
+function isRecognizedCommand(command: string, fullText: string): boolean {
+    return (
+        isStopFollowingIntent(command, fullText) ||
+        Boolean(followIntent(command, fullText)) ||
+        isReturnHomeIntent(command, fullText) ||
+        isStopIntent(command, fullText) ||
+        isStatusIntent(command, fullText) ||
+        isLookIntent(command, fullText) ||
+        isInventoryIntent(command, fullText) ||
+        Boolean(pickupIntent(command)) ||
+        Boolean(dropIntent(command)) ||
+        isPrayerTrainingIntent(command, fullText) ||
+        isBuryBonesIntent(command, fullText) ||
+        isCombatTrainingIntent(command, fullText) ||
+        Boolean(talkIntent(command)) ||
+        Boolean(attackIntent(command)) ||
+        isRetreatIntent(command, fullText) ||
+        isTradeIntent(command, fullText) ||
+        tradeOfferIntent(command) !== undefined ||
+        isTradeAcceptIntent(command, fullText) ||
+        isExploreIntent(command, fullText) ||
+        isCookingIntent(command, fullText) ||
+        isStarterFishingIntent(command, fullText) ||
+        isWoodcuttingIntent(command, fullText) ||
+        isFiremakingIntent(command, fullText) ||
+        isSmallTalkIntent(command, fullText)
+    );
 }
