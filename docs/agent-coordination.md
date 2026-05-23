@@ -159,6 +159,29 @@ npm test -- --runInBand
 
 And records the result in the roadmap task note. Another agent can re-run those locally and trust the green.
 
+### Rule 8 — Recurring strategic review (every ~30 cycles or ~24h)
+
+**Established 2026-05-23** after the runtime-knowledge expansion drifted into saturation (12 cycles of diminishing-returns +entries before the pattern was caught) and the L-deferred / I-overstated drift in `docs/null-city-rs6-vision.md` went unnoticed for days.
+
+Whenever the next agent fires and notices:
+- It has been ~24h since the last `docs/strategic-review-YYYY-MM-DD.md`, OR
+- Roughly 30 status-log STARTING lines have accumulated since the last review, OR
+- The maintainer asks ("are we doing the right things?")
+
+…the agent runs a strategic review slice:
+
+1. Dispatch parallel audit subagents (RuneBench coverage + Null City coverage + any other large source-of-truth doc set).
+2. Synthesize a pillar scorecard (the three OnionDAO pillars: autonomous agents / human guidance / emotional connection). Note which pillar is underweight.
+3. Surface drift: where spec, code, vision, and roadmap disagree.
+4. Decide refinements: process, designs, coordination conventions.
+5. Write a dated `docs/strategic-review-YYYY-MM-DD.md`.
+6. Add TaskCreate entries for the highest-leverage gaps.
+7. Fix immediately-correctable drift in the same slice (e.g., stale vision lines).
+
+The pattern is preventive, not punitive. The 30-cycle / 24h cadence is a default — the maintainer's "we are doing the right things?" prompt always wins.
+
+The first instance is `docs/strategic-review-2026-05-23.md`.
+
 ## Specific Coordination For Workstream I (Evidence Layer)
 
 Until Codex's in-flight `combat-prayer-10m` work merges:

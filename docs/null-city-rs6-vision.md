@@ -184,7 +184,7 @@ For active workstream work, read the relevant spec(s) in `docs/superpowers/specs
 | I (Evidence + Library) | `2026-05-21-spark-evidence-loop-design.md` (v2.1, locked) |
 | J (Patron Loop) | `2026-05-22-patron-loop-design.md` |
 | K (Factions) | `2026-05-22-rs6-factions-design.md` |
-| L (Cross-Resident) | *(deferred — write before starting)* |
+| L (Cross-Resident) | `2026-05-22-cross-resident-lore-design.md` |
 | M (Hero Residents) | `2026-05-22-hero-residents-design.md` |
 | N (Embassy / Event) | `2026-05-22-embassy-and-event-design.md` |
 | O (Engineering Polish) | *no spec — items are independently scoped* |
@@ -257,7 +257,7 @@ The vision is "done" enough for June 1, 2026 when:
 - ✅ A human at the Chicago embassy can earn Shards (or rs6 equivalent) by attending workshops.
 - ⏳ They can spend that currency to *birth*, *refill*, or *witness* a named resident in the RuneScape world. *(J6, J2, J5)*
 - ⏳ The resident pursues goals visibly — chops trees, lights fires, fights goblins, asks for help, talks to humans. *(Mostly done, M3 adds request_attention)*
-- ⏳ The resident remembers what happened, accumulates a voice, makes named friends. *(I — done)*
+- ⏳ The resident remembers what happened, accumulates a voice, makes named friends. *(I — WRITE side done; READ-back into next-session prompts is NOT yet wired — see `docs/strategic-review-2026-05-23.md` Pillar 3 + task I-β)*
 - ⏳ When the resident dies (combat, attention exhausted, planned legacy), an epitaph letter is delivered to humans who chatted with them. *(N4, J4)*
 - ⏳ The resident's portrait is sealed in the Library and viewable on the dashboard and on the printed embassy wall. *(I done, N4 IRL)*
 - ⏳ The human takes home a lanyard achievement they earned. *(N — uses v2 print queue or rs6 fork)*

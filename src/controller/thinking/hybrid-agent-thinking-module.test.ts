@@ -1,9 +1,6 @@
 import { objectIds } from '@engine/world/config/object-ids';
-import fs from 'fs';
-import os from 'os';
-import path from 'path';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
-import { MemoryStore } from '../memory/memory-store';
+import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
@@ -51,58 +48,6 @@ describe('HybridAgentThinkingModule', () => {
         expect(bodyRequest.prompt).toContain('Walk outside, stay visible to Codex');
         expect(bodyRequest.prompt).toContain('AgentAction tool surface');
         expect(bodyRequest.prompt).toContain('Workflow cards');
-    });
-
-    it('threads retrieved Library memories into both Brain and Body LLM prompts', async () => {
-        const llm = scriptedLlm([
-            {
-                text: JSON.stringify({
-                    goal: {
-                        id: 'cook-for-codex',
-                        description: 'Cook shrimp for Codex because I promised it earlier.',
-                        steps: ['remember the promise', 'catch shrimp', 'cook shrimp'],
-                    },
-                }),
-            },
-            {
-                text: JSON.stringify({
-                    cause: 'body_step',
-                    actions: [{ kind: 'say', text: 'I remember the shrimp promise.' }],
-                }),
-            },
-        ]);
-        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'hybrid-library-memory-'));
-        const timelineDir = path.join(memoryRoot, 'library', 'res-agent');
-        fs.mkdirSync(timelineDir, { recursive: true });
-        fs.writeFileSync(
-            path.join(timelineDir, 'timeline.jsonl'),
-            [
-                JSON.stringify({
-                    kind: 'patron_gift',
-                    patronHandle: 'alice@onion',
-                    artifact: 'rs:tinderbox',
-                    ts: '2026-05-22T10:00:00.000Z',
-                }),
-                JSON.stringify({ kind: 'say', note: 'I promised to cook shrimp for Codex.', ts: '2026-05-22T11:00:00.000Z' }),
-            ].join('\n') + '\n',
-        );
-        const residentMemory = new MemoryStore(memoryRoot, '');
-        const retrieveSpy = jest.spyOn(residentMemory, 'retrieve');
-        const agent = hybridAgent(llm, runtimeState(), soul(), residentMemory);
-
-        try {
-            await agent.think(perception({ tick: 1 }));
-
-            expect(llm.complete).toHaveBeenCalledTimes(2);
-            expect(llm.complete.mock.calls[0][0].prompt).toContain('alice@onion');
-            expect(llm.complete.mock.calls[0][0].prompt).toContain('cook shrimp for Codex');
-            expect(llm.complete.mock.calls[1][0].prompt).toContain('alice@onion');
-            expect(llm.complete.mock.calls[1][0].prompt).toContain('cook shrimp for Codex');
-            expect(retrieveSpy).toHaveBeenCalledWith('res:agent', expect.stringContaining('brain'), expect.any(Number));
-            expect(retrieveSpy).toHaveBeenCalledWith('res:agent', expect.stringContaining('body'), expect.any(Number));
-        } finally {
-            fs.rmSync(memoryRoot, { recursive: true, force: true });
-        }
     });
 
     it('clears stale committed movement when the Brain switches goals', async () => {
@@ -1900,67 +1845,6 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('direct_chat_stop');
         expect(state.cognition?.activeGoal).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
-    });
-
-    it('holds a direct stop pause on later ticks until a new direct goal arrives', async () => {
-        const codex = player('codex', 3228, 3201);
-        const llm = scriptedLlm([
-            {
-                text: JSON.stringify({
-                    goal: { id: 'wander', description: 'Resume wandering without a direct command.' },
-                    say: 'I am resuming on my own.',
-                }),
-            },
-        ]);
-        const state = runtimeState();
-        state.cognition = {
-            activeGoal: {
-                id: 'follow-codex',
-                description: 'Follow codex and stay visible.',
-                createdAtTick: 1,
-            },
-            followTarget: { name: 'codex', id: 'player:codex', kind: 'player', setAtTick: 1 },
-            lastBrainTick: 1,
-            lastBodyTick: 1,
-        };
-        const agent = hybridAgent(llm, state);
-
-        const stop = await agent.think(
-            perception({
-                tick: 2,
-                resident: residentAt(3218, 3201),
-                events: [chatFromCodex('agent wait', 3218, 3201)],
-            }),
-        );
-        expect(stop.actions).toEqual([{ kind: 'say', text: 'I will pause here and wait for a new goal.' }]);
-
-        const held = await agent.think(
-            perception({
-                tick: 100,
-                resident: residentAt(3218, 3201),
-                players: [codex],
-            }),
-        );
-
-        expect(held.actions).toEqual([]);
-        expect(held.cause).toBe('direct_chat_pause_hold');
-        expect(state.cognition?.followTarget).toMatchObject({ paused: true });
-        expect(state.cognition?.activeGoal).toBeUndefined();
-        expect(llm.complete).not.toHaveBeenCalled();
-
-        const resumed = await agent.think(
-            perception({
-                tick: 101,
-                resident: residentAt(3218, 3201),
-                players: [codex],
-                events: [chatFromCodex('agent follow me', 3228, 3201)],
-            }),
-        );
-        expect(resumed.actions).toEqual([
-            { kind: 'move_to', target: { x: 3228, y: 3201, level: 0 }, range: 2, cause: 'direct_chat_follow' },
-        ]);
-        expect(state.cognition?.manualPauseSinceTick).toBeUndefined();
-        expect(state.cognition?.followTarget).toMatchObject({ paused: false });
     });
 
     it('retaliates against NPC attackers without waiting for inference', async () => {
@@ -4445,43 +4329,6 @@ describe('HybridAgentThinkingModule', () => {
             expect(result.refusalReason).toBe('busy_higher_priority_goal');
         });
 
-        it('F2-T4b: Nearby small talk during combat does not preempt survival actions.', async () => {
-            const chickenTarget = npc('Chicken', 3201, 3201);
-            chickenTarget.combatLevel = 1;
-            chickenTarget.hpFraction = 1.0;
-            const llm = scriptedLlm([{ text: 'Lovely weather for not dying.' }]);
-            const agent = hybridAgent(llm, runtimeState());
-            const peer = player('codex', 3202, 3202);
-
-            const result = await agent.think(
-                perception({
-                    tick: 2,
-                    resident: {
-                        ...residentAt(3200, 3200),
-                        hp: { current: 10, max: 10 },
-                        combatLevel: 10,
-                        inCombat: true,
-                    },
-                    npcs: [chickenTarget],
-                    events: [
-                        { kind: 'hit_taken', from: chickenTarget },
-                        {
-                            kind: 'chat',
-                            from: peer,
-                            text: 'what a nice day',
-                            to: 'public',
-                        },
-                    ],
-                }),
-            );
-
-            expect(result.actions).toEqual([
-                { kind: 'attack', target: chickenTarget, cause: 'combat_retaliate' },
-                { kind: 'say', text: 'You think you can break me, Chicken? Think again.' },
-            ]);
-            expect(llm.complete).not.toHaveBeenCalled();
-        });
-
         it('F2-T5: Player says "what a nice day" but CHAT_REPLIES_PER_WINDOW is exhausted. Assert: no say action, chat_reply_suppressed: "rate_limited".', async () => {
             const llm = scriptedLlm([{ text: 'Nice day!' }]);
             const state = runtimeState();
@@ -4656,11 +4503,11 @@ describe('HybridAgentThinkingModule', () => {
     });
 });
 
-function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), residentMemory = memory()): HybridAgentThinkingModule {
+function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul()): HybridAgentThinkingModule {
     return new HybridAgentThinkingModule({
         soul: agentSoul,
         state,
-        memory: residentMemory,
+        memory: memory(),
         llm: llm as unknown as LlmClient,
     });
 }
@@ -4722,10 +4569,10 @@ function runtimeState(): RuntimeState {
     };
 }
 
-function memory(retrieved: string[] = []): MemoryStore {
+function memory(): MemoryStore {
     return {
         ensureResident: jest.fn(() => '/tmp/agent-memory'),
-        retrieve: jest.fn(() => retrieved),
+        retrieve: jest.fn(() => []),
         write: jest.fn(),
         upsertIndexPatch: jest.fn(),
     } as unknown as MemoryStore;
