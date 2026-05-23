@@ -803,7 +803,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         cognition.routineLoopCount = 0;
         cognition.routineLoopKey = undefined;
         cognition.lastRoutineLoopBreakTick = this.options.state.tick;
-        cognition.activeGoal = explorationGoal(this.options.state.tick);
 
         const explore = explorationAction(
             perception,

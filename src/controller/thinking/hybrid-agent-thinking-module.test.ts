@@ -594,7 +594,7 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'routine_loop_break' }]);
         expect(result.cause).toBe('routine_loop_break');
-        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+        expect(state.cognition?.activeGoal?.id).toBe('train-woodcutting');
     });
 
     it('uses evidence stuck state to break a repeated local routine immediately after restart', async () => {
@@ -634,7 +634,50 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'routine_loop_break' }]);
         expect(result.cause).toBe('routine_loop_break');
-        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+        expect(state.cognition?.activeGoal?.id).toBe('train-woodcutting');
+    });
+
+    it('keeps a make-fire goal after a temporary routine loop break move', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
+        const landmark = { objectId: 879, position: { x: 3230, y: 3231, level: 0 }, orientation: 0 };
+        const repeatedAction = { kind: 'interact', target: normalTree, option: 'chop down', cause: 'woodcutting_level1_routine' };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 70;
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather logs and light a fire with the tinderbox.',
+                steps: ['chop a nearby ordinary tree', 'use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 100,
+            lastBodyTick: 80,
+            lastBodyActionKey: JSON.stringify(repeatedAction),
+            lastBodyActionTick: 95,
+            routineLoopKey: 'woodcutting-firemaking|3225,3231,0',
+            routineLoopCount: 1,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: {
+                    ...residentAt(3225, 3231),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                objects: [normalTree, landmark],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'routine_loop_break' }]);
+        expect(result.cause).toBe('routine_loop_break');
+        expect(state.cognition?.activeGoal?.id).toBe('make-fire');
     });
 
     it('uses logs before breaking out of alternating stationary firemaking and woodcutting work', async () => {
