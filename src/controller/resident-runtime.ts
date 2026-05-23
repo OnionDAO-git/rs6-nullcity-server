@@ -2,7 +2,13 @@ import type { LlmClient } from './llm/llm-client';
 import { ActionCoordinator } from './actions/action-coordinator';
 import { PatronConfig, PatronRegistry } from './patron/patron-registry';
 import { RoutineCapableRuntime, RoutineContext, RoutinePreemptionReason, RoutineTickOutcome } from './routines/routine-runner';
-import { firemakingAction, hasNearbyFire } from './spark/runescape-body-routines';
+import {
+    buryBonesAction,
+    combatTrainingAction,
+    firemakingAction,
+    hasNearbyFire,
+    levelOneWoodcuttingAction,
+} from './spark/runescape-body-routines';
 
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
@@ -568,23 +574,50 @@ export class ResidentRuntime implements RoutineCapableRuntime {
 
         const perception = arrival.perception;
 
-        // Determine active routine action
+        // Determine active routine action via routine dispatch table.
         let action: AgentAction | undefined;
-        if (this.activeRoutineId === 'make_fire') {
-            action = firemakingAction(perception);
+        switch (this.activeRoutineId) {
+            case 'make_fire':
+                action = firemakingAction(perception);
+                if (!action && hasNearbyFire(perception)) {
+                    return 'completed';
+                }
+                break;
+            case 'chop_tree':
+                action = levelOneWoodcuttingAction(perception);
+                break;
+            case 'bury_bones':
+                action = buryBonesAction(perception);
+                if (!action) {
+                    // No bones in inventory means there are none to bury — done.
+                    return 'completed';
+                }
+                break;
+            case 'safe_combat':
+                action = combatTrainingAction(perception);
+                break;
+            case 'follow_player': {
+                const target = pickFollowTarget(perception);
+                if (target) {
+                    action = { kind: 'move_to', target: { x: target.x, y: target.y, level: target.level ?? 0 } };
+                }
+                break;
+            }
         }
 
         if (!action) {
-            // Check if fire is already nearby (completed)
-            if (this.activeRoutineId === 'make_fire' && hasNearbyFire(perception)) {
-                return 'completed';
-            }
             return 'no_progress';
         }
 
         // Populate hints
         if (action.kind === 'use_item_on_item') {
             this._lastHints.push('tinderbox_used');
+        } else if (action.kind === 'interact') {
+            this._lastHints.push('interact_target');
+        } else if (action.kind === 'attack_npc') {
+            this._lastHints.push('attack_target');
+        } else if (action.kind === 'item_action') {
+            this._lastHints.push(`item_action_${action.option}`);
         }
 
         // Submit action
@@ -623,6 +656,38 @@ interface Position {
     x: number;
     y: number;
     level?: number;
+}
+
+/**
+ * Pick the nearest visible player from the perception payload to follow.
+ * Loose typing — perception shapes vary across gateway versions; we read
+ * defensively and bail to undefined when nothing usable is found. Used by
+ * the `follow_player` routine (RB-MCP-δ).
+ */
+function pickFollowTarget(perception: unknown): Position | undefined {
+    if (!perception || typeof perception !== 'object') {
+        return undefined;
+    }
+    const nearby = (perception as Record<string, unknown>).nearby;
+    if (!nearby || typeof nearby !== 'object') {
+        return undefined;
+    }
+    const players = (nearby as Record<string, unknown>).players;
+    if (!Array.isArray(players) || players.length === 0) {
+        return undefined;
+    }
+    for (const player of players) {
+        if (player && typeof player === 'object') {
+            const position = (player as Record<string, unknown>).position;
+            if (position && typeof position === 'object') {
+                const pos = position as Record<string, unknown>;
+                if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+                    return { x: pos.x, y: pos.y, level: typeof pos.level === 'number' ? pos.level : 0 };
+                }
+            }
+        }
+    }
+    return undefined;
 }
 
 function perceptionWaitToEffect(
