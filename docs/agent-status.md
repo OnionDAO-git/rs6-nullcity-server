@@ -202,3 +202,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 03:25 codex  branch=agents/wip  workstream=I-β  HANDOFF — Library timeline memories now feed Hybrid Brain/Body + legacy SPARK prompts. SHA=b539f0f6. Tests: 1048/1048 + typecheck/lint/format/build. Collision: none.
 2026-05-23 08:35 antigravity branch=agents/wip workstream=J HANDOFF — Wired observePatron from perception pipeline and implemented nervous patron thanks reflex. SHA=7f5287f7. Tests: 1052/1052. Collision: none.
 
+2026-05-23 03:52 claude  branch=agents/wip  workstream=J  STARTING — J-α-2 StandingLedger. NEW src/controller/patron/standing-ledger.{ts,test.ts}. Mirrors CurrencyLedger pattern (9eac9dcc). 3 named tiers (Acquaintance/Ally/Officer at 10/30/75) + stranger sentinel per DRIFT-reconciled spec. recordSupport / currentTier / tier-crossing event. TDD. Codex on memory-recall benchmark (orthogonal).
