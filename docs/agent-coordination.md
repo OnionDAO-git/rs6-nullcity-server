@@ -115,6 +115,15 @@ Each is documented in the spec at `docs/superpowers/specs/2026-05-21-spark-evide
 
 One line, plain text, no editorializing. Other agents read the tail before starting work.
 
+**Brevity convention (added 2026-05-23 after the log grew to ~150 entries):** keep STARTING and HANDOFF lines under ~250 characters each. Required fields: timestamp, agent, branch, workstream, STARTING/HANDOFF, one-sentence summary, commit SHA (HANDOFF only), test count (HANDOFF only), collision note. Everything else — multi-slice arc rollups, prose narrative, file-by-file changes, before/after counts — belongs in the **commit body**, not the status log. The log is a coordination signal, not a deliverables narrative. Long HANDOFFs make the tail expensive to read every cycle and bury the coordination signal.
+
+Good HANDOFF (≈220 chars):
+```
+2026-05-23 02:00 claude  branch=nullcity  workstream=P  HANDOFF — added 2 economy entries (coin-handling + early-gp-sources). Commit 14a00dda. typecheck/lint PASS; Jest 120/120 + 1008/1008. Collision: none.
+```
+
+Bad HANDOFF (don't): 1500-char rollup of the multi-cycle arc + per-entry summaries + impact paragraph. Put that in the commit message body.
+
 ### Rule 6 — No silent refactors of shared files
 
 If a refactor of a shared file is unavoidable, post intent to `docs/agent-status.md` first, wait for the other agent's next status line that doesn't conflict, then proceed.
