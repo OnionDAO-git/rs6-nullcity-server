@@ -601,6 +601,164 @@ describe('GameSkillService', () => {
         );
         expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'train-woodcutting' }));
     });
+
+    it('adds trade-request availability when a nearby player asks to trade', () => {
+        const service = new GameSkillService();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Stay near Codex and respond to direct commands.'),
+            perception: tradeAndFiremakingPerception(),
+        });
+
+        expect(context.workflowAvailability).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    workflowId: 'trade-request',
+                    status: 'can_do_now',
+                }),
+            ]),
+        );
+        expect(context.bodySection).toContain('trade-request [can_do_now]');
+        expect(context.bodySection).toContain('trade_request');
+    });
+
+    it('attributes trade attempts to trade-request when firemaking is also available', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Stay near Codex and respond to direct commands.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-trade-request',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'trade_request',
+                    target: { id: 'resident:codex', kind: 'resident', name: 'Codex', position: { x: 3215, y: 3238, level: 0 } },
+                    cause: 'direct_chat_trade',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'trade_requested' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'trade-request',
+                proposedChange: expect.objectContaining({
+                    targetId: 'trade-request',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+    });
+
+    it('attributes follow status speech to follow-codex instead of visible skilling workflows', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Follow Codex and report what I am doing.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-follow-say',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'I will follow res:bmk_codex_005yen67 at 3225,3230.',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'follow-codex',
+                proposedChange: expect.objectContaining({
+                    targetId: 'follow-codex',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'trade-request' }));
+    });
+
+    it('attributes woodcutting status speech to woodcutting instead of firemaking', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('train-woodcutting', 'Chop a tree for logs.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-woodcutting-say',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'Chopping a tree for logs. Steady progress.',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'train-woodcutting',
+                proposedChange: expect.objectContaining({
+                    targetId: 'train-woodcutting',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+    });
 });
 
 function goal(id: string, description: string) {
@@ -629,5 +787,35 @@ function combatAndWoodcuttingPerception() {
             },
         ],
         events: [],
+    } as any;
+}
+
+function tradeAndFiremakingPerception() {
+    return {
+        tick: 1,
+        resident: {
+            inventory: [
+                { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                { itemId: 1511, key: 'rs:logs', amount: 2 },
+            ],
+            hp: { current: 10, max: 10 },
+        },
+        nearby: {
+            players: [{ id: 'resident:codex', kind: 'resident', name: 'Codex', position: { x: 3215, y: 3238, level: 0 } }],
+        },
+        availableActions: [
+            {
+                kind: 'trade_request',
+                targets: [{ id: 'resident:codex', kind: 'resident', name: 'Codex', position: { x: 3215, y: 3238, level: 0 } }],
+            },
+        ],
+        events: [
+            {
+                kind: 'chat',
+                from: { id: 'resident:codex', kind: 'resident', name: 'Codex', position: { x: 3215, y: 3238, level: 0 } },
+                text: 'agent trade me',
+                to: 'public',
+            },
+        ],
     } as any;
 }

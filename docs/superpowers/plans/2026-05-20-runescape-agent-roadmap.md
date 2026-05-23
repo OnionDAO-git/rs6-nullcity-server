@@ -236,6 +236,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: focused knowledge tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: normalized action causes before classification, kept combat movement and prayer-driven attacks under `safe-combat`, kept bury-bones under `train-prayer`, and preserved follow attribution. Focused knowledge tests, typecheck, lint, build, and full Jest suite passed.
 
+- `[x]` **E6: Trade-aware knowledge suggestion attribution.**
+  - Files: `src/controller/knowledge/game-skill-context.ts`, `src/controller/knowledge/game-skill-context.test.ts`
+  - Deliverable: trade request/offer/accept/decline attempts generate review suggestions against a trading workflow, not the first visible starter workflow.
+  - Verification: focused knowledge tests plus typecheck, lint, format, build, and live autonomous `trading-giving-5m` smoke.
+  - Verified 2026-05-23 on `agents/wip`: added trade workflow availability, trade/follow/woodcutting speech attribution, and focused regression coverage. `typecheck`, `lint`, `format`, `build`, focused knowledge+trading tests, and live autonomous `trading-giving-5m` passed (`score=1`, artifact `/tmp/oniondao-trading-giving-bench-e6-final/bench_20260523095325_trading_giving_5m.json`) with suggestions attributed to `follow-codex`, `train-woodcutting`, and `trade-request` instead of `make-fire`.
+
 ## Workstream F: Human-Like Behavior Layer
 
 **Purpose:** Make the resident feel like a human-ish player instead of a static script.
