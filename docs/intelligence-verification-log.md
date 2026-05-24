@@ -2161,3 +2161,165 @@ A second, downstream bug surfaced once `dispatchTierLetter` was made to iterate:
 
 **Owner suggestion.** claude — no follow-up needed unless live verify finds a residual.
 
+
+### E39 — HD-040 live verify on local-46903 (SPRINT-QA3 subagent A)
+
+**Status:** PASS — HD-040 closed end-to-end live
+**Tier:** 2 (claude-as-human exercises CLI against live controller)
+**Date:** 2026-05-24 23:10 claude
+**SHA:** ae60cb9d (E38 substrate already in production)
+
+**Hypothesis.** E38 fix landed at SHA `ae60cb9d`. Codex restarted controller `local-46903` (PID 46903 at 17:04 CDT) bundling the new code. Live-verify by exercising the multi-tier path through `npm run patron:offer`.
+
+**Repro.**
+1. Confirmed `dist/controller/patron/standing-ledger.js` contains `tiersCrossed` (2 occurrences) — live binary reflects new code.
+2. `npm run patron:grant -- --human claude-e39-multitier --amount 100` → ok.
+3. `npm run patron:offer -- --human claude-e39-multitier --resident res:agent --amount 30` → ok.
+4. Read `data/controller/memory/data/letters/claude-e39-multitier/inbox.jsonl`.
+5. Repeat with `claude-e39-3tier` + amount 75 to cross all three tiers.
+
+**Observation.**
+
+| handle | grant | offer | letters | subjects (in order) | shared dispatchedAt |
+|---|---|---|---|---|---|
+| claude-e39-multitier | 100 | 30 | **2** | Acquaintance → Ally | `2026-05-24T22:08:00.807Z` |
+| claude-e39-3tier | 100 | 75 | **3** | Acquaintance → Ally → Officer | `2026-05-24T22:08:27.725Z` |
+
+Identical `dispatchedAt` on all letters proves the LettersStore subject-widened dedup is working — three same-instant standing_tier_crossed letters land separately because subjects differ.
+
+**Sub-findings.**
+- **F39a (POSITIVE / RESOLVED).** HD-040 fix is END-TO-END LIVE on local-46903. Patrons who cross multiple tiers in one grant now see their full standing journey in the inbox.
+- **F39b (POLISH).** CLI `[patron:offer]` log still prints only the highest tier (`Standing Tier crossed! Now: "officer"`) — back-compat is intentional; cosmetic enhancement to print the full `tiersCrossed` array is a post-Chicago polish.
+- **F39c (NEUTRAL).** Each per-tier body correctly inlines its Shard amount in the prose — "Your most recent offering of 30 Shards…" / "Your support of 75 Shards…". Body text quality is acceptable.
+
+**Classification.** ENGINE-correctness fix verified live. HD-040 fully closed.
+
+**Suggested next step.** None — closed. Optional CLI polish deferred.
+
+**Owner suggestion.** claude — no follow-up.
+
+
+### E40 — reflex firing coverage across 19 residents (SPRINT-QA3 subagent B)
+
+**Status:** Multiple findings — 6 sub-findings filed as HDs or follow-ups
+**Tier:** 1 (read-only trajectory + soul-rule inventory cross-reference)
+**Date:** 2026-05-24 23:10 claude
+
+**Hypothesis.** With 25+ hero soul reflexes (PM-pivot E23) + 6 cohort rules + ~60 code-defined reflex causes in `hybrid-agent-thinking-module.ts`, what fraction actually FIRES in production? Which are dead code? Which heroes get distinct says vs identical fallbacks?
+
+**Observation.**
+
+**Top 10 most-fired causes across cohort (526-tick window post-Codex-restart):**
+| rank | cause | fires |
+|---|---|---|
+| 1 | `low_health_hold_position` | 749 (qa-guardian 375 + qa-survivor 374) |
+| 2 | `body_wait` | 459 |
+| 3 | `exploration_fallback` | 116 |
+| 4 | `presence_beacon` | 40 (11 residents) |
+| 5 | `firemaking_gather_logs` | 35 |
+| 6 | `resident_busy` | 33 |
+| 7 | `stuck_pre_inference_explore` | 23 |
+| 8 | `thinking_watchdog_timeout` | 21 |
+| 9 | `firemaking_fallback` | 13 / `continue_move` 13 / `stuck_move_recovery` 13 |
+| 10 | `watchdog_fallback` | 12 (heroes only) |
+
+**Dead code-defined reflexes (declared in `hybrid-agent-thinking-module.ts`, 0 fires window-wide):** approach_interaction_target, dialogue_choice_first / dialogue_continue, 23 direct_chat_* variants, follow_listen_hold + follow_player_*, goal_coordinate_move, low_health_return_to_anchor, non_command_small_talk, opportunistic_pickup, return_to_visibility_anchor, routine_loop_break, scouting_*_opportunity ×2, stuck_blocker_report / stuck_open_obstacle, trade_decline_untrusted_partner / trade_offer_safe_item, woodcutting_chain_firemaking. **Most are gated behind perception conditions never satisfied at embassy spawn** (no combat targets engaged, no NPCs dialogue-active, no trade partners, no follow targets).
+
+**Dead soul rules (declared in YAML, 0 fires):** ALL `*-took-a-hit` (4), ALL `*-on-death` (5), ALL `*-mourn-on-death` / `*-quiet-respect-on-death` / `*-soothe-after-hit`, plus `qa-guardian-hit-report`, `qa-survivor-hit-report`, `qa-guide-help-reply`, `qa-trader-inventory-report`. **11 of 25 hero rules + 4 of 6 cohort rules are dead this window** — none triggered because no combat damage event dispatched and no resident died.
+
+**Sub-findings.**
+
+- **F40a (ENGINE / NEW CRITICAL — HD-042 filed).** Hero residents (Hans, Aereck, Wise, Duke, Pip, Thrand) all show 100% `watchdog_fallback` cause + only 2-4 body actions in 526 ticks. They emit personality SAYS via reflex rules normally, but their Brain → action path produces `cause: ''` (empty) for 5-14 decisions each, forcing the watchdog to backfill. Cohort doesn't have this pattern — cohort fires `body_wait` / `exploration_fallback` normally. The Brain output path on heroes appears to drop the `cause` field somewhere between hybrid-thinking-module and the trajectory recorder.
+- **F40b (PERCEPTION / HD-044 filed).** Every `on-death` + `on-hit` reflex (15 total across hero + cohort souls) is DEAD this window. qa-guardian + qa-survivor are demonstrably at low HP (per F36a / now F39 Codex-fixed) — yet their `*-hit-report` rules never fire. Hypothesis: nervous-system reads steady-state HP gauge but doesn't dispatch a one-shot `damage_taken` perception event on the edge.
+- **F40c (KNOWLEDGE / HD-045 filed).** Rule-ID drift: my E29 / sprint-handoff documentation cited hero rule IDs like `aereck-bless-ground`, `hans-mention-lumbridge`, `wise-introduce-self`, `duke-decree-issued`, `pip-watch-the-elders`, `thrand-old-soldier-cough`. None of these exist on disk — actual hero rule names are `aereck-bless-on-chat`, `hans-courtyard-greet-chat`, `wise-aphorism-on-chat`, `duke-formal-greet-on-chat`, `pip-curious-on-chat`, `thrand-acknowledge-chat` etc (per E23 PM-pivot subagent A's actual implementation). 25 doc-cited rule IDs are drift artifacts.
+- **F40d (DESIGN — INTENTIONAL).** Heroes never fire `presence_beacon` — gated off when soul rule `*-low-attention` covers the same conversational slot. Cohort has no `*-low-attention` rules so they get the generic beacon. Intentional split; no fix needed.
+- **F40e (POSITIVE).** Per-hero personality firing CONFIRMED at the substrate level. Hans `courtyard` 6× + `combat-aside` 2× + `low-attention-patrol-mutter` 2× = 3/5 rules firing. Wise has 3/4. Duke has 3/4. Pip + Thrand + Aereck each have 2/4. PM-pivot delivered observable hero-distinct speech.
+- **F40f (FOLLOW-UP).** Heroes show `nervous:patron-memory-acknowledge` firing for res:agent with **3 different rule-ID variants** (`-claude-e39-3tier`, `-claude-e39-multitier`, base). This is rule-ID drift from hot-edits during E39 — defer cleanup.
+
+**Classification.** Mixed: 1 ENGINE-critical (F40a/HD-042), 1 PERCEPTION-gap (F40b/HD-044), 1 KNOWLEDGE-drift (F40c/HD-045), 1 DESIGN-intentional (F40d), 2 POSITIVE.
+
+**Suggested next step.** Codex investigates F40a (hero Brain output cause drop) in his current spark-zone window. F40b is a substrate change to event dispatch. F40c/KNOWLEDGE is doc-only cleanup (mine).
+
+**Owner suggestion.** Codex (F40a, F40b), claude (F40c).
+
+
+### E41 — HD-041 deep-dive: L-α/L-β substrate vs runtime wire-in (SPRINT-QA3 subagent C)
+
+**Status:** CRITICAL DISCOVERY — L-α LoreBus is DEAD CODE in production; HD-041 reframed
+**Tier:** 1 (code audit + live trajectory grep across all 19 residents)
+**Date:** 2026-05-24 23:10 claude
+
+**Hypothesis.** HD-041 / E36-F36c found zero cross-resident `heard` events. Determine if this is by-design (LoreBus narrative-only) or a regression. Audit L-α emit sites + L-β whisper substrate + live cross-resident evidence.
+
+**Observation.**
+
+**L-α (LoreBus) audit (`src/controller/lore/lore-bus.ts`):**
+- Implementation is correct: validates `LoreEvent {kind, ts, source, payload, visibility?}` and fan-outs with `kindFilter` + `proximityFilter` (Euclidean, same-level).
+- Two emit sites exist in code: `FireLitReflex.observe` (Chebyshev≤1 detection, radius 10) and `publishWhisper` (radius 6).
+- **`grep "new LoreBus\|new FireLitReflex" src/` matches ONLY test files.** No production import in `controller-host.ts`, `index.ts`, or `resident-runtime.ts`. **LoreBus is never instantiated in the live runtime. Even `fire_lit` doesn't fire in production today.**
+
+**L-β (whisper) audit (`src/controller/lore/whisper.ts`):**
+- `publishWhisper` + `whisperInboxFor` are tested in `whisper.test.ts` and correct as units.
+- **No CLI verb exists** (`package.json` has patron:grant/offer/ask/witness; no patron:whisper).
+- **Target's perception never sees the whisper** — `whisperInboxFor` buffers in-memory; nothing drains into ResidentRuntime.applyTick. `docs/next-week-handoff-2026-05-26.md:139` confirms: "Slice 3 — L-β-2 (whisper inbox into perception)" is unfinished work of ~10 LOC.
+
+**Live evidence (19 residents, ALL trajectory files, full history not just newest):** scanned for `"kind":"heard"`, `"speaker"`, `"whispered"`, `loreEvent`, `crossResident`, `"kind":"whisper"`. **Zero matches anywhere.** Fully consistent with substrate-not-wired finding.
+
+**Sub-findings.**
+
+- **F41a (DESIGN-GAP / HD-043 filed).** L-α LoreBus + L-α-2 FireLitReflex are substrate-complete but never instantiated in `controller-host.ts`. The roadmap had L-α-3 "wire LoreBus into ControllerHost" as next-week work that never landed. **Cross-resident narrative events (fire_lit, death-witness, etc) have ZERO runtime effect today.** This is a bigger gap than HD-041 named.
+- **F41b (DESIGN-GAP, same parent).** L-β whisper substrate ships without (a) CLI verb (b) perception-drain into ResidentRuntime. Even if someone called `publishWhisper(...)` from a test, the target resident's nervous-system would never see the message. Estimated wire-in cost: ~90 LOC + tests.
+- **F41c (DOC-FIX shipped this cycle).** `src/controller/soul/starter-souls/res-qa-social.md` `qa-social-chat-ack` reflex text changed from `"I heard that. Try 'social help'..."` to `"Got it. Use 'social help'..."`. The old copy implied cross-resident perception that doesn't exist; the new copy frames it as a direct-chat ack (the trigger condition is `event_kind: chat` which fires for patron:ask, not ambient overhear).
+- **F41d (POSITIVE).** HD-041 is NOT a code regression — it's the predictable behavior of substrates that shipped but were never wired in. Closeable as "expected" with one doc fix + an L-α-3 follow-up workstream.
+
+**Classification.** DESIGN + OBSERVABILITY. NOT a bug, NOT a regression.
+
+**Suggested next step.** Option 1 + Option 3:
+1. **Doc fix (shipped this cycle):** qa-social copy updated.
+2. **L-α-3 + L-β-2 wire-in workstream** for next week: instantiate `LoreBus` in `controller-host.ts` (~6 LOC), wire `FireLitReflex` subscriber per resident, add L-β-2 perception drain into ResidentRuntime (~12 LOC), add `patron:whisper` CLI verb (~25 LOC + 1 line in package.json + ~40 LOC tests). **Total ~90 LOC.** Risk: touches `controller-host.ts` (semi-Codex zone) + `resident-runtime.ts` (Codex zone) — best landed after Chicago or by Codex.
+3. **Option 2 (broaden L-α to ambient say_heard) NOT recommended** — would couple every say action to proximity fan-out, perf + prompt-token cost across 19 residents.
+
+**Owner suggestion.** claude (doc fix, this cycle). HD-043 for Codex+claude joint follow-up next week.
+
+
+### E42 — soul personality differential (SPRINT-QA3 subagent D)
+
+**Status:** Mostly POSITIVE — heroes + cohort have measurable personality differentiation; 2 catatonic confirmed (HD-039 RESOLVED-by-codex)
+**Tier:** 1 (read-only trajectory + soul-rule diff)
+**Date:** 2026-05-24 23:10 claude
+
+**Hypothesis.** Quantify whether the 19-resident roster feels distinct vs collapses to identical fallback. Per-resident say diversity + cause histogram + action mix vs hero vs cohort vs res:agent.
+
+**Observation.**
+
+**Group means (526-tick window):**
+| group | n | diversity | mean says | mean actions | top-cause % |
+|---|---|---|---|---|---|
+| res:agent | 1 | 100.0% | 6 | 30 | body_wait 56% |
+| heroes | 6 | 33.2% | 11.0 | 3.2 | **watchdog_fallback 96.3%** |
+| cohort | 12 | 69.0% | 7.4 | 25.2 | varied 48.2% |
+
+**TOP-3 most distinctive residents:**
+1. `res-qa-cook` — 16 says / 8 distinct + unique "I do not understand that command." × 9 + fires `stuck_help_request`.
+2. `res-wise-old-man` — 4 of 4 configured aphorisms firing ("fire that warmed kings" 3×, "Pick your fights" 3×, "bench/cup of tea" 2×, "Ah." opener 3×).
+3. `res-hans` — 3 of 5 rules firing ("courtyard" 6×, "blade scrapes" 2×, "bells from the chapel" 2×).
+
+**TOP-3 personality-flat:**
+1. `res-qa-survivor` 100% one phrase + 99.6% one cause + 1 action / 526 ticks → CATATONIC (now RESOLVED by Codex `0747ff8c`).
+2. `res-qa-guardian` 99.6% one cause + 1 action → CATATONIC (now RESOLVED by Codex `0747ff8c`).
+3. `res-qa-social` 100% one phrase but >0 brain actions → lexically frozen (not catatonic). qa-social-chat-ack is the only soul rule + nothing else triggers reflective speech.
+
+**Sub-findings.**
+
+- **F42a (POSITIVE / DESIGN-VALIDATION).** Heroes + cohort have measurably distinct speech via reflex layer — even though heroes' Brain-output path is broken (F40a/HD-042), the per-hero soul rules carry observable personality. PM-pivot delivered observable richness.
+- **F42b (CONFIRMS F36a / NOW RESOLVED).** qa-guardian + qa-survivor catatonia reproduced exactly (99.6% one cause). Codex `0747ff8c` (HD-039 fix at 17:08 CDT) ships `lowHealthRecoveryAction` + recovery waypoint (3228,3217) so future runs should escape the loop. Live re-verify after next restart.
+- **F42c (NEW FINDING).** 7 of 12 cohort souls (`qa-angler`, `qa-banker`, `qa-cook`, `qa-forager`, `qa-priest`, `qa-scout`, `qa-woodcutter`) have ZERO declared nervous rules — all personality delegated to Brain-LLM goal narration. Live data shows the narration works adequately (woodcutter mentions "logs/chop", angler mentions "raw fish/cook", priest mentions "Train combat"). Design-intentional minimalism; some cohort souls could get 1-2 rules for visible personality without changing test coverage intent.
+- **F42d (RECONFIRMS F40a).** Hero `watchdog_fallback` dominance independently confirmed: heroes have 2-4 actions in 526 ticks vs cohort's 20-69. Brain-output gap is real and significant.
+- **F42e (POSITIVE — patron-thank reflex working live).** res:agent fired `nervous:patron-memory-acknowledge` for all 3 patron grants from E39 multitier test cycle. Patron-acknowledge reflex (HD-031) holds up across the new HD-040 multi-tier dispatch.
+
+**Classification.** Mostly POSITIVE / DESIGN-VALIDATION. F42c is a small DESIGN observation (cohort minimalism is fine).
+
+**Suggested next step.** Live re-verify qa-guardian/survivor escape after next restart. Optional: add 1-2 cohort soul rules to the silent 7 for visible personality (low priority).
+
+**Owner suggestion.** claude (re-verify); Codex if cohort souls want per-archetype rules.
+

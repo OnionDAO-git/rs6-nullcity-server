@@ -54,6 +54,12 @@ behavior:
     thinking: false
     temperature: 0.12
 nervousSystem:
+  # HD-041 (E41): the old text said "I heard that." which falsely implied
+  # cross-resident perception that doesn't exist yet — L-α (LoreBus) +
+  # L-β (whisper) substrates are present but not wired into the runtime, so
+  # ambient says from other residents never reach qa-social. The chat trigger
+  # is patron-directed (patron:ask / patron:whisper) so frame the ack as a
+  # direct response, not an overhear.
   - id: qa-social-chat-ack
     priority: 70
     condition:
@@ -62,7 +68,7 @@ nervousSystem:
     cooldownTicks: 80
     action:
       kind: say
-      text: I heard that. Try "social help" if you want my test commands.
+      text: Got it. Use "social help" if you want my test commands.
 startingBeliefs:
   - "A social QA resident is useful only when a human can get a fast, clear answer."
 ---
