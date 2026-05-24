@@ -198,6 +198,55 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(payload.asOf).toBe('2026-05-23T16:00:00.000Z');
         });
 
+        it('redacts recipients and clears bodies when wallRedact is enabled (HD-013)', async () => {
+            // HD-013 / E13. The wall ticker is a public projection at
+            // Chicago — passers-by must not see other patrons' full
+            // handles or letter bodies. wallRedact passes the snapshot
+            // through redactWallSnapshot before returning. The per-patron
+            // /v1/inbox?human=... endpoint stays full-fidelity for the
+            // patron's own consumption.
+            seedLetter('alice@onion', 'Welcome', '2026-05-23T15:00:00.000Z');
+            seedLetter('claude-sprint-patron', 'You are now Ally', '2026-05-23T15:30:00.000Z');
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                lettersRoot: tmp,
+                wallRedact: true,
+                now: () => new Date('2026-05-23T16:00:00.000Z'),
+            });
+            const wallUrl = server.url.replace('/v1/inbox', '/v1/wall/snapshot');
+            const response = await get(wallUrl);
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { recentLetters: Array<{ recipient: string; body: string; subject: string }> };
+            expect(payload.recentLetters).toHaveLength(2);
+            // Subjects are preserved (short, already-public).
+            // Newest first → claude-sprint-patron's letter.
+            expect(payload.recentLetters[0].subject).toBe('You are now Ally');
+            // Recipients masked.
+            expect(payload.recentLetters[0].recipient).toBe('c***-patron');
+            expect(payload.recentLetters[1].recipient).toBe('a***@onion');
+            // Bodies cleared.
+            for (const letter of payload.recentLetters) {
+                expect(letter.body).toBe('');
+            }
+        });
+
+        it('returns full bodies + recipients when wallRedact is not set (default behavior preserved)', async () => {
+            seedLetter('alice@onion', 'Welcome', '2026-05-23T15:00:00.000Z');
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                lettersRoot: tmp,
+                now: () => new Date('2026-05-23T16:00:00.000Z'),
+            });
+            const wallUrl = server.url.replace('/v1/inbox', '/v1/wall/snapshot');
+            const response = await get(wallUrl);
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { recentLetters: Array<{ recipient: string; body: string }> };
+            expect(payload.recentLetters[0].recipient).toBe('alice@onion');
+            expect(payload.recentLetters[0].body).toContain('Body for alice@onion');
+        });
+
         it('honors auth on the wall route the same way as the inbox route', async () => {
             server = await startLettersHttpServer({
                 store,

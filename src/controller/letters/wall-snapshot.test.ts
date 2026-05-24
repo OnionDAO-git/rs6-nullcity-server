@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { LettersStore } from '../patron/letters-store';
-import { buildWallSnapshot, type WallSnapshot } from './wall-snapshot';
+import { buildWallSnapshot, redactWallSnapshot, type WallSnapshot } from './wall-snapshot';
 
 describe('buildWallSnapshot (EVENT-D6)', () => {
     let root: string;
@@ -161,6 +161,62 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             seed('alice@onion', 'standing_tier_crossed', '2026-05-23T15:00:00.000Z');
             const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
             expect(snap.recentLetters).toHaveLength(1);
+        });
+
+        it('redactWallSnapshot masks recipient handles and clears letter bodies for public wall display (HD-013)', () => {
+            // HD-013 / E13. The wall ticker is a public projection at the
+            // IRL event — passers-by should not be able to read another
+            // patron's full letter body or full handle. The /v1/inbox
+            // endpoint (per-patron URL) keeps full content. Recipient
+            // mask: first char + '***' + suffix-after-@-or-after-last-dash;
+            // body becomes '' so renderers can show only kind + subject.
+            seed('alice@onion', 'standing_tier_crossed', '2026-05-23T15:00:00.000Z');
+            seed('claude-sprint-patron', 'epitaph', '2026-05-23T15:30:00.000Z');
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+
+            const redacted = redactWallSnapshot(snap);
+
+            expect(redacted.recentLetters).toHaveLength(2);
+            // Newest first.
+            const [first, second] = redacted.recentLetters;
+            expect(first.recipient).toBe('c***-patron');
+            expect(first.body).toBe('');
+            expect(first.subject).toBe('epitaph for claude-sprint-patron'); // subject preserved
+            expect(first.kind).toBe('epitaph');
+            expect(second.recipient).toBe('a***@onion');
+            expect(second.body).toBe('');
+            // Counts/asOf preserved.
+            expect(redacted.deathsToday).toBe(snap.deathsToday);
+            expect(redacted.asOf).toBe(snap.asOf);
+        });
+
+        it('redactWallSnapshot masks single-character handles defensively', () => {
+            // Edge: short handles still get masked, never returned in clear.
+            seed('a', 'standing_tier_crossed', '2026-05-23T15:00:00.000Z');
+            seed('bob', 'epitaph', '2026-05-23T15:30:00.000Z');
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+
+            const redacted = redactWallSnapshot(snap);
+
+            // 'a' has no suffix delimiter and only 1 char → '***'
+            expect(redacted.recentLetters.find(l => l.kind === 'standing_tier_crossed')?.recipient).toBe('***');
+            // 'bob' has no delimiter; still mask the middle chars
+            expect(redacted.recentLetters.find(l => l.kind === 'epitaph')?.recipient).toBe('b***');
+        });
+
+        it('redactWallSnapshot returns a new object (does not mutate input)', () => {
+            seed('alice@onion', 'standing_tier_crossed', '2026-05-23T15:00:00.000Z');
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            const originalRecipient = snap.recentLetters[0].recipient;
+            const originalBody = snap.recentLetters[0].body;
+
+            const redacted = redactWallSnapshot(snap);
+
+            // Input untouched.
+            expect(snap.recentLetters[0].recipient).toBe(originalRecipient);
+            expect(snap.recentLetters[0].body).toBe(originalBody);
+            // Output redacted.
+            expect(redacted.recentLetters[0].recipient).not.toBe(originalRecipient);
         });
 
         it('skips malformed JSONL lines without throwing', () => {

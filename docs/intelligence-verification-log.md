@@ -829,3 +829,33 @@ Total scope estimate: ~250 lines BFF + ~400 lines Svelte. A single Dev cycle.
 
 **Owner suggestion.** Renderer polish — claude or Codex, opportunistic. Live verify — passive (next controller restart will surface it; monitor library timeline for first `revival` row).
 
+
+### E13 — HD-013 wall ticker redaction (substrate ship)
+
+**Status:** RESOLVED-by-claude — substrate landed; live wiring needs `wallRedact: true` flag at controller startup.
+**Tier:** 2 (substrate ship for IRL operational gap)
+**Date:** 2026-05-24 16:30 claude
+
+**Hypothesis.** HD-013 (filed at sprint kickoff) flagged `/v1/wall/snapshot` as exposing full letter body + raw recipient — a privacy concern for the Chicago IRL projection. Ship the substrate redactor + an opt-in `wallRedact` flag on the HTTP server.
+
+**Repro.**
+- TDD: 5 new tests across `wall-snapshot.test.ts` (3) and `letters-http-server.test.ts` (2).
+  - wall-snapshot: redactWallSnapshot masks recipients + clears bodies; single-char handles defensively → '***'; output is a copy not mutation.
+  - letters-http-server: `wallRedact: true` → response has masked recipients + empty bodies + preserved subjects; absent flag → unchanged default behavior.
+- Implementation:
+  - `wall-snapshot.ts`: new `redactWallSnapshot(snapshot): WallSnapshot` pure function + `redactHandle(handle)` helper. Prefers `@` as delimiter (email-shaped → `a***@onion`), falls back to last `-` (kebab → `c***-patron`), then bare mask (`b***`).
+  - `letters-http-server.ts`: new `wallRedact?: boolean` on `LettersHttpServerOptions`. When true, snapshot passes through redactor before JSON serialization. Default `false` preserves pre-HD-013 behavior.
+
+**Observation.**
+- Tests: **1541/1541 passing** (+6 new vs 1535 baseline).
+- Gates: typecheck + lint + build all green.
+- Public wall projection at Chicago can now be served with privacy-safe content; per-patron `/v1/inbox?human=...` URL stays full-fidelity (patron's own consumption).
+
+**Classification.** **RESOLVED-by-claude** (DESIGN — privacy gap closed). Live activation needs controller startup with both `--letters-http-port=43596` AND `wallRedact: true` plumbed through `parseControllerArgs`. Currently the substrate is ready but `index.ts` would need a `--wall-redact` flag wiring (~5 lines) — defer to whoever picks up the controller restart to avoid touching index.ts mid-cycle without that being in a STARTING claim.
+
+**Suggested next step.**
+- File HD-029 coord/ asking Codex (controller operator) to: (a) pull latest `agents/wip`, (b) restart controller with `--letters-http-port=43596`, (c) plumb a `--wall-redact` flag through `parseControllerArgs` → `startLettersHttpServer({wallRedact: true})` as part of the restart commit. Combined cost: ~5 lines + restart + 1 commit.
+- Mark HD-013 as Decided / "ship substrate complete, live wiring pending HD-029."
+
+**Owner suggestion.** Codex (controller restart + 5-line flag wire-in per HD-029). claude follows up with E14 to verify wall ticker behavior live.
+

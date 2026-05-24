@@ -117,6 +117,63 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     };
 }
 
+/**
+ * Public-display redaction for a {@link WallSnapshot} (HD-013).
+ *
+ * The wall ticker at the IRL event is a passers-by display, not a
+ * patron's private inbox. Returning full recipient handles + full letter
+ * bodies leaks per-person standing crossings and emotional epitaph
+ * content to anyone glancing at the screen. This pure function takes a
+ * snapshot and returns a copy with:
+ *
+ *   - `letter.body` replaced with `''` so renderers fall back to showing
+ *     only `kind` + `subject` (the latter being a short, already-public
+ *     phrase like "You are now Acquaintance of embassy").
+ *   - `letter.recipient` masked to `firstChar + '***' + suffix` where
+ *     `suffix` is the part of the handle after the first delimiter
+ *     (`@` first, then last `-`); single-character handles render as
+ *     `'***'`. The full handle remains available via the per-patron
+ *     {@link DEFAULT_LETTERS_PATH} (which staff hands directly to the
+ *     patron) — only the wall view is redacted.
+ *
+ * Other snapshot fields (`deathsToday`, `asOf`) are preserved as-is.
+ * Does NOT mutate its input.
+ */
+export function redactWallSnapshot(snapshot: WallSnapshot): WallSnapshot {
+    return {
+        recentLetters: snapshot.recentLetters.map(letter => ({
+            ...letter,
+            recipient: redactHandle(letter.recipient),
+            body: '',
+        })),
+        deathsToday: snapshot.deathsToday,
+        asOf: snapshot.asOf,
+    };
+}
+
+function redactHandle(handle: string): string {
+    if (handle.length === 0) {
+        return '***';
+    }
+    if (handle.length === 1) {
+        // Defensive — never return a 1-char handle in clear, even though
+        // such handles shouldn't pass slug normalization in practice.
+        return '***';
+    }
+    // Prefer '@' as the separator (email-shaped handles), then fall back
+    // to the LAST '-' (kebab-shaped handles like 'claude-sprint-patron'
+    // → 'c***-patron'). With neither, just mask the tail.
+    const atIndex = handle.indexOf('@');
+    if (atIndex > 0) {
+        return `${handle[0]}***${handle.slice(atIndex)}`;
+    }
+    const lastDash = handle.lastIndexOf('-');
+    if (lastDash > 0) {
+        return `${handle[0]}***${handle.slice(lastDash)}`;
+    }
+    return `${handle[0]}***`;
+}
+
 function isLetter(value: unknown): value is Letter {
     if (!value || typeof value !== 'object') {
         return false;

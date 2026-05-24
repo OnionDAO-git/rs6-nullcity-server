@@ -1,7 +1,7 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
 import type { LettersStore } from '../patron/letters-store';
-import { buildWallSnapshot } from './wall-snapshot';
+import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
 
 /**
  * Read-only HTTP server exposing a human's letter inbox as JSON
@@ -47,6 +47,17 @@ export interface LettersHttpServerOptions {
     lettersRoot?: string;
     /** Wall ticker route path. Defaults to {@link DEFAULT_WALL_PATH}. */
     wallPath?: string;
+    /**
+     * When true, the wall snapshot is passed through
+     * {@link redactWallSnapshot} before being returned: recipients are
+     * masked (e.g. `alice@onion` → `a***@onion`) and letter bodies are
+     * cleared. Use at the IRL event so the public projection does not
+     * leak per-patron content. The per-patron `/v1/inbox?human=...`
+     * route is unaffected — patrons still get full-fidelity content
+     * via their own URL. Default `false` preserves the pre-HD-013
+     * behavior. See `docs/intelligence-verification-log.md` § E13.
+     */
+    wallRedact?: boolean;
     /** Test injection for `now` used by the wall snapshot. */
     now?: () => Date;
 }
@@ -125,7 +136,9 @@ async function handle(
         const now = options.now ? options.now() : new Date();
         // lettersRoot guaranteed non-undefined here by the isWallRoute check above.
         const snapshot = buildWallSnapshot(options.lettersRoot as string, { now });
-        writeJson(response, 200, snapshot);
+        // HD-013: optionally pass the snapshot through the public-display
+        // redactor before serving it on the wall route.
+        writeJson(response, 200, options.wallRedact ? redactWallSnapshot(snapshot) : snapshot);
         return;
     }
 
