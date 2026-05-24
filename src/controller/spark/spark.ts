@@ -267,7 +267,7 @@ export class Spark {
 
     watchdogFallback(perception: Perception): SparkTickResult {
         this.abortInflight('thinking_watchdog_timeout');
-        const action = generateFirstStepCandidates(perception).find(candidate => candidate.kind !== 'noop');
+        const action = heroAnchorPatrolAction(this.soul, this.state) || generateFirstStepCandidates(perception).find(candidate => candidate.kind !== 'noop');
         if (!action) {
             return { actions: [], cause: 'thinking_watchdog_timeout', nooped: true };
         }
@@ -275,7 +275,7 @@ export class Spark {
         const fallbackAction = { ...action, cause: 'watchdog_fallback' };
         const visiblePulse: AgentAction = {
             kind: 'say',
-            text: 'I am still here; getting my bearings.',
+            text: watchdogFallbackSpeech(this.soul),
             cause: 'watchdog_fallback',
         };
         this.state.attention = spendForAction(this.state.attention, visiblePulse.kind);
@@ -358,4 +358,38 @@ function replaceNoopWithCandidate(actions: AgentAction[], candidates: AgentActio
 
 function sha256(value: string): string {
     return createHash('sha256').update(value).digest('hex');
+}
+
+function watchdogFallbackSpeech(soul: Soul): string {
+    const residentName = soul.frontmatter.heroProfile?.publicName || soul.frontmatter.display;
+    if (!residentName) {
+        return 'I am still here; getting my bearings.';
+    }
+
+    if (soul.frontmatter.heroProfile?.anchor) {
+        return `Still here as ${residentName}; getting my bearings near my post.`;
+    }
+
+    return `Still here as ${residentName}; getting my bearings.`;
+}
+
+function heroAnchorPatrolAction(soul: Soul, state: RuntimeState): AgentAction | undefined {
+    const anchor = soul.frontmatter.heroProfile?.anchor;
+    if (!anchor) {
+        return undefined;
+    }
+
+    const patrolOffsets = [
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: -1, y: 0 },
+        { x: 0, y: -1 },
+    ];
+    const offset = patrolOffsets[Math.abs(state.tick) % patrolOffsets.length];
+    return {
+        kind: 'move_to',
+        target: { x: anchor[0] + offset.x, y: anchor[1] + offset.y, level: anchor[2] },
+        range: 1,
+        cause: 'watchdog_fallback',
+    };
 }

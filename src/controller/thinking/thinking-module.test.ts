@@ -65,6 +65,61 @@ describe('createThinkingModule', () => {
         });
     });
 
+    it('personalizes default Spark watchdog fallback for anchored heroes', () => {
+        const module = createThinkingModule({
+            soul: soul({
+                heroProfile: {
+                    tier: 'hero',
+                    publicName: 'Hans',
+                    signatureAction: 'asks how long someone has been around',
+                    anchor: [3221, 3218, 0],
+                },
+            }),
+            state: runtimeState(),
+            memory: {} as MemoryStore,
+            llm: {} as LlmClient,
+        });
+
+        const result = module.onWatchdogTimeout?.({
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+            },
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { kind: 'say', text: 'Still here as Hans; getting my bearings near my post.', cause: 'watchdog_fallback' },
+                { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 1, cause: 'watchdog_fallback' },
+            ],
+            cause: 'watchdog_fallback',
+            nooped: false,
+        });
+    });
+
+    it('personalizes default Spark watchdog fallback speech for named residents without anchors', () => {
+        const module = createThinkingModule({
+            soul: soul({ display: 'Pip' }),
+            state: runtimeState(),
+            memory: {} as MemoryStore,
+            llm: {} as LlmClient,
+        });
+
+        const result = module.onWatchdogTimeout?.({
+            resident: {
+                position: { x: 3235, y: 3233, level: 0 },
+            },
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { kind: 'say', text: 'Still here as Pip; getting my bearings.', cause: 'watchdog_fallback' },
+                { kind: 'move_to', target: { x: 3236, y: 3233, level: 0 }, cause: 'watchdog_fallback' },
+            ],
+            cause: 'watchdog_fallback',
+            nooped: false,
+        });
+    });
+
     it('uses the first selected SPARK module that creates a thinking module', () => {
         const custom = fakeThinkingModule();
 

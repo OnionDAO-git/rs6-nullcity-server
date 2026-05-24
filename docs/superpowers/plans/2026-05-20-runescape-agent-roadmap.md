@@ -304,6 +304,9 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: combat fixture tests and one live local smoke if available.
   - Verified 2026-05-23: fully implemented with exposed combatLevel, weakest aggressor selection (lowest HP, lowest combat level, closest Chebyshev distance), decision classification (retaliate_confident, retaliate_after_eat, retreat_outmatched, retreat_low_hp), episode deduplication, and kill celebration. Tested F5-T1 through F5-T9 targeting all registers (achiever, mentor, endurer, default) successfully.
 
+- `[ ]` **F6: Default-SPARK idle initiative for quiet residents.** Some non-hybrid, non-anchored residents can tick without hooks and never hit watchdog fallback, so they are technically alive but invisible to observers.
+  - Filed 2026-05-24 on `agents/wip`: live M8 verification on `local-93740` found `res:thrand` producing only begin/end tick evidence in a short soak while other residents spoke or moved. Design a bounded no-hook cadence for default-SPARK residents: occasional display-name status line, safe local patrol or anchor return when available, and dashboard-visible evidence without spamming public chat.
+
 
 ## Workstream G: Real Gameplay Workflows
 
@@ -475,6 +478,9 @@ Safe public module facade building blocks are implemented, but the public member
 - `[x]` **M7: Operator revive tooling for manual residents.** Add an explicit CLI/helper that can revive `attention_exhausted` manual heroes for local/event verification without changing long-term SOUL respawn policy.
   - Started 2026-05-24 on `agents/wip`: Codex is implementing HD-030 as an admin revive command instead of temporarily flipping hero SOULs to `on_restart`.
   - Verified 2026-05-24 on `agents/wip`: `npm run controller:revive -- --resident <name>` revives manual attention-exhausted residents, refuses non-manual/non-attention deaths unless `--force`, records Library revival evidence, clears stale move/stuck state, and active controllers now adopt operator-revived runtime state instead of overwriting it. Focused tests, full gates, dashboard HTTP/browser smoke, and live `local-36085` revival of Hans, Father Aereck, Wise Old Man, Duke Horacio, Pip, and Thrand passed.
+- `[x]` **M8: Hero-aware default fallback behavior.** Default-SPARK heroes should not all say the same watchdog line or wander away from authored anchors.
+  - Started 2026-05-24 on `agents/wip`: Codex is polishing E18/F18d by making default hero watchdog fallback speech include the public hero name and moving fallback patrols around `heroProfile.anchor` when present.
+  - Verified 2026-05-24 on `agents/wip`: default-SPARK watchdog fallback now names `heroProfile.publicName` or `display`; anchored heroes patrol one tile around `heroProfile.anchor` with `range: 1`, while named non-anchored residents keep first-step candidate movement. Focused red/green tests, typecheck, lint, build, full Jest, code-review subagent, and live `local-93740` passed for Hans, Father Aereck, Wise Old Man, Duke Horacio, and Pip. Residual: F6 tracks quiet no-hook residents such as Thrand.
 
 ## Workstream N: Physical Event And Embassy
 

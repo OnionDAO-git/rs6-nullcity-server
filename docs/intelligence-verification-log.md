@@ -1203,3 +1203,37 @@ res-agent         4   15  19  1  39              7   67 73   0  205             
 
 **Owner suggestion.** F18d — Codex (thinking-module slice). 30-min soak — claude can do as background observation while doing other work.
 
+---
+
+## E19 — M8 hero-aware watchdog fallback polish (2026-05-24 18:33 UTC)
+
+**Question.** Can default-SPARK residents avoid the identical watchdog fallback line found in F18d while staying near authored hero posts?
+
+**Change.** Codex updated default `Spark.watchdogFallback` so:
+- anchored `heroProfile` residents say `Still here as <publicName>; getting my bearings near my post.`
+- anchored heroes move one tile around `heroProfile.anchor` with `range: 1`
+- named non-anchored residents say `Still here as <display>; getting my bearings.`
+- unnamed/default souls keep the original generic fallback line and first-step candidate movement
+
+**Verification.**
+
+- Focused red/green regression: `src/controller/thinking/thinking-module.test.ts` first failed for anchored hero personalization, then passed after the production change.
+- Follow-up red/green regression caught non-anchored named residents still saying the generic line; `res:pip`-style souls now use display-name speech while preserving candidate movement.
+- Static/full gates: typecheck, lint, build, and full Jest passed (`150` suites / `1561` tests).
+- Code-review subagent reported no Critical/Important/Minor issues for the scoped patch.
+
+**Live evidence (`local-93740`, fresh compiled controller, ~85s).**
+
+```
+res-agent         actions=10 results success=11
+res-hans          says=2 watchdog_fallback moves=2 results success=4
+res-father-aereck says=2 watchdog_fallback moves=2 results success=4
+res-wise-old-man  says=2 watchdog_fallback moves=2 results success=4
+res-duke-horacio  says=2 watchdog_fallback moves=2 results success=4
+res-pip           says=2 text="Still here as Pip; getting my bearings." results success=2 timeout=1
+wall snapshot     HTTP 200
+```
+
+Sample anchored line: `Still here as Hans; getting my bearings near my post.`
+
+**Conclusion.** F18d is resolved for residents whose watchdog fallback actually fires: the dashboard/player-visible speech now identifies the resident, and anchored heroes do not wander away from their posts while recovering from slow inference. A separate no-hook cadence gap remains for `res:thrand`: in this short soak he produced only begin/end tick evidence and never invoked watchdog fallback. That is now tracked as roadmap task F6 rather than bundled into this fallback polish.
