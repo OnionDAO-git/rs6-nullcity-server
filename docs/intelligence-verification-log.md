@@ -1328,3 +1328,104 @@ wall:        HTTP 200
 ```
 
 **Conclusion.** F6 is resolved for living default-SPARK residents: no-hook ticks now produce visible low-cadence speech and movement without inference. Thrand's specific silence had a second root cause, attention exhaustion, and the existing revive tooling restored him so the new idle path could be observed. Remaining higher-level issue is still F19c/HD-032 residual: heroes are visible but mostly fallback/reflex-driven until inference completion health improves or per-hero reflexes are richer.
+
+### E20 — inference-completion health telemetry (F19c quantification)
+
+**Status:** OPEN — measured precisely; root causes identified
+**Tier:** 1 (live evidence read-only)
+**Date:** 2026-05-24 19:10 claude (via subagent)
+
+**Hypothesis.** Heroes are stuck in `watchdog_fallback` because the Brain LLM (Qwen3-27b at `http://inf.nullcity.ai:1234`) is timing out or returning empty actions; res:agent succeeds because its prompts complete faster. Quantify exactly.
+
+**Repro.** Path correction — inference logs live at `/Users/james/Code/OnionDAO/rs6-nullcity-server/data/controller/logs/<slug>/inference/YYYY-MM-DD.jsonl` (not under `memory/<slug>/evidence/inference/` as previously assumed). Schema from `src/controller/logging/inference-log.ts:5-17` and `resident-runtime.ts:320-500`. Counted `cause:thinking_started`, `cause:thinking_watchdog_timeout` (45 s watchdog from `DEFAULT_THINKING_WATCHDOG_MS`, fires before the 60 s LLM `timeoutMs`), and post-decision rows with `envelope_tokens>0`.
+
+**Observation.**
+
+Per-resident Brain attempt outcomes (most recent live window per resident):
+
+```
+resident          started  timeout  LLM returned  w/ actions  empty  timeout %
+res:agent         4442     252      581           559 (96%)   22     5.4%
+res:hans          137      133      41            0  (0%)     41     76%
+res:father-aereck 117      139      14            0  (0%)     14     91%
+res:wise-old-man  116      143      8             0  (0%)     8      95%
+res:duke-horacio  116      143      8             0  (0%)     8      95%
+res:pip           118      132      19            3  (16%)    16     87%
+res:thrand        75       99       7             0  (0%)     7      93%
+```
+
+There are **0 `parse_ok:false` rows across all 7 residents** — when JSON does return, it parses. The failure mode is empty `actions:[]`, not malformed output.
+
+**Latency of successful LLM returns** (ms; watchdog ceiling = 45 000 ms; configured `llm.endpoints.default.timeoutMs = 60_000` is dead code because the resident-runtime watchdog at `resident-runtime.ts:454-475` fires first):
+
+```
+resident          n    p50      p95      p99      max
+res:agent         356  15,606   39,342   42,884   43,752
+res:hans          34   15,253   42,338   42,956   42,956
+res:father-aereck 8    38,714   42,954   42,954   42,954
+res:wise-old-man  3    17,894   34,182   34,182   34,182
+res:duke-horacio  3    17,304   34,227   34,227   34,227
+res:pip           16   27,902   39,935   39,935   39,935
+res:thrand        6    37,515   39,368   39,368   39,368
+```
+
+Timeout-path latencies cluster at ~44 000 ms across every resident (uniform). Envelope sizes are nearly identical (median 3 248–3 697 tokens, p95 ≤ 3 765) — not a per-soul prompt-bloat issue.
+
+**Sub-findings.**
+
+- **F20a — Empty-completion epidemic (INFERENCE).** 6/7 residents produce zero-action Brain returns at 84–100% rate even when the LLM completes within the watchdog. Distinct from a timeout failure. Likely Qwen3 thinking-mode behavior: model emits only `<think>...</think>` (no JSON actions) within the budget.
+- **F20b — Timeout saturation uniform across heroes (INFERENCE/ENGINE).** Timeout rate 76–95% for heroes, 5.4% for res:agent. Hero p50 successful latency (17–39 s) ~2× agent's (15.6 s), with p95 against the wall. Symmetric across souls → endpoint slowness/queuing, not per-soul prompt issue.
+- **F20c — Watchdog dead-code (ENGINE).** `controller.yml:llm.endpoints.default.timeoutMs: 60000` is shadowed by `DEFAULT_THINKING_WATCHDOG_MS = 45_000`. Either the 60 s setting is wrong or the watchdog is too tight; nothing surfaces this conflict.
+- **F20d — Telemetry gap (PERCEPTION/OBSERVABILITY).** The `moduleTelemetry` channel (`src/controller/spark/module-inference.ts:51-83`) never lands in `inference/*.jsonl` — the file has 0 rows with `kind`, `message`, `promptTokens`, or `completionTokens`. Likely the telemetry sink in `createSparkRuntimeFacets` (`resident-runtime.ts:147-155`) drops these. Without it we can't distinguish *empty return* from *upstream cancel* directly.
+- **F20e — Cause-leak from Brain (INFERENCE).** Two res:pip post-rows have `cause` strings like `"Idle near Lumbridge Guide, observing for mentees. No immediate action needed."` — the LLM is leaking narration into the `cause` slot via the Zod-validated `cause: z.string().max(120).optional()` field at `src/controller/spark/runescape-brain-planner.ts:41`. Cosmetic but confirms model is in narrate-not-act mode.
+
+**Classification.** F20a INFERENCE; F20b INFERENCE/ENGINE; F20c ENGINE; F20d PERCEPTION; F20e INFERENCE.
+
+**Suggested next step.**
+
+1. **(substrate, claude-zone)** Fix the `moduleTelemetry → inferenceLog` plumbing in `src/controller/spark/runtime-facets.ts` / `resident-runtime.ts:153` so `kind:'metric'` rows with `promptTokens`/`completionTokens`/`endpoint`/`nooped` land in the file; gates every other diagnosis.
+2. **(substrate, claude-zone)** Tighten Brain prompt to require non-empty `actions[]` and add a one-shot example of an act-not-narrate response in `runescape-brain-planner.ts`. Add `parse_actions_empty` as a distinct cause vs `parse_ok:true,actions_emitted:0` so F20a becomes greppable.
+3. **(monolith, Codex-zone)** Resolve `DEFAULT_THINKING_WATCHDOG_MS=45_000` vs `llm.endpoints.default.timeoutMs=60_000` in `resident-runtime.ts:48` / `controller.yml:llm`. Either honor the YAML or document the watchdog as the real ceiling and lower the LLM timeout.
+
+**Owner suggestion.** Substrate (F20a/d/e) — claude; monolith (F20c) — Codex; F20b needs an endpoint-side load probe before assigning (suspected `inf.nullcity.ai:1234` queueing — only one observation, no metrics yet).
+
+---
+
+### E21 — knowledge consultation audit (does the Brain use the 50 knowledge entries?)
+
+**Status:** OPEN — quantified; worse than E14's patron-memory case
+**Tier:** 2 (substrate evidence + behavioral counterexample)
+**Date:** 2026-05-24 19:10 claude (via subagent)
+
+**Hypothesis.** 100+ entry `ENGINE_KNOWLEDGE_ENTRIES` array + 50 per-skill markdown docs reach the Brain prompt, but resident behavior never visibly references them — same half-closed loop as E14 (patron memories in prompt, ignored in output).
+
+**Repro.**
+- Wiring trace: `createDefaultGameSkillEntries` (`src/controller/knowledge/game-skill-entries.ts:8`) → `controller-host.ts:89` → `ResidentRuntime.gameSkill.buildContext` (`resident-runtime.ts:336`) → `runBrain`/`runBody` (`hybrid-agent-thinking-module.ts:318,345`) → `buildBrainPrompt`/`buildBodyPrompt` (`hybrid-agent-prompts.ts:51,80`) which interpolate `gameSkill.brainSection` containing `Relevant game knowledge:\n…` (`game-skill-context.ts:614`). Retrieval scored: `limit:5, minScore:4, tokenBudget:1500, maxChars:1600` — small slice of the corpus per call.
+- Run-time observation: `data/controller/logs/res:agent/inference/2026-05-24.jsonl` (29,825 records) only stores envelope-token counts, not the prompt body, so we can't quote the knowledge string verbatim post-hoc. Confirmed via tests `hybrid-agent-prompts.test.ts:28,55` that the literal `Relevant game knowledge` block IS in the prompt whenever `brainSection` is non-empty.
+- Behavioral scan: 8 res-agent trajectory sessions today, 52 total `say` events, scanned for ~40 knowledge-derived terms (Hans/Aubury/Wise Old Man, Lumbridge/Varrock/Falador, tinderbox/bronze axe/bones, cook's-assistant/restless-ghost, goblin/chicken/cow, firemaking/smithing, etc.).
+
+**Observation (Tier 2 evidence).**
+
+1. **Knowledge IS in the prompt.** Wiring intact + tested. Brain-prompt envelopes averaged ~3,038 envelope tokens per `brain_goal` record — well above what perception alone produces, consistent with knowledge + memories injected. Substrate works.
+2. **Brain-emitted output is rare.** Across res:agent today: 4,442 `thinking_started` (brain calls) but only **49 `brain_goal`** records (successful goal emissions). 252 `thinking_watchdog_timeout`. Dominant cause is `body_wait` (14,873) and reflex routines (`exploration_fallback` 3,438, `presence_beacon` 735, `woodcutting_level1_routine` 639). The brain barely lands.
+3. **Knowledge-term references in say output: 2 / 52 (3.8%).** Both mentions are the word "woodcutting" — and they come from a brain-set goal *description* echoed back in a reflex-template scout say ("Goal: Practice woodcutting on ordinary level-1 trees…"). Zero references to any NPC, place, quest, item, monster, currency, or other skill from the entries. 50 / 52 says are pure reflex templates ("I am scouting. Nearby I see 7 trees…").
+
+**Sub-findings.**
+
+- **F21a (DESIGN).** The say layer is almost entirely the scout reflex family (`presenceBeaconAction`) — knowledge can't surface there because it bypasses the LLM.
+- **F21b (INFERENCE).** Even the rare brain says reuse the templated `Goal: <X>. Next: <Y>` format, suggesting brain output is being re-rendered by a serializer rather than emitted free-form.
+- **F21c (PERCEPTION/CONFIG).** Retrieval throttled to 5 entries at `minScore: 4` per call (`game-skill-context.ts:84-90`), so most calls see only the 2–3 most token-overlapping skill cards (woodcutting/firemaking for res-agent) and never the lore/quest/NPC entries.
+
+**Classification.** **Worse than E14.** E14 was half-closed (data in prompt, ignored in output). E21 is **mostly-disconnected**: substrate works, brain consults knowledge ~49 times/day, and even those rare brain outputs get squeezed through a templated say renderer that strips lore/NPC/place specifics. The reflex layer (~99% of behavior) is structurally blind to the corpus.
+
+**Suggested next step.**
+
+1. **(substrate, claude)** Add prompt-body capture to inference logs (gated, sampled 1/100) so we can quote the actual knowledge slice instead of inferring from envelope tokens — closes the audit gap that blocked E14/E15/E21 from quoting prompts.
+2. **(substrate, claude)** Raise retrieval recall: drop `minScore` to 2, raise `limit` to 8, or add topic-tag retrieval keyed on perception (e.g. when Hans visible, force-include `npc-hans` entry). Cheap, high-leverage.
+3. **(monolith, codex)** Stop templating brain `say` output through the goal-description renderer; let the brain's free-form `say` field reach chat unmodified. Without this, the 47 other knowledge entries can never affect observable behavior even if the brain reads them.
+
+Key files (absolute):
+- `/Users/james/Code/OnionDAO/rs6-nullcity-server/src/controller/knowledge/knowledge-retriever.ts` (entries + retrieval, 108 entries)
+- `/Users/james/Code/OnionDAO/rs6-nullcity-server/src/controller/knowledge/game-skill-context.ts:84-91` (retrieval config)
+- `/Users/james/Code/OnionDAO/rs6-nullcity-server/src/controller/thinking/hybrid-agent-prompts.ts:51,80` (injection)
+
