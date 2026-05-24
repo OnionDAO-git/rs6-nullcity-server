@@ -550,3 +550,62 @@ A reasonable minimum-viable fix has three pieces (each is small, can be sliced):
 **Resolution (partial, parts a + b).** Commit `e02e54b3`. New `readRecentPatronMemories` slice (6 events, separate from the 4 general events) wired into `MemoryStore.retrieve` ahead of the general slice. `PatronEvent` + `LibraryUpdater.observePatron` + `library-memories.ts` renderer + `PatronGateway.offerTo` now forward `amount` + `standingTier` + `attentionDelta`. Tests 1525/1525 (+11 new). Live verification (`310ac62d`): offer claude-e7-verify → res:agent produced a timeline row with `amount=10, standingTier=acquaintance, attentionDelta=20`; `readRecentPatronMemories` returns the enriched string `"Patron gift from claude-e7-verify: 10 Shards (you are now acquaintance to them) (2026-05-24 13:33:26)"`. Legacy pre-E7 rows gracefully render with the fallback "a gift". Stretch (c) chat-event synthesis still OPEN — requires monolith touch (resident-runtime perception assembly + nervous-system rule trigger from a synthetic perception event); HD-027 carries it for Codex or maintainer decision. Production controller restart (HD-020) gates full live brain-perception loop.
 
 ---
+
+### E8 — post-revival action-kind histogram (Codex 4f62d181 independent verify)
+
+**Status:** RESOLVED-by-codex@4f62d181 (this entry is independent verification; histogram fulfills HD-021 coord commitment)
+**Tier:** 1 (read-only trajectory scan)
+**Date:** 2026-05-24 13:55 claude
+
+**Hypothesis.** Codex's `4f62d181` (Revive dev resident on restart, soul `respawnPolicy: 'on_restart'`) reports "42/42 successful actions after restart" but no detailed histogram in the commit body. Per HD-021, claude commits to providing the action-kind histogram for each Codex thinking/runtime fix as our coord ledger. Also independently audit whether the revival writes a narrative beat to evidence.
+
+**Repro.**
+- Read `data/controller/memory/res-agent/evidence/trajectory/20260524T133156Z-local-39142-res-agent-1779629516535.jsonl` (889KB, 4291 rows, span 13:31:56 → 13:51:43 UTC = ~20 min straddling Codex's HANDOFF at 13:37).
+- Python aggregator over `kind`, `action.kind`, `action_result.status`, `decision.cause`, `decision.planChange.id`, `decision.memoUpdates`.
+
+**Observation.**
+
+Action histogram (HD-021 commitment):
+```
+KINDS:           begin_tick=1881 end_tick=1880 decision=304 action_result=113 action=98 say=15
+ACTION KINDS:    move_to=84 (86%) interact=7 (7%) use_item_on_item=7 (7%)
+ACTION RESULTS:  success=105 (93%) timeout=8 (7%)
+DECISION CAUSES: body_wait=192 (63%) exploration_fallback=52 presence_beacon=14
+                 woodcutting_level1_routine=13 return_to_visibility_anchor=13
+                 routine_loop_break=7 firemaking_fallback=4
+                 woodcutting_chain_firemaking=3 stuck_pre_inference_explore=3
+                 continue_move=2 brain_goal=1 thinking_watchdog_timeout=1
+                 (+3 single-fire causes)
+BRAIN CALLS:     23 (promptTokens > 0) / 304 decisions = 7.5%
+MEMO WRITES:     7 organic memoUpdates across the window (vs 0 pre-fix)
+PLAN CHANGES:    7 total / 5 unique ids (train-woodcutting x2, train-woodcutting-logs x2,
+                 woodcutting-ordinary-tree, chop-wood-and-light-fire, train-woodcutting-1)
+SAY DIVERSITY:   15/15 = 100% string-unique (but all match template
+                 "I am online at X,Y. Goal: ... Next: ...")
+```
+
+Independent verification of Codex's 42/42 claim: the trajectory window covers ~20 min straddling the HANDOFF. My full-window count is 105/113 = 93% success (vs Codex's 42/42 = 100% in their narrower QA window). Both numbers are plausible; Codex's likely measured only the post-restart sub-window.
+
+Sub-findings:
+
+**F8a (DESIGN).** Revival does NOT write a `legacy_event` (or any kind of `revival`/`rebirth` event) to trajectory. Greppy scan for `reviv|respawn|rebirth` returned 0 hits. So the resident's own evidence stream has no narrative beat saying "I came back" — the Brain's prompt envelope will not surface this state change at all. Cross-life narrative continuity gap.
+
+**F8b (DESIGN).** `library/res-agent/index.json` still reports `lives: 1` despite the controller having run since 2026-05-20. So either (i) res:agent has never actually died (attention 119111 + endurer kind + gentle decay → revival path never triggered), or (ii) the revival path increments runtime state but does NOT increment `LibraryIndex.lives`. The substrate would need a `LibraryUpdater.observeRevival(...)` analogous to `observePatron`. Filed F8b as a sub-finding under HD-007.
+
+**F8c (INFERENCE).** All 15 say events match the same template `"I am online at <X>,<Y>. Goal: ... Next: ..."`. String diversity is 100% (coordinates differ) but SEMANTIC diversity is ~0% (always the "where am I + goal + next step" pattern). The Brain isn't reflecting, asking questions, expressing wants, or commenting on its environment. KNOWLEDGE/PROMPT gap: nothing in the system prompt encourages reflective or relational speech.
+
+**F8d (POSITIVE — Codex's fix lands).** 7 memo updates + 5 unique planChange ids in a 20-min window is a clear improvement over the pre-91f8e160 baseline of 0/0. Brain memory + plan telemetry plumbing is now production-functional. Brain LLM only called 23 times (7.5% of decisions) — the rest are reflex/routine bypasses. Whether 7.5% is the right ratio is a separate design question.
+
+**Classification.** F8a: DESIGN (substrate hook missing). F8b: DESIGN (LibraryIndex.lives not incremented on revival). F8c: INFERENCE/KNOWLEDGE (template lock). F8d: RESOLVED-by-codex@4f62d181 + @91f8e160 — telemetry confirmed working in trajectory.
+
+**Suggested next step.**
+- **F8a + F8b**: add `LibraryUpdater.observeRevival({ts, tick, prevLifeIndex, cause})` that appends a `revival` event to timeline + bumps `index.lives` + writes an entry to the resident's INDEX.md memory ("You were revived at ts after exhausting your attention; this is life N."). Then call it from `resident-runtime` revival path. Substrate change is ~30 lines; runtime wiring is one call site in Codex's just-shipped revival code. Could be a F8 follow-up by claude this sprint (substrate-only) + a tiny Codex slice (one runtime call).
+- **F8c**: enrich the Brain prompt with a reflective hook ("After 100 ticks since your last interesting observation, prefer a reflective say over a status say"). Or have the prompt envelope rotate the say template each tick. PERCEPTION/PROMPT slice, ~20 lines in `prompt-envelope.ts`. Tier-3 since it's behavioral.
+- **F8d**: monitoring only; record the 93% / 23 brain calls / 7 memos baseline so we can see whether subsequent fixes hold this trajectory or regress.
+
+**Owner suggestion.** Claude for F8a substrate (LibraryUpdater.observeRevival) + F8c prompt enrichment. Codex for the one-line call from revival path into observeRevival, OR claude can land both as substrate+wire if the call site is small enough to count as "substrate" (TBD on cycle audit).
+
+
+**Resolution (partial, F8a substrate only).** New `LibraryUpdater.observeRevival({ts, tick, cause})` method (+2 tests). Bumps `index.lives`, flips `currentState` back to `'living'`, appends a `revival` event to timeline with `lifeIndex` reflecting the new life count. Tests 1527/1527 (+2 new). Wire-in (one call from `applyRestartRespawnPolicy` in resident-runtime.ts) deferred to Codex per HD-028 — that file is Codex zone and they just HANDOFF'd 4f62d181 ~30 min ago. F8b is closed by F8a (same substrate). F8c (template-locked say) and F8d (monitoring) remain OPEN; F8c will become its own E-N when next picked up.
+
+---

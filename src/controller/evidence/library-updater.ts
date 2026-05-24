@@ -114,6 +114,40 @@ export class LibraryUpdater {
         this.schedulePortraitRegeneration();
     }
 
+    /**
+     * Record that the resident was revived (E8 follow-up to Codex's
+     * `4f62d181` restart respawn policy). Bumps `index.lives`, flips
+     * `currentState` back to `'living'`, and appends a `revival` event to
+     * the timeline so the Brain's prompt envelope has a memory beat about
+     * the continuity break. Without this, a respawned resident's evidence
+     * stream silently picks up from the prior life with no narrative
+     * marker — see `docs/intelligence-verification-log.md` § E8 / F8a.
+     *
+     * Wire-in is one call from `ResidentRuntime.applyRestartRespawnPolicy`
+     * (Codex zone — tracked separately).
+     */
+    observeRevival(event: { ts: string; tick: number; cause: string }): void {
+        const index = this.readIndex();
+        const nextLifeIndex = index.lives + 1;
+        this.writeIndex({
+            ...index,
+            lives: nextLifeIndex,
+            currentState: 'living',
+            updatedAt: this.now().toISOString(),
+        });
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'revival',
+            cause: event.cause,
+            lifeIndex: nextLifeIndex,
+            significanceReasons: ['life:revival'],
+        });
+        this.schedulePortraitRegeneration();
+    }
+
     observePatron(event: PatronEvent): void {
         const index = this.readIndex();
         this.appendTimeline({
