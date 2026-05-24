@@ -621,6 +621,61 @@ describe('ControllerMcpServer', () => {
                 error: 'resident_not_found',
             });
         });
+
+        it('serves patron_ask through the SDK Streamable HTTP transport with bearer auth', async () => {
+            jest.restoreAllMocks();
+            process.env.CONTROLLER_MCP_TOKENS = 'operator-token';
+            process.env.CONTROLLER_MCP_OPERATOR_FOR_operator_token = 'operator-codex';
+
+            const started = await startControllerMcpHttpServer(mockHost, { port: 0, path: '/controller/mcp' });
+            const client = new Client({ name: 'jest-controller-patron-client', version: '0.0.0' });
+
+            try {
+                await client.connect(
+                    new StreamableHTTPClientTransport(new URL(started.url), {
+                        requestInit: { headers: { Authorization: 'Bearer operator-token' } },
+                    }),
+                );
+
+                const result = await client.callTool({
+                    name: 'patron_ask',
+                    arguments: {
+                        human: 'hd035-sdk',
+                        resident: 'agent',
+                        text: 'Can you hear me through the SDK?',
+                    },
+                });
+
+                const content = result.content as Array<{ type: string; text?: string }>;
+                const parsed = JSON.parse(content[0].text || '{}');
+                expect(parsed).toEqual({
+                    ok: true,
+                    eventId: 'ask-james-res:pip-123',
+                    enqueued: true,
+                });
+                expect(mockHost.patronGateway.askResident).toHaveBeenCalledWith(
+                    'hd035-sdk',
+                    'res:agent',
+                    'Can you hear me through the SDK?',
+                );
+                expect(mockHost.enqueuePerceptionEvent).toHaveBeenCalledWith(
+                    'res:agent',
+                    expect.objectContaining({
+                        kind: 'chat',
+                        text: 'Can you hear me through the SDK?',
+                        source: 'patron:ask',
+                        from: expect.objectContaining({
+                            id: 'player:hd035-sdk',
+                            name: 'hd035-sdk',
+                            kind: 'player',
+                        }),
+                    }),
+                );
+            } finally {
+                await client.close();
+                await closeControllerMcpHttpServer(started.server);
+            }
+        });
     });
 
     describe('Plan RB-MCP-ε run_workflow_card tool', () => {

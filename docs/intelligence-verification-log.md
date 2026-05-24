@@ -1627,3 +1627,22 @@ Optional 7th gap: no ingredient-gathering routines (windmill recipe / dairy cow 
 - Dashboard `/observe/resident/res%3Aagent` showed `SPARK Module onion.runescape.standard@0.1.0`, runtime online, and Nervous System `Last Reaction: say`, `rule patron-ask-acknowledge-hd035-second`.
 
 **Classification.** **RESOLVED** for the operator/patron ask loop. Remaining UX polish is broader F2/G5 work: manual human web-client confirmation for ordinary nearby chat and richer LLM answer content after the immediate acknowledgement.
+
+---
+
+### E28 — HD-035 `patron_ask` SDK-over-HTTP regression
+
+**Status:** RESOLVED-by-codex — live MCP path now has durable SDK coverage
+**Tier:** 2 (operator UX regression protection)
+**Date:** 2026-05-24 20:15 codex
+
+**Hypothesis.** The `patron_ask` tool should be covered through the same SDK Streamable HTTP path used by the live controller, not only through direct registered-tool handler calls.
+
+**Implementation.**
+- Added a `ControllerMcpServer` test that starts the controller MCP HTTP server on an ephemeral port, connects with `@modelcontextprotocol/sdk` `Client` + `StreamableHTTPClientTransport`, calls `patron_ask`, and verifies the returned JSON plus the injected `source: "patron:ask"` chat perception.
+- Updated the roadmap follow-up so HD-035 no longer carries this integration-test gap.
+
+**Observation.**
+- `npm test -- --runInBand src/controller/mcp/server.test.ts` → 30/30 passing, including the new SDK transport regression.
+
+**Classification.** **RESOLVED** for transport-level coverage. Remaining HD-035 UX work stays focused on richer answer content and ordinary web-client player confirmation.
