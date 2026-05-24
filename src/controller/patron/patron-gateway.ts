@@ -32,7 +32,7 @@ export interface PatronEventOutcome {
     ok: boolean;
     eventId: string;
     standingDelta?: { factionId: string; before: number; after: number; tierCrossed?: StandingTier };
-    error?: 'insufficient_currency' | 'cooldown_active' | 'resident_not_found' | 'invalid_amount';
+    error?: 'insufficient_currency' | 'cooldown_active' | 'resident_not_found' | 'invalid_amount' | 'invalid_input';
 }
 
 export interface PatronGatewayOptions {
@@ -278,6 +278,13 @@ export class PatronGateway {
 
                 if (amount > 0 && Number.isInteger(amount)) {
                     const faction = (runtime.getState() as any).faction || 'embassy';
+                    // E31 / HD-037 HIGH-2: snapshot `before` BEFORE recordSupport
+                    // so the delta is correct even if a future decay/cap path
+                    // makes recordSupport's net change differ from `amount`.
+                    // The previous implementation computed `before` as
+                    // `points(...) - amount` after recordSupport, which only
+                    // happens to work when recordSupport adds exactly amount.
+                    const before = this.options.standingLedger.points(humanId, faction);
                     const standingResult = this.options.standingLedger.recordSupport(humanId, faction, amount, {
                         reason: 'patron_witness',
                         ts: nowString,
@@ -292,7 +299,7 @@ export class PatronGateway {
                     });
                     standingDelta = {
                         factionId: faction,
-                        before: this.options.standingLedger.points(humanId, faction) - amount,
+                        before,
                         after: this.options.standingLedger.points(humanId, faction),
                         tierCrossed: standingResult.tierCrossed || undefined,
                     };
@@ -324,13 +331,22 @@ export class PatronGateway {
         question: string,
     ): Promise<PatronEventOutcome> {
         if (!humanId || !residentName || !question || question.trim().length === 0) {
-            return { ok: false, eventId: '', error: 'invalid_amount' };
+            // E31 / HD-037 HIGH-1: ask has no amount; route empty args to
+            // 'invalid_input' instead of misappropriating 'invalid_amount'.
+            return { ok: false, eventId: '', error: 'invalid_input' };
         }
 
         const runtime = this.options.runtimes.get(residentName);
         if (!runtime) {
             return { ok: false, eventId: '', error: 'resident_not_found' };
         }
+
+        // E31 / HD-038 LOW-1: cap question to 500 chars + strip control chars
+        // to keep timeline + future prompt envelope bounded. The question
+        // landing on disk forever and being re-included in every Brain prompt
+        // makes a 10MB --text payload a long-term prompt-budget burden.
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: Patron questions may arrive from CLI/HTTP and need control chars flattened before persistence.
+        const normalizedQuestion = String(question).replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, 500);
 
         const now = this.resolveTime();
         const nowString = now.toISOString();
@@ -369,7 +385,7 @@ export class PatronGateway {
                 sessionId: 'external',
                 kind: 'patron_ask',
                 patronHandle: humanId,
-                question,
+                question: normalizedQuestion,
                 lifeIndex,
                 significanceReasons: ['patron:patron_ask'],
             };
@@ -381,7 +397,8 @@ export class PatronGateway {
 
     async sendGift(humanId: string, residentName: string, artifact: string): Promise<PatronEventOutcome> {
         if (!humanId || !residentName || !artifact) {
-            return { ok: false, eventId: '', error: 'resident_not_found' };
+            // E31 / HD-037 HIGH-1: distinguish missing-args from missing-resident.
+            return { ok: false, eventId: '', error: 'invalid_input' };
         }
 
         const runtime = this.options.runtimes.get(residentName);

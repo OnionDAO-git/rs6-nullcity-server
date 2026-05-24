@@ -1840,3 +1840,31 @@ Heroes will now ASYMPTOTICALLY APPROACH their floor under normal play instead of
 
 **Owner suggestion.** This cycle shipped end-to-end. Live verify next cycle once controller restarts.
 
+
+### E31 — HD-037 + HD-038 patron-gateway correctness fixes
+
+**Status:** RESOLVED-by-claude — both HD-037 (2 bugs) + HD-038 (1 hardening) shipped end-to-end
+**Tier:** 2 (substrate correctness ship)
+**Date:** 2026-05-24 21:15 claude
+
+**Hypothesis.** E28 QA code review identified 2 HIGH-confidence semantic bugs + 1 LOW-confidence hardening item in `patron-gateway.ts` from SPRINT-PM-PIVOT's hasty subagent ship. Fix all three same-cycle now that Codex's HD-035 work has cleared the file.
+
+**Repro.** All three changes in `src/controller/patron/patron-gateway.ts`:
+
+1. **HIGH-1 (HD-037):** Widen `PatronEventOutcome.error` union with `'invalid_input'`. Route `askResident:327` empty-args to it (was misappropriating `'invalid_amount'` — ask has no amount). Route `sendGift:384` empty-args to it (was misappropriating `'resident_not_found'` — empty arg ≠ missing resident).
+2. **HIGH-2 (HD-037):** `witnessAt:281-298` — snapshot `const before = standingLedger.points(humanId, faction);` BEFORE `recordSupport`, use it for `standingDelta.before` instead of `points(...) - amount`. Pre-fix only happened to work because recordSupport always adds exactly `amount`; future decay/cap would silently produce wrong values.
+3. **LOW-1 (HD-038):** `askResident` — `normalizedQuestion = String(question).replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, 500)` before persistence. Caps the question to 500 chars and replaces NUL/BEL/DEL/etc. with space (one-for-one — no whitespace collapse, preserves user intent).
+
+**Observation.** 
+- Tests **1655/1655** (+4 new tests: HD-037 invalid_input for sendGift × 3 args, HD-037 before-snapshot with pre-seeded standing, HD-038 600→500 char cap, HD-038 control-char strip).
+- 1 existing test updated: `askResident` empty-question now asserts `error: 'invalid_input'` (was `'invalid_amount'`).
+- typecheck + lint + build all green.
+
+**Sub-findings.** All three issues closed in one commit. The widened `error` union is backward-compat at the consumer level — code that switches on the union with no `default` would have caught any new variant, but no consumer in this repo did so (verified by grep).
+
+**Classification.** **RESOLVED-by-claude** (CORRECTNESS + HARDENING — the patron loop's semantic surface is now accurate and bounded).
+
+**Suggested next step.** HD-037 closes. HD-038 closes. E28 LOW-2 (lifeIndex field-name verification) and MEDIUM-2 (findRecentSay polling cost) remain deferred — post-Chicago cleanup.
+
+**Owner suggestion.** Self-contained substrate ship — no follow-up needed.
+

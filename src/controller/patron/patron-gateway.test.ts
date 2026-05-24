@@ -239,6 +239,25 @@ describe('PatronGateway', () => {
             expect(standingLedger.points('james', 'embassy')).toBe(0);
             expect(res.standingDelta).toBeUndefined();
         });
+
+        // E31 / HD-037 HIGH-2: standingDelta.before must be a TRUE snapshot
+        // taken before recordSupport, not (after - amount). Without the
+        // snapshot, any future decay/cap that makes recordSupport's net
+        // change differ from `amount` will silently produce wrong `before`
+        // values. Pre-fix this test would still have passed because
+        // recordSupport ALWAYS adds exactly `amount` — but the test guards
+        // the invariant by seeding pre-existing standing and asserting
+        // before reports the pre-existing value, not 0.
+        it('standingDelta.before reports the pre-witness value, not (after - amount) (HD-037)', async () => {
+            // Pre-seed standing with an unrelated 7-point bump.
+            standingLedger.recordSupport('james', 'embassy', 7, { reason: 'pre-existing' });
+            expect(standingLedger.points('james', 'embassy')).toBe(7);
+
+            const res = await gateway.witnessAt('james', 'first_fire', 'res:pip', 5);
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.before).toBe(7);
+            expect(res.standingDelta?.after).toBe(12);
+        });
     });
 
     describe('askResident', () => {
@@ -264,7 +283,9 @@ describe('PatronGateway', () => {
         it('rejects empty / whitespace-only questions', async () => {
             const res = await gatewayWithMemory.askResident('james', 'res:pip', '   ');
             expect(res.ok).toBe(false);
-            expect(res.error).toBe('invalid_amount');
+            // E31 / HD-037 HIGH-1: ask has no amount; route empty args to
+            // 'invalid_input' (NOT the misappropriated 'invalid_amount').
+            expect(res.error).toBe('invalid_input');
         });
 
         it('rejects unknown residents', async () => {
@@ -302,6 +323,32 @@ describe('PatronGateway', () => {
             // No timeline written under outer soulsDir
             expect(fs.existsSync(path.join(soulsDir, 'library'))).toBe(false);
         });
+
+        // E31 / HD-038 LOW-1: cap question to 500 chars + strip control chars
+        // so a 10MB --text payload doesn't pollute timeline + future prompt
+        // envelopes forever.
+        it('caps question to 500 chars and strips control characters (HD-038)', async () => {
+            // 600 chars of 'A' should truncate to 500.
+            const longQuestion = 'A'.repeat(600);
+            const res = await gatewayWithMemory.askResident('james', 'res:pip', longQuestion);
+            expect(res.ok).toBe(true);
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            const entry = JSON.parse(lines[lines.length - 1]);
+            expect((entry.question as string).length).toBe(500);
+
+            // Control chars (NUL, BEL, DEL) replaced by space, not deleted.
+            // Each control char becomes EXACTLY one space — we don't collapse
+            // adjacent whitespace because that would change the user's intent
+            // for legitimate questions like "What's 1+2?  Three or four?".
+            const withControls = `Hello\x00World\x07!\x7F end`;
+            const res2 = await gatewayWithMemory.askResident('james', 'res:pip', withControls);
+            expect(res2.ok).toBe(true);
+            const lines2 = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            const entry2 = JSON.parse(lines2[lines2.length - 1]);
+            // \x7F → space, then literal space → 2 spaces total between '!' and 'end'.
+            expect(entry2.question).toBe('Hello World !  end');
+        });
     });
 
     describe('sendGift', () => {
@@ -309,6 +356,23 @@ describe('PatronGateway', () => {
             const res = await gateway.sendGift('james', 'res:unknown', 'rs:net');
             expect(res.ok).toBe(false);
             expect(res.error).toBe('resident_not_found');
+        });
+
+        // E31 / HD-037 HIGH-1: distinguish empty args from missing resident.
+        // Pre-fix sendGift returned 'resident_not_found' for both, hiding
+        // operator typos.
+        it('rejects gifts with empty args using invalid_input (HD-037)', async () => {
+            const emptyHuman = await gateway.sendGift('', 'res:pip', 'rs:shrimps');
+            expect(emptyHuman.ok).toBe(false);
+            expect(emptyHuman.error).toBe('invalid_input');
+
+            const emptyResident = await gateway.sendGift('james', '', 'rs:shrimps');
+            expect(emptyResident.ok).toBe(false);
+            expect(emptyResident.error).toBe('invalid_input');
+
+            const emptyArtifact = await gateway.sendGift('james', 'res:pip', '');
+            expect(emptyArtifact.ok).toBe(false);
+            expect(emptyArtifact.error).toBe('invalid_input');
         });
 
         it('logs item gift events successfully', async () => {
