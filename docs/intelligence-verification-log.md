@@ -609,3 +609,54 @@ Sub-findings:
 **Resolution (partial, F8a substrate only).** New `LibraryUpdater.observeRevival({ts, tick, cause})` method (+2 tests). Bumps `index.lives`, flips `currentState` back to `'living'`, appends a `revival` event to timeline with `lifeIndex` reflecting the new life count. Tests 1527/1527 (+2 new). Wire-in (one call from `applyRestartRespawnPolicy` in resident-runtime.ts) deferred to Codex per HD-028 — that file is Codex zone and they just HANDOFF'd 4f62d181 ~30 min ago. F8b is closed by F8a (same substrate). F8c (template-locked say) and F8d (monitoring) remain OPEN; F8c will become its own E-N when next picked up.
 
 ---
+
+### E9 — Codex a570b560 beacon-variety verify (F8c response)
+
+**Status:** F8c RESOLVED-by-codex@a570b560; sub-finding F9a OPEN (templated tail still locked); F9b POSITIVE (98% success)
+**Tier:** 1 (read-only trajectory scan + diff vs E8 baseline)
+**Date:** 2026-05-24 14:25 claude
+
+**Hypothesis.** Codex's `a570b560` ("Vary resident presence beacons", shipped 14:10) addresses E8's F8c (15/15 say events all matched `"I am online at X,Y. Goal:..."`). Verify with action-kind histogram on the new live soak `local-35899` and confirm prefix diversity.
+
+**Repro.** Read `data/controller/memory/res-agent/evidence/trajectory/20260524T140712Z-local-35899-res-agent-1779631632916.jsonl` (1215 ticks, ~20 min window). Python aggregator over say-text prefixes (split at first `.`, truncated 40 chars).
+
+**Observation (HD-021 commitment).**
+
+```
+KINDS:     begin_tick=1216 end_tick=1216 decision=327 action_result=98 action=89 say=9
+ACTIONS:   move_to=83 (93%) interact=3 use_item_on_item=3
+RESULTS:   success=96 (98%) timeout=2 (2%)  ← all-time best
+SAYS:      9 events, 9/9 string-unique = 100%
+SAY PREFIX HISTOGRAM (vs E8 baseline of 15/15 same prefix):
+  3x  "I am checking this area"
+  2x  "I am scouting"
+  1x  "I am working my route"
+  1x  "I see 15 trees nearby at 3198,3222"
+  1x  "I see 14 trees and 1 item nearby at 3197"
+  1x  "I see 29 trees nearby at 3179,3221"
+  = 5 distinct prefix templates (vs 1 in E8)
+```
+
+Codex's implementation: tick-phase rotation (phase = `floor(tick/shareGoalsEveryTicks) % 4`) after `PRESENCE_BEACON_VARIETY_AFTER_TICKS = 1000`. Four phases × variant-with-or-without-nearby = 8 possible distinct prefixes. The trajectory captured 5 of them in 20 minutes; the remaining 3 would surface in a longer soak as residents move through map cells with different visible-actor counts.
+
+**F8c resolution.** The template lock is broken. Patron-facing wall ticker and IRL observers will see substantively varied chat lines instead of one repeated string. Behavioral PERCEPTION/KNOWLEDGE gap closed.
+
+**F9a (DESIGN/PROMPT, residual).** The TAIL of each say still matches the locked template `"Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: chop the tree at X,Y."` Codex fixed the prefix; the goal/next-step tail comes from a different code path (`statusSpeech` continuation). Possible separate fix: rotate the connector ("Goal:" → "I'm focused on:" → "Working toward:") OR omit the goal restatement when it's identical to the prior say's goal. Lower urgency than F8c because the prefix variety already breaks visual monotony.
+
+**F9b (POSITIVE).** Action success rate stepped from 80% (pre-HD-023) → 91% (post-HD-023) → 93% (post-4f62d181) → **98% (post-a570b560)**. Codex's compounding fixes are working. Timeouts collapsed from 12% baseline to 2%. Move-to dominance unchanged (93% of actions) — that's the nature of explore_patrol routine, not a problem.
+
+**F9c (DESIGN, recurring).** Still 0 `revival` events in this trajectory — the HD-028 wire-in is pending. The `LibraryUpdater.observeRevival` substrate I shipped in `f9968a16` is dead code until Codex (or a future cycle) adds the one-line call from `applyRestartRespawnPolicy`.
+
+**Classification.**
+- F8c: **RESOLVED-by-codex@a570b560** (PERCEPTION/KNOWLEDGE — prompt-layer template lock).
+- F9a: PROMPT/DESIGN (residual templated tail) — low urgency.
+- F9b: POSITIVE monitoring — record 98% as new high-water mark.
+- F9c: DESIGN — wire-in still pending per HD-028.
+
+**Suggested next step.**
+- F9a: fold into a future E-N on prompt-envelope diversity, or piggyback on whichever cycle next touches the say-builder.
+- F9b: keep this baseline for regression detection. Any future fix that drops the success rate below 95% should be flagged.
+- F9c: wait one more cycle for Codex to pick up HD-028; if still pending, claude lands the wire-in (it's just `this.evidence?.library?.observeRevival(...)` inside `applyRestartRespawnPolicy`).
+
+**Owner suggestion.** F9a — claude or Codex, opportunistic. F9b — monitoring only. F9c — Codex (or claude follow-up next cycle).
+
