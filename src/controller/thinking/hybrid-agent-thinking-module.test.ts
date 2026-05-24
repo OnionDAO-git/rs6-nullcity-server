@@ -5653,6 +5653,52 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('beacons an active return to the visibility anchor so observers know why it is walking back', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+            activeMove: {
+                target: { x: 3192, y: 3229, level: 0 },
+                range: 1,
+                cause: 'return_to_visibility_anchor',
+                startedAtTick: 119,
+                lastTick: 120,
+                lastPositionKey: '3185,3229,0',
+                stationaryCount: 0,
+                lastDistance: 29,
+                bestDistance: 29,
+                lastImprovedTick: 120,
+                nonImprovingCount: 0,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3192, 3229),
+                objects: [{ objectId: objectIds.tree.normal[0].default, position: { x: 3191, y: 3229, level: 0 }, orientation: 0 }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3192,3229. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: return toward my findable point at 3200,3200.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('varies long-running presence beacons so live chat is not only an online status template', async () => {
         const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
         const sheep = npc('Sheep', 3219, 3202);

@@ -2530,14 +2530,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const here = perception.resident?.position;
         const cognition = this.cognition();
         const next = includeNextStep
-            ? nextStepSuggestion(perception, this.options.state.resident, this.activeGoal(), {
+            ? (this.visibilityReturnNextStep(perception) ??
+              nextStepSuggestion(perception, this.options.state.resident, this.activeGoal(), {
                   currentTick: this.options.state.tick,
                   pickupCooldowns: cognition.pickupCooldowns,
                   explorationCooldowns: cognition.explorationCooldowns,
                   targetFailureCooldowns: cognition.targetFailureCooldowns,
                   lastScoutingSkillOpportunityTick: cognition.lastScoutingSkillOpportunityTick,
                   interactWithOpenables: false,
-              })
+              }))
             : undefined;
         const goal = summarizeGoalForSpeech(
             this.activeGoal()?.description || 'staying findable and looking for useful actions',
@@ -2547,6 +2548,20 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return (
             cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}`) || prefix
         );
+    }
+
+    private visibilityReturnNextStep(perception: HybridPerception): string | undefined {
+        const active = this.cognition().activeMove;
+        const anchor = this.visibilityAnchor();
+        const here = perception.resident?.position;
+        if (!active || active.cause !== 'return_to_visibility_anchor' || !anchor || !here) {
+            return undefined;
+        }
+        const radius = this.behavior().returnToAnchorRadius ?? DEFAULT_RETURN_TO_ANCHOR_RADIUS;
+        if (distance(here, anchor) <= radius) {
+            return undefined;
+        }
+        return `return toward my findable point at ${anchor.x},${anchor.y}.`;
     }
 
     private survivalNeedSpeech(perception: HybridPerception): string {
