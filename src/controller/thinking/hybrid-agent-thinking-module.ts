@@ -14,6 +14,7 @@ import {
     FOOD_KEY_PATTERN,
     INTERACTION_APPROACH_RADIUS,
     LEVEL_ONE_TREE_IDS,
+    LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
     MAX_INVENTORY_SLOTS,
     PICKUP_TARGET_COOLDOWN_TICKS,
     PRAYER_TRAINING_WAYPOINTS,
@@ -44,6 +45,7 @@ import {
     itemLabel,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction as bodyLowHealthRecoveryAction,
+    nearestLowHealthRecoveryWaypoint,
     nearestPrayerTrainingWaypoint,
     normalizeActorId,
     npcTalkAction,
@@ -189,6 +191,7 @@ const SCOUTING_ANCHOR_RETURN_MIN_GOAL_AGE_TICKS = 120;
 const SCOUTING_ANCHOR_RETURN_MIN_DISTANCE = 32;
 const SCOUTING_SKILL_OPPORTUNITY_MIN_GOAL_AGE_TICKS = 120;
 const SCOUTING_SKILL_OPPORTUNITY_COOLDOWN_TICKS = 900;
+const COMBAT_AREA_ANCHOR_RECOVERY_DISTANCE = 28;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 const WORLD_TICK_RESET_DRIFT = 10_000;
 const TARGET_FAILURE_COOLDOWN_TICKS = 600;
@@ -2502,8 +2505,26 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action, cause: action.cause || 'low_health_recovery' };
         }
 
-        const anchor = this.visibilityAnchor();
         const here = perception.resident?.position;
+        const anchor = this.visibilityAnchor();
+        if (goal && isCombatTrainingGoal(goal) && !hasCarriedFood && here && anchor) {
+            const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
+            const anchorLooksLikeCombatArea = distance(anchor, recoveryWaypoint) >= COMBAT_AREA_ANCHOR_RECOVERY_DISTANCE;
+            if (anchorLooksLikeCombatArea && distance(here, recoveryWaypoint) <= LOW_HEALTH_RECOVERY_WAYPOINT_RANGE) {
+                return undefined;
+            }
+            if (anchorLooksLikeCombatArea) {
+                const recoveryAction: AgentAction = {
+                    kind: 'move_to',
+                    target: recoveryWaypoint,
+                    range: LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
+                    cause: 'low_health_seek_safe_recovery',
+                };
+                this.rememberBodyAction(recoveryAction);
+                return { action: recoveryAction, cause: 'low_health_seek_safe_recovery' };
+            }
+        }
+
         const radius = this.behavior().returnToAnchorRadius ?? DEFAULT_RETURN_TO_ANCHOR_RADIUS;
         if (!anchor || !here || distance(here, anchor) <= radius) {
             return undefined;

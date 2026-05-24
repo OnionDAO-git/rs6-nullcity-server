@@ -3928,6 +3928,97 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('continues to the recovery waypoint after escaping visible goblins during combat training', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs and retreat if hurt.',
+                steps: ['fight a safe target', 'eat when hurt'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agentSoul = soul();
+        const behavior = agentSoul.frontmatter.behavior;
+        if (!behavior || behavior.kind !== 'hybrid-agent') {
+            throw new Error('Expected hybrid-agent test soul');
+        }
+        agentSoul.frontmatter.behavior = {
+            ...behavior,
+            visibilityAnchor: { x: 3254, y: 3230, level: 0 },
+        };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3236, 3221),
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: { x: 3222, y: 3218, level: 0 },
+                range: 6,
+                cause: 'low_health_seek_safe_recovery',
+            },
+        ]);
+        expect(result.cause).toBe('low_health_seek_safe_recovery');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('holds at the recovery waypoint instead of returning to the combat anchor while still hurt', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs and retreat if hurt.',
+                steps: ['fight a safe target', 'eat when hurt'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agentSoul = soul();
+        const behavior = agentSoul.frontmatter.behavior;
+        if (!behavior || behavior.kind !== 'hybrid-agent') {
+            throw new Error('Expected hybrid-agent test soul');
+        }
+        agentSoul.frontmatter.behavior = {
+            ...behavior,
+            visibilityAnchor: { x: 3254, y: 3230, level: 0 },
+        };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3223, 3219),
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('low_health_hold_position');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('refuses to start combat training while hurt and carrying no food', async () => {
         const chicken = npc('Chicken', 3219, 3201);
         const llm = scriptedLlm([]);

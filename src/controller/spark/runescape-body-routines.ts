@@ -154,6 +154,15 @@ export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
     { x: 3249, y: 3238, level: 0 },
 ];
 
+/** Safe low-traffic recovery spots to wait for healing or food after unsafe combat. */
+export const LOW_HEALTH_RECOVERY_WAYPOINTS: ReadonlyArray<BodyPos> = [{ x: 3222, y: 3218, level: 0 }];
+
+/** How close a resident should get before treating the recovery spot as reached. */
+export const LOW_HEALTH_RECOVERY_WAYPOINT_RANGE = 6;
+
+/** Visible hostile radius that triggers retreat to a recovery waypoint. */
+const LOW_HEALTH_RECOVERY_THREAT_RADIUS = 24;
+
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
 /**
@@ -187,6 +196,24 @@ export function isEdibleFood(item: BodyItem): boolean {
 /** Returns the first inventory slot containing ready-to-eat food, or undefined. */
 export function firstFoodSlot(inventory: Array<BodyItem | null>): number | undefined {
     return findSlot(inventory, isEdibleFood);
+}
+
+/** Returns the nearest low-health recovery waypoint to the given position. */
+export function nearestLowHealthRecoveryWaypoint(here: BodyPos): BodyPos {
+    return [...LOW_HEALTH_RECOVERY_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+function isVisibleCombatThreat(actor: BodyActor): boolean {
+    const name = `${actor.key || ''} ${actor.name || ''}`;
+    const combatLevel = Number(actor.combatLevel || 0);
+    const alive = actor.hpFraction === undefined || actor.hpFraction > 0;
+    return alive && (combatLevel > 1 || /\b(goblin|spider|zombie|skeleton|guard)\b/i.test(name));
+}
+
+function hasNearbyRecoveryThreat(perception: BodyHybridPerception, here: BodyPos): boolean {
+    return (perception.nearby?.npcs || []).some(
+        actor => isVisibleCombatThreat(actor) && distance(here, actor.position) <= LOW_HEALTH_RECOVERY_THREAT_RADIUS,
+    );
 }
 
 /**
@@ -539,7 +566,19 @@ export function lowHealthRecoveryAction(
         )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
 
-    return food ? { kind: 'interact', target: food, option: 'pick-up', cause: 'low_health_pickup_food' } : undefined;
+    if (food) {
+        return { kind: 'interact', target: food, option: 'pick-up', cause: 'low_health_pickup_food' };
+    }
+
+    const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
+    return hasNearbyRecoveryThreat(perception, here) && distance(here, recoveryWaypoint) > LOW_HEALTH_RECOVERY_WAYPOINT_RANGE
+        ? {
+              kind: 'move_to',
+              target: recoveryWaypoint,
+              range: LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
+              cause: 'low_health_seek_safe_recovery',
+          }
+        : undefined;
 }
 
 /** Returns the nearest fixed prayer-training waypoint to the given position. */

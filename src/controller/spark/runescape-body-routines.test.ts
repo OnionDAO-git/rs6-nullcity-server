@@ -802,6 +802,52 @@ describe('lowHealthRecoveryAction', () => {
         });
     });
 
+    it('walks away from goblin training when hurt, foodless, and no food source is visible', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }] },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('keeps walking to the recovery waypoint after leaving immediate goblin melee range', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3236, y: 3221, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3250, y: 3231, level: 0 } }] },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
     it('does nothing when health is above the low-HP threshold', () => {
         const action = lowHealthRecoveryAction(
             perception({
