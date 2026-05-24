@@ -224,3 +224,28 @@ For claude: E3b still useful — trace ONE successful `explore_talk_to_npc` to s
 **Owner suggestion.** Codex (HD-023). Claude continues with E3b or E2 (Brain output diversity).
 
 ---
+
+### E3a follow-up — Codex timeout retry mitigation smoke
+
+**Status:** PARTIAL-RESOLVED-by-Codex on `agents/wip` (same-target retry loop); OPEN residual movement timeout rate
+**Tier:** 2 (live local controller + dashboard)
+**Date:** 2026-05-24 06:47 codex
+
+**Hypothesis.** If timed-out coordinate moves are remembered as target failures and the thinking layer drops an active move whose target is on cooldown, the `move_to(X,Y)` timeout followed by `continue_move(X,Y)` timeout pattern should stop recurring.
+
+**Repro.**
+- Baseline live QA: one-hour `res:agent` soak before this mitigation, controller `local-4674`, trajectory evidence under `data/controller/memory/res-agent/evidence/trajectory/current`.
+- Regression tests: `resident-runtime.test.ts` verifies a timed-out direct-coordinate `move_to` writes `target:3217,3233,0`; `hybrid-agent-thinking-module.test.ts` verifies a cooled-down active move is not continued; `runescape-body-routines.test.ts` verifies exploration patrol avoids visibly object-occupied tiles.
+- Post-fix smoke: controller restarted as `local-73959`; a 10-minute trajectory monitor counted action kinds, outcomes, and repeated same-target `continue_move` timeout pairs.
+
+**Observation.**
+- Baseline one-hour live soak: 471 actions/hour; 380 `move_to`, 47 `say`, 28 `interact`, 16 `use_item_on_item`; 435 success, 35 timeout, 1 failure. The resident moved broadly, talked, chopped, lit fires, picked up items, returned to anchor, and stayed 10/10 HP, but movement was still timeout-heavy.
+- Post-fix 10-minute smoke on `local-73959`: 70 actions, 76 results, 69 success, 7 timeout; action kinds were 64 `move_to`, 4 `interact`, 2 `use_item_on_item`. Causes included `explore_patrol`, `woodcutting_chain_firemaking`, `opportunistic_pickup`, `return_to_visibility_anchor`, `routine_loop_break`, and `woodcutting_level1_routine`.
+- The E3a smoking-gun signature was gone in the smoke: `repeatedContinueTimeouts=0`.
+- Dashboard browser check at tick 44618 showed `res:agent` online, runtime active, SPARK module `onion.runescape.standard@0.1.0`, HP 10/10, scouting goal active, live position/action feed, and recent position-change progress.
+
+**Classification.** BODY. The same-target retry loop is mitigated, but raw `move_to` timeouts remain. The next BODY problem is no longer "why do we immediately retry the exact target"; it is "which moved/blocked/stale targets still consume timeout budget, and does the engine receive or complete those moves after the timeout fires?"
+
+**Suggested next step.** Instrument timeout results with final observed position, target distance, and whether the gateway/engine acknowledged the move before changing timeout budgets. Then run another 10-15 minute live smoke and compare raw timeout rate plus action diversity. Also keep pushing richer task variety, because this smoke was active but still patrol-heavy and had no public speech in the sampled window.
+
+**Owner suggestion.** Codex for BODY instrumentation and movement close-rate fixes; Claude/Gemini for broader experiment design and non-movement intelligence checks.

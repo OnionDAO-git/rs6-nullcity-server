@@ -1198,6 +1198,23 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: { x: 100, y: 103, level: 0 }, range: 1, cause: 'explore_patrol' });
     });
 
+    it('does not patrol onto a visibly object-occupied tile', () => {
+        const nearbyScenery = { objectId: 879, position: { x: 101, y: 100, level: 0 } };
+        const blockedTile = { objectId: 4735, position: { x: 103, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, blockedTile], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            5,
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: { x: 100, y: 103, level: 0 }, range: 1, cause: 'explore_patrol' });
+    });
+
     it('expands patrol radius when nearby patrol targets are all on cooldown', () => {
         const action = explorationAction(
             perception({

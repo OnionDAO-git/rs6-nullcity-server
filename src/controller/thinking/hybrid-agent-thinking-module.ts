@@ -1113,7 +1113,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const cognition = this.cognition();
         const active = cognition.activeMove;
-        if (active) {
+        if (active && this.targetFailureCooldownActive(active.target)) {
+            cognition.activeMove = undefined;
+        }
+        if (active && cognition.activeMove === active) {
             if (active.lastTick === this.options.state.tick) {
                 if (
                     action?.kind === 'move_to' &&
@@ -1220,6 +1223,20 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         return undefined;
+    }
+
+    private targetFailureCooldownActive(target: Pos): boolean {
+        const cooldowns = this.cognition().targetFailureCooldowns;
+        if (!cooldowns) {
+            return false;
+        }
+        const coordinate = positionKey(target);
+        return Object.entries(cooldowns).some(([key, failedAt]) => {
+            if (this.options.state.tick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS) {
+                return false;
+            }
+            return key === `target:${coordinate}` || key.endsWith(`:${coordinate}`);
+        });
     }
 
     private anchorReturnSkillInterruption(

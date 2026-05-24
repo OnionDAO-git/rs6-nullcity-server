@@ -635,7 +635,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         }
 
         const cognition = (this.state.cognition ||= {});
-        if (attempt.finalStatus === 'failure' && attempt.finalReason === 'target_not_found') {
+        if (attempt.finalStatus === 'timeout' || (attempt.finalStatus === 'failure' && attempt.finalReason === 'target_not_found')) {
             cognition.targetFailureCooldowns = {
                 ...(cognition.targetFailureCooldowns || {}),
                 [key]: this.state.tick,
@@ -1452,7 +1452,9 @@ function actionTargetFailureKey(action: AgentAction): string | undefined {
         return undefined;
     }
     const targetRecord = record(target);
-    const position = record(targetRecord.position);
+    const directPosition = isPosition(target) ? target : undefined;
+    const nestedPosition = record(targetRecord.position);
+    const position = directPosition || nestedPosition;
     const level = typeof position.level === 'number' ? position.level : 0;
     const coordinate =
         typeof position.x === 'number' && typeof position.y === 'number' ? `${position.x},${position.y},${level}` : undefined;

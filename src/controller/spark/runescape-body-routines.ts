@@ -740,15 +740,19 @@ export function explorationPatrolTarget(
     _anchor?: BodyPos,
     currentTick = 0,
     explorationCooldowns?: Record<string, number>,
+    blockedTiles?: ReadonlySet<string>,
 ): BodyPos {
     let fallback: BodyPos | undefined;
     for (let step = EXPLORATION_PATROL_STEP_DISTANCE; step <= EXPLORATION_PATROL_MAX_DISTANCE; step += EXPLORATION_PATROL_STEP_DISTANCE) {
         const directions = localPatrolDirections(step);
         const startIndex = patrolDirectionIndex(here, currentTick, directions.length);
         const candidates = directions.map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }));
-        fallback ??= candidates[startIndex];
         for (let offset = 0; offset < candidates.length; offset += 1) {
             const candidate = candidates[(startIndex + offset) % candidates.length];
+            if (blockedTiles?.has(bodyPositionKey(candidate))) {
+                continue;
+            }
+            fallback ??= candidate;
             if (!isExplorationOnCooldown(explorationPatrolCooldownKey(candidate), explorationCooldowns, currentTick)) {
                 return candidate;
             }
@@ -787,6 +791,7 @@ export function explorationAction(
     if (!here) {
         return undefined;
     }
+    const blockedPatrolTiles = objectOccupiedTiles(perception);
 
     const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick, explorationCooldowns);
     if (pickup) {
@@ -835,7 +840,7 @@ export function explorationAction(
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
 
-        const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns);
+        const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedPatrolTiles);
         if (distance(here, patrol) > 1) {
             return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
         }
@@ -857,10 +862,22 @@ export function explorationAction(
         return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
     }
 
-    const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns);
+    const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedPatrolTiles);
     if (distance(here, patrol) > 1) {
         return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
     }
 
     return { kind: 'say', text: `I am scouting near ${here.x},${here.y} and staying findable.`, cause: 'explore_patrol' };
+}
+
+function objectOccupiedTiles(perception: BodyHybridPerception): ReadonlySet<string> | undefined {
+    const objects = perception.nearby?.objects || [];
+    if (objects.length === 0) {
+        return undefined;
+    }
+    return new Set(objects.map(object => bodyPositionKey(object.position)));
+}
+
+function bodyPositionKey(position: BodyPos): string {
+    return `${position.x},${position.y},${position.level}`;
 }

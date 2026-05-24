@@ -103,6 +103,57 @@ describe('ResidentRuntime modules', () => {
         });
     });
 
+    it('remembers timed out move targets so thinking does not continue the same failed step', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-failure-'));
+        const state = stateFor('res:pip');
+        state.tick = 40;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3217, y: 3233, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'explore_patrol' }],
+                cause: 'explore_patrol',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-move-timeout' })),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(async () => ({ ok: false, reason: 'timeout' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception({
+            tick: 40,
+            resident: { position: { x: 3216, y: 3233, level: 0 } },
+            events: [],
+        });
+
+        expect(state.cognition?.targetFailureCooldowns).toEqual({
+            'target:3217,3233,0': 40,
+        });
+    });
+
     it('writes runtime progress evidence and updates progress state from perceptions', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-'));

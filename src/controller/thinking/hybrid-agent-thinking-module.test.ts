@@ -2239,6 +2239,61 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('does not continue an active move target that just timed out', async () => {
+        const timedOutTarget = { x: 3217, y: 3233, level: 0 };
+        const freshTarget = { x: 3215, y: 3236, level: 0 };
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'move_to', target: freshTarget, range: 1, cause: 'explore_patrol' }],
+                    cause: 'explore_patrol',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'manual-nav-test',
+                description: 'Patrol a safe route.',
+                createdAtTick: 190,
+                ttlTicks: 1000,
+            },
+            lastBrainTick: 199,
+            lastBodyTick: 190,
+            lastGoalShareTick: 199,
+            lastPresenceBeaconTick: 199,
+            lastAnchorReturnTick: 195,
+            targetFailureCooldowns: {
+                'target:3217,3233,0': 199,
+            },
+            activeMove: {
+                target: timedOutTarget,
+                range: 1,
+                cause: 'explore_patrol',
+                startedAtTick: 198,
+                lastTick: 199,
+                lastPositionKey: '3215,3233,0',
+                stationaryCount: 0,
+                lastDistance: 2,
+                bestDistance: 2,
+                lastImprovedTick: 198,
+                nonImprovingCount: 1,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 200,
+                resident: residentAt(3215, 3233),
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: freshTarget, range: 1 }]);
+        expect(result.cause).toBe('explore_patrol');
+        expect(state.cognition?.activeMove?.target).toEqual(freshTarget);
+    });
+
     it('tracks active move closing progress from a fresh movement intent', async () => {
         const tree = { objectId: 1278, position: { x: 3190, y: 3255, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([]);
