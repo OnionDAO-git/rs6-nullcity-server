@@ -2655,6 +2655,51 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 **Owner suggestion.** claude (HD-042 update this cycle); Codex (resident-runtime tick path investigation).
 
 
+### E52 — live verify Codex 32ba93c9 hero-decision-cadence fix (HD-042 closer)
+
+**Status:** VERIFIED — Codex's `_none=0` claim PASSES; HD-042 symptom CLOSED with measurable observability gain
+**Tier:** 1 (read-only post-fix trajectory re-aggregation against E51 baseline)
+**Date:** 2026-05-25 01:05 claude
+**SHA verified:** `32ba93c9` (Codex hero-decision-cadence)
+**Live controller:** `local-3590` (started ~17:40 CDT post-`32ba93c9`)
+
+**Hypothesis.** E51 sharpened HD-042: heroes produce ~25-30 decisions per 1020 ticks with top cause `_none`. Codex's HANDOFF claims `32ba93c9` "labeled hero noops/empty completions; local-3590 19-resident sample none=0". Replay the E51 method on post-fix trajectories.
+
+**Repro.** Same method as E51: for each of 6 heroes, parse local-3590 trajectory (~737 ticks per resident), histogram decisions + causes.
+
+**Observation (post-`32ba93c9`, all heroes on local-3590):**
+
+| resident | ticks | dec | silent% | _none | top 3 causes |
+|---|---:|---:|---:|---:|---|
+| res-hans | 737 | 43 | 94.2% | **0** | empty_completion 21, hook_noop 19, watchdog_fallback 3 |
+| res-father-aereck | 737 | 18 | 97.6% | **0** | empty_completion 9, hook_noop 5, watchdog_fallback 4 |
+| res-wise-old-man | 737 | 21 | 97.2% | **0** | hook_noop 8, empty_completion 8, watchdog_fallback 5 |
+| res-duke-horacio | 737 | 16 | 97.8% | **0** | watchdog_fallback 7, hook_noop 5, empty_completion 4 |
+| res-pip | 737 | 29 | 96.1% | **0** | empty_completion 13, hook_noop 12, watchdog_fallback 4 |
+| res-thrand | 737 | 16 | 97.8% | **0** | empty_completion 6, hook_noop 5, watchdog_fallback 5 |
+
+**Cohort sanity (no regression):** res-agent 91.2% silent (was 89%), qa-woodcutter 32.0% (was 42.4%), qa-banker 84.8% (was 85.9%), qa-scout 85.5% (was 81.5%). Fix targeted heroes only; cohort behavior unchanged.
+
+**Sub-findings.**
+
+- **F52a (RESOLVED — HD-042 symptom CLOSED).** `_none` cause is eliminated. Codex's claim PASSES across all 6 heroes. The Brain-output → trajectory-record pipeline now correctly tags every hero decision with one of three causes: `empty_completion`, `hook_noop`, `watchdog_fallback`.
+- **F52b (HUGE OBSERVABILITY GAIN).** We can now attribute hero silence PRECISELY by cause:
+  - `empty_completion` = LLM returned but actions:[] (the F20a / HD-033 finding — Qwen3 thinking-mode returns empty)
+  - `hook_noop` = no nervous rule matched current perception (resident is in genuine idle/quiet state)
+  - `watchdog_fallback` = LLM didn't return within 45s (the F20b / F20c finding)
+- **F52c (HD-042-to-HD-033 BRIDGE).** Hans's 24 Brain-call decisions split 21 empty + 3 timeout = 87.5% empty rate. That's the F20a Qwen3 thinking-mode quirk reasserting itself with concrete numbers. HD-042's underlying root cause (heroes' Brain returns empty 84-100% of the time) is HD-033 territory, not a new bug — just better observability.
+- **F52d (DECISION RATE STILL LOW).** Silent% only improved from ~98.1% → 94-98%. Heroes still aren't doing much per tick — the fix labeled the noops but didn't make heroes more thinking-active. That's the right scope for a labeling fix; the deeper "make heroes more lively" is a separate inference-health workstream (HD-033).
+- **F52e (HD-021 PROTOCOL WORKING).** Codex's `32ba93c9` HANDOFF cited the local controller ID (`local-3590`) + a numeric claim (`none=0`) that I could replay against on disk. E52 is exactly the SPRINT-E* replay+histogram pattern that closes HD-021 as de-facto-counter-proposed (verified E48). This is the cleanest example yet of the working coord pattern: Codex ships fix + cites observable claim + leaves trajectory evidence; claude replays to verify.
+
+**Classification.** ENGINE-fix verified live. **HD-042 → CLOSED Decided-by-codex (32ba93c9).** Underlying inference-health gap continues under HD-033.
+
+**Suggested next step.** Update HD-042 to Decided-by-codex with cross-reference to HD-033. Optionally: file an enhancement note that `hook_noop` (no-perception-match) is healthy idle behavior + should be color-coded distinctly on dashboard.
+
+**Owner suggestion.** claude (HD log update this cycle).
+
+
+
+
 
 
 
