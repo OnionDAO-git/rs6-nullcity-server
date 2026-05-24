@@ -206,22 +206,32 @@ describe('controller config', () => {
         process.env.CONTROLLER_LETTERS_HTTP_PORT = '43598';
         process.env.CONTROLLER_LETTERS_HTTP_HOST = '127.0.0.3';
         process.env.CONTROLLER_LETTERS_HTTP_PATH = '/letters/env';
+        process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT = 'true';
 
         expect(parseControllerArgs([])).toEqual(
             expect.objectContaining({
                 lettersHttpPort: 43598,
                 lettersHttpHost: '127.0.0.3',
                 lettersHttpPath: '/letters/env',
+                lettersHttpWallRedact: true,
             }),
         );
 
         expect(
-            parseControllerArgs(['--letters-http-port', '43601', '--letters-http-host=127.0.0.1', '--letters-http-path', '/v1/inbox']),
+            parseControllerArgs([
+                '--letters-http-port',
+                '43601',
+                '--letters-http-host=127.0.0.1',
+                '--letters-http-path',
+                '/v1/inbox',
+                '--letters-http-wall-redact',
+            ]),
         ).toEqual(
             expect.objectContaining({
                 lettersHttpPort: 43601,
                 lettersHttpHost: '127.0.0.1',
                 lettersHttpPath: '/v1/inbox',
+                lettersHttpWallRedact: true,
             }),
         );
     });
@@ -230,12 +240,22 @@ describe('controller config', () => {
         delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
         delete process.env.CONTROLLER_LETTERS_HTTP_HOST;
         delete process.env.CONTROLLER_LETTERS_HTTP_PATH;
+        delete process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT;
 
         expect(parseControllerArgs([])).toEqual(
             expect.objectContaining({
                 lettersHttpPort: undefined,
                 lettersHttpHost: '127.0.0.1',
                 lettersHttpPath: '/v1/inbox',
+                lettersHttpWallRedact: false,
+            }),
+        );
+    });
+
+    it('accepts --wall-redact as the short event-wall alias for letters HTTP redaction (HD-029)', () => {
+        expect(parseControllerArgs(['--wall-redact'])).toEqual(
+            expect.objectContaining({
+                lettersHttpWallRedact: true,
             }),
         );
     });

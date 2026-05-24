@@ -60,6 +60,7 @@ export interface ControllerCliOptions {
     lettersHttpPort?: number;
     lettersHttpHost: string;
     lettersHttpPath: string;
+    lettersHttpWallRedact: boolean;
 }
 
 const DEFAULT_CONFIG_PATH = 'controller.yml';
@@ -74,6 +75,7 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
     let lettersHttpPort = readOptionalPort(process.env.CONTROLLER_LETTERS_HTTP_PORT, 'CONTROLLER_LETTERS_HTTP_PORT');
     let lettersHttpHost = process.env.CONTROLLER_LETTERS_HTTP_HOST || '127.0.0.1';
     let lettersHttpPath = process.env.CONTROLLER_LETTERS_HTTP_PATH || '/v1/inbox';
+    let lettersHttpWallRedact = readEnvBoolean(process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT, false);
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
@@ -135,6 +137,8 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
             i += 1;
         } else if (arg.startsWith('--letters-http-path=')) {
             lettersHttpPath = arg.slice('--letters-http-path='.length);
+        } else if (arg === '--letters-http-wall-redact' || arg === '--wall-redact') {
+            lettersHttpWallRedact = true;
         } else if (arg === '--config' || arg === '-c') {
             const next = argv[i + 1];
             if (!next) {
@@ -157,6 +161,7 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
         lettersHttpPort,
         lettersHttpHost,
         lettersHttpPath,
+        lettersHttpWallRedact,
     };
 }
 
@@ -311,6 +316,13 @@ function readOptionalPort(value: string | undefined, label: string): number | un
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
     return typeof value === 'boolean' ? value : fallback;
+}
+
+function readEnvBoolean(value: string | undefined, fallback: boolean): boolean {
+    if (value === undefined || value.length === 0) {
+        return fallback;
+    }
+    return value === '1' || value.toLowerCase() === 'true';
 }
 
 function readKnowledgeStorageMode(value: unknown, fallback: KnowledgeStorageMode): KnowledgeStorageMode {

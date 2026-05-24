@@ -55,6 +55,7 @@ async function main(): Promise<void> {
                 host: args.lettersHttpHost,
                 path: args.lettersHttpPath,
                 lettersRoot: config.memory.dir,
+                wallRedact: args.lettersHttpWallRedact,
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
         }
