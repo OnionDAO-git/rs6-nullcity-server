@@ -499,6 +499,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-22 by Codex live smoke: autonomous real-gateway `combat-prayer-10m` passed in 96s with `safeAttackActions=6`, `survivalActions=2`, `pickupBonesActions=2`, `buryActions=2`, `prayerXpIncreased=1`, `deathEvents=0`, and visible dashboard evidence for attack, retreat, loot, and bury actions.
   - Verified 2026-05-23 on `agents/wip`: non-combat low-HP recovery now eats carried food or prioritizes visible food pickup before routine beacons, and low-HP goal beacons mention the need for food or healing.
   - Verified 2026-05-23 on `agents/wip`: when hurt with no food and no visible food, the resident now returns toward its visibility anchor before roaming or skilling so humans can find it and it stops drifting deeper into danger.
+  - Verified 2026-05-23 on `agents/wip`: emergency food recovery no longer treats raw fish as edible. When hurt, the resident cooks carried raw starter fish when heat is visible and can net visible starter fish when carrying a small net and no cooked food is available.
 - `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
   - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
 - `[x]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.

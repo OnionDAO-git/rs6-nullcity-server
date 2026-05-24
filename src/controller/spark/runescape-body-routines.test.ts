@@ -627,6 +627,55 @@ describe('lowHealthRecoveryAction', () => {
         expect(action).toEqual({ kind: 'eat', slot: 0, cause: 'low_health_eat' });
     });
 
+    it('cooks carried raw starter fish instead of trying to eat it when low on health', () => {
+        const fire = { objectId: FIRE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    inCombat: false,
+                },
+                nearby: { objects: [fire] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on',
+            itemSlot: 0,
+            target: fire,
+            cause: 'low_health_cook_food',
+        });
+    });
+
+    it('nets visible starter fish when hurt, carrying a small net, and no food is available', () => {
+        const fishingSpot: BodyActor = {
+            id: 'npc:fishing-spot',
+            kind: 'npc',
+            name: 'Fishing spot',
+            position: { x: 101, y: 100, level: 0 },
+        };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+                nearby: { npcs: [fishingSpot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: fishingSpot,
+            option: 'net',
+            cause: 'low_health_fish_food',
+        });
+    });
+
     it('prioritizes visible ground food over coins when hurt and carrying no food', () => {
         const coins = ground(COINS, 100, 100, 'rs:coins');
         const food = ground(315, 103, 100, 'rs:shrimps');
@@ -647,6 +696,31 @@ describe('lowHealthRecoveryAction', () => {
         expect(action).toEqual({
             kind: 'interact',
             target: food,
+            option: 'pick-up',
+            cause: 'low_health_pickup_food',
+        });
+    });
+
+    it('does not treat raw ground fish as edible emergency food', () => {
+        const rawFish = ground(317, 101, 100, 'rs:raw_shrimp');
+        const cookedFish = ground(315, 104, 100, 'rs:shrimps');
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:agent',
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { worldItems: [rawFish, cookedFish] },
+            }),
+            'res:agent',
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: cookedFish,
             option: 'pick-up',
             cause: 'low_health_pickup_food',
         });

@@ -4938,6 +4938,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('prepares food before returning to anchor when low on health and carrying raw fish', async () => {
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Practice scouting.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 317, key: 'rs:raw_shrimp', amount: 1 }],
+                    inCombat: false,
+                },
+                objects: [fire],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'use_item_on',
+                itemSlot: 0,
+                target: fire,
+                cause: 'low_health_cook_food',
+            },
+        ]);
+        expect(result.cause).toBe('low_health_cook_food');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('starts beaconing benchmark-seeded goals after the first share interval', async () => {
         const fishingSpot = npc('Fishing spot', 3219, 3201);
         const llm = scriptedLlm([]);

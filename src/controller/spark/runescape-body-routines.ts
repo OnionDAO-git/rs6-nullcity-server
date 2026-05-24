@@ -119,6 +119,9 @@ export const COIN_ITEM_IDS: ReadonlySet<number> = new Set([995]);
 export const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
 
+/** Item-key pattern for raw food that must be cooked before it can heal. */
+export const RAW_FOOD_KEY_PATTERN = /(^|[:_-])raw([:_-]|$)/i;
+
 /** Maximum tile distance considered for opportunistic loot pickup during combat. */
 export const COMBAT_LOOT_MAX_DISTANCE = 6;
 
@@ -167,9 +170,15 @@ export function findSlot(items: Array<BodyItem | null>, predicate: (item: BodyIt
     return undefined;
 }
 
-/** Returns the first inventory slot containing a food-shaped item, or undefined. */
+/** True when an item is ready-to-eat food rather than a raw ingredient. */
+export function isEdibleFood(item: BodyItem): boolean {
+    const key = item.key || '';
+    return FOOD_KEY_PATTERN.test(key) && !RAW_FOOD_KEY_PATTERN.test(key) && !isStarterRawFish(item);
+}
+
+/** Returns the first inventory slot containing ready-to-eat food, or undefined. */
 export function firstFoodSlot(inventory: Array<BodyItem | null>): number | undefined {
-    return findSlot(inventory, candidate => FOOD_KEY_PATTERN.test(candidate.key || ''));
+    return findSlot(inventory, isEdibleFood);
 }
 
 /**
@@ -472,20 +481,31 @@ export function lowHealthRecoveryAction(
         return undefined;
     }
 
-    const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+    const inventory = perception.resident?.inventory || [];
+    const foodSlot = firstFoodSlot(inventory);
     if (foodSlot !== undefined) {
         return { kind: 'eat', slot: foodSlot, cause: 'low_health_eat' };
     }
 
+    const cookingAction = starterFishingCookingAction(perception);
+    if (cookingAction) {
+        return actionWithCause(cookingAction, 'low_health_cook_food');
+    }
+
     const here = perception.resident?.position;
-    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
+    if (!here || !inventoryHasFreeSlot(inventory)) {
         return undefined;
+    }
+
+    const fishingAction = starterFishingAction(perception);
+    if (fishingAction) {
+        return actionWithCause(fishingAction, 'low_health_fish_food');
     }
 
     const food = (perception.nearby?.worldItems || [])
         .filter(
             candidate =>
-                FOOD_KEY_PATTERN.test(candidate.key || '') &&
+                isEdibleFood(candidate) &&
                 !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
                 !isPickupOnCooldown(candidate, pickupCooldowns, currentTick),
         )
