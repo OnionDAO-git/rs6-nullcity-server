@@ -311,6 +311,10 @@ Safe public module facade building blocks are implemented, but the public member
   - Started 2026-05-24 on `agents/wip`: Codex is adding a no-inference, low-cadence default idle pulse for no-hook ticks, using display-name speech plus a safe first-step movement candidate.
   - Verified 2026-05-24 on `agents/wip`: default-SPARK no-hook ticks now emit a cadence-gated `idle_initiative` speech/action without calling inference; cadence is persisted as `lastIdleInitiativeTick`. Focused red/green tests, typecheck, lint, build, full Jest, and live controller `local-73320` passed. Live root cause note: Thrand was also `attention_exhausted`; after `npm run controller:revive -- --resident res:thrand`, he said `Still here as Thrand; watching the area.` and performed an `idle_initiative` move.
 
+- `[x]` **F7: Hero empty-completion recovery.** HD-042/F51 showed heroes alive but producing many `_none` decisions when default-SPARK idle reflection returned no useful JSON action.
+  - Started 2026-05-24 on `agents/wip`: Codex is adding named `empty_completion` decision causes and a cadence-limited fallback into existing hero idle initiative when an empty completion lands on a due tick. Intended proof: focused SPARK/evidence tests, full gates, and a live post-restart trajectory sample showing heroes no longer emit `_none` for empty completions.
+  - Verified 2026-05-24 on `agents/wip`: no-hook cooldown ticks now return `hook_noop`, empty JSON completions return `empty_completion`, and due empty completions can trigger the visible `idle_initiative` pulse. Fresh full Jest, typecheck, lint, build, and live controller `local-3590` passed; a 19-resident trajectory sample over 234 ticks each showed `none: 0` decision causes, with heroes still speaking and watchdog-moving when relevant.
+
 
 ## Workstream G: Real Gameplay Workflows
 

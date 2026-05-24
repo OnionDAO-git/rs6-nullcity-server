@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { admitInference, defaultInferenceBudget } from '../llm/budgets';
-import { parseCompletion } from '../llm/completion-parser';
+import { parseCompletion, type ParsedCompletion } from '../llm/completion-parser';
 import type { LlmClient } from '../llm/llm-client';
 import { Mailbox } from '../llm/mailbox';
 import { buildPromptEnvelope } from '../llm/prompt-envelope';
@@ -119,7 +119,7 @@ export class Spark {
                 }
 
                 endReason = 'hook_noop';
-                return { actions: [], nooped: true };
+                return { actions: [], cause: 'hook_noop', nooped: true };
             }
 
             const budget = admitInference(this.state, defaultInferenceBudget());
@@ -229,14 +229,27 @@ export class Spark {
             }
 
             let actions = replaceNoopWithCandidate(parsed.actions, candidates);
+            let decisionCause = parsed.cause;
+            let actionsAlreadySpent = false;
             if (parsed.plan) {
                 this.activePlan = installPlan(parsed.plan, this.state.tick, this.state.previousIntent as PlanIntent | undefined);
                 this.mode = { mode: 'executing', changedAt: new Date(), cause: parsed.cause };
                 const next = this.planExecutor.tick(this.activePlan, { tick: this.state.tick, perception });
                 actions = next.action ? replaceNoopWithCandidate([next.action], candidates) : [];
             }
+            if (isEmptyParsedCompletion(parsed, actions)) {
+                const idleInitiative = this.idleInitiative(perception);
+                if (idleInitiative) {
+                    actions = idleInitiative.actions;
+                    decisionCause = 'empty_completion_idle_initiative';
+                    actionsAlreadySpent = true;
+                    endReason = 'idle_initiative';
+                } else {
+                    decisionCause = 'empty_completion';
+                }
+            }
             this.options.evidence?.recordDecision({
-                cause: parsed.cause,
+                cause: decisionCause,
                 moduleId: this.options.moduleIdentity?.id,
                 moduleVersion: this.options.moduleIdentity?.version,
                 promptHash: sha256(envelope),
@@ -248,8 +261,10 @@ export class Spark {
                 planChange: parsed.plan ? { id: parsed.plan.id, steps: parsed.plan.steps.length } : undefined,
             });
 
-            for (const action of actions) {
-                this.state.attention = spendForAction(this.state.attention, action.kind, this.soul.frontmatter.attentionProfile?.floor);
+            if (!actionsAlreadySpent) {
+                for (const action of actions) {
+                    this.state.attention = spendForAction(this.state.attention, action.kind, this.soul.frontmatter.attentionProfile?.floor);
+                }
             }
 
             const postActionLegacy = this.legacy.observeActions(actions, perception);
@@ -261,9 +276,9 @@ export class Spark {
 
             return {
                 actions,
-                cause: parsed.cause,
+                cause: decisionCause,
                 envelopeTokens: estimateTokens(envelope),
-                nooped: response.nooped || actions.length === 0,
+                nooped: actions.length === 0,
             };
         } finally {
             this.options.evidence?.endTick(endReason);
@@ -389,6 +404,21 @@ function replaceNoopWithCandidate(actions: AgentAction[], candidates: AgentActio
     }
 
     return [firstCandidate];
+}
+
+function isEmptyParsedCompletion(parsed: ParsedCompletion, actions: AgentAction[]): boolean {
+    return (
+        actions.length === 0 &&
+        !parsed.cause &&
+        !parsed.plan &&
+        !parsed.memo?.length &&
+        !parsed.indexPatch?.append?.length &&
+        !parsed.proposeHook?.length &&
+        !parsed.retireHook?.length &&
+        !parsed.proposeNervousRule?.length &&
+        !parsed.retireNervousRule?.length &&
+        !parsed.proposeVariables?.length
+    );
 }
 
 function sha256(value: string): string {

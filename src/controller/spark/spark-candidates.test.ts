@@ -44,7 +44,7 @@ describe('Spark candidate fallback', () => {
             },
         });
 
-        expect(nextTick).toEqual({ actions: [], nooped: true });
+        expect(nextTick).toEqual({ actions: [], cause: 'hook_noop', nooped: true });
         expect(state.lastIdleInitiativeTick).toBe(120);
         expect(llm.complete).not.toHaveBeenCalled();
     });

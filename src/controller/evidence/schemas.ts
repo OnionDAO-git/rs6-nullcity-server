@@ -10,6 +10,7 @@ export const endTickReasonSchema = z.union([
     z.string().regex(/^budget_exhausted:[a-z0-9_-]+$/),
     z.literal('parse_failed'),
     z.literal('legacy_complete_post_action'),
+    z.literal('idle_initiative'),
     z.literal('tick_complete'),
 ]);
 
