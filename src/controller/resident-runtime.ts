@@ -49,6 +49,10 @@ const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
 const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
 const SAY_ACTION_WATCHDOG_MS = 10_000;
 const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
+const MOVE_EFFECT_TIMEOUT_MIN_MS = 5_000;
+const MOVE_EFFECT_TIMEOUT_PER_TILE_MS = 1_200;
+const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
+const MOVE_EFFECT_TIMEOUT_MAX_MS = 30_000;
 
 export interface ResidentRuntimeGameSkill {
     buildContext(input: GameSkillContextInput): GameSkillContext;
@@ -1189,10 +1193,13 @@ function positionMatches(position: Position | undefined, target: Position, range
 
 function movementEffectTimeoutMs(position: Position | undefined, target: Position): number {
     if (!position) {
-        return 5000;
+        return MOVE_EFFECT_TIMEOUT_MIN_MS;
     }
     const distance = Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y));
-    return Math.max(5000, Math.min(120000, (distance + 4) * 2500));
+    return Math.max(
+        MOVE_EFFECT_TIMEOUT_MIN_MS,
+        Math.min(MOVE_EFFECT_TIMEOUT_MAX_MS, MOVE_EFFECT_TIMEOUT_BUFFER_MS + distance * MOVE_EFFECT_TIMEOUT_PER_TILE_MS),
+    );
 }
 
 function isPosition(value: unknown): value is Position {

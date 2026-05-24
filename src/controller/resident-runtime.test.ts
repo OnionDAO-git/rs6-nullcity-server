@@ -753,7 +753,7 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).toHaveBeenCalledTimes(1);
     });
 
-    it('uses a generous movement evidence timeout for distant move_to actions', async () => {
+    it('caps distant movement evidence waits so blocked moves recover visibly', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-long-move-timeout-test-'));
         const state = stateFor('res:pip');
         let latestPerception: Record<string, unknown> | undefined;
@@ -796,7 +796,7 @@ describe('ResidentRuntime modules', () => {
             events: [],
         });
 
-        expect(body.waitForPerception).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ timeoutMs: 90_000 }));
+        expect(body.waitForPerception).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ timeoutMs: 30_000 }));
     });
 
     it('waits for item action effect evidence before marking the attempt successful', async () => {
