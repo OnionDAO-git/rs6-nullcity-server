@@ -116,8 +116,16 @@ describe('ResidentRuntime modules', () => {
         });
     });
 
-    it('remembers timed out move targets so thinking does not continue the same failed step', async () => {
+    it('records movement timeout distance evidence for coordinate target failures', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-failure-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-24T12:25:00.000Z') });
+        const session = store.beginSession('session-move-timeout', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-24T12:25:01.000Z') }),
+        };
         const state = stateFor('res:pip');
         state.tick = 40;
         let latestPerception: Record<string, unknown> | undefined;
@@ -154,17 +162,40 @@ describe('ResidentRuntime modules', () => {
             inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
             thinking,
             body,
+            evidence,
         });
 
         await runtime.onPerception({
             tick: 40,
-            resident: { position: { x: 3216, y: 3233, level: 0 } },
+            resident: { position: { x: 3214, y: 3233, level: 0 } },
             events: [],
         });
 
         expect(state.cognition?.targetFailureCooldowns).toEqual({
             'target:3217,3233,0': 40,
         });
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-move-timeout',
+                status: 'timeout',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'perception',
+                        detail: expect.objectContaining({
+                            kind: 'movement_timeout',
+                            target,
+                            range: 1,
+                            startPosition: { x: 3214, y: 3233, level: 0 },
+                            finalPosition: { x: 3214, y: 3233, level: 0 },
+                            startDistance: 3,
+                            finalDistance: 3,
+                            improved: false,
+                        }),
+                    }),
+                ],
+            }),
+        );
     });
 
     it('writes runtime progress evidence and updates progress state from perceptions', async () => {

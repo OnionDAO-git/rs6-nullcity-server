@@ -406,3 +406,30 @@ What the body_wait count actually represents:
 **Resolution.** Codex `19d398f1` (HD-023 / E3a) + `91f8e160` (F2c / F2d / E2b). Both confirmed via on-disk evidence in trajectory + memo files at 07:19 today.
 
 ---
+
+### E3a follow-up — movement timeout distance evidence
+
+**Status:** PARTIAL-RESOLVED-by-Codex on `agents/wip`; residual BODY timeout cause is now measurable
+**Tier:** 2 (runtime telemetry + live smoke)
+**Date:** 2026-05-24 07:38 codex
+
+**Hypothesis.** Residual `move_to` timeouts need enough runtime evidence to distinguish dead/stale targets from slow-but-progressing movement before changing timeout budgets or path selection.
+
+**Repro.**
+- Added a resident-runtime regression for coordinate move timeout evidence.
+- Verification: `npm test -- --runTestsByPath src/controller/resident-runtime.test.ts --runInBand`, `npm run typecheck`, `npm run lint`, `git diff --check`, `npm run build`, and full `npm test -- --runInBand`.
+- Restarted the real controller as `local-69366` and scanned fresh `res:agent` trajectory `20260524T122911Z-local-69366-res-agent-1779625751341.jsonl`.
+
+**Observation.**
+- Live smoke produced 29 action results: 26 success, 3 timeout.
+- All 3 timeouts carried the new `movement_timeout` evidence with `target`, `range`, `startPosition`, `finalPosition`, `startDistance`, `finalDistance`, `improved`, and `timeoutMs`.
+- Samples all improved by one tile before timing out: `3 -> 2`, `6 -> 5`, and `3 -> 2`, each with `improved=true`.
+- The smoke also produced 27 `move_to` and 2 `say` rows. Causes were `explore_patrol` and `return_to_visibility_anchor`; no repeated same-target `continue_move` loop reappeared.
+
+**Classification.** BODY. This residual sub-mode looks like slow partial movement / effect-wait expiry rather than a dropped action or immediate stale-target retry. The resident is moving, but some waits expire before the final tile or range threshold is observed.
+
+**Suggested next step.** Run a longer post-instrumentation soak and split movement timeouts into `improved=true` vs. `improved=false`. If most are improved, tune movement wait budgets or complete-on-progress behavior. If many are not improved, prioritize target reachability/pathing and obstacle recovery.
+
+**Owner suggestion.** Codex for the next BODY close-rate fix; Claude/Gemini can consume this evidence in dashboard/intelligence reports.
+
+---

@@ -702,19 +702,26 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
             const afterSeq = this.body.getLatestPerceptionSeq();
             const latestPerception = this.body.getLatestPerception();
-            const timeoutMs = movementEffectTimeoutMs(latestPerception ? perceptionPosition(latestPerception) : undefined, target);
-            return async signal =>
-                perceptionWaitToEffect(
-                    await this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
+            const startPosition = latestPerception ? perceptionPosition(latestPerception) : undefined;
+            const timeoutMs = movementEffectTimeoutMs(startPosition, target);
+            return async signal => {
+                const wait = await this.body.waitForPerception(
+                    perception => positionMatches(perceptionPosition(perception), target, range),
+                    {
                         afterSeq,
                         timeoutMs,
                         signal,
-                    }),
-                    perception => ({
-                        source: 'perception',
-                        detail: { kind: 'position_reached', position: perceptionPosition(perception) },
-                    }),
+                    },
                 );
+                const latestAfterWait = this.body.getLatestPerception();
+                return movementWaitToEffect(wait, {
+                    target,
+                    range,
+                    startPosition,
+                    finalPosition: latestAfterWait ? perceptionPosition(latestAfterWait) : undefined,
+                    timeoutMs,
+                });
+            };
         }
 
         if (action.kind === 'say' && typeof action.text === 'string') {
@@ -1167,6 +1174,60 @@ function perceptionWaitToEffect(
     return { ok: true, evidence: [evidence(wait.observation.value)] };
 }
 
+function movementWaitToEffect(
+    wait: Awaited<ReturnType<ResidentBody['waitForPerception']>>,
+    detail: {
+        target: Position;
+        range: number;
+        startPosition?: Position;
+        finalPosition?: Position;
+        timeoutMs: number;
+    },
+): EffectWaitResult {
+    if (wait.ok) {
+        return {
+            ok: true,
+            evidence: [
+                {
+                    source: 'perception',
+                    detail: { kind: 'position_reached', position: perceptionPosition(wait.observation.value) },
+                },
+            ],
+        };
+    }
+
+    const startDistance =
+        detail.startPosition && samePlane(detail.startPosition, detail.target)
+            ? chebyshevDistance(detail.startPosition, detail.target)
+            : undefined;
+    const finalDistance =
+        detail.finalPosition && samePlane(detail.finalPosition, detail.target)
+            ? chebyshevDistance(detail.finalPosition, detail.target)
+            : undefined;
+
+    return {
+        ok: false,
+        reason: wait.reason,
+        evidence: [
+            {
+                source: detail.finalPosition ? 'perception' : 'derived',
+                detail: {
+                    kind: wait.reason === 'timeout' ? 'movement_timeout' : 'movement_aborted',
+                    target: detail.target,
+                    range: detail.range,
+                    startPosition: detail.startPosition,
+                    finalPosition: detail.finalPosition,
+                    startDistance,
+                    finalDistance,
+                    improved:
+                        typeof startDistance === 'number' && typeof finalDistance === 'number' ? finalDistance < startDistance : undefined,
+                    timeoutMs: detail.timeoutMs,
+                },
+            },
+        ],
+    };
+}
+
 function eventWaitToEffect(
     wait: Awaited<ReturnType<ResidentBody['waitForEvent']>>,
     evidence: (event: PerceptionEvent) => ActionEvidence,
@@ -1203,6 +1264,10 @@ function positionMatches(position: Position | undefined, target: Position, range
         position.y === target.y &&
         (target.level === undefined || position.level === target.level || position.level === undefined)
     );
+}
+
+function samePlane(a: Position, b: Position): boolean {
+    return b.level === undefined || a.level === b.level || a.level === undefined;
 }
 
 function movementEffectTimeoutMs(position: Position | undefined, target: Position): number {
