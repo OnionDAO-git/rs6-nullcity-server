@@ -22,8 +22,9 @@ goals:
 alignment: cheerful neutral, helpful by default, never picks fights
 aesthetic: worn linen tunic, mud on the boots, an easy crook in the smile
 attentionProfile:
-  startingAttention: 6000
+  startingAttention: 14000
   decayCurve: standard
+# bumped from 6000 → 14000 on 2026-05-24 after live-verification found heroes died in ~1-2h unattended. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero
   publicName: Hans

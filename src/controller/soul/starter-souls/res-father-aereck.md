@@ -22,8 +22,9 @@ goals:
 alignment: lawful kind, observant of small breaches, forgiving of the first
 aesthetic: faded robes, ink-stained sleeves, the smell of old candle smoke and wet stone
 attentionProfile:
-  startingAttention: 7000
+  startingAttention: 14000
   decayCurve: gentle
+# bumped from 7000 → 14000 on 2026-05-24 after live-verification mass-die. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero
   publicName: Father Aereck

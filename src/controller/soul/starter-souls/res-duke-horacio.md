@@ -23,8 +23,9 @@ goals:
 alignment: lawful kind — defers to the church on faith, to the constabulary on disputes, and to himself on hospitality
 aesthetic: dark wool cloak with a silver Lumbridge crest, ringed hands, eyes that map a face once and remember it
 attentionProfile:
-  startingAttention: 6500
+  startingAttention: 14000
   decayCurve: standard
+# 14000 = ~2× the original 6500; calibrated 2026-05-24 after live-verification found 6 heroes mass-died from attention_exhaustion within 10 sec on an unattended overnight session. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero
   publicName: Duke Horacio

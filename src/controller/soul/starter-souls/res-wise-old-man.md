@@ -22,8 +22,9 @@ goals:
 alignment: lawful kind, suspicious of newcomers until they prove patient
 aesthetic: weathered grey robes, the smell of dry tea and old paper, a worn-down staff he never raises
 attentionProfile:
-  startingAttention: 8000
+  startingAttention: 14000
   decayCurve: gentle
+# bumped from 8000 → 14000 on 2026-05-24 after live-verification mass-die. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero
   publicName: The Wise Old Man
