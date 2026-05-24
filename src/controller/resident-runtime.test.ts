@@ -198,6 +198,91 @@ describe('ResidentRuntime modules', () => {
         );
     });
 
+    it('treats timed out coordinate movement as progress when the resident moved closer', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-progress-timeout-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-progress-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-24T12:55:00.000Z') });
+        const session = store.beginSession('session-move-progress', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-24T12:55:01.000Z') }),
+        };
+        const state = stateFor('res:pip');
+        state.tick = 41;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3202, y: 3221, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'explore_patrol' }],
+                cause: 'explore_patrol',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-move-progress' })),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(async () => {
+                latestPerception = { tick: 42, resident: { position: { x: 3200, y: 3221, level: 0 } }, events: [] };
+                perceptionSeq += 1;
+                return { ok: false, reason: 'timeout' };
+            }),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        await runtime.onPerception({
+            tick: 41,
+            resident: { position: { x: 3199, y: 3221, level: 0 } },
+            events: [],
+        });
+
+        expect(state.cognition?.targetFailureCooldowns).toBeUndefined();
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-move-progress',
+                status: 'success',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'perception',
+                        detail: expect.objectContaining({
+                            kind: 'movement_progress',
+                            target,
+                            range: 1,
+                            startPosition: { x: 3199, y: 3221, level: 0 },
+                            finalPosition: { x: 3200, y: 3221, level: 0 },
+                            startDistance: 3,
+                            finalDistance: 2,
+                            improved: true,
+                            waitOutcome: 'timeout',
+                        }),
+                    }),
+                ],
+            }),
+        );
+    });
+
     it('writes runtime progress evidence and updates progress state from perceptions', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-'));

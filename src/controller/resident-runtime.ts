@@ -1204,6 +1204,30 @@ function movementWaitToEffect(
         detail.finalPosition && samePlane(detail.finalPosition, detail.target)
             ? chebyshevDistance(detail.finalPosition, detail.target)
             : undefined;
+    const improved = typeof startDistance === 'number' && typeof finalDistance === 'number' && finalDistance < startDistance;
+
+    if (wait.reason === 'timeout' && improved) {
+        return {
+            ok: true,
+            evidence: [
+                {
+                    source: 'perception',
+                    detail: {
+                        kind: 'movement_progress',
+                        target: detail.target,
+                        range: detail.range,
+                        startPosition: detail.startPosition,
+                        finalPosition: detail.finalPosition,
+                        startDistance,
+                        finalDistance,
+                        improved,
+                        waitOutcome: wait.reason,
+                        timeoutMs: detail.timeoutMs,
+                    },
+                },
+            ],
+        };
+    }
 
     return {
         ok: false,
@@ -1219,8 +1243,7 @@ function movementWaitToEffect(
                     finalPosition: detail.finalPosition,
                     startDistance,
                     finalDistance,
-                    improved:
-                        typeof startDistance === 'number' && typeof finalDistance === 'number' ? finalDistance < startDistance : undefined,
+                    improved: typeof startDistance === 'number' && typeof finalDistance === 'number' ? improved : undefined,
                     timeoutMs: detail.timeoutMs,
                 },
             },
