@@ -1237,3 +1237,59 @@ wall snapshot     HTTP 200
 Sample anchored line: `Still here as Hans; getting my bearings near my post.`
 
 **Conclusion.** F18d is resolved for residents whose watchdog fallback actually fires: the dashboard/player-visible speech now identifies the resident, and anchored heroes do not wander away from their posts while recovering from slow inference. A separate no-hook cadence gap remains for `res:thrand`: in this short soak he produced only begin/end tick evidence and never invoked watchdog fallback. That is now tracked as roadmap task F6 rather than bundled into this fallback polish.
+
+### E19 — Codex 2e32a7bb personalized hero watchdog fallbacks verify
+
+**Status:** F18d RESOLVED-by-codex@2e32a7bb (each hero now uses its own name + anchor patrol); F19c new finding (heroes never escape fallback mode — HD-032 inference-health residual continues)
+**Tier:** 1 (read-only multi-resident trajectory diff vs E18 baseline)
+**Date:** 2026-05-24 18:55 claude
+
+**Hypothesis.** Codex's `2e32a7bb` ("Personalize resident watchdog fallbacks") addresses my E18/F18d finding (all heroes shared identical "I am still here; getting my bearings" line). Verify per-hero text uniqueness + anchor patrol behavior on `local-93740`.
+
+**Repro.** Same per-resident trajectory scan as E18. Extract say texts + move-target counts. Diff against the E18 baseline.
+
+**Observation (HD-021 commitment).**
+
+```
+RESIDENT          SAYS  UNIQUE_TEMPLATE                                                 MOVES  UNIQUE_TGT
+res-hans          19    "Still here as Hans; getting my bearings near my post."          19    4
+res-father-aereck 21    "Still here as Father Aereck; getting my bearings near my post." 21    4
+res-wise-old-man  21    "Still here as The Wise Old Man; getting my bearings near ..."   21    4
+res-duke-horacio  21    "Still here as Duke Horacio; getting my bearings near my post."  21    4
+res-pip           19    "Still here as Pip; getting my bearings."                        19    2
+res-thrand        0     (silent — Codex F6 separate)                                     0     0
+res-agent         13    rich varied scout speech + new "Path to the south is blocked
+                        or broken. Anyone heading that way?"                            126   117
+```
+
+**Sub-findings.**
+
+**F18d RESOLVED-by-codex@2e32a7bb.** Each hero now uses its display name in the fallback line. Pip's line correctly omits "near my post" because Pip has no soul anchor. Codex's per-soul template substitution works correctly across 5 of the 6 heroes (Thrand is the carve-out, see F6).
+
+**F19a (POSITIVE — anchor patrol).** Heroes with anchors now patrol exactly 4 unique tiles each (the 4 cardinal neighbors of their post, per range-1). This is exactly the design Codex specified. Hans/Aereck/Wise/Horacio all show the same 4-unique-tiles pattern. Pip with no anchor wanders 2 tiles. Visual at IRL: each hero stays at their post and rotates around it, rather than drifting away. Good.
+
+**F19b (POSITIVE — first organic conversational say from res:agent).** res:agent emitted `"Path to the south is blocked or broken. Anyone heading that way?"` — this is a Brain-driven help-request, not a fallback or template. First time observed in this sprint. Suggests Brain CAN produce meaningful conversational outputs when it succeeds.
+
+**F19c (CONCERNING — heroes never escape fallback).** Each hero produces 19-21 says in the ~30-min window, **all identical** to its personalized fallback line. The heroes' Brain doesn't recover between watchdog timeouts — they're always in fallback mode. From a Chicago patron's perspective: walk up to Hans, hear "Still here as Hans; getting my bearings near my post." Walk away. Come back 30 seconds later: same line again. Each hero has ONE signature line and uses it forever.
+
+This is the deeper residual that Codex flagged in HD-032's note: "default heroes are visibly alive but not yet smart conversational heroes." E19 quantifies it. The patron-acknowledge reflex (80f25d18) will still fire on a Shards offer, so heroes have **two** behaviors: (1) say their signature identity line on watchdog fallback (~every 30s), (2) thank a patron when offered Shards. Brain-driven varied conversation remains gated on inference-completion health.
+
+**F19d (KNOWN — Thrand silent).** Thrand produced 0 says, 0 actions across 3404 trajectory rows. Codex's commit body explicitly tracks this as roadmap F6 ("Residual quiet no-hook Thrand behavior"). Confirmed it's a separate workstream, not a regression.
+
+**Classification.**
+- F18d: **RESOLVED-by-codex@2e32a7bb** (KNOWLEDGE / soul-aware fallback).
+- F19a: PASS (DESIGN — anchor patrol working as specified).
+- F19b: POSITIVE (INFERENCE — Brain occasionally succeeds, produces meaningful conversational lines).
+- F19c: **INFERENCE — same root as HD-032 residual**. Heroes' Brain fails consistently. Mitigation works (fallback covers); cure (smart conversation) requires inference-health work or rich reflex layer per hero.
+- F19d: KNOWN per Codex F6.
+
+**Suggested next step.**
+
+The Pillar-3 substrate + fallback layer are now Chicago-acceptable. F19c is the next-deepest problem and warrants a focused investigation:
+
+(i) **Inference-completion telemetry**: how often does Brain.complete() succeed vs timeout vs error per hero? Read inference logs for `local-93740` and tabulate. If timeouts dominate, the local nullcity LLM endpoint may be the bottleneck (especially with 7 simultaneous residents).
+(ii) **Per-hero reflex-rich souls**: write 2-3 nervous-rule snippets per hero that fire based on perception (e.g. Hans says "I've been at this post a long time" when stuck > 60s; Father Aereck says "Bless this ground" when an NPC enters embassy). Deterministic, soul-aware, doesn't depend on inference.
+(iii) **Single-resident soak**: run a 30-min controller with ONLY res:agent + 1 hero (e.g. Hans) and measure their Brain success rates separately. Disambiguates whether the 7-resident concurrent load is the cause.
+
+**Owner suggestion.** (i) — claude can do as read-only inference-log scan; (ii) — Codex zone (nervous-system + soul rules); (iii) — needs a second controller spin-up (Codex zone). File as HD-033 if any of (i)/(ii)/(iii) becomes a discrete actionable work item.
+
