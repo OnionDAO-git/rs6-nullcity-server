@@ -24,6 +24,8 @@
         "controller:revive": "ts-node -r tsconfig-paths/register src/controller/admin/revive-cli.ts",
         "patron:grant": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --grant",
         "patron:offer": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --offer",
+        "patron:ask": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --ask",
+        "patron:witness": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --witness",
         "controller:knowledge:review": "npm run build && node dist/controller/knowledge/review-suggestions.js",
         "simulation": "npm run build && npm run build:simulation && node dist/simulation/index.js",
         "simulation:birth": "npm run build:simulation && node dist/simulation/birth.js",

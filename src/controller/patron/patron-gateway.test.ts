@@ -206,6 +206,102 @@ describe('PatronGateway', () => {
                 artifact: 'lumbridge_fountain',
             });
         });
+
+        it('credits +3 standing by default and returns standingDelta', async () => {
+            const res = await gateway.witnessAt('james', 'first_fire', 'res:pip');
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(3);
+            expect(res.standingDelta).toEqual({
+                factionId: 'embassy',
+                before: 0,
+                after: 3,
+                tierCrossed: undefined,
+            });
+        });
+
+        it('respects a custom amount and crosses tier when threshold met', async () => {
+            const res = await gateway.witnessAt('james', 'first_fire', 'res:pip', 12);
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(12);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+        });
+
+        it('skips standing bump when residentName is omitted (no faction to credit)', async () => {
+            const res = await gateway.witnessAt('james', 'lumbridge_fountain');
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(0);
+            expect(res.standingDelta).toBeUndefined();
+        });
+
+        it('skips standing bump when amount=0', async () => {
+            const res = await gateway.witnessAt('james', 'lumbridge_fountain', 'res:pip', 0);
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(0);
+            expect(res.standingDelta).toBeUndefined();
+        });
+    });
+
+    describe('askResident', () => {
+        let memoryDir: string;
+        let gatewayWithMemory: PatronGateway;
+
+        beforeEach(() => {
+            memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-patron-ask-memory-'));
+            gatewayWithMemory = new PatronGateway({
+                currencyLedger,
+                standingLedger,
+                runtimes,
+                soulsDir,
+                memoryDir,
+                now: () => new Date('2026-05-23T04:00:00Z'),
+            });
+        });
+
+        afterEach(() => {
+            fs.rmSync(memoryDir, { recursive: true, force: true });
+        });
+
+        it('rejects empty / whitespace-only questions', async () => {
+            const res = await gatewayWithMemory.askResident('james', 'res:pip', '   ');
+            expect(res.ok).toBe(false);
+            expect(res.error).toBe('invalid_amount');
+        });
+
+        it('rejects unknown residents', async () => {
+            const res = await gatewayWithMemory.askResident('james', 'res:unknown', 'What is your name?');
+            expect(res.ok).toBe(false);
+            expect(res.error).toBe('resident_not_found');
+        });
+
+        it('appends a patron_ask line to the resident library timeline', async () => {
+            const question = 'What did the fire teach you, pip?';
+            const res = await gatewayWithMemory.askResident('james', 'res:pip', question);
+            expect(res.ok).toBe(true);
+            expect(res.eventId).toMatch(/^ask-james-res:pip-/);
+
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            expect(fs.existsSync(timelinePath)).toBe(true);
+            const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            expect(lines).toHaveLength(1);
+            const entry = JSON.parse(lines[0]);
+            expect(entry).toMatchObject({
+                kind: 'patron_ask',
+                patronHandle: 'james',
+                question,
+                tick: 5,
+                ts: '2026-05-23T04:00:00.000Z',
+                lifeIndex: 1,
+                significanceReasons: ['patron:patron_ask'],
+            });
+        });
+
+        it('returns ok but writes nothing when memoryDir is not configured', async () => {
+            // Outer gateway has no memoryDir
+            const res = await gateway.askResident('james', 'res:pip', 'Hey!');
+            expect(res.ok).toBe(true);
+            // No timeline written under outer soulsDir
+            expect(fs.existsSync(path.join(soulsDir, 'library'))).toBe(false);
+        });
     });
 
     describe('sendGift', () => {

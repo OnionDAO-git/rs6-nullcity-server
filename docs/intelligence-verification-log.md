@@ -1458,3 +1458,110 @@ Key files (absolute):
 
 **Owner suggestion.** This fix shipped by claude (HD-034 #2). #1 next claude cycle. #3 Codex zone (`hybrid-agent-thinking-module.ts` say renderer).
 
+
+### E23 — reflex-rich hero souls (SPRINT-PM-PIVOT subagent A)
+
+**Status:** RESOLVED-by-claude — 25 new soul-side nervous rules across 6 heroes
+**Tier:** 2 (substrate ship via subagent)
+**Date:** 2026-05-24 19:50 claude (via subagent)
+
+**Hypothesis.** E19 found heroes stuck repeating their single watchdog_fallback line 19-21 times in 30 min. E20 quantified the Brain returns empty 84-100% for heroes. The reflex layer (per Codex's HD-031 patron-acknowledge proof) is the only reliable surface for observable behavior. Add 3-5 nervous-system rules per hero so each has soul-appropriate reactions independent of Brain success.
+
+**Repro.** Each hero soul (`src/controller/soul/starter-souls/res-{hans,father-aereck,wise-old-man,duke-horacio,pip,thrand}.md`) now carries a `nervousSystem` array with 4-5 rules. New test file `src/controller/soul/hero-nervous-rules.test.ts` exercises each rule by loading the real soul via `SoulLoader` and reacting through real `NervousSystem` (end-to-end YAML schema + clamp + cooldown). Tests went 1565 → 1599 → 1613 (+26 mine + ~22 from concurrent Codex work).
+
+**Observation.**
+
+Rules added (id → trigger → say text):
+- **res-hans** (5 rules): courtyard-greet-on-chat / combat-aside-on-attack / steady-on-hit / chapel-bells-low-attention / remembrance-on-death
+- **res-father-aereck** (4): bless-ground-on-chat / mourn-on-death / steady-after-hit / quiet-vigil-low-attention
+- **res-wise-old-man** (4): aphorism-on-chat / warn-on-attack / long-memory-on-death / quiet-tea-low-attention
+- **res-duke-horacio** (4): formal-greet-on-chat / decline-combat / honour-fallen / castle-aside-low-attention
+- **res-pip** (4): curious-on-chat / startle-on-hit / wonder-at-death / ask-for-guidance-low-attention
+- **res-thrand** (4): brief-acknowledge / mark-the-hit / quiet-respect-on-death / routine-mutter-low-attention
+
+Priorities 60-77 (under survival 95+, above watchdog fallback). Cooldowns 90-360 ticks. Used existing condition kinds only (`event_kind`, `attention_lte`).
+
+**Sub-findings.**
+
+- **F23a (POSITIVE).** Each hero now has 4-5 distinct observable behaviors instead of one signature line.
+- **F23b (FILED-GAP, Codex zone).** Four perception condition kinds would be useful but don't exist in nervous-system yet: `actor_new_in_perception`, `patron_in_perception` (proximity variant), `tick_modulo_N` (periodic), named-NPC `death` filter. Subagent did NOT invent — proper coordination ask.
+- **F23c (FILED-DRY).** All 6 souls have near-identical 3-rule scaffold (chat-greet, attack-react, death-remembrance). Worth a `reflexPersonality` helper that expands a per-hero personality map. Not refactored this cycle.
+
+**Classification.** **RESOLVED-by-claude** (KNOWLEDGE/PERSONALITY layer thickened deterministically). F23b is Codex zone follow-up; F23c is claude refactor opportunity.
+
+**Suggested next step.** Live-verify after Codex's next controller restart — read trajectories for each hero, count distinct say templates per hero, confirm the 4-5 new lines actually fire under real perception events (need actors entering radius for chat, combat near them for attack, etc.).
+
+---
+
+### E24 — patron verb expansion: `patron:ask` + `patron:witness` (SPRINT-PM-PIVOT subagent B)
+
+**Status:** RESOLVED-by-claude (substrate ships); coordination ask filed for chat-synthesis
+**Tier:** 2 (substrate ship via subagent)
+**Date:** 2026-05-24 19:50 claude (via subagent)
+
+**Hypothesis.** Per user PM mandate: "humans need ways to influence residents that actually matter." Currently only `patron:grant` + `patron:offer` exist (both Shards-mediated). HD-016 noted `sendGift`, `witnessAt`, `sponsorBirth` substrate exists but none are CLI-exposed. Expose two high-impact new verbs that change resident behavior observably.
+
+**Repro.** Added two CLI verbs:
+
+1. **`npm run patron:ask -- --human <handle> --resident <name> --text "<question>"`** — writes a `patron_ask` event to `library/<slug>/timeline.jsonl` (Brain reads it on next wake via library-memories renderer). Best-effort polls the resident's trajectory for 5 sec for a fresh `say` to print back. Does NOT yet synthesize a chat PerceptionEvent (would require touching `resident-runtime.ts` — Codex zone).
+
+2. **`npm run patron:witness -- --human <handle> --resident <name> --artifact <id> [--amount <n>]`** — wires the existing `witnessAt` to CLI + adds standing credit (default +3) + tier-letter dispatch via `dispatchTierLetter`.
+
+**Observation.** Tests 1599 → 1613 with all gates green. `npx tsc -p ./ --noEmit` returns exit 0. Project-level lint + build clean.
+
+**Sub-findings.**
+
+- **F24a (POSITIVE).** Two new patron verbs ship as substrate-only. Combined with HD-031's patron-acknowledge reflex + E23's per-hero rules, the patron has multiple discrete ways to interact: grant, offer, ask, witness — all of which produce observable resident state change.
+- **F24b (FILED-COORD).** `patron:ask` would be much more powerful if it could synthesize a chat PerceptionEvent so the existing `patron-acknowledge` reflex (or new soul rules from E23) fires immediately. The only existing API is `ResidentRuntime.onEvent()` (Codex zone). **Coordination ask for Codex:** expose `ControllerHost.enqueuePerceptionEvent(residentName, PerceptionEvent)` so CLI / HTTP / MCP verbs can inject chat events without instantiating runtimes. Filed as HD-035.
+- **F24c (NOTE).** The benchmarks/cli test suite has a pre-existing TypeScript compile error in `src/controller/thinking/hybrid-agent-thinking-module.ts` from Codex's F3-detour WIP — not from this subagent's work; will clear when Codex HANDOFF's their slice.
+
+**Classification.** **RESOLVED-by-claude** (DESIGN — humans now have 4 patron verbs instead of 2). F24b carved out as HD-035 (chat-synthesis enablement).
+
+**Suggested next step.**
+1. Live-verify: maintainer (or claude/Codex) runs `npm run patron:ask --human james --resident res:hans --text "What's the bread like today?"` after controller restart; confirms the event lands in res-hans timeline + Hans's next wake either references or ignores it.
+2. Codex picks up HD-035 (chat-synthesis enablement) → enable immediate `patron-acknowledge` reflex firing for asks.
+
+---
+
+### E25 — Cook's Assistant scenario harness (SPRINT-PM-PIVOT subagent C)
+
+**Status:** RESEARCH-COMPLETE — 6 concrete gaps identified between "knowledge entry exists" and "resident completes Cook's Assistant"
+**Tier:** 3 (investigative simulation harness)
+**Date:** 2026-05-24 19:55 claude (via subagent)
+
+**Hypothesis.** Per user PM mandate: "make them do hard things." Cook's Assistant knowledge entry exists; no resident has ever attempted the quest. Investigate the substrate to determine what's wired, what's missing, and what would need to be built for actual quest completion.
+
+**Repro.** New file `/Users/james/Code/OnionDAO/rs6-nullcity-server/simulation/quest-cooks-assistant.ts` (~580 lines). Spins up a dedicated resident (`res:cookquester` with `controllerId=quest-investigator`) using a temp memory.dir (does not collide with live `res:agent`). Pre-stocks egg/milk/flour via `initialInventory`. Walks to the Cook at (3207-3210, 3215, 0). Runs a deterministic walker, NOT the Brain, to isolate substrate gaps from inference quality.
+
+Findings written to `/Users/james/Code/OnionDAO/rs6-nullcity-server/data/logs/simulation/quest-cooks-assistant/findings-*.{md,json}`.
+
+**Observation.**
+
+**What IS wired (positive — engine quest is real):**
+- The quest IS fully implemented in the engine: `src/plugins/quests/cooks-assistant-quest.plugin.ts` defines `rs:cooks_assistant` with stages 0/50/complete, full Cook dialogue tree (with "I'm always happy to help a cook in distress" branch), and `handInIngredientsAction` that drains items 1944/1927/1933 and calls `setQuestProgress('rs:cooks_assistant', 'complete')`.
+- The knowledge layer is ready (`knowledge-retriever.ts` has a `quest-cooks-assistant` entry with cook coords + ingredient list).
+- The action codec is sufficient (`agentActionSchema` has `move_to`, `interact`, `dialogue_continue`, `dialogue_choice`).
+- The Cook spawns correctly at (3210, 3215, 0).
+- Harness result: 10 PASS, 7 FAIL, 0 inconclusive. Resident reaches the Cook (chebyshev distance 1), pre-stocked inventory works, all 3 submitted actions returned ok.
+
+**6 concrete gaps blocking actual quest completion** (ordered by severity):
+
+1. **No `quests` field in `Perception`** (`perception-types.ts`). Resident cannot observe stage / ingredient progress. **Complexity: small** — add `quests: Record<string, {stage, metadata}>` to perception schema + builder.
+2. **No quest goal factory in Brain planner** (`runescape-brain-planner.ts` has firemaking/woodcutting/etc., no `cooksAssistantGoal`/`questGoal`). **Complexity: small** — add factory + register in `benchmarkGoalForTask`.
+3. **No `isQuestGoal` predicate in Brain planner.** Even Brain-improvised quest goals can't route to Body routines. **Complexity: small.**
+4. **No quest Body routine** (`runescape-body-routines.ts`). Nothing in Body knows to walk-to-NPC → talk-to → advance-dialogue → pick-right-branch → fetch-ingredients → return → hand-in. **Complexity: medium.**
+5. **No gateway quest query / event** (`src/server/agent/protocol/messages.ts`). Controller cannot poll progress; can only infer from inventory deltas + chat. **Complexity: small** — new frame `quest_state` + `quest_progressed` event.
+6. **Dialogue is opaque to the agent layer.** Engine renders dialogue as interface widgets; `Perception` exposes only `resident.busy=true` during dialogue. No way to see which options are visible or which option goes where. **Complexity: medium-large** — add `dialogue_state` perception field exposing `{speaker, lines, options}`.
+
+Optional 7th gap: no ingredient-gathering routines (windmill recipe / dairy cow / chicken-coop). Sidestepped by `initialInventory` for research runs; would block fresh-resident end-to-end.
+
+**Sub-findings.**
+
+- **F25a (POSITIVE — substrate-ready).** Engine + action codec + knowledge entry + Cook spawn are all production-grade. The "we don't have quests" framing is wrong; what we don't have is the perception + planner + routine layers to USE the engine's quest support.
+- **F25b (DESIGN — concrete roadmap).** 6 gaps form a clear minimum-viable-quest implementation plan. Filed as HD-036.
+- **F25c (OBSERVATION).** The harness saw 2 "chat messages" during its run — both turned out to be `res:hans` saying *"Still here as Hans; getting my bearings near my post."* from elsewhere on the map. Confirms perception delivers chat from nearby residents but NOT NPC dialogue lines (independent evidence for gap #6).
+
+**Classification.** **RESEARCH-COMPLETE** — DESIGN gaps cleanly enumerated. Filed as HD-036 for maintainer prioritization.
+
+**Suggested next step.** Decide priority: minimum-viable quest demo for Chicago is gaps 1-5 (4× small + 1× medium = ~1-2 sprint cycles of monolith work) + the harness can prove completion with `initialInventory`. Without ingredient routines, a fresh resident can't do the quest cold, but a research-demo CAN show the quest mechanic working.
+

@@ -36,6 +36,52 @@ spawnPosition:
   x: 3221
   y: 3218
   level: 0
+nervousSystem:
+  - id: hans-courtyard-greet-chat
+    priority: 72
+    condition:
+      kind: event_kind
+      value: chat
+    cooldownTicks: 90
+    action:
+      kind: say
+      text: A good day in the courtyard, friend.
+  - id: hans-combat-aside
+    priority: 75
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 200
+    action:
+      kind: say
+      text: A blade scrapes leather — that's a sound I never miss.
+  - id: hans-took-a-hit
+    priority: 77
+    condition:
+      kind: event_kind
+      value: hit
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: Easy now — keep your feet, friend.
+  - id: hans-low-attention-patrol-mutter
+    priority: 64
+    condition:
+      kind: attention_lte
+      value: 8000
+    cooldownTicks: 240
+    action:
+      kind: say
+      text: The bells from the chapel are due any moment.
+  - id: hans-stranger-on-death
+    priority: 70
+    condition:
+      kind: event_kind
+      value: death
+    cooldownTicks: 300
+    action:
+      kind: say
+      text: That's one more name to remember.
 ---
 
 # Hans

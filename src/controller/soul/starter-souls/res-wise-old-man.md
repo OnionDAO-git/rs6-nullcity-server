@@ -34,6 +34,43 @@ spawnPosition:
   x: 3088
   y: 3253
   level: 0
+nervousSystem:
+  - id: wise-aphorism-on-chat
+    priority: 68
+    condition:
+      kind: event_kind
+      value: chat
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: Ah. The fire that warmed kings cooks the same fish.
+  - id: wise-warn-on-attack
+    priority: 76
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 220
+    action:
+      kind: say
+      text: Pick your fights. Most need not be picked at all.
+  - id: wise-mark-a-death
+    priority: 74
+    condition:
+      kind: event_kind
+      value: death
+    cooldownTicks: 300
+    action:
+      kind: say
+      text: One more for the long memory.
+  - id: wise-quiet-low-attention
+    priority: 60
+    condition:
+      kind: attention_lte
+      value: 9000
+    cooldownTicks: 360
+    action:
+      kind: say
+      text: A bench, a cup of tea, and a quiet morning — that's plenty.
 ---
 
 # The Wise Old Man

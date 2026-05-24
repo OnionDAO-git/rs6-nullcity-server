@@ -37,6 +37,43 @@ spawnPosition:
   x: 3242
   y: 3208
   level: 0
+nervousSystem:
+  - id: aereck-bless-on-chat
+    priority: 70
+    condition:
+      kind: event_kind
+      value: chat
+    cooldownTicks: 120
+    action:
+      kind: say
+      text: Bless this ground beneath us.
+  - id: aereck-mourn-on-death
+    priority: 76
+    condition:
+      kind: event_kind
+      value: death
+    cooldownTicks: 240
+    action:
+      kind: say
+      text: May the altar light their way home.
+  - id: aereck-soothe-after-hit
+    priority: 74
+    condition:
+      kind: event_kind
+      value: hit
+    cooldownTicks: 200
+    action:
+      kind: say
+      text: Steady — the altar restores Prayer when you are ready.
+  - id: aereck-quiet-vigil-low-attention
+    priority: 62
+    condition:
+      kind: attention_lte
+      value: 9000
+    cooldownTicks: 300
+    action:
+      kind: say
+      text: A breath of incense, and the quiet between prayers.
 ---
 
 # Father Aereck

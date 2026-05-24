@@ -6,6 +6,7 @@ import { produceStandingTierLetter } from './letters-producer';
 import type { LettersStore } from './letters-store';
 import { StandingLedger, StandingTier } from './standing-ledger';
 import { ResidentRuntime } from '../resident-runtime';
+import { residentSlug } from '../memory/runtime-state';
 
 export interface OfferToResidentRequest {
     humanId: string;
@@ -47,6 +48,14 @@ export interface PatronGatewayOptions {
      * `stranger` sentinel are skipped (per `isUserFacingTier`).
      */
     lettersStore?: LettersStore;
+    /**
+     * Optional memory root (same `config.memory.dir` the LibraryUpdater uses).
+     * When present, {@link PatronGateway.askResident} appends `patron_ask`
+     * events directly to `library/<slug>/timeline.jsonl`. When absent the
+     * ask verb still returns ok but writes nothing — useful for in-process
+     * test scenarios that don't care about persistence.
+     */
+    memoryDir?: string;
     onResidentBorn?: (name: string) => void | Promise<void>;
     now?: () => Date;
 }
@@ -224,10 +233,29 @@ export class PatronGateway {
         };
     }
 
-    async witnessAt(humanId: string, landmarkId: string, residentName?: string): Promise<PatronEventOutcome> {
+    /**
+     * Bear witness to a resident accomplishment (artifact / landmark). Writes
+     * a `patron_witness` event to the resident's trajectory + library timeline
+     * AND — when a `residentName` is supplied — credits the patron a small
+     * standing bump (default +3) against the resident's faction. The standing
+     * bump may cross a tier threshold, in which case a standing-tier letter is
+     * dispatched via {@link dispatchTierLetter} (same path as `offerTo`).
+     *
+     * `amount` defaults to 3 Shards-equivalent standing points: smaller than
+     * an `offerTo` (since no Shards changed hands) but still enough that the
+     * 4th witness-without-a-prior-offer pushes a patron over `acquaintance`.
+     */
+    async witnessAt(
+        humanId: string,
+        landmarkId: string,
+        residentName?: string,
+        amount: number = 3,
+    ): Promise<PatronEventOutcome> {
         const now = this.resolveTime();
         const nowString = now.toISOString();
         const eventId = `witness-${humanId}-${landmarkId}-${now.getTime()}`;
+
+        let standingDelta: PatronEventOutcome['standingDelta'];
 
         if (residentName) {
             const runtime = this.options.runtimes.get(residentName);
@@ -247,7 +275,105 @@ export class PatronGateway {
                         artifact: landmarkId,
                     });
                 }
+
+                if (amount > 0 && Number.isInteger(amount)) {
+                    const faction = (runtime.getState() as any).faction || 'embassy';
+                    const standingResult = this.options.standingLedger.recordSupport(humanId, faction, amount, {
+                        reason: 'patron_witness',
+                        ts: nowString,
+                    });
+                    this.dispatchTierLetter({
+                        humanId,
+                        faction,
+                        residentName,
+                        tierCrossed: standingResult.tierCrossed,
+                        amount,
+                        ts: nowString,
+                    });
+                    standingDelta = {
+                        factionId: faction,
+                        before: this.options.standingLedger.points(humanId, faction) - amount,
+                        after: this.options.standingLedger.points(humanId, faction),
+                        tierCrossed: standingResult.tierCrossed || undefined,
+                    };
+                }
             }
+        }
+
+        return { ok: true, eventId, standingDelta };
+    }
+
+    /**
+     * Patron asks a resident a question. Writes a `patron_ask` event to the
+     * resident's library timeline (with the question text), so the next time
+     * the resident's prompt envelope is rendered the Brain has a beat for it.
+     *
+     * NOTE: this verb does NOT (yet) synthesize a `chat` PerceptionEvent on
+     * the resident's runtime queue. That would require touching
+     * `resident-runtime.ts` (Codex zone). Filed as coordination gap — the
+     * patron-acknowledge nervous-system reflex therefore will NOT fire on
+     * this verb. The Brain will see the question only on next wake, via the
+     * library-timeline memory rendering.
+     *
+     * @returns event metadata including `eventId` and no `standingDelta`
+     *   (ask is a "free" signal — no Shards moved, no standing bump).
+     */
+    async askResident(
+        humanId: string,
+        residentName: string,
+        question: string,
+    ): Promise<PatronEventOutcome> {
+        if (!humanId || !residentName || !question || question.trim().length === 0) {
+            return { ok: false, eventId: '', error: 'invalid_amount' };
+        }
+
+        const runtime = this.options.runtimes.get(residentName);
+        if (!runtime) {
+            return { ok: false, eventId: '', error: 'resident_not_found' };
+        }
+
+        const now = this.resolveTime();
+        const nowString = now.toISOString();
+        const eventId = `ask-${humanId}-${residentName}-${now.getTime()}`;
+
+        const tick = runtime.getState().tick;
+
+        // Write `patron_ask` directly to the library timeline. We bypass
+        // LibraryUpdater.observePatron because its PatronEvent.kind union is
+        // currently restricted to `patron_gift | patron_witness | patron_sponsor`;
+        // widening that type ripples through significance/portrait/memory
+        // renderers (out of scope for this slice). Direct append keeps the
+        // event on disk where the prompt envelope can read it.
+        const memoryDir = this.options.memoryDir;
+        if (memoryDir) {
+            const libraryDir = path.join(memoryDir, 'library', residentSlug(residentName));
+            fs.mkdirSync(libraryDir, { recursive: true });
+            const timelinePath = path.join(libraryDir, 'timeline.jsonl');
+            // lifeIndex is best-effort: read the library index if present, else 1.
+            let lifeIndex = 1;
+            const indexPath = path.join(libraryDir, 'index.json');
+            if (fs.existsSync(indexPath)) {
+                try {
+                    const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as { lives?: number };
+                    if (typeof parsed.lives === 'number' && Number.isFinite(parsed.lives)) {
+                        lifeIndex = parsed.lives;
+                    }
+                } catch {
+                    // fall through with lifeIndex=1
+                }
+            }
+            const entry = {
+                schemaVersion: 1,
+                ts: nowString,
+                tick,
+                sessionId: 'external',
+                kind: 'patron_ask',
+                patronHandle: humanId,
+                question,
+                lifeIndex,
+                significanceReasons: ['patron:patron_ask'],
+            };
+            fs.appendFileSync(timelinePath, `${JSON.stringify(entry)}\n`);
         }
 
         return { ok: true, eventId };

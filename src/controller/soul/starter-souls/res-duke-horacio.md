@@ -39,6 +39,43 @@ spawnPosition:
   x: 3222
   y: 3219
   level: 1
+nervousSystem:
+  - id: duke-formal-greet-on-chat
+    priority: 72
+    condition:
+      kind: event_kind
+      value: chat
+    cooldownTicks: 120
+    action:
+      kind: say
+      text: Well met. The duchy stands open to you.
+  - id: duke-decline-combat-on-attack
+    priority: 76
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 240
+    action:
+      kind: say
+      text: The duchy keeps a constabulary for that, friend.
+  - id: duke-honour-the-fallen
+    priority: 74
+    condition:
+      kind: event_kind
+      value: death
+    cooldownTicks: 300
+    action:
+      kind: say
+      text: Aye. A name for the archive, and a candle from Father Aereck.
+  - id: duke-castle-aside-low-attention
+    priority: 62
+    condition:
+      kind: attention_lte
+      value: 9000
+    cooldownTicks: 300
+    action:
+      kind: say
+      text: The kitchen smells are early today — Cook is busy below.
 ---
 
 # Duke Horacio of Lumbridge
