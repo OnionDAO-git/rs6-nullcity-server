@@ -171,6 +171,8 @@ LettersStore slugs are case-insensitive: `Alice@Onion` and `alice@onion` are the
 | `patron:ask` | Patron asks a resident a free-text question; resident sees a `chat` perception event + the patron-acknowledge reflex fires within ~1s. | Patron wants a verbal interaction (resident may say something back). |
 | `patron:witness` | Patron records that they witnessed a resident's act (skill milestone, brave fight, etc.) — bumps standing without spending Shards. | Free-tier visitor moments; gives standing without requiring a Shard balance. |
 
+> **Standing is permanent.** Once a patron reaches Acquaintance (≥10 pts), Ally (≥30), or Officer (≥75) of a faction, that tier is theirs forever. There is no decay, demotion, or expiration. Their inbox letters persist; their epitaph letters dispatch regardless of how long ago the support happened. See `intelligence-verification-log.md` § E43 + HD-046.
+
 ```bash
 # Ask a resident a question (immediate visible say within ~1s)
 npm run patron:ask -- --human alice@onion --resident res:hans --text "Hans, what is the best way to get to Varrock?"

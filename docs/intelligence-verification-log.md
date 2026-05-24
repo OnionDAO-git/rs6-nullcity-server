@@ -2323,3 +2323,47 @@ Identical `dispatchedAt` on all letters proves the LettersStore subject-widened 
 
 **Owner suggestion.** claude (re-verify); Codex if cohort souls want per-archetype rules.
 
+
+### E43 — standing decay policy audit (spec-queued E23)
+
+**Status:** RESOLVED-as-DESIGN — standing is monotonically increasing by design; no decay anywhere in code
+**Tier:** 1 (read-only code + spec + live evidence)
+**Date:** 2026-05-24 23:40 claude
+
+**Hypothesis.** The patron-loop spec lists "decay rate" as an open maintainer-input item. Does the live implementation have any time-based decay, tier demotion, or aging mechanism on `StandingLedger`? Once a patron reaches Officer, is it forever?
+
+**Repro.**
+- `grep -nE "decay|expire|stale|reduceSupport|deduct|halflife|temporal|now\(\)|Date" src/controller/patron/standing-ledger.ts src/controller/patron/check-in-tracker.ts src/controller/patron/patron-store.ts`
+- `grep -rn "standingDecay\|decayStanding\|tier.*demot\|reduceStanding\|standing.*reduce" src/ --include="*.ts"`
+- Schema inspection: `standing-ledger.ts:67` requires `amount: z.number().int().positive()`.
+- Runtime guard: `standing-ledger.ts:127` calls `requirePositiveInteger(amount)` rejecting any non-positive support.
+- Schema snapshot: `points: z.record(z.string(), z.number().int().nonnegative())` cannot rehydrate negative balances.
+- Live evidence: scanned all 8 humanIds in `data/controller/memory/patron-standing.json#history`. Every entry has positive amount. Zero negatives. Zero "decay" or "reduction" reasons.
+- Spec evidence: `docs/superpowers/specs/2026-05-22-patron-loop-design.md:97` flags decay rate as "maintainer decision: pick the name and decay rate." Line 277 says "permanent: boolean; // founded_by is permanent; others can decay" — but this is about LandmarkCredit (artifact plaques), NOT StandingLedger. Line 500 "Resident attention decay rate per tick" is RESIDENT attention (decays via spendAttention), NOT patron STANDING.
+
+**Observation.**
+
+| layer | decay? | live evidence |
+|---|---|---|
+| StandingLedger.recordSupport | **NO** — positive-int only, additive only | 8 humans × all-positive history |
+| StandingLedger.history pruning | **NO** — entries accumulate forever | full history visible per pair |
+| Zod schema | **REJECTS** negative input + nonneg points | runtime guard fires immediately |
+| check-in-tracker.ts | **NO decay or expire** | none of the keywords match |
+| Spec design intent | **OPEN — never decided by maintainer** | line 97 flag |
+| LandmarkCredit (a different store) | YES per spec field `permanent: boolean` | not exercised yet (not in patron-standing.json) |
+
+**Verdict: standing is monotonically permanent.** Once a patron reaches Officer (≥75 points), they are forever Officer of that faction with no mechanism (in code OR in admin tooling) for demotion or aging.
+
+**Sub-findings.**
+
+- **F43a (DESIGN / DEFAULT-DECISION).** This is not a bug — it's an unmade decision. The default has been "permanent" since J-α-2 landed and the runtime guards lock it in. For Chicago, this is arguably GOOD: patron relationships are permanent narrative records. A patron who sponsors a resident once retains their Officer standing forever; their epitaph letters are dispatched no matter how long ago the support happened.
+- **F43b (POSITIVE).** No "demote due to inactivity" silent failure mode possible. Even if a patron is inactive for months, their tier stays. Their inbox letters persist.
+- **F43c (NEUTRAL).** If decay is ever desired (game-economy reason: prevent early adopters from monopolizing Officer slots indefinitely), it'd be a substrate change to add a `reduceSupport` op that emits a `standing_demoted` letter. Not Chicago-relevant.
+- **F43d (HD-045 ADDENDUM).** Drilled into HD-045 (rule-ID drift claim). E29 line 1778 actually cites `nervous:aereck-bless-on-chat` + `nervous:aereck-quiet-vigil-low-attention` — both are CORRECT on-disk rule IDs. The drift was in MY PROMPT to subagent E40 (I gave wrong rule IDs from memory in the prompt context); the actual docs in `intelligence-verification-log.md` are correct. **HD-045 downgraded to false-alarm; closing as obsolete.**
+
+**Classification.** RESOLVED — DESIGN-decision-by-default. NOT a bug.
+
+**Suggested next step.** Document this explicitly: (a) close HD-046 (new) as "Decided-by-default standing is permanent" so future agents don't re-investigate; (b) update `docs/embassy-staff-runbook.md` with one-line "Standing is permanent — once Officer, always Officer" note; (c) update `docs/superpowers/specs/2026-05-22-patron-loop-design.md` line 97 to record the default decision.
+
+**Owner suggestion.** claude (docs); maintainer ratifies post-Chicago if they want decay added.
+

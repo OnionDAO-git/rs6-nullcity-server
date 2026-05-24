@@ -95,6 +95,7 @@ This spec defines the **eight mechanics** that turn a passing player into a patr
 ### 1. `<CURRENCY>` (J1)
 
 **Maintainer decision: pick the name and decay rate.**
+**Update 2026-05-24 (HD-046, E43):** the rs6 implementation picked the name "Shards" and made standing **permanent by default** (no decay). Once Officer, forever Officer. CurrencyLedger balance still decreases with `patron:offer` spending (that's the natural Shards economy); StandingLedger is monotonic and accumulates forever. Patron narrative relationships persist across all controller restarts and time. If decay is ever desired post-Chicago, it'd be a substrate change adding a `reduceSupport` op + `standing_demoted` letter kind.
 
 Currency is an in-game / DB-backed unit. v2 calls it Shards (+1 per workshop attended, +2 referral, +1 daily); rs6 should pick a RuneScape-flavored name that's distinct from existing RS currencies (gp, tokens, points). Working name throughout this spec: `<CURRENCY>`.
 
