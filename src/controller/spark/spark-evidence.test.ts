@@ -260,6 +260,30 @@ describe('Spark evidence integration', () => {
         );
     });
 
+    it('labels no-cause action completions instead of emitting anonymous decisions', async () => {
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: JSON.stringify({ actions: [{ kind: 'say', text: 'Still thinking.' }] }),
+                nooped: false,
+            })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('completion_action');
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'decision',
+                    cause: 'completion_action',
+                    actionKinds: ['say'],
+                }),
+            ]),
+        );
+    });
+
     it('turns an empty hero idle-reflection completion into a visible idle initiative when due', async () => {
         const { builder, trajectoryPath } = evidence();
         const llm = {

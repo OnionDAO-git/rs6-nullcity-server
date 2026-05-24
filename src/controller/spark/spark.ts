@@ -248,6 +248,7 @@ export class Spark {
                     decisionCause = 'empty_completion';
                 }
             }
+            decisionCause ??= inferUnnamedCompletionCause(parsed, actions);
             this.options.evidence?.recordDecision({
                 cause: decisionCause,
                 moduleId: this.options.moduleIdentity?.id,
@@ -419,6 +420,22 @@ function isEmptyParsedCompletion(parsed: ParsedCompletion, actions: AgentAction[
         !parsed.retireNervousRule?.length &&
         !parsed.proposeVariables?.length
     );
+}
+
+function inferUnnamedCompletionCause(parsed: ParsedCompletion, actions: AgentAction[]): string {
+    if (parsed.plan) {
+        return 'plan_generated';
+    }
+    if (actions.length > 0) {
+        return parsed.actions.some(action => action.kind === 'noop') ? 'candidate_fallback' : 'completion_action';
+    }
+    if (parsed.proposeHook?.length || parsed.retireHook?.length || parsed.proposeNervousRule?.length || parsed.retireNervousRule?.length || parsed.proposeVariables?.length) {
+        return 'completion_self_modification';
+    }
+    if (parsed.memo?.length || parsed.indexPatch?.append?.length) {
+        return 'completion_memory_update';
+    }
+    return 'completion';
 }
 
 function sha256(value: string): string {
