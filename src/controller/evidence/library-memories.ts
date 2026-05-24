@@ -76,6 +76,40 @@ function isPatronKind(kind: unknown): boolean {
     return kind === 'patron_gift' || kind === 'patron_witness' || kind === 'patron_sponsor';
 }
 
+/**
+ * Translate a `LibraryUpdater.observeRevival` cause string into first-person
+ * narrative the Brain can react to. Unknown causes pass through verbatim so
+ * future cause kinds remain legible even before this table is updated.
+ */
+function humanizeRevivalCause(cause: string): string {
+    switch (cause) {
+        case 'restart_respawn_policy':
+            return 'after a controller restart';
+        case 'operator_revive_attention_exhausted':
+            return 'after my attention ran out — an operator restored me';
+        case 'operator_revive_manual':
+            return 'an operator chose to bring me back';
+        case 'attention_exhausted':
+            return 'after my attention ran out';
+        default:
+            return cause;
+    }
+}
+
+/** "1st", "2nd", "3rd", "4th"... — small UX touch for life-count narration. */
+function ordinal(n: number): string {
+    const mod100 = n % 100;
+    if (mod100 >= 11 && mod100 <= 13) {
+        return `${n}th`;
+    }
+    switch (n % 10) {
+        case 1: return `${n}st`;
+        case 2: return `${n}nd`;
+        case 3: return `${n}rd`;
+        default: return `${n}th`;
+    }
+}
+
 function renderEventAsMemory(event: Record<string, unknown>): string {
     const ts = typeof event.ts === 'string' ? event.ts.slice(0, 19).replace('T', ' ') : 'unknown time';
     const kind = typeof event.kind === 'string' ? event.kind : 'event';
@@ -106,6 +140,22 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
         case 'patron_sponsor': {
             const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
             return `Patron sponsor: ${handle} (${ts})`;
+        }
+        case 'revival': {
+            // E44 (intelligence-verification-log.md § E44, task #156): revival
+            // events from `LibraryUpdater.observeRevival` ship `lifeIndex`
+            // (this is my Nth life) + `cause` (why I'm back). Render as
+            // first-person narrative so the Brain's prompt envelope sees the
+            // continuity break and can reflect on it instead of treating
+            // revival as anonymous noise.
+            const cause = typeof event.cause === 'string' && event.cause.length > 0
+                ? humanizeRevivalCause(event.cause)
+                : 'cause unknown';
+            const lifeIndex = typeof event.lifeIndex === 'number' && Number.isFinite(event.lifeIndex) && event.lifeIndex > 0
+                ? event.lifeIndex
+                : undefined;
+            const livesClause = lifeIndex !== undefined ? `this is my ${ordinal(lifeIndex)} life — ` : '';
+            return `I returned to life — ${livesClause}${cause} (${ts})`;
         }
         default: {
             const note = typeof event.note === 'string' ? `: ${event.note}` : '';

@@ -178,6 +178,106 @@ describe('readRecentLibraryMemories', () => {
         expect(memory).toContain('10');
         expect(memory).toMatch(/acquaintance/i);
     });
+
+    // E44 (intelligence-verification-log.md § E44, task #156): revival events
+    // from LibraryUpdater.observeRevival ship lifeIndex + cause; render as
+    // first-person narrative so the Brain prompt envelope can react to the
+    // continuity break instead of seeing anonymous noise from the default.
+    describe('E44: revival event first-person narrative rendering', () => {
+        it('renders a revival event with humanized cause + ordinal lifeIndex', () => {
+            writeTimeline('res:agent', [
+                {
+                    schemaVersion: 1,
+                    ts: '2026-05-24T17:35:23.486Z',
+                    tick: 3528,
+                    sessionId: 'external',
+                    kind: 'revival',
+                    cause: 'operator_revive_attention_exhausted',
+                    lifeIndex: 2,
+                    significanceReasons: ['life:revival'],
+                },
+            ]);
+
+            const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+            expect(memory).toContain('I returned to life');
+            expect(memory).toContain('2nd life');
+            expect(memory).toContain('attention ran out');
+            expect(memory).toContain('operator restored me');
+            expect(memory).toContain('2026-05-24 17:35:23');
+        });
+
+        it('humanizes the restart_respawn_policy cause used by ResidentRuntime.applyRestartRespawnPolicy', () => {
+            writeTimeline('res:agent', [
+                {
+                    schemaVersion: 1,
+                    ts: '2026-05-24T18:00:00.000Z',
+                    tick: 4000,
+                    sessionId: 'external',
+                    kind: 'revival',
+                    cause: 'restart_respawn_policy',
+                    lifeIndex: 5,
+                    significanceReasons: ['life:revival'],
+                },
+            ]);
+
+            const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+            expect(memory).toContain('5th life');
+            expect(memory).toContain('after a controller restart');
+            expect(memory).not.toContain('restart_respawn_policy'); // raw cause is humanized away
+        });
+
+        it('falls back gracefully when cause + lifeIndex are missing or unknown', () => {
+            writeTimeline('res:agent', [
+                {
+                    schemaVersion: 1,
+                    ts: '2026-05-24T19:00:00.000Z',
+                    tick: 5000,
+                    sessionId: 'external',
+                    kind: 'revival',
+                    cause: 'novel_future_cause_we_havent_humanized_yet',
+                    // no lifeIndex
+                    significanceReasons: ['life:revival'],
+                },
+            ]);
+
+            const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+            expect(memory).toContain('I returned to life');
+            expect(memory).toContain('novel_future_cause_we_havent_humanized_yet'); // unknown cause passes through verbatim
+            expect(memory).not.toMatch(/\dth life/); // no lifeIndex → no ordinal clause
+            expect(memory).not.toMatch(/\dst life/);
+        });
+
+        it('uses correct English ordinals (1st / 2nd / 3rd / 11th / 21st)', () => {
+            const ordinals: Array<[number, string]> = [
+                [1, '1st'],
+                [2, '2nd'],
+                [3, '3rd'],
+                [4, '4th'],
+                [11, '11th'],
+                [12, '12th'],
+                [13, '13th'],
+                [21, '21st'],
+                [22, '22nd'],
+                [101, '101st'],
+            ];
+            const lines = ordinals.map(([n], i) => ({
+                schemaVersion: 1,
+                ts: `2026-05-24T${String(10 + i).padStart(2, '0')}:00:00.000Z`,
+                tick: 1000 + i,
+                sessionId: 'external',
+                kind: 'revival',
+                cause: 'attention_exhausted',
+                lifeIndex: n,
+                significanceReasons: ['life:revival'],
+            }));
+            writeTimeline('res:agent', lines);
+
+            const memories = readRecentLibraryMemories(tmpRoot, 'res:agent', ordinals.length);
+            ordinals.forEach(([, expectedOrdinal], i) => {
+                expect(memories[i]).toContain(`${expectedOrdinal} life`);
+            });
+        });
+    });
 });
 
 describe('readRecentPatronMemories', () => {

@@ -2367,3 +2367,45 @@ Identical `dispatchedAt` on all letters proves the LettersStore subject-widened 
 
 **Owner suggestion.** claude (docs); maintainer ratifies post-Chicago if they want decay added.
 
+
+### E44 — renderer polish: case 'revival' in library-memories.ts (task #156)
+
+**Status:** SHIPPED — substrate polish closes task #156
+**Tier:** 2 (TDD substrate fix, ~50 LOC total + 4 new tests)
+**Date:** 2026-05-24 23:55 claude
+**SHA:** pending (this cycle)
+
+**Hypothesis.** `LibraryUpdater.observeRevival` (E12 substrate, HD-028 wire-in) writes revival events to the library timeline carrying `kind: 'revival'`, `cause: string`, `lifeIndex: number`. The reader `library-memories.ts:renderEventAsMemory` had explicit cases for patron_witness / patron_gift / patron_sponsor but no case for revival — revival events fell through the generic `default:` and rendered as `revival at 2026-05-24 17:35`, losing both `lifeIndex` and `cause`. The Brain prompt envelope (E12 / I-β-2 wiring) sees this string and has nothing to react to.
+
+Live sample (`res-pip/timeline.jsonl`):
+```json
+{"kind":"revival","cause":"operator_revive_attention_exhausted","lifeIndex":2, ...}
+```
+
+Before polish: `revival at 2026-05-24 17:35:23` (no lifeIndex, no cause).
+After polish: `I returned to life — this is my 2nd life — after my attention ran out — an operator restored me (2026-05-24 17:35:23)`.
+
+**Fix (3 small additions to `library-memories.ts`, no monolith touch):**
+1. `humanizeRevivalCause(cause: string): string` switch over known causes (`restart_respawn_policy`, `operator_revive_attention_exhausted`, `operator_revive_manual`, `attention_exhausted`). Unknown causes pass through verbatim — keeps future causes legible before the table is updated.
+2. `ordinal(n: number): string` for "1st / 2nd / 3rd / 4th / 11th / 21st / 22nd / 101st" — handles the 11-13 teens irregularity correctly.
+3. `case 'revival'` in `renderEventAsMemory` switch — pulls `cause` + `lifeIndex` defensively (typeof guards), assembles `"I returned to life — this is my Nth life — <humanized cause> (TS)"`. Falls back gracefully when `lifeIndex` is missing.
+
+**Tests added (4 in `library-memories.test.ts`):**
+- Renders revival with humanized cause + ordinal lifeIndex (live `operator_revive_attention_exhausted` fixture).
+- Humanizes `restart_respawn_policy` correctly + strips raw cause from output.
+- Falls back gracefully when cause is unknown (passes through verbatim) AND lifeIndex is missing (no ordinal clause).
+- English ordinal correctness across 1st/2nd/3rd/4th/11th/12th/13th/21st/22nd/101st.
+
+**Gates.** Tests **1674/1674** (was 1669; +5 new — 4 E44 cases + the multi-fixture ordinal test internally checks 10 ordinals via loop), typecheck + lint clean.
+
+**Sub-findings.**
+- **F44a (POSITIVE / RESOLVED).** Task #156 closed. Revival events now produce Brain-readable first-person narrative.
+- **F44b (DESIGN INSIGHT).** The pattern `humanize<Field>` + ordinal helper generalizes — future event kinds (e.g. `death`, `tier_crossing`, `quest_completed`) can adopt the same humanization approach without touching the call sites.
+- **F44c (DEPENDENT GAIN).** Per E16 prior verification, revival events DO reach the Brain prompt envelope via `readRecentLibraryMemories`. With the new rendering, on the next controller restart, every hero who got revived after `attention_exhausted` will see something like `"I returned to life — this is my 3rd life — after my attention ran out — an operator restored me (2026-05-24 17:36:18)"` in their prompt context. Combined with E30 hero floor (HD-008), heroes can now narratively reflect on their continuity breaks instead of treating restart as opaque.
+
+**Classification.** ENGINE-polish, RESOLVED. Closes task #156.
+
+**Suggested next step.** Post-controller-restart, grep one resident's recent Brain prompt for the new revival narrative string. Optional follow-up: add similar polish for `death` events if they exist on the timeline.
+
+**Owner suggestion.** claude — no follow-up needed.
+
