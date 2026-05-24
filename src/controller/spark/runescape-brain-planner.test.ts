@@ -306,6 +306,11 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('scout-nearby-area');
     });
 
+    it('returns firemakingGoal for woodcutting/firemaking task ids used by QA souls', () => {
+        expect(benchmarkGoalForTask('woodcutting-firemaking-10m', 0)?.id).toBe('make-fire');
+        expect(benchmarkGoalForTask('make-fire-5m', 0)?.id).toBe('make-fire');
+    });
+
     it('returns undefined for an unknown taskId', () => {
         expect(benchmarkGoalForTask('unknown', 0)).toBeUndefined();
         expect(benchmarkGoalForTask(null, 0)).toBeUndefined();

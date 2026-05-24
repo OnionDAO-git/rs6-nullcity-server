@@ -263,6 +263,9 @@ export function followGoal(targetName: string, tick: number): ActiveGoalState {
  * unknown task ids.
  */
 export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | undefined {
+    if (taskId === 'make-fire-5m' || taskId === 'woodcutting-firemaking-10m') {
+        return firemakingGoal(tick);
+    }
     if (taskId === 'starter-fishing-5m') {
         return starterFishingGoal(tick);
     }

@@ -78,4 +78,34 @@ describe('SoulLoader', () => {
             expect(names).toEqual(expect.arrayContaining(['res:wise-old-man', 'res:hans', 'res:father-aereck']));
         });
     });
+
+    describe('specialized QA resident cohort', () => {
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        it('loads behavior-focused test residents with standard SPARK modules', () => {
+            const names = loader.listResidentNames();
+            expect(names).toEqual(
+                expect.arrayContaining(['res:qa-woodcutter', 'res:qa-angler', 'res:qa-guardian', 'res:qa-social']),
+            );
+
+            for (const name of ['res:qa-woodcutter', 'res:qa-angler', 'res:qa-guardian', 'res:qa-social']) {
+                const soul = loader.load(name);
+                expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
+                expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
+                expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+                expect(soul.frontmatter.attentionProfile?.startingAttention).toBeGreaterThanOrEqual(30000);
+            }
+        });
+
+        it('assigns each QA resident a distinct seeded behavior target', () => {
+            expect(loader.load('res:qa-woodcutter').frontmatter.legacy?.parameters?.benchmarkTask).toBe(
+                'woodcutting-firemaking-10m',
+            );
+            expect(loader.load('res:qa-angler').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
+            expect(loader.load('res:qa-guardian').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
+            expect(loader.load('res:qa-social').frontmatter.behavior).toEqual(
+                expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'social' }),
+            );
+        });
+    });
 });
