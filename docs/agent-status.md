@@ -329,3 +329,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 20:14 codex branch=agents/wip workstream=QA-speech-intent STARTING - align beacon Next text with active workflow goal. Files: hybrid thinking/test. Collision: avoid embassy/runtime/brain-planner WIP.
 2026-05-23 20:23 codex branch=agents/wip workstream=QA-speech-intent HANDOFF - fixed woodcutting Goal/Next mismatch; live controller local-91643 made WC/FM XP. Tests 1468/1468. Commit uncommitted. Collision: hybrid+roadmap WIP.
 2026-05-23 20:24 codex CORRECTION for 20:14 STARTING Files: docs/agent-status.md; docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md; src/controller/thinking/hybrid-agent-thinking-module.ts; src/controller/thinking/hybrid-agent-thinking-module.test.ts.
+2026-05-23 20:25 codex branch=agents/wip workstream=QA-speech-intent HANDOFF - pushed 170f109b movement+goal-beacon QA. Tests 1468/1468. Collision: embassy/runtime/brain-planner stay unstaged.
