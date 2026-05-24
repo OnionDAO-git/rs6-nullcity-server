@@ -145,12 +145,14 @@ Wrong resident name. Check `ls src/controller/soul/starter-souls/` for valid nam
 - Check the firewall isn't blocking port 43596
 
 ### Patron is not greeted when they enter the embassy
-The reception greeting is a substrate behavior — it only fires when:
-- The resident is **inside** Lumbridge churchyard
-- The patron's handle is in **the patron registry** (configured in `controller.yml`)
-- A patron-from chat event arrives in the resident's perception
+**Important Chicago-day reality (E50 / HD-018):** the automated implicit greeting reflex (D3) is substrate-ready but **NOT yet wired into the live runtime**. Hans / Father Aereck will NOT auto-greet a patron just because the patron walked into Lumbridge churchyard and spoke in-game. The substrate exists at `src/controller/embassy/reception-reflex.ts` and the wire-in template is at `docs/next-week-handoff-2026-05-26.md` § Slice 1 (post-Chicago workstream).
 
-If none of these conditions fires, no greeting happens. **This is expected behavior, not a bug.** Tap a maintainer if you need a hero to greet a specific patron deliberately.
+**What DOES work today** (verified E47 walkthrough): the CLI-driven path. Run `npm run patron:ask --human <handle> --resident res:hans --text "hi"` from the staffer console — Hans's `nervous:patron-memory-acknowledge` reflex (HD-031) fires within ~1-3 seconds and the hero says e.g. `"Thank you for the Shards, <handle>, and everyone backing me!"`. The patron's in-world experience is similar: they speak (via CLI proxy), the hero responds by name. Just the mechanism differs from a fully-wired implicit greeting.
+
+If a staffer wants an unambiguous welcome moment for a new arrival:
+1. Run `npm run patron:grant -- --human <handle> --amount 10` to credit a starter Shard balance.
+2. Run `npm run patron:offer -- --human <handle> --resident res:hans --amount 10` to fire the patron-acknowledge reflex AND cross them to Acquaintance tier (drops one welcome letter in their inbox).
+3. Hans says thanks by name within seconds; show the patron their inbox URL printed by the offer command.
 
 ### A letter doesn't reach the inbox
 1. Check `data/controller/memory/data/letters/<slug>/inbox.jsonl` exists.

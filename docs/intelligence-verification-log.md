@@ -2541,3 +2541,60 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 
 **Owner suggestion.** claude — Tuesday.
 
+
+### E50 — D3 embassy hero greeting reflex live audit (spec-queued E18)
+
+**Status:** CRITICAL — D3 reception reflex is DEAD CODE in production; parallels HD-043 LoreBus dead-in-prod finding
+**Tier:** 1 (read-only substrate + wire-in + live trajectory audit)
+**Date:** 2026-05-25 00:30 claude
+
+**Hypothesis.** EVENT-D3 (reception greeting) substrate landed `b38b937e` (2026-05-23). When a patron walks into Lumbridge churchyard and speaks in-game, a hero (Hans / Father Aereck) should emit a `"Welcome to the embassy, <name>."` say and fire a `witnessAt` patron event. Audit whether this fires live + identify any blockers.
+
+**Repro.**
+1. `grep -rn "evaluateReceptionGreeting" src/controller --include='*.ts'` — find all production callers.
+2. Grep all hero trajectories for `embassy_reception_greeting` cause:
+   ```bash
+   for r in res-hans res-father-aereck; do
+     for f in data/controller/memory/$r/evidence/trajectory/*.jsonl; do
+       grep -hE "embassy_reception_greeting|Welcome to the embassy" "$f" 2>/dev/null
+     done
+   done
+   ```
+3. Check `controller.yml#patrons[]` content.
+
+**Observation.**
+
+**Three compounding gaps make D3 a no-op at Chicago today:**
+
+| layer | state | evidence |
+|---|---|---|
+| `reception-reflex.ts` substrate | EXISTS + 15 tests passing | `src/controller/embassy/reception-reflex.ts` ships `evaluateReceptionGreeting()` pure function |
+| Production wire-in | **MISSING** | `grep evaluateReceptionGreeting` matches ONLY definition site + test file. Zero production callers in `resident-runtime.ts`, `controller-host.ts`, `nervous-system.ts`. HD-018 explicitly tracks this gap. |
+| Live trajectory evidence | **ZERO fires** across `res-hans` + `res-father-aereck` for all `embassy_reception_greeting` or `Welcome to the embassy` matches | Hero residents have never emitted the greeting in any session |
+| `controller.yml#patrons[]` registry | **EMPTY** (HD-011) | `grep patrons controller.yml` = 0 matches. Even if D3 were wired, the registry filter would reject every chat. |
+
+**Cross-substrate parallel:** This is the same failure mode as HD-043 (L-α LoreBus + L-β whisper substrates dead-in-prod). Both shipped + tested without wire-in. `docs/next-week-handoff-2026-05-26.md` § Slice 1 provides a complete 30-LOC wire-in template at `resident-runtime.ts:335` but **the file is in active Codex zone all weekend** (cooking-recovery, low-health-recovery, etc.) → claude has not been able to safely ship the wire-in per multi-agent safety rules.
+
+**Chicago-day implication:**
+- ❌ **In-game implicit path** ("patron walks in + speaks" → "Hans says hi by name"): WILL NOT FIRE. Substrate exists but is unreachable.
+- ✅ **CLI explicit path** (`patron:ask` / `patron:offer` / `patron:witness`): DOES work end-to-end (verified E47 — Hans thanked patron BY NAME twice via `nervous:patron-memory-acknowledge` reflex within seconds).
+- ⚠️ **HD-011 (empty `controller.yml#patrons[]`) is moot** until D3 is wired — populating the registry without wire-in does nothing.
+
+**Sub-findings.**
+
+- **F50a (DESIGN-GAP / HD-018 RECONFIRMED).** D3 substrate has been ready since `b38b937e` (2026-05-23) but the wire-in (~30 LOC) is blocked by Codex's continuous resident-runtime.ts activity. Slice 1 of `next-week-handoff-2026-05-26.md` documents exactly where + what to add.
+- **F50b (PRIORITY-DOWNGRADE for HD-011).** HD-011 ("populate `controller.yml#patrons[]`") is no longer High-priority pre-Chicago for D3's sake — D3 isn't wired anyway. HD-011 still matters for the OTHER patron-aware path (nervous-system.ts:49-54 `patronRegistry.getKind` check, which DOES have a wired caller in `ResidentRuntime`) and for the patron-acknowledge reflex's behavior when in-game chats arrive — but those are nice-to-have, not greeting-critical.
+- **F50c (POSITIVE / CHICAGO-RESILIENT).** The CLI-driven patron loop is fully functional. A real Chicago staffer using `patron:ask`/`patron:offer`/`patron:witness` will still produce visible hero acknowledgement, just via a different reflex (`nervous:patron-memory-acknowledge`, HD-031) — verified in E47 walkthrough. The narrative experience for the patron is similar: "I spoke at the embassy, Hans said my name." Just the mechanism differs.
+- **F50d (RECOMMENDATION).** Add an embassy-staff-runbook note: "Automated in-game greeting is unwired (post-Chicago workstream). Use `patron:ask` from the staffer console for guaranteed hero reaction." This sets correct expectations.
+
+**Classification.** DESIGN-GAP, parallel to HD-043. Wire-in deferred to post-Chicago or to a quiet Codex window.
+
+**Suggested next step.**
+1. Ship one-line clarification in `docs/embassy-staff-runbook.md` (this cycle).
+2. Update HD-018 with cross-ref to E50 + HD-011 priority downgrade note.
+3. Group D3-wire + L-α-3 + L-β-2 wire-ins as a single post-Chicago "Workstream WIRE" (~120 LOC total) targeted for any Codex-quiet window — these are the three substrate-ready-but-unwired pieces.
+
+**Owner suggestion.** Wire-in: Codex (or claude during a clean window in `resident-runtime.ts`). Doc clarifications: claude this cycle.
+
+
+
