@@ -167,6 +167,7 @@ type HybridPerception = {
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
+const PRESENCE_BEACON_VARIETY_AFTER_TICKS = 1000;
 const BRAIN_TIMEOUT_BACKOFF_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_EVERY_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_RADIUS = 12;
@@ -2522,7 +2523,41 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         cognition.lastPresenceBeaconTick = this.options.state.tick;
         cognition.lastGoalShareTick = this.options.state.tick;
-        return { kind: 'say', text: this.statusSpeech(perception, 'I am online', true) };
+        return { kind: 'say', text: this.statusSpeech(perception, this.presenceBeaconPrefix(perception), true) };
+    }
+
+    private presenceBeaconPrefix(perception: HybridPerception): string {
+        if (this.options.state.tick < PRESENCE_BEACON_VARIETY_AFTER_TICKS) {
+            return 'I am online';
+        }
+
+        const interval = Math.max(1, this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS);
+        const phase = Math.floor(this.options.state.tick / interval) % 4;
+        const nearby = this.presenceNearbySummary(perception);
+        if (phase === 1 && nearby) {
+            return `I see ${nearby} nearby`;
+        }
+        if (phase === 2) {
+            return nearby ? `I am scouting. Nearby I see ${nearby}` : 'I am scouting';
+        }
+        if (phase === 3) {
+            return nearby ? `I am working my route. Nearby I see ${nearby}` : 'I am working my route';
+        }
+        return nearby ? `I am checking this area. Nearby I see ${nearby}` : 'I am checking in';
+    }
+
+    private presenceNearbySummary(perception: HybridPerception): string | undefined {
+        const treeCount = (perception.nearby?.objects || []).filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId)).length;
+        const itemCount = perception.nearby?.worldItems?.length || 0;
+        const npcCount = perception.nearby?.npcs?.length || 0;
+        const playerCount = perception.nearby?.players?.length || 0;
+        const parts = [
+            countPhrase(treeCount, 'tree'),
+            countPhrase(itemCount, 'item'),
+            countPhrase(npcCount, 'NPC', 'NPCs'),
+            countPhrase(playerCount, 'player'),
+        ].filter((part): part is string => Boolean(part));
+        return joinSpeechList(parts.slice(0, 3));
     }
 
     private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false): string {
@@ -3911,6 +3946,26 @@ function clampStep(delta: number, maxStep: number): number {
         return 0;
     }
     return Math.sign(delta) * Math.min(Math.abs(delta), maxStep);
+}
+
+function countPhrase(count: number, singular: string, plural = `${singular}s`): string | undefined {
+    if (count <= 0) {
+        return undefined;
+    }
+    return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function joinSpeechList(parts: string[]): string | undefined {
+    if (parts.length === 0) {
+        return undefined;
+    }
+    if (parts.length === 1) {
+        return parts[0];
+    }
+    if (parts.length === 2) {
+        return `${parts[0]} and ${parts[1]}`;
+    }
+    return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
 }
 
 function getVisibleAggressors(perception: HybridPerception): Actor[] {

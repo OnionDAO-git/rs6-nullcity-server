@@ -5584,6 +5584,44 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('varies long-running presence beacons so live chat is not only an online status template', async () => {
+        const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const sheep = npc('Sheep', 3219, 3202);
+        const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 2521;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Practice scouting.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 2520,
+            lastBodyTick: 2520,
+            lastPresenceBeaconTick: 2300,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2521,
+                resident: residentAt(3218, 3201),
+                worldItems: [coins],
+                npcs: [sheep],
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions[0].kind).toBe('say');
+        const text = String((result.actions[0] as { text?: string }).text);
+        expect(text).toBe(
+            'I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.',
+        );
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('does not beacon an exploration-cooldowned pickup as the next step', async () => {
         const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
         const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
