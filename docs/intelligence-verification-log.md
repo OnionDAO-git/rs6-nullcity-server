@@ -859,3 +859,71 @@ Total scope estimate: ~250 lines BFF + ~400 lines Svelte. A single Dev cycle.
 
 **Owner suggestion.** Codex (controller restart + 5-line flag wire-in per HD-029). claude follows up with E14 to verify wall ticker behavior live.
 
+
+### E14 — combined post-restart verify (Codex 214ccc53 + 3 pre-restart-gated experiments)
+
+**Status:** E17 RESOLVED-by-codex@214ccc53; E16 deferred (no death pre-restart, wire correctly didn't fire); **E15 NEGATIVE — major INFERENCE gap surfaced**
+**Tier:** 1 (live HTTP curl + read-only trajectory scan, ~20 min)
+**Date:** 2026-05-24 16:55 claude
+
+**Hypothesis.** Codex's `214ccc53` ("Wire wall redaction controller flag") and the live `local-42413` restart with `--letters-http-port=43596 --wall-redact` simultaneously unblock E15 (E7 patron memory enrichment exercised live), E16 (E12 revival narrative), and E17 (HD-013 wall redaction over HTTP).
+
+**Repro.**
+1. `curl -s http://127.0.0.1:43596/v1/wall/snapshot` → expect masked recipients + empty bodies.
+2. `curl -s "http://127.0.0.1:43596/v1/inbox?human=claude-sprint-patron-v2"` → expect full bodies.
+3. `cat data/controller/memory/library/res-agent/index.json` → check `lives` and presence of `revival` events.
+4. Histogram + keyword scan of the post-restart trajectory `20260524T163225Z-local-42413-res-agent-1779640345603.jsonl` (839KB, 1726 ticks, ~30 min).
+
+**Observation.**
+
+**E17 (wall redaction live): PASS.** Sample wall snapshot row:
+```
+{"kind":"standing_tier_crossed","recipient":"c***-verify","senderResident":"res:agent",
+ "subject":"You are now Acquaintance of embassy","body":""}
+```
+And the inbox endpoint preserves full body for the patron's own URL:
+```
+{"recipient":"claude-sprint-patron-v2",
+ "subject":"You are now Acquaintance of embassy",
+ "body":"claude-sprint-patron-v2,\n\nYour support of res:agent reached the embassy. The clerks of embassy have noted your name; you are now known to us as an Acquaintance.\n\nYour most recent offering of 10 Shards brought you here. A small grace, and an honest one. Welcome.\n\n— Embassy Clerk"}
+```
+HD-013 IRL operational gap is fully closed end-to-end.
+
+**E16 (revival narrative): DEFERRED, behaving correctly.** `library/res-agent/index.json` reports `lives: 1`; res:agent was not in `deceased.cause === 'attention_exhausted'` state pre-restart (attention 119111, gentle decay). `applyRestartRespawnPolicy` correctly returned early per my regression test guard, so `observeRevival` did not fire. Live verification will happen organically when res:agent next dies.
+
+**E15 (patron memory in Brain output): NEGATIVE.** Post-restart trajectory (1726 ticks / 30 min / 333 decisions / 15 Brain calls / 16 says):
+- **0 says reference any patron keyword** (`patron|shard|acquaintance|james|sprint-patron|codex|claude|gift|offer|embassy`).
+- Say prefix variety is BETTER than ever (10 distinct templates including new "Scouting near X,Y", "Scouting area around X,Y" — Codex's compounding beacon work).
+- Action success 113/122 = **93%** (climbed back from E10's 89%).
+- Brain calls 15/333 decisions = 4.5% (down from E8's 7.5% — body_wait share grew).
+
+Verified the data IS reaching the Brain: `HybridAgentThinkingModule.promptMemories` (line 2705-2709) calls `memory.retrieve(name, query, MAX_PROMPT_MEMORIES=6)` and the E7-modified `MemoryStore.retrieve` returns the patron-events slice first. With 5 patron_gift events on file for res:agent (`alice@onion`, `claude-sprint-patron` x2, `claude-sprint-patron-v2`, `codex-qa`, `claude-e7-verify`), the Brain prompt window is loaded with patron lines.
+
+**Sub-findings.**
+
+**F14a (POSITIVE / RESOLVED-by-codex@214ccc53).** Wall redaction + inbox HTTP fully working at IRL-ready quality. Closes HD-013 live and `HD-026`.
+
+**F14b (DEFERRED, behaving correctly).** Revival wire-in null-safe path verified via "never deceased" regression test in E12 + observed live (no false revival event written for a living resident).
+
+**F14c (INFERENCE — the actual finding).** **The Brain has patron memories in its prompt and ignores them.** Possible causes:
+   1. **Prompt template gap**: the system prompt likely says "consider your memories" generically; doesn't say "if a memory mentions a patron by name, prefer to acknowledge them in your next say." Without that nudge, an LLM will treat 5 "Patron gift from X: 10 Shards (you are now acquaintance to them)" lines as biographical metadata, not conversational hooks.
+   2. **Memory section formatting buries them**: per `promptMemorySection` (line 2715-2721), all memories render as a bulleted "Recent Library memories and resident notes:" block. Patron events get the same prefix as `stuck_recovered` and `first_xp`. No visual hierarchy says "these are people; they matter."
+   3. **Competing instructions dominate**: Codex's recent beacon work (a570b560 / 60f5c293 / 01692a00 / 8b4b57f7) added strong direction toward status-beacon emission ("Goal: ... Next: chop tree at X,Y"). The Brain has clear, recent prompt-level reasons to produce scout speech and no prompt-level reason to produce thank-patron speech.
+
+**Classification.**
+- F14a: RESOLVED-by-codex@214ccc53 (DESIGN + OPS — IRL projection privacy closed).
+- F14b: PASS (correct null-safe behavior, organic verify deferred).
+- F14c: **INFERENCE / PROMPT** — the loop from on-disk patron event → Brain memory → in-world acknowledgment is half-closed. Substrate is right; prompt template doesn't exploit it.
+
+**Suggested next step.**
+
+Three layered fixes for F14c, in increasing scope:
+
+(a) **Prompt nudge (lightest, INFERENCE-side):** in the Brain system prompt (likely in `prompt-envelope.ts` or a constant in `hybrid-agent-thinking-module.ts`), add a single sentence: *"If your Recent Library memories mention a patron by name, and you have not thanked them in your most recent say, prefer a brief thank-them line over a generic status beacon."* ~5-line change. Substrate, no monolith logic.
+
+(b) **Dedicated patron section in prompt (medium, PROMPT-side):** in `promptMemorySection`, split memories into "Patrons (recent grace):" and "Other recent memories:" subsections. Patron lines get visual hierarchy. Forces the Brain to see the categorical distinction. ~30-line change in thinking module (Codex zone).
+
+(c) **Reflex (heaviest, deterministic):** new nervous-system rule that fires `say "Thank you for the support, X"` when (i) ≥1 patron_gift memory in the prompt-memories window AND (ii) no thank-X say in last 30 ticks AND (iii) no other higher-priority reflex pending. Doesn't depend on inference at all; closes the loop deterministically. ~40-line slice in nervous-system + tests. Most reliable for Chicago.
+
+**Owner suggestion.** (a) claude can ship next cycle if prompt template lives in substrate. (b)/(c) Codex zone (thinking + nervous-system). File as HD-031.
+
