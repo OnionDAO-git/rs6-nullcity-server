@@ -12,7 +12,7 @@ import type { MemoryStore } from './memory/memory-store';
 import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
 import { LettersStore } from './patron/letters-store';
-import { ResidentRuntime, type ResidentRuntimeGameSkill } from './resident-runtime';
+import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
 import type { ThinkingModule } from './thinking';
@@ -2148,6 +2148,101 @@ describe('ResidentRuntime modules', () => {
         expect(state.stuckSince).toBeUndefined();
         expect(state.cognition?.activeMove).toBeUndefined();
         expect(stateStore.save).toHaveBeenCalledWith(state);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('calls LibraryUpdater.observeRevival when restart respawn policy revives a deceased dev resident (HD-028 wire-in)', () => {
+        // E12 (intelligence-verification-log.md § E8 / F8a / HD-028).
+        // Codex's 4f62d181 added the runtime-state side of restart
+        // respawn but no narrative beat — the resident's evidence stream
+        // had nothing saying "I came back". claude shipped the substrate
+        // (LibraryUpdater.observeRevival) at f9968a16. This test pins
+        // the wire-in: when applyRestartRespawnPolicy actually mutates
+        // state, the library learns about it so the Brain's prompt
+        // envelope picks up a `revival` memory line on the next wake.
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-revival-evidence-'));
+
+        const state = stateFor('res:agent');
+        state.attention = 0;
+        state.deceased = {
+            date: '2026-05-24T13:21:19.155Z',
+            tick: 53908,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+        const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
+
+        const observeRevival = jest.fn();
+        const evidence: ResidentRuntimeEvidence = {
+            store: { appendTrajectory: jest.fn(), appendProgress: jest.fn(), beginSession: jest.fn() } as any,
+            sessionId: 'test-session',
+            trajectory: { recordPatron: jest.fn() } as any,
+            library: { observeRevival, observePatron: jest.fn(), observeTrajectory: jest.fn(), observeProgress: jest.fn() } as any,
+        };
+
+        new ResidentRuntime({
+            soul: soul('res:agent', {
+                attentionProfile: { startingAttention: 120000, decayCurve: 'gentle' },
+                respawnPolicy: 'on_restart',
+            } as Partial<Soul['frontmatter']>),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            evidence,
+        });
+
+        expect(observeRevival).toHaveBeenCalledTimes(1);
+        expect(observeRevival).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tick: state.tick,
+                cause: 'restart_respawn_policy',
+                ts: expect.stringMatching(/\d{4}-\d{2}-\d{2}T/),
+            }),
+        );
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('does NOT call observeRevival when the resident was never deceased', () => {
+        // Regression guard: restart respawn only fires when state had
+        // `deceased.cause === 'attention_exhausted'`. A living resident
+        // restarting should produce no false revival memory.
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-no-revival-evidence-'));
+
+        const state = stateFor('res:agent');
+        state.attention = 50000;
+        // no deceased field set
+        const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
+
+        const observeRevival = jest.fn();
+        const evidence: ResidentRuntimeEvidence = {
+            store: { appendTrajectory: jest.fn(), appendProgress: jest.fn(), beginSession: jest.fn() } as any,
+            sessionId: 'test-session-2',
+            trajectory: { recordPatron: jest.fn() } as any,
+            library: { observeRevival, observePatron: jest.fn(), observeTrajectory: jest.fn(), observeProgress: jest.fn() } as any,
+        };
+
+        new ResidentRuntime({
+            soul: soul('res:agent', {
+                attentionProfile: { startingAttention: 120000, decayCurve: 'gentle' },
+                respawnPolicy: 'on_restart',
+            } as Partial<Soul['frontmatter']>),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            evidence,
+        });
+
+        expect(observeRevival).not.toHaveBeenCalled();
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });

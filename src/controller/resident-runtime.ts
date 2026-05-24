@@ -185,6 +185,20 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         if (this.state.cognition?.activeMove) {
             this.state.cognition.activeMove = undefined;
         }
+
+        // HD-028 wire-in (E8/F8a + E12). The runtime-state mutations
+        // above bring the resident back, but without a library/timeline
+        // beat the Brain's next prompt envelope has no memory line about
+        // the continuity break. LibraryUpdater.observeRevival bumps
+        // `index.lives`, flips `currentState` back to 'living', and
+        // appends a `revival` event so the resident can acknowledge it
+        // (e.g. via a "I came back from somewhere quiet..." say). The
+        // substrate was shipped at f9968a16; this is the wire-in.
+        this.evidence?.library?.observeRevival({
+            ts: new Date().toISOString(),
+            tick: this.state.tick,
+            cause: 'restart_respawn_policy',
+        });
     }
 
     getState(): RuntimeState {

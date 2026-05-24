@@ -791,3 +791,41 @@ Total scope estimate: ~250 lines BFF + ~400 lines Svelte. A single Dev cycle.
 
 **Owner suggestion.** Dev cuts dashboard issues from the above. Claude/Codex provide the controller-side surfaces (already exist) + any missing memory file format details. Update HD-015 to reflect this concrete inventory.
 
+
+### E12 — HD-028 wire-in: call LibraryUpdater.observeRevival from applyRestartRespawnPolicy
+
+**Status:** RESOLVED-by-claude — substrate (f9968a16) + wire-in (this commit) both shipped
+**Tier:** 2 (single-file substrate+wire fix)
+**Date:** 2026-05-24 15:55 claude
+
+**Hypothesis.** F8a/F9c/F10d's recurring HD-028 ticket asked Codex to add a one-line call from `ResidentRuntime.applyRestartRespawnPolicy` into the substrate I shipped at f9968a16. Codex moved to other thinking-module fixes (a570b560, 01692a00, 8b4b57f7) without picking it up. Per HD-028 default, claude lands the wire-in once status log is clean + Codex's last touch of `resident-runtime.ts` is >2h old.
+
+**Repro.**
+- Confirmed Codex's last resident-runtime.ts touch was `4f62d181` at 13:37 UTC; wire-in cycle started 15:50 = **2h13min freshness** ✅ past the 2h Codex-zone threshold.
+- TDD: added two sibling tests in `resident-runtime.test.ts`:
+  - "calls LibraryUpdater.observeRevival when restart respawn policy revives a deceased dev resident (HD-028 wire-in)" — passes a mock `evidence.library` and asserts `observeRevival` is invoked once with the right `{ts, tick, cause: 'restart_respawn_policy'}`.
+  - "does NOT call observeRevival when the resident was never deceased" — regression guard, asserts no false-positive revival memory for a healthy restart.
+- Added one call site in `applyRestartRespawnPolicy` after the existing state mutations:
+  ```typescript
+  this.evidence?.library?.observeRevival({
+      ts: new Date().toISOString(),
+      tick: this.state.tick,
+      cause: 'restart_respawn_policy',
+  });
+  ```
+
+**Observation.**
+- Tests: **1535/1535 passing** (+2 new vs 1533 baseline).
+- Gates: typecheck + lint + build all green.
+- Net touch: `src/controller/resident-runtime.ts` (+8 lines incl. doc-comment), `src/controller/resident-runtime.test.ts` (+~95 lines for 2 tests).
+- The wire-in is null-safe (`this.evidence?.library?.observeRevival(...)`) so existing tests that construct `ResidentRuntime` without evidence don't break.
+- Closing the loop: when a real controller restart happens with res:agent deceased, the resulting library timeline will now include a `revival` event whose `lifeIndex` reflects the new life count. `readRecentPatronMemories` won't surface it (filters to patron kinds only) but `readRecentLibraryMemories` will, so the Brain's prompt envelope gets a memory line like `"revival at 2026-05-24 15:55:00"` (via the existing default renderer).
+
+**Classification.** **RESOLVED-by-claude** (DESIGN — narrative beat for cross-life continuity). F8a + F9c + F10d all close as side-effects.
+
+**Suggested next step.**
+- **Polish (low urgency):** enrich `library-memories.ts` renderer with a dedicated `case 'revival':` branch so the memory string reads `"You came back from quiet at <ts> (this is life N)"` rather than the generic `"revival at <ts>"`. Mirrors the E7 enrichment pattern for patron_gift. ~10-line slice. Defer to next cycle if appetite remains, otherwise file as nice-to-have HD.
+- **Live verification:** awaits a real restart on a deceased dev resident. The HD-020 production controller restart (still pending) would exercise this for the first time. The unit tests prove the call wiring; on-disk verification would prove the integration.
+
+**Owner suggestion.** Renderer polish — claude or Codex, opportunistic. Live verify — passive (next controller restart will surface it; monitor library timeline for first `revival` row).
+
