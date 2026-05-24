@@ -77,3 +77,101 @@
 ---
 
 *Generated 2026-05-24 ~10:35 CDT after the first live-verification cycle of this session.*
+
+---
+
+## VERIFY-2 — trajectory deep-read (2026-05-24 ~11:35 CDT)
+
+After VERIFY-1 bumped hero attention to 14k, scanned actual on-disk trajectory + progress files to verify per-resident behavior. Cron firing has produced no new behavior data because the running controller (PIDs 92175 + 97001) hasn't been restarted to reload the bumped soul files.
+
+### Findings
+
+**A. All 6 heroes are still deceased on-disk and producing no behavior.**
+
+Live `runtime-state.json` snapshot at 11:30:
+
+| Resident | tick | attention | deceased | reqsToday |
+|---|---|---|---|---|
+| res:agent          | 33946 | 7835 | NO | 0 |
+| res:hans           | 3528  | 0    | attention_exhausted | 243 |
+| res:father-aereck  | 3360  | 0    | attention_exhausted | 342 |
+| res:duke-horacio   | 1966  | 0    | attention_exhausted | 74  |
+| res:wise-old-man   | 3306  | 0    | attention_exhausted | 365 |
+| res:pip            | 3962  | 0    | attention_exhausted | 269 |
+| res:thrand         | 3987  | 0    | attention_exhausted | 219 |
+
+The numbers are identical to VERIFY-1 (~1h earlier). Heroes haven't ticked their attention or tick counters since the original death event. **The controller is still running them as deceased.**
+
+**Root cause:** soul file changes don't apply to already-loaded residents. The 14k attention bump in commit `0b9007f4` is on disk but the running controller cached the old 6–8k values when it spawned them yesterday. A controller restart is required for new values to take effect — and the maintainer hasn't restarted. **HD-020 filed.**
+
+**B. Deceased residents still consume tick budget.**
+
+`res:thrand`'s recent trajectory files (8 hours of them, going back to 08:12 UTC):
+
+```
+20260524T095253Z ... 893 begin_tick, 893 end_tick, 0 actions, 0 decisions, 0 say
+20260524T094615Z ... 579 begin_tick, 579 end_tick, 0 actions, 0 decisions, 0 say
+20260524T093615Z ... 617 begin_tick, 617 end_tick, 0 actions, 0 decisions, 0 say
+20260524T093122Z ... 483 begin_tick, 483 end_tick, 0 actions, 0 decisions, 0 say
+20260524T085446Z ... 3621 begin_tick, 3621 end_tick, 0 actions
+20260524T085141Z ... 293 begin_tick, 293 end_tick, 0 actions
+20260524T081715Z ... 3406 begin_tick, 3406 end_tick, 0 actions
+20260524T081202Z ... 517 begin_tick, 517 end_tick, 0 actions
+```
+
+The runtime keeps polling perception + writing trajectory rows for a dead resident indefinitely. No LLM cost (the Brain doesn't get called when deceased) but real disk + perception-fetch cost. **HD-019 filed** — propose `runtime.stop(name)` called from the death-loop AFTER `dispatchEpitaphs` returns.
+
+**C. res:agent (alive) is genuinely playing — at low quality.**
+
+Same latest session (~15 min wall-clock window):
+
+```
+916 begin_tick / 916 end_tick
+272 decision (Brain LLM calls — actively thinking)
+ 78 action_result
+ 70 action
+  65 action.move_to
+   8 say
+   3 action.interact
+   2 action.use_item_on_item
+```
+
+**Real say outputs (sample):**
+- "Heading to chop a nearby tree for logs. Steady work builds the foundation."
+- "I am online at 3193,3259. Goal: Gather logs from a nearby tree to progress woodcutting and support f..."
+- "I am online at 3199,3257. Goal: Gather logs from a nearby tree to progress woodcutting and support f..."
+- "I am online at 3201,3251. Goal: Gather logs from a nearby tree to progress woodcutting and support f..."
+
+The first say has a real plan-narrating voice. The next three are near-identical re-emissions of the same "I am online at X" template — the Brain is repeating itself across moves. The Brain LLM is producing genuine output but with very limited variation.
+
+**Real action samples:**
+```
+move_to (3190, 3259) cause=routine_loop_break
+move_to (3190, 3259) cause=continue_move
+move_to (3190, 3255) cause=woodcutting_level1_routine
+move_to (3190, 3255) cause=woodcutting_level1_routine
+move_to (3190, 3255) cause=woodcutting_level1_routine
+```
+
+Three consecutive identical moves to the same tile with cause `woodcutting_level1_routine`. This is the "non-closing-move" bug Codex is actively investigating per `QA-nonclosing-move` STARTING at 04:44 — the woodcutting routine keeps re-emitting the same move target without the resident actually approaching the tree.
+
+**Observable behavior summary:** res:agent IS doing things, but in a tight loop near (3190, 3255) without ever closing distance to chop. Brain produces genuine voice but with narrow variation across consecutive ticks.
+
+### What this means for the IRL event
+
+- **Heroes don't actually do interesting things autonomously without patron support.** The 14k floor will help once the controller restarts, but the deeper question is whether the Brain alone produces a watchable arc.
+- **Behavior shape today: ~95% move_to, ~10% repeat-say, ~5% interact/use_item.** Skill progression yes (woodcutting routine targets are correctly chosen) but the resident isn't completing actions.
+- **The Codex QA-nonclosing-move investigation is the right priority.** Patron support won't matter if residents never reach the tree.
+
+### Action items from VERIFY-2
+
+| # | Action | Owner | Status |
+|---|---|---|---|
+| 1 | Maintainer restarts controller to pick up VERIFY-1 attention bump | Maintainer | HD-020 |
+| 2 | Death loop calls `runtime.stop(name)` after dispatch | next available agent | HD-019 |
+| 3 | Codex's QA-nonclosing-move investigation must land before more behavior verification is useful | Codex (active per status log) | in-flight |
+| 4 | Once heroes alive again: re-read trajectories to confirm they actually move, chop, interact, talk to each other | claude (next cycle) | queued |
+
+---
+
+*Updated 2026-05-24 ~11:42 CDT after VERIFY-2 trajectory deep-read.*
