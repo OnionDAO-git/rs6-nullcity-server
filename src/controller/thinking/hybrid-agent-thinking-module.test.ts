@@ -2960,7 +2960,15 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(narration.actions).toEqual([]);
+        expect(narration.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: { x: 3200, y: 3200, level: 0 },
+                range: 6,
+                cause: 'low_health_return_to_anchor',
+            },
+        ]);
+        expect(narration.cause).toBe('low_health_return_to_anchor');
         expect(state.cognition?.pendingCombatNarration).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4875,7 +4883,7 @@ describe('HybridAgentThinkingModule', () => {
             perception({
                 tick: 121,
                 resident: {
-                    ...residentAt(3218, 3201),
+                    ...residentAt(3201, 3201),
                     hp: { current: 3, max: 10 },
                     inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
                     inCombat: false,
@@ -4886,8 +4894,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('presence_beacon');
         expect(result.actions[0]).toEqual({
             kind: 'say',
-            text: 'I am online at 3218,3201. Goal: Practice scouting. Need: food or time to heal before fighting.',
+            text: 'I am online at 3201,3201. Goal: Practice scouting. Need: food or time to heal before fighting.',
         });
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('returns toward the visibility anchor before roaming when low on health without food', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Practice scouting.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: { x: 3200, y: 3200, level: 0 },
+                range: 6,
+                cause: 'low_health_return_to_anchor',
+            },
+        ]);
+        expect(result.cause).toBe('low_health_return_to_anchor');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

@@ -2323,15 +2323,27 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const action = bodyLowHealthRecoveryAction(
             perception,
             this.options.state.resident,
-            hasCarriedFood ? undefined : this.pickupCooldowns(),
+            hasCarriedFood ? undefined : this.cognition().pickupCooldowns,
             this.options.state.tick,
         );
-        if (!action || this.isRepeatedAction(action)) {
+        if (action) {
+            if (this.isRepeatedAction(action)) {
+                return undefined;
+            }
+            this.rememberBodyAction(action);
+            return { action, cause: action.cause || 'low_health_recovery' };
+        }
+
+        const anchor = this.visibilityAnchor();
+        const here = perception.resident?.position;
+        const radius = this.behavior().returnToAnchorRadius ?? DEFAULT_RETURN_TO_ANCHOR_RADIUS;
+        if (!anchor || !here || distance(here, anchor) <= radius) {
             return undefined;
         }
 
-        this.rememberBodyAction(action);
-        return { action, cause: action.cause || 'low_health_recovery' };
+        const returnAction: AgentAction = { kind: 'move_to', target: anchor, range: radius, cause: 'low_health_return_to_anchor' };
+        this.rememberBodyAction(returnAction);
+        return { action: returnAction, cause: 'low_health_return_to_anchor' };
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
