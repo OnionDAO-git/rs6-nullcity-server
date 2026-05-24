@@ -720,3 +720,74 @@ post-6e34e8fb:          89% (E10)  ← regression
 
 **Owner suggestion.** F10c monitoring (claude). F10d wire-in (Codex or claude next cycle).
 
+
+### E11 — dashboard repo audit for patron/Shards UX visibility
+
+**Status:** OPEN — major DESIGN gap found in sibling repo; tracked under HD-015 (sharpened this cycle)
+**Tier:** 2 (sibling-repo audit, addresses user mandate "dashboard shows important stuff about agents")
+**Date:** 2026-05-24 15:25 claude
+
+**Hypothesis.** The maintainer's verbatim mandate includes "ensure the dashboard shows important stuff about agents and that humans can use shards to do interesting things with agents." HD-015 named five patron-related fields the dashboard probably doesn't surface. Audit the sibling repo (`/Users/james/Code/OnionDAO/rs6-nullcity-residents-dashboard`) to confirm.
+
+**Repro.**
+- `ls /Users/james/Code/OnionDAO/rs6-nullcity-residents-dashboard/packages/` → `observer / server / shared / web` (Bun + Svelte 5 + TypeScript, per README).
+- `grep -rni "patron|shard|standing|letter" packages/{server,web}/src --include="*.ts" --include="*.svelte" -l` → ONE file matches: `packages/web/src/App.svelte`.
+- Inspect those 2 matches in App.svelte:
+  - Line 253: `if (!/^[a-z0-9_]{1,20}$/.test(slug)) throw new Error('Resident names must use 1-20 lowercase letters...')` — slug-validation comment, no patron logic.
+  - Line 1165: `<div class="shard-line" aria-hidden="true">` — CSS class, visual decoration only (probably the chevron/divider styling).
+- `grep -nE "(\.get\(|\.post\(|\.route)" packages/server/src/index.ts` → enumerated all BFF routes. Patron-related: 0 of 25+ routes.
+
+**Observation.**
+
+Dashboard BFF routes present:
+```
+GET  /api/gateway/status
+GET  /api/controller/status
+GET  /api/controller/config
+GET  /api/overview                        ← residents + gateway + controller + recentEvents
+GET  /api/residents
+POST /api/residents
+POST /api/residents/:name/{connect|attach|detach|disconnect|pause|actions}
+DELETE /api/residents/:name
+GET  /api/runtime/:resident/stream
+GET  /api/runtime/:resident/{thinking|nervous-system|body|history|inference|memory/*}
+GET  /api/observe/*                       ← spectator
+GET  /api/souls
+GET  /api/logs
+GET  /api/benchmarks*
+```
+
+Dashboard BFF routes ABSENT:
+```
+/api/patrons                  ← currency balances / standing leaderboard
+/api/patrons/:handle/inbox    ← per-patron letter feed (the controller already has /v1/inbox)
+/api/embassy/schedule         ← current event window / staff hours
+/api/wall/snapshot            ← wall ticker JSON (controller already has /v1/wall/snapshot)
+/api/letters/recent           ← global recent letters feed for the operator
+/api/residents/:name/relationships  ← per-resident standing-by-patron view
+```
+
+The controller already exposes most of the source data:
+- `data/controller/memory/patron-currency.json` (handle → balance + history)
+- `data/controller/memory/patron-standing.json` (handle|faction → points + tier)
+- `data/controller/memory/data/letters/<handle>/inbox.jsonl` (per-patron inbox, atomic JSONL)
+- `data/controller/memory/library/<resident>/timeline.jsonl` (patron_gift/witness/sponsor events with E7-enriched amount + tier + attentionDelta)
+- HTTP `/v1/inbox?human=...` and `/v1/wall/snapshot` (when controller booted with `--letters-http-port`, per HD-026)
+
+**Classification.** Combined **DESIGN (dashboard repo, Dev-owned)** + **PROCESS (cross-repo coordination)**.
+- DESIGN: the dashboard SPEC.md (sections 1-3, derived from controller surfaces) does not mention patron/Shards/standing/letters at all — they were added to the controller AFTER the dashboard's spec was frozen.
+- PROCESS: HD-015 default ("File a single GitHub issue on the dashboard repo with this list; let Dev prioritize") still applies. The audit data here makes that issue concrete.
+
+**Suggested next step.**
+
+Concrete patch package for the dashboard repo (handoff to Dev for prioritization, NOT shipped from this repo):
+
+1. **`/api/patrons` (highest value)** — Reads `patron-currency.json` + `patron-standing.json` from `NULLCITY_MEMORY_ROOT` (already configured). Returns `[{handle, balance, standingByFaction: {factionId: {points, tier}}, recentEventCount}]` sorted by balance or recency. ~40-line BFF route + ~80-line Svelte panel.
+2. **`/api/letters/recent`** — Scans `data/letters/*/inbox.jsonl` (last N files mtime-sorted) and returns the most recent N letters across all patrons with `{kind, subject, recipient, ts, body}`. ~30-line BFF route + small Svelte feed.
+3. **`/api/residents/:name/relationships`** — Reads `library/<slug>/index.json#relationshipCounts` + scans timeline.jsonl for `patron_*` events; returns standing-by-patron rollup. ~25-line BFF route + small per-resident card section.
+4. **Pre-event readiness widget** — Combines: (a) controller pid + uptime, (b) HTTP-port-bound check for HD-026, (c) embassy schedule active-window flag, (d) live patron registry count from `controller.yml`. Single GET `/api/event/readiness` returning `{ok, blockers[]}`.
+
+Total scope estimate: ~250 lines BFF + ~400 lines Svelte. A single Dev cycle.
+
+**Owner suggestion.** Dev cuts dashboard issues from the above. Claude/Codex provide the controller-side surfaces (already exist) + any missing memory file format details. Update HD-015 to reflect this concrete inventory.
+
