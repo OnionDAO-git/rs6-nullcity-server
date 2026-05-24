@@ -11,6 +11,8 @@ import {
     combatLootOrPrayerAction,
     combatTrainingAction,
     explorationAction,
+    explorationObjectCooldownKey,
+    explorationPatrolCooldownKey,
     firemakingAction,
     LUMBRIDGE_CASTLE_RANGE,
     levelOneWoodcuttingAction,
@@ -878,6 +880,64 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
     });
 
+    it('prioritizes moving toward openable gates over nearby generic scenery while exploring', () => {
+        const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
+        const gate = { objectId: 11993, position: { x: 107, y: 102, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, gate] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: gate.position, range: 1, cause: 'explore_open_obstacle' });
+    });
+
+    it('opens an adjacent gate while exploring instead of patrolling around it', () => {
+        const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [gate] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'interact', target: gate, option: 'open', cause: 'explore_open_obstacle' });
+    });
+
+    it('still opens an adjacent gate after its approach tile was visited', () => {
+        const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [gate] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            200,
+            { [explorationPatrolCooldownKey(gate.position)]: 199 },
+        );
+
+        expect(action).toEqual({ kind: 'interact', target: gate, option: 'open', cause: 'explore_open_obstacle' });
+    });
+
+    it('skips a gate when the object is cooling down from a blocked scouting attempt', () => {
+        const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
+        const gate = { objectId: 11993, position: { x: 107, y: 102, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, gate] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            200,
+            { [explorationObjectCooldownKey(gate)]: 49 },
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: nearbyScenery.position, range: 2, cause: 'explore_visible_object' });
+    });
+
     it('falls back to patrol when nothing is in sight (moves to a non-here patrol position)', () => {
         const action = explorationAction(
             perception({
@@ -907,6 +967,30 @@ describe('explorationAction', () => {
         );
 
         expect(action).toEqual({ kind: 'move_to', target: { x: 100, y: 103, level: 0 }, range: 1, cause: 'explore_patrol' });
+    });
+
+    it('expands patrol radius when nearby patrol targets are all on cooldown', () => {
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            50,
+            {
+                'patrol:103,100,0': 49,
+                'patrol:100,103,0': 49,
+                'patrol:97,100,0': 49,
+                'patrol:100,97,0': 49,
+            },
+        );
+
+        expect(action?.kind).toBe('move_to');
+        const target = (action as { target?: { x: number; y: number } } | undefined)?.target;
+        expect(target).toBeDefined();
+        expect(Math.max(Math.abs(Number(target?.x) - 100), Math.abs(Number(target?.y) - 100))).toBeGreaterThan(3);
     });
 
     it('skips an NPC that is on exploration cooldown', () => {

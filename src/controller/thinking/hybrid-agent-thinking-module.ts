@@ -96,6 +96,7 @@ import {
     isFiremakingGoal,
     isFollowGoal,
     isPrayerTrainingGoal,
+    isStandaloneFiremakingGoal,
     isStarterFishingGoal,
     isWoodcuttingTrainingGoal,
     parseBrainCompletion,
@@ -167,6 +168,8 @@ const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const BRAIN_TIMEOUT_BACKOFF_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_EVERY_TICKS = 600;
 const DEFAULT_RETURN_TO_ANCHOR_RADIUS = 12;
+const VISIBILITY_ANCHOR_RETURN_STEP_DISTANCE = 8;
+const VISIBILITY_ANCHOR_RETURN_DIRECT_DISTANCE = 24;
 const DEFAULT_FOLLOW_RADIUS = 2;
 const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const MOVE_COMMIT_TICKS = 24;
@@ -176,6 +179,10 @@ const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
 const EXPLORATION_MODEL_TARGET_MAX_DISTANCE = 6;
 const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
+const SCOUTING_ANCHOR_RETURN_MIN_GOAL_AGE_TICKS = 120;
+const SCOUTING_ANCHOR_RETURN_MIN_DISTANCE = 32;
+const SCOUTING_SKILL_OPPORTUNITY_MIN_GOAL_AGE_TICKS = 120;
+const SCOUTING_SKILL_OPPORTUNITY_COOLDOWN_TICKS = 900;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 const WORLD_TICK_RESET_DRIFT = 10_000;
 const TARGET_FAILURE_COOLDOWN_TICKS = 600;
@@ -207,9 +214,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.ensureCognition();
             this.cognition().tickTelemetry = undefined;
             this.ensureBenchmarkGoal();
+            this.observeCompletedLocalGoal(perception as HybridPerception);
 
             const directChat = await this.directChatAction(perception as HybridPerception, thinkId, { includeSmallTalk: false });
-            const directChatCancellation = this.cancelledResult(thinkId);
+            const directChatCancellation = this.cancelledResult(thinkId, perception as HybridPerception);
             if (directChatCancellation) {
                 return directChatCancellation;
             }
@@ -272,7 +280,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             if (!this.activeGoal() || !this.shouldRunBody()) {
                 const smallTalk = await this.directChatAction(perception as HybridPerception, thinkId, { includeSmallTalk: true });
-                const smallTalkCancellation = this.cancelledResult(thinkId);
+                const smallTalkCancellation = this.cancelledResult(thinkId, perception as HybridPerception);
                 if (smallTalkCancellation) {
                     return smallTalkCancellation;
                 }
@@ -283,7 +291,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             if (this.shouldRunBrain()) {
                 const brain = await this.runBrain(perception, gameSkill, thinkId);
-                const brainCancellation = this.cancelledResult(thinkId);
+                const brainCancellation = this.cancelledResult(thinkId, perception as HybridPerception);
                 if (brainCancellation) {
                     return brainCancellation;
                 }
@@ -297,7 +305,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
 
             const bodyResult = await this.runBody(perception, gameSkill, thinkId);
-            const bodyCancellation = this.cancelledResult(thinkId);
+            const bodyCancellation = this.cancelledResult(thinkId, perception as HybridPerception);
             if (bodyCancellation) {
                 return bodyCancellation;
             }
@@ -336,13 +344,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
     }
 
-    private cancelledResult(thinkId: number): ThoughtResult | undefined {
+    private cancelledResult(thinkId: number, perception?: HybridPerception): ThoughtResult | undefined {
         const cause = this.cancelledThinkIds.get(thinkId);
         if (!cause) {
             return undefined;
         }
         if (cause === 'thinking_watchdog_timeout') {
-            this.applyBrainTimeoutFallback();
+            this.applyBrainTimeoutFallback(perception);
         }
         return {
             actions: [],
@@ -353,7 +361,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
-    private applyBrainTimeoutFallback(): void {
+    private applyBrainTimeoutFallback(perception?: HybridPerception): void {
         const cognition = this.cognition();
         cognition.lastBrainTick = this.options.state.tick;
         cognition.brainBackoffUntilTick = this.options.state.tick + BRAIN_TIMEOUT_BACKOFF_TICKS;
@@ -363,6 +371,34 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         this.clearGoalMomentum();
+        cognition.activeGoal = this.brainTimeoutFallbackGoal(perception);
+        cognition.lastGoalShareTick = undefined;
+    }
+
+    private brainTimeoutFallbackGoal(perception?: HybridPerception): ActiveGoalState {
+        if (perception && firemakingAction(perception)) {
+            return firemakingGoal(this.options.state.tick);
+        }
+        if (perception && starterFishingAction(perception)) {
+            return starterFishingGoal(this.options.state.tick);
+        }
+        if (perception && buryBonesAction(perception)) {
+            return prayerGoal(this.options.state.tick);
+        }
+        return explorationGoal(this.options.state.tick);
+    }
+
+    private observeCompletedLocalGoal(perception: HybridPerception): void {
+        if (this.options.soul.frontmatter.legacy?.parameters?.benchmarkTask) {
+            return;
+        }
+        const goal = this.activeGoal();
+        if (!goal || !isStandaloneFiremakingGoal(goal) || !fireLitEventObserved(perception)) {
+            return;
+        }
+
+        this.clearGoalMomentum();
+        const cognition = this.cognition();
         cognition.activeGoal = explorationGoal(this.options.state.tick);
         cognition.lastGoalShareTick = undefined;
     }
@@ -578,6 +614,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                         }
                       : undefined;
             if (recovery) {
+                if (visibility.returnDue) {
+                    this.deferVisibilityAnchorReturn();
+                }
                 return this.preInferenceResult(
                     actionWithCause(recovery, 'stuck_pre_inference_explore'),
                     'stuck_pre_inference_explore',
@@ -593,22 +632,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const goal = this.activeGoal();
         const explore =
             brainBackedOff && goal && isExplorationGoal(goal)
-                ? explorationAction(
-                      perception,
-                      visibility.anchor,
-                      this.options.state.resident,
-                      this.pickupCooldowns(),
-                      this.options.state.tick,
-                      this.explorationCooldowns(),
-                  )
+                ? this.explorationOrSkillOpportunityAction(perception, visibility.anchor)
                 : undefined;
         if (explore) {
-            return this.preInferenceResult(
-                explore,
-                explore.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback',
-                perception,
-                visibility,
-            );
+            const anchorReturn = this.hardVisibilityAnchorReturnAction(perception, visibility);
+            if (anchorReturn) {
+                return this.preInferenceResult(anchorReturn.action, anchorReturn.cause, perception, visibility);
+            }
+
+            return this.preInferenceResult(explore.action, explore.cause, perception, visibility);
         }
 
         return undefined;
@@ -685,6 +717,103 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
     }
 
+    private explorationOrSkillOpportunityAction(
+        perception: HybridPerception,
+        anchor?: Pos,
+    ): { action: AgentAction; cause: string } | undefined {
+        const exploreAction = explorationAction(
+            perception,
+            anchor,
+            this.options.state.resident,
+            this.pickupCooldowns(),
+            this.options.state.tick,
+            this.explorationCooldowns(),
+        );
+        const opportunity = this.scoutingSkillOpportunityAction(perception);
+        if (opportunity && shouldPreferScoutingSkillOpportunity(exploreAction)) {
+            return opportunity;
+        }
+        if (!exploreAction || exploreAction.cause === 'explore_patrol') {
+            const anchorReturn = this.scoutingAnchorReturnAction(perception, anchor);
+            if (anchorReturn) {
+                return anchorReturn;
+            }
+        }
+        if (!exploreAction) {
+            return undefined;
+        }
+        return {
+            action: exploreAction,
+            cause: exploreAction.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback',
+        };
+    }
+
+    private scoutingAnchorReturnAction(perception: HybridPerception, anchor?: Pos): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        const here = perception.resident?.position;
+        if (!goal || !isExplorationGoal(goal) || !here || !anchor) {
+            return undefined;
+        }
+        if (this.options.state.tick - goal.createdAtTick < SCOUTING_ANCHOR_RETURN_MIN_GOAL_AGE_TICKS) {
+            return undefined;
+        }
+
+        const radius = this.behavior().returnToAnchorRadius ?? DEFAULT_RETURN_TO_ANCHOR_RADIUS;
+        if (distance(here, anchor) <= Math.max(SCOUTING_ANCHOR_RETURN_MIN_DISTANCE, radius * 2)) {
+            return undefined;
+        }
+
+        const farFromAnchor = distance(here, anchor) > VISIBILITY_ANCHOR_RETURN_DIRECT_DISTANCE;
+        return {
+            action: {
+                kind: 'move_to',
+                target: farFromAnchor ? stepToward(here, anchor, VISIBILITY_ANCHOR_RETURN_STEP_DISTANCE) : anchor,
+                ...(farFromAnchor ? { range: 1 } : {}),
+                cause: 'return_to_visibility_anchor',
+            },
+            cause: 'return_to_visibility_anchor',
+        };
+    }
+
+    private scoutingSkillOpportunityAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        if (!goal || !isExplorationGoal(goal)) {
+            return undefined;
+        }
+        if (this.options.state.tick - goal.createdAtTick < SCOUTING_SKILL_OPPORTUNITY_MIN_GOAL_AGE_TICKS) {
+            return undefined;
+        }
+
+        const cognition = this.cognition();
+        const last = cognition.lastScoutingSkillOpportunityTick || 0;
+        if (last > 0 && this.options.state.tick - last < SCOUTING_SKILL_OPPORTUNITY_COOLDOWN_TICKS) {
+            return undefined;
+        }
+
+        const fireAction = firemakingAction(perception);
+        if (fireAction) {
+            this.clearGoalMomentum();
+            cognition.activeGoal = firemakingGoal(this.options.state.tick);
+            cognition.lastScoutingSkillOpportunityTick = this.options.state.tick;
+            cognition.lastGoalShareTick = undefined;
+            return { action: actionWithCause(fireAction, 'scouting_firemaking_opportunity'), cause: 'scouting_firemaking_opportunity' };
+        }
+
+        const woodcuttingAction = levelOneWoodcuttingAction(perception);
+        if (woodcuttingAction) {
+            this.clearGoalMomentum();
+            cognition.activeGoal = woodcuttingGoal(this.options.state.tick);
+            cognition.lastScoutingSkillOpportunityTick = this.options.state.tick;
+            cognition.lastGoalShareTick = undefined;
+            return {
+                action: actionWithCause(woodcuttingAction, 'scouting_woodcutting_opportunity'),
+                cause: 'scouting_woodcutting_opportunity',
+            };
+        }
+
+        return undefined;
+    }
+
     private fallbackAction(
         perception: Perception,
         visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
@@ -723,22 +852,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: fireAction, cause: 'firemaking_fallback' };
         }
 
-        const exploreAction =
-            goal && isExplorationGoal(goal)
-                ? explorationAction(
-                      view,
-                      visibility.anchor,
-                      this.options.state.resident,
-                      this.pickupCooldowns(),
-                      this.options.state.tick,
-                      this.explorationCooldowns(),
-                  )
-                : undefined;
-        if (exploreAction) {
-            return {
-                action: exploreAction,
-                cause: exploreAction.cause === 'opportunistic_pickup' ? 'opportunistic_pickup' : 'exploration_fallback',
-            };
+        const explorationFallback =
+            goal && isExplorationGoal(goal) ? this.explorationOrSkillOpportunityAction(view, visibility.anchor) : undefined;
+        if (explorationFallback) {
+            return explorationFallback;
+        }
+
+        const anchorReturn = goal ? this.fallbackVisibilityAnchorReturnAction(view, visibility) : undefined;
+        if (anchorReturn) {
+            return anchorReturn;
         }
 
         const follow = this.followAction(view);
@@ -746,14 +868,66 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: follow, cause: 'follow_player_fallback' };
         }
 
-        if (visibility.returnDue && visibility.anchor) {
-            return {
-                action: { kind: 'move_to', target: visibility.anchor, cause: 'return_to_visibility_anchor' },
-                cause: 'return_to_visibility_anchor',
-            };
+        const fallbackAnchorReturn = this.visibilityAnchorReturnAction(view, visibility);
+        if (fallbackAnchorReturn) {
+            return fallbackAnchorReturn;
         }
 
         return undefined;
+    }
+
+    private visibilityAnchorReturnAction(
+        perception: HybridPerception,
+        visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
+    ): { action: AgentAction; cause: string } | undefined {
+        if (!visibility.returnDue || !visibility.anchor) {
+            return undefined;
+        }
+
+        const here = perception.resident?.position;
+        const farFromAnchor = here ? distance(here, visibility.anchor) > VISIBILITY_ANCHOR_RETURN_DIRECT_DISTANCE : false;
+        const target = farFromAnchor ? stepToward(here!, visibility.anchor, VISIBILITY_ANCHOR_RETURN_STEP_DISTANCE) : visibility.anchor;
+
+        return {
+            action: {
+                kind: 'move_to',
+                target,
+                ...(farFromAnchor ? { range: 1 } : {}),
+                cause: 'return_to_visibility_anchor',
+            },
+            cause: 'return_to_visibility_anchor',
+        };
+    }
+
+    private hardVisibilityAnchorReturnAction(
+        perception: HybridPerception,
+        visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
+    ): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        const here = perception.resident?.position;
+        if (!goal || !isExplorationGoal(goal) || !here || !visibility.anchor || !visibility.returnDue) {
+            return undefined;
+        }
+
+        const radius = this.behavior().returnToAnchorRadius ?? DEFAULT_RETURN_TO_ANCHOR_RADIUS;
+        const hardReturnDistance = Math.max(80, radius * 10);
+        if (distance(here, visibility.anchor) <= hardReturnDistance) {
+            return undefined;
+        }
+
+        return this.visibilityAnchorReturnAction(perception, visibility);
+    }
+
+    private fallbackVisibilityAnchorReturnAction(
+        perception: HybridPerception,
+        visibility: ReturnType<HybridAgentThinkingModule['visibilityStatus']>,
+    ): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        if (goal && isExplorationGoal(goal)) {
+            return this.hardVisibilityAnchorReturnAction(perception, visibility);
+        }
+
+        return this.visibilityAnchorReturnAction(perception, visibility);
     }
 
     private goalRoutineOverride(actions: AgentAction[], perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
@@ -968,6 +1142,16 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     return this.stuckMoveRecoveryAction(perception, here, updated, anchor);
                 }
 
+                const interruptedAnchorReturn = this.anchorReturnSkillInterruption(perception, updated);
+                if (interruptedAnchorReturn) {
+                    return interruptedAnchorReturn;
+                }
+
+                const chunkedAnchorReturn = this.chunkedAnchorReturnContinuation(here, updated, anchor);
+                if (chunkedAnchorReturn) {
+                    return chunkedAnchorReturn;
+                }
+
                 if (
                     action?.kind === 'move_to' &&
                     !sameMoveIntent(action, updated) &&
@@ -991,16 +1175,69 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return undefined;
     }
 
+    private anchorReturnSkillInterruption(
+        perception: HybridPerception,
+        active: ActiveMoveState,
+    ): { action: AgentAction; cause: string } | undefined {
+        if (active.cause !== 'return_to_visibility_anchor') {
+            return undefined;
+        }
+        const isStruggling = typeof this.options.state.stuckSince === 'number' || (active.stationaryCount || 0) > 0;
+        if (!isStruggling) {
+            return undefined;
+        }
+
+        const opportunity = this.scoutingSkillOpportunityAction(perception);
+        if (!opportunity) {
+            return undefined;
+        }
+
+        this.deferVisibilityAnchorReturn();
+        return opportunity;
+    }
+
+    private chunkedAnchorReturnContinuation(
+        here: Pos,
+        active: ActiveMoveState,
+        anchor?: Pos,
+    ): { action: AgentAction; cause: string } | undefined {
+        const finalTarget = anchor || active.target;
+        if (active.cause !== 'return_to_visibility_anchor' || distance(here, finalTarget) <= VISIBILITY_ANCHOR_RETURN_DIRECT_DISTANCE) {
+            return undefined;
+        }
+
+        const action: AgentAction = {
+            kind: 'move_to',
+            target: stepToward(here, finalTarget, VISIBILITY_ANCHOR_RETURN_STEP_DISTANCE),
+            range: 1,
+            cause: 'return_to_visibility_anchor',
+        };
+        this.rememberActiveMove(action, here);
+        return { action, cause: 'return_to_visibility_anchor' };
+    }
+
     private stuckMoveRecoveryAction(
         perception: HybridPerception,
         here: Pos,
         active: ActiveMoveState,
         anchor?: Pos,
     ): { action: AgentAction; cause: string } | undefined {
+        if (active.cause === 'return_to_visibility_anchor') {
+            this.deferVisibilityAnchorReturn();
+        }
+
         const obstacle = stuckOpenObstacleAction(perception, here, active, this.explorationCooldowns(), this.options.state.tick);
         if (obstacle) {
             this.cognition().activeMove = undefined;
             return { action: obstacle, cause: 'stuck_open_obstacle' };
+        }
+
+        this.rememberBlockedExplorationTarget(perception, active.target);
+        this.rememberBlockedActionTarget(perception, active.target);
+
+        const localSkill = this.anchorReturnSkillInterruption(perception, active);
+        if (localSkill) {
+            return localSkill;
         }
 
         const blocker = stuckBlockerReportAction(perception, here, active);
@@ -1034,6 +1271,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const action = actionWithCause(recovery, 'stuck_move_recovery');
         this.rememberActiveMove(action, here);
         return { action, cause: 'stuck_move_recovery' };
+    }
+
+    private deferVisibilityAnchorReturn(): void {
+        this.cognition().lastAnchorReturnTick = this.options.state.tick;
     }
 
     private approachDistantInteraction(
@@ -2360,6 +2601,66 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
     }
 
+    private rememberBlockedExplorationTarget(perception: HybridPerception, target: Pos): void {
+        const cooldowns = this.explorationCooldowns();
+        cooldowns[explorationPatrolCooldownKey(target)] = this.options.state.tick;
+
+        for (const object of perception.nearby?.objects || []) {
+            if (positionsEqual(object.position, target)) {
+                cooldowns[explorationObjectCooldownKey(object)] = this.options.state.tick;
+            }
+        }
+        for (const item of perception.nearby?.worldItems || []) {
+            if (positionsEqual(item.position, target)) {
+                cooldowns[explorationItemCooldownKey(item)] = this.options.state.tick;
+            }
+        }
+        for (const actor of [...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])]) {
+            if (positionsEqual(actor.position, target)) {
+                cooldowns[explorationActorCooldownKey(actor)] = this.options.state.tick;
+            }
+        }
+
+        for (const [cooldownKey, tick] of Object.entries(cooldowns)) {
+            if (this.options.state.tick - tick > EXPLORATION_TARGET_COOLDOWN_TICKS) {
+                delete cooldowns[cooldownKey];
+            }
+        }
+    }
+
+    private rememberBlockedActionTarget(perception: HybridPerception, target: Pos): void {
+        const cooldowns = (this.cognition().targetFailureCooldowns ||= {});
+        const remember = (candidate: unknown): void => {
+            if (!isRecord(candidate)) {
+                return;
+            }
+            const position = positionLike(candidate.position);
+            if (!position || !positionsEqual(position, target)) {
+                return;
+            }
+            const key = targetFailureKey(candidate);
+            if (key) {
+                cooldowns[key] = this.options.state.tick;
+            }
+        };
+
+        for (const object of perception.nearby?.objects || []) {
+            remember(object);
+        }
+        for (const item of perception.nearby?.worldItems || []) {
+            remember(item);
+        }
+        for (const actor of [...(perception.nearby?.npcs || []), ...(perception.nearby?.players || [])]) {
+            remember(actor);
+        }
+
+        for (const [cooldownKey, tick] of Object.entries(cooldowns)) {
+            if (this.options.state.tick - tick > TARGET_FAILURE_COOLDOWN_TICKS) {
+                delete cooldowns[cooldownKey];
+            }
+        }
+    }
+
     private pickupCooldowns(): Record<string, number> {
         const cognition = this.cognition();
         cognition.pickupCooldowns ||= {};
@@ -2442,6 +2743,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
 function goalExpiresBefore(goal: ActiveGoalState, tick: number): boolean {
     return goal.ttlTicks !== undefined && goal.createdAtTick + goal.ttlTicks < tick;
+}
+
+function fireLitEventObserved(perception: HybridPerception): boolean {
+    return (perception.events || []).some(event => {
+        const kind = typeof event.kind === 'string' ? event.kind : '';
+        const text = typeof event.text === 'string' ? event.text.toLowerCase() : '';
+        return kind === 'fire_lit' || /fire catches|logs begin to burn/.test(text);
+    });
 }
 
 function missingFiremakingToolAction(perception: HybridPerception): AgentAction {
@@ -2565,6 +2874,11 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string, g
         return `pick up ${itemLabel(item)} at ${item.position.x},${item.position.y}.`;
     }
 
+    const workflowFallback = workflowGoalNextStepSuggestion(perception, here, goal);
+    if (workflowFallback !== undefined) {
+        return workflowFallback || undefined;
+    }
+
     const safeTarget = safeCombatTarget(perception);
     if (safeTarget) {
         return `fight the safe ${actorName(safeTarget)} at ${safeTarget.position.x},${safeTarget.position.y}.`;
@@ -2624,6 +2938,52 @@ function routineNextStepSuggestion(perception: HybridPerception, here: Pos, goal
     return undefined;
 }
 
+function workflowGoalNextStepSuggestion(perception: HybridPerception, here: Pos, goal?: ActiveGoalState): string | null | undefined {
+    if (!goal) {
+        return undefined;
+    }
+
+    if (isStarterFishingGoal(goal)) {
+        if (!hasSmallFishingNet(perception)) {
+            return 'find a small fishing net.';
+        }
+        const fishingSpot = (perception.nearby?.npcs || [])
+            .filter(isFishingSpot)
+            .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        return fishingSpot
+            ? `fish at ${fishingSpot.position.x},${fishingSpot.position.y} with my small net.`
+            : 'look for a Fishing spot to net shrimp.';
+    }
+
+    if (isCombatTrainingGoal(goal)) {
+        const safeTarget = safeCombatTarget(perception);
+        return safeTarget
+            ? `fight the safe ${actorName(safeTarget)} at ${safeTarget.position.x},${safeTarget.position.y}.`
+            : 'look for a safe low-level creature to fight.';
+    }
+
+    if (isFiremakingGoal(goal) || isWoodcuttingTrainingGoal(goal)) {
+        const tree = (perception.nearby?.objects || [])
+            .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
+            .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        const hasAxe = hasWoodcuttingAxe(perception);
+
+        if (isFiremakingGoal(goal)) {
+            if (tree && !hasAxe) {
+                return 'find a woodcutting axe to gather logs.';
+            }
+            return null;
+        }
+
+        if (!hasAxe) {
+            return 'find a woodcutting axe.';
+        }
+        return 'look for an ordinary tree to chop.';
+    }
+
+    return undefined;
+}
+
 function isLocalRoutineCause(cause: string, action: AgentAction): boolean {
     if (action.kind === 'use_item_on_item') {
         return false;
@@ -2643,6 +3003,13 @@ function isConcreteExplorationOverride(action: AgentAction): boolean {
 }
 
 function isStuckRecoveryAction(action: AgentAction): boolean {
+    return /explore_talk_to_npc|explore_visible_object|explore_open_obstacle|explore_patrol/i.test(String(action.cause || ''));
+}
+
+function shouldPreferScoutingSkillOpportunity(action: AgentAction | undefined): boolean {
+    if (!action) {
+        return true;
+    }
     return /explore_talk_to_npc|explore_visible_object|explore_patrol/i.test(String(action.cause || ''));
 }
 
@@ -3251,6 +3618,39 @@ function positionLike(value: unknown): Pos | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stepToward(here: Pos, target: Pos, maxStep: number): Pos {
+    const dx = target.x - here.x;
+    const dy = target.y - here.y;
+    if (Math.abs(dy) > maxStep) {
+        return {
+            x: here.x,
+            y: here.y + clampStep(dy, maxStep),
+            level: target.level ?? here.level ?? 0,
+        };
+    }
+
+    if (Math.abs(dx) > maxStep) {
+        return {
+            x: here.x + clampStep(dx, maxStep),
+            y: here.y,
+            level: target.level ?? here.level ?? 0,
+        };
+    }
+
+    return {
+        x: target.x,
+        y: here.y + clampStep(dy, maxStep),
+        level: target.level ?? here.level ?? 0,
+    };
+}
+
+function clampStep(delta: number, maxStep: number): number {
+    if (delta === 0) {
+        return 0;
+    }
+    return Math.sign(delta) * Math.min(Math.abs(delta), maxStep);
 }
 
 function getVisibleAggressors(perception: HybridPerception): Actor[] {

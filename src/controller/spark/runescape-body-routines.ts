@@ -95,6 +95,11 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
 /** Object IDs that can be used as cooking heat sources by the fishing routine. */
 export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 
+/** Door/gate IDs worth trying during exploration before generic landmark patrol. */
+export const EXPLORATION_OPENABLE_OBJECT_IDS: ReadonlySet<number> = new Set([
+    1530, 11707, 1533, 1516, 1519, 1536, 11993, 13001, 1551, 1553, 12986, 12987,
+]);
+
 /** Lumbridge Castle kitchen range fallback for raw starter fish when no local fire is available. */
 export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 
@@ -120,11 +125,14 @@ export const COMBAT_LOOT_MAX_DISTANCE = 6;
 /** Default body tick cadence; participates in the patrol-direction hash. Mirrors the monolith constant. */
 export const DEFAULT_BODY_EVERY_TICKS = 8;
 
-/** Ticks before an exploration target is considered eligible again after a recent visit. */
-export const EXPLORATION_TARGET_COOLDOWN_TICKS = 120;
+/** Ticks before an exploration target is considered eligible again after a recent visit or blocked approach. */
+export const EXPLORATION_TARGET_COOLDOWN_TICKS = 600;
 
 /** Patrol step distance (tiles) for the local exploration patroller. */
 export const EXPLORATION_PATROL_STEP_DISTANCE = 3;
+
+/** Farthest exploratory patrol step tried before reusing a recent patrol target. */
+export const EXPLORATION_PATROL_MAX_DISTANCE = 12;
 
 /** Range (in tiles) within which a prayer-training waypoint is considered reached. */
 export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
@@ -670,16 +678,20 @@ export function explorationPatrolTarget(
     currentTick = 0,
     explorationCooldowns?: Record<string, number>,
 ): BodyPos {
-    const directions = localPatrolDirections(EXPLORATION_PATROL_STEP_DISTANCE);
-    const startIndex = patrolDirectionIndex(here, currentTick, directions.length);
-    const candidates = directions.map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }));
-    for (let offset = 0; offset < candidates.length; offset += 1) {
-        const candidate = candidates[(startIndex + offset) % candidates.length];
-        if (!isExplorationOnCooldown(explorationPatrolCooldownKey(candidate), explorationCooldowns, currentTick)) {
-            return candidate;
+    let fallback: BodyPos | undefined;
+    for (let step = EXPLORATION_PATROL_STEP_DISTANCE; step <= EXPLORATION_PATROL_MAX_DISTANCE; step += EXPLORATION_PATROL_STEP_DISTANCE) {
+        const directions = localPatrolDirections(step);
+        const startIndex = patrolDirectionIndex(here, currentTick, directions.length);
+        const candidates = directions.map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }));
+        fallback ??= candidates[startIndex];
+        for (let offset = 0; offset < candidates.length; offset += 1) {
+            const candidate = candidates[(startIndex + offset) % candidates.length];
+            if (!isExplorationOnCooldown(explorationPatrolCooldownKey(candidate), explorationCooldowns, currentTick)) {
+                return candidate;
+            }
         }
     }
-    return candidates[startIndex];
+    return fallback || here;
 }
 
 /** Returns a patrol step that increases distance from the blocked target. Used by stuck recovery. */
@@ -728,11 +740,26 @@ export function explorationAction(
         return npcTalkAction(perception, npc, 'explore_talk_to_npc');
     }
 
+    const openableObject = (perception.nearby?.objects || [])
+        .filter(
+            candidate =>
+                EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
+                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (openableObject) {
+        if (distance(here, openableObject.position) > 1) {
+            return { kind: 'move_to', target: openableObject.position, range: 1, cause: 'explore_open_obstacle' };
+        }
+        return { kind: 'interact', target: openableObject, option: 'open', cause: 'explore_open_obstacle' };
+    }
+
     const object = (perception.nearby?.objects || [])
         .filter(
             candidate =>
                 !FIRE_OBJECT_IDS.has(candidate.objectId) &&
                 !LEVEL_ONE_TREE_IDS.has(candidate.objectId) &&
+                !EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
                 !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
         )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];

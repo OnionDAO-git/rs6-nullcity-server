@@ -143,6 +143,59 @@ describe('HybridAgentThinkingModule', () => {
         expect(complete).not.toHaveBeenCalled();
     });
 
+    it('switches from a completed firemaking goal into scouting instead of grinding another tree', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
+            throw new Error('Completed local firemaking should not need inference');
+        });
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                steps: ['Chop logs', 'Use tinderbox on logs'],
+                ttlTicks: 600,
+                createdAtTick: 20,
+            },
+            lastBrainTick: 20,
+            brainBackoffUntilTick: 650,
+            lastBodyTick: 49,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 50,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    inventory: [
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    ],
+                },
+                objects: [
+                    { objectId: objectIds.fire, position: { x: 3200, y: 3200, level: 0 } },
+                    { objectId: objectIds.tree.normal[0].default, position: { x: 3201, y: 3200, level: 0 } },
+                ],
+                events: [{ kind: 'fire_lit', position: { x: 3200, y: 3200, level: 0 } }],
+            }),
+        );
+
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'scout-nearby-area',
+                createdAtTick: 50,
+            }),
+        );
+        expect(result.cause).toBe('exploration_fallback');
+        expect(result.actions).toEqual([
+            expect.objectContaining({
+                kind: 'move_to',
+                cause: 'explore_patrol',
+            }),
+        ]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
     it('refreshes a local exploration goal when the current goal would expire during Brain backoff', async () => {
         let capturedSignal: AbortSignal | undefined;
         const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(
@@ -181,6 +234,119 @@ describe('HybridAgentThinkingModule', () => {
         await thinking;
 
         expect(state.cognition?.brainBackoffUntilTick).toBe(650);
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'scout-nearby-area',
+                createdAtTick: 50,
+            }),
+        );
+    });
+
+    it('uses local firemaking ambition after a Brain watchdog timeout when tools are carried', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(
+            request =>
+                new Promise(resolve => {
+                    capturedSignal = request.signal;
+                    request.signal?.addEventListener('abort', () =>
+                        resolve({
+                            text: '',
+                            nooped: true,
+                            cancelledBy: String(request.signal?.reason || 'aborted'),
+                        }),
+                    );
+                }),
+        );
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'stale-scout',
+                description: 'Look around.',
+                ttlTicks: 5,
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 20,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const thinking = agent.think(
+            perception({
+                tick: 50,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    inventory: [
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                    ],
+                },
+            }),
+        );
+        for (let i = 0; i < 5 && !capturedSignal; i += 1) {
+            await Promise.resolve();
+        }
+        expect(capturedSignal).toBeDefined();
+
+        agent.stop('thinking_watchdog_timeout');
+        await thinking;
+
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'make-fire',
+                createdAtTick: 50,
+            }),
+        );
+    });
+
+    it('falls back to scouting after a Brain watchdog timeout instead of grinding visible trees by default', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(
+            request =>
+                new Promise(resolve => {
+                    capturedSignal = request.signal;
+                    request.signal?.addEventListener('abort', () =>
+                        resolve({
+                            text: '',
+                            nooped: true,
+                            cancelledBy: String(request.signal?.reason || 'aborted'),
+                        }),
+                    );
+                }),
+        );
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'stale-scout',
+                description: 'Look around.',
+                ttlTicks: 5,
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 20,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const thinking = agent.think(
+            perception({
+                tick: 50,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    inventory: [
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    ],
+                },
+                objects: [{ objectId: objectIds.tree.normal[0].default, position: { x: 3201, y: 3200, level: 0 } }],
+            }),
+        );
+        for (let i = 0; i < 5 && !capturedSignal; i += 1) {
+            await Promise.resolve();
+        }
+        expect(capturedSignal).toBeDefined();
+
+        agent.stop('thinking_watchdog_timeout');
+        await thinking;
+
         expect(state.cognition?.activeGoal).toEqual(
             expect.objectContaining({
                 id: 'scout-nearby-area',
@@ -511,6 +677,376 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3200, y: 3200, level: 0 }, cause: 'return_to_visibility_anchor' }]);
         expect(llm.complete).toHaveBeenCalledTimes(1);
         expect(llm.complete.mock.calls[0][0].thinking).toBe(false);
+    });
+
+    it('returns to the visibility anchor even when exploration has nearby patrol work', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                steps: ['walk around', 'return to the anchor if I drift too far'],
+                createdAtTick: 10,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 120,
+                resident: residentAt(3095, 3160),
+                objects: [{ objectId: 2739, position: { x: 3096, y: 3160, level: 0 }, orientation: 0 }],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3095, y: 3168, level: 0 }, range: 1, cause: 'return_to_visibility_anchor' },
+        ]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('converts persisted long anchor moves into reachable waypoint steps', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 10,
+                ttlTicks: 600,
+            },
+            activeMove: {
+                target: { x: 3200, y: 3200, level: 0 },
+                range: 0,
+                cause: 'return_to_visibility_anchor',
+                startedAtTick: 90,
+                lastTick: 90,
+                lastPositionKey: '3094,3160,0',
+                stationaryCount: 0,
+            },
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+            brainBackoffUntilTick: 1000,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 120,
+                resident: residentAt(3095, 3160),
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3095, y: 3168, level: 0 }, range: 1, cause: 'return_to_visibility_anchor' },
+        ]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('backs off a stuck anchor return and tries recovery instead of repeating the blocked waypoint', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.stuckSince = 110;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 10,
+                ttlTicks: 600,
+            },
+            activeMove: {
+                target: { x: 3105, y: 3184, level: 0 },
+                range: 1,
+                cause: 'return_to_visibility_anchor',
+                startedAtTick: 90,
+                lastTick: 100,
+                lastPositionKey: '3105,3176,0',
+                stationaryCount: 1,
+            },
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 120,
+                resident: residentAt(3105, 3176),
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_move_recovery');
+        expect(result.actions).toHaveLength(1);
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_move_recovery' }));
+        expect(result.actions[0]).not.toEqual(
+            expect.objectContaining({ target: { x: 3105, y: 3184, level: 0 }, cause: 'return_to_visibility_anchor' }),
+        );
+        expect(state.cognition?.lastAnchorReturnTick).toBe(120);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('abandons a struggling anchor return for a visible local skill opportunity', async () => {
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3105, y: 3170, level: 0 }, orientation: 0 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.stuckSince = 110;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 10,
+                ttlTicks: 600,
+            },
+            activeMove: {
+                target: { x: 3225, y: 3230, level: 0 },
+                range: 1,
+                cause: 'return_to_visibility_anchor',
+                startedAtTick: 90,
+                lastTick: 100,
+                lastPositionKey: '3095,3165,0',
+                stationaryCount: 1,
+            },
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: {
+                    ...residentAt(3095, 3165),
+                    inventory: [
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    ],
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).toBe('scouting_woodcutting_opportunity');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: tree.position, range: 1, cause: 'scouting_woodcutting_opportunity' }]);
+        expect(state.cognition?.activeGoal?.id).toBe('chop-level-one-tree');
+        expect(state.cognition?.activeMove).toEqual(
+            expect.objectContaining({ target: tree.position, cause: 'scouting_woodcutting_opportunity' }),
+        );
+        expect(state.cognition?.lastAnchorReturnTick).toBe(150);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('uses stuck exploration before a hard anchor return when the resident is already stuck', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.stuckSince = 110;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 10,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 10,
+            lastBodyTick: 0,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 0,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 120,
+                resident: residentAt(3095, 3160),
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(result.actions).toHaveLength(1);
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        expect(result.actions[0]).not.toEqual(expect.objectContaining({ cause: 'return_to_visibility_anchor' }));
+        expect(state.cognition?.lastAnchorReturnTick).toBe(120);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('cools down a blocked openable target when stuck so scouting does not orbit the same gate', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const gate = { objectId: 1530, position: { x: 3111, y: 3162, level: 0 }, orientation: 0 };
+        const state = runtimeState();
+        state.tick = 20860;
+        state.stuckSince = 20850;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 20800,
+                ttlTicks: 600,
+            },
+            activeMove: {
+                target: gate.position,
+                range: 1,
+                cause: 'explore_open_obstacle',
+                startedAtTick: 20840,
+                lastTick: 20855,
+                lastPositionKey: '3122,3158,0',
+                stationaryCount: 1,
+            },
+            lastBrainTick: 20800,
+            lastBodyTick: 20800,
+            brainBackoffUntilTick: 21400,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 20875,
+                resident: residentAt(3122, 3158),
+                objects: [gate],
+            }),
+        );
+        state.cognition!.activeMove = undefined;
+        const second = await agent.think(
+            perception({
+                tick: 20876,
+                resident: residentAt(3125, 3158),
+                objects: [gate],
+            }),
+        );
+
+        expect(first.cause).toBe('stuck_move_recovery');
+        expect(second.cause).toBe('stuck_pre_inference_explore');
+        expect(second.actions[0]).not.toEqual(expect.objectContaining({ target: gate.position }));
+        expect(state.cognition?.explorationCooldowns?.['object:1530:3111,3162,0']).toBe(20875);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('cools down a stuck woodcutting target so the routine tries another visible tree', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const blockedTree = { objectId: 1278, position: { x: 3200, y: 3255, level: 0 }, orientation: 3 };
+        const otherTree = { objectId: 1278, position: { x: 3208, y: 3262, level: 0 }, orientation: 0 };
+        const state = runtimeState();
+        state.stuckSince = 110;
+        state.cognition = {
+            activeGoal: {
+                id: 'chop-level-one-tree',
+                description: 'Practice woodcutting on ordinary level-1 trees and gather logs.',
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            activeMove: {
+                target: blockedTree.position,
+                range: 1,
+                cause: 'woodcutting_level1_routine',
+                startedAtTick: 100,
+                lastTick: 110,
+                lastPositionKey: '3200,3262,0',
+                stationaryCount: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 120,
+                resident: residentAt(3200, 3262),
+                objects: [blockedTree, otherTree],
+            }),
+        );
+        state.stuckSince = undefined;
+        state.cognition!.activeMove = undefined;
+
+        const second = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3262),
+                objects: [blockedTree, otherTree],
+            }),
+        );
+
+        expect(first.cause).toBe('stuck_move_recovery');
+        expect(state.cognition?.targetFailureCooldowns?.['object:1278:3200,3255,0']).toBe(120);
+        expect(second.actions).toEqual([{ kind: 'move_to', target: otherTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('opens an exploration gate after approaching it instead of suppressing it with the approach cooldown', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const gate = { objectId: 1530, position: { x: 3229, y: 3230, level: 0 }, orientation: 0 };
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3226, 3230),
+                objects: [gate],
+            }),
+        );
+        const second = await agent.think(
+            perception({
+                tick: 151,
+                resident: residentAt(3228, 3230),
+                objects: [gate],
+            }),
+        );
+
+        expect(first.actions).toEqual([{ kind: 'move_to', target: gate.position, range: 1, cause: 'explore_open_obstacle' }]);
+        expect(second.actions).toEqual([{ kind: 'interact', target: gate, option: 'open', cause: 'explore_open_obstacle' }]);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('opens an adjacent exploration gate while already stuck instead of patrolling away', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const gate = { objectId: 1530, position: { x: 3111, y: 3162, level: 0 }, orientation: 0 };
+        const state = runtimeState();
+        state.stuckSince = 180;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 200,
+                resident: residentAt(3110, 3162),
+                objects: [gate],
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(result.actions).toEqual([{ kind: 'interact', target: gate, option: 'open', cause: 'stuck_pre_inference_explore' }]);
+        expect(complete).not.toHaveBeenCalled();
     });
 
     it('can use item-on-item firemaking as a reliable fallback when the active goal asks for fire', async () => {
@@ -3469,6 +4005,210 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('exploration_fallback');
     });
 
+    it('turns an aged scouting loop into a local woodcutting opportunity instead of only patrolling', async () => {
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3205, y: 3200, level: 0 }, orientation: 0 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                steps: ['walk locally', 'try a useful task after looking around'],
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3204, 3200),
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).toBe('scouting_woodcutting_opportunity');
+        expect(result.actions).toEqual([
+            { kind: 'interact', target: tree, option: 'chop down', cause: 'scouting_woodcutting_opportunity' },
+        ]);
+        expect(state.cognition?.activeGoal?.id).toBe('chop-level-one-tree');
+        expect(state.cognition?.lastScoutingSkillOpportunityTick).toBe(150);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('takes a visible local work opportunity during aged far-away scouting', async () => {
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3105, y: 3170, level: 0 }, orientation: 0 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                steps: ['walk locally', 'try a useful task after looking around'],
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 150,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3104, 3175),
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).toBe('scouting_woodcutting_opportunity');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: tree.position, range: 1, cause: 'scouting_woodcutting_opportunity' }]);
+        expect(state.cognition?.activeGoal?.id).toBe('chop-level-one-tree');
+        expect(state.cognition?.lastScoutingSkillOpportunityTick).toBe(150);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('prefers visible local work over another landmark during aged scouting', async () => {
+        const landmark = { objectId: 879, position: { x: 3102, y: 3175, level: 0 }, orientation: 0 };
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3105, y: 3170, level: 0 }, orientation: 0 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                steps: ['walk locally', 'try a useful task after looking around'],
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3104, 3170),
+                objects: [landmark, tree],
+            }),
+        );
+
+        expect(result.cause).toBe('scouting_woodcutting_opportunity');
+        expect(result.actions).toEqual([
+            { kind: 'interact', target: tree, option: 'chop down', cause: 'scouting_woodcutting_opportunity' },
+        ]);
+        expect(state.cognition?.activeGoal?.id).toBe('chop-level-one-tree');
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('uses local work before anchor return when Body inference noops during aged scouting', async () => {
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3105, y: 3170, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                steps: ['walk locally', 'try a useful task after looking around'],
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 130,
+            lastBodyTick: 1,
+            lastAnchorReturnTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3104, 3175),
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).toBe('scouting_woodcutting_opportunity');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: tree.position, range: 1, cause: 'scouting_woodcutting_opportunity' }]);
+        expect(state.cognition?.activeGoal?.id).toBe('chop-level-one-tree');
+        expect(state.cognition?.lastScoutingSkillOpportunityTick).toBe(150);
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns toward the visibility anchor during aged far-away scouting when no local work is visible', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                steps: ['walk locally', 'try a useful task after looking around'],
+                createdAtTick: 1,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 150,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3104, 3175),
+                objects: [],
+            }),
+        );
+
+        expect(result.cause).toBe('return_to_visibility_anchor');
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3104, y: 3183, level: 0 }, range: 1, cause: 'return_to_visibility_anchor' },
+        ]);
+        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+        expect(state.cognition?.lastScoutingSkillOpportunityTick).toBeUndefined();
+        expect(complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps a fresh scouting goal in exploration before taking a visible skilling opportunity', async () => {
+        const tree = { objectId: objectIds.tree.normal[0].default, position: { x: 3105, y: 3170, level: 0 }, orientation: 0 };
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('Body inference should not run')));
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                createdAtTick: 120,
+                ttlTicks: 600,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            brainBackoffUntilTick: 1000,
+            lastAnchorReturnTick: 150,
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3104, 3175),
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).toBe('exploration_fallback');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'explore_patrol' }));
+        expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
+        expect(complete).not.toHaveBeenCalled();
+    });
+
     it('moves on when scouting has already reached a nearby landmark', async () => {
         const fountain = { objectId: 879, position: { x: 3230, y: 3238, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
@@ -4299,6 +5039,40 @@ describe('HybridAgentThinkingModule', () => {
             {
                 kind: 'say',
                 text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net. Next: fish at 3219,3201 with my small net.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps woodcutting beacons aligned with the active goal when only an NPC is nearby', async () => {
+        const guide = npc('RuneScape Guide', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'woodcut-visible-tree',
+                description: 'Move to a visible tree and chop it to gather logs and gain Woodcutting XP.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3218, 3201),
+                npcs: [guide],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: look for an ordinary tree to chop.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
