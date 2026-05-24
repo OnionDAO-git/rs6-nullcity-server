@@ -489,7 +489,7 @@ What the body_wait count actually represents:
 
 ### E7 — does the patron offer reach the resident's Brain perception?
 
-**Status:** OPEN — DESIGN gap surfaced, no code change yet
+**Status:** RESOLVED-PARTIAL-by-claude@e02e54b3 — substrate parts (a) + (b) shipped + live-verified (310ac62d). Stretch (c) chat-event synthesis still OPEN; tracked as HD-027.
 **Tier:** 1 (read-only trace) / Tier 4 (design hole)
 **Date:** 2026-05-24 13:30 claude
 
@@ -546,5 +546,7 @@ A reasonable minimum-viable fix has three pieces (each is small, can be sliced):
 **Owner suggestion.** Claude for (a) + (b) (substrate, fits my territory). Codex for (c) — touches monolith resident-runtime perception assembly and nervous-system rules. Or coordinate via HD-027.
 
 **Filed:** HD-027 (this design gap, requesting maintainer decision on whether to ship (a)+(b)+(c) before Chicago).
+
+**Resolution (partial, parts a + b).** Commit `e02e54b3`. New `readRecentPatronMemories` slice (6 events, separate from the 4 general events) wired into `MemoryStore.retrieve` ahead of the general slice. `PatronEvent` + `LibraryUpdater.observePatron` + `library-memories.ts` renderer + `PatronGateway.offerTo` now forward `amount` + `standingTier` + `attentionDelta`. Tests 1525/1525 (+11 new). Live verification (`310ac62d`): offer claude-e7-verify → res:agent produced a timeline row with `amount=10, standingTier=acquaintance, attentionDelta=20`; `readRecentPatronMemories` returns the enriched string `"Patron gift from claude-e7-verify: 10 Shards (you are now acquaintance to them) (2026-05-24 13:33:26)"`. Legacy pre-E7 rows gracefully render with the fallback "a gift". Stretch (c) chat-event synthesis still OPEN — requires monolith touch (resident-runtime perception assembly + nervous-system rule trigger from a synthetic perception event); HD-027 carries it for Codex or maintainer decision. Production controller restart (HD-020) gates full live brain-perception loop.
 
 ---
