@@ -560,3 +560,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 
 2026-05-24 18:31 codex branch=agents/wip workstream=hero-decision-cadence STARTING - investigate HD-042 hero silent-tick/decision gap and patch if root cause is small. Collision: avoid patron/docs except status/roadmap.
 2026-05-24 18:44 codex branch=agents/wip workstream=hero-decision-cadence HANDOFF - labeled hero noops/empty completions; local-3590 19-resident sample none=0. SHA=32ba93c9 tests=1691+type/lint/build collision=none
+2026-05-24 18:48 codex branch=agents/wip workstream=hero-decision-cadence HANDOFF - Lovelace review hardening: unnamed action/noop completions labeled; local-12513 totalNone=0. SHA=aed50245 tests=1692+type/lint/build collision=none
