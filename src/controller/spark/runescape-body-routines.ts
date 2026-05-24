@@ -437,10 +437,12 @@ export function opportunisticPickupAction(
     }
 
     const suppressFiremakingLogPickup = hasNearbyFire(perception);
+    const suppressNonFoodPickup = isLowHealth(perception);
     const item = (perception.nearby?.worldItems || [])
         .filter(candidate => {
             if (
                 (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
+                (suppressNonFoodPickup && !isEdibleFood(candidate)) ||
                 isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) ||
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||

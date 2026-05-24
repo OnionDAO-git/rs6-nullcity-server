@@ -525,6 +525,44 @@ describe('opportunisticPickupAction', () => {
         expect((action as unknown as { target: { position: { x: number } } }).target.position.x).toBe(102);
     });
 
+    it('skips non-food loot when low on health', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                nearby: { worldItems: [coin] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('only picks edible food opportunistically when low on health', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const food = ground(315, 102, 100, 'rs:shrimps');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                nearby: { worldItems: [coin, food] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: food,
+            option: 'pick-up',
+            cause: 'opportunistic_pickup',
+        });
+    });
+
     it('skips logs when a nearby fire is present (suppress firemaking-log pickup)', () => {
         const log = ground(LOGS, 100, 100);
         const action = opportunisticPickupAction(

@@ -4275,6 +4275,41 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('opportunistic_pickup');
     });
 
+    it('does not chase coins while scouting at low health', async () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3200, y: 3200, level: 0 } };
+        const fountain = { objectId: 879, position: { x: 3201, y: 3200, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout the nearby Lumbridge area and look for useful things.',
+                steps: ['walk to nearby landmarks', 'notice useful items', 'report anything useful'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                worldItems: [coins],
+                objects: [fountain],
+            }),
+        );
+
+        expect(result.actions).not.toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
+        expect(result.cause).not.toBe('opportunistic_pickup');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
     it('moves toward useful ground items while scouting when they are out of reach', async () => {
         const logs = { itemId: 1511, key: 'rs:logs', amount: 1, position: { x: 3224, y: 3201, level: 0 } };
         const fountain = { objectId: 879, position: { x: 3219, y: 3201, level: 0 }, orientation: 0 };
