@@ -219,6 +219,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
+        this.applyExternalOperatorRevive();
         this.state.attention = spendAttention(
             this.state.attention,
             this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
@@ -400,6 +401,29 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         } finally {
             this.checkDeceasedAndDispatchEpitaphs(perception);
             this.options.stateStore.save(this.state);
+        }
+    }
+
+    private applyExternalOperatorRevive(): void {
+        if (!this.state.deceased) {
+            return;
+        }
+
+        const startingAttention = initialAttention(this.options.soul.frontmatter.attentionProfile);
+        const external = this.options.stateStore.load(
+            this.name,
+            startingAttention,
+            this.options.soul.frontmatter.legacy?.kind || this.options.soul.frontmatter.archetype,
+        );
+        if (external.deceased || external.attention <= 0) {
+            return;
+        }
+
+        this.state.attention = Math.max(this.state.attention, external.attention);
+        this.state.deceased = undefined;
+        this.state.stuckSince = undefined;
+        if (this.state.cognition?.activeMove) {
+            this.state.cognition.activeMove = undefined;
         }
     }
 

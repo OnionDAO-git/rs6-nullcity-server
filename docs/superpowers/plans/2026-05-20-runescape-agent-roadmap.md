@@ -472,6 +472,9 @@ Safe public module facade building blocks are implemented, but the public member
 - `[ ]` **M4: `prepare_epitaph` action.** When `lifespanTicks < threshold`, hero spends a tick writing its own epitaph that overrides the templated one at death.
 - `[ ]` **M5: `trade_resource` action.** Hero proactively offers a resource to a patron who's neglected them.
 - `[ ]` **M6: Hero-as-resource-gatherer at faction landmarks.** Heroes skill-train at rs6 zones their faction controls; output → faction stockpile.
+- `[x]` **M7: Operator revive tooling for manual residents.** Add an explicit CLI/helper that can revive `attention_exhausted` manual heroes for local/event verification without changing long-term SOUL respawn policy.
+  - Started 2026-05-24 on `agents/wip`: Codex is implementing HD-030 as an admin revive command instead of temporarily flipping hero SOULs to `on_restart`.
+  - Verified 2026-05-24 on `agents/wip`: `npm run controller:revive -- --resident <name>` revives manual attention-exhausted residents, refuses non-manual/non-attention deaths unless `--force`, records Library revival evidence, clears stale move/stuck state, and active controllers now adopt operator-revived runtime state instead of overwriting it. Focused tests, full gates, dashboard HTTP/browser smoke, and live `local-36085` revival of Hans, Father Aereck, Wise Old Man, Duke Horacio, Pip, and Thrand passed.
 
 ## Workstream N: Physical Event And Embassy
 

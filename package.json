@@ -21,6 +21,7 @@
         "controller:once": "npm run build && node dist/controller/index.js --once",
         "controller:dev": "ts-node -r tsconfig-paths/register src/controller/index.ts",
         "controller:bench": "npm run build && node dist/controller/benchmarks/cli.js",
+        "controller:revive": "ts-node -r tsconfig-paths/register src/controller/admin/revive-cli.ts",
         "patron:grant": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --grant",
         "patron:offer": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --offer",
         "controller:knowledge:review": "npm run build && node dist/controller/knowledge/review-suggestions.js",

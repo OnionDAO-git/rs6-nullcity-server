@@ -2277,6 +2277,65 @@ describe('ResidentRuntime modules', () => {
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
+
+    it('adopts an operator revive written to runtime state while the controller is still running', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-operator-revive-memory-'));
+
+        const state = stateFor('res:hans');
+        state.attention = 0;
+        state.stuckSince = 99;
+        state.cognition = {
+            activeMove: {
+                target: { x: 3200, y: 3200, level: 0 },
+                startedAtTick: 90,
+                lastTick: 98,
+                cause: 'pre_death_move',
+            },
+        };
+        state.deceased = {
+            date: '2026-05-24T17:40:00.000Z',
+            tick: 99,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+        const externallyRevived = {
+            ...state,
+            attention: 14000,
+            stuckSince: undefined,
+            deceased: undefined,
+            cognition: { ...state.cognition, activeMove: undefined },
+        };
+        const stateStore = {
+            load: jest.fn().mockReturnValueOnce(state).mockReturnValueOnce(externallyRevived),
+            save: jest.fn(),
+        } as unknown as RuntimeStateStore;
+        const thinking = thinkingModule();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:hans', {
+                attentionProfile: { startingAttention: 14000, decayCurve: 'gentle' },
+                respawnPolicy: 'manual',
+            } as Partial<Soul['frontmatter']>),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+        });
+
+        await runtime.onPerception({ tick: 100, events: [] });
+
+        expect(state.deceased).toBeUndefined();
+        expect(state.attention).toBeGreaterThan(13900);
+        expect(state.stuckSince).toBeUndefined();
+        expect(state.cognition?.activeMove).toBeUndefined();
+        expect(thinking.think).toHaveBeenCalled();
+        expect(stateStore.save).toHaveBeenLastCalledWith(expect.objectContaining({ resident: 'res:hans', deceased: undefined }));
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
 });
 
 function stateFor(resident: string): RuntimeState {

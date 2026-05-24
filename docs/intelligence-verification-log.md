@@ -1003,3 +1003,21 @@ All 3 inboxes received their standing_tier_crossed letter (verified via curl). O
 
 **Owner suggestion.** F16e — Codex when adjacent thinking/nervous work surfaces. Runbook line — claude can do as part of #153 (event-day staff disk-files fallback runbook).
 
+### E17 — HD-030 operator revive while controller is running
+
+**Status:** RESOLVED-by-codex
+**Tier:** 2 (code fix + live controller verification)
+**Date:** 2026-05-24 17:45 codex
+
+**Hypothesis.** HD-030 should be solved with a permanent operator command, not temporary SOUL respawn-policy edits: `npm run controller:revive -- --resident <name>` should revive manual residents that died from attention exhaustion and leave narrative evidence.
+
+**Observation.**
+- First CLI/helper tests passed, but live QA found an important integration bug: with the controller running, dead resident runtimes kept stale in-memory state and overwrote the CLI's disk revive on the next tick.
+- Fix: `ResidentRuntime` now checks for an externally revived runtime-state when its local state is deceased, then clears `deceased`, stale `stuckSince`, and stale `cognition.activeMove` before continuing normal thinking.
+- Operator safety: CLI honors `CONTROLLER_CONFIG`, rejects unknown args, revives only `respawnPolicy: manual` + `attention_exhausted` by default, and requires `--force` for other policies/death causes.
+- Full gates passed after the fix: typecheck, lint, format, build, Jest **1555/1555**.
+- Live rebuilt controller `local-36085` adopted revives for all six previously dead residents: Hans, Father Aereck, Wise Old Man, Duke Horacio, Pip, and Thrand. Follow-up `controller:revive -- --resident hans` reported Hans already living instead of rewriting stale death state.
+
+**Classification.** RESOLVED (OPS / RUNTIME). The lesson is important: external admin tools that mutate runtime-state must either stop the controller first or have runtime-side adoption logic. This slice shipped the latter.
+
+**Suggested next step.** Continue HD-019 separately: deceased or idle residents still produce empty tick files and should eventually stop consuming perception/disk budget after death processing.
