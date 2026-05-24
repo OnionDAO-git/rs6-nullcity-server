@@ -111,6 +111,9 @@ export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 /** Range close enough for a raw-fish use action against the fallback kitchen range. */
 export const COOKING_RANGE_APPROACH_RADIUS = 1;
 
+/** Farthest nearby log the cooking routine will grab to make its own fire. */
+export const COOKING_LOG_PICKUP_MAX_DISTANCE = 8;
+
 /** Max number of inventory slots considered "free" by the pickup routine. */
 export const MAX_INVENTORY_SLOTS = 28;
 
@@ -311,7 +314,8 @@ export function buryBonesAction(perception: BodyHybridPerception): AgentAction |
  * say what's missing. Moved verbatim from the monolith (R-β slice 5).
  */
 export function starterFishingCookingAction(perception: BodyHybridPerception): AgentAction | undefined {
-    const rawFishSlot = findSlot(perception.resident?.inventory || [], isStarterRawFish);
+    const inventory = perception.resident?.inventory || [];
+    const rawFishSlot = findSlot(inventory, isStarterRawFish);
     if (rawFishSlot === undefined) {
         return undefined;
     }
@@ -327,6 +331,21 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
     const fireAction = firemakingAction(perception);
     if (fireAction) {
         return actionWithCause(fireAction, 'starter_fishing_make_cooking_fire');
+    }
+
+    const tinderboxSlot = findSlot(inventory, isTinderbox);
+    if (here && tinderboxSlot !== undefined && inventoryHasFreeSlot(inventory)) {
+        const logs = (perception.nearby?.worldItems || [])
+            .filter(
+                candidate =>
+                    isFiremakingLog(candidate) &&
+                    !isOwnedByAnotherActor(candidate, undefined, perception.resident?.id) &&
+                    distance(here, candidate.position) <= COOKING_LOG_PICKUP_MAX_DISTANCE,
+            )
+            .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        if (logs) {
+            return { kind: 'interact', target: logs, option: 'pick-up', cause: 'starter_fishing_pickup_cooking_logs' };
+        }
     }
 
     if (here && distance(here, LUMBRIDGE_CASTLE_RANGE) > COOKING_RANGE_APPROACH_RADIUS) {

@@ -94,6 +94,10 @@ describe('SoulLoader', () => {
                     'res:qa-scout',
                     'res:qa-trader',
                     'res:qa-survivor',
+                    'res:qa-banker',
+                    'res:qa-guide',
+                    'res:qa-priest',
+                    'res:qa-forager',
                 ]),
             );
 
@@ -106,6 +110,10 @@ describe('SoulLoader', () => {
                 'res:qa-scout',
                 'res:qa-trader',
                 'res:qa-survivor',
+                'res:qa-banker',
+                'res:qa-guide',
+                'res:qa-priest',
+                'res:qa-forager',
             ]) {
                 const soul = loader.load(name);
                 expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
@@ -130,6 +138,12 @@ describe('SoulLoader', () => {
                 expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'trade' }),
             );
             expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
+            expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(
+                expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'bank' }),
+            );
+            expect(loader.load('res:qa-guide').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'guide' }));
+            expect(loader.load('res:qa-priest').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
+            expect(loader.load('res:qa-forager').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
         });
     });
 });

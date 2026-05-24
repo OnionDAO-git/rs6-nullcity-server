@@ -2484,10 +2484,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private lowHealthRecoveryAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
         const goal = this.activeGoal();
-        if (!isLowHealth(perception) || (goal && isCombatTrainingGoal(goal))) {
+        const hasCarriedFood = firstFoodSlot(perception.resident?.inventory || []) !== undefined;
+        if (!isLowHealth(perception) || (goal && isCombatTrainingGoal(goal) && hasCarriedFood)) {
             return undefined;
         }
-        const hasCarriedFood = firstFoodSlot(perception.resident?.inventory || []) !== undefined;
         const action = bodyLowHealthRecoveryAction(
             perception,
             this.options.state.resident,
@@ -2520,7 +2520,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const goal = this.activeGoal();
         if (
             !isLowHealth(perception) ||
-            (goal && isCombatTrainingGoal(goal)) ||
             firstFoodSlot(perception.resident?.inventory || []) !== undefined
         ) {
             return undefined;

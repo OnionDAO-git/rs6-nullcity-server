@@ -3887,6 +3887,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('combat_eat_before_training');
     });
 
+    it('returns to safety during combat training when hurt and carrying no food', async () => {
+        const chicken = npc('Chicken', 3220, 3201);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs and retreat if hurt.',
+                steps: ['fight a safe target', 'eat when hurt'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                    inCombat: false,
+                },
+                npcs: [chicken],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: { x: 3200, y: 3200, level: 0 },
+                range: 6,
+                cause: 'low_health_return_to_anchor',
+            },
+        ]);
+        expect(result.cause).toBe('low_health_return_to_anchor');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('refuses to start combat training while hurt and carrying no food', async () => {
         const chicken = npc('Chicken', 3219, 3201);
         const llm = scriptedLlm([]);

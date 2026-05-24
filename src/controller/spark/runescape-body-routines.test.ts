@@ -432,6 +432,26 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
+    it('picks up nearby logs before walking to a range when raw fish and a tinderbox are carried', () => {
+        const logs = { itemId: LOGS, key: 'rs:logs', amount: 1, position: { x: 104, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: {
+                    id: 'res:qa-angler',
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [item(RAW_SHRIMP), item(TINDERBOX)],
+                },
+                nearby: { worldItems: [logs] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: logs,
+            option: 'pick-up',
+            cause: 'starter_fishing_pickup_cooking_logs',
+        });
+    });
+
     it('says when raw fish are carried but no heat source and no firemaking tools', () => {
         const action = starterFishingCookingAction(
             perception({
