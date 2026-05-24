@@ -501,6 +501,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-23 on `agents/wip`: when hurt with no food and no visible food, the resident now returns toward its visibility anchor before roaming or skilling so humans can find it and it stops drifting deeper into danger.
   - Verified 2026-05-23 on `agents/wip`: emergency food recovery no longer treats raw fish as edible. When hurt, the resident cooks carried raw starter fish when heat is visible and can net visible starter fish when carrying a small net and no cooked food is available.
   - Verified 2026-05-23 on `agents/wip`: opportunistic pickup now suppresses non-food loot while hurt, so low-HP residents stop chasing coins/logs/bones unless the ground item is edible survival food.
+  - Verified 2026-05-23 on `agents/wip`: low-HP/no-food residents now hold position near safety instead of continuing normal skilling loops, with an occasional visible "holding near safety" status line.
 - `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
   - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
 - `[x]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.

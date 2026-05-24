@@ -255,6 +255,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return this.result([lowHealthRecovery.action], lowHealthRecovery.cause, 0, false);
             }
 
+            const lowHealthHold = this.lowHealthHoldPositionAction(perception as HybridPerception);
+            if (lowHealthHold) {
+                return this.result(lowHealthHold.actions, lowHealthHold.cause, 0, lowHealthHold.nooped);
+            }
+
             const combatNarration = this.combatNarrationAction();
             if (combatNarration) {
                 return this.result([combatNarration.action], combatNarration.cause, 0, false);
@@ -2344,6 +2349,49 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const returnAction: AgentAction = { kind: 'move_to', target: anchor, range: radius, cause: 'low_health_return_to_anchor' };
         this.rememberBodyAction(returnAction);
         return { action: returnAction, cause: 'low_health_return_to_anchor' };
+    }
+
+    private lowHealthHoldPositionAction(
+        perception: HybridPerception,
+    ): { actions: AgentAction[]; cause: string; nooped: boolean } | undefined {
+        const goal = this.activeGoal();
+        if (
+            !isLowHealth(perception) ||
+            (goal && isCombatTrainingGoal(goal)) ||
+            firstFoodSlot(perception.resident?.inventory || []) !== undefined
+        ) {
+            return undefined;
+        }
+
+        const cognition = this.cognition();
+        cognition.lastBodyTick = this.options.state.tick;
+        if (
+            !shouldEmitPresenceBeacon({
+                tick: this.options.state.tick,
+                hasActiveGoal: this.activeGoal() !== undefined,
+                lastBeaconTick: cognition.lastPresenceBeaconTick,
+                lastGoalShareTick: cognition.lastGoalShareTick,
+                interval: this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS,
+            })
+        ) {
+            return { actions: [], cause: 'low_health_hold_position', nooped: true };
+        }
+
+        cognition.lastPresenceBeaconTick = this.options.state.tick;
+        cognition.lastGoalShareTick = this.options.state.tick;
+        return {
+            actions: [{ kind: 'say', text: this.lowHealthHoldSpeech(perception) }],
+            cause: 'low_health_hold_position',
+            nooped: false,
+        };
+    }
+
+    private lowHealthHoldSpeech(perception: HybridPerception): string {
+        const here = perception.resident?.position;
+        return (
+            cleanSpeech(`I am hurt${here ? ` at ${here.x},${here.y}` : ''}. Holding near safety until I find food or heal.`) ||
+            'I am hurt. Holding near safety until I find food or heal.'
+        );
     }
 
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {

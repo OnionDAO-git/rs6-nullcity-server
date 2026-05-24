@@ -4306,8 +4306,8 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).not.toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
-        expect(result.cause).not.toBe('opportunistic_pickup');
-        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(result.cause).toBe('low_health_hold_position');
+        expect(llm.complete).not.toHaveBeenCalled();
     });
 
     it('moves toward useful ground items while scouting when they are out of reach', async () => {
@@ -4926,10 +4926,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.cause).toBe('presence_beacon');
+        expect(result.cause).toBe('low_health_hold_position');
         expect(result.actions[0]).toEqual({
             kind: 'say',
-            text: 'I am online at 3201,3201. Goal: Practice scouting. Need: food or time to heal before fighting.',
+            text: 'I am hurt at 3201,3201. Holding near safety until I find food or heal.',
         });
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4970,6 +4970,77 @@ describe('HybridAgentThinkingModule', () => {
             },
         ]);
         expect(result.cause).toBe('low_health_return_to_anchor');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('holds position near the anchor instead of skilling when low on health without food', async () => {
+        const tree = { objectId: 1278, position: { x: 3201, y: 3200, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'woodcutting-practice',
+                description: 'Practice woodcutting on ordinary trees and gather logs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 120,
+            lastGoalShareTick: 120,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                    inCombat: false,
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('low_health_hold_position');
+        expect(result.nooped).toBe(true);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('occasionally says it is holding for food or healing when low on health near the anchor', async () => {
+        const tree = { objectId: 1278, position: { x: 3201, y: 3200, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'woodcutting-practice',
+                description: 'Practice woodcutting on ordinary trees and gather logs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+            lastGoalShareTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                    inCombat: false,
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am hurt at 3200,3200. Holding near safety until I find food or heal.' }]);
+        expect(result.cause).toBe('low_health_hold_position');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
