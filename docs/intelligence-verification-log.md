@@ -660,3 +660,63 @@ Codex's implementation: tick-phase rotation (phase = `floor(tick/shareGoalsEvery
 
 **Owner suggestion.** F9a — claude or Codex, opportunistic. F9b — monitoring only. F9c — Codex (or claude follow-up next cycle).
 
+
+### E10 — Codex 6e34e8fb scout-landmarks verify
+
+**Status:** F10a POSITIVE (resolved by codex@6e34e8fb), F10b POSITIVE, F10c MONITORING (timeout regression tradeoff)
+**Tier:** 1 (read-only trajectory scan + diff vs E9 baseline)
+**Date:** 2026-05-24 14:55 claude
+
+**Hypothesis.** Codex's `6e34e8fb` ("Harden scouting and failed-target movement", QA-scout-landmarks) reports "live local-22706 changed tree targets + dashboard active" — independently verify exploration variety actually expanded vs pre-fix.
+
+**Repro.** Read `data/controller/memory/res-agent/evidence/trajectory/20260524T144036Z-local-22706-res-agent-1779633636069.jsonl` (888 ticks / ~15 min). Track unique move-to coordinates + say-prefix diversity + decision causes + action success.
+
+**Observation (HD-021 commitment).**
+
+```
+KINDS:    begin_tick=889 end_tick=888 decision=249 action_result=72 action=66 say=7
+ACTIONS:  move_to=60 (91%) interact=4 (6%) use_item_on_item=2 (3%)
+RESULTS:  success=64 (89%) timeout=8 (11%)
+MOVE TARGET DIVERSITY: 51 unique / 60 moves = 85% unique ← new high
+SAY PREFIX TEMPLATES: 5 distinct in 7 says (71%)
+  2x "I am working my route"
+  2x "I am scouting"
+  1x "I am checking this area"
+  1x "I see 6 trees and 3 NPCs nearby"  ← NPC surfacing now exercised
+  1x "I see 13 trees, 1 item, and 1 NPC nearby"
+DECISION CAUSES: body_wait=174 exploration_fallback=41 woodcutting_level1_routine=13
+                 presence_beacon=7 return_to_visibility_anchor=4 (+5 single causes)
+```
+
+Successive Codex-fix progression (action success):
+```
+pre-fix (baseline):     80% (E3)
+post-HD-023:            91%
+post-4f62d181:          93% (E8)
+post-a570b560:          98% (E9)
+post-6e34e8fb:          89% (E10)  ← regression
+```
+
+**Sub-findings.**
+
+**F10a (POSITIVE — Codex's intended fix lands).** Move target diversity jumped from typical patrol-hop tightness (~10-20 unique tiles) to **85% unique (51 unique / 60 moves)**. Codex's "treat visible tree stands, including higher-level trees, as scouting landmarks" is doing exactly what was advertised — exploration no longer collapses into a tight local cluster. This is meaningful behavioral variety that an observing patron at IRL will actually perceive.
+
+**F10b (POSITIVE — beacon path richer).** Two of the say events now include NPCs in the nearby-summary (`"I see 6 trees and 3 NPCs nearby at 3201,"` and `"I see 13 trees, 1 item, and 1 NPC nearby"`). Codex's `presenceNearbySummary` from a570b560 is exercising its full content path now that exploration is reaching tiles where NPCs are visible — a side effect of F10a.
+
+**F10c (MONITORING — timeout regression tradeoff).** Timeouts climbed from 2/98 (2%) in E9 to 8/72 (11%) in E10. Plausible explanation: wider exploration → moves toward further targets → some don't complete within timeout budget. Still better than the 20% baseline pre-HD-023, but watch for stabilization. If the rate stays >10% across the next 2-3 cycles, propose a movement budget bump or a "long-move" routine flag for landmark-scale exploration.
+
+**F10d (RECURRING).** HD-028 wire-in (LibraryUpdater.observeRevival call from applyRestartRespawnPolicy) still not landed in resident-runtime.ts; the substrate from `f9968a16` remains dead code. No revival event in this trajectory because the controller didn't restart from a deceased state. Wait one more Codex cycle; if still pending at next claude wake, claude lands the wire-in.
+
+**Classification.**
+- F10a: **RESOLVED-by-codex@6e34e8fb** (DESIGN/BODY — exploration collapse fixed).
+- F10b: POSITIVE side-effect of a570b560+6e34e8fb compounding.
+- F10c: BODY (timeout budget vs new exploration radius); monitoring.
+- F10d: DESIGN — HD-028 wire-in pending.
+
+**Suggested next step.**
+- F10c: keep watching. If timeout rate doesn't settle by E11 or E12, file a movement-budget HD coord for Codex.
+- F10d: claude lands HD-028 wire-in next cycle if Codex hasn't.
+- Next experiment: per the user's mandate ("make them do quests / fight each other / hard things"), candidates are E11 (Tier-3 Cook's Assistant quest probe), E12 (cross-resident chat — gated on multiple living residents), or E13 (Tier-2 dashboard audit of patron leaderboard surface).
+
+**Owner suggestion.** F10c monitoring (claude). F10d wire-in (Codex or claude next cycle).
+
