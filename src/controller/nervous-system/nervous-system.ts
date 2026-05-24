@@ -85,8 +85,79 @@ export class NervousSystem {
             }
         }
 
+        const patronMemoryReaction = this.patronMemoryReaction(perception);
+        if (patronMemoryReaction) {
+            return patronMemoryReaction;
+        }
+
         const memoryDir = this.options.memory.ensureResident(this.options.soul.frontmatter.name);
         return evaluateNervousRules(this.rules(memoryDir), this.options.state, perception, this.options.state.variables || {});
+    }
+
+    private patronMemoryReaction(perception: Perception): NervousReaction | undefined {
+        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const coolingUntil = this.options.state.hookCooldowns?.['patron-memory-acknowledge:any'] || 0;
+        if (coolingUntil > tick) {
+            return undefined;
+        }
+        const scanCoolingUntil = this.options.state.hookCooldowns?.['patron-memory-acknowledge:scan'] || 0;
+        if (scanCoolingUntil > tick) {
+            return undefined;
+        }
+
+        let memories: string[];
+        try {
+            memories = this.options.memory.retrieve(this.options.soul.frontmatter.name, 'patron gift Shards support witness sponsor', 6);
+        } catch {
+            this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+            this.options.state.hookCooldowns['patron-memory-acknowledge:scan'] = tick + 10;
+            return undefined;
+        }
+
+        const candidates: Array<{ patron: PatronMemory; ackKey: string }> = [];
+        for (const memory of memories) {
+            const patron = parsePatronMemory(memory);
+            if (!patron) {
+                continue;
+            }
+
+            const ackKey = `patron-memory-acknowledge:${stableKey(memory)}`;
+            const ackCoolingUntil = this.options.state.hookCooldowns?.[ackKey] || 0;
+            if (ackCoolingUntil > tick) {
+                continue;
+            }
+
+            candidates.push({ patron, ackKey });
+        }
+
+        const latest = candidates[candidates.length - 1];
+        if (latest) {
+            this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+            for (const candidate of candidates) {
+                this.options.state.hookCooldowns[candidate.ackKey] = Number.MAX_SAFE_INTEGER;
+            }
+            this.options.state.hookCooldowns['patron-memory-acknowledge:any'] = tick + 30;
+
+            const message = patronThanksMessage(latest.patron, candidates.length > 1);
+            const rule: NervousRule = {
+                id: `patron-memory-acknowledge-${stableKey(latest.patron.handle)}`,
+                priority: 90,
+                condition: { kind: 'always' },
+                action: { kind: 'say', text: message },
+                source: 'system',
+            };
+
+            return {
+                rule,
+                action: { kind: 'say', text: message, cause: 'nervous:patron-memory-acknowledge' },
+                suppressThinking: true,
+                interruptThinking: true,
+            };
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+        this.options.state.hookCooldowns['patron-memory-acknowledge:scan'] = tick + 10;
+        return undefined;
     }
 
     private rules(memoryDir: string): NervousRule[] {
@@ -132,4 +203,49 @@ function isFoodItem(value: unknown): value is Item {
     }
 
     return typeof value.key === 'string' && FOOD_KEY_PATTERN.test(value.key);
+}
+
+type PatronMemory = { kind: 'gift' | 'witness' | 'sponsor'; handle: string; detail?: string };
+
+function parsePatronMemory(memory: string): PatronMemory | undefined {
+    const gift = memory.match(/patron gift from\s+([^:]+):\s*([^()]+)/i);
+    if (gift) {
+        return { kind: 'gift', handle: gift[1].trim(), detail: gift[2].trim() };
+    }
+
+    const witness = memory.match(/patron witnessed\s+\(([^)]+)\)/i);
+    if (witness) {
+        return { kind: 'witness', handle: witness[1].trim() };
+    }
+
+    const sponsor = memory.match(/patron sponsor:\s*([^()]+)/i);
+    if (sponsor) {
+        return { kind: 'sponsor', handle: sponsor[1].trim() };
+    }
+
+    return undefined;
+}
+
+function patronThanksMessage(patron: PatronMemory, backlog = false): string {
+    const suffix = backlog ? ', and everyone backing me!' : '!';
+    if (patron.kind === 'sponsor') {
+        return `Thank you for sponsoring us, ${patron.handle}${suffix}`;
+    }
+    if (patron.kind === 'witness') {
+        return `Thank you for witnessing this, ${patron.handle}${suffix}`;
+    }
+    if (patron.detail && /\bshards?\b/i.test(patron.detail)) {
+        return `Thank you for the Shards, ${patron.handle}${suffix}`;
+    }
+    return `Thank you for the support, ${patron.handle}${suffix}`;
+}
+
+function stableKey(value: string): string {
+    return (
+        value
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 80) || 'unknown'
+    );
 }

@@ -439,6 +439,9 @@ Safe public module facade building blocks are implemented, but the public member
 - `[ ]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
 - `[x]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
   - *Completed: Integrated in PatronGateway to record all actions to both the trajectory builder and the library timeline.*
+- `[x]` **J9: Visible patron acknowledgement loop.** Residents should visibly thank patrons after out-of-band Shards/support events reach Library memory, without relying on the LLM to notice.
+  - Started 2026-05-24 on `agents/wip`: HD-031 deterministic nervous-system patron-memory reflex; verify with focused tests, full gates, and live patron-offer smoke.
+  - Verified 2026-05-24 on `agents/wip`: Codex added a memory-backed nervous reflex that thanks the latest unacknowledged patron gift, collapses backlog thanks into one line, and keeps survival reflexes higher priority. Focused tests, typecheck, lint, format, build, full Jest, and live `codex-hd031-smoke` patron-offer smoke passed; live controller `local-16152` produced 23/23 successful actions including the visible Shards thanks.
 
 ## Workstream K: Factions Adapted For Runescape
 

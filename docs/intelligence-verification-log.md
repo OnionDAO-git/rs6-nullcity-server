@@ -927,3 +927,29 @@ Three layered fixes for F14c, in increasing scope:
 
 **Owner suggestion.** (a) claude can ship next cycle if prompt template lives in substrate. (b)/(c) Codex zone (thinking + nervous-system). File as HD-031.
 
+### E15 — HD-031 patron-memory acknowledgement reflex live smoke
+
+**Status:** RESOLVED-by-codex (deterministic reflex landed; prompt polish remains optional)
+**Tier:** 2 (code fix + live patron-offer smoke)
+**Date:** 2026-05-24 17:05 codex
+
+**Hypothesis.** E14/F14c showed the patron support data reached resident memory but the Brain ignored it. A nervous-system reflex should close the IRL-visible loop without waiting for a small model to choose a thank-you line.
+
+**Repro.**
+1. Add focused nervous-system tests for a memory line like `Patron gift from alice@onion: 10 Shards (...)`.
+2. Restart controller from rebuilt `dist` as `local-16152` with `--letters-http-port=43596 --wall-redact`.
+3. Run `npm run patron:grant -- --human codex-hd031-smoke --amount 100`.
+4. Run `npm run patron:offer -- --human codex-hd031-smoke --resident res:agent --amount 10`.
+5. Scan post-restart action JSONL for `cause="nervous:patron-memory-acknowledge"`.
+
+**Observation.**
+- Focused red/green tests now cover: patron-memory thanks, same-gift non-repeat, scan throttle, backlog collapse, and survival priority.
+- Full gate passed: typecheck, lint, format, build, Jest **1547/1547**.
+- Live offer path delivered the private patron letter and kept the wall redacted.
+- Live controller `local-16152` produced this visible public action:
+  `Thank you for the Shards, codex-hd031-smoke, and everyone backing me!`
+- Post-restart live sample: **23/23 successful actions**, including the thank-you line and continued `explore_patrol` movement afterward.
+
+**Classification.** RESOLVED (DESIGN / NERVOUS). This intentionally solves the Chicago guarantee at the reflex layer. E14's prompt nudge / dedicated prompt section remain useful for richer Brain-authored appreciation, but the patron can now visibly see the resident react.
+
+**Suggested next step.** Run a longer patron soak later with 2-3 fresh offers spaced apart and confirm the resident thanks new support once each while continuing normal gameplay. Then decide whether prompt polish is still worth doing before event day.
