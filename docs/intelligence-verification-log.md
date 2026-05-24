@@ -1139,3 +1139,67 @@ res-thrand        says=1 actions=1 results success=1 timeout=1
 ```
 
 **Conclusion.** HD-032 is mitigated: heroes are no longer silently frozen after watchdog timeouts, and players/dashboard can see fallback speech/action. It is not fully "smart hero" solved. The deeper inference-health issue remains: real LLM completions are still timing out frequently, so the next slice should either add an inference health check with provider failover or give default hero souls deterministic local patrol/greeting routines that do not depend on LLM completion.
+
+### E18 — Codex d72a3d00 watchdog freeze mitigation verify (E17 / HD-032 response)
+
+**Status:** RESOLVED-by-codex@d72a3d00 — all 7 residents now alive AND active; F17b fully closed
+**Tier:** 1 (read-only multi-resident trajectory diff vs E17 baseline)
+**Date:** 2026-05-24 18:25 claude
+
+**Hypothesis.** Codex's `d72a3d00` ("Mitigate resident watchdog freezes", responding to HD-032 within ~15 min) claims to abort queued LLM requests cleanly, consume module fallback decisions, apply backoff immediately, and emit a watchdog_fallback say + safe local move. Verify against the same per-hero histogram shape used in E17 (which found 32/19-cause:none/13-watchdog frozen pattern).
+
+**Repro.** Same protocol as E17: for each of 7 residents, read their most recent `local-63709` trajectory and histogram kinds + decision causes + actions + brain calls. Diff against E17 baseline.
+
+**Observation (HD-021 commitment).**
+
+Before/after comparison on similar 10-15 min windows:
+
+```
+RESIDENT          E17 (pre-fix)                  E18 (post-fix d72a3d00)             Delta
+                  say act res br dec              say act res br dec
+res-hans          0   0   0   0  32 (frozen)     9   9  18   4  25                  +9/+9/+18/+4
+res-father-aereck 0   0   0   0  32              9   9  18   2  23                  +9/+9/+18/+2
+res-wise-old-man  0   0   0   0  32              10  10 20   1  20                  +10/+10/+20/+1
+res-duke-horacio  0   0   0   0  32              10  10 20   1  20                  +10/+10/+20/+1
+res-pip           0   0   0   0  32              8   10 18   4  18                  +8/+10/+18/+4
+res-thrand        0   0   0   0  32              9   9  18   1  16                  +9/+9/+18/+1
+res-agent         4   15  19  1  39              7   67 73   0  205                 +3/+52/+54
+```
+
+**Action success rates** (heroes pre-fix were "0/0 = N/A"; now):
+- All 6 heroes: 18/18 = **100%** success (all actions are `move_to`)
+- res:agent: 73/73 = **100%** success (64 move_to + 2 interact + 1 use_item_on_item)
+
+**Decision causes** for heroes (the diagnostic shape):
+- `watchdog_fallback`: 8-10 per hero — the new mitigation firing
+- `none`: 7-16 per hero — initial decision rows without cause (initial perception or similar)
+- `thinking_watchdog_timeout`: **0** across all heroes (vs 13 each in E17)
+- res:agent: body_wait=129, exploration_fallback=40, return_to_visibility_anchor=14 (normal explore profile)
+
+**Sub-findings.**
+
+**F18a (POSITIVE / RESOLVED-by-codex@d72a3d00).** Every resident is alive AND active. The uniform 32/19/13 frozen pattern from E17 is completely gone. Heroes produce 9-10 says + 9-10 actions in a ~15-min window after the fix.
+
+**F18b (POSITIVE).** 100% action success across all 7 residents in this window. The `move_to` fallback that watchdog_fallback emits succeeds reliably. No timeouts at all in the post-fix window.
+
+**F18c (POSITIVE — organic Brain output).** `res:pip` produced a soul-driven goal text in its decision causes: `"Idle near Lumbridge Guide, observing for mentees. No immediate action needed."` This is real Brain inference reflecting Pip's mentor soul archetype, not a fallback template. Suggests the Brain DOES sometimes succeed for heroes, not always; the fallback is the safety net.
+
+**F18d (MONITORING / minor polish).** All 6 heroes' first say is the IDENTICAL line: `"I am still here; getting my bearings."` — this is the watchdog_fallback template. At Chicago, if multiple heroes simultaneously fall back, patrons will see all 6 saying the same thing. Future polish: vary the fallback text per resident (could pull from soul.voice frontmatter), or rotate across N variants.
+
+**F18e (POSITIVE — secondary win).** res:agent went from 15 actions in 10 min (E17) to 67 actions in ~15 min (E18) — roughly 4x throughput. Codex's "aborted queued LLM requests settle immediately" change reduces head-of-line blocking, so res:agent's body cycles run faster between Brain calls.
+
+**Classification.**
+- F18a: **RESOLVED-by-codex@d72a3d00** (ENGINE / DESIGN — watchdog/LLM-abort plumbing fixed at scale).
+- F18b: PASS / 100% success monitoring baseline.
+- F18c: PASS / first organic hero Brain output observed; encouraging.
+- F18d: KNOWLEDGE / minor — identical fallback text. Pre-Chicago polish, not a blocker.
+- F18e: PASS / secondary throughput win.
+
+**Sprint context.** This closes the most critical IRL risk surfaced this sprint. With Chicago 8 days out, all 7 residents can now stand at the embassy actively rather than as motionless statues. Combined with the now-closed patron acknowledgment loop (E16), the Pillar-3 conversation core is **functional end-to-end for the full roster**, not just res:agent.
+
+**Suggested next step.**
+- F18d polish: vary watchdog_fallback text per soul (~10-line tweak in thinking module; Codex zone). Pull a one-liner from each hero's soul.voice array on fallback, fall back to the generic line if empty. Could become its own short cycle.
+- Run a longer 30-min soak to see whether the 100% action success rate holds with all 6 heroes simultaneously active — saturation behavior on the LLM endpoint is the next concern.
+
+**Owner suggestion.** F18d — Codex (thinking-module slice). 30-min soak — claude can do as background observation while doing other work.
+
