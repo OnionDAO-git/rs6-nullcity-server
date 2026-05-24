@@ -162,6 +162,43 @@ LettersStore slugs are case-insensitive: `Alice@Onion` and `alice@onion` are the
 
 ---
 
+## The four patron verbs (cheat sheet)
+
+| verb | what it does | when to use it |
+| --- | --- | --- |
+| `patron:grant` | Credit Shards to a patron's wallet. | Onboarding (first visit) or top-up when they spent their balance. |
+| `patron:offer` | Patron spends Shards → resident gets attention + standing bumps. | The default action when a patron wants to support a resident. |
+| `patron:ask` | Patron asks a resident a free-text question; resident sees a `chat` perception event + the patron-acknowledge reflex fires within ~1s. | Patron wants a verbal interaction (resident may say something back). |
+| `patron:witness` | Patron records that they witnessed a resident's act (skill milestone, brave fight, etc.) — bumps standing without spending Shards. | Free-tier visitor moments; gives standing without requiring a Shard balance. |
+
+```bash
+# Ask a resident a question (immediate visible say within ~1s)
+npm run patron:ask -- --human alice@onion --resident res:hans --text "Hans, what is the best way to get to Varrock?"
+
+# Witness a resident doing something brave
+npm run patron:witness -- --human alice@onion --resident res:hans --note "watched him cook a shrimp without burning it"
+```
+
+Both verbs land library timeline events on the resident (auditable later) and flow into letters when a tier threshold is crossed.
+
+---
+
+## Wall ticker projection
+
+The `/v1/wall/snapshot` endpoint feeds a redacted public scroll suitable for the room projector. It serves only the last N letters with bodies cleared + recipient masked (`a***@onion`, `c***-patron`), so private epitaph and standing letters stay private while the room can still see "something is happening."
+
+```bash
+# Verify wall snapshot is redacted (body empty, recipient masked)
+curl -s 'http://127.0.0.1:43596/v1/wall/snapshot' | jq '.recentLetters[0]'
+
+# Point the projector browser at the static page (no auth, redaction baked in)
+open 'http://127.0.0.1:43596/wall/'   # or load on the projector laptop
+```
+
+If the snapshot returns 404 the controller was started without `--letters-http-port=43596 --wall-redact`. Ask the maintainer (or Codex) to restart with both flags. The `scripts/post-restart-smoke.sh` health check covers this in section 2 + 3.
+
+---
+
 ## Live in-event commands cheatsheet
 
 ```bash

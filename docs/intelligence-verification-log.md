@@ -1988,3 +1988,137 @@ Some cohort residents (guardian, survivor) say a lot but act little — they're 
 
 **Owner suggestion.** Pure verification. No follow-up required.
 
+
+### E34 — test + gate audit + soul roster sanity (SPRINT-QA2 subagent A)
+
+**Status:** GREEN 1657/1657 + typecheck/lint/build; minor corrections to my own counting
+**Tier:** 0 (read-only test execution + grep)
+**Date:** 2026-05-24 22:00 claude (subagent dispatched at 21:50)
+
+**Hypothesis.** Post E30/E31 + Codex's `resident-test-cohort-2` (banker/guide/priest/forager added; 12 cohort total per Codex HANDOFF at 16:06), verify the test suite is still green at 1657, no flakes, and confirm soul schema parses every starter soul without warnings.
+
+**Observation.**
+- `npm test` 1657/1657 pass; zero flakes across two runs; total runtime ~22s
+- `npm run typecheck && npm run lint && npm run build` all green
+- Soul roster on disk: **19 souls in `src/controller/soul/starter-souls/`**, not 15 as my SPRINT-PM-PIVOT TLDR claimed. Breakdown: res:agent + 6 heroes + **12 cohort** (qa-angler, qa-banker, qa-cook, qa-forager, qa-guardian, qa-guide, qa-priest, qa-scout, qa-social, qa-survivor, qa-trader, qa-woodcutter). Codex landed `qa-banker / qa-guide / qa-priest / qa-forager` in `resident-test-cohort-2` after my E33 counted 8 cohort.
+- Floor wire-ins in `spark.ts`: **8 call sites**, not 9 as my E30 HANDOFF claimed. (Two adjacent calls were combined in one line that I'd counted twice.) `resident-runtime.ts` per-tick decay floor remains 1 call site. Total = 9 production spend-with-floor sites.
+
+**Sub-findings.**
+- **F34a (POSITIVE).** Codex's expansion to 19 souls slotted in cleanly. Soul-schema Zod validation passes every soul during runtime load with no warnings.
+- **F34b (DOC-ROT).** My E30 HANDOFF + sprint-handoff doc cite 1651/1651 and 7-resident roster. Refreshed inline in E37.
+
+**Classification.** ENGINE-validation PASS. No new HDs.
+
+**Suggested next step.** Refresh the count-citing docs (covered in E37 inline).
+
+
+### E35 — code review of E30/E31 + cohort souls + multi-resident wiring (SPRINT-QA2 subagent B)
+
+**Status:** CLEAN — 0 HIGH bugs, 2 MEDIUM (defer post-Chicago), 1 LOW (defer)
+**Tier:** 1 (static code review on diff `04451dbb..afcf5cab` + Codex cohort souls)
+**Date:** 2026-05-24 22:00 claude
+
+**Observation.** Subagent code-reviewer pass on the post-SPRINT-QA window: HD-037/038 patron-gateway fixes (E31, commit `77b5cbb7`), HD-008 attention floor substrate (E30, commit `04451dbb`), Codex's cohort souls (commits `0d7445dd`, `cafb58d0`, `afcf5cab`), and the multi-resident runtime path that fans cohort spawn through `ControllerHost`.
+
+**Findings.**
+
+| sev | file | issue |
+|---|---|---|
+| MEDIUM-1 | `src/controller/mcp/patron-mcp-tool.ts` | `PatronEventOutcome.error` is narrowed at the gateway but the MCP tool surface still propagates the raw string union without re-asserting type. A future broadening of the union won't error at MCP-tool serialization; runtime caller assumes a closed set. **Not a Chicago blocker.** Fix: tighten the MCP outcome envelope with the same `PatronEventOutcomeErrorKind` Zod enum as the gateway. |
+| MEDIUM-2 | `src/controller/soul/soul-schema.ts` | `soulNervousRuleSchema.priority` is `z.number()` without `.min(0).max(80)` (or `.max(100)`). Heroes use 78/76/42; QA cohort uses 80/78/76. The reflex-loop heuristic in `nervous-system.ts` expects priority < 80 to interleave with patron-acknowledge (HD-031, priority 80). If a soul ever lands with priority 99 it'd silently outrank patron-thank. **Not a Chicago blocker.** Fix: add `.min(0).max(80)` to Zod schema + 1 regression test. |
+| LOW-1 | `src/controller/patron/patron-gateway.ts` (sendGift) | `sendGift` empty-args returns `error: 'resident_not_found'` even though HD-037 widened the error union with `'invalid_input'`. The fix landed for `askResident` but missed `sendGift`. Regression test for this single path missing. |
+
+**Sub-findings.**
+- **F35a (POSITIVE).** Zero HIGH bugs across ~1200 lines of new substrate + ~600 lines of Codex cohort soul YAML. E30/E31 ship cleanly.
+- **F35b (CONSISTENCY GAP).** LOW-1 above: `sendGift` was widened to accept `invalid_input` in the error type but the empty-args path was not re-routed. Single-line fix + 1 test. Filed as a deferred follow-up to HD-037.
+
+**Classification.** Substrate quality is HEALTHY. No new HDs unless the Zod priority clamp drifts pre-Chicago.
+
+**Suggested next step.** Post-Chicago cleanup: tighten MCP error envelope (MEDIUM-1), Zod-clamp nervous rule priority (MEDIUM-2), fix sendGift empty-args path (LOW-1). All bundled into a single ~30-line PR. Track via HD log addendums.
+
+
+### E36 — live trajectory deep scan across 15 residents (SPRINT-QA2 subagent C — CRITICAL FINDINGS)
+
+**Status:** CRITICAL — 3 new failure modes found live; HD-039 + HD-040 + HD-041 filed
+**Tier:** 1 (deep-scan trajectory + library + standing + letters across 15 residents)
+**Date:** 2026-05-24 22:00 claude
+
+**Hypothesis.** Now that the cohort is alive + active for ~14 minutes on `local-39827`, what new patterns emerge that weren't visible in the E18 7-resident baseline? Specifically: cross-resident chat (L-α/L-β), letter dispatch correctness over many tier crossings (J-δ-β-2), and per-cohort goal-completion behavior.
+
+**Three CRITICAL anomalies confirmed live by direct verification.**
+
+#### F36a — qa-guardian + qa-survivor catatonic (DESIGN+PERCEPTION)
+Both QA souls are stuck in `lowHealthHoldPositionAction` (`hybrid-agent-thinking-module.ts:2517`). Histogram of latest trajectory file:
+```
+res-qa-guardian:  2192 low_health_hold_position (100% of decisions)
+res-qa-survivor:  2177 low_health_hold_position (100% of decisions)
+```
+Neither resident emits a single Brain call, a single `say` (except the periodic presence-beacon `"I am hurt at X,Y..."` every 90 ticks), and zero `move_to` or `interact` actions. The reflex fires correctly — `isLowHealth(perception) && firstFoodSlot(inventory) === undefined` is true forever — but **the soul has no `seek_food` routine, no patron-fed regen path, and no escape from the low-health state**. The presence-beacon emits ~1/90 ticks while the other 89 ticks are `nooped:true`.
+
+Root cause likely DESIGN: both souls' `initialInventory` ships `itemId: 315` × 3 (or × 4), but `firstFoodSlot` requires `isEdibleFood` which checks the `key` string for the cooked/raw pattern. Either the engine reports the items with a key that misses the food pattern, OR they ate all their food early and have no acquisition path.
+
+#### F36b — standing-tier letter dispatcher LOSSY when multi-tier crossing (J-δ-β-2 regression)
+Reconstructed expected tier crossings from `data/controller/memory/patron-standing.json` history vs actual `standing_tier_crossed` letters delivered:
+```
+HUMAN                         EXPECTED  DELIVERED  MISSING
+codex-hour-qa                 3 (acq+ally+officer @ 20:36:41)   0   −3
+codex-live                    3 (acq+ally+officer @ 04:51-04:53)  0   −3
+codex-qa                      2 (acq+ally @ 13:01:15)              1   −1
+claude-mega-rescue            3 (acq+ally+officer @ 19:10:28)     1   −2  (officer only, no acq/ally)
+codex-hd031-smoke             1   1   0
+claude-e16-{alpha,beta,gamma} 1 each  1 each  0
+```
+**Failure pattern: when a single `incrementSupport` call crosses MULTIPLE tier thresholds, only the highest-tier letter is produced (or sometimes zero letters).** When tier crossings are timestamp-coincident, the dispatcher dedupes or drops earlier crossings. Total: **~8 of 15 expected tier letters never dispatched.**
+
+Hypothesis: `produceStandingTierLetter` is called once per `recordSupport`, and inside it picks the resulting tier but doesn't emit a letter per crossed threshold. The J-δ-β-2 substrate test probably only covers single-tier crossings (the test fixture grants 10 then 100 then 1000 across separate calls).
+
+#### F36c — zero cross-resident chat observed (L-α/L-β residual or regression)
+Scanned latest trajectory file for 9 residents (hans, aereck, wise, duke, pip, thrand, qa-angler, qa-cook, qa-social) for `heard` events / `resident_speech` / `speaker` keys. **Zero** matches across all 9. Either:
+- L-α (LoreBus) only emits for narrative-event kinds (`fire_lit`, `death`) and not for ambient `say`s — which is by design but means qa-social's "I heard that. Try social help" can't actually be heard by anyone
+- L-β whisper substrate is wired but no resident has actually used it
+- Perception range for `heard` is too short (only Chebyshev 1-2) and residents are spawned in non-overlapping anchors
+
+This is an **OBSERVABILITY question** before it's a bug — the spec intent for cross-resident chat was never spelled out at the L-α/L-β level. The cohort is the first scenario where it would matter.
+
+**Sub-findings (positives).**
+- **F36d (POSITIVE).** Cohort other than guardian/survivor performs well: qa-scout 75 actions / 5min, qa-woodcutter 81 actions / 5min, qa-banker 44 actions / 5min.
+- **F36e (POSITIVE).** Hero floors STILL holding (50+ min post-restart): 4 of 6 heroes at exact floor value, the other 2 above; zero hero deaths.
+- **F36f (NEUTRAL).** `res-thrand` and `res-duke-horacio` have very small recent trajectory files (just 2-3 decisions in latest file) because they spent most of the window in older trajectory files that have since rotated. The 31% timeout / 22% interrupt rates noted in the briefing summary may be local to the older window; will re-confirm next deep scan.
+
+**Classification.**
+- F36a → **HD-039 filed** (DESIGN+PERCEPTION, High priority): qa-guardian / qa-survivor lack a low-health escape path. Codex zone (hybrid-agent-thinking-module + cohort soul design).
+- F36b → **HD-040 filed** (ENGINE / DESIGN regression, High priority): J-δ-β-2 standing-tier letter dispatcher loses letters when one grant crosses multiple thresholds. Codex zone (letters/produce-standing-tier.ts).
+- F36c → **HD-041 filed** (OBSERVABILITY / DESIGN, Normal priority): cross-resident chat never observed live; either by design (LoreBus filter) or a regression to L-α/L-β. Needs spec clarity before Chicago.
+
+**Suggested next step.** Codex Monday morning consumes HD-039 + HD-040 + HD-041 in priority order. Pre-Chicago, the HD-040 letter dispatch is most important (epitaphs + tier letters are the core Pillar-3 user-visible output); patron grants that cross multiple tiers will produce confusing inboxes ("I got an Officer letter without ever seeing Acquaintance or Ally letters").
+
+**Owner suggestion.** Codex.
+
+
+### E37 — cross-doc consistency pass (SPRINT-QA2 subagent D)
+
+**Status:** 6 doc-rot items found; 4 fixed inline; 2 logged as small follow-ups
+**Tier:** 0 (read-only doc audit, then inline edits)
+**Date:** 2026-05-24 22:00 claude
+
+**Observation.** Subagent cross-doc consistency pass found these stale facts after SPRINT-MEGA → SPRINT-PM-PIVOT → SPRINT-QA → SPRINT-QA2 churn:
+
+| # | doc | stale fact | fixed in this cycle? |
+|---|---|---|---|
+| 1 | `scripts/post-restart-smoke.sh` | Hardcoded 7-resident `RESIDENTS=(...)` array; misses 12 cohort residents | **YES** — globs `data/controller/memory/res-*/` (bash 3.2 compatible); section 4 summary now uses `${#RESIDENTS[@]}` |
+| 2 | `docs/embassy-staff-runbook.md` | Lists `patron:grant` + `patron:offer` only; missing `patron:ask` + `patron:witness` (HD-035, E24) | **YES** — added "The four patron verbs" cheat-sheet table + example commands |
+| 3 | `docs/embassy-staff-runbook.md` | No wall-ticker projection section despite HD-013 + EVENT-D6 shipping | **YES** — added "Wall ticker projection" section with `curl` + `open public/wall/` |
+| 4 | `docs/sprint-handoff-2026-05-26.md` | Cites "7 residents", "1632/1632 tests", "HD-001 through HD-033", "21 E-entries" | **YES** — refreshed TL;DR + footer to 19 residents / 1657 tests / HD-001-041 / 37 E-entries |
+| 5 | `docs/pre-chicago-readiness.md` | "All 7 residents alive" check + "Hero attention > 5000" without floor language; HD-008 listed as High not Closed | **YES** — globbed-19 + floor-language + HD-008 marked CLOSED with 22:00 CDT live state |
+| 6 | `docs/roadmap.md` (Workstream S) | Sprint-QA + SPRINT-QA2 findings not surfaced as a workstream block | NO — deferred, low priority pre-Chicago; intel log + HD log are the source-of-truth this weekend |
+
+**Sub-findings.**
+- **F37a (DOC-HEALTH POSITIVE).** Major design docs (embassy-staff-runbook.md, pre-chicago-readiness.md, sprint-handoff-2026-05-26.md) are now internally consistent + reflect the live 19-resident state.
+- **F37b (DEFERRED).** `docs/roadmap.md` Workstream S section deferred — sprint-handoff + intel log are sufficient for the maintainer recovery flow Tuesday morning.
+
+**Classification.** DOC-VALIDATION PASS post-fix. No new HDs.
+
+**Suggested next step.** Post-Chicago: write `docs/roadmap.md` Workstream S consolidating QA findings.
+
+**Owner suggestion.** claude follow-up.
+

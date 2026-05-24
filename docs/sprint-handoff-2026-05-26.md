@@ -3,17 +3,19 @@
 **For:** James (maintainer), Tuesday morning recovery context.
 **Sprint window:** 2026-05-24 (Saturday) → 2026-05-26 (Tuesday).
 **Author:** claude (with Codex as the depth-fix partner; see § Codex contribution).
-**Linked artifacts:** `docs/intelligence-verification-log.md` (E1-E21), `docs/human-decisions.md` (HD-001 through HD-033), `docs/agent-status.md` (append-only multi-agent log).
+**Linked artifacts:** `docs/intelligence-verification-log.md` (E1-E37), `docs/human-decisions.md` (HD-001 through HD-041), `docs/agent-status.md` (append-only multi-agent log).
 
 ---
 
 ## TL;DR
 
-- **The Pillar-3 patron loop is end-to-end functional for the full 7-resident roster.** Patron offers Shards → letter dispatches → resident says thanks by name → letter visible at `/v1/inbox?human=...` → wall projection masks recipient + body for public display.
-- **All 7 residents are alive and active** (after Codex shipped revive tooling + watchdog freeze mitigation + personalized fallbacks).
-- **Two deep gaps remain (not blockers but worth knowing):** Brain LLM completion is empty 84-100% of the time for heroes (F20 quantified); resident speech rarely references the 50 knowledge entries (F21 quantified at 3.8%).
-- **Three Chicago-relevant operational items need maintainer attention:** populate `controller.yml#patrons[]` (HD-011), file the dashboard Pillar-3 patch package with Dev (HD-015), and recalibrate hero attention floors (HD-008 — pip hit 162 today and had to be rescued).
-- **Tests: 1632/1632 passing as of 20:40 UTC** (E27 deep audit; was 1562 at SPRINT-PM-PIVOT TLDR-write time). Action success on the living-three residents trends 83-97% — but at audit time **4 of 6 heroes (Hans, Duke Horacio, Pip, Thrand) had died** between 19:11-19:52 UTC. **All 4 revived inline via `npm run controller:revive`** (Pip + Thrand back at 5000 attention — HD-008's calibration is genuinely too low; heroes will likely die again without auto-top-up or a much higher floor).
+- **The Pillar-3 patron loop is end-to-end functional for a 19-resident roster** (6 heroes + res:agent + 12-soul Codex QA cohort). Patron offers Shards → letter dispatches → resident says thanks by name → letter visible at `/v1/inbox?human=...` → wall projection masks recipient + body for public display.
+- **All 19 residents are alive** (zero deaths in 50+ min post-restart per E32 + E33, validated again in SPRINT-QA2 / E36).
+- **HD-008 hero attention floor CLOSED end-to-end** (E30 substrate + E32/E33 live verify). Soul-declared `attentionProfile.floor` clamps spend outcomes: Hans/Aereck/Wise/Duke=5000, Pip/Thrand=3000. Three heroes were observed resting exactly at floor under live load, three above floor with patron offers lifting them. The recurring hero-death pattern (4 deaths during E29 sprint window before E30) is permanently closed at the source.
+- **Two intelligence gaps remain (not Chicago blockers):** Brain LLM completion is empty 84-100% of the time for heroes (F20 quantified); resident speech rarely references the 50 knowledge entries (F21 / E22 partial close, residual). Reflex layer + per-hero nervous rules carry the experience.
+- **Three new findings from SPRINT-QA2 (E36, late Saturday):** (a) qa-guardian + qa-survivor catatonic — both stuck emitting `low_health_hold_position` 2192/2177 times consecutively with no escape path (HD-039 filed for Codex); (b) standing-tier letter dispatcher LOSSY when one grant crosses multiple tiers (HD-040 filed — codex-hour-qa + codex-live each missing 3 tier letters; total ~8 of 15 expected tier letters missing); (c) zero cross-resident chat events observed across 9 residents in a 14-min window (HD-041 filed for L-α/L-β regression check).
+- **Three Chicago-relevant operational items still need maintainer attention:** populate `controller.yml#patrons[]` (HD-011 — sole remaining smoke-script yellow), file the dashboard Pillar-3 patch package with Dev (HD-015), and confirm HD-039/040/041 priorities with Codex Monday morning.
+- **Tests: 1657/1657 passing as of 22:00 UTC.** Action volume on cohort residents reaches 75 actions / 5min on the most active (qa-scout / qa-woodcutter). The pre-E30 hero death pattern has NOT recurred since the floor landed.
 
 **Single command Chicago-day go/no-go:** `bash scripts/post-restart-smoke.sh`
 **Single-page operational checklist:** `docs/pre-chicago-readiness.md`
@@ -191,6 +193,6 @@ Per HD-021, claude commits to providing action-kind histograms for each Codex fi
 
 ---
 
-*Sprint tally: 21 E-entries, 33 HDs, 18 Codex+claude commits, 1562 tests, all 7 residents alive and active, Pillar-3 functional end-to-end for the full roster.*
+*Sprint tally (refreshed 2026-05-24 22:00 UTC): 37 E-entries, 41 HDs, 30+ Codex+claude commits, 1657 tests, all 19 residents alive (6 heroes + res:agent + 12-soul Codex QA cohort), Pillar-3 functional end-to-end for the full roster. HD-008 closed via E30 substrate. New HD-039/040/041 filed from SPRINT-QA2 E36.*
 
 *"The honest assessment: today's biggest contribution might be quantifying what works precisely enough that we can recognize when something stops working."*

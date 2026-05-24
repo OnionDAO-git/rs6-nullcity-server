@@ -14,8 +14,17 @@ yellow() { echo "${Y}[YELLOW]${N} $*"; YEL_COUNT=$((YEL_COUNT+1)); }
 green()  { echo "${G}[GREEN]${N}  $*"; }
 section(){ echo; echo "${B}== $* ==${N}"; }
 
-RESIDENTS=(res-agent res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand)
 HEROES=(res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand)
+# Glob the full active roster: heroes + res:agent + Codex QA cohort (qa-angler, qa-banker, ...).
+# Falls back to the hardcoded heroes if the memory dir doesn't exist yet.
+# Avoids bash-4 `mapfile` so it runs under macOS default bash 3.2.
+RESIDENTS=()
+if [[ -d data/controller/memory ]]; then
+  while IFS= read -r dir; do
+    RESIDENTS+=("$dir")
+  done < <(find data/controller/memory -maxdepth 1 -type d -name 'res-*' -not -name 'res-bmk_*' -exec basename {} \; 2>/dev/null | sort)
+fi
+[[ ${#RESIDENTS[@]} -eq 0 ]] && RESIDENTS=(res-agent "${HEROES[@]}")
 PORT=43596
 BASE="http://127.0.0.1:${PORT}"
 
@@ -78,7 +87,7 @@ for slug in "${RESIDENTS[@]}"; do
   status=$(python3 -c "import json; d=json.load(open('$f')); print('DEAD' if d.get('deceased') else 'ALIVE')" 2>/dev/null || echo PARSE_ERR)
   [[ "$status" == "ALIVE" ]] || DEAD+=("$slug")
 done
-if [[ ${#DEAD[@]} -eq 0 ]]; then green "all 7 residents alive"; else red "dead/missing: ${DEAD[*]}"; fi
+if [[ ${#DEAD[@]} -eq 0 ]]; then green "all ${#RESIDENTS[@]} residents alive"; else red "dead/missing: ${DEAD[*]}"; fi
 
 section "5. Hero attention floors (>5000)"
 for slug in "${HEROES[@]}"; do

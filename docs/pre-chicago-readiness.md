@@ -27,8 +27,8 @@ Exit code 0 = ready; 1 = blocking red. If the script reports `READY` or `READY W
 | **Controller process alive** | `ps aux \| grep dist/controller/index.js \| grep -v grep \| grep -v SCREEN` | One node PID, started today | Restart controller: `npm run build && node dist/controller/index.js --letters-http-port=43596 --wall-redact` |
 | **HTTP port 43596 bound** | `curl -s "http://127.0.0.1:43596/v1/inbox?human=health-check"` | Returns `{"letters": [...]}` JSON | Controller was started without `--letters-http-port=43596` (HD-026). Restart with the flag. (`?` MUST be quoted in zsh.) |
 | **Wall ticker redaction active** | `curl -s http://127.0.0.1:43596/v1/wall/snapshot \| python3 -m json.tool \| head` | `body` fields are `""`, `recipient` contains `***` | Controller missing `--wall-redact` (HD-013-live, HD-029). Restart with both flags. |
-| **All 7 residents alive** | `for h in res-agent res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand; do echo -n "$h: "; jq -r '.deceased // "alive"' data/controller/memory/$h/runtime-state.json; done` | All show `alive` | `npm run controller:revive -- --resident res:<name>` for each dead one. (Codex's `3f042b38` tooling.) **Use `scripts/post-restart-smoke.sh` for the same loop with green/red coloring.** |
-| **Hero attention > 5000** | `for h in res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand; do jq '.attention' data/controller/memory/$h/runtime-state.json; done` | All ≥ 5000 | Patron:offer `--amount 1000+` to top them up. `claude-mega-rescue` rescued pip from 162 → 4067 with `--amount 2000`. |
+| **All 19 residents alive** (6 heroes + res:agent + 12 Codex QA cohort) | `bash scripts/post-restart-smoke.sh` (section 4 globs `data/controller/memory/res-*/`) | All marked ALIVE | `npm run controller:revive -- --resident res:<name>` for each dead one. (Codex's `3f042b38` tooling.) The QA cohort runs without a floor by design (they SHOULD be able to die so the death loop is testable); heroes have HD-008 floors that prevent attention-exhaustion. |
+| **Hero attention at or above declared floor** | `for h in res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand; do jq '.attention' data/controller/memory/$h/runtime-state.json; done` | Hans/Aereck/Wise/Duke ≥ 5000; Pip/Thrand ≥ 3000 — **clamped to those floors by HD-008 (E30 substrate + E32 live-verify)** | Floor under-shoot means soul YAML missing `attentionProfile.floor`. Re-add via `intelligence-verification-log.md § E30`. Patron:offer `--amount 1000+` still tops them above floor for active engagement; e.g. `claude-mega-rescue` lifted pip from 3000 floor → 4067 with a 2000 Shard offer. |
 | **Patron registry populated** | `grep -A 99 'patrons:' controller.yml \| grep '^\s*-'` | One line per attendee handle | HD-011 default: event-staff onboarding step ~24h before doors writes the attendee list to `controller.yml`. |
 | **Recent trajectory activity** | `for h in res-*; do wc -l data/controller/memory/$h/evidence/trajectory/$(ls -t data/controller/memory/$h/evidence/trajectory | head -1); done` | Each file has 100+ rows from the last hour | If a hero shows 0 rows in 5 min and is alive, suspect HD-032 freeze residual. Check `cause: thinking_watchdog_timeout` density in their trajectory. |
 | **Embassy schedule loaded** | `jq '.windows' data/controller/embassy-schedule.json \| head -20` | Today's window appears | Maintainer authors the schedule per `docs/embassy-staff-runbook.md`. |
@@ -55,7 +55,7 @@ Exit code 0 = ready; 1 = blocking red. If the script reports `READY` or `READY W
 | **HD-011** | High | Who populates `controller.yml#patrons[]` with attendee handles? | Event-staff onboarding step ~24h before doors |
 | **HD-015** | High | Will the dashboard surface patron / Shards / letters / standing UI? | No — staff reads files directly via this runbook |
 | **HD-016** | High | Which Shards UX verb ships first beyond `patron:grant`/`patron:offer`? | C/D (balance lookup + tier visibility) |
-| **HD-008** | High | Hero attention calibration | 14000 floor; **observed decay much faster — pip at 162 today** |
+| **HD-008** | **CLOSED 2026-05-24 21:30 UTC** | Hero attention calibration | Soul-declared `attentionProfile.floor` clamps spend outcomes. Hans/Aereck/Wise/Duke=5000, Pip/Thrand=3000. **E32 live-verify: zero hero deaths in 50+ min post-restart; 3 heroes resting exactly at floor (clamp firing); 3 above floor (patron offers lifting).** |
 | **HD-032** | Critical-Mitigated | Heroes alive but Brain conversation poor | Fallback covers; rich conversation gated on inference health |
 
 ---
@@ -94,12 +94,13 @@ Verified end-to-end this sprint (E14-E19):
 
 ---
 
-## Live state as of this writing (2026-05-24 19:10 CDT)
+## Live state as of this writing (2026-05-24 22:00 CDT)
 
-- Controller `local-93740` (then `local-73320`) healthy
-- All 7 residents alive (after `claude-mega-rescue` saved pip from 162 attention)
-- Tests: 1562/1562 passing on `agents/wip`
-- Open critical HDs: HD-032 mitigated; F19c / E20 / E21 quantified
-- Smoke script: READY WITH WARNINGS (5 yellows — patron registry empty, 4 hero attentions below 5000 floor)
+- Controller `local-39827` (PID 15751) healthy; Codex's multi-resident-live-qa cohort spawn
+- **All 19 residents alive** — 6 heroes + res:agent + 12-soul Codex QA cohort (qa-angler, qa-banker, qa-cook, qa-forager, qa-guardian, qa-guide, qa-priest, qa-scout, qa-social, qa-survivor, qa-trader, qa-woodcutter)
+- Tests: 1657/1657 passing on `agents/wip`
+- HD-008 hero attention floor: **CLOSED** (E30 substrate + E32 + E33 live verify; 50+ min zero hero deaths)
+- Open critical HDs after SPRINT-QA2: HD-032 still mitigated (inference health residual); HD-033/034/036 quantified; new HD-039 (qa-guardian + qa-survivor catatonic, 2192+ `low_health_hold_position` decisions back-to-back), HD-040 (standing-tier letter dispatcher lossy when multi-tier crossed in single grant), HD-041 (zero cross-resident chat observed in 14-min window)
+- Smoke script (post E37 ship): globs all 19 residents; READY WITH WARNINGS (HD-011 empty patrons[] is the only Chicago-day blocker remaining)
 
 See `docs/sprint-handoff-2026-05-26.md` for the maintainer's Tuesday recovery context.
