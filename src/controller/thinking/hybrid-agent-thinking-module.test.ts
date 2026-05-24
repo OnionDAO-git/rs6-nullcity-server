@@ -4379,6 +4379,102 @@ describe('HybridAgentThinkingModule', () => {
         expect(second.cause).toBe('exploration_fallback');
     });
 
+    it('keeps scavenged item spawns on the longer exploration cooldown while scouting', async () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 25, position: { x: 3218, y: 3201, level: 0 } };
+        const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([
+            { text: JSON.stringify({ actions: [] }) },
+            { text: JSON.stringify({ actions: [] }) },
+            { text: JSON.stringify({ actions: [] }) },
+        ]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout the nearby Lumbridge area and look for useful things.',
+                steps: ['walk to nearby landmarks', 'notice useful items', 'report anything useful'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                worldItems: [coins],
+                objects: [fountain],
+            }),
+        );
+
+        expect(first.actions).toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
+        expect(state.cognition?.explorationCooldowns?.['item:995:rs:coins:3218,3201,0']).toBe(3);
+
+        const stillExploring = await agent.think(
+            perception({
+                tick: 150,
+                resident: residentAt(3218, 3201),
+                worldItems: [coins],
+                objects: [fountain],
+            }),
+        );
+
+        expect(stillExploring.actions).toEqual([{ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(stillExploring.cause).toBe('exploration_fallback');
+
+        const revisitAfterCooldown = await agent.think(
+            perception({
+                tick: 650,
+                resident: residentAt(3218, 3201),
+                worldItems: [coins],
+                objects: [fountain],
+            }),
+        );
+
+        expect(revisitAfterCooldown.actions).toEqual([
+            { kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' },
+        ]);
+    });
+
+    it('keeps scavenged item spawns cooldowned after scouting shifts into skill practice', async () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 25, position: { x: 3218, y: 3201, level: 0 } };
+        const tree = { objectId: 1278, position: { x: 3220, y: 3201, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-woodcutting',
+                description: 'Practice woodcutting on ordinary trees and gather logs.',
+                steps: ['Find a visible ordinary tree.', 'Chop it for logs.'],
+                createdAtTick: 30,
+            },
+            lastBrainTick: 30,
+            lastBodyTick: 0,
+            explorationCooldowns: {
+                'item:995:rs:coins:3218,3201,0': 30,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 150,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                worldItems: [coins],
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: tree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(result.cause).toBe('woodcutting_level1_routine');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('does not opportunistically pick up items owned by another actor while scouting', async () => {
         const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3218, y: 3201, level: 0 }, ownerId: 'player:codex' };
         const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };

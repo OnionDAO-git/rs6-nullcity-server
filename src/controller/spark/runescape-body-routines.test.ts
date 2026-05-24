@@ -11,6 +11,7 @@ import {
     combatLootOrPrayerAction,
     combatTrainingAction,
     explorationAction,
+    explorationItemCooldownKey,
     explorationObjectCooldownKey,
     explorationPatrolCooldownKey,
     firemakingAction,
@@ -614,6 +615,23 @@ describe('opportunisticPickupAction', () => {
             cooldowns,
             150,
         );
+        expect(action).toBeUndefined();
+    });
+
+    it('returns undefined when ground item is on an exploration cooldown', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            150,
+            { [explorationItemCooldownKey(coin)]: 100 },
+        );
+
         expect(action).toBeUndefined();
     });
 

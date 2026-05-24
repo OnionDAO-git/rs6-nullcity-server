@@ -430,6 +430,7 @@ export function opportunisticPickupAction(
     maxDistance?: number,
     pickupCooldowns?: Record<string, number>,
     currentTick = perception.tick ?? 0,
+    explorationCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
@@ -446,7 +447,8 @@ export function opportunisticPickupAction(
                 isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) ||
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
-                isPickupOnCooldown(candidate, pickupCooldowns, currentTick)
+                isPickupOnCooldown(candidate, pickupCooldowns, currentTick) ||
+                isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick)
             ) {
                 return false;
             }
@@ -779,7 +781,7 @@ export function explorationAction(
         return undefined;
     }
 
-    const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick);
+    const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick, explorationCooldowns);
     if (pickup) {
         return pickup;
     }

@@ -996,6 +996,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE,
             this.pickupCooldowns(),
             this.options.state.tick,
+            this.explorationCooldowns(),
         );
         if (opportunity) {
             return { action: opportunity, cause: 'opportunistic_pickup' };
@@ -2873,7 +2874,7 @@ function missingStarterFishingAction(perception: HybridPerception, missingSpotTe
 }
 
 function explorationCooldownKeyFromAction(action: AgentAction): string | undefined {
-    if (!/explore|routine_loop_break|stuck_move_recovery|stuck_open_obstacle/i.test(String(action.cause || ''))) {
+    if (!/explore|opportunistic_pickup|routine_loop_break|stuck_move_recovery|stuck_open_obstacle/i.test(String(action.cause || ''))) {
         return undefined;
     }
     if (!('target' in action) || !isRecord(action.target)) {
