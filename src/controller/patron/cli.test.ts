@@ -155,10 +155,26 @@ describe('Patron CLI', () => {
             );
         });
 
-        it('throws error when --artifact is missing for --witness', () => {
-            expect(() => parsePatronCliArgs(['--witness', '--human', 'james', '--resident', 'pip'])).toThrow(
-                '--artifact <id> is required for --witness.',
-            );
+        it('E46 staffer UX: auto-generates --artifact when omitted for --witness', () => {
+            // Old behavior threw "--artifact <id> is required for --witness."
+            // New behavior synthesizes `witness-<resident-slug>-<timestamp>`
+            // so embassy staffers don't have to learn another required flag
+            // (per E46 SPRINT-QA4 walkthrough finding).
+            const options = parsePatronCliArgs(['--witness', '--human', 'james', '--resident', 'pip']);
+            expect(options.artifact).toMatch(/^witness-pip-\d+$/);
+        });
+
+        it('preserves explicit --artifact when provided', () => {
+            const options = parsePatronCliArgs([
+                '--witness',
+                '--human',
+                'james',
+                '--resident',
+                'pip',
+                '--artifact',
+                'patrol-2026-06-01-evening',
+            ]);
+            expect(options.artifact).toBe('patrol-2026-06-01-evening');
         });
     });
 

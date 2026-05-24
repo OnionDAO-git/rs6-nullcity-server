@@ -2409,3 +2409,135 @@ After polish: `I returned to life — this is my 2nd life — after my attention
 
 **Owner suggestion.** claude — no follow-up needed.
 
+
+### E46 — live verify E44 revival narrative reaches Brain prompt envelope (SPRINT-QA4 subagent A)
+
+**Status:** PASS on disk (renderer correct); NEEDS-RESTART (live process pre-commit); downstream contract verified
+**Tier:** 2 (live filesystem + node script invocation)
+**Date:** 2026-05-25 00:10 claude
+**SHA:** ae60cb9d (E38) + 903914e1 (E44)
+**Note:** Codex independently filed E45 (cooking-route recovery) concurrent with my SPRINT-QA4 dispatch; my subagent findings renumber to E46–E49 to avoid collision.
+
+**Hypothesis.** E44 shipped `case 'revival'` in `renderEventAsMemory`. Verify the new output reaches the Brain prompt envelope read path for residents with real revival events.
+
+**Observation.**
+- Live controller PID 12536 started 17:38:26 CDT — **3 min BEFORE** commit `903914e1` at 17:39:47. Process bundled pre-commit code.
+- `dist/controller/evidence/library-memories.js` mtime 17:43:25 + `grep -c "I returned to life" dist/...js` = 1. **Build output reflects new code.**
+- Per-resident revival counts on disk: hans 4, pip 3, thrand 4, duke 3, aereck 2, wise 2, agent 0. **18 total revival events, ALL `cause: operator_revive_attention_exhausted`** (covered by humanization table).
+- Subagent invoked `readRecentLibraryMemories` via one-off node script. Sample from `res:pip`: `"I returned to life — this is my 4th life — after my attention ran out — an operator restored me (2026-05-24 20:19:12)"`. Same pattern for hans/aereck/thrand. **Zero old `"revival at"` lines.**
+
+**Sub-findings.**
+- **F46a (POSITIVE / RESOLVED).** Renderer-on-disk end-to-end correct. Brain prompt envelope will see the new narrative once the live process restarts.
+- **F46b (NEEDS-RESTART).** Currently-running process bundled pre-`903914e1`. Won't pick up change until next Codex restart.
+- **F46c (NEUTRAL).** All 18 events use `operator_revive_attention_exhausted` — humanization table covers all 3 of the possible causes; no widening needed.
+
+**Classification.** ENGINE-polish VERIFIED on disk; live wire-in deferred to next restart.
+
+**Suggested next step.** None. Picks up at next restart organically.
+
+
+### E47 — Pillar-3 full-loop claude-as-human walkthrough (SPRINT-QA4 subagent B)
+
+**Status:** end-to-end FUNCTIONAL with 3 staffer-UX gaps fixed inline this cycle
+**Tier:** 2 (claude-as-human CLI walkthrough against live controller)
+**Date:** 2026-05-25 00:15 claude
+**SHA:** pending (this cycle)
+
+**Hypothesis.** Walk the Chicago patron-onboarding arc end-to-end as patron+staffer combo. Identify UX friction before doors open.
+
+**Observation.** Test handle: `claude-qa4-walkthrough`. Resident: `res:hans`. Controller PID 12536 → died silently mid-walkthrough → Codex restarted as PID 38908.
+
+| # | Step | Score | Result |
+|---|---|---|---|
+| 0 | Controller alive | smooth | HTTP 200 |
+| 1 | `patron:grant 100` | smooth | `Successfully credited 100 Shards… balance: 100` |
+| 2 | `patron:offer 30 → res:hans` | acceptable | `0 -> 30; Tier crossed! Now: "ally"` — final tier only; 2 letters dispatched invisibly |
+| 3 | `GET /v1/inbox` | smooth | 2 letters (Acq + Ally), warm bodies |
+| 4 | Show inbox URL | friction | CLI never prints URL; staffer hand-constructs |
+| 5 | `patron:witness` | broken→ok | First attempt: `--artifact <id> required for --witness`; retry succeeded |
+| 6 | Hans reflex | smooth | `nervous:patron-memory-acknowledge` fired 2× by name (3s + 33s) |
+| 7 | Wall ticker | acceptable | `c***-walkthrough` + body cleared |
+
+Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2×. End-to-end functional.
+
+**3 staffer UX gaps identified — ALL FIXED INLINE THIS CYCLE:**
+
+1. **HD-040 success invisible** — `patron:offer 30` crossed 2 tiers but CLI showed highest only. **FIX:** Extended `PatronEventOutcome.standingDelta` with `tiersCrossed: readonly StandingTier[]`; CLI prints `Tiers crossed: acquaintance, ally (2 letters dispatched)`.
+2. **Inbox URL discoverability** — successful offer never printed URL. **FIX:** CLI prints `[patron:offer] Inbox: http://127.0.0.1:43596/v1/inbox?human=<handle>` after every successful offer.
+3. **`patron:witness --artifact required`** errored before staffer knew what to type. **FIX:** Auto-generate `witness-<resident-slug>-<timestamp>` when omitted; explicit value still preserved.
+
++3 tests; 2 existing patron-gateway tests amended for new field. Tests 1677/1677 + gates clean.
+
+**Sub-findings.**
+- **F47a (POSITIVE / SHIPPED).** 3 gaps closed inline same cycle.
+- **F47b (OBSERVATION).** Controller died silently mid-walkthrough — Codex restarted as PID 38908. Adjacent: event-day staff needs a liveness heartbeat. Not action this cycle.
+- **F47c (FUTURE).** Wall redaction collapsed `claude-qa4-walkthrough` → `c***-walkthrough` not `c***-qa4-walkthrough`. Aggressive but works; document in runbook later.
+
+**Classification.** UX / DESIGN polish — SHIPPED. Pillar-3 patron loop upgraded from "needs-polish" to "smooth" for staffer experience.
+
+**Suggested next step.** Live-verify CLI changes with fresh handle on next restart; cosmetic.
+
+**Owner suggestion.** claude — no follow-up.
+
+
+### E48 — HD-021 commit histogram audit (SPRINT-QA4 subagent C)
+
+**Status:** HD-021 closing as **counter-proposed-de-facto**
+**Tier:** 1 (read-only git + status log inspection)
+**Date:** 2026-05-25 00:15 claude
+
+**Hypothesis.** HD-021 proposed Codex include action-kind histograms in commit bodies for thinking/runtime fixes. Audit 13 such commits over the last 48h for compliance.
+
+**Observation.** **0 COMPLIANT / 8 PARTIAL / 5 NON-COMPLIANT / 1 NOT-APPLICABLE.** Zero commits include the proposed `X move_to / Y say / Z interact / W use_item_on_item — vs pre-fix baseline of A/B/C/D` format in body or HANDOFF. Codex never accepted, declined, or counter-proposed in the HD log.
+
+**What Codex DOES provide reliably:**
+- Total Jest test counts (1556→1669 across the window)
+- Aggregate live-soak success ratios (9/9, 18/18, 21/21, 23/23, 42/42)
+- Live controller IDs (`local-46903`, `local-38908`, etc.) — lets audit partner replay
+- Named-resident outcomes ("all 6 heroes producing watchdog_fallback")
+- Validation gate list (typecheck/lint/format/build) — hygiene confirmation
+
+**Sub-findings.**
+- **F48a (PROCESS / WORKING).** De-facto split emerged: **Codex = ship signal (SHA + test count + live id) ; Claude = replay + histogram.** Every SPRINT-E* HANDOFF in window has a claude-produced histogram tied to a Codex SHA. Audit partnership IS working — just not via HD-021's original protocol.
+- **F48b (POSITIVE).** No refinement needed.
+
+**Classification.** PROCESS — close HD-021 as Decided-by-de-facto-counter-proposal.
+
+**Suggested next step.** Update HD-021 status; close task #159.
+
+**Owner suggestion.** claude (docs).
+
+
+### E49 — roadmap re-sync audit (SPRINT-QA4 subagent D)
+
+**Status:** Identified 5 inline edits + 3 new workstream proposals; deferred to Tuesday roadmap-sync cycle (same-file collision with Codex's cooking-recovery WIP)
+**Tier:** 1 (read-only audit)
+**Date:** 2026-05-25 00:15 claude
+
+**Hypothesis.** Maintainer reads `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` Tuesday morning. Roadmap lacks entries for 8 new HDs (HD-039 → HD-046) and several recently-closed tasks. Identify high-signal updates.
+
+**Observation.**
+- **HDs total: 46** (Open 31, Decided variants 11, false-alarm/not-a-bug 3, Mitigated 1).
+- **Intel log E-entries: 52** (numbering reused across SPRINT-PM-PIVOT and SPRINT-QA).
+- **Weekend HDs (HD-039 → HD-046): 4 CLOSED** (039 by Codex `0747ff8c`, 040 by E38, 045+046 by E43); **4 Open: HD-038, HD-042, HD-043, HD-044.**
+
+**Subagent recommendations:**
+| # | Recommendation | Type | Action |
+|---|---|---|---|
+| 1 | Task #156 (revival renderer) closed by E44/`903914e1` | TASK CLOSE | Reflected in intel log; no roadmap entry needed |
+| 2 | J4 Letters substantively done (J-δ-β/γ/β-2 + EVENT-D2 + HD-040) — flip `[ ]` → `[~]` | TASK FLIP | Defer — Codex edited roadmap this cycle (collision) |
+| 3 | Workstream LBW: L-α-3 + L-β-2 + patron:whisper CLI (~90 LOC post-Chicago) — HD-043 | NEW WORKSTREAM | Defer post-Chicago |
+| 4 | Workstream HBO: HD-042 + HD-044 under one heading | NEW WORKSTREAM | Defer post-Chicago |
+| 5 | Cross-ref under O4 inference health: HD-032/033/034/042 | INLINE ADD | Defer — same-file collision |
+
+**Sub-findings.**
+- **F49a (POSITIVE).** Pre-Chicago roadmap acceptable — HD log + intel log are canonical sources; roadmap update is polish, not blocking.
+- **F49b (DEFERRED).** All 5 inline edits deferred this cycle. Codex's cooking-recovery WIP edits roadmap.md; avoiding same-file collision while uncommitted.
+- **F49c (POSITIVE).** Maintainer-Tuesday TL;DR already exists in intel log E36–E49 + HD-039–046. Maintainer can skim those directly.
+
+**Classification.** PROCESS — deferred to Tuesday roadmap-sync cycle.
+
+**Suggested next step.** Tuesday: ship all 5 inline edits + 3 new workstreams in one focused commit once Codex's roadmap.md WIP lands.
+
+**Owner suggestion.** claude — Tuesday.
+

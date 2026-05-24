@@ -144,7 +144,12 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             throw new Error('--resident <name> is required for --witness.');
         }
         if (!options.artifact) {
-            throw new Error('--artifact <id> is required for --witness.');
+            // E46 staffer UX: auto-generate a unique artifact id when the
+            // staffer omits --artifact. The artifact is a free-text label for
+            // the witnessed moment (e.g. "patrol-2026-06-01-evening"); we
+            // synthesize a timestamp-based fallback so a real embassy clerk
+            // doesn't have to learn yet another required-flag pattern.
+            options.artifact = `witness-${residentSlug(options.residentName)}-${Date.now()}`;
         }
     }
 
@@ -492,9 +497,26 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
                     const delta = outcome.standingDelta;
                     console.log(`[patron:offer] Standing with faction "${delta.factionId}": ${delta.before} -> ${delta.after}`);
                     if (delta.tierCrossed) {
-                        console.log(`[patron:offer] Standing Tier crossed! Now: "${delta.tierCrossed}"`);
+                        // E46 staffer UX: report EVERY tier crossed + matching letter
+                        // count so a multi-tier grant doesn't look single-tier in chat.
+                        // `tiersCrossed` is the canonical list (HD-040 / E38); fall
+                        // back to `tierCrossed` alone if a stale outcome is missing it.
+                        const tiers = delta.tiersCrossed && delta.tiersCrossed.length > 0
+                            ? delta.tiersCrossed
+                            : [delta.tierCrossed];
+                        const letterCount = tiers.length;
+                        const letterWord = letterCount === 1 ? 'letter' : 'letters';
+                        console.log(
+                            `[patron:offer] Tiers crossed: ${tiers.join(', ')} (${letterCount} ${letterWord} dispatched)`,
+                        );
                     }
                 }
+                // E46 staffer UX: print the inbox URL hint so the staffer can
+                // hand off the link without memorizing port + path. Uses the
+                // standard EVENT-D2c letters HTTP port 43596 (HD-026 / HD-029).
+                console.log(
+                    `[patron:offer] Inbox: http://127.0.0.1:43596/v1/inbox?human=${encodeURIComponent(options.humanId)}`,
+                );
                 return 0;
             }
             throw new Error(`Offer failed: ${outcome.error}`);

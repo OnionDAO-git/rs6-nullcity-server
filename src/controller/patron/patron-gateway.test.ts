@@ -111,6 +111,7 @@ describe('PatronGateway', () => {
                 before: 0,
                 after: 5,
                 tierCrossed: undefined,
+                tiersCrossed: [],
             });
         });
 
@@ -216,6 +217,7 @@ describe('PatronGateway', () => {
                 before: 0,
                 after: 3,
                 tierCrossed: undefined,
+                tiersCrossed: [],
             });
         });
 

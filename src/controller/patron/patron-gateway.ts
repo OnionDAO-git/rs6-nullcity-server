@@ -31,7 +31,23 @@ export interface SponsorBirthRequest {
 export interface PatronEventOutcome {
     ok: boolean;
     eventId: string;
-    standingDelta?: { factionId: string; before: number; after: number; tierCrossed?: StandingTier };
+    /**
+     * Standing delta produced by this event, if any.
+     *
+     * `tierCrossed` holds the HIGHEST tier the patron crossed into (back-compat
+     * with pre-HD-040 callers that expected one tier per call). `tiersCrossed`
+     * enumerates EVERY user-facing tier crossed in ascending order — callers
+     * that surface "you got N letters" UX (CLI / dashboard) should prefer
+     * `tiersCrossed.length` to match the actual letter dispatch count
+     * (E38 / E46 HD-040 follow-on).
+     */
+    standingDelta?: {
+        factionId: string;
+        before: number;
+        after: number;
+        tierCrossed?: StandingTier;
+        tiersCrossed?: readonly StandingTier[];
+    };
     error?: 'insufficient_currency' | 'cooldown_active' | 'resident_not_found' | 'invalid_amount' | 'invalid_input';
 }
 
@@ -145,6 +161,7 @@ export class PatronGateway {
                 before: this.options.standingLedger.points(req.humanId, faction) - req.amount,
                 after: this.options.standingLedger.points(req.humanId, faction),
                 tierCrossed: standingResult.tierCrossed || undefined,
+                tiersCrossed: standingResult.tiersCrossed,
             },
         };
     }
@@ -231,6 +248,7 @@ export class PatronGateway {
                 before: this.options.standingLedger.points(req.humanId, req.factionId) - 10,
                 after: this.options.standingLedger.points(req.humanId, req.factionId),
                 tierCrossed: standingResult.tierCrossed || undefined,
+                tiersCrossed: standingResult.tiersCrossed,
             },
         };
     }
@@ -307,6 +325,7 @@ export class PatronGateway {
                         before,
                         after: this.options.standingLedger.points(humanId, faction),
                         tierCrossed: standingResult.tierCrossed || undefined,
+                        tiersCrossed: standingResult.tiersCrossed,
                     };
                 }
             }
