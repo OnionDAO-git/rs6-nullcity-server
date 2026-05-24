@@ -101,6 +101,10 @@ export interface ActiveMoveState {
     lastTick: number;
     lastPositionKey?: string;
     stationaryCount?: number;
+    lastDistance?: number;
+    bestDistance?: number;
+    lastImprovedTick?: number;
+    nonImprovingCount?: number;
 }
 
 export interface ActiveGoalState {

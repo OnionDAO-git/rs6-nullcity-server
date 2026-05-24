@@ -1103,6 +1103,24 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: gate.position, range: 1, cause: 'explore_open_obstacle' });
     });
 
+    it('can skip brittle openable gates during autonomous scouting', () => {
+        const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
+        const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, gate] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            200,
+            undefined,
+            { interactWithOpenables: false },
+        );
+        expect(action).toEqual({ kind: 'move_to', target: nearbyScenery.position, range: 2, cause: 'explore_visible_object' });
+    });
+
     it('opens an adjacent gate while exploring instead of patrolling around it', () => {
         const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
         const action = explorationAction(

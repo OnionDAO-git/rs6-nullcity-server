@@ -176,6 +176,8 @@ const DEFAULT_FOLLOW_RADIUS = 2;
 const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const MOVE_COMMIT_TICKS = 24;
 const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
+const MOVE_STUCK_NON_IMPROVING_OBSERVATIONS = 4;
+const MOVE_STUCK_NON_CLOSING_TICKS = 96;
 const ROUTINE_LOOP_BREAK_ACTIONS = 3;
 const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
@@ -613,6 +615,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 this.pickupCooldowns(),
                 this.options.state.tick,
                 this.explorationCooldowns(),
+                { interactWithOpenables: false },
             );
             const recovery =
                 exploratory && isStuckRecoveryAction(exploratory)
@@ -740,6 +743,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.pickupCooldowns(),
             this.options.state.tick,
             this.explorationCooldowns(),
+            { interactWithOpenables: false },
         );
         const opportunity = this.scoutingSkillOpportunityAction(perception);
         if (opportunity && shouldPreferScoutingSkillOpportunity(exploreAction)) {
@@ -1046,6 +1050,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.pickupCooldowns(),
             this.options.state.tick,
             this.explorationCooldowns(),
+            { interactWithOpenables: false },
         );
     }
 
@@ -1066,6 +1071,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.pickupCooldowns(),
             this.options.state.tick,
             this.explorationCooldowns(),
+            { interactWithOpenables: false },
         );
         if (!localAction) {
             return undefined;
@@ -1123,16 +1129,40 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 cognition.activeMove = undefined;
                 return undefined;
             }
-            if (distance(here, active.target) <= (active.range ?? 0)) {
+            const currentDistance = distance(here, active.target);
+            if (currentDistance <= (active.range ?? 0)) {
                 cognition.activeMove = undefined;
             } else {
                 const currentPositionKey = positionKey(here);
                 const stationaryCount = active.lastPositionKey === currentPositionKey ? (active.stationaryCount || 0) + 1 : 0;
+                const hasClosingBaseline = typeof active.bestDistance === 'number' || typeof active.lastImprovedTick === 'number';
+                const previousBestDistance =
+                    typeof active.bestDistance === 'number'
+                        ? active.bestDistance
+                        : typeof active.lastDistance === 'number'
+                          ? Math.min(active.lastDistance, currentDistance)
+                          : currentDistance;
+                const closedDistance = currentDistance < previousBestDistance;
+                const bestDistance = closedDistance ? currentDistance : previousBestDistance;
+                const lastImprovedTick = closedDistance
+                    ? this.options.state.tick
+                    : typeof active.lastImprovedTick === 'number'
+                      ? active.lastImprovedTick
+                      : this.options.state.tick;
+                const nonImprovingCount = closedDistance
+                    ? 0
+                    : hasClosingBaseline
+                      ? (active.nonImprovingCount || 0) + 1
+                      : active.nonImprovingCount || 0;
                 const updated = {
                     ...active,
                     lastTick: this.options.state.tick,
                     lastPositionKey: currentPositionKey,
                     stationaryCount,
+                    lastDistance: currentDistance,
+                    bestDistance,
+                    lastImprovedTick,
+                    nonImprovingCount,
                 };
                 cognition.activeMove = updated;
 
@@ -1151,7 +1181,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     }
                 }
 
-                if (stationaryCount >= MOVE_STUCK_STATIONARY_OBSERVATIONS) {
+                if (
+                    stationaryCount >= MOVE_STUCK_STATIONARY_OBSERVATIONS ||
+                    (this.options.state.tick - lastImprovedTick >= MOVE_STUCK_NON_CLOSING_TICKS &&
+                        nonImprovingCount >= MOVE_STUCK_NON_IMPROVING_OBSERVATIONS)
+                ) {
                     return this.stuckMoveRecoveryAction(perception, here, updated, anchor);
                 }
 
@@ -1271,6 +1305,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.pickupCooldowns(),
             this.options.state.tick,
             this.explorationCooldowns(),
+            { interactWithOpenables: false },
         );
         const recovery =
             localAction && isConcreteExplorationOverride(localAction)
@@ -1368,6 +1403,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.pickupCooldowns(),
             this.options.state.tick,
             this.explorationCooldowns(),
+            { interactWithOpenables: false },
         );
         return {
             action: explore
@@ -2068,6 +2104,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     this.pickupCooldowns(),
                     this.options.state.tick,
                     this.explorationCooldowns(),
+                    { interactWithOpenables: false },
                 ) || {
                     kind: 'say',
                     text: this.statusSpeech(perception, 'I will scout nearby and stay findable'),
@@ -2417,7 +2454,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false): string {
         const here = perception.resident?.position;
-        const next = includeNextStep ? nextStepSuggestion(perception, this.options.state.resident, this.activeGoal()) : undefined;
+        const cognition = this.cognition();
+        const next = includeNextStep
+            ? nextStepSuggestion(perception, this.options.state.resident, this.activeGoal(), {
+                  currentTick: this.options.state.tick,
+                  pickupCooldowns: cognition.pickupCooldowns,
+                  explorationCooldowns: cognition.explorationCooldowns,
+                  interactWithOpenables: false,
+              })
+            : undefined;
         const goal = summarizeGoalForSpeech(
             this.activeGoal()?.description || 'staying findable and looking for useful actions',
             Boolean(next),
@@ -2504,6 +2549,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return;
         }
 
+        const targetDistance = distance(here, target);
         this.cognition().activeMove = {
             target,
             range: typeof action.range === 'number' ? action.range : 0,
@@ -2512,6 +2558,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             lastTick: this.options.state.tick,
             lastPositionKey: positionKey(here),
             stationaryCount: 0,
+            lastDistance: targetDistance,
+            bestDistance: targetDistance,
+            lastImprovedTick: this.options.state.tick,
+            nonImprovingCount: 0,
         };
     }
 
@@ -2951,7 +3001,19 @@ function worldItemLike(value: unknown): WorldItem | undefined {
     };
 }
 
-function nextStepSuggestion(perception: HybridPerception, residentId?: string, goal?: ActiveGoalState): string | undefined {
+type NextStepCooldownContext = {
+    currentTick?: number;
+    pickupCooldowns?: Record<string, number>;
+    explorationCooldowns?: Record<string, number>;
+    interactWithOpenables?: boolean;
+};
+
+function nextStepSuggestion(
+    perception: HybridPerception,
+    residentId?: string,
+    goal?: ActiveGoalState,
+    cooldowns?: NextStepCooldownContext,
+): string | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
@@ -2963,13 +3025,16 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string, g
     }
 
     const suppressFiremakingLogPickup = hasNearbyFire(perception);
+    const currentTick = cooldowns?.currentTick ?? perception.tick ?? 0;
     const item = (perception.nearby?.worldItems || [])
         .filter(
             candidate =>
                 !(suppressFiremakingLogPickup && isFiremakingLog(candidate)) &&
                 !isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) &&
                 isUsefulGroundItem(candidate) &&
-                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id),
+                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
+                !isPickupOnCooldown(candidate, cooldowns?.pickupCooldowns, currentTick) &&
+                !isExplorationOnCooldown(explorationItemCooldownKey(candidate), cooldowns?.explorationCooldowns, currentTick),
         )
         .sort((a, b) => {
             const priority = usefulGroundItemPriority(a) - usefulGroundItemPriority(b);
@@ -2996,23 +3061,33 @@ function nextStepSuggestion(perception: HybridPerception, residentId?: string, g
         return `fish at ${fishingSpot.position.x},${fishingSpot.position.y} with my small net.`;
     }
 
-    const npc = (perception.nearby?.npcs || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    const npc = (perception.nearby?.npcs || [])
+        .filter(
+            candidate =>
+                !isExplorationOnCooldown(explorationActorCooldownKey(candidate), cooldowns?.explorationCooldowns, currentTick) &&
+                !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), cooldowns?.explorationCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (npc) {
         return `talk to ${actorName(npc)} at ${npc.position.x},${npc.position.y}.`;
     }
 
     const tree = (perception.nearby?.objects || [])
         .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
+        .filter(object => !isExplorationOnCooldown(explorationObjectCooldownKey(object), cooldowns?.explorationCooldowns, currentTick))
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (tree) {
         return `chop the tree at ${tree.position.x},${tree.position.y}.`;
     }
 
-    const obstacle = (perception.nearby?.objects || [])
-        .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId))
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (obstacle) {
-        return `open the door or gate at ${obstacle.position.x},${obstacle.position.y}.`;
+    if (cooldowns?.interactWithOpenables ?? true) {
+        const obstacle = (perception.nearby?.objects || [])
+            .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId))
+            .filter(object => !isExplorationOnCooldown(explorationObjectCooldownKey(object), cooldowns?.explorationCooldowns, currentTick))
+            .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        if (obstacle) {
+            return `open the door or gate at ${obstacle.position.x},${obstacle.position.y}.`;
+        }
     }
 
     const player = (perception.nearby?.players || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];

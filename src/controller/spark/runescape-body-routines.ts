@@ -781,6 +781,7 @@ export function explorationAction(
     pickupCooldowns?: Record<string, number>,
     currentTick = perception.tick ?? 0,
     explorationCooldowns?: Record<string, number>,
+    options?: { interactWithOpenables?: boolean },
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
@@ -804,18 +805,20 @@ export function explorationAction(
         return npcTalkAction(perception, npc, 'explore_talk_to_npc');
     }
 
-    const openableObject = (perception.nearby?.objects || [])
-        .filter(
-            candidate =>
-                EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
-                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
-        )
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (openableObject) {
-        if (distance(here, openableObject.position) > 1) {
-            return { kind: 'move_to', target: openableObject.position, range: 1, cause: 'explore_open_obstacle' };
+    if (options?.interactWithOpenables ?? true) {
+        const openableObject = (perception.nearby?.objects || [])
+            .filter(
+                candidate =>
+                    EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
+                    !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+            )
+            .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        if (openableObject) {
+            if (distance(here, openableObject.position) > 1) {
+                return { kind: 'move_to', target: openableObject.position, range: 1, cause: 'explore_open_obstacle' };
+            }
+            return { kind: 'interact', target: openableObject, option: 'open', cause: 'explore_open_obstacle' };
         }
-        return { kind: 'interact', target: openableObject, option: 'open', cause: 'explore_open_obstacle' };
     }
 
     const object = (perception.nearby?.objects || [])
