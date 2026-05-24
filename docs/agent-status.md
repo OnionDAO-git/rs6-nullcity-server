@@ -359,3 +359,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-24 02:43 codex branch=agents/wip workstream=QA-explore-variety STARTING - reduce repeated local loops so exploration feels more human. Files: thinking tests/code, roadmap/status. Collision: embassy WIP unstaged.
 2026-05-24 03:13 codex branch=agents/wip workstream=QA-explore-variety HANDOFF - landed 08ef0b5a; tests 1497/1497 + gates; live local-25805 47 actions/5m, no repeated coin loop. Collision: embassy WIP unstaged.
 2026-05-24 03:20 codex branch=agents/wip workstream=QA-npc-variety STARTING - reduce repeated same-family NPC chatter during scouting. Files: body/thinking tests+code, roadmap/status. Collision: embassy WIP unstaged.
+2026-05-24 03:25 codex branch=agents/wip workstream=QA-npc-variety HANDOFF - landed 71e4762c; tests 1499/1499 + gates; live local-2214 26 actions/5m, no repeated NPC family talks. Collision: embassy WIP unstaged.
