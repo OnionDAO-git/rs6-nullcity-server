@@ -28,6 +28,8 @@ export interface SparkTickResult {
     envelopeTokens?: number;
     nooped: boolean;
     syntheticEvents?: PerceptionEvent[];
+    memoUpdates?: number;
+    planChange?: unknown;
     chat_reply_emitted?: boolean;
     chat_reply_kind?: 'small_talk' | 'clarifying_question' | 'polite_decline';
     refusalReason?: string;

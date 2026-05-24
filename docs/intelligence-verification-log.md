@@ -332,3 +332,33 @@ Module identity: 100% `onion.runescape.standard` (single SPARK module).
 **Suggested next step.** Instrument timeout results with final observed position, target distance, and whether the gateway/engine acknowledged the move before changing timeout budgets. Then run another 10-15 minute live smoke and compare raw timeout rate plus action diversity. Also keep pushing richer task variety, because this smoke was active but still patrol-heavy and had no public speech in the sampled window.
 
 **Owner suggestion.** Codex for BODY instrumentation and movement close-rate fixes; Claude/Gemini for broader experiment design and non-movement intelligence checks.
+
+---
+
+### E2b follow-up — Brain memory + plan telemetry plumbing
+
+**Status:** PARTIAL-RESOLVED-by-Codex on `agents/wip`; needs live-controller restart/soak to measure organic memo rate
+**Tier:** 2 (prompt/runtime plumbing + focused tests)
+**Date:** 2026-05-24 07:15 codex
+
+**Hypothesis.** E2c/E2d were caused by a substrate gap: the Hybrid Brain prompt did not explicitly ask for sparse memory notes, and runtime decision evidence did not carry Brain-side `memoUpdates` / goal-change telemetry.
+
+**Repro.**
+- Focused regression tests added to `hybrid-agent-prompts.test.ts`, `hybrid-agent-thinking-module.test.ts`, and `resident-runtime.test.ts`.
+- Focused command: `npm test -- --runTestsByPath src/controller/thinking/hybrid-agent-prompts.test.ts src/controller/thinking/hybrid-agent-thinking-module.test.ts src/controller/resident-runtime.test.ts --runInBand --testNamePattern "sparse first-person memory|Brain memo output|writes runtime evidence"`.
+- Full relevant suite command: `npm test -- --runTestsByPath src/controller/thinking/hybrid-agent-prompts.test.ts src/controller/thinking/hybrid-agent-thinking-module.test.ts src/controller/resident-runtime.test.ts --runInBand`.
+
+**Observation.**
+- Hybrid Brain now sees an explicit `memo` output shape with `events/YYYY-MM-DD.md`, first-person text, and a sparseness rule.
+- Brain JSON containing `memo` writes through `MemoryStore.write(...)`.
+- `SparkTickResult` / `ThoughtResult` can surface `memoUpdates` and `planChange`.
+- `ResidentRuntime` records those fields in `decision` trajectory rows, so the dashboard / verification scripts can count them.
+- Brain watchdog fallback goal changes now also surface `planChange` with `source=brain_timeout_fallback`, because the live patched controller hit inference backoff during the smoke and otherwise hid a real local goal change.
+- Codex also rechecked the current latest trajectories and found `body_wait` rows carrying `promptTokens=0`, so HD-024's "8.2M token waste" should be treated as a measurement contradiction until re-scanned after this telemetry patch. The user-visible gap remains: too many local no-op decision rows, and too little Brain reflection.
+- Live smoke after restart (`local-77175`, 65s) produced 1 organic `memoUpdates`, 1 `planChange` (`train-woodcutting`, 4 steps), 1 public say, 3 move_to, 1 interact, 1 use_item_on_item, and 5/5 successful action results. The memo landed in `data/controller/memory/res-agent/events/2026-05-24.md` as a first-person note about scouting tree-like objects and switching to Woodcutting.
+
+**Classification.** DESIGN + KNOWLEDGE. The Brain was capable of receiving memories, but the standard Hybrid Brain path was not prompted to write its own sparse first-person memories or expose goal changes to evidence.
+
+**Suggested next step.** Restart/soak a real controller long enough for at least one Brain interval, then re-run the E2 scanner. Success criteria: nonzero organic `memoUpdates` on meaningful goal changes or learning moments, nonzero `planChange`, and no increase in noisy public chat.
+
+**Owner suggestion.** Codex for live QA + telemetry scan; Claude/Gemini can update dashboard panels once the fields appear in real trajectories.

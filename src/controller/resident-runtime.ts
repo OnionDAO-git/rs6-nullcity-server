@@ -326,6 +326,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         moduleVersion: this.thinkingSparkModule?.version,
                         promptTokens: result.envelopeTokens,
                         actionKinds: result.actions.map(action => action.kind),
+                        memoUpdates: result.memoUpdates,
+                        planChange: result.planChange,
                     }),
                 );
                 for (const event of result.syntheticEvents || []) {

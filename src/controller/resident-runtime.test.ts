@@ -30,7 +30,13 @@ describe('ResidentRuntime modules', () => {
             trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-21T08:45:01.000Z') }),
         };
         const thinking: ThinkingModule = {
-            think: jest.fn(async () => ({ actions: [{ kind: 'noop', cause: 'module-test' }], cause: 'module-test', nooped: false })),
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'noop', cause: 'module-test' }],
+                cause: 'module-test',
+                nooped: false,
+                memoUpdates: 1,
+                planChange: { id: 'scout-test', steps: 2 },
+            })),
             considerInterrupt: jest.fn(() => false),
             stop: jest.fn(),
         };
@@ -57,7 +63,14 @@ describe('ResidentRuntime modules', () => {
 
         expect(readJsonl(session.trajectoryPath)).toEqual([
             expect.objectContaining({ kind: 'begin_tick', tick: 7 }),
-            expect.objectContaining({ kind: 'decision', tick: 7, cause: 'module-test', actionKinds: ['noop'] }),
+            expect.objectContaining({
+                kind: 'decision',
+                tick: 7,
+                cause: 'module-test',
+                actionKinds: ['noop'],
+                memoUpdates: 1,
+                planChange: { id: 'scout-test', steps: 2 },
+            }),
             expect.objectContaining({ kind: 'action', tick: 7, requestId: 'request-1', actionKind: 'noop' }),
             expect.objectContaining({ kind: 'action_result', tick: 7, requestId: 'request-1', status: 'success' }),
             expect.objectContaining({ kind: 'end_tick', tick: 7, reason: 'tick_complete' }),

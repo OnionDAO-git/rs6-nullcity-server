@@ -213,6 +213,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     async think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult> {
         const thinkId = ++this.nextThinkId;
         this.activeThinkIds.add(thinkId);
+        let brainDecision:
+            | {
+                  cause: string;
+                  envelopeTokens: number;
+                  nooped: boolean;
+                  memoUpdates?: number;
+                  planChange?: unknown;
+              }
+            | undefined;
         try {
             this.advanceTick(perception);
             this.ensureCognition();
@@ -309,13 +318,26 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 if (brainCancellation) {
                     return brainCancellation;
                 }
+                brainDecision = brain;
                 if (brain.action) {
-                    return this.result([brain.action], brain.cause, brain.envelopeTokens, brain.nooped);
+                    return this.result([brain.action], brain.cause, brain.envelopeTokens, brain.nooped, {
+                        memoUpdates: brain.memoUpdates,
+                        planChange: brain.planChange,
+                    });
                 }
             }
 
             if (!this.shouldRunBody()) {
-                return this.result([], 'body_wait', 0, true);
+                return this.result(
+                    [],
+                    brainDecision?.cause || 'body_wait',
+                    brainDecision?.envelopeTokens || 0,
+                    brainDecision?.nooped ?? true,
+                    {
+                        memoUpdates: brainDecision?.memoUpdates,
+                        planChange: brainDecision?.planChange,
+                    },
+                );
             }
 
             const bodyResult = await this.runBody(perception, gameSkill, thinkId);
@@ -323,7 +345,16 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (bodyCancellation) {
                 return bodyCancellation;
             }
-            return this.result(bodyResult.actions, bodyResult.cause || 'body_step', bodyResult.envelopeTokens || 0, bodyResult.nooped);
+            return this.result(
+                bodyResult.actions,
+                bodyResult.cause || 'body_step',
+                (bodyResult.envelopeTokens || 0) + (brainDecision?.envelopeTokens || 0),
+                bodyResult.nooped,
+                {
+                    memoUpdates: brainDecision?.memoUpdates,
+                    planChange: brainDecision?.planChange,
+                },
+            );
         } finally {
             this.activeThinkIds.delete(thinkId);
             this.cancelledThinkIds.delete(thinkId);
@@ -363,8 +394,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (!cause) {
             return undefined;
         }
+        let planChange: unknown;
         if (cause === 'thinking_watchdog_timeout') {
-            this.applyBrainTimeoutFallback(perception);
+            planChange = this.applyBrainTimeoutFallback(perception);
         }
         return {
             actions: [],
@@ -372,21 +404,27 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             cause,
             envelopeTokens: 0,
             nooped: true,
+            planChange,
         };
     }
 
-    private applyBrainTimeoutFallback(perception?: HybridPerception): void {
+    private applyBrainTimeoutFallback(perception?: HybridPerception): unknown {
         const cognition = this.cognition();
         cognition.lastBrainTick = this.options.state.tick;
         cognition.brainBackoffUntilTick = this.options.state.tick + BRAIN_TIMEOUT_BACKOFF_TICKS;
         const goal = this.activeGoal();
         if (goal && !goalExpiresBefore(goal, cognition.brainBackoffUntilTick)) {
-            return;
+            return undefined;
         }
 
         this.clearGoalMomentum();
         cognition.activeGoal = this.brainTimeoutFallbackGoal(perception);
         cognition.lastGoalShareTick = undefined;
+        return {
+            id: cognition.activeGoal.id,
+            steps: cognition.activeGoal.steps?.length || 0,
+            source: 'brain_timeout_fallback',
+        };
     }
 
     private brainTimeoutFallbackGoal(perception?: HybridPerception): ActiveGoalState {
@@ -421,7 +459,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         perception: Perception,
         gameSkill?: GameSkillContext,
         thinkId = this.nextThinkId,
-    ): Promise<{ action?: AgentAction; cause: string; envelopeTokens: number; nooped: boolean }> {
+    ): Promise<{
+        action?: AgentAction;
+        cause: string;
+        envelopeTokens: number;
+        nooped: boolean;
+        memoUpdates?: number;
+        planChange?: unknown;
+    }> {
         const behavior = this.behavior();
         const prompt = buildBrainPrompt({
             soul: this.options.soul,
@@ -442,9 +487,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         });
 
         const parsed = parseBrainCompletion(response.text);
-        this.applyBrainSideEffects(response.text);
+        const sideEffects = this.applyBrainSideEffects(response.text);
         this.cognition().lastBrainTick = this.options.state.tick;
         this.cognition().brainBackoffUntilTick = undefined;
+        let planChange: unknown;
 
         if (parsed.goal) {
             const cognition = this.cognition();
@@ -460,6 +506,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 ttlTicks: parsed.goal.ttlTicks,
                 createdAtTick: this.options.state.tick,
             };
+            planChange = { id: nextGoalId, steps: parsed.goal.steps?.length || 0 };
         }
 
         const say = cleanSpeech(parsed.say);
@@ -470,10 +517,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 cause: parsed.cause || 'brain_goal',
                 envelopeTokens: estimateTokens(prompt),
                 nooped: response.nooped,
+                memoUpdates: sideEffects.memoUpdates,
+                planChange,
             };
         }
 
-        return { cause: parsed.cause || 'brain_goal', envelopeTokens: estimateTokens(prompt), nooped: response.nooped && !parsed.goal };
+        return {
+            cause: parsed.cause || 'brain_goal',
+            envelopeTokens: estimateTokens(prompt),
+            nooped: response.nooped && !parsed.goal,
+            memoUpdates: sideEffects.memoUpdates,
+            planChange,
+        };
     }
 
     private async runBody(perception: Perception, gameSkill?: GameSkillContext, thinkId = this.nextThinkId): Promise<ThoughtResult> {
@@ -711,10 +766,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         };
     }
 
-    private applyBrainSideEffects(text: string): void {
+    private applyBrainSideEffects(text: string): { memoUpdates: number } {
         const parsed = parseCompletion(text);
         if (!parsed.ok) {
-            return;
+            return { memoUpdates: 0 };
         }
 
         const memoryDir = this.options.memory.ensureResident(this.options.soul.frontmatter.name);
@@ -730,6 +785,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (parsed.proposeNervousRule?.length) {
             upsertNervousRulesMd(memoryDir, { rules: parsed.proposeNervousRule });
         }
+        return { memoUpdates: parsed.memo?.length || 0 };
     }
 
     private explorationOrSkillOpportunityAction(
@@ -2901,7 +2957,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         this.options.state.budgets.requestsThisTick = undefined;
     }
 
-    private result(actions: AgentAction[], cause: string, envelopeTokens: number, nooped: boolean): ThoughtResult {
+    private result(
+        actions: AgentAction[],
+        cause: string,
+        envelopeTokens: number,
+        nooped: boolean,
+        extra: Partial<ThoughtResult> = {},
+    ): ThoughtResult {
         const telemetry = this.cognition().tickTelemetry;
         return {
             actions,
@@ -2909,6 +2971,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             envelopeTokens,
             nooped: nooped || actions.length === 0,
             ...telemetry,
+            ...extra,
         };
     }
 }

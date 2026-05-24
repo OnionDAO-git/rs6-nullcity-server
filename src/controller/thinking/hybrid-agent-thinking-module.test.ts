@@ -77,6 +77,7 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.nooped).toBe(true);
         expect(result.cause).toBe('thinking_watchdog_timeout');
+        expect(result.planChange).toEqual({ id: 'scout-nearby-area', steps: 3, source: 'brain_timeout_fallback' });
         expect(state.cognition?.lastBrainTick).toBe(50);
         expect(state.cognition?.brainBackoffUntilTick).toBe(650);
         expect(state.cognition?.activeGoal).toEqual(
@@ -396,6 +397,39 @@ describe('HybridAgentThinkingModule', () => {
         expect(bodyRequest.prompt).toContain('Walk outside, stay visible to Codex');
         expect(bodyRequest.prompt).toContain('AgentAction tool surface');
         expect(bodyRequest.prompt).toContain('Workflow cards');
+    });
+
+    it('writes Brain memo output and exposes goal changes in decision telemetry', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: {
+                        id: 'scout-lumbridge',
+                        description: 'Scout Lumbridge for useful resources and stay findable.',
+                        steps: ['walk to a landmark', 'report what looks useful'],
+                    },
+                    say: 'I am scouting Lumbridge and noting useful landmarks.',
+                    memo: {
+                        path: 'events/2026-05-24.md',
+                        text: 'I chose to scout Lumbridge so I can find useful resources and stay easy to find.',
+                        mode: 'append',
+                    },
+                }),
+            },
+        ]);
+        const memoryStore = memory();
+        const agent = hybridAgent(llm, runtimeState(), soul(), memoryStore);
+
+        const result = await agent.think(perception({ tick: 10 }));
+
+        expect(memoryStore.write).toHaveBeenCalledWith(
+            'res:agent',
+            'events/2026-05-24.md',
+            'I chose to scout Lumbridge so I can find useful resources and stay easy to find.',
+            'append',
+        );
+        expect((result as any).memoUpdates).toBe(1);
+        expect((result as any).planChange).toEqual({ id: 'scout-lumbridge', steps: 2 });
     });
 
     it('clears stale committed movement when the Brain switches goals', async () => {

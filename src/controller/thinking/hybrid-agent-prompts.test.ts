@@ -119,6 +119,19 @@ describe('hybrid agent prompts', () => {
         }
     });
 
+    it('asks the Brain to write sparse first-person memory notes', () => {
+        const prompt = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Idle in Lumbridge.'),
+            commandPrefix: '!',
+        });
+
+        expect(prompt).toContain('"memo"');
+        expect(prompt).toContain('events/YYYY-MM-DD.md');
+        expect(prompt).toContain('first-person memory');
+        expect(prompt).toContain('Only include memo');
+    });
+
     describe('SOUL identity injection', () => {
         it('injects archetype directive language into the Brain prompt', () => {
             const enduringPrompt = buildBrainPrompt({

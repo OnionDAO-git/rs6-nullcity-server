@@ -405,6 +405,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: red/green evidence-store regression, full gates, and live controller restart without evidence init failure.
   - Verified 2026-05-24 on `agents/wip`: local QA found `res:father-aereck` evidence disabled by a zero-byte index; `EvidenceStore` now quarantines corrupt indexes and starts a fresh session. Focused red/green test, full gates, Jest 1493/1493, and live controller restart passed with a new active evidence index.
 
+- `[x]` **I7: Prompt and record Brain-written memories.**
+  - Files: `src/controller/thinking/hybrid-agent-prompts.ts`, `src/controller/thinking/hybrid-agent-thinking-module.ts`, `src/controller/resident-runtime.ts`, `src/controller/spark/spark.ts`
+  - Deliverable: the standard Hybrid Brain can write sparse first-person memo notes when it learns, changes goal, responds to a player, completes a step, or changes tactic; runtime decision evidence records memo/update and goal-change telemetry for dashboard/verifier scans.
+  - Verification: prompt regression, scripted Brain memo write, runtime trajectory evidence test, then typecheck/lint/build/Jest and a live controller soak that produces nonzero organic memo/plan-change evidence.
+  - Verified 2026-05-24 on `agents/wip`: Codex resolved E2c/E2d from `docs/intelligence-verification-log.md` by adding the prompt contract and telemetry plumbing; fallback plan telemetry is included for Brain watchdog backoff. Focused prompt/thinking/runtime tests, typecheck, lint, build, full Jest 1513/1513, and live smoke passed. Live `local-77175` produced nonzero organic `memoUpdates` + `planChange`, wrote a first-person memo, said a goal/location line, chopped, and lit a fire with 5/5 action results successful.
+
 ## Workstream J: Patron / Human-Attention Loop
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
