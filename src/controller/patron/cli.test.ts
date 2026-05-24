@@ -139,6 +139,19 @@ describe('Patron CLI', () => {
             const stateData = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
             expect(stateData.attention).toBe(120); // 100 base + 10 * 2 attention per shard = 120
 
+            // Regression for E6 (intelligence-verification-log.md): the CLI's
+            // PatronGateway must construct with a LettersStore so tier-crossing
+            // letters reach disk — same wiring ControllerHost gets via EVENT-D1a.
+            // Pre-fix: the offer fired tier-crossing but no inbox file existed.
+            const inboxFile = path.join(memoryDir, 'data', 'letters', 'james', 'inbox.jsonl');
+            expect(fs.existsSync(inboxFile)).toBe(true);
+            const inboxLines = fs.readFileSync(inboxFile, 'utf8').trim().split('\n').filter(Boolean);
+            expect(inboxLines.length).toBeGreaterThanOrEqual(1);
+            const firstLetter = JSON.parse(inboxLines[0]);
+            expect(firstLetter.kind).toBe('standing_tier_crossed');
+            expect(firstLetter.recipient).toBe('james');
+            expect(firstLetter.body).toMatch(/james/);
+
             logSpy.mockRestore();
         });
 

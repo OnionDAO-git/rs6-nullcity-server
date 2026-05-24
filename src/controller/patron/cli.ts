@@ -3,6 +3,7 @@ import path from 'path';
 import { loadControllerConfig } from '../config';
 import { PatronStore } from './patron-store';
 import { PatronGateway } from './patron-gateway';
+import { LettersStore } from './letters-store';
 import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention } from '../memory/runtime-state';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
@@ -147,11 +148,16 @@ export async function runPatronCli(argv: string[]): Promise<number> {
             const runtimes = new Map<string, any>();
             runtimes.set(residentName, mockRuntime);
 
+            // E6 fix: pass a LettersStore so tier-crossing letters reach
+            // disk same as ControllerHost's gateway does via EVENT-D1a.
+            // Without this the CLI happily reports "Standing Tier crossed!"
+            // and the patron's inbox stays empty.
             const gateway = new PatronGateway({
                 currencyLedger,
                 standingLedger,
                 runtimes: runtimes as any,
                 soulsDir: config.souls.dir,
+                lettersStore: new LettersStore(config.memory.dir),
             });
 
             const outcome = await gateway.offerTo({

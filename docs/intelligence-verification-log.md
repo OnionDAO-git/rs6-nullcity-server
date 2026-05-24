@@ -433,3 +433,56 @@ What the body_wait count actually represents:
 **Owner suggestion.** Codex for the next BODY close-rate fix; Claude/Gemini can consume this evidence in dashboard/intelligence reports.
 
 ---
+
+### E6 — claude-as-human patron loop end-to-end (revealed CLI bug)
+
+**Status:** OPEN — substrate fix shipped same-cycle; HTTP/static page verification pending controller HTTP server restart
+**Tier:** 2 (claude-as-human)
+**Date:** 2026-05-24 14:55 claude
+
+**Hypothesis.** Walking through the actual patron flow the way an event-day staff member would — grant Shards → offer to a hero → verify letter landed → fetch via HTTP → render in browser — would surface UX/wiring gaps that pure read-only experiments miss.
+
+**Repro.**
+1. `npm run patron:grant -- --human claude-sprint-patron --amount 100`
+2. `npm run patron:offer -- --human claude-sprint-patron --resident res:agent --amount 10` (res:agent is the only alive resident; would normally pick a hero, but heroes are still deceased per F3a/HD-020)
+3. Check `data/controller/memory/data/letters/<slug>/inbox.jsonl`
+4. `curl http://127.0.0.1:43596/v1/inbox?human=<handle>` (HTTP server)
+5. Inspect `public/inbox/index.html` rendering
+
+**Observation — bug found, fixed, re-verified.**
+
+**Step 1 (grant):** ✅ "Successfully credited 100 Shards. New balance: 100."
+
+**Step 2 (offer) PRE-FIX:** CLI reported success including `[patron:offer] Standing Tier crossed! Now: "acquaintance"`. Currency ledger and standing ledger both updated correctly on disk. **BUT** `data/controller/memory/data/letters/claude-sprint-patron/` was never created. The patron's inbox stayed empty despite the tier crossing event firing successfully through `PatronGateway.offerTo`.
+
+**Root cause.** `src/controller/patron/cli.ts:150` constructed its `PatronGateway` without a `lettersStore`. `ControllerHost` got the LettersStore wiring via my earlier EVENT-D1a (`ba3d024a`); CLI was missed in the same fix. `PatronGateway.dispatchTierLetter` early-returns when `lettersStore` is undefined → letter never reaches disk.
+
+**Fix shipped same-cycle.**
+- `src/controller/patron/cli.ts`: import `LettersStore`, pass `lettersStore: new LettersStore(config.memory.dir)` to the `PatronGateway` constructor (matches ControllerHost pattern from EVENT-D1a).
+- `src/controller/patron/cli.test.ts`: added regression to "performs offer to resident successfully" — asserts `data/letters/<slug>/inbox.jsonl` exists with a `standing_tier_crossed` letter whose body mentions the human's handle. Pre-fix the test failed; post-fix all 9 CLI tests pass.
+
+**Step 2 POST-FIX (live re-verification with `claude-sprint-patron-v2`):**
+- `[patron:offer] Standing with faction "embassy": 0 -> 10`
+- `[patron:offer] Standing Tier crossed! Now: "acquaintance"`
+- `data/controller/memory/data/letters/claude-sprint-patron-v2/inbox.jsonl` (519 bytes, mtime 07:53)
+- Letter content readable: kind=standing_tier_crossed, subject="You are now Acquaintance of embassy", body starts "claude-sprint-patron-v2, Your support of res:agent reached the embassy. The clerks of embassy have noted your name; you are now known to us as an Acquaintance..."
+
+**Step 3 (HTTP endpoint check):** `curl http://127.0.0.1:43596/v1/inbox?human=...` returned nothing — port 43596 is not listening. The production controller (PIDs 92175 + 97001) was started without `--letters-http-port`, so the EVENT-D2c HTTP server isn't running. The HTTP path was confirmed working in unit tests; live-on-disk path works; but the LIVE HTTP serving step is currently not enabled.
+
+**Step 4 (static page):** Not testable until step 3 is fixed.
+
+**Classification.**
+
+1. **DESIGN (CLI)** — CLI's PatronGateway construction missed the EVENT-D1a wiring. Pure copy-paste oversight. RESOLVED same-cycle by claude.
+2. **PROCESS** — production controller wasn't started with `--letters-http-port=43596`. Maintainer (or whoever spawned PIDs 92175+97001) needs to either restart with the flag, OR add it to whatever supervisor config starts the controller. Filed as HD-026.
+
+**Suggested next step.**
+- (a) Same-cycle CLI fix shipped (this commit). Re-verify with E6 step 2 ✅ done above.
+- (b) Maintainer adds `--letters-http-port=43596` to controller startup. Until then, all event-day staff would need to read inbox.jsonl directly (works, but uglier UX). Filed HD-026.
+- (c) Next cycle: E11 (cross-resident chat) and the remaining tier-3 experiments. Or audit the static page rendering by loading the file + checking syntax.
+
+**Owner suggestion.** CLI fix already shipped by claude. HD-026 is maintainer-action.
+
+**Resolution (CLI bug only).** Claude commit (pending this cycle's HANDOFF) — see git log for the SPRINT-E6 commit. Letter dispatch from CLI is now production-functional. HTTP serving remains gated on HD-026.
+
+---
