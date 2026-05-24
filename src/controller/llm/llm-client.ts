@@ -35,6 +35,9 @@ export class LlmClient {
     ) {}
 
     async complete(request: LlmRequest): Promise<LlmResponse> {
+        if (request.signal?.aborted) {
+            return cancelledResponse(request.signal);
+        }
         return this.enqueue(request, () => this.completeNow(request));
     }
 
@@ -88,19 +91,36 @@ export class LlmClient {
         }
     }
 
-    private enqueue<T>(request: LlmRequest, run: () => Promise<T>): Promise<T> {
+    private enqueue(request: LlmRequest, run: () => Promise<LlmResponse>): Promise<LlmResponse> {
         if (this.maxConcurrent <= 0 || this.active < this.maxConcurrent) {
             return this.runQueued(run);
         }
 
-        return new Promise<T>((resolve, reject) => {
-            const queued: QueuedRequest<T> = {
+        return new Promise<LlmResponse>((resolve, reject) => {
+            const queued: QueuedRequest = {
                 priority: request.priority || 0,
                 sequence: ++this.sequence,
                 run,
                 resolve,
                 reject,
             };
+            const abortQueued = () => {
+                const index = this.queue.indexOf(queued);
+                if (index < 0) {
+                    return;
+                }
+                this.queue.splice(index, 1);
+                queued.cleanup?.();
+                resolve(cancelledResponse(request.signal));
+            };
+            if (request.signal) {
+                if (request.signal.aborted) {
+                    resolve(cancelledResponse(request.signal));
+                    return;
+                }
+                request.signal.addEventListener('abort', abortQueued, { once: true });
+                queued.cleanup = () => request.signal?.removeEventListener('abort', abortQueued);
+            }
             this.queue.push(queued);
             this.queue.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
         });
@@ -119,6 +139,7 @@ export class LlmClient {
     private drainQueue(): void {
         while (this.queue.length > 0 && this.active < this.maxConcurrent) {
             const next = this.queue.shift()!;
+            next.cleanup?.();
             this.runQueued(next.run).then(next.resolve, next.reject);
         }
     }
@@ -228,12 +249,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-interface QueuedRequest<T = unknown> {
+function cancelledResponse(signal?: AbortSignal): LlmResponse {
+    return { text: '', nooped: true, cancelledBy: String(signal?.reason || 'aborted') };
+}
+
+interface QueuedRequest {
     priority: number;
     sequence: number;
-    run: () => Promise<T>;
-    resolve: (value: T) => void;
+    run: () => Promise<LlmResponse>;
+    resolve: (value: LlmResponse) => void;
     reject: (reason: unknown) => void;
+    cleanup?: () => void;
 }
 
 interface EndpointState {

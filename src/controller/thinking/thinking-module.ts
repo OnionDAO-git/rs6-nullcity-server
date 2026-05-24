@@ -22,6 +22,7 @@ export interface ThinkingModule {
     think(perception: Perception, gameSkill?: GameSkillContext): Promise<ThoughtResult>;
     considerInterrupt(perception: Perception): boolean;
     stop(cause: string): void;
+    onWatchdogTimeout?(perception: Perception, gameSkill?: GameSkillContext): ThoughtResult | undefined;
 }
 
 export interface SparkThinkingModuleOptions {
@@ -98,5 +99,9 @@ export class SparkThinkingModule implements ThinkingModule {
 
     stop(cause: string): void {
         this.spark.abortInflight(cause);
+    }
+
+    onWatchdogTimeout(perception: Perception): ThoughtResult | undefined {
+        return this.spark.watchdogFallback(perception);
     }
 }

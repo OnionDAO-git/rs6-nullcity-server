@@ -207,6 +207,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private nextThinkId = 0;
     private readonly activeThinkIds = new Set<number>();
     private readonly cancelledThinkIds = new Map<number, string>();
+    private readonly cancelledThinkResults = new Map<number, ThoughtResult>();
     private readonly inflightCompletions = new Map<number, AbortController>();
 
     constructor(private readonly options: HybridAgentThinkingModuleOptions) {}
@@ -359,6 +360,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         } finally {
             this.activeThinkIds.delete(thinkId);
             this.cancelledThinkIds.delete(thinkId);
+            this.cancelledThinkResults.delete(thinkId);
             this.inflightCompletions.delete(thinkId);
         }
     }
@@ -372,6 +374,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.cancelledThinkIds.set(thinkId, cause);
             this.inflightCompletions.get(thinkId)?.abort(cause);
         }
+    }
+
+    onWatchdogTimeout(perception: Perception): ThoughtResult | undefined {
+        let fallback: ThoughtResult | undefined;
+        for (const thinkId of this.activeThinkIds) {
+            if (!this.cancelledThinkIds.has(thinkId)) {
+                this.cancelledThinkIds.set(thinkId, 'thinking_watchdog_timeout');
+            }
+            const result = this.cancelledResult(thinkId, perception as HybridPerception);
+            fallback ||= result;
+        }
+        return fallback;
     }
 
     private async complete(thinkId: number, request: Omit<LlmRequest, 'signal'>): Promise<LlmResponse> {
@@ -391,6 +405,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private cancelledResult(thinkId: number, perception?: HybridPerception): ThoughtResult | undefined {
+        const existing = this.cancelledThinkResults.get(thinkId);
+        if (existing) {
+            return existing;
+        }
         const cause = this.cancelledThinkIds.get(thinkId);
         if (!cause) {
             return undefined;
@@ -399,7 +417,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (cause === 'thinking_watchdog_timeout') {
             planChange = this.applyBrainTimeoutFallback(perception);
         }
-        return {
+        const result = {
             actions: [],
             syntheticEvents: [],
             cause,
@@ -407,6 +425,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             nooped: true,
             planChange,
         };
+        this.cancelledThinkResults.set(thinkId, result);
+        return result;
     }
 
     private applyBrainTimeoutFallback(perception?: HybridPerception): unknown {
@@ -486,6 +506,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             priority: 5,
             ...(this.modelFor(behavior.brain) ? { model: this.modelFor(behavior.brain) } : {}),
         });
+        const cancellation = this.cancelledResult(thinkId, perception as HybridPerception);
+        if (cancellation) {
+            return {
+                cause: cancellation.cause || 'thinking_cancelled',
+                envelopeTokens: cancellation.envelopeTokens || 0,
+                nooped: cancellation.nooped,
+                planChange: cancellation.planChange,
+            };
+        }
 
         const parsed = parseBrainCompletion(response.text);
         const sideEffects = this.applyBrainSideEffects(response.text);
@@ -559,6 +588,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             priority: 2,
             ...(this.modelFor(behavior.body) ? { model: this.modelFor(behavior.body) } : {}),
         });
+        const cancellation = this.cancelledResult(thinkId, bodyPerception);
+        if (cancellation) {
+            return cancellation;
+        }
         this.cognition().lastBodyTick = this.options.state.tick;
 
         const parsed = parseCompletion(response.text);

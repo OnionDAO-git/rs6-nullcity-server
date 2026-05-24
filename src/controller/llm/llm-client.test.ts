@@ -1,4 +1,4 @@
-import { LlmClient } from './llm-client';
+import { LlmClient, type LlmResponse } from './llm-client';
 
 describe('LlmClient retry and endpoint pause', () => {
     const originalFetch = global.fetch;
@@ -150,6 +150,52 @@ describe('LlmClient retry and endpoint pause', () => {
         await expect(first).resolves.toMatchObject({ text: 'first' });
         await expect(high).resolves.toMatchObject({ text: 'high' });
         await expect(low).resolves.toMatchObject({ text: 'low' });
+    });
+
+    it('settles aborted queued requests immediately instead of waiting for an inference slot', async () => {
+        jest.useRealTimers();
+        let releaseFirst: (() => void) | undefined;
+        const firstResponse = new Promise<Response>(resolve => {
+            releaseFirst = () => resolve(completionResponse('first'));
+        });
+        const fetchMock = jest.fn().mockReturnValueOnce(firstResponse);
+        global.fetch = fetchMock;
+
+        const client = new LlmClient(
+            {
+                default: {
+                    baseUrl: 'https://llm.test',
+                    model: 'test-model',
+                    timeoutMs: 1000,
+                },
+            },
+            1,
+        );
+
+        const first = client.complete({ endpoint: 'default', prompt: 'first' });
+        const controller = new AbortController();
+        const queued = client.complete({ endpoint: 'default', prompt: 'queued', signal: controller.signal });
+
+        controller.abort('thinking_watchdog_timeout');
+        const settledBeforeSlotFreed = await Promise.race([
+            queued,
+            new Promise<LlmResponse | 'pending'>(resolve => setImmediate(() => resolve('pending'))),
+        ]);
+
+        releaseFirst?.();
+        await expect(first).resolves.toMatchObject({ text: 'first' });
+        await expect(queued).resolves.toMatchObject({
+            nooped: true,
+            cancelledBy: 'thinking_watchdog_timeout',
+        });
+
+        expect(settledBeforeSlotFreed).toEqual(
+            expect.objectContaining({
+                nooped: true,
+                cancelledBy: 'thinking_watchdog_timeout',
+            }),
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 });
 

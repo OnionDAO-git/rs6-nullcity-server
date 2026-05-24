@@ -456,19 +456,22 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         const timeout = new Promise<ThoughtResult>(resolve => {
             timer = setTimeout(() => {
                 this.thinking.stop('thinking_watchdog_timeout');
+                const fallback = this.thinking.onWatchdogTimeout?.(perception, gameSkillContext);
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'thinking_watchdog_timeout',
                     timeoutMs,
                     sparkModule: this.thinkingSparkModule,
                 });
-                resolve({
-                    actions: [],
-                    syntheticEvents: [],
-                    cause: 'thinking_watchdog_timeout',
-                    envelopeTokens: 0,
-                    nooped: true,
-                });
+                resolve(
+                    fallback || {
+                        actions: [],
+                        syntheticEvents: [],
+                        cause: 'thinking_watchdog_timeout',
+                        envelopeTokens: 0,
+                        nooped: true,
+                    },
+                );
             }, timeoutMs);
         });
         try {

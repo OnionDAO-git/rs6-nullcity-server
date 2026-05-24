@@ -514,6 +514,67 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).toHaveBeenCalledTimes(2);
     });
 
+    it('uses a module watchdog fallback decision when thinking times out', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-thinking-fallback-'));
+        const state = stateFor('res:pip');
+        const thinking = {
+            think: jest.fn().mockImplementationOnce(() => new Promise(() => undefined)),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+            onWatchdogTimeout: jest.fn(() => ({
+                actions: [{ kind: 'say', text: 'I lost the thread, so I am scouting nearby.', cause: 'brain_timeout_fallback' }],
+                syntheticEvents: [],
+                cause: 'brain_timeout_fallback',
+                envelopeTokens: 0,
+                nooped: false,
+                planChange: { id: 'scout-nearby-area', source: 'brain_timeout_fallback' },
+            })),
+        } as unknown as ThinkingModule & {
+            onWatchdogTimeout: jest.Mock;
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-fallback-say' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(async () => ({
+                ok: true,
+                observation: {
+                    seq: 1,
+                    observedAt: Date.now(),
+                    value: { kind: 'chat', text: 'I lost the thread, so I am scouting nearby.' },
+                },
+            })),
+        } as unknown as ResidentBody;
+        const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog,
+            thinking,
+            body,
+            watchdog: { thinkingMs: 5 },
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        expect(thinking.stop).toHaveBeenCalledWith('thinking_watchdog_timeout');
+        expect(thinking.onWatchdogTimeout).toHaveBeenCalled();
+        expect(body.submit).toHaveBeenCalledWith(
+            expect.objectContaining({ kind: 'say', text: 'I lost the thread, so I am scouting nearby.' }),
+            expect.objectContaining({ source: 'thinking' }),
+        );
+        expect(inferenceLog.append).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({ cause: 'brain_timeout_fallback', actions_emitted: 1 }),
+        );
+    });
+
     it('logs deciding status only after slow thinking remains pending so observers see activity without spam', async () => {
         jest.useFakeTimers();
         try {

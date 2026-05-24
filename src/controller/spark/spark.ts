@@ -265,6 +265,28 @@ export class Spark {
         this.mode = idleMode(cause);
     }
 
+    watchdogFallback(perception: Perception): SparkTickResult {
+        this.abortInflight('thinking_watchdog_timeout');
+        const action = generateFirstStepCandidates(perception).find(candidate => candidate.kind !== 'noop');
+        if (!action) {
+            return { actions: [], cause: 'thinking_watchdog_timeout', nooped: true };
+        }
+
+        const fallbackAction = { ...action, cause: 'watchdog_fallback' };
+        const visiblePulse: AgentAction = {
+            kind: 'say',
+            text: 'I am still here; getting my bearings.',
+            cause: 'watchdog_fallback',
+        };
+        this.state.attention = spendForAction(this.state.attention, visiblePulse.kind);
+        this.state.attention = spendForAction(this.state.attention, fallbackAction.kind);
+        return {
+            actions: [visiblePulse, fallbackAction],
+            cause: 'watchdog_fallback',
+            nooped: false,
+        };
+    }
+
     considerInterrupt(perception: Perception): boolean {
         const current = this.mailbox.current();
         if (!current) {

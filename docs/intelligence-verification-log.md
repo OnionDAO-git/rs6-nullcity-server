@@ -1087,3 +1087,55 @@ File HD-032 Critical/coord for Codex investigation. Without resolution, hero-bea
 
 **Owner suggestion.** Codex for diagnosis (thinking + runtime + body wiring are their zone). claude continues read-only audits + non-hero experiments (E19 knowledge audit, E21 tick-budget).
 
+---
+
+## E18 — HD-032 Codex Frozen-Hero Mitigation (2026-05-24 18:10 UTC)
+
+**Question.** Are the revived heroes frozen because they lack game perception/sessions, or because thinking/inference timeout handling leaves them with no visible fallback?
+
+**Root-cause findings.**
+
+1. Perception was present for every hero: fresh trajectories had nonzero `perceptionBytes` every tick, so "no gateway perception" was not the primary blocker.
+2. The default-SPARK heroes were not using the hybrid Brain/Body module. They had no `cognition` state and no module-specific timeout fallback, so the runtime's generic watchdog result produced no actions.
+3. The LLM queue did not settle aborted queued requests until an inference slot became available, which can amplify slow endpoint/backpressure behavior during multi-resident runs.
+4. The runtime watchdog returned its own timeout result before modules could expose fallback/backoff decisions, which let hybrid residents restart inference too aggressively after a timeout.
+
+**Fixes landed by Codex on `agents/wip`.**
+
+- `LlmClient` now resolves aborted queued requests immediately and removes them from the queue.
+- `ResidentRuntime` now asks a thinking module for an `onWatchdogTimeout` fallback and consumes that decision.
+- `HybridAgentThinkingModule` now applies Brain-timeout fallback/backoff immediately and avoids later cancelled completions clearing that backoff.
+- `SparkThinkingModule` now delegates default-SPARK timeouts to a visible fallback: say "I am still here; getting my bearings." and attempt one safe local step.
+
+**Live verification.**
+
+Pre-fix baseline from E17 (`local-36085`, 10m):
+
+```
+6/6 heroes: 0 says, 0 actions, 0 results, repeated thinking_watchdog_timeout
+```
+
+After queue/runtime/hybrid fix but before default-SPARK visible fallback (`local-57240`, ~75s):
+
+```
+res-hans          watchdog_fallback actions=2 results success=2
+res-father-aereck watchdog_fallback actions=2 results success=2
+res-wise-old-man  watchdog_fallback actions=1 results timeout=1
+res-duke-horacio  watchdog_fallback actions=1 results timeout=1
+res-pip           watchdog_fallback actions=1 results timeout=1
+res-thrand        watchdog_fallback actions=1 results timeout=1
+```
+
+After default-SPARK say+step fallback (`local-63709`, ~75s):
+
+```
+res-agent         actions=9 results success=9
+res-hans          says=2 actions=2 results success=4
+res-father-aereck says=1 actions=1 results success=1 timeout=1
+res-wise-old-man  says=1 actions=1 results success=1 timeout=1
+res-duke-horacio  says=1 actions=1 results success=1 timeout=1
+res-pip           says=1 actions=1 results success=1 timeout=1
+res-thrand        says=1 actions=1 results success=1 timeout=1
+```
+
+**Conclusion.** HD-032 is mitigated: heroes are no longer silently frozen after watchdog timeouts, and players/dashboard can see fallback speech/action. It is not fully "smart hero" solved. The deeper inference-health issue remains: real LLM completions are still timing out frequently, so the next slice should either add an inference health check with provider failover or give default hero souls deterministic local patrol/greeting routines that do not depend on LLM completion.

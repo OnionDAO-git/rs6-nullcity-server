@@ -41,6 +41,30 @@ describe('createThinkingModule', () => {
         expect(module).toBeInstanceOf(SparkThinkingModule);
     });
 
+    it('lets the default Spark module emit a visible watchdog fallback action', () => {
+        const module = createThinkingModule({
+            soul: soul({}),
+            state: runtimeState(),
+            memory: {} as MemoryStore,
+            llm: {} as LlmClient,
+        });
+
+        const result = module.onWatchdogTimeout?.({
+            resident: {
+                position: { x: 3221, y: 3218, level: 0 },
+            },
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { kind: 'say', text: 'I am still here; getting my bearings.', cause: 'watchdog_fallback' },
+                { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, cause: 'watchdog_fallback' },
+            ],
+            cause: 'watchdog_fallback',
+            nooped: false,
+        });
+    });
+
     it('uses the first selected SPARK module that creates a thinking module', () => {
         const custom = fakeThinkingModule();
 
