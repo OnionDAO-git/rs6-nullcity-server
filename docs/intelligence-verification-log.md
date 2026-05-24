@@ -1021,3 +1021,69 @@ All 3 inboxes received their standing_tier_crossed letter (verified via curl). O
 **Classification.** RESOLVED (OPS / RUNTIME). The lesson is important: external admin tools that mutate runtime-state must either stop the controller first or have runtime-side adoption logic. This slice shipped the latter.
 
 **Suggested next step.** Continue HD-019 separately: deceased or idle residents still produce empty tick files and should eventually stop consuming perception/disk budget after death processing.
+
+### E17 — verify Codex 3f042b38 revive tooling library evidence + hero post-revival activity
+
+**Status:** Mixed — F17a POSITIVE (library evidence works across 6 souls); F17b CRITICAL NEGATIVE (heroes alive but Brain frozen, IDENTICAL pattern across all 6)
+**Tier:** 1 (read-only multi-resident state + trajectory scan)
+**Date:** 2026-05-24 17:55 claude
+
+**Hypothesis.** Codex's `3f042b38` ("Add operator revive tooling") revived all 6 manual-respawn heroes and claims "records Library revival evidence" and "9/9 successful post-restart actions" for res:agent. Independently verify (a) library evidence landed across all 6 heroes (first live exercise of my E12 `observeRevival` substrate at scale), and (b) heroes actually do something post-revival.
+
+**Repro.**
+1. Read each `data/controller/memory/library/<slug>/index.json` + `runtime-state.json` for the 7 residents.
+2. Grep each library `timeline.jsonl` for `revival` events; record `lives` count.
+3. Find each resident's most recent `local-36085` trajectory file and histogram kinds + decision causes + brain calls.
+
+**Observation.**
+
+**F17a (POSITIVE — RESOLVED-by-codex@3f042b38).** All 6 heroes show correct library evidence:
+```
+res-hans          lives=4  0 deceased  3 revival events  (last: operator_revive_attention_exhausted, lifeIndex=4)
+res-father-aereck lives=3  0 deceased  2 revival events  (last: operator_revive_attention_exhausted, lifeIndex=3)
+res-wise-old-man  lives=3  0 deceased  2 revival events  (last: operator_revive_attention_exhausted, lifeIndex=3)
+res-duke-horacio  lives=3  0 deceased  2 revival events  (last: operator_revive_attention_exhausted, lifeIndex=3)
+res-pip           lives=3  0 deceased  2 revival events  (last: operator_revive_attention_exhausted, lifeIndex=3)
+res-thrand        lives=3  0 deceased  2 revival events  (last: operator_revive_attention_exhausted, lifeIndex=3)
+res-agent         lives=1  0 deceased  0 revival events  (never died)
+```
+Codex's CLI used `cause: 'operator_revive_attention_exhausted'` rather than my default `restart_respawn_policy` — good design distinction (operator-driven vs policy-driven). The E12 substrate I shipped at `f9968a16` worked correctly on first live exercise across 6 souls simultaneously.
+
+**F17b (CRITICAL — uniform freeze pattern).** Post-revival activity histogram across all 6 heroes (10-minute window, controller `local-36085`):
+```
+HERO              SAYS  ACTIONS  RESULTS  BRAIN  DECISIONS    TOP CAUSES
+res-hans          0     0        0        0      32           none=19  thinking_watchdog_timeout=13
+res-father-aereck 0     0        0        0      32           none=19  thinking_watchdog_timeout=13
+res-wise-old-man  0     0        0        0      32           none=19  thinking_watchdog_timeout=13
+res-duke-horacio  0     0        0        0      32           none=19  thinking_watchdog_timeout=13
+res-pip           0     0        0        0      32           none=19  thinking_watchdog_timeout=13
+res-thrand        0     0        0        0      32           none=19  thinking_watchdog_timeout=13
+res-agent         4     15       19       1      39           stuck_pre_inference_explore=13 thinking_watchdog_timeout=12 body_wait=8
+```
+**Every hero is alive-but-frozen with IDENTICAL pattern** — 32 decisions split EXACTLY 19 none / 13 thinking_watchdog_timeout. The thinking watchdog (DEFAULT_THINKING_WATCHDOG_MS = 45_000) is firing ~every 45s for ALL heroes. Zero says, zero actions, zero Brain LLM calls successful.
+
+**res:agent does work** (15 actions / 19 results / 1 brain call / 4 says) but ALSO has 12 thinking_watchdog_timeouts — its Brain is also hanging frequently, just not 100% of the time.
+
+**Sub-finding F17c (additional negative).** This means the E14 finding (patron memories reach Brain but Brain ignores) was understating the problem: **the Brain hangs more than it succeeds, even for res:agent.** The reason Codex's 80f25d18 nervous-rule fix worked is precisely because it's deterministic and doesn't depend on the Brain firing.
+
+**Classification.**
+- F17a: **RESOLVED-by-codex@3f042b38** — DESIGN (E12 substrate exercised correctly at scale).
+- F17b: **ENGINE or INFERENCE — uniform pattern suggests shared root cause.** Plausibilities (require further investigation):
+  - Heroes lack a game gateway connection after revive (revive clears state but doesn't `connect_resident`)
+  - LLM endpoint saturated with 7 simultaneous residents (but res:agent succeeds at least once, so not full saturation)
+  - Heroes have a different thinking module config that perpetually hangs
+  - Per-hero perception poll never returns a usable perception
+- F17c: secondary — Brain hang rate is high even for the one working resident.
+
+**Suggested next step.**
+
+CRITICAL pre-Chicago: heroes alive without functional Brain are WORSE than absent heroes — patrons walking into the embassy will see characters standing motionless rather than greeting them. Need root-cause investigation:
+
+(i) **Gateway connection check** — does each hero have an active WebSocket session? `gateway.listSessions()` from the dashboard BFF, or grep controller stderr for connection events.
+(ii) **Inspect a hero's prompt** — if InferenceLog has a prompt for a hero, the prompt itself may reveal "no perception", "no goal", etc.
+(iii) **`thinking_watchdog_timeout` decision causes carry telemetry** — read one row's full content to see what was awaited.
+
+File HD-032 Critical/coord for Codex investigation. Without resolution, hero-bearing experiments (E18 embassy greeting, E20 soul personality differential, multi-resident L-β whisper) cannot proceed.
+
+**Owner suggestion.** Codex for diagnosis (thinking + runtime + body wiring are their zone). claude continues read-only audits + non-hero experiments (E19 knowledge audit, E21 tick-budget).
+
