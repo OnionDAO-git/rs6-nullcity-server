@@ -1565,3 +1565,38 @@ Optional 7th gap: no ingredient-gathering routines (windmill recipe / dairy cow 
 
 **Suggested next step.** Decide priority: minimum-viable quest demo for Chicago is gaps 1-5 (4× small + 1× medium = ~1-2 sprint cycles of monolith work) + the harness can prove completion with `initialInventory`. Without ingredient routines, a fresh resident can't do the quest cold, but a research-demo CAN show the quest mechanic working.
 
+
+### E26 — HD-034 fix #1: gated prompt-body capture in InferenceLog
+
+**Status:** RESOLVED-by-claude — substrate ship; production opt-in via constructor param
+**Tier:** 2 (substrate ship for OBSERVABILITY gap)
+**Date:** 2026-05-24 20:20 claude
+
+**Hypothesis.** E14/E15/E21 all hit the same wall: "can't quote prompt" — `InferenceLog` stripped the `envelope` field when `includeEnvelope=false` (production default). Future audits like E20/E21 need to inspect real prompt content to attribute Brain failures to prompt vs model vs endpoint. Add gated sampling so production runs at low overhead (~1% capture) with full audit-ability.
+
+**Repro.**
+- Extend `InferenceLog` constructor: `samplePromptRate?: number = 0` + `sampler?: () => number = Math.random` (test-injectable).
+- Append logic: `includeEnvelope=true` keeps everything (existing); `includeEnvelope=false AND samplePromptRate>0 AND sampler() < samplePromptRate` keeps + marks with `envelopeSampled: true`; otherwise strip (existing default).
+- 4 new tests covering: sample-fires-keeps, sample-doesn't-fire-strips, rate=0-never-samples (sampler not consulted), includeEnvelope=true-always-keeps (sampler not consulted).
+
+**Observation.**
+- `npx jest --runTestsByPath src/controller/logging/inference-log.test.ts --runInBand` → 8/8 passing (4 existing + 4 new).
+- `npm run typecheck` + `lint` + `build` all green.
+- 4 unrelated test failures in `controller-host.test.ts` / `mcp/server.test.ts` / `patron/cli.test.ts` are Codex's HD-035 WIP (in-flight `enqueuePerceptionEvent` method on `ControllerHost`) — they reference a method Codex is adding right now. Not caused by my change.
+- Net touch: `src/controller/logging/inference-log.ts` (+27 lines incl. doc-comment), `src/controller/logging/inference-log.test.ts` (+62 lines for 4 tests).
+
+**Sub-findings.**
+
+- **F26a (POSITIVE).** Production can now opt into ~1% prompt capture (`new InferenceLog(root, false, 0.01)`) without changing the dominant strip behavior. Audit tools grep for `envelopeSampled` to find quotable rows.
+- **F26b (DEFAULT-PRESERVING).** When `samplePromptRate=0` (default) OR `includeEnvelope=true`, the sampler is NOT consulted — zero CPU cost for callers who haven't opted in.
+- **F26c (DETERMINISTIC TESTING).** The `sampler` injection point makes the gated path fully testable without flakiness; tests use `() => 0` (always fire) or `() => 0.99` (never fire).
+- **F26d (FOLLOW-UP).** Wire-in step: the controller's bootstrap currently passes 2 args to `new InferenceLog(root, includeEnvelope)`. To activate sampling in production, add a `inferenceSamplePromptRate` field to `controller.yml` (or a `--inference-sample-prompt-rate` flag) and plumb to the constructor. That edit is in `src/controller/index.ts` / `controller-host.ts` — Codex zone right now (HD-035 in flight), defer to next cycle.
+
+**Classification.** **RESOLVED-by-claude** (PERCEPTION/OBSERVABILITY substrate gap closed). Pending wire-in is small (~5 lines), Codex zone.
+
+**Suggested next step.**
+- After Codex's HD-035 lands, add `controller.yml#inference.samplePromptRate` (default `0.01`) + plumb through `parseControllerArgs` → `new InferenceLog(...)` constructor.
+- Future audit (E27?): re-run E21's knowledge-consultation methodology AFTER restart, this time quoting actual prompt content from sampled `envelopeSampled: true` rows. Should produce sharper findings.
+
+**Owner suggestion.** Wire-in — claude or Codex when controller index.ts is next touched. HD-034 closes when both #1 (this) + #3 (free-form say renderer, Codex zone) ship.
+
