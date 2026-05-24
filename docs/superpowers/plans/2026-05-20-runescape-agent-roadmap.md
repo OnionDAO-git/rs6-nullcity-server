@@ -238,6 +238,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: combat, prayer, follow, fishing, firemaking, and woodcutting attempts are suggested against the workflow that produced the action, not whichever visible workflow sorts first.
   - Verification: focused knowledge tests, then full typecheck, lint, build, and Jest suite.
   - Verified 2026-05-21 on `claude/evidence-loop-p1`: normalized action causes before classification, kept combat movement and prayer-driven attacks under `safe-combat`, kept bury-bones under `train-prayer`, and preserved follow attribution. Focused knowledge tests, typecheck, lint, build, and full Jest suite passed.
+  - Hardened 2026-05-24 on `agents/wip`: speech-only, generic movement, unattributed failed actions, logout, and noop attempts no longer emit workflow hints. This keeps the self-improvement queue focused on real gameplay effects rather than status chatter, pathing noise, or lifecycle cleanup.
 
 - `[x]` **E6: Trade-aware knowledge suggestion attribution.**
   - Files: `src/controller/knowledge/game-skill-context.ts`, `src/controller/knowledge/game-skill-context.test.ts`

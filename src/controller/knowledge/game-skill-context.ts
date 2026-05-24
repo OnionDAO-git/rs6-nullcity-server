@@ -109,9 +109,15 @@ export class GameSkillService {
         if (!this.suggestionStore) {
             return;
         }
+        if (shouldSuppressAttemptSuggestion(event.attempt)) {
+            return;
+        }
 
         const workflow = selectWorkflowForAttempt(event.attempt, event.context?.workflowAvailability || []);
-        if (event.attempt.finalStatus === 'success' && (!workflow || event.attempt.evidence.length === 0)) {
+        if (!workflow) {
+            return;
+        }
+        if (event.attempt.finalStatus === 'success' && event.attempt.evidence.length === 0) {
             return;
         }
         const suggestion = this.buildAttemptSuggestion(event, workflow);
@@ -214,7 +220,8 @@ function selectWorkflowForAttempt(attempt: ActionAttempt, workflowAvailability: 
             return preferred;
         }
     }
-    return visible[0];
+    const fallbackWorkflowId = fallbackWorkflowForAttempt(attempt);
+    return fallbackWorkflowId ? visible.find(availability => availability.workflowId === fallbackWorkflowId) : undefined;
 }
 
 function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined {
@@ -261,6 +268,20 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
         return 'follow-codex';
     }
     return undefined;
+}
+
+function fallbackWorkflowForAttempt(attempt: ActionAttempt): string | undefined {
+    const action = record(attempt.action);
+    const kind = textField(action.kind);
+    if (kind === 'use_item_on_item') {
+        return 'make-fire';
+    }
+    return undefined;
+}
+
+function shouldSuppressAttemptSuggestion(attempt: ActionAttempt): boolean {
+    const kind = textField(record(attempt.action).kind);
+    return kind === 'say' || kind === 'logout' || kind === 'noop';
 }
 
 function targetText(target: Record<string, unknown>): string {
