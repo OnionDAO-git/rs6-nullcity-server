@@ -391,6 +391,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Started 2026-05-23 on `agents/wip`: add a `memory-recall-3m` task and ensure non-command chat replies can see Library memories.
   - Verified 2026-05-23 on `agents/wip`: `memory-recall-3m` seeds Library memories, prompts normal nearby-player recall chat, rejects JSON-like prompt echo, and passed live autonomous score=1. Format, lint, typecheck, build, full Jest 1092/1092, and `git diff --check` passed.
 
+- `[x]` **I6: Recover corrupt evidence indexes.**
+  - Files: `src/controller/evidence/evidence-store.ts`, `src/controller/evidence/evidence-store.test.ts`
+  - Deliverable: one malformed `evidence/index.json` cannot disable story/action/progress logging for a resident.
+  - Verification: red/green evidence-store regression, full gates, and live controller restart without evidence init failure.
+  - Verified 2026-05-24 on `agents/wip`: local QA found `res:father-aereck` evidence disabled by a zero-byte index; `EvidenceStore` now quarantines corrupt indexes and starts a fresh session. Focused red/green test, full gates, Jest 1493/1493, and live controller restart passed with a new active evidence index.
+
 ## Workstream J: Patron / Human-Attention Loop
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
@@ -497,6 +503,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-23: dynamic stuck recovery phrasebook system integrated with personality-specific voicing (achiever, mentor, endurer) and path-blocker (gate, fence, NPC) resolution. All tests pass.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: progress evidence state now records `lastMeaningfulProgressAt` and `stuckSince` on the resident runtime clock when persisted `state.tick` is ahead of gateway perception ticks. Regression covers the clock mismatch that made recent progress look ancient in Brain/Body prompts; autonomous real-gateway `make-fire-5m` benchmark passed with standard SPARK after the fix.
   - Verified 2026-05-22 on `codex/q-stuck-recovery`: make-fire autonomous benchmark verifier now consumes selected-module final action-effect evidence from the runtime, so a completed tinderbox/logs action can end the task promptly instead of waiting for later perception proof and accumulating stale stuck ticks. Focused red/green tests cover verifier and runtime evidence plumbing; live autonomous `make-fire-5m` passed in 45s with `successfulActionEffects=1`, `finalStatus=success`, and `effectEvidenceCount=1` on the firemaking action.
+  - QA gap 2026-05-24 on `agents/wip`: after a live controller restart, `res:agent` stayed online but entered a prolonged no-progress movement wait with `stuckSince` advancing and no fresh recovery action. Next slice should reproduce/fix stale active movement after restart.
 - `[x]` **Q3 (F5): Combat survival personality.** Eat when HP low, run when outmatched, narrate the decision.
   - Verified 2026-05-23: fully implemented and verified under full Jest coverage. Target selection prioritizes weakest visible aggressor using lowest hpFraction, lowest combatLevel, and closest Chebyshev distance. Combat decisions are classified (retaliate_confident, retaliate_after_eat, retreat_outmatched, retreat_low_hp), and character voicing matches the registered soul archetype. Action-effect survival (eating/retreating) takes precedence over speech, with robust safety and deduplication logic verified.
   - Verified 2026-05-22 by Codex live smoke: autonomous real-gateway `combat-prayer-10m` passed in 96s with `safeAttackActions=6`, `survivalActions=2`, `pickupBonesActions=2`, `buryActions=2`, `prayerXpIncreased=1`, `deathEvents=0`, and visible dashboard evidence for attack, retreat, loot, and bury actions.

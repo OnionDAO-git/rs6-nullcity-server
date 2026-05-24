@@ -79,6 +79,27 @@ describe('EvidenceStore', () => {
         expect(fs.existsSync(first.progressPath)).toBe(false);
         expect(fs.existsSync(second.trajectoryPath)).toBe(true);
     });
+
+    it('quarantines a corrupt resident evidence index and starts a fresh session', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'evidence-store-corrupt-index-'));
+        const evidenceDir = path.join(root, 'res-agent', 'evidence');
+        fs.mkdirSync(evidenceDir, { recursive: true });
+        fs.writeFileSync(path.join(evidenceDir, 'index.json'), '');
+        const store = new EvidenceStore('res:agent', root, { now: fixedNow });
+
+        const session = store.beginSession('session-1', 'soul-v1');
+
+        const index = JSON.parse(fs.readFileSync(path.join(evidenceDir, 'index.json'), 'utf8'));
+        expect(index.currentSessionId).toBe('session-1');
+        expect(index.sessions).toEqual([
+            expect.objectContaining({
+                sessionId: 'session-1',
+                status: 'active',
+            }),
+        ]);
+        expect(fs.existsSync(session.trajectoryPath)).toBe(true);
+        expect(fs.readdirSync(evidenceDir).some(name => name.startsWith('index.json.corrupt-'))).toBe(true);
+    });
 });
 
 function fixedNow(): Date {
