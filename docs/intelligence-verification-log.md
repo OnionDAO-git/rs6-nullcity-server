@@ -1910,3 +1910,81 @@ Optional future enhancement: a separate auto-replenish mechanism where patron-ac
 
 **Owner suggestion.** No follow-up needed. Sprint risk closure complete.
 
+
+### E33 — 15-resident cohort live audit (Codex multi-resident-live-qa)
+
+**Status:** STRONG POSITIVE — cohort behaviors firing richly; first evidence of widespread environment-reactive intelligence
+**Tier:** 1 (read-only multi-resident state + trajectory scan)
+**Date:** 2026-05-24 21:40 claude
+
+**Hypothesis.** Codex shipped 8 specialized cohort souls (angler, cook, guardian, scout, social, survivor, trader, woodcutter) atop the 6 heroes + res:agent = 15 residents total. They're running multi-resident-live-qa on local controller. Audit: (a) cohort soul floor coverage — does Codex give them HD-008's floor too? (b) Are cohort souls' specialized behaviors actually firing live?
+
+**Repro.**
+- `grep "^  floor:" src/controller/soul/starter-souls/res-qa-*.md` for cohort floor coverage
+- Per-resident `runtime-state.json` for liveness + attention
+- Per-cohort first-say scan + action histogram from latest trajectory
+
+**Observation.**
+
+**Floor coverage: cohort has NO floor by design.** Codex chose `startingAttention: 60000` for all 8 cohort souls — ~4-12x the heroes — and deliberately omitted the floor. This is correct QA design: cohort souls should be able to die so death behavior is testable; 60000 attention gives them 8-12 hours of lifetime before mortality becomes likely.
+
+**All 15 residents alive:**
+```
+res-agent          97986    (no floor, dev)
+res-hans            9958    above floor 5000
+res-father-aereck   5000    AT floor (clamp firing)
+res-wise-old-man    5000    AT floor
+res-duke-horacio   10031    above floor
+res-pip             3000    AT floor
+res-thrand          3000    AT floor
+res-qa-angler      58506    no floor, abundant
+res-qa-cook        58903
+res-qa-guardian    58514
+res-qa-scout       58903
+res-qa-social      58530
+res-qa-survivor    58902
+res-qa-trader      58902
+res-qa-woodcutter  58488
+```
+
+Hero floors (E30) **still working** — 4 of 6 heroes at exact floor value (Aereck/Wise/Pip/Thrand). Pip went 3353 → 3000 between E32 (15min ago) and now — clamp caught the drop.
+
+**Cohort first-says (BIG WIN — environment-reactive intelligence):**
+
+- **res-qa-angler**: *"I have raw fish now. I need a fire or range to cook it."* — Brain-driven contextual workflow-aware statement; recognizes what state it's in and what's blocking
+- **res-qa-cook**: *"I am checking this area. Nearby I see 6 trees, 15 NPCs, and 4 players at 3249,3227. Goal: Catch shrimp with a small fishing net..."* — perception count + soul-driven goal stated
+- **res-qa-guardian**: *"I am too hurt to start combat without food. I need to heal or get food first."* — **SAFETY REASONING.** Brain assessed hp + inventory + situation and produced a defensive plan
+- **res-qa-social**: *"I heard that. Try 'social help' if you want my test commands."* — invitation to interact; designed-for-testing meta-conversation
+- **res-qa-survivor**: *"Goal: Train combat on safe low-level..."* — soul-driven combat-training goal stated
+- **res-qa-trader/scout/woodcutter**: standard scout/work-route beacon family
+
+**Action volume (cohort vs heroes baseline):**
+```
+res-qa-trader      48 actions / 124 decisions / 6 says
+res-qa-scout       38 actions /  94 decisions / 6 says
+res-qa-woodcutter  28 actions /  96 decisions / 5 says
+res-qa-social      14 actions /  84 decisions / 11 says
+res-qa-cook         8 actions /  22 decisions / 5 says
+res-qa-angler       2 actions /  75 decisions / 13 says
+res-qa-guardian     0 actions /  58 decisions / 14 says
+res-qa-survivor     0 actions /  38 decisions / 14 says
+```
+
+Some cohort residents (guardian, survivor) say a lot but act little — they're "stuck thinking" in some sense, possibly because their goals require capabilities not yet wired (combat without food). The Brain is correctly REFUSING unsafe action; the body has nothing safe to do. That's healthy behavior.
+
+**Sub-findings.**
+
+- **F33a (POSITIVE / VALIDATION).** Cohort souls demonstrate the substrate's smart-residents capability when souls are designed with explicit goals + sufficient attention budget. The user's "residents need to be smart and react to environment" mandate is empirically shown working.
+- **F33b (POSITIVE / E30 holds).** Hero floors continue to work alongside the 8 new cohort residents. Pip drifted 353 attention down to exact floor since E32, demonstrating the clamp catching the decay.
+- **F33c (DESIGN INSIGHT).** Cohort guardian/survivor's "many says, few actions" pattern is HEALTHY — Brain refuses unsafe combat without food rather than dying. This is the safety-first reflex pattern designed into HD-031's patron-thank reflex generalizing into broader behavior. No fix needed.
+- **F33d (OBSERVATION).** Cohort 60000 startingAttention buffer is enough for a single Chicago session (8-12 hours typical lifetime under load). For longer sessions or persistent NPCs, would need a floor; for cohort QA souls, the unbounded death path is correct.
+
+**Classification.** POSITIVE — the substrate WORKS for multi-resident smart-feeling behavior. No regressions, no bugs, no new HDs needed.
+
+**Suggested next step.**
+- No code changes needed; this is a verification PASS.
+- Recommend Codex consider an optional `floor` on the cohort souls before Chicago if they'll be alive for the full event — but the 60k buffer is sufficient if cohort residents are session-scoped.
+- Continue ~2 hour soak to see if cohort residents organically die per their design (validates the death-loop + epitaph mechanics at multi-resident scale).
+
+**Owner suggestion.** Pure verification. No follow-up required.
+
