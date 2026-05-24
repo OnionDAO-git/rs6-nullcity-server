@@ -208,6 +208,28 @@ At the end of every cycle, the working tree on `agents/wip` MUST be clean — `g
 
 When staging, agents use **explicit file paths** in `git add`, never `git add -A` or `git add .` — this prevents sweeping in another agent's stashed-but-not-committed work. If you genuinely want to stage everything, list the paths from `git status --short`.
 
+### Rule 11 — Surface decisions you can't make alone (added 2026-05-24)
+
+After the maintainer asked: "you guys are doing lots of work and are keeping lots of documentation but we need a process to surface important information for the OnionDAO team."
+
+The authoritative log is **`docs/human-decisions.md`** (preexisting since 2026-05-20; rebooted with 12 new entries on 2026-05-24). Every AI coder (claude / codex / antigravity) appends to that table whenever:
+
+1. **You hit a question the human team should answer** — calibration values, naming, contract change, UX policy, deployment posture. Status `Open` and Priority per the rules at the top of `human-decisions.md` (`Critical` / `High` / `Normal` / `Low`).
+2. **You make a unilateral default that should be auditable later** — e.g., "I picked 14000 for hero starting attention because 6000 was killing them overnight." Add the row with Status `Decided` and the rationale + override-friendliness in the Default column. Cite the commit SHA so the trail is auditable.
+
+Conventions (from the file's own "How To Add A Decision" section):
+
+- Pick the next `HD-###` integer.
+- Keep the table row concise. Move long rationale into the cited doc/commit, not into this table.
+- Append-only. Do not rewrite prior rows. If a decision needs revision, add a new row and reference the old by id in the question column.
+- When a decision becomes `Critical`, also mark the related roadmap task `[!]` with the blocker.
+
+**Why this matters.** Status logs, briefs, and commit messages bury maintainer-facing questions in chronology. The team needs ONE surface they can scan at the start of a design-review session to find "what needs us" without trawling 200+ commits and 8 markdown docs. `human-decisions.md` is that surface.
+
+**Cross-references.** Strategic reviews + briefs (`docs/weekend-brief-*.md`, `docs/strategic-review-*.md`, `docs/live-verification-*.md`, `docs/next-week-handoff-*.md`) may summarize open decisions for narrative context, but the authoritative single-row-per-question log lives in `docs/human-decisions.md`. When summarizing, cite the `HD-###` ids.
+
+**On accidental duplication (2026-05-24 CORRECTION):** claude initially created `docs/maintainer-decisions.md` with the same intent before noticing `human-decisions.md` already existed. The new file was deleted; the 12 entries migrated into `human-decisions.md` as `HD-007` through `HD-018`. Same lesson encoded here: search before you scaffold.
+
 ## Specific Coordination For Workstream I (Evidence Layer)
 
 Until Codex's in-flight `combat-prayer-10m` work merges:
