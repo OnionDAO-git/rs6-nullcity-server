@@ -22,12 +22,28 @@ export class InferenceLog {
      *   `0` always keeps and one that returns `0.99` keeps only at rates
      *   above 0.99.
      */
+    private readonly samplePromptRate: number;
+
     constructor(
         private readonly root: string,
         private readonly includeEnvelope: boolean,
-        private readonly samplePromptRate: number = 0,
+        samplePromptRate: number = 0,
         private readonly sampler: () => number = Math.random,
-    ) {}
+    ) {
+        // E28 QA finding MEDIUM-1: clamp to [0, 1]. NaN or non-finite
+        // inputs collapse to 0 (no sampling) — fail-safe to the existing
+        // default rather than throw, because misconfigured production
+        // envvars / yaml should not crash the controller.
+        if (!Number.isFinite(samplePromptRate)) {
+            this.samplePromptRate = 0;
+        } else if (samplePromptRate < 0) {
+            this.samplePromptRate = 0;
+        } else if (samplePromptRate > 1) {
+            this.samplePromptRate = 1;
+        } else {
+            this.samplePromptRate = samplePromptRate;
+        }
+    }
 
     append(resident: string, entry: Record<string, unknown>): void {
         const dir = path.join(this.root, resident, 'inference');

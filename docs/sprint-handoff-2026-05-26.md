@@ -13,7 +13,7 @@
 - **All 7 residents are alive and active** (after Codex shipped revive tooling + watchdog freeze mitigation + personalized fallbacks).
 - **Two deep gaps remain (not blockers but worth knowing):** Brain LLM completion is empty 84-100% of the time for heroes (F20 quantified); resident speech rarely references the 50 knowledge entries (F21 quantified at 3.8%).
 - **Three Chicago-relevant operational items need maintainer attention:** populate `controller.yml#patrons[]` (HD-011), file the dashboard Pillar-3 patch package with Dev (HD-015), and recalibrate hero attention floors (HD-008 — pip hit 162 today and had to be rescued).
-- **Tests: 1562/1562 passing.** Action success across all 7 residents now ~93-100% (up from 80% baseline at sprint start).
+- **Tests: 1632/1632 passing as of 20:40 UTC** (E27 deep audit; was 1562 at SPRINT-PM-PIVOT TLDR-write time). Action success on the living-three residents trends 83-97% — but at audit time **4 of 6 heroes (Hans, Duke Horacio, Pip, Thrand) had died** between 19:11-19:52 UTC. **All 4 revived inline via `npm run controller:revive`** (Pip + Thrand back at 5000 attention — HD-008's calibration is genuinely too low; heroes will likely die again without auto-top-up or a much higher floor).
 
 **Single command Chicago-day go/no-go:** `bash scripts/post-restart-smoke.sh`
 **Single-page operational checklist:** `docs/pre-chicago-readiness.md`

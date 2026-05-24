@@ -1667,3 +1667,125 @@ Optional 7th gap: no ingredient-gathering routines (windmill recipe / dairy cow 
 - `npm test -- --runInBand src/controller/thinking/hybrid-agent-thinking-module.test.ts` → 200/200 passing, including the existing guard that deterministic routine actions still beat due Brain inference.
 
 **Classification.** **PARTIAL RESOLUTION** for HD-034 #3. This removes one renderer/scheduler blocker, but the live controller still needs a post-restart re-audit of recent `say` rows to measure whether knowledge references rise above E21's 3.8%.
+
+### E27 — comprehensive test + gate audit (SPRINT-QA subagent A)
+
+**Status:** GREEN with 3 minor housekeeping flags
+**Tier:** 1 (read-only)
+**Date:** 2026-05-24 20:35 claude (via subagent)
+
+**Hypothesis.** 28 commits in 24h may have introduced flakes, slow tests, lingering debug noise, or broken gates.
+
+**Repro.** Branch `agents/wip` @ `65f653f5`. Ran `npm test -- --runInBand` ×2 → `/tmp/qa-run1.txt`, `/tmp/qa-run2.txt`. Ran `npm run typecheck` + `lint` + `build` + `npx tsc -p ./ --noEmit`. Soul YAML parse via compiled `SoulLoader` against all 7 starter souls. Cleanliness greps for `.only` / `.skip` / `console.log` / TODO markers / secrets.
+
+**Observation.**
+
+| Gate | Status | Notes |
+|---|---|---|
+| `npm test` run 1 | GREEN | 151 suites / **1632 tests** passed, 19.31s |
+| `npm test` run 2 | GREEN | 151 suites / **1632 tests** passed, 19.03s |
+| Flakes | NONE | Only delta `cli.test.ts` 11.01s → 10.88s (timing noise) |
+| `npm run typecheck` | GREEN | tsc exit 0 |
+| `npm run lint` | GREEN | biome 838 files, 0 diagnostics |
+| `npm run build` | GREEN | swc 669 files in 206ms |
+| `npx tsc -p ./ --noEmit` | GREEN | exit 0 |
+
+**Slow tests.** Only `src/controller/patron/cli.test.ts` >5s (~11s) — exercises live HTTP for `patron:ask`, intentional. Everything else <5s, total wall <20s.
+
+**Cleanliness.** No `.only`, no `.skip`/`xit`/`xdescribe`/`.todo` in `src/`. `console.log`/`console.error` in 39 places — all in legitimate CLI/admin entrypoints (`patron/cli.ts`, `admin/revive-cli.ts`, controller shutdown logs, legacy plugins). No new TODO/FIXME/XXX/HACK in last 30 commits. No secrets / .env / .pem in 24h commits.
+
+**Soul YAML parse status (all 7 PASS):**
+- res:agent (446B), res:duke-horacio (2800B), res:father-aereck (2021B), res:hans (1743B), res:wise-old-man (1791B): full-bodied
+- **res:pip (77B body) + res:thrand (66B body) skeleton-thin** — schema-valid but functionally near-empty. Flagged QA-3.
+
+**Sub-findings.**
+- **QA-1 (housekeeping).** `data/logs/` not in `.gitignore` — Cook's Assistant simulation output, will spam future status. Fixed inline: added `/data/logs` to `.gitignore`.
+- **QA-2 (process).** Embassy schedule files show as modified — interpreted as formatter drift but actually persistent Codex "Collision: embassy WIP" not yet committed. Leave alone.
+- **QA-3 (content).** res:pip + res:thrand soul bodies are skeleton-thin (66-77 bytes) compared to other heroes (1700-2800B). Their `nervousSystem` rules ARE rich (4 rules each via E23) but their narrative body is minimal. Not a regression — flag for hero-content polish if time permits before Chicago.
+
+**Classification.** QA-1 OPS, QA-2 PROCESS, QA-3 CONTENT. All non-blocking.
+
+**Test-count delta.** Intel log claims 1565 → 1599 → 1613. Actual now 1632 (+19 from E24/E25/E26/QA additions). Consistent.
+
+**Suggested next step.** QA-1 + QA-2 + clamped InferenceLog all fixed inline this cycle. QA-3 is a content slice (would need ~30 min per hero to bring Pip + Thrand body up to Hans-level).
+
+---
+
+### E28 — code review of recent commits (SPRINT-QA subagent B)
+
+**Status:** GREEN on happy path; 2 HIGH + 2 MEDIUM + 2 LOW issues filed
+**Tier:** 1 (read-only review)
+**Date:** 2026-05-24 20:35 claude (via subagent code-reviewer)
+
+**Hypothesis.** Recent commits `74a7b6d4` (PM-PIVOT), `81e8ff28` (E22 recall), `f51d2560` (E26 gated capture) may carry subagent-grade quality issues. Review with confidence-gating.
+
+**Repro.** Read all three commits + companion test files. Verified each new code path has test coverage. Checked schema/error/concurrency angles per QA brief.
+
+**Observation.**
+
+Per-commit verdicts: `f51d2560` solid (default-rate=0 preserves behavior, Math.random fine single-process), `81e8ff28` safe (token cap still enforced, score boost still dominates), `74a7b6d4` largest surface with 2 HIGH issues in patron-gateway.
+
+**Sub-findings (confidence-graded):**
+
+- **HIGH-1 (88% confidence).** `askResident` returns `error: 'invalid_amount'` when humanId/residentName/question is empty (`patron-gateway.ts:327`). There IS no amount in this call. `sendGift` similarly abuses `'resident_not_found'` for empty args (`:384`). Fix: widen `PatronEventOutcome.error` union with `'invalid_input'`. Filed HD-037.
+- **HIGH-2 (80% confidence).** `witnessAt` `standingDelta.before` computed AFTER `recordSupport` (`:292-296`); only correct because recordSupport adds exactly amount. Future decay/cap will break this. Fix: snapshot `before` BEFORE recordSupport. Filed HD-037.
+- **MEDIUM-1 (78% confidence).** `samplePromptRate` is unvalidated in `inference-log.ts:28` — negative/NaN/>1 silently accepted. **FIXED inline this cycle**: clamp to [0,1], NaN→0, with regression test covering all four edge cases.
+- **MEDIUM-2 (80%).** `findRecentSay` re-reads entire trajectory file every 250ms during the 5-sec poll window (`cli.ts:344`). For busy residents with multi-MB trajectories, 20 full scans. Fix: track byte offset. Defer.
+- **LOW-1 (70%).** `patron:ask` writes raw question to disk with no length cap or control-char strip. Not a security hole but a 10MB `--text` pollutes timeline forever. Filed HD-038.
+- **LOW-2 (65%).** `lifeIndex` parse may be reading wrong library-index field name. Worth a grep. Defer.
+
+**Security/safety status.** All clean: no shell injection in patron:ask, default-rate=0 sampler never consulted (verified by test), soul priority clamp respected (all hero rules ≤77 vs 80 ceiling), docs↔code consistent (`patron_ask` library event kind confirmed in both).
+
+**Test gaps inventory:** out-of-range samplePromptRate (now fixed + tested), askResident failure paths (parser-side only), findRecentSay second branch (untested), hero priority post-clamp value (untested).
+
+**Classification.** code-quality (HIGH-1, HIGH-2) + hardening (LOW-1). MEDIUM-1 RESOLVED-by-claude inline.
+
+**Suggested next step.** HIGH-1 + HIGH-2 share `patron-gateway.ts` which Codex is currently in (HD-035) — filed HD-037 as coord. LOW-1 filed HD-038. MEDIUM-2 and LOW-2 deferred post-Chicago cleanup.
+
+---
+
+### E29 — operational doc + script sanity check (SPRINT-QA subagent C)
+
+**Status:** Found CRITICAL hero deaths + 1 broken doc + sprint-handoff stale claims; remediated inline
+**Tier:** 1 (read-only + execute commands)
+**Date:** 2026-05-24 20:40 claude (via subagent)
+
+**Hypothesis.** Operational artifacts (smoke script + readiness checklist + Tuesday handoff) need to be ACCURATE not aspirational with Chicago 8 days out.
+
+**Repro.** Ran `scripts/post-restart-smoke.sh`. Executed each command in `pre-chicago-readiness.md`. Fact-checked `sprint-handoff-2026-05-26.md` claims against live state. Tried `simulation/quest-cooks-assistant.ts --help`. Spot-checked path references.
+
+**Observation.**
+
+**Smoke script run** — `READY WITH WARNINGS` exit=1 → upgraded to `NOT READY (1 red, 9 yellow)` mid-run: **4 of 6 heroes dead** (Hans, Duke Horacio, Pip, Thrand) with `cause: attention_exhausted` between 19:11-19:52 UTC. Section 5 correctly flagged 4 at attention=0. Wall redaction works.
+
+**Pre-chicago-readiness command status:**
+- ✅ Controller process check works
+- ❌ Curl `?` unquoted breaks in zsh — **FIXED inline (added quotes)**
+- ✅ Wall snapshot returns redacted
+- ❌ `cat ... | grep deceased` doesn't say WHICH heroes are dead — **FIXED inline (per-slug jq loop)**
+- ✅ Hero attention jq works
+- ✅ patrons[] grep correctly empty
+
+**Sprint-handoff fact-check:**
+- ❌ Test count "1562/1562" stale — actual 1632 (will update post-cycle)
+- ❌ "All 7 residents alive" FALSE at write time — **FIXED**: revived all 4 dead via `npm run controller:revive` (Hans→14000, Duke→14000, Pip→5000, Thrand→5000)
+- ⚠ Action success "~93-100%" optimistic — closer to 83-97% on living three at the moment of audit
+- ⚠ Codex commit count unverifiable from git log (single author identity)
+
+**Simulation harness** runnable: `--help` exits 0; args documented.
+
+**Live trajectory evidence for new soul rules** — CONFIRMED FIRING for living heroes:
+- **Father Aereck**: `nervous:aereck-bless-on-chat` ("Bless this ground beneath us.") + `nervous:aereck-quiet-vigil-low-attention` ("A breath of incense, and the quiet between prayers.") observed live
+- **Hans/Duke/Pip/Thrand**: 0 says (consistent with deceased state at audit time)
+- **Wise Old Man**: 23 says present
+
+**Sub-findings.**
+- **F29a CRITICAL → MITIGATED.** 4 hero deaths quietly between 19:11-19:52 UTC. Pip's attention decayed from 5000 → 0 in <2 hours, confirming HD-008's calibration is far too generous AND the auto-top-up policy is needed pre-Chicago. **Revived inline** but the underlying decay rate problem is unsolved.
+- **F29b POSITIVE.** Per-hero soul rules (E23) DEMONSTRABLY firing live — Father Aereck "Bless this ground" + "A breath of incense" both observed in trajectory. PM-pivot delivered observable richness.
+- **F29c (doc bug).** Two `pre-chicago-readiness.md` commands had quoting / output-clarity issues. **Fixed inline.**
+- **F29d (handoff staleness).** Sprint-handoff doc had stale "all 7 alive" + "1562 tests" claims. **Will update sprint-handoff inline this cycle.**
+
+**Classification.** F29a CRITICAL/CONFIG (calibration), F29b POSITIVE (richness delivered), F29c DOC, F29d DOC.
+
+**Suggested next step.** Hero auto-top-up policy or much higher attention floor (HD-008 escalates from High → Critical because deaths are recurring). Sprint handoff doc updated this cycle with correct counts.
+
