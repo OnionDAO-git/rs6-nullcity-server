@@ -2597,4 +2597,64 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 **Owner suggestion.** Wire-in: Codex (or claude during a clean window in `resident-runtime.ts`). Doc clarifications: claude this cycle.
 
 
+### E51 — tick-budget profile across 19 residents (spec-queued E21)
+
+**Status:** Quantified — sharper framing for HD-042; reveals 3 distinct tick-budget archetypes
+**Tier:** 1 (read-only trajectory aggregation across full history + post-restart-only windows)
+**Date:** 2026-05-25 00:50 claude
+
+**Hypothesis.** HD-042 (heroes 100% `watchdog_fallback`) describes the symptom. Quantify where ticks ACTUALLY go: how many ticks produce zero trajectory work, how many produce a decision, how many produce body work? Cross-reference cohort vs heroes vs res:agent.
+
+**Repro.** Per-resident over all + newest trajectory files, count rows of each kind (`begin_tick`, `end_tick`, `decision`, `action`, `action_result`, `say`). A "silent tick" is one where `begin_tick` fires but no `decision` row is recorded — the runtime tick happens but the thinking module skipped it.
+
+**Observation (full-history aggregate across 19 residents).**
+
+| group | sum_ticks | sum_dec | sum_say | sum_aRes | avg silent% | top causes |
+|---|---:|---:|---:|---:|---:|---|
+| **res:agent (dev)** | 11,557 | 2,166 | 84 | 613 | **81.3%** | body_wait 1473, exploration_fallback, stuck_pre_inference_explore |
+| **6 heroes** | 17,971 | 345 | 256 | 329 | **98.1%** | `_none` (cause-field missing) dominant — F40a/HD-042 signature |
+| **12 cohort** | 26,148 | 7,811 | 332 | 1,398 | **70.1%** | body_wait, exploration_fallback (healthy), some catatonic outliers |
+
+**Observation (newest trajectory only, post-Codex-restart at 17:38 CDT, ~1020 ticks per resident):**
+
+| resident | ticks | dec | silent% | top causes |
+|---|---:|---:|---:|---|
+| res-hans | 1021 | 33 | 96.8% | `_none` 27, watchdog_fallback 6 |
+| res-father-aereck | 1021 | 26 | 97.5% | `_none` 18, watchdog_fallback 8 |
+| res-wise-old-man | 1021 | 20 | 98.0% | `_none` 13, watchdog_fallback 7 |
+| res-duke-horacio | 1021 | 24 | 97.6% | `_none` 15, watchdog_fallback 9 |
+| res-pip | 1020 | 20 | 98.0% | `_none` 13, watchdog_fallback 7 |
+| res-thrand | 1020 | 30 | 97.1% | `_none` 22, watchdog_fallback 8 |
+| **res-agent** | 1021 | **112** | **89.0%** | body_wait 66, exploration_fallback 14 |
+
+**Per-cohort flags (full-history aggregate):**
+- `res-qa-woodcutter` is the busiest worker — 1256 decisions / 2179 ticks = **57.6% decision-ful** (top body_wait 864).
+- `res-qa-banker` 308 / 2179 = **14.1% decision-ful** (exploration_fallback dominant).
+- `res-qa-guardian` + `res-qa-survivor` are the CATATONIC pair — 2138 / 2154 decisions / 2179 ticks = **~98.5% decision-ful but ALL nooped `low_health_hold_position`**. Codex `0747ff8c` (HD-039) added a recovery waypoint — newest-window check still ongoing (those residents' newest trajectories postdate the fix; need a separate verification).
+- `res-qa-cook` 105 / 2179 = 4.8% with TOP cause `thinking_watchdog_timeout 24` — unique among cohort. Brain isn't returning in time for cook (different bottleneck from heroes).
+- `res-qa-priest` 114 / 2179 = 5.2% with TOP cause `combat_seek_safe_target 33` — actually doing combat reasoning! Healthy DESIGN signal.
+
+**THREE distinct tick-budget archetypes emerge:**
+
+1. **HERO archetype (~98% silent, dec mostly `_none`):** thinking module produces decisions without setting `cause` field. F40a / HD-042 manifest. Heroes appear "idle" to dashboard observers because ticks aren't producing trajectory rows — they're decision-less even when they fire.
+2. **COHORT-HEALTHY archetype (~70-90% silent, dec causes varied):** body_wait dominant + occasional exploration_fallback / firemaking / etc. Looks like a real production system — slow tick budget but causes are coherent. qa-woodcutter / qa-banker / qa-scout / qa-forager are this archetype.
+3. **COHORT-CATATONIC archetype (~98.5% decision-ful, all `low_health_hold_position`):** qa-guardian + qa-survivor pre-Codex-fix. The fix at `0747ff8c` adds a recovery waypoint that should break this pattern; live verification next cycle.
+
+**Sub-findings.**
+
+- **F51a (HD-042 SHARPENED).** Heroes don't just "fail to set cause" — they're producing only ~25-30 decisions per 1000 ticks of runtime. That's an effective decision rate of ~2-3% of ticks. Compare res:agent at ~10-18% and cohort-healthy at 10-30%. **The hero brain output gap is bigger than HD-042's original framing.** It's not just empty-cause decisions — it's missing decisions entirely.
+- **F51b (POSITIVE / res:agent VALIDATION).** res:agent reaches 11,557 ticks lifetime with 2166 decisions and 613 action_results. Demonstrates that the trajectory recorder + decision pipeline CAN produce rich evidence — heroes diverge from this baseline.
+- **F51c (POSITIVE / cohort archetype healthy).** Cohort-healthy residents (woodcutter, banker, scout, forager) produce realistic-looking action distributions. The substrate works for them; heroes diverge from this baseline too.
+- **F51d (DATA POINT for HD-042 Codex fix).** When Codex investigates HD-042, the diagnostic test should be: **for a hero, does ResidentRuntime.applyTick early-return before the thinking module record-decision call?** The 98% silent rate suggests the tick body skips a phase entirely for heroes. Possibly tied to soul `behavior.kind: hybrid-agent` triggering a code path different from cohort's `behavior.kind: hybrid-agent` (same kind but maybe different config — investigate `brainEveryTicks` / `bodyEveryTicks` interaction).
+- **F51e (NEW OBSERVATION).** `res-qa-cook` is the only cohort resident with `thinking_watchdog_timeout` as its top cause. Adjacent to HD-039 (catatonic guardian/survivor) but a different failure: cook's Brain IS being called but the LLM doesn't return in time. Worth a separate HD if it persists post-Codex-cooking-recovery (`30d5f1b7`).
+
+**Classification.** ENGINE-quantification — sharpens HD-042 framing. No new bugs found; existing HDs covered.
+
+**Suggested next step.** Update HD-042 description with the "~2-3% decision rate" framing. Codex investigates whether ResidentRuntime.applyTick has a hero-specific early-return path. F51e (qa-cook watchdog) gets one more cycle of live observation before deciding if it needs a separate HD.
+
+**Owner suggestion.** claude (HD-042 update this cycle); Codex (resident-runtime tick path investigation).
+
+
+
+
 
