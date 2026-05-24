@@ -97,6 +97,13 @@ describe('PatronGateway', () => {
                 tick: 5,
                 patronHandle: 'james',
                 note: 'chathead',
+                // E7 enrichment: amount + attentionDelta + (optional) tier
+                // get forwarded so the Brain's memory rendering can include
+                // them. tier is undefined here because 5 Shards stays under
+                // the stranger → acquaintance threshold.
+                amount: 5,
+                standingTier: undefined,
+                attentionDelta: 10,
             });
 
             expect(res.standingDelta).toEqual({

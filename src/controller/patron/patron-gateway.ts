@@ -116,6 +116,14 @@ export class PatronGateway {
                 tick: runtime.getState().tick,
                 patronHandle: req.humanId,
                 note: req.interactionContext || 'mercy_infusion',
+                // E7 (intelligence-verification-log.md § E7): forward
+                // amount + standingTier so the Brain's memory rendering
+                // can include them instead of the literal string
+                // "a gift". attentionDelta mirrors the attentionPerShard
+                // multiplier used above.
+                amount: req.amount,
+                standingTier: standingResult.tierCrossed || undefined,
+                attentionDelta: req.amount * attentionPerShard,
             });
         }
 

@@ -24,11 +24,41 @@ export function readRecentLibraryMemories(libraryRoot: string, resident: string,
     if (n <= 0) {
         return [];
     }
+    const events = readTimeline(libraryRoot, resident);
+    if (events.length === 0) {
+        return [];
+    }
+    const lastN = events.slice(-n);
+    return lastN.map(renderEventAsMemory);
+}
+
+/**
+ * Read the last N patron-kind events from the library timeline, filtered
+ * away from stuck/say noise. See E7 in
+ * `docs/intelligence-verification-log.md`: res:agent's timeline is dominated
+ * by ~92% stuck/say events at ~1/10s, so patron events evict from the
+ * general {@link readRecentLibraryMemories} window within minutes. A
+ * dedicated patron-only reader preserves them long enough for the resident
+ * to acknowledge the patron in subsequent conversation or behavior. The
+ * caller typically concatenates the two readers' output for the
+ * `memories` field of {@link PromptEnvelopeInput}.
+ */
+export function readRecentPatronMemories(libraryRoot: string, resident: string, n: number): string[] {
+    if (n <= 0) {
+        return [];
+    }
+    const events = readTimeline(libraryRoot, resident);
+    const patronEvents = events.filter(event => isPatronKind(event.kind));
+    const lastN = patronEvents.slice(-n);
+    return lastN.map(renderEventAsMemory);
+}
+
+function readTimeline(libraryRoot: string, resident: string): Array<Record<string, unknown>> {
     const timelinePath = path.join(libraryRoot, 'library', residentSlug(resident), 'timeline.jsonl');
     if (!fs.existsSync(timelinePath)) {
         return [];
     }
-    const events = fs
+    return fs
         .readFileSync(timelinePath, 'utf8')
         .split('\n')
         .map(line => line.trim())
@@ -40,8 +70,10 @@ export function readRecentLibraryMemories(libraryRoot: string, resident: string,
                 return [];
             }
         });
-    const lastN = events.slice(-n);
-    return lastN.map(renderEventAsMemory);
+}
+
+function isPatronKind(kind: unknown): boolean {
+    return kind === 'patron_gift' || kind === 'patron_witness' || kind === 'patron_sponsor';
 }
 
 function renderEventAsMemory(event: Record<string, unknown>): string {
@@ -55,6 +87,19 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
         }
         case 'patron_gift': {
             const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
+            // E7 (intelligence-verification-log.md § E7): when the CLI /
+            // PatronGateway path forwards `amount` (Shards) and
+            // `standingTier` (the tier the patron crossed into), prefer
+            // the enriched rendering so the Brain can react meaningfully.
+            // Fall back to legacy `artifact`-based rendering for in-world
+            // gifts that carry a tangible item instead.
+            const amount = typeof event.amount === 'number' && Number.isFinite(event.amount) ? event.amount : undefined;
+            const tier = typeof event.standingTier === 'string' && event.standingTier.length > 0 ? event.standingTier : undefined;
+            if (amount !== undefined) {
+                const shards = `${amount} Shard${amount === 1 ? '' : 's'}`;
+                const tierClause = tier ? ` (you are now ${tier} to them)` : '';
+                return `Patron gift from ${handle}: ${shards}${tierClause} (${ts})`;
+            }
             const artifact = typeof event.artifact === 'string' ? event.artifact : 'a gift';
             return `Patron gift from ${handle}: ${artifact} (${ts})`;
         }

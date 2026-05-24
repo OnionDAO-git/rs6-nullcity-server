@@ -12,6 +12,24 @@ export interface PatronEvent {
     patronHandle: string;
     artifact?: string;
     note?: string;
+    /**
+     * Shards transferred (patron_gift / patron_sponsor only). Surfaces in
+     * the Brain's memory rendering so the resident can acknowledge the
+     * specific amount. See E7 in `docs/intelligence-verification-log.md`.
+     */
+    amount?: number;
+    /**
+     * Standing tier the patron crossed into as a side-effect of this event
+     * (e.g. `'acquaintance'` after their first 10-Shard offer). Optional —
+     * only set when the verb crossed a threshold.
+     */
+    standingTier?: string;
+    /**
+     * Attention bump delivered to the resident from this gift, in units of
+     * resident attention (not Shards). Useful for the Brain to understand
+     * the magnitude of support beyond the raw Shards count.
+     */
+    attentionDelta?: number;
 }
 
 export interface LibraryUpdaterOptions {
@@ -107,6 +125,9 @@ export class LibraryUpdater {
             patronHandle: event.patronHandle,
             artifact: event.artifact,
             note: event.note,
+            amount: event.amount,
+            standingTier: event.standingTier,
+            attentionDelta: event.attentionDelta,
             lifeIndex: index.lives,
             significanceReasons: [`patron:${event.kind}`],
         });

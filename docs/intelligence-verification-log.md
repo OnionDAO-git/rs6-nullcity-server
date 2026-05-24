@@ -486,3 +486,65 @@ What the body_wait count actually represents:
 **Resolution (CLI bug only).** Claude commit (pending this cycle's HANDOFF) — see git log for the SPRINT-E6 commit. Letter dispatch from CLI is now production-functional. HTTP serving remains gated on HD-026.
 
 ---
+
+### E7 — does the patron offer reach the resident's Brain perception?
+
+**Status:** OPEN — DESIGN gap surfaced, no code change yet
+**Tier:** 1 (read-only trace) / Tier 4 (design hole)
+**Date:** 2026-05-24 13:30 claude
+
+**Hypothesis.** When a patron offers Shards via CLI (E6 path), the resident's Brain should eventually see "patron X gave you a gift" in its perception/memory so it can acknowledge them, change behavior, or at least say thanks. If it doesn't, the entire Pillar-3 loop is open-loop from the resident's side and Chicago patrons will get no in-world acknowledgement.
+
+**Repro.**
+- Trace path: `PatronGateway.offerTo` → `evidence.library.observePatron({kind: 'patron_gift', ...})` → `library/<resident>/timeline.jsonl` append (✓ verified, 15 patron_gift rows in res:agent timeline).
+- Read path: `MemoryStore.retrieve(resident, query, limit)` (memory-store.ts:38) calls `readRecentLibraryMemories(memoryRoot, resident, libraryMemoryLimit)` (memory-store.ts:41).
+- The constant `libraryMemoryLimit = 4` (memory-store.ts:11) caps the library memory window at the **last 4 events** of the timeline.
+- Inspect res:agent timeline tail RIGHT NOW (4 most recent events the Brain would see):
+  ```
+  2026-05-24 13:18:35 kind=stuck_recovered
+  2026-05-24 13:19:47 kind=say
+  2026-05-24 13:21:01 kind=say
+  2026-05-24 13:21:38 kind=stuck_detected
+  ```
+- Kind-histogram for last 100 timeline events of res:agent:
+  - stuck_detected: 32
+  - say: 31
+  - stuck_recovered: 29
+  - first_xp: 4
+  - **patron_gift: 4**
+- The 5 patron_gift events from the last 24h (`codex-live`, `claude-sprint-patron`x2, `claude-sprint-patron-v2`, `codex-qa`) all wrote to the timeline correctly. The most recent — `codex-qa` at 13:01 UTC — was followed by 20+ minutes of stuck/say spam that pushed every patron event out of the last-4 window. By the time the Brain wakes up after a stuck loop, patron events are invisible.
+
+**Observation.** Two distinct gaps:
+
+1. **The patron_gift write IS happening** (PatronGateway works, library timeline persists) — but the read window is too small / too noisy. Patron events are 4% of recent timeline; stuck/say events are 92%. A patron offer becomes invisible to the Brain's memory within seconds.
+
+2. **The `renderEventAsMemory` rendering for patron_gift is generic.** Looking at `library-memories.ts:56-60`:
+   ```typescript
+   case 'patron_gift': {
+       const handle = ...patronHandle... ?? 'an unknown patron';
+       const artifact = typeof event.artifact === 'string' ? event.artifact : 'a gift';
+       return `Patron gift from ${handle}: ${artifact} (${ts})`;
+   }
+   ```
+   The CLI path doesn't pass `artifact` (it passes `note: 'cli_offer'`), so all CLI-originated offers render as the literal string `"Patron gift from <handle>: a gift"`. No amount of Shards, no standing tier, no resulting attention bump. Even if the memory survived, it would carry less signal than the JSONL line itself.
+
+3. **There IS a chat-based fast path in `nervous-system.ts:44-86`**: if a patron sends an in-game chat message, the nervous system fires a `say "Thank you for the gift, X!"` reflex with cooldown. But the CLI offer path doesn't generate a chat event — it only writes to library timeline + bumps attention. So the only currently-working acknowledgement path requires the patron to walk into the world and talk to the resident, which is not how out-of-band Shard sponsorship works in the IRL event.
+
+**Classification.** Combined **DESIGN + PERCEPTION**.
+- DESIGN: the patron_gift event lifecycle does not include a perception write — only a library write. So the closest the Brain gets is a single line in its memories, evicted in minutes.
+- PERCEPTION: even when the memory survives, the rendered string omits the variables (amount, standing tier crossed, attention bump) that would let the Brain react meaningfully.
+- KNOWLEDGE (secondary): residents have no soul-level guidance to thank patrons, plan around their support, or remember relationships across sessions.
+
+**Suggested next step.**
+
+A reasonable minimum-viable fix has three pieces (each is small, can be sliced):
+
+- (a) **Promote patron events out of the rolling window.** Either keep them in a dedicated `recent-patron-events` slice with its own larger limit (e.g. 8 most recent patron events, separate from the 4 general memories), OR pin patron events as sticky until acknowledged. Files: `library-memories.ts`, `memory-store.ts`. ~30-line slice.
+- (b) **Enrich the patron_gift rendering with amount + tier.** Pass `amount` and `tierCrossed` through `LibraryUpdater.observePatron` (it already has access via PatronGateway.offerTo). Render as `"Patron gift from X: 10 Shards (you are now Acquaintance) at TS"`. Files: `library-updater.ts`, `library-memories.ts`, schema in `evidence/schemas.ts` if Zod-validated. ~50-line slice.
+- (c) **Synthesize a chat-like perception event when CLI-originated patron_gift fires.** The nervous system's existing `patron-acknowledge` rule (nervous-system.ts:67-73) is the right primitive — it just needs to be triggered from a synthetic perception event when `PatronGateway.offerTo` succeeds on a CLI path (no in-world chat to piggyback on). Files: `patron-gateway.ts` (push a "synthetic_patron_chat" perception event into a queue read by the next tick's perception assembler), `nervous-system.ts` (handle the synthetic kind). ~80-line slice.
+
+**Owner suggestion.** Claude for (a) + (b) (substrate, fits my territory). Codex for (c) — touches monolith resident-runtime perception assembly and nervous-system rules. Or coordinate via HD-027.
+
+**Filed:** HD-027 (this design gap, requesting maintainer decision on whether to ship (a)+(b)+(c) before Chicago).
+
+---
