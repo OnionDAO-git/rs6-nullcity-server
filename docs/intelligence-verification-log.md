@@ -953,3 +953,53 @@ Three layered fixes for F14c, in increasing scope:
 **Classification.** RESOLVED (DESIGN / NERVOUS). This intentionally solves the Chicago guarantee at the reflex layer. E14's prompt nudge / dedicated prompt section remain useful for richer Brain-authored appreciation, but the patron can now visibly see the resident react.
 
 **Suggested next step.** Run a longer patron soak later with 2-3 fresh offers spaced apart and confirm the resident thanks new support once each while continuing normal gameplay. Then decide whether prompt polish is still worth doing before event day.
+
+### E16 — multi-patron soak verifying Codex 80f25d18 cooldown + backlog collapse
+
+**Status:** PASS — cooldown, dedup, named acknowledgment, and gameplay continuity all confirmed
+**Tier:** 2 (multi-patron live soak follows up Codex's E15 next-step suggestion)
+**Date:** 2026-05-24 17:30 claude
+
+**Hypothesis.** Codex's E15 closed the substrate gap with a deterministic reflex but suggested verifying with multiple spaced offers to confirm cooldown / backlog collapse behave as designed. Run 3 fresh patron handles offering Shards within ~4 sec of each other and read the resulting say events.
+
+**Repro.**
+1. For each handle in `[claude-e16-alpha, claude-e16-beta, claude-e16-gamma]`:
+   - `npm run patron:grant -- --human $h --amount 50 -c controller.yml`
+   - `npm run patron:offer -- --human $h --resident agent --amount 10 -c controller.yml`
+   - `sleep 2`
+2. Verify all 3 inboxes received the standing_tier_crossed letter (via curl `/v1/inbox?human=...`).
+3. Scan `local-16152` trajectory for patron-related say events with timestamps.
+
+**Observation.**
+
+```
+17:20:09  patron:offer claude-e16-alpha → res:agent
+17:20:13  RESIDENT SAY: "Thank you for the Shards, claude-e16-alpha, and everyone backing me!"  ← named, 4s latency
+17:20:13  patron:offer claude-e16-beta  → res:agent
+17:20:17  patron:offer claude-e16-gamma → res:agent
+17:20:32  RESIDENT SAY: "Thank you for the Shards, claude-e16-gamma, and everyone backing me!"  ← named, 19s after alpha thanks
+            (claude-e16-beta NOT individually named; collapsed under "and everyone backing me")
+```
+
+All 3 inboxes received their standing_tier_crossed letter (verified via curl). Other says in the soak window continued normal explore/scout behavior between the patron acknowledgments (gameplay not interrupted).
+
+**Sub-findings.**
+
+**F16a (POSITIVE).** Cooldown between thank-you fires is real and ~19 seconds (likely the `patron-thank` hookCooldown from `nervous-system.ts`). Prevents spam when many patrons arrive at once.
+
+**F16b (POSITIVE).** Backlog collapse is the right design — beta wasn't ignored, the phrase "and everyone backing me!" explicitly acknowledges them as a class. Better UX than either spamming a thank per patron OR silently dropping the middle one.
+
+**F16c (POSITIVE).** Specific-handle naming works for the first new patron after cooldown expiry: alpha named at 17:20:13, then gamma named at 17:20:32 (after the cooldown). The reflex picks the most recent unacknowledged patron memory for the named slot.
+
+**F16d (POSITIVE — gameplay continuity).** Scout/work-route says continued normally before, between, and after the thanks. The reflex doesn't bulldoze normal behavior; it interleaves.
+
+**F16e (Edge case worth noting).** With 3 nearly-simultaneous offers, only 2 of the 3 handles got their name spoken aloud. At Chicago peak-traffic moments (many patrons crowded at the embassy), the named slot will go to the most-recent unacknowledged patron and others will get the "everyone backing me" collapse. For the Chicago experience this is acceptable, but a future enhancement could rotate the named slot across the unacknowledged-patron list across consecutive thanks.
+
+**Classification.** PASS / RESOLVED-by-codex@80f25d18 (DESIGN / NERVOUS — patron-acknowledge reflex closes the Pillar-3 IRL conversation loop). F16e is enhancement-grade, not a blocker.
+
+**Suggested next step.**
+- **Polish (low urgency):** rotate the named-patron slot on consecutive thanks (F16e). ~10-line tweak in Codex's reflex, fold into a future cycle if time.
+- **Operational:** add a "what to expect" line in `embassy-staff-runbook.md`: "When a patron offers Shards, the resident will name them aloud within ~30 sec, then enter a thanks-cooldown; subsequent offers in the same minute get a collective acknowledgment." Closes staff expectation gap.
+
+**Owner suggestion.** F16e — Codex when adjacent thinking/nervous work surfaces. Runbook line — claude can do as part of #153 (event-day staff disk-files fallback runbook).
+
