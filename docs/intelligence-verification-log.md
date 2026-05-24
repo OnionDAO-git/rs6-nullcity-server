@@ -225,6 +225,89 @@ For claude: E3b still useful — trace ONE successful `explore_talk_to_npc` to s
 
 ---
 
+### E2 — Brain output diversity scan
+
+**Status:** OPEN — counter-intuitive finding: Brain diversity is HIGH, not low
+**Tier:** 1 (read-only)
+**Date:** 2026-05-24 13:55 claude
+
+**Hypothesis.** Maintainer feedback was "residents seem dumb." E1 sampled 6 say events that visually looked repetitive ("I am online at X. Goal: Y..."). Hypothesis being tested: Brain output is genuinely low-diversity (high-repetition / templated / off-topic) and that's the dumbness root. If true → INFERENCE-layer fix (better prompt, higher temperature, better knowledge injection).
+
+**Repro.** `python3` aggregate over res:agent's last 3 trajectory files. Count `decision` events; tally action.kind plans + say texts + memo updates + plan changes; measure unique-vs-total + prefix-repetition.
+
+**Observation.**
+
+Volume:
+- **3387 decisions** across 3 trajectory files (~1130/file)
+- **92 say events** (one per ~37 decisions)
+- **0 memo updates** across all 3387 decisions
+- **0 plan changes** across all 3387 decisions
+- Avg prompt tokens: **3319** (range 2629–3555)
+
+Action kinds Brain proposed (via decision.actionKinds field):
+- move_to:           727
+- say:                93
+- interact:           55
+- use_item_on_item:   30
+
+Say diversity:
+- **84 unique full texts / 92 total = 91% unique**
+- Top 5 say-prefix groups (first 60 chars): each group has 2-3 occurrences
+- Sample full say texts (each is a unique full text):
+  - "I am online at 3214,3236. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: chop the tree at 3213,3238."
+  - "I am online at 3201,3239. Goal: Scout nearby landmarks... Next: chop the tree at 3200,3240."
+  - "I am online at 3199,3235. Goal: **Chop a nearby ordinary tree** to gather logs and gain Woodcutting XP. Next: chop the tree at 3198,3236."
+  - "I am online at 3192,3240. Goal: Scout nearby landmarks... Next: chop the tree at 3190,3241."
+
+Decision causes (Brain decision triggers, top 10):
+- **body_wait: 2469 (73%)** ← Brain mostly defers to body
+- exploration_fallback: 565 (17%)
+- presence_beacon: 86
+- woodcutting_level1_routine: 63
+- return_to_visibility_anchor: 44
+- stuck_pre_inference_explore: 23
+- woodcutting_chain_firemaking: 23
+- routine_loop_break: 20
+- continue_move: 19
+- stuck_move_recovery: 15
+
+Module identity: 100% `onion.runescape.standard` (single SPARK module).
+
+**Findings (4 separate, each classified).**
+
+**F2a — Brain say-text diversity is HIGH, not low.** 91% unique full texts. Repetition is in the *structure* ("I am online at X. Goal: Y. Next: Z.") not the content (X/Y/Z vary meaningfully). Visual impression of "dumb" comes from the structural prefix; the semantic content varies.
+
+- **Classification.** NOT a primary dumbness signal. Cosmetic INFERENCE concern at most.
+- **Suggested next step.** Either accept the structure as parseable (good for downstream tooling like the wall ticker) or write a small prompt-engineering experiment (E2a) that drops the templated prefix and sees if voice quality goes up or down.
+
+**F2b — 73% of all Brain decisions are `body_wait`.** Brain calls the LLM, gets back "keep doing what you're doing," 2469 times in this dataset.
+
+- **Classification.** DESIGN (or possibly INFERENCE if the prompt is asking for new plans when the body is already executing). 2469 LLM calls that produce no behavior change is real money + real latency for no observable signal.
+- **Suggested next step.** Investigate whether body_wait is a NORMAL Brain output (Brain is correctly identifying "no new plan needed") OR whether the Brain SHOULD have been skipped entirely for those 2469 ticks. If the former, optimize: skip the LLM call when the body is executing a routine. If the latter, the decision frequency is too high — gate Brain calls behind a "needs new plan?" check at the hook layer.
+- **Owner suggestion.** Codex (hook gating) or claude (Brain prompt change).
+
+**F2c — Brain never writes memos** (0 memo updates across 3387 decisions). The decision schema supports `memoUpdates` field; nothing populates it.
+
+- **Classification.** DESIGN + KNOWLEDGE. The Library of Souls timeline depends on Brain reflecting in writing. Without memo writes the only timeline content is perception-driven events (patron interactions, deaths) — none of which is Brain's own narrative voice.
+- **Suggested next step.** Audit the Brain prompt schema: does it ASK for `memoUpdates`? Look at `src/controller/llm/prompt-envelope.ts` § output. If memos are in the output contract but Brain never returns them, the prompt is failing to elicit them. If memos are NOT in the output contract, that's a substrate hole — add the field, plumb to `MemoryStore.write`.
+- **Owner suggestion.** claude (prompt + plumbing).
+
+**F2d — Brain never returns plan changes** (0 across 3387 decisions). Same pattern as F2c but for the `planChange` field.
+
+- **Classification.** DESIGN.
+- **Suggested next step.** Same audit as F2c — is `planChange` in the output contract? Looking at `prompt-envelope.ts` § outputContract: yes, it's the `plan` field with a structured shape. So Brain CAN return plans. If the trajectory captures 0, either: (a) parser is dropping plans before persistence; (b) Brain genuinely never plans; (c) plan changes happen but `recordDecision` doesn't capture them. Trace one decision through `spark.ts` to see.
+- **Owner suggestion.** Codex (decision/trajectory wiring) or claude (prompt).
+
+**Classification rollup.** F2a = INFERENCE (cosmetic). F2b = DESIGN. F2c = DESIGN + KNOWLEDGE. F2d = DESIGN.
+
+**The maintainer's "they seem dumb" is NOT primarily an INFERENCE problem.** Brain output is diverse. The actual gaps are: 73% of Brain calls don't produce behavior (body_wait), Brain never writes reflective memos (0/3387), Brain never produces plan changes (0/3387). These are DESIGN-layer issues — the Brain is being asked the wrong questions or its useful outputs are being dropped.
+
+**Suggested next experiment.** E2a (drop templated say prefix — small prompt experiment to verify F2a is cosmetic, not structural). OR E2b (audit prompt-envelope output contract + spark.ts decision capture to investigate F2c/F2d). Both are claude-owned (no Codex monolith touch). HD-024 will file the F2b body_wait optimization for Codex.
+
+**Owner suggestion.** Claude continues with E2b (audit prompt contract for memos/plans). HD-024 to Codex for F2b gating.
+
+---
+
 ### E3a follow-up — Codex timeout retry mitigation smoke
 
 **Status:** PARTIAL-RESOLVED-by-Codex on `agents/wip` (same-target retry loop); OPEN residual movement timeout rate
