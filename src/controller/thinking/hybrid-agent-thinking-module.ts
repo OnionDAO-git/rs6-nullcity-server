@@ -25,6 +25,7 @@ import {
     distance,
     explorationAction,
     explorationActorCooldownKey,
+    explorationActorFamilyCooldownKey,
     explorationItemCooldownKey,
     explorationObjectCooldownKey,
     explorationPatrolCooldownKey,
@@ -2694,6 +2695,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         const cooldowns = this.explorationCooldowns();
         cooldowns[key] = this.options.state.tick;
+        const actor = 'target' in action ? actorLike(action.target) : undefined;
+        if (actor?.kind === 'npc') {
+            cooldowns[explorationActorFamilyCooldownKey(actor)] = this.options.state.tick;
+        }
         for (const [cooldownKey, tick] of Object.entries(cooldowns)) {
             if (this.options.state.tick - tick > EXPLORATION_TARGET_COOLDOWN_TICKS) {
                 delete cooldowns[cooldownKey];

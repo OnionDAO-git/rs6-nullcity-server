@@ -1062,6 +1062,24 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
     });
 
+    it('skips NPC families that are already on the exploration cooldown', () => {
+        const sheep = { ...npc('Sheep', 101, 100), key: 'rs:sheep' };
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [sheep], objects: [fountain] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            150,
+            { 'npc-key:rs:sheep': 100 },
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
     it('moves toward a visible landmark when no NPC is nearby', () => {
         const fountain = { objectId: 879, position: { x: 105, y: 100, level: 0 } };
         const action = explorationAction(

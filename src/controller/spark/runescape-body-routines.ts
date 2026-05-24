@@ -694,6 +694,12 @@ export function explorationActorCooldownKey(actor: BodyActor): string {
         : `npc:${actor.key || actor.name || `${actor.position.x},${actor.position.y},${actor.position.level}`}`;
 }
 
+/** Broader cooldown key for an NPC family the exploration routine just sampled. */
+export function explorationActorFamilyCooldownKey(actor: BodyActor): string {
+    const family = actor.key || actor.name;
+    return family ? `npc-key:${family.toLowerCase()}` : explorationActorCooldownKey(actor);
+}
+
 /** Stable cooldown key for a world object the exploration routine just visited. */
 export function explorationObjectCooldownKey(object: { objectId: number; position: BodyPos }): string {
     return `object:${object.objectId}:${object.position.x},${object.position.y},${object.position.level}`;
@@ -790,7 +796,8 @@ export function explorationAction(
         .filter(
             candidate =>
                 !isFishingSpot(candidate) &&
-                !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick),
+                !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick),
         )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (npc) {

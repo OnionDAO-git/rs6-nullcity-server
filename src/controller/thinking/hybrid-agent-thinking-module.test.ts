@@ -3966,6 +3966,59 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.explorationCooldowns?.['npc:npc:86']).toBe(101);
     });
 
+    it('does not chain through the same exploration NPC family while scouting', async () => {
+        const firstSheep = {
+            id: 'npc:sheep-1',
+            kind: 'npc' as const,
+            key: 'rs:sheep',
+            name: 'Sheep',
+            position: { x: 3207, y: 3262, level: 0 },
+        };
+        const secondSheep = {
+            id: 'npc:sheep-2',
+            kind: 'npc' as const,
+            key: 'rs:sheep',
+            name: 'Sheep',
+            position: { x: 3203, y: 3267, level: 0 },
+        };
+        const landmark = { objectId: 879, position: { x: 3210, y: 3267, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }, { text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-sheep-field',
+                description: 'Scout nearby animals and landmarks while staying easy to find.',
+                steps: ['talk to one nearby animal', 'move on to another landmark'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3207, 3262),
+                npcs: [firstSheep],
+                objects: [landmark],
+            }),
+        );
+        const second = await agent.think(
+            perception({
+                tick: 102,
+                resident: residentAt(3207, 3262),
+                npcs: [secondSheep],
+                objects: [landmark],
+            }),
+        );
+
+        expect(first.actions).toEqual([{ kind: 'interact', target: firstSheep, option: 'talk-to', cause: 'explore_talk_to_npc' }]);
+        expect(second.actions).toEqual([{ kind: 'move_to', target: landmark.position, range: 2, cause: 'explore_visible_object' }]);
+        expect(state.cognition?.explorationCooldowns?.['npc-key:rs:sheep']).toBe(101);
+    });
+
     it('starts a local exploration workflow from direct chat without inference', async () => {
         const fountain = { objectId: 879, position: { x: 3222, y: 3201, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([]);
