@@ -348,3 +348,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-23 23:55 codex branch=agents/wip workstream=QA-attention-lifecycle HANDOFF - landed 56268502; tests 1488/1488 + gates; live logout+revive+dashboard woodcutting. Collision: embassy WIP unstaged.
 2026-05-24 00:12 codex branch=agents/wip workstream=QA-knowledge-noise STARTING - stop generic say/move/logout attempts from teaching workflow hints. Files: status/roadmap/knowledge suggestion tests+code. Collision: embassy WIP unstaged.
 2026-05-24 00:25 codex branch=agents/wip workstream=QA-knowledge-noise HANDOFF - landed 6b67ae69; tests 1491/1491 + gates; live local-38316 explored with 0 bad/speech/logout hints. Collision: embassy WIP unstaged.
+2026-05-24 00:42 codex branch=agents/wip workstream=QA-dev-attention STARTING - keep local QA residents visible without manual patron top-offs. Files TBD after config/runtime inspect. Collision: embassy WIP unstaged.

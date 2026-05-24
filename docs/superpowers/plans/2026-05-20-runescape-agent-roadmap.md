@@ -397,6 +397,7 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[~]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
   - Hardened 2026-05-23 on `agents/wip`: attention exhaustion now submits a single logout and suppresses normal thinking/body actions, and patron attention refill clears only the `attention_exhausted` marker so revived residents can resume play. Focused runtime + patron tests passed.
+  - Tuned 2026-05-24 on `agents/wip`: the default `res:agent` starter soul now uses a long-lived local QA attention profile (`20000`, gentle) so the main visible test resident can run through meaningful dashboard/play sessions before needing patron refill.
 - `[x]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
   - *Completed: Implemented in PatronGateway.offerTo to deduct player shards, boost resident attention, and log standing points.*
 - `[x]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).

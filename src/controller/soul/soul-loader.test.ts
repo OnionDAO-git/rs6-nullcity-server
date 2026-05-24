@@ -21,6 +21,15 @@ describe('SoulLoader', () => {
         expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
     });
 
+    it('loads the starter agent with a long-lived local QA attention profile', () => {
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        const soul = loader.load('res:agent');
+
+        expect(soul.frontmatter.attentionProfile?.startingAttention).toBeGreaterThanOrEqual(15000);
+        expect(soul.frontmatter.attentionProfile?.decayCurve).toBe('gentle');
+    });
+
     it('lists resident names from valid soul files', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-soul-loader-list-'));
         fs.writeFileSync(path.join(root, 'res-agent.md'), `---\nname: res:agent\narchetype: endurer\n---\n# Agent\n`);
