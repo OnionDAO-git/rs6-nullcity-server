@@ -35,7 +35,7 @@ export function makeFishingCooking10mBenchmarkTask(now: () => number = () => Dat
         timeoutMs: FISHING_COOKING_10M_BUDGET_MS,
         resident: {
             spawnPosition: START_POSITION,
-            initialInventory: [{ itemId: 303 }, { itemId: 590 }, { itemId: 1511 }],
+            initialInventory: [{ itemId: 303 }, { itemId: 590 }, { itemId: 1511 }, { itemId: 1351 }],
         },
         run: async context => {
             const startedAt = now();

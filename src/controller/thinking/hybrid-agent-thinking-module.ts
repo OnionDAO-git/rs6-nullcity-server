@@ -950,7 +950,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const fireAction =
-            goal && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
+            goal && !isStarterFishingGoal(goal) && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
                 ? firemakingAction(view)
                 : undefined;
         if (fireAction) {
@@ -1076,7 +1076,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             }
         }
 
-        const fireGoalLike = /fire|burn|logs|tinderbox|light/i.test(goalText);
+        const fireGoalLike = !isStarterFishingGoal(goal) && /fire|burn|logs|tinderbox|light/i.test(goalText);
         if (fireGoalLike) {
             const fireAction = firemakingAction(perception);
             if (fireAction) {

@@ -5776,6 +5776,48 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('starter_fishing_approach');
     });
 
+    it('does not turn a fishing-cooking goal into firemaking before any raw fish is caught', async () => {
+        const normalTree = { objectId: 1278, position: { x: 3243, y: 3242, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3242, 3242),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 1511, key: 'rs:logs', amount: 1 },
+                        { itemId: 1351, key: 'rs:bronze_axe', amount: 1 },
+                    ],
+                },
+                objects: [normalTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('body_step');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
     it('seeds combat prayer as the active benchmark goal without initial Brain drift', async () => {
         const goblin = npc('Goblin', 3254, 3231);
         goblin.key = 'rs:goblin';

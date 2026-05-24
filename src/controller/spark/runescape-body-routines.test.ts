@@ -384,6 +384,7 @@ describe('starterFishingCookingAction', () => {
     const RAW_ANCHOVIES = 321;
     const TINDERBOX = 590;
     const LOGS = 1511;
+    const BRONZE_AXE = 1351;
     const COOKING_RANGE = 114;
     const FIRE_OBJECT = FIRE_OBJECT_ID;
     const KITCHEN_DOOR = 1530;
@@ -563,6 +564,27 @@ describe('starterFishingCookingAction', () => {
             target: logs,
             option: 'pick-up',
             cause: 'starter_fishing_pickup_cooking_logs',
+        });
+    });
+
+    it('chops a visible tree for cooking logs before chasing a blocked range', () => {
+        const tree = { objectId: 1278, position: { x: 103, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: {
+                    id: 'res:qa-angler',
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [item(RAW_SHRIMP), item(TINDERBOX), item(BRONZE_AXE)],
+                },
+                nearby: { objects: [tree] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: tree.position,
+            range: 1,
+            cause: 'starter_fishing_chop_cooking_logs',
         });
     });
 

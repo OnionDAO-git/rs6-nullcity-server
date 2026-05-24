@@ -527,6 +527,13 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
         }
     }
 
+    if (tinderboxSlot !== undefined && hasWoodcuttingAxe(perception)) {
+        const woodcuttingAction = levelOneWoodcuttingAction(perception);
+        if (woodcuttingAction) {
+            return actionWithCause(woodcuttingAction, 'starter_fishing_chop_cooking_logs');
+        }
+    }
+
     if (here && distance(here, LUMBRIDGE_CASTLE_RANGE) > COOKING_RANGE_APPROACH_RADIUS) {
         const lumbridgeEntryOpen = isWestOfLumbridgeKitchen(here) && isLumbridgeCastleKitchenEntryOpen(perception);
         const lumbridgeRouteAction = starterFishingLumbridgeKitchenRouteAction(perception, LUMBRIDGE_CASTLE_RANGE);

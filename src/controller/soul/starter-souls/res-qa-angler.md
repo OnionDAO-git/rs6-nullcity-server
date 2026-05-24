@@ -25,6 +25,7 @@ initialInventory:
   - itemId: 303
   - itemId: 590
   - itemId: 1511
+  - itemId: 1351
 legacy:
   kind: endurer
   parameters:
