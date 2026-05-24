@@ -399,6 +399,52 @@ describe('HybridAgentThinkingModule', () => {
         expect(bodyRequest.prompt).toContain('Workflow cards');
     });
 
+    it('lets due Brain speech beat the templated presence beacon so knowledge can surface', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: {
+                        id: 'help-cook',
+                        description: "Work toward Cook's Assistant by finding eggs, milk, and flour.",
+                    },
+                    say: 'Cook needs egg, milk, and flour; I am checking Lumbridge for the missing ingredients.',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 180;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout Lumbridge for useful resources and stay findable.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 0,
+            lastBodyTick: 172,
+            lastGoalShareTick: 0,
+            lastPresenceBeaconTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 180,
+                resident: residentAt(3218, 3201),
+            }),
+            {
+                brainSection: "Relevant game knowledge: Cook's Assistant requires egg, milk, and flour.",
+                bodySection: '',
+            } as any,
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'Cook needs egg, milk, and flour; I am checking Lumbridge for the missing ingredients.' },
+        ]);
+        expect(result.cause).toBe('brain_goal');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete.mock.calls[0][0].prompt).toContain("Cook's Assistant requires egg, milk, and flour");
+    });
+
     it('writes Brain memo output and exposes goal changes in decision telemetry', async () => {
         const llm = scriptedLlm([
             {

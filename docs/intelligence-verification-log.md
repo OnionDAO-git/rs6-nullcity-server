@@ -1646,3 +1646,24 @@ Optional 7th gap: no ingredient-gathering routines (windmill recipe / dairy cow 
 - `npm test -- --runInBand src/controller/mcp/server.test.ts` → 30/30 passing, including the new SDK transport regression.
 
 **Classification.** **RESOLVED** for transport-level coverage. Remaining HD-035 UX work stays focused on richer answer content and ordinary web-client player confirmation.
+
+---
+
+### E29 — HD-034 #3 presence beacon no longer suppresses Brain speech
+
+**Status:** RESOLVED-by-codex — organic Brain `say` now gets a turn when knowledge is available
+**Tier:** 1 (visible intelligence / knowledge expression)
+**Date:** 2026-05-24 20:25 codex
+
+**Hypothesis.** E21 showed knowledge entering the Brain prompt but rarely surfacing in public chat. One root cause is scheduler ordering: on a tick where both the presence beacon and Brain are due, the generic beacon returns first, then updates `lastGoalShareTick`, so the next Brain turn can suppress its own `say`.
+
+**Implementation.**
+- Added a red/green regression where Cook's Assistant knowledge is present in the Brain prompt and Brain returns a knowledge-rich `say`, while the generic presence beacon is also due.
+- Changed Hybrid thinking so a due Brain suppresses only the generic presence beacon. Useful deterministic Body routines still run before Brain when they have a concrete action.
+
+**Observation.**
+- Before the fix, the regression emitted `I am online at 3218,3201. Goal: Scout Lumbridge...` and never called inference.
+- After the fix, the resident emits `Cook needs egg, milk, and flour; I am checking Lumbridge for the missing ingredients.`
+- `npm test -- --runInBand src/controller/thinking/hybrid-agent-thinking-module.test.ts` → 200/200 passing, including the existing guard that deterministic routine actions still beat due Brain inference.
+
+**Classification.** **PARTIAL RESOLUTION** for HD-034 #3. This removes one renderer/scheduler blocker, but the live controller still needs a post-restart re-audit of recent `say` rows to measure whether knowledge references rise above E21's 3.8%.

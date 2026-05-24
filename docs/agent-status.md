@@ -488,5 +488,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-24 15:07 codex branch=agents/wip workstream=HD-035-patron-ask-immediate HANDOFF - live MCP patron:ask ack + dashboard proof; tests 1631/1631; SHA=pending. Collision: embassy/log dirt untouched.
 2026-05-24 15:12 codex branch=agents/wip workstream=HD-035-sdk-integration STARTING - add real HTTP SDK patron_ask regression after da95edb7. Collision: embassy/log dirt untouched.
 2026-05-24 15:14 codex branch=agents/wip workstream=HD-035-sdk-integration HANDOFF - SDK HTTP patron_ask regression + E28 docs; tests 30/30 + typecheck/lint; SHA=pending. Collision: embassy/log dirt untouched.
+2026-05-24 15:18 codex branch=agents/wip workstream=HD-034-brain-say STARTING - stop presence beacon from suppressing due Brain knowledge speech. Collision: embassy/log dirt untouched.
+2026-05-24 15:25 codex branch=agents/wip workstream=HD-034-brain-say HANDOFF - Brain say beats generic beacon; gates + tests 1634/1634; SHA=pending. Collision: embassy/log dirt untouched.
 
 2026-05-24 20:30 claude branch=agents/wip workstream=SPRINT-QA STARTING — Deep QA round. Three parallel subagents: (A) comprehensive test+gate audit (flakes/slow/skips/regressions); (B) code-review focused on recent E22/E23/E24/E26 commits for bugs/regressions/safety; (C) operational doc + script sanity (run scripts/post-restart-smoke.sh, verify each command in pre-chicago-readiness.md). Claude synthesizes + ships fixes inline. Codex on HD-035 — avoiding controller-host + patron/cli.

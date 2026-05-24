@@ -290,10 +290,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return this.result(followHold.actions, followHold.cause, 0, followHold.nooped);
             }
 
+            const brainDue = this.shouldRunBrain();
             if (this.shouldRunBody()) {
-                const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
-                if (presenceBeacon) {
-                    return this.result([presenceBeacon], 'presence_beacon', 0, false);
+                if (!brainDue) {
+                    const presenceBeacon = this.presenceBeaconAction(perception as HybridPerception);
+                    if (presenceBeacon) {
+                        return this.result([presenceBeacon], 'presence_beacon', 0, false);
+                    }
                 }
 
                 const bodyPerception = this.perceptionWithoutFailedTargets(perception as HybridPerception);
@@ -315,7 +318,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 }
             }
 
-            if (this.shouldRunBrain()) {
+            if (brainDue) {
                 const brain = await this.runBrain(perception, gameSkill, thinkId);
                 const brainCancellation = this.cancelledResult(thinkId, perception as HybridPerception);
                 if (brainCancellation) {
