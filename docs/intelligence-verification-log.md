@@ -362,3 +362,47 @@ Module identity: 100% `onion.runescape.standard` (single SPARK module).
 **Suggested next step.** Restart/soak a real controller long enough for at least one Brain interval, then re-run the E2 scanner. Success criteria: nonzero organic `memoUpdates` on meaningful goal changes or learning moments, nonzero `planChange`, and no increase in noisy public chat.
 
 **Owner suggestion.** Codex for live QA + telemetry scan; Claude/Gemini can update dashboard panels once the fields appear in real trajectories.
+
+---
+
+### E2 / E3a / E2b verification — confirm Codex 19d398f1 + 91f8e160 fixes against live data
+
+**Status:** RESOLVED-by-Codex (E3a via 19d398f1, E2 F2c+F2d via 91f8e160). E2 F2b reframed.
+**Tier:** 1 (read-only)
+**Date:** 2026-05-24 14:25 claude
+
+**Hypothesis.** Codex shipped two fixes between the cycles (19d398f1 movement timeout cooldowns, 91f8e160 Brain memo+planChange telemetry). Verify against live data: (1) did memos actually land on disk, (2) does planChange show up in decision rows, (3) does the body_wait token cost framing in HD-024 hold up?
+
+**Repro.** Scan res:agent's last 3 trajectory files for `decision` rows; count `memoUpdates`, `planChange`, `body_wait` causes with `promptTokens`. List recent `data/controller/memory/res-agent/events/*.md` files.
+
+**Observation.**
+
+Memo writes (F2c verification):
+- `data/controller/memory/res-agent/events/2026-05-24.md` — **222,838 bytes**, mtime 07:19:28 (post Codex fix). The pre-fix file was much smaller; the post-fix expansion is real Brain content.
+- Trajectory `decision` rows: 1 organic `memoUpdates` recorded in the sampled window.
+
+Plan changes (F2d verification):
+- Trajectory `decision` rows: 1 organic `planChange = {id: 'train-woodcutting', steps: 4}` recorded in the sampled window. Confirms Brain produces structured named plans now.
+
+Token cost (HD-024 correction):
+- 956 total decisions across the 3-file window.
+- **623 body_wait decisions ALL have `promptTokens = 0`** — body_wait is dispatched without an LLM call. Per Codex's E2b follow-up entry: "`body_wait` rows carrying `promptTokens=0`, so HD-024's '8.2M token waste' should be treated as a measurement contradiction."
+- Only 22 non-body_wait decisions had `promptTokens > 0` (avg 3309 tokens, total 72,799 tokens for the window).
+- Actual cost: ~73K tokens per 3-session window, not 8.2M. My HD-024 number was wrong by 100×.
+
+What the body_wait count actually represents:
+- 65% (623/956) of decision rows are `body_wait` with zero LLM cost.
+- The user-visible gap I observed in E2 is real but reframed: those rows are *telemetry* (Brain confirms body is healthy + nothing to do), not *waste*. They consume disk + scan time but no inference. Whether they should be persisted at all (vs. coalesced or omitted) is a downstream observability question, not an inference-cost one.
+
+**Classification.** F2c + F2d: RESOLVED-by-Codex@91f8e160 (DESIGN+KNOWLEDGE substrate gap closed). F2b: PARTIAL — reframe from "wasted inference cost" (false) to "noisy telemetry" (still arguable). E3a: RESOLVED-by-Codex@19d398f1 (confirmed via earlier HD-023 in-line update with 91% success rate).
+
+**Suggested next step.**
+- (a) Edit HD-024 to acknowledge the cost-claim correction. Reframe the open question as "should body_wait decision rows be persisted at all?" — much lower priority than originally filed.
+- (b) Re-run E3 (aggregate outcome histogram) after another live soak to measure how much memo/planChange Brain produces *organically* over a longer window. Codex's live smoke (local-77175, 65s) saw 1 memo + 1 planChange + 1 say + 5/5 success — but 65s is tiny. A 10-min soak post-restart will give a stable rate.
+- (c) E5 (patron path) showed **0 patron events** in res:agent's last 3 sessions. Patron loop is not being exercised by normal play. Need Tier 2 work to actually call `patron:grant` + `patron:offer` ourselves and watch the cascade. That's E6 from the queue.
+
+**Owner suggestion.** Claude continues with HD-024 correction (this cycle) + E6 (next cycle, Tier 2 claude-as-human patron loop).
+
+**Resolution.** Codex `19d398f1` (HD-023 / E3a) + `91f8e160` (F2c / F2d / E2b). Both confirmed via on-disk evidence in trajectory + memo files at 07:19 today.
+
+---
