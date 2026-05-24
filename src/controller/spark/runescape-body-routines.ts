@@ -92,6 +92,11 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
     ...objectIds.tree.dead.map(tree => tree.default),
 ]);
 
+/** Tree object IDs that are useful as scouting landmarks, even when the resident cannot chop them yet. */
+export const SCOUTING_TREE_IDS: ReadonlySet<number> = new Set(
+    Object.values(objectIds.tree).flatMap(trees => trees.map(tree => tree.default)),
+);
+
 /** Object IDs that can be used as cooking heat sources by the fishing routine. */
 export const COOKING_HEAT_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire, 114, 2728, 2729, 2730, 2731, 2859, 4172, 9682]);
 
@@ -830,7 +835,7 @@ export function explorationAction(
         .filter(
             candidate =>
                 !FIRE_OBJECT_IDS.has(candidate.objectId) &&
-                !LEVEL_ONE_TREE_IDS.has(candidate.objectId) &&
+                !SCOUTING_TREE_IDS.has(candidate.objectId) &&
                 !EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
                 !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
         )
@@ -850,6 +855,18 @@ export function explorationAction(
             text: `I am checking the landmark at ${object.position.x},${object.position.y}.`,
             cause: 'explore_visible_object',
         };
+    }
+
+    const treeStand = (perception.nearby?.objects || [])
+        .filter(
+            candidate =>
+                SCOUTING_TREE_IDS.has(candidate.objectId) &&
+                distance(here, candidate.position) > 2 &&
+                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, b.position) - distance(here, a.position))[0];
+    if (treeStand) {
+        return { kind: 'move_to', target: treeStand.position, range: 2, cause: 'explore_tree_stand' };
     }
 
     const item = (perception.nearby?.worldItems || [])

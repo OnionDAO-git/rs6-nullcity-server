@@ -1091,6 +1091,29 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
     });
 
+    it('uses a visible tree stand as a scouting destination instead of a tiny patrol hop', () => {
+        const nearbyTree = { objectId: objectIds.tree.normal[0].default, position: { x: 101, y: 100, level: 0 } };
+        const distantTree = { objectId: objectIds.tree.normal[0].default, position: { x: 112, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyTree, distantTree] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: distantTree.position, range: 2, cause: 'explore_tree_stand' });
+    });
+
+    it('uses higher-level trees as scouting landmarks without turning them into woodcutting targets', () => {
+        const oak = { objectId: objectIds.tree.oak[0].default, position: { x: 108, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [oak] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: oak.position, range: 2, cause: 'explore_tree_stand' });
+    });
+
     it('prioritizes moving toward openable gates over nearby generic scenery while exploring', () => {
         const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
         const gate = { objectId: 11993, position: { x: 107, y: 102, level: 0 }, orientation: 1 };

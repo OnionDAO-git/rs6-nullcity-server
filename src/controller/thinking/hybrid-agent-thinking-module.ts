@@ -621,12 +621,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const keepTarget = (target: unknown): boolean => {
-            const key = targetFailureKey(target);
-            if (!key) {
+            const keys = targetFailureKeys(target);
+            if (keys.length === 0) {
                 return true;
             }
-            const failedAt = cooldowns[key];
-            return failedAt === undefined || this.options.state.tick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS;
+            return keys.every(key => {
+                const failedAt = cooldowns[key];
+                return failedAt === undefined || this.options.state.tick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS;
+            });
         };
 
         const nearby = perception.nearby || {};
@@ -3298,14 +3300,16 @@ function isConcreteExplorationOverride(action: AgentAction): boolean {
 }
 
 function isStuckRecoveryAction(action: AgentAction): boolean {
-    return /explore_talk_to_npc|explore_visible_object|explore_open_obstacle|explore_patrol/i.test(String(action.cause || ''));
+    return /explore_talk_to_npc|explore_visible_object|explore_tree_stand|explore_open_obstacle|explore_patrol/i.test(
+        String(action.cause || ''),
+    );
 }
 
 function shouldPreferScoutingSkillOpportunity(action: AgentAction | undefined): boolean {
     if (!action) {
         return true;
     }
-    return /explore_talk_to_npc|explore_visible_object|explore_patrol/i.test(String(action.cause || ''));
+    return /explore_talk_to_npc|explore_visible_object|explore_tree_stand|explore_patrol/i.test(String(action.cause || ''));
 }
 
 function modelActionTarget(action: AgentAction): Pos | undefined {
@@ -3362,25 +3366,31 @@ function firstGoalCoordinate(text: string, fallbackLevel: number): Pos | undefin
 }
 
 function targetFailureKey(target: unknown): string | undefined {
+    return targetFailureKeys(target)[0];
+}
+
+function targetFailureKeys(target: unknown): string[] {
     if (!isRecord(target)) {
-        return undefined;
+        return [];
     }
     const targetRecord = target;
-    const position = positionLike(targetRecord.position);
+    const position = positionLike(target) || positionLike(targetRecord.position);
     if (!position) {
-        return undefined;
+        return [];
     }
     const coordinate = positionKey(position);
+    const keys: string[] = [];
     if (typeof targetRecord.objectId === 'number') {
-        return `object:${targetRecord.objectId}:${coordinate}`;
+        keys.push(`object:${targetRecord.objectId}:${coordinate}`);
     }
     if (typeof targetRecord.itemId === 'number') {
-        return `item:${targetRecord.itemId}:${coordinate}`;
+        keys.push(`item:${targetRecord.itemId}:${coordinate}`);
     }
     if (typeof targetRecord.id === 'string') {
-        return `actor:${targetRecord.id}:${coordinate}`;
+        keys.push(`actor:${targetRecord.id}:${coordinate}`);
     }
-    return `target:${coordinate}`;
+    keys.push(`target:${coordinate}`);
+    return keys;
 }
 
 function positionKey(position: Pos): string {

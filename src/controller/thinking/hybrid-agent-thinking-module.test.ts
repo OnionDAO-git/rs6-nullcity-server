@@ -592,6 +592,38 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('avoids coordinate-only movement timeout targets before choosing a routine target', async () => {
+        const staleTree = { objectId: 1278, position: { x: 3213, y: 3238, level: 0 }, orientation: 1 };
+        const nextTree = { objectId: 1278, position: { x: 3217, y: 3241, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-woodcutting',
+                description: 'Chop ordinary trees to gather logs.',
+                steps: ['Find the next reachable tree.', 'Chop it.'],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+            targetFailureCooldowns: {
+                'target:3213,3238,0': 9,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 10,
+                resident: residentAt(3212, 3238),
+                objects: [staleTree, nextTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: nextTree.position, range: 1, cause: 'woodcutting_level1_routine' }]);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('does not let slow small talk inference starve an overdue routine action', async () => {
         const tree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
         const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(() => Promise.reject(new Error('small talk should wait')));
@@ -4551,7 +4583,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.cause).toBe('exploration_fallback');
-        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'explore_patrol' }));
+        expect(result.actions[0]).toEqual({ kind: 'move_to', target: tree.position, range: 2, cause: 'explore_tree_stand' });
         expect(state.cognition?.activeGoal?.id).toBe('scout-nearby-area');
         expect(complete).not.toHaveBeenCalled();
     });
