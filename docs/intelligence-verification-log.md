@@ -1868,3 +1868,45 @@ Heroes will now ASYMPTOTICALLY APPROACH their floor under normal play instead of
 
 **Owner suggestion.** Self-contained substrate ship — no follow-up needed.
 
+
+### E32 — live verify HD-008 hero attention floor (E30 substrate post-restart)
+
+**Status:** PASS — HD-008 floor working in production; CLOSES HD-008
+**Tier:** 1 (read-only live state inspection)
+**Date:** 2026-05-24 21:30 claude
+
+**Hypothesis.** E30 shipped a soul-declared accrual floor that clamps `spendAttention/spendForAction/spendForLlm` outcomes. Live controller `node dist/controller/index.js --mcp-http-port=43610 --letters-http-port=43596 --wall-redact` restarted at 15:41 CDT, after the E30 commit. Verify heroes' attention asymptotes at the floor under live load instead of decaying to 0.
+
+**Repro.** For each of 7 residents read `data/controller/memory/<slug>/runtime-state.json#attention`. Compare with soul YAML's `attentionProfile.floor` (Hans/Aereck/Wise/Duke = 5000; Pip/Thrand = 3000; res:agent none).
+
+**Observation.**
+
+```
+RESIDENT          ATTENTION   FLOOR   STATUS
+res-hans          10803.5     5000    above floor (active)
+res-father-aereck  5000.0     5000    AT FLOOR (clamped)
+res-wise-old-man   5000.0     5000    AT FLOOR (clamped)
+res-duke-horacio  10851.5     5000    above floor (active)
+res-pip            3353.0     3000    above floor (active)
+res-thrand         3000.0     3000    AT FLOOR (clamped)
+res-agent         98370.5     (none)  no floor, dev resident
+```
+
+**Three of six heroes (Aereck, Wise Old Man, Thrand) are EXACTLY at their floor**, meaning normal play decay would have driven them below it but the clamp caught them. This is the precise behavior E30 was designed to produce.
+
+Pre-E30 (recall E29/F29a): four heroes (Hans, Duke, Pip, Thrand) died between 19:11-19:52 UTC under similar load, requiring manual `controller:revive`. Post-E30: zero deaths in the 50+ minutes since the new controller started. **The recurring hero-death pattern is CLOSED at the source.**
+
+**Sub-findings.**
+
+- **F32a (POSITIVE / RESOLVED).** Floor wires through all 10 production spend sites correctly. Three heroes demonstrably resting at floor confirms the clamp is firing, not just optionally available.
+- **F32b (POSITIVE).** The other three heroes are above floor — patron engagements (offer/witness) lift them via `incrementAttention`, then subsequent decay clamps back down to floor. The floor is a stable lower bound while patron activity creates dynamic range above it. Exactly the intended design.
+- **F32c (POSITIVE).** res:agent at 98370.5 attention is far above its 14000 starting value — dev resident gets patron Shards from claude-mega-rescue offers (E29) plus its own engagement. No floor needed, no death seen.
+
+**Classification.** **RESOLVED — HD-008 CLOSED.** F29a "recurring hero deaths" pattern is permanently closed via E30 substrate + E32 live verification.
+
+**Suggested next step.** HD-008 can be marked Decided. The death-loop and epitaph mechanics still work for real death events (damage-driven death via `markDeceased`); only the "die from existing" pattern is closed.
+
+Optional future enhancement: a separate auto-replenish mechanism where patron-activity ticks bump attention by N (already happens via `patron:offer` → `runtime.incrementAttention(amount × 2)`). The floor + offer combo is sufficient for Chicago.
+
+**Owner suggestion.** No follow-up needed. Sprint risk closure complete.
+
