@@ -29,7 +29,7 @@ import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
 import type { MemoryStore } from './memory/memory-store';
-import { type RuntimeState, RuntimeStateStore, markDeceased } from './memory/runtime-state';
+import { type RuntimeState, RuntimeStateStore, addAttention, markDeceased } from './memory/runtime-state';
 import { NervousSystem } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
@@ -38,6 +38,7 @@ import { LettersStore } from './patron/letters-store';
 import { buildEpitaphDispatchRequests, dispatchEpitaphs, type DeceasedResidentSummary } from './patron/epitaph-dispatcher';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import { initialAttention, spendAttention } from './spark/attention';
+import { explorationGoal, isStandaloneFiremakingGoal } from './spark/runescape-brain-planner';
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
 import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
@@ -172,7 +173,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     incrementAttention(amount: number): void {
-        this.state.attention = Math.max(0, this.state.attention + amount);
+        addAttention(this.state, amount);
         this.options.stateStore.save(this.state);
     }
 
@@ -186,11 +187,27 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
         );
 
-        if (this.state.attention <= 0 && !this.state.deceased) {
+        const attentionExhaustedThisTick = this.state.attention <= 0 && !this.state.deceased;
+        if (attentionExhaustedThisTick) {
             markDeceased(this.state, 'attention_exhausted');
         }
 
         try {
+            if (this.state.deceased) {
+                if (attentionExhaustedThisTick) {
+                    await this.submitAttentionLogout(perception);
+                }
+                if (this.nextPerceptionResolver) {
+                    const resolve = this.nextPerceptionResolver;
+                    this.nextPerceptionResolver = undefined;
+                    resolve({
+                        perception,
+                        preemption: { preempted: 'nervous_death' },
+                    });
+                }
+                return;
+            }
+
             if (this.nextPerceptionResolver) {
                 const resolve = this.nextPerceptionResolver;
                 this.nextPerceptionResolver = undefined;
@@ -325,6 +342,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     });
                     this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
                     this.rememberTargetFailure(attempt);
+                    this.rememberCompletedGoal(attempt);
                 }
             } finally {
                 this.deciding = false;
@@ -333,6 +351,29 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.checkDeceasedAndDispatchEpitaphs(perception);
             this.options.stateStore.save(this.state);
         }
+    }
+
+    private async submitAttentionLogout(perception: Perception): Promise<void> {
+        if (this.deciding) {
+            this.thinking.stop('attention_exhausted');
+        }
+        const decisionPerception = this.withPendingEvents(perception);
+        this.history.push(decisionPerception);
+        this.body.observePerception(decisionPerception);
+
+        const attempt = await this.submitActionWithWatchdog({
+            producer: 'nervous-system',
+            action: { kind: 'logout', cause: 'attention_exhausted' },
+            metadata: {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'nervous-system',
+                ruleId: 'attention_exhausted',
+            },
+            waitForEffect: undefined,
+            ...this.evidenceCallbacks(),
+        });
+        this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
     }
 
     private async thinkWithWatchdog(perception: Perception, gameSkillContext: GameSkillContext | undefined): Promise<ThoughtResult> {
@@ -589,6 +630,23 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         if (attempt.finalStatus === 'success' && cognition.targetFailureCooldowns?.[key] !== undefined) {
             delete cognition.targetFailureCooldowns[key];
         }
+    }
+
+    private rememberCompletedGoal(attempt: ActionAttempt): void {
+        if (attempt.finalStatus !== 'success') {
+            return;
+        }
+        const cognition = this.state.cognition;
+        const goal = cognition?.activeGoal;
+        if (!goal || !isStandaloneFiremakingGoal(goal) || attempt.action.kind !== 'use_item_on_item') {
+            return;
+        }
+
+        cognition.activeGoal = explorationGoal(actionAttemptTick(attempt) ?? this.state.tick);
+        cognition.activeMove = undefined;
+        cognition.lastGoalShareTick = undefined;
+        cognition.routineLoopKey = undefined;
+        cognition.routineLoopCount = undefined;
     }
 
     private checkDeceasedAndDispatchEpitaphs(perception: Perception): void {
@@ -1396,6 +1454,11 @@ function actionTargetFailureKey(action: AgentAction): string | undefined {
 
 function record(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function actionAttemptTick(attempt: ActionAttempt): number | undefined {
+    const tick = record(attempt.metadata).tick;
+    return typeof tick === 'number' ? tick : undefined;
 }
 
 function mapNervousRuleId(ruleId: string): RoutinePreemptionReason {

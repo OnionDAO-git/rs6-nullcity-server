@@ -802,6 +802,14 @@ describe('ResidentRuntime modules', () => {
     it('waits for item action effect evidence before marking the attempt successful', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-item-effect-test-'));
         const state = stateFor('res:pip');
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                ttlTicks: 600,
+                createdAtTick: 1,
+            },
+        };
         const context = gameSkillContext();
         const gameSkill: ResidentRuntimeGameSkill = {
             buildContext: jest.fn(() => context),
@@ -895,6 +903,11 @@ describe('ResidentRuntime modules', () => {
                         }),
                     ]),
                 }),
+            }),
+        );
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'scout-nearby-area',
             }),
         );
     });
@@ -1709,6 +1722,11 @@ describe('ResidentRuntime modules', () => {
             considerInterrupt: jest.fn(() => false),
             stop: jest.fn(),
         };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-logout' })),
+        } as unknown as ResidentBody;
 
         const runtime = new ResidentRuntime({
             soul: soul('res:pip', {
@@ -1721,6 +1739,7 @@ describe('ResidentRuntime modules', () => {
             actionLog: {} as ActionLog,
             inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
             thinking,
+            body,
         });
 
         await runtime.onPerception({
@@ -1738,6 +1757,97 @@ describe('ResidentRuntime modules', () => {
         expect(state.attention).toBe(0);
         expect(state.deceased).toBeDefined();
         expect(state.deceased?.cause).toBe('attention_exhausted');
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('submits an attention logout and skips thinking when attention is exhausted', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-attention-logout-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 1.0;
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'noop', cause: 'attention-regression' }],
+                cause: 'attention-regression',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-logout' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 1.0, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [],
+                skills: {},
+            },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        expect(state.attention).toBe(0);
+        expect(state.deceased?.cause).toBe('attention_exhausted');
+        expect(thinking.think).not.toHaveBeenCalled();
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'logout', cause: 'attention_exhausted' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'attention_exhausted' }),
+        );
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('revives attention-exhausted state when patron attention is added', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-attention-revive-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 0;
+        state.deceased = {
+            date: '2026-05-24T03:29:07.016Z',
+            tick: 59728,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+        const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+        });
+
+        runtime.incrementAttention(20);
+
+        expect(state.attention).toBe(20);
+        expect(state.deceased).toBeUndefined();
+        expect(stateStore.save).toHaveBeenCalledWith(state);
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });

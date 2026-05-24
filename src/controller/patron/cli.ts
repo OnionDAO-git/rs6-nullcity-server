@@ -4,7 +4,7 @@ import { loadControllerConfig } from '../config';
 import { PatronStore } from './patron-store';
 import { PatronGateway } from './patron-gateway';
 import { SoulLoader } from '../soul/soul-loader';
-import { RuntimeStateStore } from '../memory/runtime-state';
+import { RuntimeStateStore, addAttention } from '../memory/runtime-state';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 
 export interface PatronCliOptions {
@@ -136,7 +136,7 @@ export async function runPatronCli(argv: string[]): Promise<number> {
                 }),
                 getEvidence: () => evidence,
                 incrementAttention: (amount: number) => {
-                    state.attention = Math.max(0, state.attention + amount);
+                    addAttention(state, amount);
                     stateStore.save(state);
                     console.log(
                         `[patron:offer] Attention for "${residentName}" increased by ${amount}. New attention: ${state.attention}.`,

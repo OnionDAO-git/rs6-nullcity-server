@@ -394,7 +394,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Give Runescape players a concrete reason to care about residents — attention as a clock, refill verbs, standing tiers, letters, credit surfaces. Adapted from v2 Shards mechanics with RS-flavored in-world surfaces. Detailed item provenance in `docs/null-city-ideation-backlog.md` Theme 4. Spec: `docs/superpowers/specs/2026-05-22-patron-loop-design.md`.
 
-- `[ ]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
+- `[~]` **J1: Currency + attention decay clock.** Resident attention decays per tick; refill via in-game patron offering. Currency name + decay rate pinned in rs6.
+  - Hardened 2026-05-23 on `agents/wip`: attention exhaustion now submits a single logout and suppresses normal thinking/body actions, and patron attention refill clears only the `attention_exhausted` marker so revived residents can resume play. Focused runtime + patron tests passed.
 - `[x]` **J2: Mercy infusion (refill) verb.** In-game NPC interaction (e.g., "pray for", "offer to") at resident chathead → +N attention for M units of currency.
   - *Completed: Implemented in PatronGateway.offerTo to deduct player shards, boost resident attention, and log standing points.*
 - `[x]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).

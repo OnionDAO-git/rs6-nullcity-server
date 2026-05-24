@@ -22,6 +22,7 @@ import {
     isFiremakingGoal,
     isFollowGoal,
     isPrayerTrainingGoal,
+    isStandaloneFiremakingGoal,
     isStarterFishingGoal,
     isWoodcuttingTrainingGoal,
     parseBrainCompletion,
@@ -353,6 +354,12 @@ describe('goal-identity predicates', () => {
     it('isFiremakingGoal matches fire/tinderbox/light goals', () => {
         expect(isFiremakingGoal(firemakingGoal(0))).toBe(true);
         expect(isFiremakingGoal(starterFishingGoal(0))).toBe(false);
+    });
+
+    it('isStandaloneFiremakingGoal excludes cooking and fishing plans that merely mention fire', () => {
+        expect(isStandaloneFiremakingGoal(firemakingGoal(0))).toBe(true);
+        expect(isStandaloneFiremakingGoal(starterFishingCookingGoal(0))).toBe(false);
+        expect(isStandaloneFiremakingGoal(starterCookingGoal(0))).toBe(false);
     });
 
     it('isFollowGoal matches follow-* ids and follow-mentioning descriptions', () => {

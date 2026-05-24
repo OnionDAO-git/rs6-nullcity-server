@@ -337,6 +337,12 @@ export function isFiremakingGoal(goal: ActiveGoalState): boolean {
     return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
+/** True when the goal is specifically about making a fire, not a broader cooking/fishing plan that mentions fire. */
+export function isStandaloneFiremakingGoal(goal: ActiveGoalState): boolean {
+    const text = `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`;
+    return isFiremakingGoal(goal) && /make-fire|firemaking|make a fire|light a fire/i.test(text) && !/fish|fishing|cook/i.test(text);
+}
+
 /** True when the goal is a follow-someone goal. Handles undefined input. */
 export function isFollowGoal(goal?: ActiveGoalState): boolean {
     if (!goal) {

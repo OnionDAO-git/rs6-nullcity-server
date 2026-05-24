@@ -177,3 +177,10 @@ export function markDeceased(state: RuntimeState, cause: string): void {
         cause,
     };
 }
+
+export function addAttention(state: RuntimeState, amount: number): void {
+    state.attention = Math.max(0, state.attention + amount);
+    if (state.attention > 0 && state.deceased?.cause === 'attention_exhausted') {
+        delete state.deceased;
+    }
+}
