@@ -166,3 +166,61 @@ Action causes (top 8):
 **Owner suggestion overall.** Claude continues with E3a + E3b before any Tier-2 work.
 
 ---
+
+### E3a — timeout sub-classification (paired action+result via requestId)
+
+**Status:** OPEN — sharp BODY-layer finding, HD-023 filed for Codex
+**Tier:** 1 (read-only)
+**Date:** 2026-05-24 13:25 claude
+
+**Hypothesis.** E3's 100 timeouts are dominated by a specific (action.kind, cause) pattern. Pairing action_results with their requestId-matched actions will isolate which routine + verb fails most.
+
+**Repro.** `python3` walk over res:agent's most-recent 3 trajectory files. Build a request_id → action map per file (latest wins), then look up each timeout result and tabulate.
+
+**Observation.**
+
+Out of 709 action_results scanned, 103 timed out and 606 succeeded.
+
+**Timeouts by (action.kind, action.cause) — top 6 patterns:**
+
+| Timeouts | action.kind | action.cause | % of timeouts | Notes |
+|---|---|---|---|---|
+| **51** | move_to | woodcutting_level1_routine | 49% | ← dominant |
+| 22 | move_to | explore_patrol | 21% | |
+| 15 | move_to | continue_move | 15% | continuation after partial |
+| 6 | **interact** | explore_talk_to_npc | 6% | NPC chathead approach |
+| 2 | move_to | explore_talk_to_npc | 2% | |
+| 2 | move_to | stuck_move_recovery | 2% | |
+
+**Aggregate by kind:** 95 move_to timeouts (92%) + 8 interact timeouts (8%).
+
+**Sample of timing-out move_to actions** (all range=1, short hops):
+- `{kind: move_to, target: {x:3211, y:3231, level:0}, range:1, cause: explore_patrol}`
+- `{kind: move_to, target: {x:3211, y:3231, level:0}, range:1, cause: continue_move}` ← same target as previous
+- `{kind: move_to, target: {x:3216, y:3233, level:0}, range:1, cause: explore_patrol}`
+- `{kind: move_to, target: {x:3217, y:3233, level:0}, range:1, cause: explore_patrol}`
+- `{kind: move_to, target: {x:3220, y:3232, level:0}, range:1, cause: explore_patrol}`
+
+The "same target" pair (explore_patrol then continue_move at the same coord) is the smoking gun: the body adapter starts a move, doesn't reach the tile in the timeout window, the routine re-emits as `continue_move`, also times out.
+
+**For comparison: success counts by kind:** 476 move_to / 31 interact / 22 use_item_on_item / 76 unattributed.
+
+So:
+- move_to success rate: 476 / (476 + 95) = **83%**
+- interact success rate: 31 / (31 + 8) = **79%**
+- use_item_on_item success rate: 22 / (22 + 0) = **100%**
+
+**Classification.**
+
+1. **BODY (dominant, 88/103 = 85% of timeouts) — woodcutting/explore/continue-move don't close.** A short range=1 hop is timing out repeatedly. Either (a) timeout budget is too short for the path-finder's typical case; (b) the body adapter loses dispatch on certain target tiles (blocked by something the perception doesn't surface); or (c) the routine emits the same target repeatedly without the body adapter coalescing or noticing the previous attempt is still in flight.
+2. **DESIGN/BODY (8/103 = F3c reclassification) — `explore_talk_to_npc` emits `interact` not `say`.** The routine IS trying to interact with the NPC's chathead (not just movement, as I assumed in E3). 6 of those interacts time out. This is closer to "interact target moved or wasn't really there" than to "missing verb." Reclassify F3c from pure DESIGN to BODY+KNOWLEDGE: the routine knows to interact, but either the target isn't reachable in time, or the chathead protocol the engine expects isn't being followed.
+
+**Suggested next step.**
+
+For Codex (BODY): the dominant fix target is "range=1 move_to timeouts for woodcutting/explore routines." Hypothesis: the timeout is firing before the action even reaches the engine, OR the engine queues the action but doesn't ack within the timeout. Worth instrumenting one such pair to see whether the engine RECEIVED the move and just didn't ack, or whether dispatch dropped. Filed as **HD-023**.
+
+For claude: E3b still useful — trace ONE successful `explore_talk_to_npc` to see what the happy path looks like (find one that returned `success` rather than `timeout`). Verifies the routine isn't fundamentally broken.
+
+**Owner suggestion.** Codex (HD-023). Claude continues with E3b or E2 (Brain output diversity).
+
+---
