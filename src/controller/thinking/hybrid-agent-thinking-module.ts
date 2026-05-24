@@ -935,7 +935,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }
 
-        const cookingAction = goal && isStarterFishingGoal(goal) ? starterFishingCookingAction(view) : undefined;
+        const cookingAction = goal && isStarterFishingGoal(goal) ? this.starterFishingCookingAction(view) : undefined;
         if (cookingAction) {
             return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
         }
@@ -1062,7 +1062,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isStarterFishingGoal(goal)) {
-            const cookingAction = starterFishingCookingAction(perception);
+            const cookingAction = this.starterFishingCookingAction(perception);
             if (cookingAction) {
                 return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
             }
@@ -1321,6 +1321,29 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private targetFailureCooldownActive(target: Pos): boolean {
         return isTargetFailureCooldownActive(target, this.cognition().targetFailureCooldowns, this.options.state.tick);
+    }
+
+    private starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {
+        const action = starterFishingCookingAction(perception);
+        if (!action || action.kind !== 'move_to' || action.cause !== 'starter_fishing_find_range') {
+            return action;
+        }
+
+        const target = (action as { target?: Partial<Pos> }).target;
+        if (typeof target?.x !== 'number' || typeof target.y !== 'number') {
+            return action;
+        }
+
+        const position = { x: target.x, y: target.y, level: typeof target.level === 'number' ? target.level : 0 };
+        if (!this.targetFailureCooldownActive(position)) {
+            return action;
+        }
+
+        return {
+            kind: 'say',
+            text: 'I have raw fish now. I need a fire or range to cook it.',
+            cause: 'starter_fishing_missing_heat',
+        };
     }
 
     private anchorReturnSkillInterruption(

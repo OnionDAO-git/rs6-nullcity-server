@@ -108,8 +108,8 @@ export const EXPLORATION_OPENABLE_OBJECT_IDS: ReadonlySet<number> = new Set([
 /** Lumbridge Castle kitchen range fallback for raw starter fish when no local fire is available. */
 export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 
-/** Range within which the resident should stop walking and report missing heat. */
-export const COOKING_RANGE_APPROACH_RADIUS = 4;
+/** Range close enough for a raw-fish use action against the fallback kitchen range. */
+export const COOKING_RANGE_APPROACH_RADIUS = 1;
 
 /** Max number of inventory slots considered "free" by the pickup routine. */
 export const MAX_INVENTORY_SLOTS = 28;

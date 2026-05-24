@@ -85,10 +85,28 @@ describe('SoulLoader', () => {
         it('loads behavior-focused test residents with standard SPARK modules', () => {
             const names = loader.listResidentNames();
             expect(names).toEqual(
-                expect.arrayContaining(['res:qa-woodcutter', 'res:qa-angler', 'res:qa-guardian', 'res:qa-social']),
+                expect.arrayContaining([
+                    'res:qa-woodcutter',
+                    'res:qa-angler',
+                    'res:qa-guardian',
+                    'res:qa-social',
+                    'res:qa-cook',
+                    'res:qa-scout',
+                    'res:qa-trader',
+                    'res:qa-survivor',
+                ]),
             );
 
-            for (const name of ['res:qa-woodcutter', 'res:qa-angler', 'res:qa-guardian', 'res:qa-social']) {
+            for (const name of [
+                'res:qa-woodcutter',
+                'res:qa-angler',
+                'res:qa-guardian',
+                'res:qa-social',
+                'res:qa-cook',
+                'res:qa-scout',
+                'res:qa-trader',
+                'res:qa-survivor',
+            ]) {
                 const soul = loader.load(name);
                 expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
                 expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
@@ -106,6 +124,12 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-social').frontmatter.behavior).toEqual(
                 expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'social' }),
             );
+            expect(loader.load('res:qa-cook').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
+            expect(loader.load('res:qa-scout').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
+            expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
+                expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'trade' }),
+            );
+            expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
         });
     });
 });

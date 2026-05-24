@@ -5482,6 +5482,43 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
+    it('does not repeat an unreachable Lumbridge range move after a fishing-cooking timeout', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 20,
+            lastGoalShareTick: 20,
+            targetFailureCooldowns: {
+                'target:3208,3213,0': 12,
+            },
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 20,
+                resident: {
+                    ...residentAt(3204, 3210),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' },
+        ]);
+        expect(result.cause).toBe('starter_fishing_missing_heat');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
     it('does not pre-light the only cooking fire before catching fish for the fishing-cooking benchmark', async () => {
         const fishingSpot = npc('Fishing spot', 3241, 3242);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);

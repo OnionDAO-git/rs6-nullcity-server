@@ -454,7 +454,7 @@ describe('starterFishingCookingAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: LUMBRIDGE_CASTLE_RANGE,
-            range: 4,
+            range: 1,
             cause: 'starter_fishing_find_range',
         });
     });
