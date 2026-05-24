@@ -2200,6 +2200,131 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('stuck_pre_inference_explore');
     });
 
+    it('steps away instead of repeating a landmark report while stuck before inference', async () => {
+        const fountain = { objectId: 879, position: { x: 3201, y: 3212, level: 0 }, orientation: 0 };
+        const blockedPatrolObjects = [3, 6, 9, 12].flatMap(step => [
+            { objectId: 4735, position: { x: 3201 + step, y: 3212, level: 0 }, orientation: 0 },
+            { objectId: 4735, position: { x: 3201, y: 3212 + step, level: 0 }, orientation: 0 },
+            { objectId: 4735, position: { x: 3201 - step, y: 3212, level: 0 }, orientation: 0 },
+            { objectId: 4735, position: { x: 3201, y: 3212 - step, level: 0 }, orientation: 0 },
+        ]);
+        const blockedPatrolKeys = new Set(
+            blockedPatrolObjects.map(object => `${object.position.x},${object.position.y},${object.position.level}`),
+        );
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 200;
+        state.stuckSince = 150;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 190,
+            lastBodyTick: 190,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 201,
+                resident: residentAt(3201, 3212),
+                objects: [fountain, ...blockedPatrolObjects],
+            }),
+        );
+
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        const action = result.actions[0] as { target?: { x: number; y: number; level: number } };
+        if (!action.target) {
+            throw new Error('Expected stuck pre-inference recovery to pick a movement target');
+        }
+        expect(action.target).not.toEqual({ x: 3201, y: 3212, level: 0 });
+        expect(blockedPatrolKeys.has(`${action.target.x},${action.target.y},${action.target.level}`)).toBe(false);
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('avoids target-failed patrol coordinates while stuck before inference', async () => {
+        const failedPatrolTarget = { x: 3204, y: 3212, level: 0 };
+        const fountain = { objectId: 879, position: { x: 3201, y: 3212, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 200;
+        state.stuckSince = 150;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 190,
+            lastBodyTick: 190,
+            targetFailureCooldowns: {
+                'target:3204,3212,0': 190,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 201,
+                resident: residentAt(3201, 3212),
+                objects: [fountain],
+            }),
+        );
+
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        expect((result.actions[0] as { target?: unknown }).target).not.toEqual(failedPatrolTarget);
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('uses Body inference instead of emitting an already-in-range stuck move when boxed in', async () => {
+        const fountain = { objectId: 879, position: { x: 3201, y: 3212, level: 0 }, orientation: 0 };
+        const boxedObjects = [1, 3, 6, 9, 12].flatMap(step => [
+            { objectId: 4735, position: { x: 3201 + step, y: 3212, level: 0 }, orientation: 0 },
+            { objectId: 4735, position: { x: 3201, y: 3212 + step, level: 0 }, orientation: 0 },
+            { objectId: 4735, position: { x: 3201 - step, y: 3212, level: 0 }, orientation: 0 },
+            { objectId: 4735, position: { x: 3201, y: 3212 - step, level: 0 }, orientation: 0 },
+        ]);
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    actions: [{ kind: 'say', text: 'I am boxed in and need a route.', cause: 'body_step' }],
+                    cause: 'body_step',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 200;
+        state.stuckSince = 150;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 190,
+            lastBodyTick: 190,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 201,
+                resident: residentAt(3201, 3212),
+                objects: [fountain, ...boxedObjects],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am boxed in and need a route.', cause: 'body_step' }]);
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
     it('switches to a nearby patrol when a committed move makes no visible progress', async () => {
         const blockedLandmark = { x: 3243, y: 3242, level: 0 };
         const llm = scriptedLlm([
@@ -2466,6 +2591,107 @@ describe('HybridAgentThinkingModule', () => {
                 lastImprovedTick: 112,
             }),
         );
+    });
+
+    it('treats equal-distance tile changes as detour progress before stuck recovery', async () => {
+        const tree = { objectId: 1278, position: { x: 3190, y: 3255, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-woodcutting-1',
+                description: 'Chop a nearby ordinary tree to gather logs and gain Woodcutting XP.',
+                createdAtTick: 100,
+            },
+            lastBrainTick: 100,
+            lastBodyTick: 100,
+            activeMove: {
+                target: tree.position,
+                range: 1,
+                cause: 'woodcutting_level1_routine',
+                startedAtTick: 100,
+                lastTick: 116,
+                lastPositionKey: '3193,3259,0',
+                stationaryCount: 0,
+                lastDistance: 4,
+                bestDistance: 3,
+                lastImprovedTick: 20,
+                nonImprovingCount: 3,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 124,
+                resident: {
+                    ...residentAt(3194, 3259),
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).not.toBe('stuck_move_recovery');
+        expect(result.actions).not.toEqual([expect.objectContaining({ cause: 'stuck_move_recovery' })]);
+        expect(state.cognition?.activeMove).toEqual(
+            expect.objectContaining({
+                target: tree.position,
+                lastPositionKey: '3194,3259,0',
+                stationaryCount: 0,
+                lastDistance: 4,
+                bestDistance: 3,
+                lastImprovedTick: 20,
+                nonImprovingCount: 0,
+                equalDistanceDetourCount: 1,
+            }),
+        );
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('switches tactics after repeated equal-distance detours without closing distance', async () => {
+        const tree = { objectId: 1278, position: { x: 3190, y: 3255, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-woodcutting-1',
+                description: 'Chop a nearby ordinary tree to gather logs and gain Woodcutting XP.',
+                createdAtTick: 100,
+            },
+            lastBrainTick: 100,
+            lastBodyTick: 100,
+            activeMove: {
+                target: tree.position,
+                range: 1,
+                cause: 'woodcutting_level1_routine',
+                startedAtTick: 100,
+                lastTick: 116,
+                lastPositionKey: '3193,3259,0',
+                stationaryCount: 0,
+                lastDistance: 4,
+                bestDistance: 3,
+                lastImprovedTick: 20,
+                nonImprovingCount: 0,
+                equalDistanceDetourCount: 2,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 124,
+                resident: {
+                    ...residentAt(3194, 3259),
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_move_recovery');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_move_recovery' }));
+        expect(llm.complete).not.toHaveBeenCalled();
     });
 
     it('initializes persisted active moves without new distance fields before judging them stuck', async () => {

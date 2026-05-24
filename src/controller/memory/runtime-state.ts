@@ -106,6 +106,7 @@ export interface ActiveMoveState {
     bestDistance?: number;
     lastImprovedTick?: number;
     nonImprovingCount?: number;
+    equalDistanceDetourCount?: number;
 }
 
 export interface ActiveGoalState {

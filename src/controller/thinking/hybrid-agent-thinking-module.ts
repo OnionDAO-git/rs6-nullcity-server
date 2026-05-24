@@ -179,6 +179,7 @@ const MOVE_COMMIT_TICKS = 24;
 const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
 const MOVE_STUCK_NON_IMPROVING_OBSERVATIONS = 4;
 const MOVE_STUCK_NON_CLOSING_TICKS = 96;
+const MOVE_STUCK_EQUAL_DISTANCE_DETOUR_OBSERVATIONS = 3;
 const ROUTINE_LOOP_BREAK_ACTIONS = 3;
 const ROUTINE_LOOP_BREAK_COOLDOWN_TICKS = 90;
 const EXPLORATION_REPORT_COOLDOWN_TICKS = 80;
@@ -682,17 +683,32 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 this.explorationCooldowns(),
                 { interactWithOpenables: false },
             );
-            const recovery =
-                exploratory && isStuckRecoveryAction(exploratory)
-                    ? exploratory
-                    : here
-                      ? {
-                            kind: 'move_to' as const,
-                            target: explorationPatrolTarget(here, visibility.anchor, this.options.state.tick),
-                            range: 1,
-                            cause: 'stuck_pre_inference_explore',
-                        }
-                      : undefined;
+            const targetFailureCooldowns = this.cognition().targetFailureCooldowns;
+            let recovery: AgentAction | undefined;
+            if (
+                exploratory &&
+                isStuckRecoveryAction(exploratory) &&
+                !moveTargetFailureCooldownActive(exploratory, targetFailureCooldowns, this.options.state.tick)
+            ) {
+                recovery = exploratory;
+            } else if (here) {
+                const target = stuckPreInferencePatrolTarget(
+                    perception,
+                    here,
+                    visibility.anchor,
+                    this.options.state.tick,
+                    this.explorationCooldowns(),
+                    targetFailureCooldowns,
+                );
+                if (target) {
+                    recovery = {
+                        kind: 'move_to',
+                        target,
+                        range: distance(here, target) <= 1 ? 0 : 1,
+                        cause: 'stuck_pre_inference_explore',
+                    };
+                }
+            }
             if (recovery) {
                 if (visibility.returnDue) {
                     this.deferVisibilityAnchorReturn();
@@ -1203,7 +1219,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 cognition.activeMove = undefined;
             } else {
                 const currentPositionKey = positionKey(here);
-                const stationaryCount = active.lastPositionKey === currentPositionKey ? (active.stationaryCount || 0) + 1 : 0;
+                const changedPosition = active.lastPositionKey !== currentPositionKey;
+                const stationaryCount = changedPosition ? 0 : (active.stationaryCount || 0) + 1;
                 const hasClosingBaseline = typeof active.bestDistance === 'number' || typeof active.lastImprovedTick === 'number';
                 const previousBestDistance =
                     typeof active.bestDistance === 'number'
@@ -1212,17 +1229,23 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                           ? Math.min(active.lastDistance, currentDistance)
                           : currentDistance;
                 const closedDistance = currentDistance < previousBestDistance;
+                const equalDistanceDetour =
+                    changedPosition && typeof active.lastDistance === 'number' && currentDistance === active.lastDistance;
                 const bestDistance = closedDistance ? currentDistance : previousBestDistance;
                 const lastImprovedTick = closedDistance
                     ? this.options.state.tick
                     : typeof active.lastImprovedTick === 'number'
                       ? active.lastImprovedTick
                       : this.options.state.tick;
+                const visiblyBlocked = !changedPosition || currentDistance > previousBestDistance;
                 const nonImprovingCount = closedDistance
                     ? 0
-                    : hasClosingBaseline
-                      ? (active.nonImprovingCount || 0) + 1
-                      : active.nonImprovingCount || 0;
+                    : equalDistanceDetour
+                      ? 0
+                      : hasClosingBaseline && visiblyBlocked
+                        ? (active.nonImprovingCount || 0) + 1
+                        : active.nonImprovingCount || 0;
+                const equalDistanceDetourCount = closedDistance ? 0 : equalDistanceDetour ? (active.equalDistanceDetourCount || 0) + 1 : 0;
                 const updated = {
                     ...active,
                     lastTick: this.options.state.tick,
@@ -1232,6 +1255,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     bestDistance,
                     lastImprovedTick,
                     nonImprovingCount,
+                    equalDistanceDetourCount,
                 };
                 cognition.activeMove = updated;
 
@@ -1253,7 +1277,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 if (
                     stationaryCount >= MOVE_STUCK_STATIONARY_OBSERVATIONS ||
                     (this.options.state.tick - lastImprovedTick >= MOVE_STUCK_NON_CLOSING_TICKS &&
-                        nonImprovingCount >= MOVE_STUCK_NON_IMPROVING_OBSERVATIONS)
+                        (nonImprovingCount >= MOVE_STUCK_NON_IMPROVING_OBSERVATIONS ||
+                            equalDistanceDetourCount >= MOVE_STUCK_EQUAL_DISTANCE_DETOUR_OBSERVATIONS))
                 ) {
                     return this.stuckMoveRecoveryAction(perception, here, updated, anchor);
                 }
@@ -3377,9 +3402,77 @@ function isConcreteExplorationOverride(action: AgentAction): boolean {
 }
 
 function isStuckRecoveryAction(action: AgentAction): boolean {
+    if (action.kind === 'say') {
+        return false;
+    }
     return /explore_talk_to_npc|explore_visible_object|explore_tree_stand|explore_open_obstacle|explore_patrol/i.test(
         String(action.cause || ''),
     );
+}
+
+function stuckPreInferencePatrolTarget(
+    perception: HybridPerception,
+    here: Pos,
+    anchor: Pos | undefined,
+    currentTick: number,
+    explorationCooldowns: Record<string, number>,
+    targetFailureCooldowns?: Record<string, number>,
+): Pos | undefined {
+    const blockedTiles = objectOccupiedTiles(perception);
+    const target = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedTiles);
+    if (!stuckPatrolCandidateUnavailable(target, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+        return target;
+    }
+
+    const nearbyCandidates = [
+        { x: here.x + 1, y: here.y, level: here.level },
+        { x: here.x, y: here.y + 1, level: here.level },
+        { x: here.x - 1, y: here.y, level: here.level },
+        { x: here.x, y: here.y - 1, level: here.level },
+    ];
+    const startIndex = Math.abs(here.x * 31 + here.y * 17 + currentTick) % nearbyCandidates.length;
+    for (let offset = 0; offset < nearbyCandidates.length; offset += 1) {
+        const candidate = nearbyCandidates[(startIndex + offset) % nearbyCandidates.length];
+        if (!stuckPatrolCandidateUnavailable(candidate, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+            return candidate;
+        }
+    }
+
+    return undefined;
+}
+
+function objectOccupiedTiles(perception: HybridPerception): ReadonlySet<string> | undefined {
+    const objects = perception.nearby?.objects || [];
+    if (objects.length === 0) {
+        return undefined;
+    }
+    return new Set(objects.map(object => positionKey(object.position)));
+}
+
+function stuckPatrolCandidateUnavailable(
+    candidate: Pos,
+    here: Pos,
+    blockedTiles: ReadonlySet<string> | undefined,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): boolean {
+    return (
+        positionsEqual(candidate, here) ||
+        Boolean(blockedTiles?.has(positionKey(candidate))) ||
+        isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick)
+    );
+}
+
+function moveTargetFailureCooldownActive(
+    action: AgentAction,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): boolean {
+    if (action.kind !== 'move_to' || !('target' in action)) {
+        return false;
+    }
+    const target = positionLike(action.target);
+    return Boolean(target && isTargetFailureCooldownActive(target, targetFailureCooldowns, currentTick));
 }
 
 function shouldPreferScoutingSkillOpportunity(action: AgentAction | undefined): boolean {
