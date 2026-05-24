@@ -1293,3 +1293,38 @@ The Pillar-3 substrate + fallback layer are now Chicago-acceptable. F19c is the 
 
 **Owner suggestion.** (i) — claude can do as read-only inference-log scan; (ii) — Codex zone (nervous-system + soul rules); (iii) — needs a second controller spin-up (Codex zone). File as HD-033 if any of (i)/(ii)/(iii) becomes a discrete actionable work item.
 
+---
+
+## E20 — F6 default-SPARK idle initiative and Thrand revival proof (2026-05-24 19:03 UTC)
+
+**Question.** Can a default-SPARK resident with no winning hook become visible to players/dashboard without waiting for inference or watchdog fallback?
+
+**Change.** Codex added a low-cadence no-hook idle initiative in default `Spark.tick`:
+- waits until tick 120 before first use
+- stores `lastIdleInitiativeTick` in runtime state
+- emits display-name speech like `Still here as Thrand; watching the area.`
+- pairs speech with a safe first-step movement candidate when position is available
+- uses no inference and does not run when any real hook/plan wins
+
+**Verification.**
+
+- Focused red/green regression first failed with no actions on the no-hook path, then passed after implementation.
+- Cadence regression confirms the next tick noops and does not call the LLM before the interval elapses.
+- Static/full gates passed: typecheck, lint, build, full Jest (`150` suites / `1562` tests).
+
+**Live evidence (`local-73320`).**
+
+First soak after restart showed the new code path working for Hans, Father Aereck, Wise Old Man, Duke Horacio, and Pip, but not Thrand. Root cause was not F6 logic: Thrand's persisted state had `attention: 0` and `deceased.cause = attention_exhausted`, so `ResidentRuntime` intentionally ended ticks before SPARK thinking.
+
+After `npm run controller:revive -- --resident res:thrand`:
+
+```
+res-thrand sayCount=2 actionCount=2
+idle say:    "Still here as Thrand; watching the area."
+idle action: move_to 3236,3234,0 cause=idle_initiative
+results:     success=2 timeout=2
+state:       attention=4813 deceased=undefined lastIdleInitiativeTick=4125
+wall:        HTTP 200
+```
+
+**Conclusion.** F6 is resolved for living default-SPARK residents: no-hook ticks now produce visible low-cadence speech and movement without inference. Thrand's specific silence had a second root cause, attention exhaustion, and the existing revive tooling restored him so the new idle path could be observed. Remaining higher-level issue is still F19c/HD-032 residual: heroes are visible but mostly fallback/reflex-driven until inference completion health improves or per-hero reflexes are richer.

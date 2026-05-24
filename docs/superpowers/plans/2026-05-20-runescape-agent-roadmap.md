@@ -304,8 +304,10 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: combat fixture tests and one live local smoke if available.
   - Verified 2026-05-23: fully implemented with exposed combatLevel, weakest aggressor selection (lowest HP, lowest combat level, closest Chebyshev distance), decision classification (retaliate_confident, retaliate_after_eat, retreat_outmatched, retreat_low_hp), episode deduplication, and kill celebration. Tested F5-T1 through F5-T9 targeting all registers (achiever, mentor, endurer, default) successfully.
 
-- `[ ]` **F6: Default-SPARK idle initiative for quiet residents.** Some non-hybrid, non-anchored residents can tick without hooks and never hit watchdog fallback, so they are technically alive but invisible to observers.
+- `[x]` **F6: Default-SPARK idle initiative for quiet residents.** Some non-hybrid, non-anchored residents can tick without hooks and never hit watchdog fallback, so they are technically alive but invisible to observers.
   - Filed 2026-05-24 on `agents/wip`: live M8 verification on `local-93740` found `res:thrand` producing only begin/end tick evidence in a short soak while other residents spoke or moved. Design a bounded no-hook cadence for default-SPARK residents: occasional display-name status line, safe local patrol or anchor return when available, and dashboard-visible evidence without spamming public chat.
+  - Started 2026-05-24 on `agents/wip`: Codex is adding a no-inference, low-cadence default idle pulse for no-hook ticks, using display-name speech plus a safe first-step movement candidate.
+  - Verified 2026-05-24 on `agents/wip`: default-SPARK no-hook ticks now emit a cadence-gated `idle_initiative` speech/action without calling inference; cadence is persisted as `lastIdleInitiativeTick`. Focused red/green tests, typecheck, lint, build, full Jest, and live controller `local-73320` passed. Live root cause note: Thrand was also `attention_exhausted`; after `npm run controller:revive -- --resident res:thrand`, he said `Still here as Thrand; watching the area.` and performed an `idle_initiative` move.
 
 
 ## Workstream G: Real Gameplay Workflows

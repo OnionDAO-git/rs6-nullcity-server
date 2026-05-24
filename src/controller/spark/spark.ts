@@ -22,6 +22,9 @@ import { type Plan, type PlanIntent, installPlan, remainingIntent } from './plan
 import { PlanExecutor } from './plan-executor';
 import { type VariableDefinition, recomputeVariables } from './variables';
 
+const IDLE_INITIATIVE_FIRST_TICK = 120;
+const IDLE_INITIATIVE_INTERVAL_TICKS = 120;
+
 export interface SparkTickResult {
     actions: AgentAction[];
     cause?: string;
@@ -109,6 +112,12 @@ export class Spark {
             }
 
             if (!winner || winner.priority <= 0) {
+                const idleInitiative = this.idleInitiative(perception);
+                if (idleInitiative) {
+                    endReason = 'idle_initiative';
+                    return idleInitiative;
+                }
+
                 endReason = 'hook_noop';
                 return { actions: [], nooped: true };
             }
@@ -260,6 +269,31 @@ export class Spark {
         }
     }
 
+    private idleInitiative(perception: Perception): SparkTickResult | undefined {
+        if (this.state.tick < IDLE_INITIATIVE_FIRST_TICK) {
+            return undefined;
+        }
+        if (
+            this.state.lastIdleInitiativeTick !== undefined &&
+            this.state.tick - this.state.lastIdleInitiativeTick < IDLE_INITIATIVE_INTERVAL_TICKS
+        ) {
+            return undefined;
+        }
+
+        const candidate = heroAnchorPatrolAction(this.soul, this.state) || generateFirstStepCandidates(perception).find(action => action.kind !== 'noop');
+        const visiblePulse: AgentAction = {
+            kind: 'say',
+            text: idleInitiativeSpeech(this.soul),
+            cause: 'idle_initiative',
+        };
+        const actions: AgentAction[] = candidate ? [visiblePulse, { ...candidate, cause: 'idle_initiative' }] : [visiblePulse];
+        for (const action of actions) {
+            this.state.attention = spendForAction(this.state.attention, action.kind);
+        }
+        this.state.lastIdleInitiativeTick = this.state.tick;
+        return { actions, cause: 'idle_initiative', nooped: false };
+    }
+
     abortInflight(cause: string): void {
         this.mailbox.abort(cause);
         this.mode = idleMode(cause);
@@ -371,6 +405,15 @@ function watchdogFallbackSpeech(soul: Soul): string {
     }
 
     return `Still here as ${residentName}; getting my bearings.`;
+}
+
+function idleInitiativeSpeech(soul: Soul): string {
+    const residentName = soul.frontmatter.heroProfile?.publicName || soul.frontmatter.display;
+    if (!residentName) {
+        return 'I am still here; watching the area.';
+    }
+
+    return `Still here as ${residentName}; watching the area.`;
 }
 
 function heroAnchorPatrolAction(soul: Soul, state: RuntimeState): AgentAction | undefined {

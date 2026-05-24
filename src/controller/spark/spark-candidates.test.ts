@@ -8,6 +8,47 @@ import type { Soul } from '../soul/soul-schema';
 import { Spark } from './spark';
 
 describe('Spark candidate fallback', () => {
+    it('emits a low-cadence idle pulse for named residents when no hook wins', async () => {
+        const state = runtimeState();
+        state.tick = 119;
+        state.hookCooldowns = { idle_reflection: 99999, new_actor_or_chunk: 99999 };
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spark-idle-initiative-'));
+        const memory = {
+            ensureResident: jest.fn(() => memoryDir),
+            retrieve: jest.fn(() => []),
+            write: jest.fn(),
+        } as unknown as MemoryStore;
+        const llm = { complete: jest.fn() } as unknown as LlmClient;
+        const spark = new Spark(soul({ hooks: [], display: 'Thrand' }), state, memory, llm);
+
+        const result = await spark.tick({
+            resident: {
+                position: { x: 3235, y: 3233, level: 0 },
+            },
+        });
+
+        expect(result).toEqual({
+            actions: [
+                { kind: 'say', text: 'Still here as Thrand; watching the area.', cause: 'idle_initiative' },
+                { kind: 'move_to', target: { x: 3236, y: 3233, level: 0 }, cause: 'idle_initiative' },
+            ],
+            cause: 'idle_initiative',
+            nooped: false,
+        });
+        expect(state.lastIdleInitiativeTick).toBe(120);
+        expect(llm.complete).not.toHaveBeenCalled();
+
+        const nextTick = await spark.tick({
+            resident: {
+                position: { x: 3236, y: 3233, level: 0 },
+            },
+        });
+
+        expect(nextTick).toEqual({ actions: [], nooped: true });
+        expect(state.lastIdleInitiativeTick).toBe(120);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('uses a safe movement candidate when the LLM only returns noop', async () => {
         const state = runtimeState();
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spark-candidate-'));
@@ -88,7 +129,7 @@ function runtimeState(): RuntimeState {
     };
 }
 
-function soul(): Soul {
+function soul(extra: Partial<Soul['frontmatter']> = {}): Soul {
     return {
         sourcePath: 'test.md',
         body: '',
@@ -97,6 +138,7 @@ function soul(): Soul {
             archetype: 'mentor',
             hooks: [{ id: 'always', priority: 50, condition: { kind: 'always' } }],
             attentionProfile: { decayCurve: 'standard', startingAttention: 100 },
+            ...extra,
         },
     };
 }
