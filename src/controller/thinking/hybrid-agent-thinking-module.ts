@@ -615,33 +615,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private perceptionWithoutFailedTargets(perception: HybridPerception): HybridPerception {
-        const cooldowns = this.cognition().targetFailureCooldowns;
-        if (!cooldowns || Object.keys(cooldowns).length === 0) {
-            return perception;
-        }
-
-        const keepTarget = (target: unknown): boolean => {
-            const keys = targetFailureKeys(target);
-            if (keys.length === 0) {
-                return true;
-            }
-            return keys.every(key => {
-                const failedAt = cooldowns[key];
-                return failedAt === undefined || this.options.state.tick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS;
-            });
-        };
-
-        const nearby = perception.nearby || {};
-        return {
-            ...perception,
-            nearby: {
-                ...nearby,
-                objects: (nearby.objects || []).filter(keepTarget),
-                worldItems: (nearby.worldItems || []).filter(keepTarget),
-                npcs: (nearby.npcs || []).filter(keepTarget),
-                players: (nearby.players || []).filter(keepTarget),
-            },
-        };
+        return withoutTargetFailedPerception(perception, this.cognition().targetFailureCooldowns, this.options.state.tick);
     }
 
     private preInferenceBodyAction(
@@ -1285,17 +1259,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private targetFailureCooldownActive(target: Pos): boolean {
-        const cooldowns = this.cognition().targetFailureCooldowns;
-        if (!cooldowns) {
-            return false;
-        }
-        const coordinate = positionKey(target);
-        return Object.entries(cooldowns).some(([key, failedAt]) => {
-            if (this.options.state.tick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS) {
-                return false;
-            }
-            return key === `target:${coordinate}` || key.endsWith(`:${coordinate}`);
-        });
+        return isTargetFailureCooldownActive(target, this.cognition().targetFailureCooldowns, this.options.state.tick);
     }
 
     private anchorReturnSkillInterruption(
@@ -2570,6 +2534,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                   currentTick: this.options.state.tick,
                   pickupCooldowns: cognition.pickupCooldowns,
                   explorationCooldowns: cognition.explorationCooldowns,
+                  targetFailureCooldowns: cognition.targetFailureCooldowns,
                   interactWithOpenables: false,
               })
             : undefined;
@@ -3122,6 +3087,7 @@ type NextStepCooldownContext = {
     currentTick?: number;
     pickupCooldowns?: Record<string, number>;
     explorationCooldowns?: Record<string, number>;
+    targetFailureCooldowns?: Record<string, number>;
     interactWithOpenables?: boolean;
 };
 
@@ -3131,25 +3097,26 @@ function nextStepSuggestion(
     goal?: ActiveGoalState,
     cooldowns?: NextStepCooldownContext,
 ): string | undefined {
-    const here = perception.resident?.position;
+    const currentTick = cooldowns?.currentTick ?? perception.tick ?? 0;
+    const effectivePerception = withoutTargetFailedPerception(perception, cooldowns?.targetFailureCooldowns, currentTick);
+    const here = effectivePerception.resident?.position;
     if (!here) {
         return undefined;
     }
 
-    const routine = routineNextStepSuggestion(perception, here, goal);
+    const routine = routineNextStepSuggestion(effectivePerception, here, goal);
     if (routine) {
         return routine;
     }
 
-    const suppressFiremakingLogPickup = hasNearbyFire(perception);
-    const currentTick = cooldowns?.currentTick ?? perception.tick ?? 0;
-    const item = (perception.nearby?.worldItems || [])
+    const suppressFiremakingLogPickup = hasNearbyFire(effectivePerception);
+    const item = (effectivePerception.nearby?.worldItems || [])
         .filter(
             candidate =>
                 !(suppressFiremakingLogPickup && isFiremakingLog(candidate)) &&
-                !isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) &&
+                !isStaleSelfOwnedLog(candidate, residentId, effectivePerception.resident?.id) &&
                 isUsefulGroundItem(candidate) &&
-                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
+                !isOwnedByAnotherActor(candidate, residentId, effectivePerception.resident?.id) &&
                 !isPickupOnCooldown(candidate, cooldowns?.pickupCooldowns, currentTick) &&
                 !isExplorationOnCooldown(explorationItemCooldownKey(candidate), cooldowns?.explorationCooldowns, currentTick),
         )
@@ -3161,24 +3128,24 @@ function nextStepSuggestion(
         return `pick up ${itemLabel(item)} at ${item.position.x},${item.position.y}.`;
     }
 
-    const workflowFallback = workflowGoalNextStepSuggestion(perception, here, goal);
+    const workflowFallback = workflowGoalNextStepSuggestion(effectivePerception, here, goal);
     if (workflowFallback !== undefined) {
         return workflowFallback || undefined;
     }
 
-    const safeTarget = safeCombatTarget(perception);
+    const safeTarget = safeCombatTarget(effectivePerception);
     if (safeTarget) {
         return `fight the safe ${actorName(safeTarget)} at ${safeTarget.position.x},${safeTarget.position.y}.`;
     }
 
-    const fishingSpot = (perception.nearby?.npcs || [])
+    const fishingSpot = (effectivePerception.nearby?.npcs || [])
         .filter(isFishingSpot)
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (fishingSpot && hasSmallFishingNet(perception)) {
+    if (fishingSpot && hasSmallFishingNet(effectivePerception)) {
         return `fish at ${fishingSpot.position.x},${fishingSpot.position.y} with my small net.`;
     }
 
-    const npc = (perception.nearby?.npcs || [])
+    const npc = (effectivePerception.nearby?.npcs || [])
         .filter(
             candidate =>
                 !isExplorationOnCooldown(explorationActorCooldownKey(candidate), cooldowns?.explorationCooldowns, currentTick) &&
@@ -3189,7 +3156,7 @@ function nextStepSuggestion(
         return `talk to ${actorName(npc)} at ${npc.position.x},${npc.position.y}.`;
     }
 
-    const tree = (perception.nearby?.objects || [])
+    const tree = (effectivePerception.nearby?.objects || [])
         .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
         .filter(object => !isExplorationOnCooldown(explorationObjectCooldownKey(object), cooldowns?.explorationCooldowns, currentTick))
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -3198,7 +3165,7 @@ function nextStepSuggestion(
     }
 
     if (cooldowns?.interactWithOpenables ?? true) {
-        const obstacle = (perception.nearby?.objects || [])
+        const obstacle = (effectivePerception.nearby?.objects || [])
             .filter(object => OPENABLE_OBSTACLE_IDS.has(object.objectId))
             .filter(object => !isExplorationOnCooldown(explorationObjectCooldownKey(object), cooldowns?.explorationCooldowns, currentTick))
             .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
@@ -3207,7 +3174,7 @@ function nextStepSuggestion(
         }
     }
 
-    const player = (perception.nearby?.players || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    const player = (effectivePerception.nearby?.players || []).sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (player) {
         return `stay near ${actorName(player)} and answer commands.`;
     }
@@ -3367,6 +3334,44 @@ function firstGoalCoordinate(text: string, fallbackLevel: number): Pos | undefin
 
 function targetFailureKey(target: unknown): string | undefined {
     return targetFailureKeys(target)[0];
+}
+
+function withoutTargetFailedPerception(
+    perception: HybridPerception,
+    cooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): HybridPerception {
+    if (!cooldowns || Object.keys(cooldowns).length === 0) {
+        return perception;
+    }
+
+    const keepTarget = (target: unknown): boolean => !isTargetFailureCooldownActive(target, cooldowns, currentTick);
+    const nearby = perception.nearby || {};
+    return {
+        ...perception,
+        nearby: {
+            ...nearby,
+            objects: (nearby.objects || []).filter(keepTarget),
+            worldItems: (nearby.worldItems || []).filter(keepTarget),
+            npcs: (nearby.npcs || []).filter(keepTarget),
+            players: (nearby.players || []).filter(keepTarget),
+        },
+    };
+}
+
+function isTargetFailureCooldownActive(target: unknown, cooldowns: Record<string, number> | undefined, currentTick: number): boolean {
+    if (!cooldowns) {
+        return false;
+    }
+    const keys = new Set(targetFailureKeys(target));
+    const position = isRecord(target) ? positionLike(target) || positionLike(target.position) : positionLike(target);
+    const coordinate = position ? positionKey(position) : undefined;
+    return Object.entries(cooldowns).some(([key, failedAt]) => {
+        if (currentTick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS) {
+            return false;
+        }
+        return keys.has(key) || Boolean(coordinate && (key === `target:${coordinate}` || key.endsWith(`:${coordinate}`)));
+    });
 }
 
 function targetFailureKeys(target: unknown): string[] {

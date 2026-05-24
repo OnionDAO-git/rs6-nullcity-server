@@ -5810,6 +5810,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('does not beacon a target-failed tree as the next step', async () => {
+        const failedTree = { objectId: 1278, position: { x: 3219, y: 3200, level: 0 }, orientation: 1 };
+        const nextTree = { objectId: 1278, position: { x: 3221, y: 3201, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'woodcut-visible-tree',
+                description: 'Move to a visible tree and chop it to gather logs and gain Woodcutting XP.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+            targetFailureCooldowns: {
+                'target:3219,3200,0': 120,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [failedTree, nextTree],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: chop the tree at 3221,3201.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('does not beacon self-owned stale logs as the next step', async () => {
         const logs = {
             itemId: 1511,
