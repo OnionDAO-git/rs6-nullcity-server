@@ -2104,6 +2104,84 @@ describe('ResidentRuntime modules', () => {
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
+
+    it('revives an attention-exhausted dev resident on restart when SOUL requests it', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-respawn-memory-'));
+
+        const state = stateFor('res:agent');
+        state.attention = 0;
+        state.stuckSince = 53943;
+        state.cognition = {
+            activeMove: {
+                target: { x: 3225, y: 3230, level: 0 },
+                startedAtTick: 53900,
+                lastTick: 53908,
+                lastDistance: 6,
+                stationaryCount: 3,
+                cause: 'continue_move',
+            },
+        };
+        state.deceased = {
+            date: '2026-05-24T13:21:19.155Z',
+            tick: 53908,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+        const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
+
+        new ResidentRuntime({
+            soul: soul('res:agent', {
+                attentionProfile: { startingAttention: 120000, decayCurve: 'gentle' },
+                respawnPolicy: 'on_restart',
+            } as Partial<Soul['frontmatter']>),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+        });
+
+        expect(state.attention).toBe(120000);
+        expect(state.deceased).toBeUndefined();
+        expect(state.stuckSince).toBeUndefined();
+        expect(state.cognition?.activeMove).toBeUndefined();
+        expect(stateStore.save).toHaveBeenCalledWith(state);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('keeps attention-exhausted residents deceased without explicit restart respawn policy', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-no-respawn-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 0;
+        state.deceased = {
+            date: '2026-05-24T13:21:19.155Z',
+            tick: 53908,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+        const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
+
+        new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+        });
+
+        expect(state.attention).toBe(0);
+        expect(state.deceased?.cause).toBe('attention_exhausted');
+        expect(stateStore.save).toHaveBeenCalledWith(state);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
 });
 
 function stateFor(resident: string): RuntimeState {

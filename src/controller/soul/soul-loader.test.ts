@@ -30,6 +30,14 @@ describe('SoulLoader', () => {
         expect(soul.frontmatter.attentionProfile?.decayCurve).toBe('gentle');
     });
 
+    it('loads the starter agent with restart respawn enabled for local QA', () => {
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        const soul = loader.load('res:agent');
+
+        expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+    });
+
     it('lists resident names from valid soul files', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-soul-loader-list-'));
         fs.writeFileSync(path.join(root, 'res-agent.md'), `---\nname: res:agent\narchetype: endurer\n---\n# Agent\n`);

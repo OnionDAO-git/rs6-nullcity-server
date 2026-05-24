@@ -127,11 +127,13 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
         this.evidence = options.evidence;
+        const startingAttention = initialAttention(options.soul.frontmatter.attentionProfile);
         this.state = options.stateStore.load(
             this.name,
-            initialAttention(options.soul.frontmatter.attentionProfile),
+            startingAttention,
             options.soul.frontmatter.legacy?.kind || options.soul.frontmatter.archetype,
         );
+        this.applyRestartRespawnPolicy(startingAttention);
         this.patronRegistry = new PatronRegistry(options.patrons || []);
         if (options.thinking) {
             this.thinking = options.thinking;
@@ -167,6 +169,22 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 },
             });
         this.options.stateStore.save(this.state);
+    }
+
+    private applyRestartRespawnPolicy(startingAttention: number): void {
+        if (this.options.soul.frontmatter.respawnPolicy !== 'on_restart') {
+            return;
+        }
+        if (this.state.deceased?.cause !== 'attention_exhausted') {
+            return;
+        }
+
+        this.state.attention = Math.max(this.state.attention, startingAttention);
+        this.state.deceased = undefined;
+        this.state.stuckSince = undefined;
+        if (this.state.cognition?.activeMove) {
+            this.state.cognition.activeMove = undefined;
+        }
     }
 
     getState(): RuntimeState {

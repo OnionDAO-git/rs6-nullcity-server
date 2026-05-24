@@ -6,6 +6,7 @@ import { agentActionSchema } from '../transport/message-codecs';
 
 export type SoulArchetype = 'mentor' | 'achiever' | 'endurer';
 export type DecayCurve = 'gentle' | 'standard' | 'steep';
+export type RespawnPolicy = 'on_restart' | 'manual' | 'never';
 export type HeroTier = 'hero' | 'novice' | 'background';
 
 /**
@@ -119,6 +120,7 @@ export interface SoulFrontmatter {
         startingAttention?: number;
         decayCurve?: DecayCurve;
     };
+    respawnPolicy?: RespawnPolicy;
     legacy?: {
         kind: SoulArchetype;
         parameters?: Record<string, unknown>;
@@ -217,6 +219,7 @@ export interface InferenceProfileDefinition {
 
 const soulArchetypeSchema = z.enum(['mentor', 'achiever', 'endurer']);
 const decayCurveSchema = z.enum(['gentle', 'standard', 'steep']);
+const respawnPolicySchema = z.enum(['on_restart', 'manual', 'never']);
 const variableOperationSchema = z.object({
     op: z.enum(['set', 'increment', 'decrement', 'decay', 'clamp']),
     value: z.union([z.number(), z.string()]).optional(),
@@ -322,6 +325,7 @@ export const soulFrontmatterSchema = z
                 decayCurve: decayCurveSchema.default('standard'),
             })
             .default({ decayCurve: 'standard' }),
+        respawnPolicy: respawnPolicySchema.optional(),
         legacy: z
             .object({
                 kind: soulArchetypeSchema,

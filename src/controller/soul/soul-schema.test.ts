@@ -75,6 +75,32 @@ describe('validateSoulFrontmatter modules', () => {
         });
     });
 
+    it('accepts explicit restart respawn policy for development residents', () => {
+        const frontmatter = validateSoulFrontmatter(
+            {
+                name: 'res:agent',
+                archetype: 'endurer',
+                respawnPolicy: 'on_restart',
+            },
+            '/tmp/res-agent.md',
+        );
+
+        expect(frontmatter.respawnPolicy).toBe('on_restart');
+    });
+
+    it('rejects unknown respawn policies', () => {
+        expect(() =>
+            validateSoulFrontmatter(
+                {
+                    name: 'res:agent',
+                    archetype: 'endurer',
+                    respawnPolicy: 'always',
+                },
+                '/tmp/res-agent.md',
+            ),
+        ).toThrow('Invalid soul frontmatter');
+    });
+
     describe('heroProfile (M-α)', () => {
         it('accepts a hero soul with tier=hero, publicName, signatureAction, and anchor', () => {
             const frontmatter = validateSoulFrontmatter(
