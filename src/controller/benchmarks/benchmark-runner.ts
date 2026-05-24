@@ -668,7 +668,8 @@ function selectedModuleActionCount(evidence: BenchmarkEvidenceBuffer, module: Sp
 }
 
 function selectedModuleInferenceCount(evidence: BenchmarkEvidenceBuffer, module: SparkModuleIdentity): number {
-    return evidence.inferenceRequests.filter(request => sameModule(request.sparkModule, module)).length;
+    return evidence.inferenceRequests.filter(request => sameModule(request.sparkModule, module) && request.cause !== 'thinking_started')
+        .length;
 }
 
 function sameModule(candidate: SparkModuleIdentity | undefined, expected: SparkModuleIdentity): boolean {

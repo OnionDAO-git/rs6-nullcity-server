@@ -53,6 +53,7 @@ const MOVE_EFFECT_TIMEOUT_MIN_MS = 5_000;
 const MOVE_EFFECT_TIMEOUT_PER_TILE_MS = 1_200;
 const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
 const MOVE_EFFECT_TIMEOUT_MAX_MS = 30_000;
+const THINKING_VISIBILITY_DELAY_MS = 1_000;
 
 export interface ResidentRuntimeGameSkill {
     buildContext(input: GameSkillContextInput): GameSkillContext;
@@ -306,6 +307,16 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 perception: compressedPerception,
             });
             this.deciding = true;
+            const thinkingVisibilityTimer = setTimeout(() => {
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    status: 'deciding',
+                    cause: 'thinking_started',
+                    perception_tokens: compressed.text.length,
+                    sparkModule: this.thinkingSparkModule,
+                });
+            }, THINKING_VISIBILITY_DELAY_MS);
+            thinkingVisibilityTimer.unref?.();
             try {
                 const result = await this.thinkWithWatchdog(compressedPerception, gameSkillContext);
                 this.recordEvidence(trajectory =>
@@ -349,6 +360,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     this.rememberCompletedGoal(attempt);
                 }
             } finally {
+                clearTimeout(thinkingVisibilityTimer);
                 this.deciding = false;
             }
         } finally {

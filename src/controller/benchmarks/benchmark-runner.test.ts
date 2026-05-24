@@ -289,6 +289,7 @@ describe('BenchmarkRunner', () => {
         const module = { id: 'onion.runescape.standard', version: '0.1.0' };
         const autonomousRuntime = {
             start: jest.fn(async context => {
+                context.recordInferenceRequest({ cause: 'thinking_started', sparkModule: module });
                 context.recordInferenceRequest({ requestId: 'infer-1', cause: 'body_tick', sparkModule: module });
                 context.recordArtifactPath('/tmp/nullcity-benchmark/evidence/trajectory/current');
                 context.recordArtifactPath('/tmp/nullcity-benchmark/evidence/progress/current');
@@ -345,6 +346,7 @@ describe('BenchmarkRunner', () => {
         expect(autonomousRuntime.stop).toHaveBeenCalledWith('benchmark_complete');
         expect(artifact.mode).toBe('autonomous');
         expect(artifact.metrics.autonomousActions).toBe(1);
+        expect(artifact.metrics.selectedModuleInferences).toBe(1);
         expect(artifact.evidence.actionAttemptIds).toEqual(['auto-action-1']);
         expect(artifact.evidence.actionAttempts).toEqual([
             expect.objectContaining({
@@ -358,6 +360,10 @@ describe('BenchmarkRunner', () => {
         ]);
         expect(artifact.evidence.inferenceRequestIds).toEqual(['infer-1']);
         expect(artifact.evidence.inferenceRequests).toEqual([
+            expect.objectContaining({
+                cause: 'thinking_started',
+                sparkModule: module,
+            }),
             expect.objectContaining({
                 requestId: 'infer-1',
                 cause: 'body_tick',

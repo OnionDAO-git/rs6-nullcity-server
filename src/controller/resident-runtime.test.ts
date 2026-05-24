@@ -334,6 +334,79 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).toHaveBeenCalledTimes(2);
     });
 
+    it('logs deciding status only after slow thinking remains pending so observers see activity without spam', async () => {
+        jest.useFakeTimers();
+        try {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-thinking-start-'));
+            const state = stateFor('res:pip');
+            let resolveThink:
+                | ((result: { actions: []; cause: string; envelopeTokens: number; nooped: boolean; syntheticEvents: [] }) => void)
+                | undefined;
+            const thinking: ThinkingModule = {
+                think: jest.fn(
+                    () =>
+                        new Promise(resolve => {
+                            resolveThink = resolve;
+                        }),
+                ),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true })),
+            } as unknown as ResidentBody;
+            const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+            const runtime = new ResidentRuntime({
+                soul: soul('res:pip'),
+                gateway: {} as GatewayClient,
+                memory: {
+                    ensureResident: jest.fn(() => memoryDir),
+                    retrieve: jest.fn(() => []),
+                    write: jest.fn(),
+                } as unknown as MemoryStore,
+                stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                llm: {} as LlmClient,
+                actionLog: {} as ActionLog,
+                inferenceLog,
+                thinking,
+                body,
+            });
+
+            const pending = runtime.onPerception({ tick: 3, events: [] });
+            await Promise.resolve();
+            expect(inferenceLog.append).not.toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({ cause: 'thinking_started', status: 'deciding' }),
+            );
+
+            jest.advanceTimersByTime(999);
+            await Promise.resolve();
+            expect(inferenceLog.append).not.toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({ cause: 'thinking_started', status: 'deciding' }),
+            );
+
+            jest.advanceTimersByTime(1);
+            await Promise.resolve();
+            expect(inferenceLog.append).toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({ cause: 'thinking_started', status: 'deciding', perception_tokens: expect.any(Number) }),
+            );
+
+            resolveThink?.({ actions: [], cause: 'slow-test', envelopeTokens: 12, nooped: true, syntheticEvents: [] });
+            await pending;
+            expect(inferenceLog.append).toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({ cause: 'slow-test', actions_emitted: 0 }),
+            );
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     it('uses a selected SPARK module for thinking and logs module identity', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-spark-module-test-'));
         const state = stateFor('res:pip');
