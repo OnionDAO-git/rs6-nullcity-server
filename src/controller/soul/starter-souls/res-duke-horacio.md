@@ -25,6 +25,7 @@ aesthetic: dark wool cloak with a silver Lumbridge crest, ringed hands, eyes tha
 attentionProfile:
   startingAttention: 14000
   decayCurve: standard
+  floor: 5000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
 # 14000 = ~2× the original 6500; calibrated 2026-05-24 after live-verification found 6 heroes mass-died from attention_exhaustion within 10 sec on an unattended overnight session. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero

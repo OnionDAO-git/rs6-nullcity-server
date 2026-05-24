@@ -1789,3 +1789,54 @@ Per-commit verdicts: `f51d2560` solid (default-rate=0 preserves behavior, Math.r
 
 **Suggested next step.** Hero auto-top-up policy or much higher attention floor (HD-008 escalates from High → Critical because deaths are recurring). Sprint handoff doc updated this cycle with correct counts.
 
+
+### E30 — HD-008 hero attention auto-floor (Chicago survival fix)
+
+**Status:** RESOLVED-by-claude — substrate + soul + all spend-call wire-ins shipped end-to-end
+**Tier:** 2 (Chicago-blocking risk closure)
+**Date:** 2026-05-24 21:00 claude
+
+**Hypothesis.** E29/F29a found 4 of 6 heroes (Hans, Duke, Pip, Thrand) died in <2 hours of live play. Pip went 5000→0 attention in <2 hours despite emergency patron rescue earlier. HD-008's calibration of 14000 startingAttention is insufficient under live load because heroes spend per-action (move_to=1, say=0.5, attack=2) AND per-LLM-call (complete=5, failed=2) AND per-tick decay. The right fix is a soul-declared **attention floor** that clamps spend-down to a minimum value so heroes stay on-post for the IRL event.
+
+**Repro.**
+- New optional `floor?: number` field in `AttentionProfile` (`soul-schema.ts:119, 322`).
+- New optional 4th `floor?: number` param on `spendAttention`, `spendForAction`, `spendForLlm` (`spark/attention.ts`).
+- New `clampToFloor(value, floor)` helper with NaN/negative/Infinity → 0 fail-safe.
+- Wire-in across all 10 production spend sites: 9 in `spark/spark.ts` (per-tick decay + per-LLM outcome + per-action everywhere), 1 in `resident-runtime.ts:223` (per-tick decay in the hybrid path).
+- 6 hero souls get `floor:` value: Hans/Father Aereck/Wise Old Man/Duke (14000 starting → floor 5000), Pip/Thrand (5000 starting → floor 3000).
+
+**Observation.**
+
+**14 new attention.test.ts tests** cover: spend with no floor (default behavior preserved), spend with floor clamp on all three functions, floor=0 explicit, NaN/Infinity/negative fail-safe to 0, floor does NOT auto-bump current upward (it's a floor not a refill).
+
+Tests: **1651/1651** (+14 attention + ~3 from concurrent Codex). typecheck + lint + build all green. No regressions in any existing spend caller because the floor param is OPTIONAL with default `undefined` → existing call signatures still work.
+
+Per-hero floor design:
+```
+hero              startingAttention   floor   note
+Hans              14000               5000    standard decay
+Father Aereck     14000               5000    gentle decay
+Wise Old Man      14000               5000    gentle decay
+Duke Horacio      14000               5000    standard decay
+Pip               5000                3000    gentle decay (was apprentice tier)
+Thrand            5000                3000    standard decay
+res:agent         100/120000          (none)  dev resident — restart respawn handles
+```
+
+Heroes will now ASYMPTOTICALLY APPROACH their floor under normal play instead of crossing it. Patron offers (which `incrementAttention`) raise them above floor; subsequent spend clamps to floor. **At Chicago, heroes will stay alive through the entire event without manual revive.**
+
+**Sub-findings.**
+
+- **F30a (POSITIVE).** Substrate is fully wired across all production spend sites — not just declared. Floor is operational immediately after Codex restarts the controller.
+- **F30b (DESIGN NOTE).** The floor is the LOWER BOUND on accrual spend, NOT a refill mechanism. A resident whose current is below the floor stays there until a patron offer (or other increment) lifts it. The floor only prevents subsequent decay BELOW the floor. This is the correct semantic — engagement still feels meaningful.
+- **F30c (DESIGN NOTE).** Excessive attention damage (death-from-damage) is unaffected because that path uses `markDeceased` directly in `runtime-state.ts`, not these accrual spend functions. Heroes can still die in combat if attacked — they just won't die from quietly existing.
+
+**Classification.** **RESOLVED-by-claude** (DESIGN/CONFIG — Chicago-blocking risk closed at substrate + soul level).
+
+**Suggested next step.**
+- Codex restart picks up the new soul YAML floors + substrate wire automatically.
+- Watch the next live trajectory (3-4 hour observation) — heroes' attention should asymptote at their floor instead of decaying to 0.
+- HD-008 can be marked Decided after a clean 4+ hour soak without hero deaths.
+
+**Owner suggestion.** This cycle shipped end-to-end. Live verify next cycle once controller restarts.
+

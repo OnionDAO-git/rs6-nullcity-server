@@ -119,6 +119,14 @@ export interface SoulFrontmatter {
     attentionProfile?: {
         startingAttention?: number;
         decayCurve?: DecayCurve;
+        /**
+         * Optional lower bound for accrual spend (idle decay + per-action
+         * + per-LLM-call) so the resident's attention never drops below
+         * this value from normal play. See `src/controller/spark/attention.ts`
+         * for the policy. Filed in E30 / HD-008 — heroes need to stay on
+         * post through the IRL event without manual top-up.
+         */
+        floor?: number;
     };
     respawnPolicy?: RespawnPolicy;
     legacy?: {
@@ -323,6 +331,8 @@ export const soulFrontmatterSchema = z
             .object({
                 startingAttention: z.number().positive().optional(),
                 decayCurve: decayCurveSchema.default('standard'),
+                // E30 / HD-008: optional accrual floor. See attention.ts.
+                floor: z.number().nonnegative().optional(),
             })
             .default({ decayCurve: 'standard' }),
         respawnPolicy: respawnPolicySchema.optional(),

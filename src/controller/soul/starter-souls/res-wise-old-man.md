@@ -24,6 +24,7 @@ aesthetic: weathered grey robes, the smell of dry tea and old paper, a worn-down
 attentionProfile:
   startingAttention: 14000
   decayCurve: gentle
+  floor: 5000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
 # bumped from 8000 → 14000 on 2026-05-24 after live-verification mass-die. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero

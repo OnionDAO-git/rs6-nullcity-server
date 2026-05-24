@@ -24,6 +24,7 @@ aesthetic: faded robes, ink-stained sleeves, the smell of old candle smoke and w
 attentionProfile:
   startingAttention: 14000
   decayCurve: gentle
+  floor: 5000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
 # bumped from 7000 → 14000 on 2026-05-24 after live-verification mass-die. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero

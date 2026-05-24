@@ -74,7 +74,7 @@ export class Spark {
         let endReason: EndTickReason = 'tick_complete';
         this.options.evidence?.beginTick(this.state.tick, perception);
         try {
-            this.state.attention = spendAttention(this.state.attention, this.soul.frontmatter.attentionProfile?.decayCurve || 'standard');
+            this.state.attention = spendAttention(this.state.attention, this.soul.frontmatter.attentionProfile?.decayCurve || 'standard', 1, this.soul.frontmatter.attentionProfile?.floor);
             this.state.variables = recomputeVariables(this.variableDefinitions(), this.state.variables, {
                 attention: this.state.attention,
                 tick: this.state.tick,
@@ -184,11 +184,12 @@ export class Spark {
             this.state.attention = spendForLlm(
                 this.state.attention,
                 response.cancelledBy ? 'aborted' : response.nooped ? 'nooped' : 'complete',
+                this.soul.frontmatter.attentionProfile?.floor,
             );
 
             const parsed = parseCompletion(response.text);
             if (!parsed.ok) {
-                this.state.attention = spendForLlm(this.state.attention, 'failed');
+                this.state.attention = spendForLlm(this.state.attention, 'failed', this.soul.frontmatter.attentionProfile?.floor);
                 endReason = 'parse_failed';
                 this.options.evidence?.recordDecision({
                     cause: parsed.cause,
@@ -248,7 +249,7 @@ export class Spark {
             });
 
             for (const action of actions) {
-                this.state.attention = spendForAction(this.state.attention, action.kind);
+                this.state.attention = spendForAction(this.state.attention, action.kind, this.soul.frontmatter.attentionProfile?.floor);
             }
 
             const postActionLegacy = this.legacy.observeActions(actions, perception);
@@ -288,7 +289,7 @@ export class Spark {
         };
         const actions: AgentAction[] = candidate ? [visiblePulse, { ...candidate, cause: 'idle_initiative' }] : [visiblePulse];
         for (const action of actions) {
-            this.state.attention = spendForAction(this.state.attention, action.kind);
+            this.state.attention = spendForAction(this.state.attention, action.kind, this.soul.frontmatter.attentionProfile?.floor);
         }
         this.state.lastIdleInitiativeTick = this.state.tick;
         return { actions, cause: 'idle_initiative', nooped: false };
@@ -312,8 +313,8 @@ export class Spark {
             text: watchdogFallbackSpeech(this.soul),
             cause: 'watchdog_fallback',
         };
-        this.state.attention = spendForAction(this.state.attention, visiblePulse.kind);
-        this.state.attention = spendForAction(this.state.attention, fallbackAction.kind);
+        this.state.attention = spendForAction(this.state.attention, visiblePulse.kind, this.soul.frontmatter.attentionProfile?.floor);
+        this.state.attention = spendForAction(this.state.attention, fallbackAction.kind, this.soul.frontmatter.attentionProfile?.floor);
         return {
             actions: [visiblePulse, fallbackAction],
             cause: 'watchdog_fallback',
@@ -353,7 +354,7 @@ export class Spark {
             return planned.complete ? { actions: [], cause: planned.cause, nooped: true } : undefined;
         }
 
-        this.state.attention = spendForAction(this.state.attention, planned.action.kind);
+        this.state.attention = spendForAction(this.state.attention, planned.action.kind, this.soul.frontmatter.attentionProfile?.floor);
         return { actions: [planned.action], cause: this.activePlan?.cause, nooped: false };
     }
 

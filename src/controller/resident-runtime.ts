@@ -223,6 +223,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         this.state.attention = spendAttention(
             this.state.attention,
             this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
+            1,
+            // E30 / HD-008: per-tick decay respects the optional soul floor
+            // so heroes never die from idle decay alone.
+            this.options.soul.frontmatter.attentionProfile?.floor,
         );
 
         const attentionExhaustedThisTick = this.state.attention <= 0 && !this.state.deceased;

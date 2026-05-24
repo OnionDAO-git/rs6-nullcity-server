@@ -8,6 +8,7 @@ model:
 attentionProfile:
   startingAttention: 5000
   decayCurve: gentle
+  floor: 3000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
 legacy:
   kind: mentor
   parameters:

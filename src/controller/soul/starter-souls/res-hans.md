@@ -24,6 +24,7 @@ aesthetic: worn linen tunic, mud on the boots, an easy crook in the smile
 attentionProfile:
   startingAttention: 14000
   decayCurve: standard
+  floor: 5000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
 # bumped from 6000 → 14000 on 2026-05-24 after live-verification found heroes died in ~1-2h unattended. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero
