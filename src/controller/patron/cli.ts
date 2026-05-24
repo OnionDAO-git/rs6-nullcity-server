@@ -1,5 +1,7 @@
 import fs from 'fs';
 import path from 'path';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { loadControllerConfig } from '../config';
 import { PatronStore } from './patron-store';
 import { PatronGateway } from './patron-gateway';
@@ -18,6 +20,31 @@ export interface PatronCliOptions {
     text: string;
     artifact: string;
     configPath: string;
+}
+
+export interface RunningControllerAskInput {
+    url: string;
+    token: string;
+    humanId: string;
+    residentName: string;
+    text: string;
+}
+
+export interface RunningControllerAskResult {
+    ok: boolean;
+    eventId: string;
+    enqueued: boolean;
+    error?: string;
+}
+
+export interface PatronCliRuntimeDeps {
+    env?: Record<string, string | undefined>;
+    askRunningController?: (input: RunningControllerAskInput) => Promise<RunningControllerAskResult>;
+}
+
+export interface FindRecentSayOptions {
+    cause?: string;
+    textIncludes?: string;
 }
 
 export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
@@ -124,6 +151,69 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
     return options;
 }
 
+export async function askRunningControllerViaMcp(input: RunningControllerAskInput): Promise<RunningControllerAskResult> {
+    const client = new Client({ name: 'nullcity-patron-cli', version: '0.1.0' });
+    await client.connect(
+        new StreamableHTTPClientTransport(new URL(input.url), {
+            requestInit: { headers: { Authorization: `Bearer ${input.token}` } },
+        }),
+    );
+    try {
+        const result = await client.callTool({
+            name: 'patron_ask',
+            arguments: {
+                human: input.humanId,
+                resident: input.residentName,
+                text: input.text,
+            },
+        });
+        const text = firstTextContent(result);
+        return JSON.parse(text) as RunningControllerAskResult;
+    } finally {
+        await client.close();
+    }
+}
+
+function mcpAskConfigFromEnv(env: Record<string, string | undefined>): Pick<RunningControllerAskInput, 'url' | 'token'> | undefined {
+    const token = env.CONTROLLER_MCP_TOKEN || firstToken(env.CONTROLLER_MCP_TOKENS);
+    if (!token) {
+        return undefined;
+    }
+    const explicitUrl = env.CONTROLLER_MCP_HTTP_URL;
+    if (explicitUrl) {
+        return { url: explicitUrl, token };
+    }
+    const port = env.CONTROLLER_MCP_HTTP_PORT;
+    if (!port) {
+        return undefined;
+    }
+    const host = env.CONTROLLER_MCP_HTTP_HOST || '127.0.0.1';
+    const routePath = env.CONTROLLER_MCP_HTTP_PATH || '/controller/mcp';
+    const normalizedPath = routePath.startsWith('/') ? routePath : `/${routePath}`;
+    return { url: `http://${host}:${port}${normalizedPath}`, token };
+}
+
+function firstToken(value: string | undefined): string | undefined {
+    return value
+        ?.split(',')
+        .map(token => token.trim())
+        .filter(Boolean)[0];
+}
+
+function firstTextContent(value: unknown): string {
+    const content = (value as { content?: Array<{ text?: string }> }).content || [];
+    const first = content.find(item => typeof item.text === 'string');
+    if (!first?.text) {
+        throw new Error('patron_ask returned no text content');
+    }
+    return first.text;
+}
+
+function normalizeResidentName(name: string): string {
+    const withoutGatewayPrefix = name.startsWith('resident:') ? name.slice('resident:'.length) : name;
+    return withoutGatewayPrefix.startsWith('res:') ? withoutGatewayPrefix : `res:${withoutGatewayPrefix}`;
+}
+
 interface ResidentRuntimeBundle {
     residentName: string;
     runtimes: Map<string, any>;
@@ -137,7 +227,7 @@ interface ResidentRuntimeBundle {
  * Build the patron-CLI "mock runtime" sandbox used by every verb that targets
  * a specific resident (offer / ask / witness). This is a thin wrapper around
  * the SoulLoader + RuntimeStateStore + EvidenceStore stack that the
- * ControllerHost normally wires together — extracted so the four verbs share
+ * ControllerHost normally wires together - extracted so the four verbs share
  * the same wiring instead of each rebuilding it ad-hoc.
  */
 function buildResidentBundle(
@@ -232,37 +322,42 @@ function buildResidentBundle(
  * landed AFTER `sinceTs`. Used by the ask verb to surface "did the resident
  * reply?" to the patron at the terminal. Returns null when nothing matches.
  *
- * NOTE: this is best-effort. The ask verb does NOT synthesize a chat
- * perception event onto the runtime queue (that would require touching
- * resident-runtime.ts, Codex zone). The Brain only sees the question on its
- * NEXT wake, via the library-timeline memory rendering — so the most common
- * outcome at CLI time is `null` (no fresh say yet). This is documented as
- * the chat-synthesis coordination gap.
+ * This is best-effort. Current controllers write trajectory lines under
+ * `memory/<resident>/evidence/trajectory/current`; older CLI-only bundles
+ * used one trajectory file per legacy session directory. Scan both so the
+ * terminal can surface a live reply when the MCP path injects the ask into a
+ * running controller, while preserving the offline fallback.
  */
-function findRecentSay(memoryDir: string, residentName: string, sinceTs: string): string | null {
+export function findRecentSay(
+    memoryDir: string,
+    residentName: string,
+    sinceTs: string,
+    options: FindRecentSayOptions = {},
+): string | null {
     const slug = residentSlug(residentName);
-    const trajectoryRoot = path.join(memoryDir, slug, 'sessions');
-    if (!fs.existsSync(trajectoryRoot)) {
-        return null;
-    }
-    const sessionDirs = fs.readdirSync(trajectoryRoot).filter(name => {
-        try {
-            return fs.statSync(path.join(trajectoryRoot, name)).isDirectory();
-        } catch {
-            return false;
-        }
-    });
+    const candidates = recentTrajectoryCandidates(memoryDir, slug);
     let latestSay: { text: string; ts: string } | null = null;
-    for (const sessionDir of sessionDirs) {
-        const trajectoryPath = path.join(trajectoryRoot, sessionDir, 'trajectory.jsonl');
+    for (const trajectoryPath of candidates) {
         if (!fs.existsSync(trajectoryPath)) {
             continue;
         }
         const lines = fs.readFileSync(trajectoryPath, 'utf8').split('\n').filter(Boolean);
         for (const line of lines) {
             try {
-                const entry = JSON.parse(line) as { kind?: string; text?: string; ts?: string };
-                if (entry.kind === 'say' && typeof entry.text === 'string' && typeof entry.ts === 'string' && entry.ts > sinceTs) {
+                const entry = JSON.parse(line) as {
+                    kind?: string;
+                    text?: string;
+                    ts?: string;
+                    cause?: string;
+                    action?: { cause?: string };
+                };
+                if (
+                    entry.kind === 'say' &&
+                    typeof entry.text === 'string' &&
+                    typeof entry.ts === 'string' &&
+                    entry.ts > sinceTs &&
+                    matchesRecentSayOptions(entry, options)
+                ) {
                     if (!latestSay || entry.ts > latestSay.ts) {
                         latestSay = { text: entry.text, ts: entry.ts };
                     }
@@ -275,7 +370,91 @@ function findRecentSay(memoryDir: string, residentName: string, sinceTs: string)
     return latestSay?.text ?? null;
 }
 
-export async function runPatronCli(argv: string[]): Promise<number> {
+function matchesRecentSayOptions(
+    entry: { text?: string; cause?: string; action?: { cause?: string } },
+    options: FindRecentSayOptions,
+): boolean {
+    if (options.cause && entry.cause !== options.cause && entry.action?.cause !== options.cause) {
+        return false;
+    }
+    if (options.textIncludes && !entry.text?.includes(options.textIncludes)) {
+        return false;
+    }
+    return true;
+}
+
+function recentTrajectoryCandidates(memoryDir: string, slug: string): string[] {
+    const candidates: string[] = [];
+    const evidenceRoot = path.join(memoryDir, slug, 'evidence');
+    const evidenceTrajectoryDir = path.join(evidenceRoot, 'trajectory');
+    const currentTrajectoryPath = path.join(evidenceTrajectoryDir, 'current');
+    if (fs.existsSync(currentTrajectoryPath)) {
+        candidates.push(resolveCurrentTrajectoryPath(currentTrajectoryPath, evidenceTrajectoryDir));
+    }
+
+    const indexPath = path.join(evidenceRoot, 'index.json');
+    if (fs.existsSync(indexPath)) {
+        try {
+            const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
+                currentSessionId?: string;
+                sessions?: Array<{ sessionId?: string; trajectoryPath?: string }>;
+            };
+            const current =
+                index.sessions?.find(session => session.sessionId === index.currentSessionId) || index.sessions?.[index.sessions.length - 1];
+            if (current?.trajectoryPath) {
+                candidates.push(path.join(evidenceRoot, current.trajectoryPath));
+            }
+        } catch {
+            // ignore corrupt evidence indexes; the legacy path may still work.
+        }
+    }
+
+    const trajectoryRoot = path.join(memoryDir, slug, 'sessions');
+    if (!fs.existsSync(trajectoryRoot)) {
+        return uniquePaths(candidates);
+    }
+    const sessionDirs = fs.readdirSync(trajectoryRoot).filter(name => {
+        try {
+            return fs.statSync(path.join(trajectoryRoot, name)).isDirectory();
+        } catch {
+            return false;
+        }
+    });
+    for (const sessionDir of sessionDirs) {
+        const trajectoryPath = path.join(trajectoryRoot, sessionDir, 'trajectory.jsonl');
+        candidates.push(trajectoryPath);
+    }
+    return uniquePaths(candidates);
+}
+
+function resolveCurrentTrajectoryPath(currentPath: string, trajectoryDir: string): string {
+    try {
+        if (fs.lstatSync(currentPath).isSymbolicLink()) {
+            return fs.realpathSync(currentPath);
+        }
+        const maybeTarget = fs.readFileSync(currentPath, 'utf8').trim();
+        if (maybeTarget && !maybeTarget.startsWith('{')) {
+            return path.join(trajectoryDir, maybeTarget);
+        }
+        return currentPath;
+    } catch {
+        try {
+            const maybeTarget = fs.readFileSync(currentPath, 'utf8').trim();
+            if (maybeTarget && !maybeTarget.startsWith('{')) {
+                return path.join(trajectoryDir, maybeTarget);
+            }
+        } catch {
+            // fall through to the original path.
+        }
+        return currentPath;
+    }
+}
+
+function uniquePaths(paths: string[]): string[] {
+    return [...new Set(paths)];
+}
+
+export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = {}): Promise<number> {
     try {
         const options = parsePatronCliArgs(argv);
         const config = loadControllerConfig(options.configPath);
@@ -322,8 +501,41 @@ export async function runPatronCli(argv: string[]): Promise<number> {
         }
 
         if (options.action === 'ask') {
-            const bundle = buildResidentBundle(options, config, store, 'ask');
+            const residentName = normalizeResidentName(options.residentName);
             const startedAt = new Date().toISOString();
+            const liveConfig = mcpAskConfigFromEnv(deps.env || process.env);
+            if (liveConfig) {
+                const askRunningController = deps.askRunningController || askRunningControllerViaMcp;
+                const outcome = await askRunningController({
+                    ...liveConfig,
+                    humanId: options.humanId,
+                    residentName,
+                    text: options.text,
+                });
+
+                if (!outcome.ok || !outcome.enqueued) {
+                    throw new Error(`Live ask failed: ${outcome.error || 'not_enqueued'}`);
+                }
+
+                console.log(`[patron:ask] Live controller enqueued the question.`);
+                console.log(`[patron:ask] Resident: "${residentName}"`);
+                console.log(`[patron:ask] Human: "${options.humanId}"`);
+                console.log(`[patron:ask]   "${options.text}"`);
+                console.log(`[patron:ask] Event ID: ${outcome.eventId}`);
+
+                const reply = await pollRecentSay(config.memory.dir, residentName, startedAt, {
+                    cause: 'nervous:patron-ask-acknowledge',
+                    textIncludes: options.humanId,
+                });
+                if (reply) {
+                    console.log(`[patron:ask] Resident replied: "${reply}"`);
+                } else {
+                    console.log(`[patron:ask] No response captured within 5000ms. Check the dashboard trajectory for the live ask.`);
+                }
+                return 0;
+            }
+
+            const bundle = buildResidentBundle(options, config, store, 'ask');
 
             const outcome = await bundle.gateway.askResident(options.humanId, bundle.residentName, options.text);
 
@@ -335,27 +547,12 @@ export async function runPatronCli(argv: string[]): Promise<number> {
                 console.log(`[patron:ask]   "${options.text}"`);
                 console.log(`[patron:ask] Event ID: ${outcome.eventId}`);
 
-                // Best-effort: poll trajectory briefly for a fresh `say`.
-                // Substrate-only: this won't typically capture a reply because
-                // the chat perception event is NOT yet synthesized onto the
-                // runtime queue (Codex-zone coordination gap). We still poll
-                // so that, once the synthesis lands, this code path "just
-                // works" without changes to the CLI.
-                const pollTimeoutMs = 5000;
-                const pollIntervalMs = 250;
-                const deadline = Date.now() + pollTimeoutMs;
-                let reply: string | null = null;
-                while (Date.now() < deadline) {
-                    reply = findRecentSay(config.memory.dir, bundle.residentName, startedAt);
-                    if (reply) break;
-                    await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
-                }
-
+                const reply = await pollRecentSay(config.memory.dir, bundle.residentName, startedAt);
                 if (reply) {
                     console.log(`[patron:ask] Resident replied: "${reply}"`);
                 } else {
                     console.log(
-                        `[patron:ask] No response captured within ${pollTimeoutMs}ms. The question was recorded; the Brain will see it on next wake.`,
+                        `[patron:ask] No response captured within 5000ms. The question was recorded; the Brain will see it on next wake.`,
                     );
                 }
                 return 0;
@@ -399,6 +596,26 @@ export async function runPatronCli(argv: string[]): Promise<number> {
         console.error(`[patron:cli] ${error instanceof Error ? error.message : String(error)}`);
         return 1;
     }
+}
+
+async function pollRecentSay(
+    memoryDir: string,
+    residentName: string,
+    startedAt: string,
+    options: FindRecentSayOptions = {},
+): Promise<string | null> {
+    const pollTimeoutMs = 5000;
+    const pollIntervalMs = 250;
+    const deadline = Date.now() + pollTimeoutMs;
+    let reply: string | null = null;
+    while (Date.now() < deadline) {
+        reply = findRecentSay(memoryDir, residentName, startedAt, options);
+        if (reply) {
+            break;
+        }
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+    }
+    return reply;
 }
 
 if (require.main === module) {

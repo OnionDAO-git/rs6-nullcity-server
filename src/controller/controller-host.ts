@@ -17,6 +17,7 @@ import { PatronGateway } from './patron/patron-gateway';
 import { CurrencyLedger } from './patron/currency-ledger';
 import { StandingLedger } from './patron/standing-ledger';
 import { LettersStore } from './patron/letters-store';
+import type { PerceptionEvent } from './transport/message-codecs';
 
 export interface ControllerHostOptions {
     once?: boolean;
@@ -113,6 +114,7 @@ export class ControllerHost {
                 runtimes: this.runtimes,
                 soulsDir: config.souls.dir,
                 lettersStore: new LettersStore(config.memory.dir),
+                memoryDir: config.memory.dir,
             });
         this.bindGatewayEvents();
     }
@@ -161,6 +163,15 @@ export class ControllerHost {
 
     public getRuntime(name: string): ResidentRuntime | undefined {
         return this.runtimes.get(name);
+    }
+
+    public enqueuePerceptionEvent(residentName: string, event: PerceptionEvent): boolean {
+        const runtime = this.runtimes.get(this.runtimeName(residentName));
+        if (!runtime) {
+            return false;
+        }
+        runtime.onEvent(event);
+        return true;
     }
 
     async reconcile(): Promise<void> {

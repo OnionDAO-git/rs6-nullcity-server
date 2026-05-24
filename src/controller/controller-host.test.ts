@@ -114,6 +114,45 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('enqueues external perception events onto a running runtime', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) });
+
+        await host.start();
+        const event = { kind: 'chat', text: 'Can you hear me?', from: { name: 'hd035-smoke' } };
+
+        expect(host.enqueuePerceptionEvent('res:pip', event)).toBe(true);
+        expect(runtime.onEvent).toHaveBeenCalledWith(event);
+
+        await host.stop();
+    });
+
+    it('normalizes resident-prefixed ids when enqueuing external perception events', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) });
+
+        await host.start();
+        const event = { kind: 'chat', text: 'Still there?', from: { name: 'hd035-smoke' } };
+
+        expect(host.enqueuePerceptionEvent('resident:res:pip', event)).toBe(true);
+        expect(runtime.onEvent).toHaveBeenCalledWith(event);
+
+        await host.stop();
+    });
+
+    it('returns false when enqueuing an external event for a missing runtime', async () => {
+        const gateway = new FakeGateway();
+        const host = new ControllerHost(config(), dependencies(gateway));
+
+        await host.start();
+
+        expect(host.enqueuePerceptionEvent('res:missing', { kind: 'chat', text: 'hello' })).toBe(false);
+
+        await host.stop();
+    });
+
     it('passes starter items from the soul when creating a resident', async () => {
         const gateway = new FakeGateway();
         const deps = dependencies(gateway);
@@ -359,6 +398,15 @@ describe('ControllerHost patron wiring (EVENT-D1a)', () => {
         expect(wiredStore).toBeInstanceOf(LettersStore);
     });
 
+    it('constructs PatronGateway with memory.dir so host-side patron asks write Library timeline events', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+
+        expect(memoryDirOf(host.patronGateway)).toBe(tmpMemory);
+    });
+
     it('round-trips a Letter through the wired LettersStore at the same memory.dir', () => {
         const gateway = new FakeGateway();
         const cfg = config();
@@ -402,6 +450,10 @@ describe('ControllerHost patron wiring (EVENT-D1a)', () => {
 // into the gateway's private options to verify the wiring we care about.
 function lettersStoreOf(gateway: ControllerHost['patronGateway']): LettersStore | undefined {
     return (gateway as unknown as { options: { lettersStore?: LettersStore } }).options.lettersStore;
+}
+
+function memoryDirOf(gateway: ControllerHost['patronGateway']): string | undefined {
+    return (gateway as unknown as { options: { memoryDir?: string } }).options.memoryDir;
 }
 
 function dependencies(gateway: FakeGateway): ControllerHostOptions {

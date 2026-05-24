@@ -9,6 +9,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { ControllerHost } from '../controller-host';
 import { z } from 'zod';
 import { RoutineRunner, type RoutineCapableRuntime, type RoutineId, type RunRoutineResponse } from '../routines/routine-runner';
+import type { PerceptionEvent } from '../transport/message-codecs';
 
 export interface McpCallLogEntry {
     operator: string;
@@ -361,6 +362,50 @@ export class ControllerMcpServer {
             },
         );
 
+        server.tool(
+            'patron_ask',
+            'Ask a running resident a patron question and enqueue it as live chat perception',
+            {
+                human: z.string().min(1).describe('Human or patron handle asking the question'),
+                resident: z.string().min(1).describe('Resident name, with or without res: prefix'),
+                text: z.string().min(1).max(240).describe('Question or message to deliver to the resident'),
+            },
+            async ({ human, resident, text }) => {
+                const residentName = normalizeResidentName(resident);
+                const outcome = await this.host.patronGateway.askResident(human, residentName, text);
+                if (!outcome.ok) {
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify({
+                                    ok: false,
+                                    eventId: outcome.eventId,
+                                    enqueued: false,
+                                    error: outcome.error || 'ask_failed',
+                                }),
+                            },
+                        ],
+                    };
+                }
+
+                const enqueued = this.host.enqueuePerceptionEvent(residentName, patronAskChatEvent(human, text));
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify({
+                                ok: enqueued,
+                                eventId: outcome.eventId,
+                                enqueued,
+                                ...(enqueued ? {} : { error: 'resident_not_found' }),
+                            }),
+                        },
+                    ],
+                };
+            },
+        );
+
         return server;
     }
 
@@ -452,6 +497,35 @@ function paramsForWorkflowCard(mapping: WorkflowCardRoutineMapping, params: unkn
         return { ...mapping.defaultParams, ...(params as Record<string, unknown>) };
     }
     return mapping.defaultParams;
+}
+
+function normalizeResidentName(name: string): string {
+    const withoutGatewayPrefix = name.startsWith('resident:') ? name.slice('resident:'.length) : name;
+    return withoutGatewayPrefix.startsWith('res:') ? withoutGatewayPrefix : `res:${withoutGatewayPrefix}`;
+}
+
+function patronAskChatEvent(human: string, text: string): PerceptionEvent {
+    return {
+        kind: 'chat',
+        source: 'patron:ask',
+        from: {
+            id: `player:${safeActorId(human)}`,
+            kind: 'player',
+            name: human,
+            position: { x: 0, y: 0, level: 0 },
+        },
+        text,
+        to: 'public',
+        ts: new Date().toISOString(),
+    };
+}
+
+function safeActorId(value: string): string {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9:_-]+/g, '-')
+        .replace(/^-+|-+$/g, '');
 }
 
 function residentNameFromTemplateVariable(value: string | string[] | undefined): string {

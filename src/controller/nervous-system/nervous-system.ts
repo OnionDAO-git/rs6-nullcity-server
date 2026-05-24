@@ -41,6 +41,11 @@ export class NervousSystem {
             };
         }
 
+        const patronAsk = this.patronAskReaction(perception);
+        if (patronAsk) {
+            return patronAsk;
+        }
+
         if (this.options.patronRegistry && Array.isArray(perception.events)) {
             for (const event of perception.events) {
                 if (event.kind === 'chat' && typeof event.text === 'string' && event.from && typeof event.from === 'object') {
@@ -92,6 +97,49 @@ export class NervousSystem {
 
         const memoryDir = this.options.memory.ensureResident(this.options.soul.frontmatter.name);
         return evaluateNervousRules(this.rules(memoryDir), this.options.state, perception, this.options.state.variables || {});
+    }
+
+    private patronAskReaction(perception: Perception): NervousReaction | undefined {
+        if (!Array.isArray(perception.events)) {
+            return undefined;
+        }
+
+        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        for (const event of perception.events) {
+            if (event.kind !== 'chat' || event.source !== 'patron:ask' || !event.from || typeof event.from !== 'object') {
+                continue;
+            }
+            const fromName = 'name' in event.from && typeof event.from.name === 'string' ? event.from.name : undefined;
+            if (!fromName) {
+                continue;
+            }
+
+            const cooldownKey = `patron-ask-acknowledge:${fromName.toLowerCase()}`;
+            const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
+            if (coolingUntil > tick) {
+                continue;
+            }
+
+            this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+            this.options.state.hookCooldowns[cooldownKey] = tick + 10;
+            const message = `I heard you, ${fromName}. I will answer what I can while I keep moving.`;
+            const rule: NervousRule = {
+                id: `patron-ask-acknowledge-${stableKey(fromName)}`,
+                priority: 94,
+                condition: { kind: 'always' },
+                action: { kind: 'say', text: message },
+                source: 'system',
+            };
+
+            return {
+                rule,
+                action: { kind: 'say', text: message, cause: 'nervous:patron-ask-acknowledge' },
+                suppressThinking: true,
+                interruptThinking: true,
+            };
+        }
+
+        return undefined;
     }
 
     private patronMemoryReaction(perception: Perception): NervousReaction | undefined {

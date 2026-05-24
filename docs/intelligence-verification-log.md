@@ -1600,3 +1600,30 @@ Optional 7th gap: no ingredient-gathering routines (windmill recipe / dairy cow 
 
 **Owner suggestion.** Wire-in — claude or Codex when controller index.ts is next touched. HD-034 closes when both #1 (this) + #3 (free-form say renderer, Codex zone) ship.
 
+---
+
+### E27 — HD-035 live `patron:ask` immediate resident acknowledgement
+
+**Status:** RESOLVED-by-codex — live MCP ask reaches the running resident and creates visible proof
+**Tier:** 1 (live gameplay/operator UX)
+**Date:** 2026-05-24 20:05 codex
+
+**Hypothesis.** `patron:ask` should behave like a real human prompt, not just a timeline note. A patron/operator should be able to ask `res:agent` a question and see the resident react immediately in CLI output, Library timeline, trajectory evidence, and dashboard.
+
+**Implementation.**
+- Added `ControllerHost.enqueuePerceptionEvent(residentName, event)` so out-of-band operator surfaces can deliver live perception to a running resident.
+- Added Controller MCP tool `patron_ask`: it calls `PatronGateway.askResident(...)` to persist the Library event, then injects a synthetic `chat` event with `source: "patron:ask"`.
+- Updated `npm run patron:ask` to use the running controller MCP route when `CONTROLLER_MCP_HTTP_PORT` + token env are present, while preserving the offline timeline-only fallback.
+- Added a no-inference Nervous reaction for `source=patron:ask` chat events so the resident says an immediate acknowledgement even when `controller.yml` has no `patrons:` block.
+- Hardened review findings: cooled-down asks no longer suppress later fresh humans in the same perception batch; CLI reply polling filters by `nervous:patron-ask-acknowledge` plus the human handle so unrelated nearby speech is not reported as the answer.
+
+**Observation.**
+- Unit/focused proof: `npm test -- --runInBand src/controller/controller-host.test.ts src/controller/mcp/server.test.ts src/controller/patron/cli.test.ts src/controller/nervous-system/nervous-system.test.ts` → 79/79 passing.
+- Full proof: `npm run typecheck`, `npm run lint`, `npm run build`, and full `npm test -- --runInBand` → 151 suites / 1631 tests passing.
+- Live proof: restarted controller as `local-41249` with `--mcp-http-port=43610 --letters-http-port=43596 --wall-redact`, then ran `CONTROLLER_MCP_HTTP_PORT=43610 CONTROLLER_MCP_TOKENS=operator-token npm run patron:ask -- --human hd035-second --resident res:agent --text "Can you prove the updated live ask path still reaches you?" -c controller.yml`.
+- CLI printed the resident reply: `I heard you, hd035-second. I will answer what I can while I keep moving.`
+- Library timeline contains `kind:"patron_ask"` for `hd035-second` followed by the resident `say`.
+- Active trajectory contains `kind:"say"` with `cause:"nervous:patron-ask-acknowledge"` plus a successful `action_result` with `chat_observed` evidence.
+- Dashboard `/observe/resident/res%3Aagent` showed `SPARK Module onion.runescape.standard@0.1.0`, runtime online, and Nervous System `Last Reaction: say`, `rule patron-ask-acknowledge-hd035-second`.
+
+**Classification.** **RESOLVED** for the operator/patron ask loop. Remaining UX polish is broader F2/G5 work: manual human web-client confirmation for ordinary nearby chat and richer LLM answer content after the immediate acknowledgement.

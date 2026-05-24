@@ -88,6 +88,75 @@ describe('NervousSystem', () => {
 
         expect(reaction?.action).toEqual({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' });
     });
+
+    it('acknowledges live patron:ask chat events without requiring inference or patron registry config', () => {
+        const system = new NervousSystem({
+            soul: soul(),
+            state: runtimeState(42),
+            memory: memoryWith([]),
+        });
+
+        const reaction = system.react({
+            ...healthyPerception(42),
+            events: [
+                {
+                    kind: 'chat',
+                    source: 'patron:ask',
+                    from: { name: 'hd035-smoke' },
+                    text: 'Can you answer from the live controller?',
+                },
+            ],
+        });
+
+        expect(reaction?.action).toEqual({
+            kind: 'say',
+            text: 'I heard you, hd035-smoke. I will answer what I can while I keep moving.',
+            cause: 'nervous:patron-ask-acknowledge',
+        });
+        expect(reaction?.suppressThinking).toBe(true);
+        expect(reaction?.interruptThinking).toBe(true);
+    });
+
+    it('cooldowns repeated live patron:ask acknowledgements from the same human', () => {
+        const state = runtimeState(42);
+        const system = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+        const perception = {
+            ...healthyPerception(42),
+            events: [{ kind: 'chat', source: 'patron:ask', from: { name: 'hd035-smoke' }, text: 'Still there?' }],
+        };
+
+        expect(system.react(perception)?.action.kind).toBe('say');
+
+        state.tick = 43;
+        expect(system.react({ ...perception, tick: 43 })).toBeUndefined();
+    });
+
+    it('skips cooled-down patron asks and acknowledges a later fresh human in the same perception', () => {
+        const state = runtimeState(42);
+        const system = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+        expect(
+            system.react({
+                ...healthyPerception(42),
+                events: [{ kind: 'chat', source: 'patron:ask', from: { name: 'hd035-smoke' }, text: 'First?' }],
+            })?.action.kind,
+        ).toBe('say');
+
+        state.tick = 43;
+        const reaction = system.react({
+            ...healthyPerception(43),
+            events: [
+                { kind: 'chat', source: 'patron:ask', from: { name: 'hd035-smoke' }, text: 'Repeat?' },
+                { kind: 'chat', source: 'patron:ask', from: { name: 'new-helper' }, text: 'Fresh ask?' },
+            ],
+        });
+
+        expect(reaction?.action).toEqual({
+            kind: 'say',
+            text: 'I heard you, new-helper. I will answer what I can while I keep moving.',
+            cause: 'nervous:patron-ask-acknowledge',
+        });
+    });
 });
 
 function soul(): Soul {

@@ -519,6 +519,110 @@ describe('ControllerMcpServer', () => {
         });
     });
 
+    describe('patron_ask tool', () => {
+        beforeEach(() => {
+            mockHost.patronGateway = {
+                askResident: jest.fn().mockResolvedValue({ ok: true, eventId: 'ask-james-res:pip-123' }),
+            };
+            mockHost.enqueuePerceptionEvent = jest.fn().mockReturnValue(true);
+        });
+
+        it('is registered under name patron_ask with correct properties', () => {
+            const mcpServer = serverInstance.createServer();
+            const registeredTools = (mcpServer as any)._registeredTools;
+
+            const tool = registeredTools.patron_ask;
+            expect(tool).toBeDefined();
+            expect(tool.description).toContain('Ask a running resident');
+            expect(tool.inputSchema).toBeDefined();
+        });
+
+        it('records the ask and enqueues a synthetic chat event on the running resident', async () => {
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.patron_ask;
+
+            const result = await tool.handler({
+                human: 'hd035-smoke',
+                resident: 'pip',
+                text: 'Can you answer me right now?',
+            });
+
+            expect(mockHost.patronGateway.askResident).toHaveBeenCalledWith(
+                'hd035-smoke',
+                'res:pip',
+                'Can you answer me right now?',
+            );
+            expect(mockHost.enqueuePerceptionEvent).toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({
+                    kind: 'chat',
+                    text: 'Can you answer me right now?',
+                    to: 'public',
+                    source: 'patron:ask',
+                    from: expect.objectContaining({
+                        id: 'player:hd035-smoke',
+                        kind: 'player',
+                        name: 'hd035-smoke',
+                        position: { x: 0, y: 0, level: 0 },
+                    }),
+                }),
+            );
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed).toEqual(
+                expect.objectContaining({
+                    ok: true,
+                    eventId: 'ask-james-res:pip-123',
+                    enqueued: true,
+                }),
+            );
+        });
+
+        it('does not enqueue when PatronGateway rejects the ask', async () => {
+            mockHost.patronGateway.askResident.mockResolvedValueOnce({
+                ok: false,
+                eventId: '',
+                error: 'resident_not_found',
+            });
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.patron_ask;
+
+            const result = await tool.handler({
+                human: 'hd035-smoke',
+                resident: 'missing',
+                text: 'Anyone home?',
+            });
+
+            expect(mockHost.enqueuePerceptionEvent).not.toHaveBeenCalled();
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed).toEqual({
+                ok: false,
+                eventId: '',
+                enqueued: false,
+                error: 'resident_not_found',
+            });
+        });
+
+        it('reports enqueue failure when the runtime disappears after recording the ask', async () => {
+            mockHost.enqueuePerceptionEvent.mockReturnValueOnce(false);
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.patron_ask;
+
+            const result = await tool.handler({
+                human: 'hd035-smoke',
+                resident: 'res:pip',
+                text: 'Did this reach you?',
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed).toEqual({
+                ok: false,
+                eventId: 'ask-james-res:pip-123',
+                enqueued: false,
+                error: 'resident_not_found',
+            });
+        });
+    });
+
     describe('Plan RB-MCP-ε run_workflow_card tool', () => {
         const logFilePath = path.join(process.cwd(), 'data', 'mcp-call-log.jsonl');
 

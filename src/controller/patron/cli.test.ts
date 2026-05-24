@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { runPatronCli, parsePatronCliArgs } from './cli';
+import { findRecentSay, runPatronCli, parsePatronCliArgs } from './cli';
 
 describe('Patron CLI', () => {
     let tempDir: string;
@@ -280,6 +280,49 @@ describe('Patron CLI', () => {
             logSpy.mockRestore();
         }, 10000);
 
+        it('ask uses the running controller MCP route when configured', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const askRunningController = jest.fn(async () => ({
+                ok: true,
+                eventId: 'ask-live-1',
+                enqueued: true,
+            }));
+
+            const code = await runPatronCli(
+                [
+                    '--ask',
+                    '--human',
+                    'james',
+                    '--resident',
+                    'pip',
+                    '--text',
+                    'Can you answer from the live controller?',
+                    '-c',
+                    configPath,
+                ],
+                {
+                    env: {
+                        CONTROLLER_MCP_HTTP_PORT: '43594',
+                        CONTROLLER_MCP_TOKENS: 'operator-token',
+                    },
+                    askRunningController,
+                },
+            );
+
+            expect(code).toBe(0);
+            expect(askRunningController).toHaveBeenCalledWith({
+                url: 'http://127.0.0.1:43594/controller/mcp',
+                token: 'operator-token',
+                humanId: 'james',
+                residentName: 'res:pip',
+                text: 'Can you answer from the live controller?',
+            });
+            expect(fs.existsSync(path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl'))).toBe(false);
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:ask] Live controller enqueued the question.'));
+
+            logSpy.mockRestore();
+        }, 10000);
+
         it('ask fails when --text is empty / whitespace-only', async () => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -395,6 +438,63 @@ describe('Patron CLI', () => {
             expect(code).toBe(1);
 
             errSpy.mockRestore();
+        });
+    });
+
+    describe('findRecentSay', () => {
+        it('finds fresh say lines in the active evidence trajectory path', () => {
+            const trajectoryDir = path.join(memoryDir, 'res-pip', 'evidence', 'trajectory');
+            fs.mkdirSync(trajectoryDir, { recursive: true });
+            const trajectoryPath = path.join(trajectoryDir, '20260524T200000Z-session.jsonl');
+            fs.writeFileSync(
+                trajectoryPath,
+                [
+                    JSON.stringify({ kind: 'say', ts: '2026-05-24T19:59:59.000Z', text: 'old line' }),
+                    JSON.stringify({ kind: 'say', ts: '2026-05-24T20:00:02.000Z', text: 'fresh live reply' }),
+                ].join('\n') + '\n',
+                'utf8',
+            );
+            fs.symlinkSync(path.basename(trajectoryPath), path.join(trajectoryDir, 'current'));
+
+            expect(findRecentSay(memoryDir, 'res:pip', '2026-05-24T20:00:00.000Z')).toBe('fresh live reply');
+        });
+
+        it('can filter live ask replies so unrelated speech is not mistaken for an answer', () => {
+            const trajectoryDir = path.join(memoryDir, 'res-pip', 'evidence', 'trajectory');
+            fs.mkdirSync(trajectoryDir, { recursive: true });
+            const trajectoryPath = path.join(trajectoryDir, '20260524T201000Z-session.jsonl');
+            fs.writeFileSync(
+                trajectoryPath,
+                [
+                    JSON.stringify({
+                        kind: 'say',
+                        ts: '2026-05-24T20:10:01.000Z',
+                        text: 'I am scouting nearby trees.',
+                        cause: 'spark:goal-share',
+                    }),
+                    JSON.stringify({
+                        kind: 'say',
+                        ts: '2026-05-24T20:10:02.000Z',
+                        text: 'I heard you, hd035-smoke. I will answer what I can while I keep moving.',
+                        action: { cause: 'nervous:patron-ask-acknowledge' },
+                    }),
+                    JSON.stringify({
+                        kind: 'say',
+                        ts: '2026-05-24T20:10:03.000Z',
+                        text: 'Another unrelated later line.',
+                        cause: 'spark:goal-share',
+                    }),
+                ].join('\n') + '\n',
+                'utf8',
+            );
+            fs.symlinkSync(path.basename(trajectoryPath), path.join(trajectoryDir, 'current'));
+
+            expect(
+                findRecentSay(memoryDir, 'res:pip', '2026-05-24T20:10:00.000Z', {
+                    cause: 'nervous:patron-ask-acknowledge',
+                    textIncludes: 'hd035-smoke',
+                }),
+            ).toBe('I heard you, hd035-smoke. I will answer what I can while I keep moving.');
         });
     });
 });
