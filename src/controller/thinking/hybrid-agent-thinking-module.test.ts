@@ -4824,6 +4824,73 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('eats carried food before non-combat goal beacons when low on health', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Practice firemaking.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'eat', slot: 0, cause: 'low_health_eat' }]);
+        expect(result.cause).toBe('low_health_eat');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('mentions the need for food or healing in goal beacons when low on health without food', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Practice scouting.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(result.cause).toBe('presence_beacon');
+        expect(result.actions[0]).toEqual({
+            kind: 'say',
+            text: 'I am online at 3218,3201. Goal: Practice scouting. Need: food or time to heal before fighting.',
+        });
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('starts beaconing benchmark-seeded goals after the first share interval', async () => {
         const fishingSpot = npc('Fishing spot', 3219, 3201);
         const llm = scriptedLlm([]);

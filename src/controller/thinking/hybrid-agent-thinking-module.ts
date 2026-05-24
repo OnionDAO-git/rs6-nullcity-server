@@ -42,6 +42,7 @@ import {
     isUsefulGroundItem,
     itemLabel,
     levelOneWoodcuttingAction,
+    lowHealthRecoveryAction as bodyLowHealthRecoveryAction,
     nearestPrayerTrainingWaypoint,
     normalizeActorId,
     npcTalkAction,
@@ -247,6 +248,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             if ((perception as HybridPerception).resident?.busy) {
                 return { actions: [], cause: 'resident_busy', nooped: true };
+            }
+
+            const lowHealthRecovery = this.lowHealthRecoveryAction(perception as HybridPerception);
+            if (lowHealthRecovery) {
+                return this.result([lowHealthRecovery.action], lowHealthRecovery.cause, 0, false);
             }
 
             const combatNarration = this.combatNarrationAction();
@@ -2308,6 +2314,26 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return { action, cause: action.cause || 'trade_reaction' };
     }
 
+    private lowHealthRecoveryAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        if (!isLowHealth(perception) || (goal && isCombatTrainingGoal(goal))) {
+            return undefined;
+        }
+        const hasCarriedFood = firstFoodSlot(perception.resident?.inventory || []) !== undefined;
+        const action = bodyLowHealthRecoveryAction(
+            perception,
+            this.options.state.resident,
+            hasCarriedFood ? undefined : this.pickupCooldowns(),
+            this.options.state.tick,
+        );
+        if (!action || this.isRepeatedAction(action)) {
+            return undefined;
+        }
+
+        this.rememberBodyAction(action);
+        return { action, cause: action.cause || 'low_health_recovery' };
+    }
+
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
         const cognition = this.cognition();
         if (
@@ -2334,7 +2360,20 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.activeGoal()?.description || 'staying findable and looking for useful actions',
             Boolean(next),
         );
-        return cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}`) || prefix;
+        const need = this.survivalNeedSpeech(perception);
+        return (
+            cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}`) || prefix
+        );
+    }
+
+    private survivalNeedSpeech(perception: HybridPerception): string {
+        if (!isLowHealth(perception)) {
+            return '';
+        }
+        if (firstFoodSlot(perception.resident?.inventory || []) !== undefined) {
+            return ' Need: hurt and eating before danger.';
+        }
+        return ' Need: food or time to heal before fighting.';
     }
 
     private visibilityStatus(perception: Perception): { anchor?: Pos; returnDue: boolean } {

@@ -16,6 +16,7 @@ import {
     firemakingAction,
     LUMBRIDGE_CASTLE_RANGE,
     levelOneWoodcuttingAction,
+    lowHealthRecoveryAction,
     opportunisticPickupAction,
     prayerTrainingAction,
     starterFishingAction,
@@ -600,6 +601,68 @@ describe('opportunisticPickupAction', () => {
                 nearby: { worldItems: [coin] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('lowHealthRecoveryAction', () => {
+    const COINS = 995;
+
+    function ground(itemId: number, x: number, y: number, key?: string, ownerId?: string): BodyWorldItem {
+        return { itemId, amount: 1, position: { x, y, level: 0 }, key, ownerId };
+    }
+
+    it('eats carried food before continuing non-combat routines at low HP', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(315, 'rs:shrimps')],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'eat', slot: 0, cause: 'low_health_eat' });
+    });
+
+    it('prioritizes visible ground food over coins when hurt and carrying no food', () => {
+        const coins = ground(COINS, 100, 100, 'rs:coins');
+        const food = ground(315, 103, 100, 'rs:shrimps');
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:agent',
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { worldItems: [coins, food] },
+            }),
+            'res:agent',
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: food,
+            option: 'pick-up',
+            cause: 'low_health_pickup_food',
+        });
+    });
+
+    it('does nothing when health is above the low-HP threshold', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 7, max: 10 },
+                    inventory: [item(315, 'rs:shrimps')],
+                },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });

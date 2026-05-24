@@ -461,6 +461,39 @@ export function isLowHealth(perception: BodyHybridPerception): boolean {
     return max > 0 && Number(hp?.current || 0) / max <= 0.4;
 }
 
+/** Eat carried food or pick up visible food when hurt outside combat routines. */
+export function lowHealthRecoveryAction(
+    perception: BodyHybridPerception,
+    residentId?: string,
+    pickupCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    if (!isLowHealth(perception)) {
+        return undefined;
+    }
+
+    const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+    if (foodSlot !== undefined) {
+        return { kind: 'eat', slot: foodSlot, cause: 'low_health_eat' };
+    }
+
+    const here = perception.resident?.position;
+    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
+        return undefined;
+    }
+
+    const food = (perception.nearby?.worldItems || [])
+        .filter(
+            candidate =>
+                FOOD_KEY_PATTERN.test(candidate.key || '') &&
+                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
+                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    return food ? { kind: 'interact', target: food, option: 'pick-up', cause: 'low_health_pickup_food' } : undefined;
+}
+
 /** Returns the nearest fixed prayer-training waypoint to the given position. */
 export function nearestPrayerTrainingWaypoint(here: BodyPos): BodyPos {
     return [...PRAYER_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
