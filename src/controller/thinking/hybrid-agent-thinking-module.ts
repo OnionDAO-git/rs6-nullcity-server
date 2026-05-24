@@ -2535,6 +2535,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                   pickupCooldowns: cognition.pickupCooldowns,
                   explorationCooldowns: cognition.explorationCooldowns,
                   targetFailureCooldowns: cognition.targetFailureCooldowns,
+                  lastScoutingSkillOpportunityTick: cognition.lastScoutingSkillOpportunityTick,
                   interactWithOpenables: false,
               })
             : undefined;
@@ -3088,6 +3089,7 @@ type NextStepCooldownContext = {
     pickupCooldowns?: Record<string, number>;
     explorationCooldowns?: Record<string, number>;
     targetFailureCooldowns?: Record<string, number>;
+    lastScoutingSkillOpportunityTick?: number;
     interactWithOpenables?: boolean;
 };
 
@@ -3126,6 +3128,22 @@ function nextStepSuggestion(
         })[0];
     if (item) {
         return `pick up ${itemLabel(item)} at ${item.position.x},${item.position.y}.`;
+    }
+
+    if (shouldPreviewExplorationNextStep(goal, cooldowns, currentTick)) {
+        const exploration = explorationAction(
+            effectivePerception,
+            undefined,
+            residentId,
+            cooldowns?.pickupCooldowns,
+            currentTick,
+            cooldowns?.explorationCooldowns,
+            { interactWithOpenables: cooldowns?.interactWithOpenables },
+        );
+        const explorationStep = explorationActionNextStepSuggestion(exploration);
+        if (explorationStep) {
+            return explorationStep;
+        }
     }
 
     const workflowFallback = workflowGoalNextStepSuggestion(effectivePerception, here, goal);
@@ -3179,6 +3197,50 @@ function nextStepSuggestion(
         return `stay near ${actorName(player)} and answer commands.`;
     }
 
+    return undefined;
+}
+
+function shouldPreviewExplorationNextStep(
+    goal: ActiveGoalState | undefined,
+    cooldowns: NextStepCooldownContext | undefined,
+    currentTick: number,
+): boolean {
+    if (!goal || !isExplorationGoal(goal)) {
+        return false;
+    }
+    if (currentTick - goal.createdAtTick < SCOUTING_SKILL_OPPORTUNITY_MIN_GOAL_AGE_TICKS) {
+        return true;
+    }
+    const lastSkillOpportunity = cooldowns?.lastScoutingSkillOpportunityTick || 0;
+    return lastSkillOpportunity > 0 && currentTick - lastSkillOpportunity < SCOUTING_SKILL_OPPORTUNITY_COOLDOWN_TICKS;
+}
+
+function explorationActionNextStepSuggestion(action: AgentAction | undefined): string | undefined {
+    if (!action) {
+        return undefined;
+    }
+
+    const target = modelActionTarget(action);
+    const targetText = target ? `${target.x},${target.y}` : undefined;
+    if (action.cause === 'explore_tree_stand') {
+        return targetText ? `scout the tree stand at ${targetText}.` : 'scout a nearby tree stand.';
+    }
+    if (action.cause === 'explore_visible_object') {
+        return targetText ? `check the landmark at ${targetText}.` : 'check a nearby landmark.';
+    }
+    if (action.cause === 'explore_visible_item') {
+        return targetText ? `check the item at ${targetText}.` : 'check a nearby item.';
+    }
+    if (action.cause === 'explore_patrol') {
+        return targetText ? `patrol toward ${targetText}.` : 'patrol nearby.';
+    }
+    if (action.cause === 'explore_talk_to_npc') {
+        const targetActor = 'target' in action ? actorLike(action.target) : undefined;
+        if (targetActor) {
+            return `talk to ${actorName(targetActor)} at ${targetActor.position.x},${targetActor.position.y}.`;
+        }
+        return targetText ? `walk toward a nearby NPC at ${targetText}.` : 'talk to a nearby NPC.';
+    }
     return undefined;
 }
 
