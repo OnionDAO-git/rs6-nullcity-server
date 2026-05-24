@@ -2122,3 +2122,42 @@ This is an **OBSERVABILITY question** before it's a bug — the spec intent for 
 
 **Owner suggestion.** claude follow-up.
 
+
+### E38 — HD-040 fix: standing-tier letter dispatcher per-tier emission
+
+**Status:** RESOLVED — HD-040 CLOSED via substrate ship
+**Tier:** 2 (TDD substrate fix + regression suite)
+**Date:** 2026-05-24 22:50 claude
+**SHA:** pending (this cycle)
+
+**Hypothesis.** E36-F36b found `~8 of 15` expected standing-tier letters never dispatched live. Tracing inward: `StandingLedger.recordSupport` returns `tierCrossed: StandingTier | null` (the **highest** tier crossed), and `produceStandingTierLetter` is a pure function that produces ONE letter from ONE tier. The J-δ-β-2 wiring in `PatronGateway.dispatchTierLetter` calls it exactly once per `recordSupport` call. Compound failure: when a single grant crosses multiple thresholds (`stranger → officer` in one 75-Shard offer), only the Officer letter is produced; Acquaintance + Ally are silently lost.
+
+The pre-existing standing-ledger test at line 87 (`returns the HIGHEST crossed tier when a single support crosses multiple thresholds`) literally documents this as the intended behavior of the LEDGER layer — but the DISPATCHER layer needs the full crossing list to drive the patron's narrative.
+
+A second, downstream bug surfaced once `dispatchTierLetter` was made to iterate: `LettersStore.append` deduplicates on `(recipient, kind, dispatchedAt)`. Multiple `standing_tier_crossed` letters with identical `dispatchedAt` (the single grant's `nowString`) collapsed into one. Dedup tuple needed `subject` to distinguish "Acquaintance of embassy" / "Ally of embassy" / "Officer of embassy" while preserving idempotency for true replays.
+
+**Fix.** Three-file TDD substrate ship:
+
+1. **`src/controller/patron/standing-ledger.ts`** — added `tiersCrossed: StandingTier[]` field to `RecordSupportResult`. Populated by filtering `STANDING_TIERS` to those whose `minPoints > 0` *and* `minPoints > previousPoints` *and* `minPoints <= nextPoints`. Returns `[]` when no threshold crossed; `['acquaintance', 'ally', 'officer']` for stranger→officer in one shot. Back-compat field `tierCrossed` (highest only, or null) preserved unchanged.
+2. **`src/controller/patron/patron-gateway.ts`** — `dispatchTierLetter` signature changed from `tierCrossed: StandingTier | null` to `tiersCrossed: readonly StandingTier[]`. Body iterates `for (const tier of tiersCrossed)` and emits one letter per. All three call sites (`offerTo:104`, `sponsorBirth:206`, `witnessAt:294`) updated to pass `standingResult.tiersCrossed`.
+3. **`src/controller/patron/letters-store.ts`** — `append` dedup tuple widened from `(kind, dispatchedAt, recipient)` to `(kind, dispatchedAt, subject, recipient)`. Identical-subject letters still dedupe (idempotency preserved for restart replays); different-subject letters in the same instant land separately.
+
+**Tests added.** 8 new tests across 3 suites:
+- `standing-ledger.test.ts` (+5): `tiersCrossed` for no-cross, single-cross, two-tier, all-three-tier, second-grant-skip-already-crossed cases
+- `patron-gateway.test.ts` (+1 modified, +1 new): 30-Shard offer produces 2 letters in [acquaintance, ally] order; 75-Shard offer produces 3 letters in [acquaintance, ally, officer] order
+- `letters-store.test.ts` (+2): multi-subject same-ts coexist; identical (kind,ts,subject,recipient) still dedupe
+
+**Gates.** Tests **1665/1665** (was 1657 pre-cycle, +8 new), typecheck/lint/build all green.
+
+**Sub-findings.**
+- **F38a (POSITIVE / RESOLVED).** HD-040 closed at the substrate root. New patron grants that cross multiple tiers now dispatch one Letter per tier in ascending order.
+- **F38b (HISTORICAL).** Existing patron-standing.json history still shows the past lossy dispatches (codex-hour-qa missing 3, codex-live missing 3, claude-mega-rescue missing 2, etc). A one-off backfill job could replay those crossings against the new dispatcher; optional, low value (patrons likely don't notice retroactive letters appearing days later). Filed as deferred enhancement.
+- **F38c (DESIGN INSIGHT).** The dedup change is intentionally narrower than alternatives like "include tier in Letter shape." `subject` is already part of the Letter contract + uniquely identifies the tier; using it preserves the existing schema.
+- **F38d (CHICAGO IMPACT).** A patron walking into Chicago who first encounters the embassy and gets sponsored with a single 75-Shard onboarding gift will now receive 3 letters in their inbox (Acquaintance → Ally → Officer) rather than just Officer. This matches the embassy-staff-runbook's "first patron interaction" intent.
+
+**Classification.** ENGINE-correctness fix shipped, RESOLVED. HD-040 → Decided.
+
+**Suggested next step.** Verify live on next controller restart: grant a fresh handle 30 Shards via `patron:offer` and confirm 2 letters in `data/controller/memory/data/letters/<slug>/inbox.jsonl`. Optional backfill of historic standing crossings deferred.
+
+**Owner suggestion.** claude — no follow-up needed unless live verify finds a residual.
+

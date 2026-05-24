@@ -491,7 +491,12 @@ describe('PatronGateway', () => {
             expect(inbox).toHaveLength(1);
         });
 
-        it('crosses ally on a single big offerTo and dispatches the Ally letter (not Acquaintance)', async () => {
+        it('crosses ally on a single big offerTo and dispatches one letter PER tier crossed (HD-040)', async () => {
+            // HD-040 (E36-F36b, 2026-05-24): a single grant that crosses
+            // multiple thresholds must produce one letter per tier so the
+            // patron sees their entire standing journey, not just the final
+            // tier. A 30-point offer from stranger → ally crosses both
+            // acquaintance (10) and ally (30) — both letters fire.
             currencyLedger.credit('james', 50, { reason: 'workshop_attendance' });
             const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 30 });
 
@@ -499,9 +504,28 @@ describe('PatronGateway', () => {
             expect(res.standingDelta?.tierCrossed).toBe('ally');
 
             const inbox = lettersStore.readInbox('james');
-            expect(inbox).toHaveLength(1);
-            expect(inbox[0].subject).toMatch(/ally/i);
-            expect(inbox[0].body).toMatch(/ally/i);
+            expect(inbox).toHaveLength(2);
+            // Letters land in ascending tier order (acquaintance first, ally
+            // second) per StandingLedger.recordSupport's `tiersCrossed`
+            // contract.
+            expect(inbox[0].subject).toMatch(/acquaintance/i);
+            expect(inbox[0].body).toMatch(/acquaintance/i);
+            expect(inbox[1].subject).toMatch(/ally/i);
+            expect(inbox[1].body).toMatch(/ally/i);
+        });
+
+        it('crosses all three tiers in one grant and dispatches three letters in ascending order (HD-040)', async () => {
+            currencyLedger.credit('james', 100, { reason: 'workshop_attendance' });
+            const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 75 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('officer');
+
+            const inbox = lettersStore.readInbox('james');
+            expect(inbox).toHaveLength(3);
+            expect(inbox[0].subject).toMatch(/acquaintance/i);
+            expect(inbox[1].subject).toMatch(/ally/i);
+            expect(inbox[2].subject).toMatch(/officer/i);
         });
     });
 });

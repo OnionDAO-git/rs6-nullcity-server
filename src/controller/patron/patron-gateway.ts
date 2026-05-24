@@ -100,12 +100,13 @@ export class PatronGateway {
             ts: nowString,
         });
 
-        // 3a. Letter dispatch on tier crossing (J-δ-β-2).
+        // 3a. Letter dispatch on tier crossing (J-δ-β-2). HD-040: iterate
+        // EVERY tier crossed so multi-tier grants produce one letter per tier.
         this.dispatchTierLetter({
             humanId: req.humanId,
             faction,
             residentName: req.residentName,
-            tierCrossed: standingResult.tierCrossed,
+            tiersCrossed: standingResult.tiersCrossed,
             amount: req.amount,
             ts: nowString,
         });
@@ -202,12 +203,13 @@ export class PatronGateway {
         });
 
         // Letter dispatch on tier crossing (J-δ-β-2). Birth always grants +10,
-        // which crosses stranger→acquaintance for first-time sponsors.
+        // which crosses stranger→acquaintance for first-time sponsors. HD-040:
+        // iterate ALL crossed tiers (only acquaintance here in practice).
         this.dispatchTierLetter({
             humanId: req.humanId,
             faction: req.factionId,
             residentName: req.name,
-            tierCrossed: standingResult.tierCrossed,
+            tiersCrossed: standingResult.tiersCrossed,
             amount: 10,
             ts: nowString,
         });
@@ -289,11 +291,14 @@ export class PatronGateway {
                         reason: 'patron_witness',
                         ts: nowString,
                     });
+                    // HD-040: iterate ALL tiers crossed so multi-tier witness
+                    // jumps (rare for amount=3 default but possible if a CLI
+                    // override passes a larger value) produce one letter each.
                     this.dispatchTierLetter({
                         humanId,
                         faction,
                         residentName,
-                        tierCrossed: standingResult.tierCrossed,
+                        tiersCrossed: standingResult.tiersCrossed,
                         amount,
                         ts: nowString,
                     });
@@ -443,23 +448,31 @@ export class PatronGateway {
         humanId: string;
         faction: string;
         residentName: string;
-        tierCrossed: StandingTier | null;
+        /**
+         * Every user-facing tier crossed by the supporting call. The
+         * dispatcher emits ONE letter per element so a stranger → officer
+         * jump produces Acquaintance + Ally + Officer letters, not just an
+         * Officer letter (HD-040 / E36-F36b).
+         */
+        tiersCrossed: readonly StandingTier[];
         amount: number;
         ts: string;
     }): void {
-        if (!this.options.lettersStore || !input.tierCrossed) {
+        if (!this.options.lettersStore || input.tiersCrossed.length === 0) {
             return;
         }
-        const letter = produceStandingTierLetter({
-            humanId: input.humanId,
-            faction: input.faction,
-            residentName: input.residentName,
-            tierCrossed: input.tierCrossed,
-            amount: input.amount,
-            ts: input.ts,
-        });
-        if (letter) {
-            this.options.lettersStore.append(letter);
+        for (const tierCrossed of input.tiersCrossed) {
+            const letter = produceStandingTierLetter({
+                humanId: input.humanId,
+                faction: input.faction,
+                residentName: input.residentName,
+                tierCrossed,
+                amount: input.amount,
+                ts: input.ts,
+            });
+            if (letter) {
+                this.options.lettersStore.append(letter);
+            }
         }
     }
 }

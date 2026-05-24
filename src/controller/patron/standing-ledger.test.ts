@@ -101,6 +101,48 @@ describe('StandingLedger', () => {
             expect(stillAlly).toBeDefined();
             expect(ledger.currentTier('alice', 'embassy')).toBe('officer');
         });
+
+        // HD-040 / E36-F36b regression suite (2026-05-24): a single support that
+        // crosses multiple thresholds must enumerate ALL crossed tiers in
+        // ascending order, so the dispatcher can emit one letter per crossing.
+        // The legacy `tierCrossed` field (highest-only) stays for back-compat.
+        describe('HD-040: tiersCrossed enumerates every threshold crossed', () => {
+            it('returns an empty list when the support does not cross any threshold', () => {
+                const ledger = new StandingLedger();
+                const result = ledger.recordSupport('alice', 'embassy', 5, { reason: 'patron_witness' });
+                expect(result.tiersCrossed).toEqual([]);
+            });
+
+            it('returns ["acquaintance"] when 0 -> 10 (single threshold)', () => {
+                const ledger = new StandingLedger();
+                const result = ledger.recordSupport('alice', 'embassy', 10, { reason: 'patron_witness' });
+                expect(result.tiersCrossed).toEqual(['acquaintance']);
+            });
+
+            it('returns ["acquaintance","ally"] when 0 -> 30 (two thresholds in one grant)', () => {
+                const ledger = new StandingLedger();
+                const result = ledger.recordSupport('alice', 'embassy', 30, { reason: 'birth_sponsorship' });
+                expect(result.previousTier).toBe('stranger');
+                expect(result.currentTier).toBe('ally');
+                expect(result.tiersCrossed).toEqual(['acquaintance', 'ally']);
+                // back-compat: tierCrossed still holds the highest only.
+                expect(result.tierCrossed).toBe('ally');
+            });
+
+            it('returns ["acquaintance","ally","officer"] when 0 -> 75 (all three thresholds in one grant)', () => {
+                const ledger = new StandingLedger();
+                const result = ledger.recordSupport('alice', 'embassy', 75, { reason: 'birth_sponsorship' });
+                expect(result.tiersCrossed).toEqual(['acquaintance', 'ally', 'officer']);
+                expect(result.tierCrossed).toBe('officer');
+            });
+
+            it('returns ["ally"] when 10 -> 30 (skips already-crossed acquaintance)', () => {
+                const ledger = new StandingLedger();
+                ledger.recordSupport('alice', 'embassy', 10, { reason: 'patron_witness' });
+                const result = ledger.recordSupport('alice', 'embassy', 20, { reason: 'patron_witness' });
+                expect(result.tiersCrossed).toEqual(['ally']);
+            });
+        });
     });
 
     describe('history', () => {

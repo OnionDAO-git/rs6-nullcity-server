@@ -24,12 +24,24 @@ export interface RecordSupportResult {
     previousTier: StandingTier;
     currentTier: StandingTier;
     /**
-     * The highest tier crossed by this support, or `null` if no threshold
-     * was reached. A single support that crosses multiple thresholds (e.g.
-     * stranger → ally in one big sponsor) returns the **highest** crossed
-     * tier so the Letters producer can fire one letter per support.
+     * Back-compat shortcut: the **highest** user-facing tier crossed by this
+     * support, or `null` if no threshold was reached. Prefer `tiersCrossed`
+     * for letter dispatch — a single support that crosses multiple thresholds
+     * (e.g. stranger → ally in one big sponsor) must produce one letter per
+     * crossing, not just one letter for the final tier (HD-040 / E36-F36b).
      */
     tierCrossed: StandingTier | null;
+    /**
+     * **Every** user-facing tier crossed by this support, in ascending order.
+     * Empty when no threshold was reached. The `stranger` sentinel is never
+     * included (it has `minPoints: 0`, so it can never be "crossed").
+     *
+     * Drives the J-δ-β-2 letter dispatcher: callers iterate this list and
+     * emit one letter per element, so a patron whose first sponsor jumps them
+     * from stranger to officer receives Acquaintance + Ally + Officer letters
+     * in their inbox rather than just the Officer letter (HD-040 fix).
+     */
+    tiersCrossed: StandingTier[];
 }
 
 /** A single mutation on a (human, faction) standing pair. */
@@ -128,10 +140,20 @@ export class StandingLedger {
             ts: this.resolveTs(options.ts),
         });
 
+        // HD-040: enumerate EVERY user-facing tier crossed (not just the
+        // highest). A single grant that spans multiple thresholds must surface
+        // each crossing so the J-δ-β-2 dispatcher can emit one letter per
+        // tier. `stranger` (minPoints: 0) is the no-standing sentinel and can
+        // never be "crossed" — filtered out by `minPoints > 0`.
+        const tiersCrossed: StandingTier[] = STANDING_TIERS
+            .filter(t => t.minPoints > 0 && t.minPoints > previousPoints && t.minPoints <= nextPoints)
+            .map(t => t.name);
+
         return {
             previousTier,
             currentTier: nextTier,
             tierCrossed: previousTier === nextTier ? null : nextTier,
+            tiersCrossed,
         };
     }
 
