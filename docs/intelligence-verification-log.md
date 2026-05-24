@@ -93,3 +93,76 @@ Say sample (first 6, truncated to ~120 chars):
 **Resolution.** Codex `a87eed0d` (committed 05:01 UTC). Verified post-fix behavior across 3232 ticks of res:agent; the post-fix run shows a different agent in every observable metric.
 
 ---
+
+### E3 — action-result outcome histogram across all residents
+
+**Status:** OPEN (3 sub-findings; 2 file new HD entries)
+**Tier:** 1 (read-only)
+**Date:** 2026-05-24 12:55 claude
+
+**Hypothesis.** E1 found 88% action success on a single res:agent session. Test: does this rate generalize across all 7 configured residents and recent sessions? Also: what's the per-action-kind breakdown?
+
+**Repro.** `python3` aggregate over the most-recent 3 trajectory files per resident in `data/controller/memory/<res>/evidence/trajectory/`. Count `begin_tick`, `action.kind`, `action.cause`, `action_result.status`.
+
+**Observation.**
+
+```
+resident             ticks  actions  results   top outcomes
+res-agent             6802     444      499    399 success  100 timeout
+res-hans              6802       0        0    (deceased)
+res-father-aereck     6802       0        0    (deceased)
+res-duke-horacio      6802       0        0    (deceased)
+res-wise-old-man      6803       0        0    (deceased)
+res-pip               6803       0        0    (deceased)
+res-thrand            6803       0        0    (deceased)
+```
+
+Aggregate outcomes (only res:agent contributes):
+- **success: 399 / 499 = 80.0%**
+- **timeout: 100 / 499 = 20.0%**
+
+Aggregate action kinds:
+- move_to:           406 (91.4%)
+- interact:           23 (5.2%)
+- use_item_on_item:   15 (3.4%)
+
+Action causes (top 8):
+1. explore_patrol: 251
+2. woodcutting_level1_routine: 106
+3. return_to_visibility_anchor: 18
+4. routine_loop_break: 16
+5. stuck_pre_inference_explore: 10
+6. woodcutting_chain_firemaking: 10
+7. continue_move: 7
+8. stuck_move_recovery: 6
+9. firemaking_fallback: 5
+10. scouting_woodcutting_opportunity: 5
+11. **explore_talk_to_npc: 5** ← Brain is trying to talk to NPCs
+
+**Findings (3 separate sub-findings, each classified).**
+
+**F3a — Only 1 of 7 configured residents produces ANY behavior** (the other 6 are deceased and tick-leak).
+
+- **Classification.** DESIGN (resident pool is effectively a single agent right now; doesn't match the IRL-event narrative which assumes a community of heroes interacting in the embassy).
+- **Suggested next step.** This blocks every multi-resident experiment in the queue (E4 cross-resident interaction, E11 cross-resident chat, the EVENT-D3 greeting). Either (a) maintainer restarts controller to apply the 14k attention bump per HD-020 → fresh heroes spawn → live experiments resume; OR (b) claude spins up a second controller on port 43596 with isolated `memory.dir` to run experiments. Option B is what the cron prompt explicitly enables.
+- **Owner suggestion.** claude (option B) — pick a second-controller path for E9, E10, E11 since (a) is gated on maintainer being online.
+
+**F3b — Typical action success rate is 80%, not 88%.** E1's 88% was a particularly good session.
+
+- **Classification.** BODY (the 100 timeouts out of 499 = ~20% of actions are emitted but never complete).
+- **Suggested next step.** Sub-experiment E3a: filter the 100 timeouts by action.kind + action.cause to find the dominant timeout pattern. Hypothesis: move_to targets that the body adapter can't reach because the world moved between the Brain's decision and the action dispatch (NPC walked away, tree was chopped). If true, this is a perception staleness or action-target-validation issue. Codex's recent fixes already addressed `nonclosing-move`; the residual 20% is likely a different sub-mode.
+- **Owner suggestion.** Codex (BODY), but blocked on better timeout sub-classification first. Claude runs E3a next cycle.
+
+**F3c — `explore_talk_to_npc` fires 5 times but never produces a `say` action.** Brain is choosing to talk to NPCs but the routine emits a move_to instead.
+
+- **Classification.** DESIGN (routine selects "talk to NPC" intent but emits movement, not a say or chat action). Could also be BODY if the move is the approach-then-talk pattern.
+- **Suggested next step.** Trace one `explore_talk_to_npc` event in the trajectory: read the action it emitted, the action_result, and any follow-up actions. If the pattern is `move_to NPC tile → no follow-up say/chat`, it's DESIGN (missing the second-step verb). If `move_to → arrived → say`, it's working as intended. Sub-experiment E3b.
+- **Owner suggestion.** claude (trace) → likely Codex (fix if DESIGN, claude knowledge if KNOWLEDGE).
+
+**Classification rollup.** F3a = DESIGN/PROCESS, F3b = BODY, F3c = DESIGN.
+
+**Suggested next experiment after E3.** E3a (timeout sub-classification) AND E3b (talk_to_npc trace). Both are short read-only experiments. Then E4 (cross-resident interaction) is blocked until either heroes are alive (F3a fix) or we spin a second controller.
+
+**Owner suggestion overall.** Claude continues with E3a + E3b before any Tier-2 work.
+
+---
