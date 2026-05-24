@@ -1429,3 +1429,32 @@ Key files (absolute):
 - `/Users/james/Code/OnionDAO/rs6-nullcity-server/src/controller/knowledge/game-skill-context.ts:84-91` (retrieval config)
 - `/Users/james/Code/OnionDAO/rs6-nullcity-server/src/controller/thinking/hybrid-agent-prompts.ts:51,80` (injection)
 
+
+### E22 — HD-034 fix (#1+#2): raise knowledge retrieval recall
+
+**Status:** RESOLVED-by-claude — substrate-only ship; live behavioral impact awaits next Brain wake
+**Tier:** 2 (substrate ship for INFERENCE/KNOWLEDGE gap)
+**Date:** 2026-05-24 19:30 claude
+
+**Hypothesis.** E21 measured only 2/52 (3.8%) of res:agent's recent says reference any knowledge entry despite the substrate wiring being intact and ~3kb of knowledge reaching each Brain prompt. One root cause per E21 sub-finding F21c: `retrieveKnowledge(entries, query, {limit: 5, minScore: 4})` at `src/controller/knowledge/game-skill-context.ts:84-90` is too tight — most calls see only 2-3 high-score skill cards (woodcutting/firemaking for res:agent) and never the lore/quest/NPC entries that would surface in conversation.
+
+**Repro.**
+- `src/controller/knowledge/game-skill-context.ts` line 85: `limit: 5` → `limit: 8`
+- Same file line 86: `minScore: 4` → `minScore: 2`
+- Existing scoring math preserved: `tokenBudget: 1500` + downstream `maxChars: 1600` continue to cap prompt size; the slice will shrink itself if 8 entries are genuinely too big. Perception/goal boost (1.5x/3x in `knowledge-retriever.ts:1351,1355`) still prioritizes contextually-relevant entries.
+
+**Observation.**
+- Added regression test `"returns more than the legacy 5-entry cap when many low-score matches are eligible (HD-034)"` — asserts `knowledgeResults.length > 5 && ≤ 8` when goal text mentions many knowledge topics. Pre-fix would clamp at 5.
+- Tests: **1565/1565 passing** (+1 regression). All existing 26 game-skill-context tests still green — the recall widening does not break any prior assertion.
+- Gates: typecheck + lint + build all green.
+- Net touch: `src/controller/knowledge/game-skill-context.ts` (+10 lines incl. doc-comment, -2 retrieval params), `src/controller/knowledge/game-skill-context.test.ts` (+25 lines for new test).
+
+**Classification.** **RESOLVED-by-claude** (DESIGN/CONFIG — recall ceiling that suppressed lore/NPC/quest entries from reaching the Brain). Closes HD-034 fix #2; HD-034 fix #1 (prompt-body capture for future audits) and #3 (free-form say renderer) remain for separate slices.
+
+**Suggested next step.**
+- **Live verification (next cycle):** scan a new `local-XXXXX` trajectory for res:agent + 1 hero after Codex's next controller restart picks up this commit. Look for any say or decision that references the wider knowledge slice (NPC names, place names, quest names). Expected behavior: marginal improvement — knowledge surfaces more often in Brain output. The deeper F19c (heroes' Brain returns empty 84-100% per E20) remains the dominant gap, so the improvement may be subtle.
+- **HD-034 fix #1**: prompt-body capture (gated, sampled 1/100) in inference logs. Closes the audit-can't-quote-prompts gap that blocked E14/E15/E21. ~20 lines, substrate, claude-friendly.
+- **HD-034 fix #3**: free-form say renderer (~Codex zone) — the higher-leverage long-term fix.
+
+**Owner suggestion.** This fix shipped by claude (HD-034 #2). #1 next claude cycle. #3 Codex zone (`hybrid-agent-thinking-module.ts` say renderer).
+

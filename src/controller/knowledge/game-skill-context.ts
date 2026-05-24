@@ -81,9 +81,20 @@ export class GameSkillService {
         const perceptionContext = derivePerceptionContext(input.perception);
         const goalContext = deriveGoalContext(input.activeGoal);
 
+        // E22 / HD-034 fix #2: raise recall so more of the 108 knowledge
+        // entries reach the Brain. E21 measured only 2/52 (3.8%) of recent
+        // res:agent says reference any knowledge term despite the substrate
+        // wiring being intact. Lowering minScore from 4 → 2 admits weaker
+        // matches when the strong matches are scarce; raising limit from
+        // 5 → 8 allows up to 3 more entries through when the score floor
+        // is also met. tokenBudget + downstream maxChars still cap the
+        // prompt size, so the slice can shrink itself if 8 entries are
+        // genuinely too big. The perception/goal score boosts (1.5x/3x
+        // in knowledge-retriever.ts) continue to prioritize the most
+        // contextually relevant entries.
         const knowledgeResults = retrieveKnowledge(this.entries, [goalText, perceptionText, availabilityText].join('\n'), {
-            limit: 5,
-            minScore: 4,
+            limit: 8,
+            minScore: 2,
             perceptionContext,
             goalContext,
             tokenBudget: 1500,

@@ -984,6 +984,35 @@ describe('GameSkillService', () => {
 
         expect(append).not.toHaveBeenCalled();
     });
+
+    // E22 / HD-034 regression: knowledge retrieval recall was raised
+    // (limit 5→8, minScore 4→2) because E21 measured only 2/52 (3.8%)
+    // of res:agent's recent says reference any knowledge entry despite
+    // the substrate wiring being intact. The wider recall admits more
+    // entries when the brain prompt has token budget, prioritized by
+    // the existing perception (1.5x) and goal (3x) score boosts.
+    it('returns more than the legacy 5-entry cap when many low-score matches are eligible (HD-034)', () => {
+        const service = new GameSkillService();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            // Goal text mentions many distinct knowledge topics so that
+            // multiple lower-score (but still ≥2) entries become eligible.
+            // Pre-fix behavior would clamp at 5 results; post-fix should
+            // be able to return up to 8.
+            activeGoal: goal(
+                'broad-survey',
+                'Survey woodcutting trees, firemaking tinderbox, cooking shrimp, fishing net, smithing copper, mining ore, magic runes, ranged bows, prayer bones, quests cook assistant and sheep shearer, places lumbridge varrock falador, NPCs hans bob, monsters chicken goblin cow.',
+            ),
+            perception: perception('Inventory: rs:tinderbox, rs:logs. Nearby Tree, Chicken.'),
+        });
+
+        // The context should include MORE than the legacy 5-entry cap.
+        // We deliberately don't pin an exact number because retrieval
+        // depends on scoring math; we just guard the regression direction.
+        expect(context.knowledgeResults.length).toBeGreaterThan(5);
+        expect(context.knowledgeResults.length).toBeLessThanOrEqual(8);
+    });
 });
 
 function goal(id: string, description: string) {
