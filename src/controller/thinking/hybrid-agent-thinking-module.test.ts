@@ -5614,7 +5614,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
-    it('does not repeat an unreachable Lumbridge range move after a fishing-cooking timeout', async () => {
+    it('routes around an unreachable Lumbridge range move after a fishing-cooking timeout', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
         state.cognition = {
@@ -5645,9 +5645,100 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' },
+            {
+                kind: 'move_to',
+                target: { x: 3217, y: 3218, level: 0 },
+                range: 0,
+                cause: 'starter_fishing_reach_castle_entrance',
+            },
+        ]);
+        expect(result.cause).toBe('starter_fishing_reach_castle_entrance');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
+    it('does not repeat the castle entrance cooking route after that route times out', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 20,
+            lastGoalShareTick: 20,
+            targetFailureCooldowns: {
+                'target:3208,3213,0': 12,
+                'target:3217,3218,0': 12,
+            },
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 20,
+                resident: {
+                    ...residentAt(3204, 3210),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I can see the Lumbridge range, but I cannot reach it from here. I need logs, an axe, or someone to open a path.',
+                cause: 'starter_fishing_missing_heat',
+            },
         ]);
         expect(result.cause).toBe('starter_fishing_missing_heat');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
+    it('tries the castle entrance route before declaring the range unreachable', async () => {
+        const door = { objectId: 1530, position: { x: 3208, y: 3211, level: 0 } };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 20,
+            lastGoalShareTick: 20,
+            targetFailureCooldowns: {
+                'target:3208,3213,0': 12,
+            },
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 20,
+                resident: {
+                    ...residentAt(3204, 3213),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                objects: [door],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: { x: 3217, y: 3218, level: 0 },
+                range: 0,
+                cause: 'starter_fishing_reach_castle_entrance',
+            },
+        ]);
+        expect(result.cause).toBe('starter_fishing_reach_castle_entrance');
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 

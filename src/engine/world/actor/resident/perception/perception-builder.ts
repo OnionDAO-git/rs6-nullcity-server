@@ -161,13 +161,30 @@ export class PerceptionBuilder {
 
     private findNearbyObjects(player: Player, visionRange: number): LandscapeObject[] {
         const objects: LandscapeObject[] = [];
+        const seenObjects = new Set<string>();
+        const addObject = (object: LandscapeObject): void => {
+            const position = new Position(object.x, object.y, object.level);
+            if (player.position.distanceBetween(position) > visionRange) {
+                return;
+            }
+            const key = `${object.objectId}:${object.x},${object.y},${object.level}:${object.orientation ?? ''}`;
+            if (seenObjects.has(key)) {
+                return;
+            }
+            seenObjects.add(key);
+            objects.push(object);
+        };
         const nearbyChunks = activeWorld.chunkManager.getSurroundingChunks(
             activeWorld.chunkManager.getChunkForWorldPosition(player.position),
         );
         for (const chunk of nearbyChunks) {
             for (const object of chunk.filestoreLandscapeObjects.values()) {
-                if (player.position.distanceBetween(new Position(object.x, object.y, object.level)) <= visionRange) {
-                    objects.push(object);
+                const position = new Position(object.x, object.y, object.level);
+                if (player.position.distanceBetween(position) <= visionRange) {
+                    const found = activeWorld.findObjectAtLocation(player, object.objectId, position);
+                    if (found.object) {
+                        addObject(found.object);
+                    }
                 }
             }
         }
@@ -175,9 +192,7 @@ export class PerceptionBuilder {
             for (const instancedChunk of instance.chunkModifications.values()) {
                 for (const mods of instancedChunk.mods.values()) {
                     for (const object of mods.spawnedObjects) {
-                        if (player.position.distanceBetween(new Position(object.x, object.y, object.level)) <= visionRange) {
-                            objects.push(object);
-                        }
+                        addObject(object);
                     }
                 }
             }

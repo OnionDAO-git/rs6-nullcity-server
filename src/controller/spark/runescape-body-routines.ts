@@ -108,8 +108,23 @@ export const EXPLORATION_OPENABLE_OBJECT_IDS: ReadonlySet<number> = new Set([
 /** Lumbridge Castle kitchen range fallback for raw starter fish when no local fire is available. */
 export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 
+/** Reachable castle entry used when west-side kitchen doors are visible but not pathable. */
+export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY: BodyPos = { x: 3217, y: 3218, level: 0 };
+
+/** Closed double-door IDs for the south Lumbridge Castle entrance. */
+export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_CLOSED_DOOR_IDS: ReadonlySet<number> = new Set([1516, 1519]);
+
+/** Open double-door IDs for the south Lumbridge Castle entrance. */
+export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPEN_DOOR_IDS: ReadonlySet<number> = new Set([1517, 1520]);
+
 /** Range close enough for a raw-fish use action against the fallback kitchen range. */
 export const COOKING_RANGE_APPROACH_RADIUS = 1;
+
+/** Visible door/gate radius considered useful for reaching a cooking heat source. */
+export const COOKING_ROUTE_OPENABLE_MAX_DISTANCE = 8;
+
+/** Visible radius for clicking the large Lumbridge Castle entry instead of walking onto its blocked tile. */
+export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPENABLE_MAX_DISTANCE = 18;
 
 /** Farthest nearby log the cooking routine will grab to make its own fire. */
 export const COOKING_LOG_PICKUP_MAX_DISTANCE = 8;
@@ -201,6 +216,127 @@ export function firstFoodSlot(inventory: Array<BodyItem | null>): number | undef
 /** Returns the nearest low-health recovery waypoint to the given position. */
 export function nearestLowHealthRecoveryWaypoint(here: BodyPos): BodyPos {
     return [...LOW_HEALTH_RECOVERY_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+function starterFishingCookingRouteAction(perception: BodyHybridPerception, target: BodyPos): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const openable = (perception.nearby?.objects || [])
+        .filter(
+            candidate =>
+                EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
+                candidate.position.level === target.level &&
+                distance(here, candidate.position) <= COOKING_ROUTE_OPENABLE_MAX_DISTANCE &&
+                distance(candidate.position, target) < distance(here, target),
+        )
+        .sort(
+            (a, b) =>
+                distance(here, a.position) + distance(a.position, target) -
+                (distance(here, b.position) + distance(b.position, target)),
+        )[0];
+
+    if (!openable) {
+        return undefined;
+    }
+
+    return {
+        kind: 'interact',
+        target: openable,
+        option: 'open',
+        cause: 'starter_fishing_open_cooking_route',
+    };
+}
+
+function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPerception, target: BodyPos): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const adjacentOpenable = (perception.nearby?.objects || [])
+        .filter(
+            candidate =>
+                EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
+                candidate.position.level === target.level &&
+                distance(here, candidate.position) <= INTERACTION_APPROACH_RADIUS &&
+                distance(candidate.position, target) <= distance(here, target),
+        )
+        .sort((a, b) => distance(a.position, target) - distance(b.position, target))[0];
+    if (adjacentOpenable) {
+        return {
+            kind: 'interact',
+            target: adjacentOpenable,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        };
+    }
+
+    if (!isLumbridgeKitchenTarget(target) || !isWestOfLumbridgeKitchen(here)) {
+        return undefined;
+    }
+
+    if (isLumbridgeCastleKitchenEntryOpen(perception)) {
+        return undefined;
+    }
+
+    const castleEntranceOpenable = (perception.nearby?.objects || [])
+        .filter(
+            candidate =>
+                EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
+                candidate.position.level === LUMBRIDGE_CASTLE_KITCHEN_ENTRY.level &&
+                distance(candidate.position, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= 1 &&
+                distance(here, candidate.position) <= LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPENABLE_MAX_DISTANCE,
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (castleEntranceOpenable) {
+        return {
+            kind: 'interact',
+            target: castleEntranceOpenable,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        };
+    }
+
+    if (distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) > 0) {
+        return {
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        };
+    }
+
+    return undefined;
+}
+
+function isLumbridgeKitchenTarget(target: BodyPos): boolean {
+    return target.level === 0 && target.x >= 3208 && target.x <= 3213 && target.y >= 3211 && target.y <= 3216;
+}
+
+function isWestOfLumbridgeKitchen(here: BodyPos): boolean {
+    return here.level === 0 && here.x <= 3212 && here.y >= 3208 && here.y <= 3217;
+}
+
+function isLumbridgeCastleKitchenEntryOpen(perception: BodyHybridPerception): boolean {
+    const objects = perception.nearby?.objects || [];
+    const closedEntryVisible = objects.some(
+        candidate =>
+            LUMBRIDGE_CASTLE_KITCHEN_ENTRY_CLOSED_DOOR_IDS.has(candidate.objectId) &&
+            candidate.position.level === LUMBRIDGE_CASTLE_KITCHEN_ENTRY.level &&
+            distance(candidate.position, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= 1,
+    );
+    if (closedEntryVisible) {
+        return false;
+    }
+    return objects.some(
+        candidate =>
+            LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPEN_DOOR_IDS.has(candidate.objectId) &&
+            candidate.position.level === LUMBRIDGE_CASTLE_KITCHEN_ENTRY.level &&
+            distance(candidate.position, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= 2,
+    );
 }
 
 function isVisibleCombatThreat(actor: BodyActor): boolean {
@@ -352,6 +488,22 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
         .filter(object => COOKING_HEAT_OBJECT_IDS.has(object.objectId))
         .sort((a, b) => distance(here || a.position, a.position) - distance(here || b.position, b.position))[0];
     if (heatSource) {
+        if (here && distance(here, heatSource.position) > COOKING_RANGE_APPROACH_RADIUS) {
+            const lumbridgeEntryOpen =
+                isLumbridgeKitchenTarget(heatSource.position) &&
+                isWestOfLumbridgeKitchen(here) &&
+                isLumbridgeCastleKitchenEntryOpen(perception);
+            const lumbridgeRouteAction = starterFishingLumbridgeKitchenRouteAction(perception, heatSource.position);
+            if (lumbridgeRouteAction) {
+                return lumbridgeRouteAction;
+            }
+            if (!lumbridgeEntryOpen) {
+                const routeAction = starterFishingCookingRouteAction(perception, heatSource.position);
+                if (routeAction) {
+                    return routeAction;
+                }
+            }
+        }
         return { kind: 'use_item_on', itemSlot: rawFishSlot, target: heatSource, cause: 'starter_fishing_cook_catch' };
     }
 
@@ -376,6 +528,17 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
     }
 
     if (here && distance(here, LUMBRIDGE_CASTLE_RANGE) > COOKING_RANGE_APPROACH_RADIUS) {
+        const lumbridgeEntryOpen = isWestOfLumbridgeKitchen(here) && isLumbridgeCastleKitchenEntryOpen(perception);
+        const lumbridgeRouteAction = starterFishingLumbridgeKitchenRouteAction(perception, LUMBRIDGE_CASTLE_RANGE);
+        if (lumbridgeRouteAction) {
+            return lumbridgeRouteAction;
+        }
+        if (!lumbridgeEntryOpen) {
+            const routeAction = starterFishingCookingRouteAction(perception, LUMBRIDGE_CASTLE_RANGE);
+            if (routeAction) {
+                return routeAction;
+            }
+        }
         return {
             kind: 'move_to',
             target: LUMBRIDGE_CASTLE_RANGE,
@@ -542,19 +705,27 @@ export function lowHealthRecoveryAction(
         return { kind: 'eat', slot: foodSlot, cause: 'low_health_eat' };
     }
 
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+    const nearbyThreat = hasNearbyRecoveryThreat(perception, here);
+
     const cookingAction = starterFishingCookingAction(perception);
-    if (cookingAction) {
+    if (cookingAction && !nearbyThreat) {
         return actionWithCause(cookingAction, 'low_health_cook_food');
     }
 
-    const here = perception.resident?.position;
-    if (!here || !inventoryHasFreeSlot(inventory)) {
-        return undefined;
-    }
-
-    const fishingAction = starterFishingAction(perception);
+    const fishingAction = nearbyThreat ? undefined : starterFishingAction(perception);
     if (fishingAction) {
         return actionWithCause(fishingAction, 'low_health_fish_food');
+    }
+
+    if (!inventoryHasFreeSlot(inventory)) {
+        const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
+        return nearbyThreat && distance(here, recoveryWaypoint) > LOW_HEALTH_RECOVERY_WAYPOINT_RANGE
+            ? { kind: 'move_to', target: recoveryWaypoint, range: LOW_HEALTH_RECOVERY_WAYPOINT_RANGE, cause: 'low_health_seek_safe_recovery' }
+            : undefined;
     }
 
     const food = (perception.nearby?.worldItems || [])
@@ -571,7 +742,7 @@ export function lowHealthRecoveryAction(
     }
 
     const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
-    return hasNearbyRecoveryThreat(perception, here) && distance(here, recoveryWaypoint) > LOW_HEALTH_RECOVERY_WAYPOINT_RANGE
+    return nearbyThreat && distance(here, recoveryWaypoint) > LOW_HEALTH_RECOVERY_WAYPOINT_RANGE
         ? {
               kind: 'move_to',
               target: recoveryWaypoint,

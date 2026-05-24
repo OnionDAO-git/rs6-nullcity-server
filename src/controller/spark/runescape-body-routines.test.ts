@@ -386,6 +386,9 @@ describe('starterFishingCookingAction', () => {
     const LOGS = 1511;
     const COOKING_RANGE = 114;
     const FIRE_OBJECT = FIRE_OBJECT_ID;
+    const KITCHEN_DOOR = 1530;
+    const CASTLE_ENTRANCE_DOOR = 1516;
+    const OPEN_CASTLE_ENTRANCE_DOOR = 1517;
 
     it('returns use_item_on against a heat source when raw fish is in inventory', () => {
         const heatSource = { objectId: COOKING_RANGE, position: { x: 100, y: 100, level: 0 } };
@@ -413,6 +416,117 @@ describe('starterFishingCookingAction', () => {
             }),
         );
         expect((action as { target: unknown }).target).toBe(near);
+    });
+
+    it('walks around to the castle entrance before using an unreachable west kitchen door', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const door = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3217, y: 3218, level: 0 },
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('opens a visible castle entrance door instead of walking onto the door tile', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const castleDoor = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, kitchenDoor, castleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: castleDoor,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('uses the range when the castle entrance is already open', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, kitchenDoor, openCastleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on',
+            itemSlot: 0,
+            target: range,
+            cause: 'starter_fishing_cook_catch',
+        });
+    });
+
+    it('does not treat a mixed open and closed castle entrance as pathable', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const closedCastleDoor = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, closedCastleDoor, openCastleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: closedCastleDoor,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('opens a visible kitchen door when adjacent before cooking on a distant range', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const door = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3207, y: 3211, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: door,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('opens the castle entrance door when the cooking route reaches it', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const door = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3217, y: 3218, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: door,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
     });
 
     it('falls back to lighting a cooking fire when no heat source but tinderbox+logs are carried', () => {
@@ -722,6 +836,33 @@ describe('lowHealthRecoveryAction', () => {
             itemSlot: 0,
             target: fire,
             cause: 'low_health_cook_food',
+        });
+    });
+
+    it('retreats instead of taking a distant cooking route when hurt and threatened', () => {
+        const range = { objectId: FIRE_OBJECT_ID, position: { x: 3212, y: 3215, level: 0 } };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    inCombat: false,
+                },
+                nearby: {
+                    objects: [range],
+                    npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }],
+                },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
         });
     });
 

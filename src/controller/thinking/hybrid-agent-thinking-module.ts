@@ -14,6 +14,7 @@ import {
     FOOD_KEY_PATTERN,
     INTERACTION_APPROACH_RADIUS,
     LEVEL_ONE_TREE_IDS,
+    LUMBRIDGE_CASTLE_RANGE,
     LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
     MAX_INVENTORY_SLOTS,
     PICKUP_TARGET_COOLDOWN_TICKS,
@@ -1328,7 +1329,22 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private starterFishingCookingAction(perception: HybridPerception): AgentAction | undefined {
         const action = starterFishingCookingAction(perception);
-        if (!action || action.kind !== 'move_to' || action.cause !== 'starter_fishing_find_range') {
+        if (
+            action?.kind === 'say' &&
+            action.cause === 'starter_fishing_missing_heat' &&
+            this.targetFailureCooldownActive(LUMBRIDGE_CASTLE_RANGE)
+        ) {
+            return {
+                kind: 'say',
+                text: 'I can see the Lumbridge range, but I cannot reach it from here. I need logs, an axe, or someone to open a path.',
+                cause: 'starter_fishing_missing_heat',
+            };
+        }
+        if (
+            !action ||
+            action.kind !== 'move_to' ||
+            (action.cause !== 'starter_fishing_find_range' && action.cause !== 'starter_fishing_reach_castle_entrance')
+        ) {
             return action;
         }
 
@@ -1344,7 +1360,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         return {
             kind: 'say',
-            text: 'I have raw fish now. I need a fire or range to cook it.',
+            text: 'I can see the Lumbridge range, but I cannot reach it from here. I need logs, an axe, or someone to open a path.',
             cause: 'starter_fishing_missing_heat',
         };
     }
