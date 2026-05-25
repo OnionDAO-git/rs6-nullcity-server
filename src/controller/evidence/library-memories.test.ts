@@ -356,4 +356,101 @@ describe('readRecentPatronMemories', () => {
         expect(patronMemories).toHaveLength(1);
         expect(patronMemories[0]).toContain('alice@onion');
     });
+
+    // HD-027 gap (a): patron_ask events written by patron:ask CLI / PatronGateway
+    // land in the timeline but were excluded from the patron-dedicated slice
+    // because isPatronKind did not list 'patron_ask'. Brain was therefore blind
+    // to patron questions, making the ask verb's timeline write-path useless.
+    it('patron_ask events survive timeline noise in the patron-dedicated slice', () => {
+        writeTimeline('res:agent', [
+            { ts: '2026-05-25T10:00:00.000Z', kind: 'patron_ask', patronHandle: 'james', question: 'What do you think of the Foundry?' },
+            { ts: '2026-05-25T10:01:00.000Z', kind: 'say', text: 'I wander.' },
+            { ts: '2026-05-25T10:02:00.000Z', kind: 'say', text: 'Still here.' },
+            { ts: '2026-05-25T10:03:00.000Z', kind: 'say', text: 'Moving on.' },
+            { ts: '2026-05-25T10:04:00.000Z', kind: 'say', text: 'Exploring.' },
+            { ts: '2026-05-25T10:05:00.000Z', kind: 'say', text: 'Quiet day.' },
+        ]);
+
+        const patronMemories = readRecentPatronMemories(tmpRoot, 'res:agent', 4);
+        expect(patronMemories).toHaveLength(1);
+        expect(patronMemories[0]).toContain('james');
+        expect(patronMemories[0]).toContain('What do you think of the Foundry?');
+    });
+});
+
+describe('renderEventAsMemory — HD-027 rendering gaps', () => {
+    let tmpRoot: string;
+
+    beforeEach(() => {
+        tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'library-hd027-test-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+    });
+
+    function writeTimeline(resident: string, lines: Array<Record<string, unknown>>): void {
+        const dir = path.join(tmpRoot, 'library', resident.replace(/[^a-z0-9-]/gi, '-'));
+        fs.mkdirSync(dir, { recursive: true });
+        const body = lines.map(line => JSON.stringify(line)).join('\n');
+        fs.writeFileSync(path.join(dir, 'timeline.jsonl'), body ? `${body}\n` : '');
+    }
+
+    // HD-027 gap (b): attentionDelta is stored in patron_gift timeline events
+    // (via LibraryUpdater.observePatron → PatronGateway.offerTo) but was not
+    // rendered in the Brain's memory string. Heroes couldn't see the magnitude
+    // of patron support beyond the raw Shard count.
+    it('patron_gift rendering includes attentionDelta when present', () => {
+        writeTimeline('res:agent', [
+            {
+                ts: '2026-05-25T10:00:00.000Z',
+                kind: 'patron_gift',
+                patronHandle: 'james',
+                amount: 50,
+                standingTier: 'ally',
+                attentionDelta: 500,
+            },
+        ]);
+
+        const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+        expect(memory).toContain('james');
+        expect(memory).toContain('50 Shards');
+        expect(memory).toContain('ally');
+        expect(memory).toContain('500');
+    });
+
+    // HD-027 gap (c): patron_witness stores artifact=landmarkId but the renderer
+    // output 'Patron witnessed (handle) at <ts>' — no location info. Heroes
+    // couldn't distinguish an embassy witness from a wilderness witness.
+    it('patron_witness rendering includes artifact (landmark) when present', () => {
+        writeTimeline('res:agent', [
+            {
+                ts: '2026-05-25T10:05:00.000Z',
+                kind: 'patron_witness',
+                patronHandle: 'alice',
+                artifact: 'atrium',
+            },
+        ]);
+
+        const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+        expect(memory).toContain('alice');
+        expect(memory).toContain('atrium');
+    });
+
+    // patron_ask rendering: the question text should appear in the memory string
+    // so the Brain can address it in conversation.
+    it('patron_ask renders with handle and question text', () => {
+        writeTimeline('res:agent', [
+            {
+                ts: '2026-05-25T10:10:00.000Z',
+                kind: 'patron_ask',
+                patronHandle: 'bob',
+                question: 'How are you holding up?',
+            },
+        ]);
+
+        const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+        expect(memory).toContain('bob');
+        expect(memory).toContain('How are you holding up?');
+    });
 });

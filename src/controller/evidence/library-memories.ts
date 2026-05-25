@@ -73,7 +73,7 @@ function readTimeline(libraryRoot: string, resident: string): Array<Record<strin
 }
 
 function isPatronKind(kind: unknown): boolean {
-    return kind === 'patron_gift' || kind === 'patron_witness' || kind === 'patron_sponsor';
+    return kind === 'patron_gift' || kind === 'patron_witness' || kind === 'patron_sponsor' || kind === 'patron_ask';
 }
 
 /**
@@ -121,7 +121,10 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
     switch (kind) {
         case 'patron_witness': {
             const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
-            return `Patron witnessed (${handle}) at ${ts}`;
+            // HD-027 gap (c): include the landmark (stored as `artifact`) so the
+            // Brain can distinguish an embassy witness from a wilderness witness.
+            const landmark = typeof event.artifact === 'string' && event.artifact.length > 0 ? ` at ${event.artifact}` : '';
+            return `Patron witnessed (${handle})${landmark} (${ts})`;
         }
         case 'patron_gift': {
             const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
@@ -136,7 +139,13 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
             if (amount !== undefined) {
                 const shards = `${amount} Shard${amount === 1 ? '' : 's'}`;
                 const tierClause = tier ? ` (you are now ${tier} to them)` : '';
-                return `Patron gift from ${handle}: ${shards}${tierClause} (${ts})`;
+                // HD-027 gap (b): include attentionDelta so Brain understands the
+                // magnitude of support beyond the raw Shard count.
+                const attnDelta =
+                    typeof event.attentionDelta === 'number' && Number.isFinite(event.attentionDelta) && event.attentionDelta > 0
+                        ? ` +${event.attentionDelta} attention`
+                        : '';
+                return `Patron gift from ${handle}: ${shards}${attnDelta}${tierClause} (${ts})`;
             }
             const artifact = typeof event.artifact === 'string' ? event.artifact : 'a gift';
             return `Patron gift from ${handle}: ${artifact} (${ts})`;
@@ -144,6 +153,15 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
         case 'patron_sponsor': {
             const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
             return `Patron sponsor: ${handle} (${ts})`;
+        }
+        case 'patron_ask': {
+            // HD-027 gap (a): patron questions written by patron:ask / PatronGateway
+            // were invisible to the Brain because isPatronKind excluded 'patron_ask'.
+            // Now included in patron slice AND rendered with question text so the Brain
+            // can address it in conversation.
+            const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
+            const question = typeof event.question === 'string' && event.question.length > 0 ? event.question : '(question unavailable)';
+            return `Patron ${handle} asks: "${question}" (${ts})`;
         }
         case 'revival': {
             // E44 (intelligence-verification-log.md § E44, task #156): revival
