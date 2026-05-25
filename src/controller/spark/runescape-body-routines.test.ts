@@ -11,15 +11,15 @@ import {
     combatLootOrPrayerAction,
     combatTrainingAction,
     explorationAction,
-    factionLandmarkWorkAction,
     explorationItemCooldownKey,
     explorationObjectCooldownKey,
     explorationPatrolCooldownKey,
+    factionLandmarkWorkAction,
     firemakingAction,
+    INTERACTION_APPROACH_RADIUS,
     LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
-    LUMBRIDGE_STARTER_FISHING_SPOT,
-    LUMBRIDGE_STARTER_FISHING_SPOTS,
+    LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
     opportunisticPickupAction,
@@ -222,10 +222,11 @@ describe('levelOneWoodcuttingAction', () => {
 describe('starterFishingAction', () => {
     const SMALL_NET = 303;
 
-    function fishingSpot(x: number, y: number): BodyActor {
+    function fishingSpot(x: number, y: number, key = 'rs:fishing_spot_net_bait'): BodyActor {
         return {
             id: `npc:fishing-${x}-${y}`,
             kind: 'npc',
+            key,
             name: 'Fishing spot',
             position: { x, y, level: 0 },
             hpFraction: 1,
@@ -282,6 +283,18 @@ describe('starterFishingAction', () => {
         });
     });
 
+    it('ignores visible fishing spots that do not support netting', () => {
+        const lureOnly = fishingSpot(101, 100, 'rs:fishing_spot_lure_bait');
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [lureOnly] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
     it('prefers the live-proven Lumbridge starter spot when both fixed river spots are visible', () => {
         const primary = fishingSpot(3239, 3244);
         const secondary = fishingSpot(3241, 3242);
@@ -333,10 +346,11 @@ describe('starterFishingAction', () => {
 describe('starterFishingRouteAction', () => {
     const SMALL_NET = 303;
 
-    function fishingSpot(x: number, y: number): BodyActor {
+    function fishingSpot(x: number, y: number, key = 'rs:fishing_spot_net_bait'): BodyActor {
         return {
             id: `npc:fishing-${x}-${y}`,
             kind: 'npc',
+            key,
             name: 'Fishing spot',
             position: { x, y, level: 0 },
             hpFraction: 1,
@@ -360,7 +374,7 @@ describe('starterFishingRouteAction', () => {
         });
     });
 
-    it('routes a Lumbridge starter angler toward the river fishing spot when no spot is visible', () => {
+    it('routes a Lumbridge starter angler toward the river stand spot when no spot is visible', () => {
         const action = starterFishingRouteAction(
             perception({
                 resident: { position: { x: 3228, y: 3204, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -370,16 +384,16 @@ describe('starterFishingRouteAction', () => {
 
         expect(action).toEqual({
             kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_SPOT,
-            range: 7,
+            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+            range: INTERACTION_APPROACH_RADIUS,
             cause: 'starter_fishing_seek_spot',
         });
     });
 
-    it('does not path onto a known server spawn when already at bank-visible range but no spot is visible', () => {
+    it('does not keep pathing when already close to the stand spot but no spot is visible', () => {
         const action = starterFishingRouteAction(
             perception({
-                resident: { position: { x: 3242, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
+                resident: { position: { x: 3240, y: 3243, level: 0 }, inventory: [item(SMALL_NET)] },
                 nearby: { npcs: [] },
             }),
         );
@@ -391,7 +405,7 @@ describe('starterFishingRouteAction', () => {
         });
     });
 
-    it('keeps searching nearby Lumbridge starter spots when the nearest spawn is quiet', () => {
+    it('keeps moving to the stand spot instead of loose range oscillation when nearby spawns are quiet', () => {
         const action = starterFishingRouteAction(
             perception({
                 resident: { position: { x: 3232, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -401,8 +415,8 @@ describe('starterFishingRouteAction', () => {
 
         expect(action).toEqual({
             kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_SPOTS[1],
-            range: 7,
+            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+            range: INTERACTION_APPROACH_RADIUS,
             cause: 'starter_fishing_seek_spot',
         });
     });
@@ -1052,6 +1066,7 @@ describe('lowHealthRecoveryAction', () => {
         const fishingSpot: BodyActor = {
             id: 'npc:fishing-spot',
             kind: 'npc',
+            key: 'rs:fishing_spot_net_bait',
             name: 'Fishing spot',
             position: { x: 101, y: 100, level: 0 },
         };

@@ -3,7 +3,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
-import { LUMBRIDGE_STARTER_FISHING_SPOT, STARTER_FISHING_SPOT_DISCOVERY_RANGE } from '../spark/runescape-body-routines';
+import { INTERACTION_APPROACH_RADIUS, LUMBRIDGE_STARTER_FISHING_STAND_SPOT } from '../spark/runescape-body-routines';
 import type { Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 
@@ -2531,7 +2531,12 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: LUMBRIDGE_STARTER_FISHING_SPOT, range: 7, cause: 'starter_fishing_seek_spot' },
+            {
+                kind: 'move_to',
+                target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+                range: INTERACTION_APPROACH_RADIUS,
+                cause: 'starter_fishing_seek_spot',
+            },
         ]);
         expect(result.cause).toBe('starter_fishing_seek_spot');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -5898,7 +5903,7 @@ describe('HybridAgentThinkingModule', () => {
             {
                 kind: 'move_to',
                 target: { x: 3240, y: 3244, level: 0 },
-                range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+                range: INTERACTION_APPROACH_RADIUS,
                 cause: 'starter_fishing_reposition_to_bank',
             },
         ]);
@@ -6128,8 +6133,9 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([
             {
-                kind: 'say',
-                text: 'I am at the Lumbridge fishing water and looking for a net spot.',
+                kind: 'move_to',
+                target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+                range: INTERACTION_APPROACH_RADIUS,
                 cause: 'starter_fishing_seek_spot',
             },
         ]);
@@ -7977,11 +7983,12 @@ function chatFromSelfResident(text: string, x: number, y: number): Record<string
 }
 
 function npc(name: string, x: number, y: number): Record<string, unknown> {
+    const key = name.toLowerCase() === 'fishing spot' ? 'rs:fishing_spot_net_bait' : name.toLowerCase();
     return {
         id: `npc:${name.toLowerCase()}`,
         kind: 'npc',
         name,
-        key: name.toLowerCase(),
+        key,
         position: { x, y, level: 0 },
         hpFraction: 1,
     };

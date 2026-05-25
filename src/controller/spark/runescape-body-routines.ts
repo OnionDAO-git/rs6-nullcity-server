@@ -137,6 +137,8 @@ export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = 7;
 /** Conservative guard so the Lumbridge waypoint only claims nearby starter-area anglers. */
 export const STARTER_FISHING_ROUTE_MAX_DISTANCE = 128;
 
+const NET_FISHING_SPOT_KEY_PATTERN = /fishing_spot_net_(?:bait|harpoon)/i;
+
 /** Visible door/gate radius considered useful for reaching a cooking heat source. */
 export const COOKING_ROUTE_OPENABLE_MAX_DISTANCE = 8;
 
@@ -457,7 +459,7 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
     }
 
     const target = (perception.nearby?.npcs || [])
-        .filter(isFishingSpot)
+        .filter(isNetCapableFishingSpot)
         .sort((a, b) => starterFishingSpotScore(here, a.position) - starterFishingSpotScore(here, b.position))[0];
     if (!target) {
         return undefined;
@@ -473,6 +475,20 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
     }
 
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
+}
+
+function isNetCapableFishingSpot(actor: BodyActor): boolean {
+    if (!isFishingSpot(actor)) {
+        return false;
+    }
+    const keyText = [actor.key, actor.id].filter((value): value is string => typeof value === 'string').join(' ');
+    if (NET_FISHING_SPOT_KEY_PATTERN.test(keyText)) {
+        return true;
+    }
+    if (actor.key) {
+        return false;
+    }
+    return LUMBRIDGE_STARTER_FISHING_SPOTS.some(position => bodyPositionKey(position) === bodyPositionKey(actor.position));
 }
 
 function starterFishingSpotScore(here: BodyPos, target: BodyPos): number {
@@ -500,17 +516,16 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
         return undefined;
     }
 
-    const target = nextStarterFishingSearchPoint(here);
-    const routeDistance = target ? distance(here, target) : Number.POSITIVE_INFINITY;
-    if (!target || here.level !== target.level || routeDistance > STARTER_FISHING_ROUTE_MAX_DISTANCE) {
+    const routeDistance = distance(here, LUMBRIDGE_STARTER_FISHING_STAND_SPOT);
+    if (here.level !== LUMBRIDGE_STARTER_FISHING_STAND_SPOT.level || routeDistance > STARTER_FISHING_ROUTE_MAX_DISTANCE) {
         return undefined;
     }
 
-    if (routeDistance > STARTER_FISHING_SPOT_DISCOVERY_RANGE) {
+    if (routeDistance > INTERACTION_APPROACH_RADIUS) {
         return {
             kind: 'move_to',
-            target,
-            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+            range: INTERACTION_APPROACH_RADIUS,
             cause: 'starter_fishing_seek_spot',
         };
     }
@@ -520,15 +535,6 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
         text: 'I am at the Lumbridge fishing water and looking for a net spot.',
         cause: 'starter_fishing_seek_spot',
     };
-}
-
-function nextStarterFishingSearchPoint(here: BodyPos): BodyPos | undefined {
-    const candidates = LUMBRIDGE_STARTER_FISHING_SPOTS.filter(position => position.level === here.level);
-    return (
-        candidates.find(position => distance(here, position) > STARTER_FISHING_SPOT_DISCOVERY_RANGE) ||
-        candidates.find(position => distance(here, position) > 0) ||
-        candidates[0]
-    );
 }
 
 /**

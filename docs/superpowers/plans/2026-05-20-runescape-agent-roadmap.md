@@ -104,7 +104,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: existing hybrid tests still pass; new workflow tests verify prerequisites and next actions.
   - *Completed: Extracted, unit tested, and integrated under Workstream R1.*
 
-- `[>]` **B3: Extract deterministic Body routines.**
+- `[~]` **B3: Extract deterministic Body routines.**
   - Files: `src/controller/spark/runescape-body-routines.ts`, `src/controller/spark/runescape-body-routines.test.ts`
   - Deliverable: "make fire", "walk to interaction range", "use tool on target", "eat food", and "recover from stuck" routines are separate from inference prompts.
   - Verification: tests simulate perception and assert typed `AgentAction` sequences.
@@ -113,6 +113,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Partial 2026-05-25 on `agents/wip`: NPC interaction hooks can declare custom interaction distance, fishing spots use a shoreline casting range, and `ignoreDestination` pathing can fall back to reachable adjacent tiles. Verified with focused tests and a live autonomous `starter-fishing-5m` pass (`score=1`, `changed=skills,inventory`, artifact `/tmp/oniondao-starter-fishing-live-codex/bench_20260525102747_starter_fishing_5m.json`). Remaining extraction work still includes generalizing the typed routine library beyond fishing/firemaking.
   - Hardened 2026-05-25 on `agents/wip`: stale NPC world-index refs now recover by matching target key/position, and starter anglers can reposition to the live-proven Lumbridge bank tile after a spot timeout. Live `res:qa-angler` restarted, netted shrimp, gained Fishing XP, and passed `controller:smoke -- --resident res:qa-angler --fail-on-warn`.
   - Hardened 2026-05-25 on `agents/wip` (ae49008f): accept fishing busy evidence and relax bank recovery range using `STARTER_FISHING_SPOT_DISCOVERY_RANGE`.
+  - Follow-up 2026-05-25 on `agents/wip`: live QA showed discovery-range movement could pass while qa anglers oscillated near the river without netting. Starter fishing now routes to the live stand spot with normal interaction range, filters visible spots to net-capable NPC keys, and leaves broad Body extraction open.
 
 - `[x]` **B4: Extract Brain goal planner.**
   - Files: `src/controller/spark/runescape-brain-planner.ts`, `src/controller/spark/runescape-brain-planner.test.ts`

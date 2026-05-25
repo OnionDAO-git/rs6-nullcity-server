@@ -240,6 +240,8 @@ export class ActionAdapter {
             if (!actor) {
                 return { ok: false, reason: 'target_not_found' };
             }
+            resident.walkingQueue.clear();
+            resident.walkingQueue.valid = false;
             if (actor.type === 'npc') {
                 resident.actionPipeline.call('npc_interaction', resident, actor, actor.position, option.toLowerCase());
             } else {

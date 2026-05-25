@@ -24,7 +24,6 @@ import {
     PICKUP_TARGET_COOLDOWN_TICKS,
     PRAYER_TRAINING_WAYPOINTS,
     PRAYER_TRAINING_WAYPOINT_RANGE,
-    STARTER_FISHING_SPOT_DISCOVERY_RANGE,
     STARTER_FISHING_ROUTE_MAX_DISTANCE,
     actionWithCause,
     buryBonesAction,
@@ -1077,7 +1076,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return {
             kind: 'move_to',
             target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+            range: INTERACTION_APPROACH_RADIUS,
             cause: 'starter_fishing_reposition_to_bank',
         };
     }

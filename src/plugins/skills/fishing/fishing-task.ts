@@ -47,6 +47,7 @@ export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
 
         const taskIteration = this.elapsedTicks++;
         if (taskIteration === 0) {
+            this.actor.busy = true;
             this.actor.sendMessage('You start fishing.');
             this.actor.face(fishingSpot.position);
             this.actor.playAnimation(this.method.animation);
@@ -106,5 +107,6 @@ export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
         super.onStop();
 
         this.actor.stopAnimation();
+        this.actor.busy = false;
     }
 }
