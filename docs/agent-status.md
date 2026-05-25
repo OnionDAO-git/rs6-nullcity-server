@@ -622,3 +622,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-24 22:47 codex branch=agents/wip workstream=o4-inference-health HANDOFF - hardened probe bypasses LlmClient pause + strict JSON; live /v1/health 200 and res:agent smoke OK. SHA=9bee728a tests=1718+fin collision=O3 docs by antigravity.
 2026-05-24 22:49 codex branch=agents/wip workstream=proof-soak STARTING - timed smoke. Files:docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md,docs/agent-status.md,src/controller/admin/live-smoke.ts,src/controller/admin/live-smoke.test.ts
 2026-05-24 23:00 codex branch=agents/wip workstream=proof-soak HANDOFF - timed controller:smoke proof passed live res:agent; commit pending. SHA=pending tests=1728+fin+live collision=none
+2026-05-24 23:01 codex branch=agents/wip workstream=proof-soak CORRECTION - prior HANDOFF commit SHA is fd7b29fd. tests=1728+fin+live collision=none
