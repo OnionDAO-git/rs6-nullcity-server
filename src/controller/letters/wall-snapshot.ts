@@ -16,6 +16,9 @@ import type { Letter } from '../patron/letters-producer';
  *     epitaphs were dispatched during the local-day window
  *     containing `now`. A resident with multiple patrons still
  *     counts once.
+ *   - `residents`: live roster of all residents found in
+ *     lettersRoot/res-SLUG/runtime-state.json, sorted alive-first
+ *     then alphabetically. Drives the "Who's Here" panel.
  *   - `asOf`: the supplied `now` echoed back as ISO so the consumer
  *     can render "as of HH:MM".
  *
@@ -23,6 +26,7 @@ import type { Letter } from '../patron/letters-producer';
  *   - Missing letters directory ⇒ empty snapshot.
  *   - Inbox sub-directory without inbox.jsonl ⇒ skipped.
  *   - Malformed JSONL lines ⇒ skipped (not thrown).
+ *   - Missing or malformed runtime-state.json ⇒ resident skipped.
  *
  * Pairs with the planned HTTP route `GET /v1/wall/snapshot` and a
  * static page at `public/wall/` (post-event).
@@ -36,9 +40,25 @@ export interface BuildWallSnapshotOptions {
     limit?: number;
 }
 
+/** One resident's live status for the wall roster panel. */
+export interface ResidentSummary {
+    /** Directory slug, e.g. "res-hans". */
+    slug: string;
+    /** Human-friendly display name derived from slug, e.g. "Hans". */
+    displayName: string;
+    /** True unless the runtime-state has a `deceased` entry. */
+    alive: boolean;
+    /** Remaining attention ticks. */
+    attention: number;
+    /** Current active goal description, if any. */
+    activeGoal?: string;
+}
+
 export interface WallSnapshot {
     recentLetters: Letter[];
     deathsToday: number;
+    /** Live roster scanned from runtime-state files. Always present; empty when no res- dirs exist. */
+    residents: ResidentSummary[];
     asOf: string;
 }
 
@@ -48,7 +68,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     const lettersDir = path.join(lettersRoot, 'data', 'letters');
 
     if (!fs.existsSync(lettersDir)) {
-        return { recentLetters: [], deathsToday: 0, asOf };
+        return { recentLetters: [], deathsToday: 0, residents: readResidents(lettersRoot), asOf };
     }
 
     const allLetters: Letter[] = [];
@@ -110,9 +130,12 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         deceasedResidents.add(letter.senderResident);
     }
 
+    const residents = readResidents(lettersRoot);
+
     return {
         recentLetters,
         deathsToday: deceasedResidents.size,
+        residents,
         asOf,
     };
 }
@@ -147,6 +170,8 @@ export function redactWallSnapshot(snapshot: WallSnapshot): WallSnapshot {
             body: '',
         })),
         deathsToday: snapshot.deathsToday,
+        // Resident names and goals are public information on the wall display.
+        residents: snapshot.residents,
         asOf: snapshot.asOf,
     };
 }
@@ -172,6 +197,98 @@ function redactHandle(handle: string): string {
         return `${handle[0]}***${handle.slice(lastDash)}`;
     }
     return `${handle[0]}***`;
+}
+
+/**
+ * Scan lettersRoot/res-SLUG/runtime-state.json files and return a roster
+ * of all residents (alive and deceased), sorted alive-first then by slug.
+ * Resilient: missing dir, unreadable files, and malformed JSON are skipped.
+ */
+function readResidents(lettersRoot: string): ResidentSummary[] {
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+
+    const summaries: ResidentSummary[] = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
+            continue;
+        }
+        const slug = entry.name;
+        const statePath = path.join(lettersRoot, slug, 'runtime-state.json');
+        if (!fs.existsSync(statePath)) {
+            continue;
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(statePath, 'utf8');
+        } catch {
+            continue;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        if (!isRuntimeStateShape(parsed)) {
+            continue;
+        }
+        const displayName = humanizeName(slug);
+        const alive = parsed.deceased === undefined || parsed.deceased === null;
+        const activeGoal =
+            parsed.cognition !== undefined &&
+            parsed.cognition !== null &&
+            typeof parsed.cognition === 'object' &&
+            'activeGoal' in parsed.cognition &&
+            parsed.cognition.activeGoal !== undefined &&
+            parsed.cognition.activeGoal !== null &&
+            typeof parsed.cognition.activeGoal === 'object' &&
+            'description' in parsed.cognition.activeGoal &&
+            typeof (parsed.cognition.activeGoal as Record<string, unknown>).description === 'string'
+                ? ((parsed.cognition.activeGoal as Record<string, unknown>).description as string)
+                : undefined;
+
+        const summary: ResidentSummary = { slug, displayName, alive, attention: parsed.attention };
+        if (activeGoal !== undefined) {
+            summary.activeGoal = activeGoal;
+        }
+        summaries.push(summary);
+    }
+
+    // Alive residents first; alphabetical within each group.
+    summaries.sort((a, b) => {
+        if (a.alive !== b.alive) {
+            return a.alive ? -1 : 1;
+        }
+        return a.slug.localeCompare(b.slug);
+    });
+
+    return summaries;
+}
+
+function humanizeName(slug: string): string {
+    const withoutPrefix = slug.replace(/^res-/, '');
+    return withoutPrefix
+        .split('-')
+        .map(word => (word.length > 0 ? word.charAt(0).toUpperCase() + word.slice(1) : ''))
+        .join(' ')
+        .trim();
+}
+
+function isRuntimeStateShape(value: unknown): value is {
+    attention: number;
+    deceased?: object | null;
+    cognition?: unknown;
+} {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const v = value as Record<string, unknown>;
+    return typeof v.attention === 'number';
 }
 
 function isLetter(value: unknown): value is Letter {

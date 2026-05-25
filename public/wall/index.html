@@ -13,6 +13,7 @@
             --bg-mid: #1a120a;
             --bg-card: #1f160c;
             --bg-card-fresh: #3a2914;
+            --bg-roster: #160e07;
             --edge: #4f3a1c;
             --edge-soft: rgba(79, 58, 28, 0.55);
             --accent: #d49b4a;
@@ -24,6 +25,8 @@
             --civic: #7a9fd0;
             --civic-deep: #2a4666;
             --rule: rgba(212, 155, 74, 0.25);
+            --alive-dot: #7eb056;
+            --dead-dot: #c14a3a;
         }
         * { box-sizing: border-box; }
         html, body {
@@ -34,7 +37,6 @@
             overflow: hidden;
         }
         body {
-            /* layered parchment-y background: deep ink + soft warm glow + grain */
             background:
                 radial-gradient(ellipse at 50% 0%, rgba(212, 155, 74, 0.08), transparent 60%),
                 radial-gradient(ellipse at 50% 100%, rgba(193, 74, 58, 0.05), transparent 55%),
@@ -76,7 +78,88 @@
             font-size: 1rem;
             letter-spacing: 0.04em;
         }
+
+        /* Two-column layout: roster sidebar on the left, letters on the right */
         main {
+            display: grid;
+            grid-template-columns: 260px 1fr;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* ── LEFT: resident roster panel ────────────────────────────── */
+        .roster {
+            background: var(--bg-roster);
+            border-right: 1px solid var(--edge);
+            overflow-y: auto;
+            padding: 1.25rem 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+        .roster-heading {
+            font-size: 0.72rem;
+            font-variant: small-caps;
+            letter-spacing: 0.2em;
+            color: var(--accent);
+            border-bottom: 1px solid var(--rule);
+            padding-bottom: 0.55rem;
+            margin-bottom: 0.85rem;
+        }
+        .roster-empty {
+            color: var(--ink-fade);
+            font-style: italic;
+            font-size: 0.88rem;
+            padding: 0.5rem 0;
+        }
+        .resident-row {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.45rem 0.65rem;
+            align-items: start;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid rgba(79, 58, 28, 0.25);
+        }
+        .resident-row:last-child { border-bottom: none; }
+        .resident-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-top: 0.35em;
+            flex-shrink: 0;
+            box-shadow: 0 0 6px currentColor;
+        }
+        .resident-dot.alive { color: var(--alive-dot); background: var(--alive-dot); }
+        .resident-dot.dead  { color: var(--dead-dot);  background: var(--dead-dot);  opacity: 0.55; }
+        .resident-info { min-width: 0; }
+        .resident-name {
+            font-size: 0.95rem;
+            color: var(--ink);
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .resident-row.dead .resident-name {
+            color: var(--ink-fade);
+            text-decoration: line-through;
+            text-decoration-color: rgba(193, 74, 58, 0.45);
+        }
+        .resident-goal {
+            font-size: 0.78rem;
+            color: var(--ink-soft);
+            font-style: italic;
+            line-height: 1.35;
+            margin-top: 0.2rem;
+            /* Two lines max to keep rows compact */
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* ── RIGHT: letters ticker ───────────────────────────────────── */
+        .letters {
             overflow: hidden;
             padding: 1.5rem 2.25rem;
             display: flex;
@@ -85,7 +168,7 @@
             position: relative;
         }
         /* faint vertical "scroll edge" guides */
-        main::before, main::after {
+        .letters::before, .letters::after {
             content: "";
             position: absolute;
             top: 0;
@@ -93,8 +176,8 @@
             width: 1px;
             background: linear-gradient(180deg, transparent, var(--edge-soft) 30%, var(--edge-soft) 70%, transparent);
         }
-        main::before { left: 1rem; }
-        main::after  { right: 1rem; }
+        .letters::before { left: 1rem; }
+        .letters::after  { right: 1rem; }
 
         .card {
             background:
@@ -125,7 +208,6 @@
             100% { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(212, 155, 74, 0); }
         }
 
-        /* tier/kind badge — wax-seal feel */
         .card .kind {
             font-size: 0.72rem;
             font-variant: small-caps;
@@ -213,7 +295,13 @@
         <h1>Null City Embassy</h1>
         <div class="subtitle">letters between residents and their patrons</div>
     </header>
-    <main id="cards"><div class="empty">Loading…</div></main>
+    <main>
+        <aside class="roster" id="roster">
+            <div class="roster-heading">Who's Here</div>
+            <div class="roster-empty" id="roster-empty">Loading…</div>
+        </aside>
+        <section class="letters" id="cards"><div class="empty">Loading…</div></section>
+    </main>
     <footer>
         <span><span class="deaths" id="deaths">— deaths today</span></span>
         <span class="asof" id="asof">—</span>
@@ -221,20 +309,16 @@
     <script>
         (function () {
             const params = new URLSearchParams(window.location.search);
-            // Polling interval (ms). Default 5 seconds.
             const intervalMs = Math.max(1000, Number(params.get('intervalMs')) || 5000);
-            // Maximum cards to render. Default 8.
             const maxCards = Math.max(1, Number(params.get('limit')) || 8);
-            // API base — override when wall page is served from a different
-            // origin than the controller HTTP server.
             const apiBase = params.get('api') || '/v1/wall/snapshot';
 
             const cardsElement = document.getElementById('cards');
+            const rosterElement = document.getElementById('roster');
+            const rosterEmpty = document.getElementById('roster-empty');
             const deathsElement = document.getElementById('deaths');
             const asofElement = document.getElementById('asof');
 
-            // Track which letters we've already shown so newly-arrived ones
-            // can pulse on first render.
             const seen = new Set();
             let firstFetchDone = false;
 
@@ -290,6 +374,47 @@
                 return card;
             }
 
+            function renderRoster(residents) {
+                // Remove old resident rows; keep the heading.
+                const heading = rosterElement.querySelector('.roster-heading');
+                rosterElement.replaceChildren(heading || document.createTextNode(''));
+
+                if (!Array.isArray(residents) || residents.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'roster-empty';
+                    empty.textContent = 'No residents found.';
+                    rosterElement.appendChild(empty);
+                    return;
+                }
+
+                for (const r of residents) {
+                    const row = document.createElement('div');
+                    row.className = 'resident-row' + (r.alive ? '' : ' dead');
+
+                    const dot = document.createElement('div');
+                    dot.className = 'resident-dot ' + (r.alive ? 'alive' : 'dead');
+                    row.appendChild(dot);
+
+                    const info = document.createElement('div');
+                    info.className = 'resident-info';
+
+                    const name = document.createElement('div');
+                    name.className = 'resident-name';
+                    name.textContent = String(r.displayName || r.slug || '?');
+                    info.appendChild(name);
+
+                    if (r.activeGoal) {
+                        const goal = document.createElement('div');
+                        goal.className = 'resident-goal';
+                        goal.textContent = String(r.activeGoal);
+                        info.appendChild(goal);
+                    }
+
+                    row.appendChild(info);
+                    rosterElement.appendChild(row);
+                }
+            }
+
             function formatTs(iso) {
                 if (!iso) return '';
                 try {
@@ -308,9 +433,12 @@
                 const letters = Array.isArray(payload && payload.letters) ? payload.letters : (payload && payload.recentLetters) || [];
                 const deathsToday = (payload && typeof payload.deathsToday === 'number') ? payload.deathsToday : 0;
                 const asOf = (payload && payload.asOf) ? payload.asOf : '';
+                const residents = (payload && Array.isArray(payload.residents)) ? payload.residents : [];
 
                 deathsElement.textContent = pluralize(deathsToday, 'death') + ' today';
                 asofElement.textContent = 'as of ' + formatTs(asOf);
+
+                renderRoster(residents);
 
                 const slice = letters.slice(0, maxCards);
                 if (slice.length === 0) {

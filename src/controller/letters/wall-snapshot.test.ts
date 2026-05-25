@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import type { RuntimeState } from '../memory/runtime-state';
 import { LettersStore } from '../patron/letters-store';
 import { buildWallSnapshot, redactWallSnapshot, type WallSnapshot } from './wall-snapshot';
 
@@ -150,7 +151,7 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
         it('returns a WallSnapshot with stable field set', () => {
             seed('alice@onion', 'epitaph', '2026-05-23T15:00:00.000Z');
             const snap: WallSnapshot = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
-            expect(Object.keys(snap).sort()).toEqual(['asOf', 'deathsToday', 'recentLetters']);
+            expect(Object.keys(snap).sort()).toEqual(['asOf', 'deathsToday', 'recentLetters', 'residents']);
         });
     });
 
@@ -219,6 +220,13 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             expect(redacted.recentLetters[0].recipient).not.toBe(originalRecipient);
         });
 
+        it('redactWallSnapshot passes residents through unchanged (names/goals are public)', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            const redacted = redactWallSnapshot(snap);
+            expect(redacted.residents).toEqual(snap.residents);
+        });
+
         it('skips malformed JSONL lines without throwing', () => {
             // Seed first via the store, then append a garbage line AFTER (LettersStore
             // atomic-writes the whole file each append, so any post-append garbage
@@ -231,4 +239,105 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             expect(snap.recentLetters).toHaveLength(2);
         });
     });
+
+    describe('residents roster', () => {
+        it('returns empty residents when no res- directories exist', () => {
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents).toEqual([]);
+        });
+
+        it('returns an alive resident with display name and attention', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents).toHaveLength(1);
+            const [hans] = snap.residents;
+            expect(hans.slug).toBe('res-hans');
+            expect(hans.displayName).toBe('Hans');
+            expect(hans.alive).toBe(true);
+            expect(hans.attention).toBe(8000);
+            expect(hans.activeGoal).toBeUndefined();
+        });
+
+        it('includes active goal description when cognition.activeGoal is present', () => {
+            writeRuntimeState(root, 'res-wise-old-man', {
+                attention: 5000,
+                cognition: { activeGoal: { id: 'goal-1', description: 'Chop some oak trees', createdAtTick: 100 } },
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents[0].activeGoal).toBe('Chop some oak trees');
+            expect(snap.residents[0].displayName).toBe('Wise Old Man');
+        });
+
+        it('marks a resident with a deceased field as alive=false', () => {
+            writeRuntimeState(root, 'res-fern', {
+                attention: 0,
+                deceased: { date: '2026-05-23T10:00:00.000Z', tick: 500, cause: 'attention_exhausted' },
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents).toHaveLength(1);
+            expect(snap.residents[0].alive).toBe(false);
+        });
+
+        it('sorts alive residents before deceased, then alphabetically within each group', () => {
+            writeRuntimeState(root, 'res-zorka', { attention: 6000 });
+            writeRuntimeState(root, 'res-fern', {
+                attention: 0,
+                deceased: { date: '2026-05-23T10:00:00.000Z', tick: 200, cause: 'attention_exhausted' },
+            });
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            const slugs = snap.residents.map(r => r.slug);
+            // Both alive come before deceased; alive sorted alphabetically.
+            expect(slugs).toEqual(['res-hans', 'res-zorka', 'res-fern']);
+        });
+
+        it('skips a res- directory whose runtime-state.json is missing', () => {
+            // Only create the directory, no file inside.
+            fs.mkdirSync(path.join(root, 'res-ghost'), { recursive: true });
+            writeRuntimeState(root, 'res-hans', { attention: 7000 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents).toHaveLength(1);
+            expect(snap.residents[0].slug).toBe('res-hans');
+        });
+
+        it('skips a res- directory whose runtime-state.json is malformed JSON', () => {
+            fs.mkdirSync(path.join(root, 'res-broken'), { recursive: true });
+            fs.writeFileSync(path.join(root, 'res-broken', 'runtime-state.json'), '{ not json }');
+            writeRuntimeState(root, 'res-hans', { attention: 7000 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents).toHaveLength(1);
+        });
+
+        it('ignores non-res- directories in the root', () => {
+            // "data" directory (letters) and other non-res dirs should not appear.
+            fs.mkdirSync(path.join(root, 'data', 'letters'), { recursive: true });
+            fs.mkdirSync(path.join(root, 'benchmarks'), { recursive: true });
+            writeRuntimeState(root, 'res-pip', { attention: 4000 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
+            expect(snap.residents).toHaveLength(1);
+            expect(snap.residents[0].slug).toBe('res-pip');
+        });
+    });
 });
+
+// ---------------------------------------------------------------------------
+// Test helpers
+// ---------------------------------------------------------------------------
+
+function writeRuntimeState(root: string, slug: string, partial: Partial<RuntimeState> & { attention: number }): void {
+    const dir = path.join(root, slug);
+    fs.mkdirSync(dir, { recursive: true });
+    const state: Partial<RuntimeState> = {
+        resident: slug.replace(/^res-/, 'res:').replace(/-([a-z])/g, (_, c: string) => `-${c}`),
+        tick: 0,
+        legacy: { kind: 'gather', progress: {}, complete: false },
+        budgets: {
+            minuteStartedAt: '2026-05-23T00:00:00.000Z',
+            dayStartedAt: '2026-05-23T00:00:00.000Z',
+            requestsThisMinute: 0,
+            requestsToday: 0,
+        },
+        ...partial,
+    };
+    fs.writeFileSync(path.join(dir, 'runtime-state.json'), JSON.stringify(state, null, 2));
+}
