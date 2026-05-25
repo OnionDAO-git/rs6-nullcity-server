@@ -697,3 +697,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 14:15 antigravity branch=agents/wip workstream=HD-044  STARTING — implement HD-044/F40b to fix perception event routing mismatch preventing nervous rules from firing.
 2026-05-25 09:32 codex branch=agents/wip workstream=M4-EPITAPH-WIRE STARTING - wire prepared epitaph into death letters. Files: resident-runtime.test.ts, resident-runtime.ts, memory-store.ts, epitaph-dispatcher.ts.
 2026-05-25 14:40 antigravity branch=agents/wip workstream=HD-044  HANDOFF — implemented event kind aliasing via matchEventKind helper in rules.ts, plan-executor.ts, and hook-evaluator.ts. SHA=b1e9c12a tests=1858+fin.
+2026-05-25 09:37 codex branch=agents/wip workstream=M4-EPITAPH-WIRE HANDOFF - prepared final words now included in death letters. SHA=f73204ae tests=75+fin1878+build+live res:agent collision=none.
