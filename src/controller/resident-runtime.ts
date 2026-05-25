@@ -58,6 +58,7 @@ const MOVE_EFFECT_TIMEOUT_MIN_MS = 5_000;
 const MOVE_EFFECT_TIMEOUT_PER_TILE_MS = 1_200;
 const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
 const MOVE_EFFECT_TIMEOUT_MAX_MS = 30_000;
+const STARTER_FISHING_EFFECT_TIMEOUT_MS = 45_000;
 const THINKING_VISIBILITY_DELAY_MS = 1_000;
 
 export interface ResidentRuntimeGameSkill {
@@ -1601,6 +1602,10 @@ export function actionEffectTimeoutMs(action: AgentAction, before: Perception | 
         return 15000;
     }
 
+    if (isStarterFishingInteractAction(action)) {
+        return STARTER_FISHING_EFFECT_TIMEOUT_MS;
+    }
+
     const startPosition = before ? perceptionPosition(before) : undefined;
     const targetPosition = actionTargetPositionForEffect(action);
     if (targetPosition) {
@@ -1621,6 +1626,21 @@ function isFiremakingUseItemOnItemAction(action: AgentAction, perception: Percep
     const source = inventoryItemAt(perception, actionRecord.itemSlot);
     const target = inventoryItemAt(perception, actionRecord.targetSlot);
     return (isTinderboxItem(source) && isLogItem(target)) || (isLogItem(source) && isTinderboxItem(target));
+}
+
+function isStarterFishingInteractAction(action: AgentAction | undefined): boolean {
+    if (!action || action.kind !== 'interact') {
+        return false;
+    }
+    const actionRecord = record(action);
+    const option = typeof actionRecord.option === 'string' ? actionRecord.option.toLowerCase() : '';
+    if (option !== 'net') {
+        return false;
+    }
+    const target = record(actionRecord.target);
+    const targetText =
+        `${typeof target.key === 'string' ? target.key : ''} ${typeof target.name === 'string' ? target.name : ''}`.toLowerCase();
+    return actionRecord.cause === 'starter_fishing_net' || /fishing_spot|fishing spot/.test(targetText);
 }
 
 function inventoryItemAt(perception: Perception | undefined, slot: number): Record<string, unknown> | undefined {
@@ -1698,6 +1718,10 @@ function changedEffectSections(before: Perception | undefined, after: Perception
 }
 
 function effectStateSections(action?: AgentAction): string[] {
+    if (isStarterFishingInteractAction(action)) {
+        return ['skills', 'inventory'];
+    }
+
     switch (action?.kind) {
         case 'eat':
             return ['hp', 'inventory'];
@@ -1742,6 +1766,9 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
     if (eventRecord.kind === 'chat') {
         return false;
     }
+    if (isStarterFishingInteractAction(action)) {
+        return eventMatchesStarterFishingEffect(event);
+    }
     if (eventRecord.kind === 'fire_lit') {
         return true;
     }
@@ -1759,6 +1786,17 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
         default:
             return eventRecord.kind === 'message' || text.length > 0;
     }
+}
+
+function eventMatchesStarterFishingEffect(event: unknown): boolean {
+    const eventRecord = record(event);
+    if (eventRecord.kind === 'item_received') {
+        const item = record(eventRecord.item);
+        const itemText = `${typeof item.key === 'string' ? item.key : ''} ${typeof item.name === 'string' ? item.name : ''}`.toLowerCase();
+        return itemText.length === 0 || /fish|shrimp|anchov/.test(itemText);
+    }
+    const text = typeof eventRecord.text === 'string' ? eventRecord.text.toLowerCase() : '';
+    return /start(?:ed)? fishing|begin(?:s)? fishing|catch(?:es)? (?:some )?(?:raw )?(?:shrimp|anchov|fish)/.test(text);
 }
 
 function fallbackTimedOutAttempt(resident: string, input: ActionCoordinatorSubmitInput, reason: string): ActionAttempt {

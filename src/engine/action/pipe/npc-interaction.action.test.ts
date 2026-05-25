@@ -76,6 +76,6 @@ describe('npcInteractionActionPipe', () => {
 
         expect(result).toBeNull();
         expect(player.enqueueBaseTask).toHaveBeenCalledTimes(1);
-        expect(player.pathfinding.walkTo).toHaveBeenCalledWith(npc.position, { pathingSearchRadius: 64 });
+        expect(player.pathfinding.walkTo).toHaveBeenCalledWith(npc.position, { pathingSearchRadius: 64, ignoreDestination: true });
     });
 });

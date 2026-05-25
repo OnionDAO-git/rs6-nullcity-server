@@ -56,7 +56,10 @@ export class WalkToActorPluginTask<
         const needsWalk = !player.position.withinInteractionDistance(other.position, 1);
         super(player, other, false);
         if (needsWalk) {
-            player.pathfinding.walkTo(other.position, { pathingSearchRadius: ACTOR_INTERACTION_PATHING_SEARCH_RADIUS });
+            player.pathfinding.walkTo(other.position, {
+                pathingSearchRadius: ACTOR_INTERACTION_PATHING_SEARCH_RADIUS,
+                ignoreDestination: true,
+            });
         }
 
         this.plugins = plugins;

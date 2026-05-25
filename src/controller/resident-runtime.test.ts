@@ -46,6 +46,28 @@ describe('ResidentRuntime modules', () => {
         expect(timeoutMs).toBeGreaterThan(5_000);
     });
 
+    it('waits through starter fishing catch rolls instead of timing out after the walk', () => {
+        const timeoutMs = actionEffectTimeoutMs(
+            {
+                kind: 'interact',
+                option: 'net',
+                target: {
+                    id: 'npc:69',
+                    kind: 'npc',
+                    key: 'rs:fishing_spot_net_bait',
+                    name: 'Fishing spot',
+                    position: { x: 3239, y: 3244, level: 0 },
+                },
+                cause: 'starter_fishing_net',
+            },
+            {
+                resident: { position: { x: 3232, y: 3242, level: 0 } },
+            },
+        );
+
+        expect(timeoutMs).toBeGreaterThanOrEqual(45_000);
+    });
+
     it('writes runtime evidence around decisions and action results', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-evidence-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-evidence-'));
@@ -1348,6 +1370,119 @@ describe('ResidentRuntime modules', () => {
             events: [{ kind: 'message', text: 'You bury the bones.' }],
         });
         await firstTick;
+    });
+
+    it('does not treat nearby object churn as starter fishing progress', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-fishing-effect-test-'));
+        const state = stateFor('res:pip');
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                ttlTicks: 600,
+                createdAtTick: 1,
+            },
+        };
+        const gameSkill: ResidentRuntimeGameSkill = {
+            buildContext: jest.fn(() => gameSkillContext()),
+            observeAttempt: jest.fn(),
+        };
+        const fishingSpot = {
+            id: 'npc:69',
+            kind: 'npc',
+            key: 'rs:fishing_spot_net_bait',
+            name: 'Fishing spot',
+            position: { x: 3239, y: 3244, level: 0 },
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }],
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const gateway: jest.Mocked<BodyGateway> = {
+            submitAction: jest.fn<ReturnType<BodyGateway['submitAction']>, Parameters<BodyGateway['submitAction']>>(async () => ({
+                ok: true,
+            })),
+        };
+        const body = new ConcreteResidentBody({
+            resident: 'res:pip',
+            gateway,
+            actionLog: { append: jest.fn() } as unknown as ActionLog,
+        });
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            gameSkill,
+        });
+
+        const firstTick = runtime.onPerception({
+            tick: 1,
+            resident: {
+                position: { x: 3234, y: 3240, level: 0 },
+                inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                skills: { fishing: { level: 1, xp: 0 } },
+            },
+            nearby: { npcs: [fishingSpot], objects: [{ objectId: 325, position: { x: 3235, y: 3240, level: 0 } }] },
+            events: [],
+        });
+        await Promise.resolve();
+        expect(await settlesWithin(firstTick, 5)).toBe(false);
+
+        await runtime.onPerception({
+            tick: 2,
+            resident: {
+                position: { x: 3234, y: 3240, level: 0 },
+                inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                skills: { fishing: { level: 1, xp: 0 } },
+            },
+            nearby: { npcs: [fishingSpot], objects: [{ objectId: 325, position: { x: 3236, y: 3240, level: 0 } }] },
+            events: [],
+        });
+        expect(await settlesWithin(firstTick, 5)).toBe(false);
+
+        await runtime.onPerception({
+            tick: 3,
+            resident: {
+                position: { x: 3234, y: 3240, level: 0 },
+                inventory: [
+                    { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                    { itemId: 317, key: 'rs:raw_shrimps', amount: 1 },
+                ],
+                skills: { fishing: { level: 1, xp: 10 } },
+            },
+            nearby: { npcs: [fishingSpot], objects: [{ objectId: 325, position: { x: 3236, y: 3240, level: 0 } }] },
+            events: [{ kind: 'item_received', item: { itemId: 317, key: 'rs:raw_shrimps', amount: 1 } }],
+        });
+        await firstTick;
+
+        expect(gameSkill.observeAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                producer: 'body',
+                attempt: expect.objectContaining({
+                    finalStatus: 'success',
+                    evidence: expect.arrayContaining([
+                        expect.objectContaining({
+                            source: 'perception',
+                            detail: expect.objectContaining({
+                                kind: 'action_effect_observed',
+                                changed: expect.arrayContaining(['inventory', 'skills']),
+                            }),
+                        }),
+                    ]),
+                }),
+            }),
+        );
     });
 
     it('builds game-skill context before thinking and observes completed body attempts', async () => {

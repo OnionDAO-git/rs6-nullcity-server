@@ -480,7 +480,7 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
         return undefined;
     }
 
-    const target = nearestStarterFishingSearchPoint(here);
+    const target = nextStarterFishingSearchPoint(here);
     const routeDistance = target ? distance(here, target) : Number.POSITIVE_INFINITY;
     if (!target || here.level !== target.level || routeDistance > STARTER_FISHING_ROUTE_MAX_DISTANCE) {
         return undefined;
@@ -502,11 +502,15 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
     };
 }
 
-function nearestStarterFishingSearchPoint(here: BodyPos): BodyPos | undefined {
+function nextStarterFishingSearchPoint(here: BodyPos): BodyPos | undefined {
     const candidates = LUMBRIDGE_STARTER_FISHING_SPOTS.filter(position => position.level === here.level).sort(
         (a, b) => distance(here, a) - distance(here, b),
     );
-    return candidates.find(position => distance(here, position) > 0) || candidates[0];
+    return (
+        candidates.find(position => distance(here, position) > STARTER_FISHING_SPOT_DISCOVERY_RANGE) ||
+        candidates.find(position => distance(here, position) > 0) ||
+        candidates[0]
+    );
 }
 
 /**

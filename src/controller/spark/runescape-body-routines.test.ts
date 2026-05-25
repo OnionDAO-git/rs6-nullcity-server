@@ -372,6 +372,22 @@ describe('starterFishingRouteAction', () => {
         });
     });
 
+    it('keeps searching nearby Lumbridge starter spots when the nearest spawn is quiet', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3232, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_STARTER_FISHING_SPOT,
+            range: 7,
+            cause: 'starter_fishing_seek_spot',
+        });
+    });
+
     it('does not hijack non-Lumbridge starter anglers without a visible spot', () => {
         const action = starterFishingRouteAction(
             perception({
