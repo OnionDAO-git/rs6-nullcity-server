@@ -58,7 +58,7 @@ describe('validateSoulFrontmatter modules', () => {
             {
                 name: 'res:agent',
                 archetype: 'endurer',
-                model: { endpoint: 'local', model: 'resident-model', temperature: 0.4 },
+                model: { endpoint: 'local', model: 'resident-model', temperature: 0.4, thinking: false },
                 behavior: {
                     kind: 'hybrid-agent',
                     brain: { model: 'resident-brain-model', thinking: true },
@@ -68,7 +68,7 @@ describe('validateSoulFrontmatter modules', () => {
             '/tmp/res-agent.md',
         );
 
-        expect(frontmatter.model).toEqual({ endpoint: 'local', model: 'resident-model', temperature: 0.4 });
+        expect(frontmatter.model).toEqual({ endpoint: 'local', model: 'resident-model', temperature: 0.4, thinking: false });
         expect(frontmatter.behavior).toMatchObject({
             brain: { model: 'resident-brain-model' },
             body: { model: 'resident-body-model' },

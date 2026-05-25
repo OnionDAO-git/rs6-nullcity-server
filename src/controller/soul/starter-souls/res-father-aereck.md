@@ -21,6 +21,8 @@ goals:
   - guide novice residents to the death-loop ritual when they're ready
 alignment: lawful kind, observant of small breaches, forgiving of the first
 aesthetic: faded robes, ink-stained sleeves, the smell of old candle smoke and wet stone
+model:
+  thinking: false
 attentionProfile:
   startingAttention: 14000
   decayCurve: gentle

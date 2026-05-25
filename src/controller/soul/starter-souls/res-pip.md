@@ -5,6 +5,7 @@ archetype: mentor
 model:
   endpoint: default
   temperature: 0.7
+  thinking: false
 voice:
   register: bright, practical, curious
   quirks:

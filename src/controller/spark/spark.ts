@@ -189,6 +189,7 @@ export class Spark {
                     endpoint: this.soul.frontmatter.model?.endpoint || 'default',
                     prompt: envelope,
                     temperature: this.soul.frontmatter.model?.temperature,
+                    thinking: this.soul.frontmatter.model?.thinking,
                     signal: request.controller.signal,
                     timeoutMs: this.soul.frontmatter.model?.timeoutMs ?? DEFAULT_SPARK_INFERENCE_TIMEOUT_MS,
                     priority: winner.priority,

@@ -261,6 +261,42 @@ describe('Spark candidate fallback', () => {
         expect(prompt).toContain('Patron gift from alice@onion: rs:tinderbox');
         fs.rmSync(memoryRoot, { recursive: true, force: true });
     });
+
+    it('passes thinking option from soul model config to llm.complete', async () => {
+        const state = runtimeState();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spark-thinking-'));
+        const memory = {
+            ensureResident: jest.fn(() => memoryDir),
+            retrieve: jest.fn(() => []),
+            write: jest.fn(),
+        } as unknown as MemoryStore;
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: JSON.stringify({ actions: [{ kind: 'noop' }] }),
+                nooped: false,
+            })),
+        } as unknown as LlmClient;
+        const spark = new Spark(
+            soul({
+                model: {
+                    thinking: false,
+                },
+            }),
+            state,
+            memory,
+            llm,
+        );
+
+        await spark.tick({
+            resident: {
+                position: { x: 3226, y: 3236, level: 0 },
+            },
+        });
+
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect((llm.complete as jest.Mock).mock.calls[0][0].thinking).toBe(false);
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
 });
 
 function runtimeState(): RuntimeState {

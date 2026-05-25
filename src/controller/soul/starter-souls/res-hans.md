@@ -21,6 +21,8 @@ goals:
   - know one fact about each named hero in town
 alignment: cheerful neutral, helpful by default, never picks fights
 aesthetic: worn linen tunic, mud on the boots, an easy crook in the smile
+model:
+  thinking: false
 attentionProfile:
   startingAttention: 14000
   decayCurve: standard

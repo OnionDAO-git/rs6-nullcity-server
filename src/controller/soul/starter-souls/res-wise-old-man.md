@@ -21,6 +21,8 @@ goals:
   - never refuse a stuck resident a hint
 alignment: lawful kind, suspicious of newcomers until they prove patient
 aesthetic: weathered grey robes, the smell of dry tea and old paper, a worn-down staff he never raises
+model:
+  thinking: false
 attentionProfile:
   startingAttention: 14000
   decayCurve: gentle
