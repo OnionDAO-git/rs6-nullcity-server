@@ -56,6 +56,7 @@ interface TrajectoryEntry {
     kind?: string;
     action?: string | { kind?: string };
     status?: string;
+    cause?: string;
     reason?: string;
     text?: string;
 }
@@ -184,6 +185,7 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     const tick = numberOrUndefined(state?.tick) ?? lastTrajectoryTick;
     const referenceTick = Math.max(tick ?? 0, lastTrajectoryTick ?? 0);
     const recentEntries = entries.filter(entry => typeof entry.tick !== 'number' || entry.tick >= referenceTick - windowTicks);
+    const decisionCauses = new Map<string, number>();
     const summary: LiveSmokeSummary = {
         resident: state?.resident || resident,
         status: state ? 'ok' : 'missing',
@@ -204,7 +206,12 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     };
 
     for (const entry of recentEntries) {
-        if (entry.kind === 'decision') summary.recent.decisions += 1;
+        if (entry.kind === 'decision') {
+            summary.recent.decisions += 1;
+            if (entry.cause) {
+                decisionCauses.set(entry.cause, (decisionCauses.get(entry.cause) || 0) + 1);
+            }
+        }
         if (entry.kind === 'say') {
             summary.recent.says += 1;
             if (entry.text) summary.lastSay = entry.text;
@@ -237,8 +244,30 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     if (summary.recent.results >= 3 && summary.recent.successes === 0) {
         summary.issues.push('recent_actions_not_succeeding');
     }
+    const dominantDecision = dominantDecisionCause(decisionCauses, summary.recent.decisions);
+    if (summary.recent.actions === 0 && dominantDecision && dominantDecision.count >= 20 && dominantDecision.share >= 0.75) {
+        summary.issues.push(`decision_loop_without_actions:${dominantDecision.cause}`);
+    }
     summary.status = summary.issues.length ? (state ? 'warn' : 'missing') : 'ok';
     return summary;
+}
+
+function dominantDecisionCause(
+    causes: ReadonlyMap<string, number>,
+    decisionCount: number,
+): { cause: string; count: number; share: number } | undefined {
+    if (decisionCount <= 0 || causes.size === 0) {
+        return undefined;
+    }
+
+    let dominant: { cause: string; count: number } | undefined;
+    for (const [cause, count] of causes) {
+        if (!dominant || count > dominant.count) {
+            dominant = { cause, count };
+        }
+    }
+
+    return dominant ? { ...dominant, share: dominant.count / decisionCount } : undefined;
 }
 
 function discoverResidents(memoryDir: string): string[] {

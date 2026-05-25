@@ -525,6 +525,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Hardened 2026-05-24 on `agents/wip`: controller-created runtimes now derive `watchdog.thinkingMs` from the maximum configured LLM endpoint timeout plus a 5s grace window, so `controller.yml`'s 60s Qwen endpoint timeout is no longer shadowed by the old 45s runtime default. Focused host/runtime/config tests cover the wiring.
 - `[x]` **O10: Operator live resident smoke CLI.** Give Codex/Claude/Gemini and humans a quick command to verify real resident liveness from runtime state plus trajectory evidence.
   - Verified 2026-05-24 on `agents/wip`: added `npm run controller:smoke`, a tested admin summarizer for recent actions/results/speech/stuck issues. Defaults use configured residents from `controller.yml` so stale disposable benchmark folders do not pollute normal QA. Live smoke showed all 19 configured residents active, and `res:agent` passed `--fail-on-warn` with recent movement/speech/action evidence.
+  - Hardened 2026-05-24 on `agents/wip`: live QA showed `qa-guardian` and `qa-survivor` repeatedly emitting `low_health_hold_position` while occasional speech/result rows made the smoke read OK. `controller:smoke` now warns on dominant no-action decision loops so "talking but inert" residents are visible to operators.
 
 ## Workstream P: Deeper Game-Skill Knowledge
 
@@ -572,6 +573,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-23 on `agents/wip`: opportunistic pickup now suppresses non-food loot while hurt, so low-HP residents stop chasing coins/logs/bones unless the ground item is edible survival food.
   - Verified 2026-05-23 on `agents/wip`: low-HP/no-food residents now hold position near safety instead of continuing normal skilling loops, with an occasional visible "holding near safety" status line.
   - Verified 2026-05-23 on `agents/wip`: players and residents now receive passive Hitpoints regeneration every 100 game ticks, so low-HP hold can naturally recover into useful play instead of waiting forever when no food is visible.
+  - Live audit 2026-05-24 on `agents/wip`: `qa-guardian` and `qa-survivor` were still holding low HP because the long-running game server process predated the compiled Hitpoints regeneration plugin. Restart game + controller before judging this behavior after code changes that add new server plugins.
 - `[x]` **Q4 (G4): Trading/giving items.** Request trade, offer item, accept/decline by perceived value.
   - Verified 2026-05-22: completed and integrated in commits d8acbd78 / 1c52ef08 / 19e7809b / 8374a01b.
 - `[x]` **Q5 (G5): Broader command vocabulary.** "make fire", "come here", "stop", "wait", "follow X", "stop following", polite rejection of unknown commands.

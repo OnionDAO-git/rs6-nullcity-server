@@ -59,6 +59,26 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toEqual(expect.arrayContaining(['no_recent_visible_activity', 'stuck_for_150_ticks']));
     });
 
+    it('flags residents stuck in repeated no-action decisions even when they still talk', () => {
+        writeResidentState('res:agent', { tick: 260, lastMeaningfulProgressAt: 255, stuckSince: 259 });
+        writeTrajectory('res:agent', [
+            { tick: 230, kind: 'say', text: 'I am hurt. Holding near safety until I find food or heal.' },
+            { tick: 231, kind: 'action_result', status: 'success', reason: 'success' },
+            ...Array.from({ length: 30 }, (_, index) => ({
+                tick: 231 + index,
+                kind: 'decision',
+                cause: 'low_health_hold_position',
+                actionKinds: [],
+            })),
+        ]);
+
+        const [summary] = summarizeLiveResidents({ memoryDir, residents: ['res:agent'], windowTicks: 40, maxStuckTicks: 90 });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.recent).toMatchObject({ actions: 0, decisions: 30, says: 1, results: 1 });
+        expect(summary.issues).toContain('decision_loop_without_actions:low_health_hold_position');
+    });
+
     it('auto-discovers only resident directories with runtime state', () => {
         fs.mkdirSync(path.join(memoryDir, 'library'), { recursive: true });
         fs.mkdirSync(path.join(memoryDir, 'data'), { recursive: true });
