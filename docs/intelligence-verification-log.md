@@ -2859,3 +2859,52 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 
 **Owner suggestion.** claude (small inline patches this cycle if time; otherwise deferred to Tuesday rollup).
 
+
+### E58 — live verify Codex `fd575281` D3 embassy reception wire-in (HD-018 closer)
+
+**Status:** WIRE-IN VERIFIED at source + dist + test level; LIVE FIRE BLOCKED by HD-011 (empty registry)
+**Tier:** 1 (read-only grep + dist check + commit-test inspection)
+**Date:** 2026-05-25 02:00 claude
+**SHA verified:** `fd575281` (Codex wire-embassy-greeting)
+
+**Hypothesis.** E50 found D3 reception greeting was DEAD CODE in production — substrate at `b38b937e` (2026-05-23) but zero callers in `resident-runtime.ts`. Codex's `fd575281` claims the wire-in landed: "D3 runtime hook greets registered patrons in embassy; witness only after say success. Tests 1696." Verify the wire actually reaches production code + lives in the live dist.
+
+**Repro.**
+1. `grep -rn "evaluateReceptionGreeting" src/controller --include='*.ts' | grep -v ".test."` — production callers (was 0 in E50)
+2. `grep -c "evaluateReceptionGreeting\|trySubmitReceptionGreeting" dist/controller/resident-runtime.js` — dist bundle has new code
+3. `ps -axo pid,lstart,command | grep dist/controller/index.js` — live process restarted post-commit
+4. `grep -A 10 "patrons" controller.yml` — registry populated? (was empty in E50)
+5. Trajectory scan for `embassy_reception_greeting` cause across all 6 heroes
+
+**Observation.**
+
+| layer | state | evidence |
+|---|---|---|
+| Production source callers | **NEW: 1** (was 0 in E50) | `resident-runtime.ts:18` import + `:425` call + `:453` `ruleId: 'embassy_reception_greeting'` tag |
+| Dist bundle | **NEW: 3 matches** | `dist/controller/resident-runtime.js` contains `evaluateReceptionGreeting` + `trySubmitReceptionGreeting` |
+| Live process | RESTARTED | PID 71341/71342 started 19:45:09 — **after** commit `fd575281` (19:44:17) |
+| Test coverage | NEW: 2 tests added | `resident-runtime.test.ts`: registered patron → greeting + witnessAt; greeting-fails → witness NOT recorded + cooldown not set |
+| `controller.yml#patrons[]` | STILL EMPTY (HD-011) | `grep -A 10 patrons controller.yml` = 0 matches |
+| Live trajectory fires | **0 across all 6 heroes** | Expected — empty registry rejects every chat at `registry.isPatron(handle)` gate |
+
+**Wire-in quality is excellent.** Codex's `trySubmitReceptionGreeting` adds:
+- Per-patron-handle cooldown (`embassy-greeting:<handle>`, 10-tick) to prevent spam
+- Witness only on confirmed `submitActionWithWatchdog` success (HANDOFF: "witness only after say success")
+- `ruleId: 'embassy_reception_greeting'` tag for trajectory + dashboard
+- `thinking.think` is bypassed when greeting fires (preempts brain — desirable for immediate response)
+
+**Sub-findings.**
+
+- **F58a (POSITIVE / RESOLVED).** HD-018 substrate-to-wire-in gap is CLOSED. `evaluateReceptionGreeting` is now a live production code path. Same de-facto-counter-proposed pattern as HD-021: Codex shipped fix + cited observable test count (1696) + restarted live controller; claude replays source + dist + process state to verify.
+- **F58b (RE-ELEVATED).** HD-011 (`controller.yml#patrons[]` empty) was DOWNGRADED to Normal in E50 because D3 was unwired anyway. **Now that D3 IS wired, HD-011 is the binding constraint again** — without registered patrons, the reflex's `registry.isPatron(handle)` gate rejects every chat. **HD-011 needs to be re-upgraded to High pre-Chicago.** Operationally: ~24h before doors, staff onboarding writes attendee handles to `controller.yml#patrons[]` per the runbook.
+- **F58c (POSITIVE / PATTERN).** This is the 4th consecutive cycle where Codex shipped a fix tied to a claude finding (E50→`fd575281`, E51→`32ba93c9`, E51→`aed50245`, E52/3→`8eae437f`). The multi-agent loop continues to compound — every claude diagnostic gets a Codex fix within ~30-60 min, every Codex ship gets a claude replay-verify within ~30 min. HD-021 protocol is in steady state.
+- **F58d (CHICAGO IMPACT).** Pre-fix: D3 was dead-in-prod + empty registry was double-blocked; CLI was the ONLY working hero-acknowledgement path. Post-fix: D3 is wired + just needs `controller.yml#patrons[]` populated; CLI path still works. **Net: 2-stage Chicago-day hero-acknowledgement now available** (in-world via D3 if registry populated, or CLI via `patron:ask/offer/witness` regardless).
+
+**Classification.** ENGINE-fix VERIFIED at source/dist/test level; LIVE FIRE requires HD-011 follow-up. **HD-018 → Decided-by-codex (`fd575281`).**
+
+**Suggested next step.** Update HD-018 to Decided-by-codex. Re-upgrade HD-011 to High pre-Chicago. Update `docs/pre-chicago-readiness.md` to reflect D3 now wired but pending registry populate. Future cycle: populate `controller.yml#patrons[]` with a test handle + restart + observe greeting fire live for the first time.
+
+**Owner suggestion.** claude (HD updates this cycle); maintainer / Codex (populate test patron + observe live greeting once event handles are known).
+
+
+
