@@ -568,7 +568,8 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-24 on `agents/wip`: added real `/v1/health` inference probe on the controller HTTP surface. Checked and tested with focused tests. Passes typecheck, biome lint, and Jest.
 - `[ ]` **O5: Layered Docker base image.** Pre-cache engine + deps to cut per-iteration build time.
 - `[ ]` **O6: GitHub Pages auto-deploy from result JSON.** Static leaderboard / library snapshot rebuilt when results change.
-- `[ ]` **O7: `MODEL_CONFIG`-style precomputed UI metadata dictionary.** Single source for module IDs, faction colors, emotion presets.
+- `[x]` **O7: `MODEL_CONFIG`-style precomputed UI metadata dictionary.** Single source for module IDs, faction colors, emotion presets.
+  - Implemented 2026-05-25 on `agents/wip`: added `UI_METADATA` for factions, module manifests, and dashboard emotion presets; wall roster/stockpile faction colors now consume the catalog. Verified with focused tests plus full `npm run fin`.
 - `[x]` **O8: env + CLI dual config audit.** Document conventions and apply across rs6 CLIs.
   - Implemented 2026-05-25 on `agents/wip`: audited and aligned all 7 main and helper CLI scripts for consistent environment variable defaults and precedence. CLI options always override env variable defaults. Added unit tests covering env variable overrides for all CLIs.
 - `[x]` **O9: Watchdog fallback and LLM queue abort hygiene.** Prevent inference timeouts from freezing residents invisibly.

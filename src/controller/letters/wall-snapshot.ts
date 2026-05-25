@@ -1,9 +1,10 @@
 import fs from 'fs';
 import path from 'path';
-import { FACTIONS, lookupFaction, type FactionId } from '../factions/factions';
+import { FACTIONS, type FactionId } from '../factions/factions';
 import { readFactionStockpileSnapshot } from '../factions/stockpile-ledger';
 import type { Letter } from '../patron/letters-producer';
 import { SoulLoader } from '../soul/soul-loader';
+import { factionUiMetadata, factionWallColor } from '../ui-metadata';
 
 /**
  * Wall ticker snapshot (workstream EVENT-D6).
@@ -234,7 +235,7 @@ function readFactionStockpiles(lettersRoot: string): FactionStockpileSummary[] {
         summaries.push({
             factionId: faction.id,
             factionDisplayName: faction.displayName,
-            factionColor: faction.color === '#0A0A0A' && faction.accentColor ? faction.accentColor : faction.color,
+            factionColor: factionWallColor(faction.id) || faction.color,
             total,
             resources,
         });
@@ -332,7 +333,7 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
         const activeGoal = runtimeActiveGoal || soulSummary?.fallbackGoal;
 
         const factionId = soulSummary?.factionId;
-        const faction = factionId !== undefined ? lookupFaction(factionId) : undefined;
+        const faction = factionId !== undefined ? factionUiMetadata(factionId) : undefined;
 
         const summary: ResidentSummary = { slug, displayName, alive, attention: parsed.attention };
         if (activeGoal !== undefined) {
@@ -343,7 +344,7 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
         }
         if (faction !== undefined) {
             summary.factionDisplayName = faction.displayName;
-            summary.factionColor = faction.color;
+            summary.factionColor = faction.wallColor;
         }
         summaries.push(summary);
     }
