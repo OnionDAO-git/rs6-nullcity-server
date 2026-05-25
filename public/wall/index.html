@@ -106,6 +106,16 @@
             padding-bottom: 0.55rem;
             margin-bottom: 0.85rem;
         }
+        .stockpile-heading {
+            font-size: 0.72rem;
+            font-variant: small-caps;
+            letter-spacing: 0.18em;
+            color: var(--accent);
+            border-top: 1px solid var(--rule);
+            padding-top: 0.85rem;
+            margin-top: 0.85rem;
+            margin-bottom: 0.65rem;
+        }
         .roster-empty {
             color: var(--ink-fade);
             font-style: italic;
@@ -170,6 +180,35 @@
             white-space: nowrap;
         }
         .resident-row.dead .resident-faction { opacity: 0.4; }
+        .stockpile-row {
+            padding: 0.55rem 0;
+            border-bottom: 1px solid rgba(79, 58, 28, 0.22);
+        }
+        .stockpile-row:last-child { border-bottom: none; }
+        .stockpile-top {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .stockpile-name {
+            font-size: 0.88rem;
+            color: var(--ink);
+            line-height: 1.2;
+        }
+        .stockpile-total {
+            font-size: 0.72rem;
+            color: var(--ink-fade);
+            font-variant: tabular-nums;
+            white-space: nowrap;
+        }
+        .stockpile-resources {
+            margin-top: 0.25rem;
+            font-size: 0.74rem;
+            line-height: 1.35;
+            color: var(--ink-soft);
+            font-style: italic;
+        }
 
         /* ── RIGHT: letters ticker ───────────────────────────────────── */
         .letters {
@@ -311,7 +350,9 @@
     <main>
         <aside class="roster" id="roster">
             <div class="roster-heading">Who's Here</div>
-            <div class="roster-empty" id="roster-empty">Loading…</div>
+            <div id="resident-list"><div class="roster-empty">Loading…</div></div>
+            <div class="stockpile-heading">Faction Work</div>
+            <div id="stockpiles"><div class="roster-empty">Loading…</div></div>
         </aside>
         <section class="letters" id="cards"><div class="empty">Loading…</div></section>
     </main>
@@ -327,8 +368,8 @@
             const apiBase = params.get('api') || '/v1/wall/snapshot';
 
             const cardsElement = document.getElementById('cards');
-            const rosterElement = document.getElementById('roster');
-            const rosterEmpty = document.getElementById('roster-empty');
+            const residentListElement = document.getElementById('resident-list');
+            const stockpilesElement = document.getElementById('stockpiles');
             const deathsElement = document.getElementById('deaths');
             const asofElement = document.getElementById('asof');
 
@@ -388,15 +429,13 @@
             }
 
             function renderRoster(residents) {
-                // Remove old resident rows; keep the heading.
-                const heading = rosterElement.querySelector('.roster-heading');
-                rosterElement.replaceChildren(heading || document.createTextNode(''));
+                residentListElement.replaceChildren();
 
                 if (!Array.isArray(residents) || residents.length === 0) {
                     const empty = document.createElement('div');
                     empty.className = 'roster-empty';
                     empty.textContent = 'No residents found.';
-                    rosterElement.appendChild(empty);
+                    residentListElement.appendChild(empty);
                     return;
                 }
 
@@ -436,7 +475,53 @@
                     }
 
                     row.appendChild(info);
-                    rosterElement.appendChild(row);
+                    residentListElement.appendChild(row);
+                }
+            }
+
+            function renderStockpiles(stockpiles) {
+                stockpilesElement.replaceChildren();
+                if (!Array.isArray(stockpiles) || stockpiles.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'roster-empty';
+                    empty.textContent = 'No faction work recorded yet.';
+                    stockpilesElement.appendChild(empty);
+                    return;
+                }
+
+                for (const pile of stockpiles) {
+                    const row = document.createElement('div');
+                    row.className = 'stockpile-row';
+
+                    const top = document.createElement('div');
+                    top.className = 'stockpile-top';
+
+                    const name = document.createElement('div');
+                    name.className = 'stockpile-name';
+                    name.style.color = pile.factionColor || '';
+                    name.textContent = String(pile.factionDisplayName || pile.factionId || '?');
+                    top.appendChild(name);
+
+                    const total = document.createElement('div');
+                    total.className = 'stockpile-total';
+                    total.textContent = String(pile.total || 0);
+                    top.appendChild(total);
+                    row.appendChild(top);
+
+                    const resources = Array.isArray(pile.resources) ? pile.resources : [];
+                    if (resources.length > 0) {
+                        const detail = document.createElement('div');
+                        detail.className = 'stockpile-resources';
+                        detail.textContent = resources
+                            .slice(0, 3)
+                            .map(function (r) {
+                                return String(r.amount || 0) + ' ' + String(r.resource || '').replace(/_/g, ' ');
+                            })
+                            .join(' · ');
+                        row.appendChild(detail);
+                    }
+
+                    stockpilesElement.appendChild(row);
                 }
             }
 
@@ -459,11 +544,13 @@
                 const deathsToday = (payload && typeof payload.deathsToday === 'number') ? payload.deathsToday : 0;
                 const asOf = (payload && payload.asOf) ? payload.asOf : '';
                 const residents = (payload && Array.isArray(payload.residents)) ? payload.residents : [];
+                const factionStockpiles = (payload && Array.isArray(payload.factionStockpiles)) ? payload.factionStockpiles : [];
 
                 deathsElement.textContent = pluralize(deathsToday, 'death') + ' today';
                 asofElement.textContent = 'as of ' + formatTs(asOf);
 
                 renderRoster(residents);
+                renderStockpiles(factionStockpiles);
 
                 const slice = letters.slice(0, maxCards);
                 if (slice.length === 0) {

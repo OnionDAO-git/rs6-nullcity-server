@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import type { RuntimeState } from '../memory/runtime-state';
 import { LettersStore } from '../patron/letters-store';
+import { FactionStockpileLedger } from '../factions/stockpile-ledger';
 import { buildWallSnapshot, redactWallSnapshot, type WallSnapshot } from './wall-snapshot';
 
 describe('buildWallSnapshot (EVENT-D6)', () => {
@@ -151,7 +152,7 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
         it('returns a WallSnapshot with stable field set', () => {
             seed('alice@onion', 'epitaph', '2026-05-23T15:00:00.000Z');
             const snap: WallSnapshot = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
-            expect(Object.keys(snap).sort()).toEqual(['asOf', 'deathsToday', 'recentLetters', 'residents']);
+            expect(Object.keys(snap).sort()).toEqual(['asOf', 'deathsToday', 'factionStockpiles', 'recentLetters', 'residents']);
         });
     });
 
@@ -225,6 +226,18 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z') });
             const redacted = redactWallSnapshot(snap);
             expect(redacted.residents).toEqual(snap.residents);
+        });
+
+        it('redactWallSnapshot passes faction stockpiles through unchanged (totals are public)', () => {
+            const ledger = new FactionStockpileLedger(root, { now: () => new Date('2026-05-25T19:30:00.000Z') });
+            ledger.recordAttempt({
+                resident: 'res:wren-calix',
+                factionId: 'ledger',
+                attempt: factionAttempt('faction_ledger_audit_work', 'move_to'),
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-25T19:30:00.000Z') });
+            const redacted = redactWallSnapshot(snap);
+            expect(redacted.factionStockpiles).toEqual(snap.factionStockpiles);
         });
 
         it('skips malformed JSONL lines without throwing', () => {
@@ -448,6 +461,49 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             });
         });
     });
+
+    describe('faction stockpiles', () => {
+        it('summarizes persisted faction stockpile totals for the wall', () => {
+            const ledger = new FactionStockpileLedger(root, { now: () => new Date('2026-05-25T19:30:00.000Z') });
+            ledger.recordAttempt({
+                resident: 'res:mother-anvil',
+                factionId: 'foundry',
+                attempt: factionAttempt('faction_foundry_fuel_work', 'use_item_on_item'),
+            });
+            ledger.recordAttempt({
+                resident: 'res:wren-calix',
+                factionId: 'ledger',
+                attempt: factionAttempt('faction_ledger_audit_work', 'move_to'),
+            });
+            ledger.recordAttempt({
+                resident: 'res:wren-calix',
+                factionId: 'ledger',
+                attempt: factionAttempt('faction_ledger_audit_work', 'say'),
+            });
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-25T19:30:00.000Z') });
+
+            expect(snap.factionStockpiles).toEqual([
+                {
+                    factionId: 'foundry',
+                    factionDisplayName: 'The Foundry',
+                    factionColor: '#B87333',
+                    total: 1,
+                    resources: [{ resource: 'kindling', amount: 1 }],
+                },
+                {
+                    factionId: 'ledger',
+                    factionDisplayName: 'The Ledger',
+                    factionColor: '#CD7F32',
+                    total: 2,
+                    resources: [
+                        { resource: 'audit_marks', amount: 1 },
+                        { resource: 'public_notices', amount: 1 },
+                    ],
+                },
+            ]);
+        });
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -492,4 +548,16 @@ function writeSoul(
         '',
     ].filter((line): line is string => line !== undefined);
     fs.writeFileSync(path.join(soulsDir, fileName), `${lines.join('\n')}\n`);
+}
+
+function factionAttempt(cause: string, kind: string) {
+    return {
+        attemptId: `attempt-${cause}-${kind}`,
+        resident: 'res:test',
+        producer: 'body',
+        submittedAt: '2026-05-25T19:30:00.000Z',
+        action: { kind, cause },
+        evidence: [],
+        finalStatus: 'success',
+    } as any;
 }

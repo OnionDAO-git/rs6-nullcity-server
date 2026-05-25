@@ -134,6 +134,27 @@ export class ControllerMcpServer {
             },
         );
 
+        // Register faction_stockpile://current resource
+        server.registerResource(
+            'faction_stockpile',
+            'faction-stockpile://current',
+            {
+                mimeType: 'application/json',
+                description: 'Current faction stockpile totals and history',
+            },
+            async () => {
+                const snapshot = this.host.factionStockpile.snapshot();
+                return {
+                    contents: [
+                        {
+                            uri: 'faction-stockpile://current',
+                            text: JSON.stringify(snapshot, null, 2),
+                        },
+                    ],
+                };
+            },
+        );
+
         // Register resident-progress://{residentName} template resource
         server.registerResource(
             'observe_resident_progress',

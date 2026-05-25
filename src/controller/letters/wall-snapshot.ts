@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
-import { lookupFaction } from '../factions/factions';
+import { FACTIONS, lookupFaction, type FactionId } from '../factions/factions';
+import { readFactionStockpileSnapshot } from '../factions/stockpile-ledger';
 import type { Letter } from '../patron/letters-producer';
 import { SoulLoader } from '../soul/soul-loader';
 
@@ -78,7 +79,17 @@ export interface WallSnapshot {
     deathsToday: number;
     /** Live roster scanned from runtime-state files. Always present; empty when no res- dirs exist. */
     residents: ResidentSummary[];
+    /** Public aggregate faction work totals from faction-stockpile.json. */
+    factionStockpiles: FactionStockpileSummary[];
     asOf: string;
+}
+
+export interface FactionStockpileSummary {
+    factionId: FactionId;
+    factionDisplayName: string;
+    factionColor: string;
+    total: number;
+    resources: Array<{ resource: string; amount: number }>;
 }
 
 export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapshotOptions): WallSnapshot {
@@ -87,7 +98,13 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     const lettersDir = path.join(lettersRoot, 'data', 'letters');
 
     if (!fs.existsSync(lettersDir)) {
-        return { recentLetters: [], deathsToday: 0, residents: readResidents(lettersRoot, options.residentIds, options.soulsDir), asOf };
+        return {
+            recentLetters: [],
+            deathsToday: 0,
+            residents: readResidents(lettersRoot, options.residentIds, options.soulsDir),
+            factionStockpiles: readFactionStockpiles(lettersRoot),
+            asOf,
+        };
     }
 
     const allLetters: Letter[] = [];
@@ -150,11 +167,13 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     }
 
     const residents = readResidents(lettersRoot, options.residentIds, options.soulsDir);
+    const factionStockpiles = readFactionStockpiles(lettersRoot);
 
     return {
         recentLetters,
         deathsToday: deceasedResidents.size,
         residents,
+        factionStockpiles,
         asOf,
     };
 }
@@ -191,8 +210,36 @@ export function redactWallSnapshot(snapshot: WallSnapshot): WallSnapshot {
         deathsToday: snapshot.deathsToday,
         // Resident names and goals are public information on the wall display.
         residents: snapshot.residents,
+        factionStockpiles: snapshot.factionStockpiles,
         asOf: snapshot.asOf,
     };
+}
+
+function readFactionStockpiles(lettersRoot: string): FactionStockpileSummary[] {
+    const snapshot = readFactionStockpileSnapshot(lettersRoot);
+    const summaries: FactionStockpileSummary[] = [];
+    for (const faction of FACTIONS) {
+        const totals = snapshot.totals[faction.id];
+        if (!totals) {
+            continue;
+        }
+        const resources = Object.entries(totals)
+            .filter(([, amount]) => amount > 0)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([resource, amount]) => ({ resource, amount }));
+        const total = resources.reduce((sum, resource) => sum + resource.amount, 0);
+        if (total <= 0) {
+            continue;
+        }
+        summaries.push({
+            factionId: faction.id,
+            factionDisplayName: faction.displayName,
+            factionColor: faction.color === '#0A0A0A' && faction.accentColor ? faction.accentColor : faction.color,
+            total,
+            resources,
+        });
+    }
+    return summaries;
 }
 
 function redactHandle(handle: string): string {

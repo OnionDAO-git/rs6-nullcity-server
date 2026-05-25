@@ -12,7 +12,13 @@ import { MemoryStore } from './memory/memory-store';
 import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
 import { LettersStore } from './patron/letters-store';
-import { ResidentRuntime, actionEffectTimeoutMs, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
+import {
+    ResidentRuntime,
+    actionEffectTimeoutMs,
+    type ResidentRuntimeEvidence,
+    type ResidentRuntimeFactionStockpile,
+    type ResidentRuntimeGameSkill,
+} from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
 import type { ThinkingModule } from './thinking';
@@ -1535,6 +1541,51 @@ describe('ResidentRuntime modules', () => {
                 attempt: expect.objectContaining({ finalStatus: 'success', action: { kind: 'item_action', slot: 0, option: 'bury' } }),
             }),
         );
+    });
+
+    it('observes successful faction work attempts for stockpile persistence', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-faction-stockpile-test-'));
+        const state = stateFor('res:wren-calix');
+        const factionStockpile: ResidentRuntimeFactionStockpile = {
+            recordAttempt: jest.fn(),
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'noop', cause: 'faction_ledger_audit_work' }],
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:wren-calix', { factionId: 'ledger' }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            factionStockpile,
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        expect(factionStockpile.recordAttempt).toHaveBeenCalledWith({
+            resident: 'res:wren-calix',
+            factionId: 'ledger',
+            attempt: expect.objectContaining({
+                finalStatus: 'success',
+                action: expect.objectContaining({ kind: 'noop', cause: 'faction_ledger_audit_work' }),
+            }),
+        });
     });
 
     it('observes nervous-system attempts after coordinator completion', async () => {

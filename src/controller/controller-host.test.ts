@@ -361,6 +361,42 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(gameSkill.flush).toHaveBeenCalledTimes(1);
     });
 
+    it('passes a persistent faction stockpile ledger into resident runtimes', async () => {
+        const gateway = new FakeGateway();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-stockpile-'));
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: ConstructorParameters<typeof ResidentRuntime>[0]) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(
+            { ...config(), memory: { dir: memoryDir, qmdBin: '' } },
+            { ...dependencies(gateway), runtimeFactory },
+        );
+
+        await host.start();
+
+        const runtimeOptions = runtimeFactory.mock.calls[0]?.[0];
+        expect(runtimeOptions?.factionStockpile).toBeDefined();
+        runtimeOptions?.factionStockpile?.recordAttempt({
+            resident: 'res:pip',
+            factionId: 'ledger',
+            attempt: {
+                attemptId: 'attempt-test',
+                resident: 'res:pip',
+                producer: 'body',
+                submittedAt: '2026-05-25T19:20:00.000Z',
+                action: { kind: 'move_to', target: { x: 3210, y: 3424, level: 0 }, cause: 'faction_ledger_audit_work' },
+                evidence: [],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(fs.existsSync(path.join(memoryDir, 'faction-stockpile.json'))).toBe(true);
+
+        await host.stop();
+    });
+
     it('pauses a resident runtime and keeps reconcile from restarting it', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();

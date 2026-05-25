@@ -63,6 +63,34 @@ describe('ControllerMcpServer', () => {
             ]);
             expect(mockHost.listResidents).toHaveBeenCalled();
         });
+
+        it('registers the faction-stockpile://current resource returning JSON-stringified stockpile snapshot', async () => {
+            const mockSnapshot = {
+                schemaVersion: 1,
+                totals: { foundry: { kindling: 5 } },
+                history: [],
+            };
+            mockHost.factionStockpile = {
+                snapshot: jest.fn().mockReturnValue(mockSnapshot),
+            };
+            const mcpServer = serverInstance.createServer();
+            const registeredResources = (mcpServer as any)._registeredResources;
+            expect(registeredResources).toBeDefined();
+
+            const resource = registeredResources['faction-stockpile://current'];
+            expect(resource).toBeDefined();
+            expect(resource.name).toBe('faction_stockpile');
+            expect(resource.metadata?.mimeType).toBe('application/json');
+
+            const readResult = await resource.readCallback(new URL('faction-stockpile://current'));
+            expect(readResult.contents).toBeDefined();
+            expect(readResult.contents.length).toBe(1);
+            expect(readResult.contents[0].uri).toBe('faction-stockpile://current');
+
+            const parsed = JSON.parse(readResult.contents[0].text);
+            expect(parsed).toEqual(mockSnapshot);
+            expect(mockHost.factionStockpile.snapshot).toHaveBeenCalled();
+        });
     });
 
     describe('connectStdio (Stdio transport)', () => {

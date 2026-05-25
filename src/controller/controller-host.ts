@@ -19,6 +19,7 @@ import { StandingLedger } from './patron/standing-ledger';
 import { LettersStore } from './patron/letters-store';
 import type { PerceptionEvent } from './transport/message-codecs';
 import { LoreBus } from './lore/lore-bus';
+import { FactionStockpileLedger } from './factions/stockpile-ledger';
 
 const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
 
@@ -38,6 +39,7 @@ export interface ControllerHostOptions {
     patronStore?: PatronStore;
     patronGateway?: PatronGateway;
     loreBus?: LoreBus;
+    factionStockpile?: FactionStockpileLedger;
 }
 
 function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefined {
@@ -75,6 +77,7 @@ export class ControllerHost {
     private readonly currencyLedger: CurrencyLedger;
     private readonly standingLedger: StandingLedger;
     public readonly loreBus: LoreBus;
+    public readonly factionStockpile: FactionStockpileLedger;
 
     constructor(
         private readonly config: ControllerConfig,
@@ -132,6 +135,7 @@ export class ControllerHost {
                 memoryDir: config.memory.dir,
             });
         this.loreBus = options.loreBus || new LoreBus();
+        this.factionStockpile = options.factionStockpile || new FactionStockpileLedger(config.memory.dir);
         this.bindGatewayEvents();
     }
 
@@ -296,6 +300,7 @@ export class ControllerHost {
             patrons: this.config.patrons,
             patronGateway: this.patronGateway,
             loreBus: this.loreBus,
+            factionStockpile: this.factionStockpile,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
         };
         this.runtimes.set(

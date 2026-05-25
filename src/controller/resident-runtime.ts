@@ -28,6 +28,7 @@ import {
     type TrajectoryBuilder,
 } from './evidence';
 import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
+import type { RecordFactionAttemptInput } from './factions/stockpile-ledger';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
@@ -82,6 +83,10 @@ export interface ResidentRuntimeGameSkill {
     flush?(): Promise<void>;
 }
 
+export interface ResidentRuntimeFactionStockpile {
+    recordAttempt(input: RecordFactionAttemptInput): unknown;
+}
+
 export interface ResidentRuntimeOptions {
     soul: Soul;
     gateway: GatewayClient;
@@ -94,6 +99,7 @@ export interface ResidentRuntimeOptions {
     body?: ResidentBody;
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
+    factionStockpile?: ResidentRuntimeFactionStockpile;
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
     patrons?: PatronConfig[];
@@ -850,6 +856,23 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.options.inferenceLog.append(this.name, {
                 tick: this.state.tick,
                 cause: 'game_skill_observe_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+        this.observeFactionStockpileAttempt(attempt);
+    }
+
+    private observeFactionStockpileAttempt(attempt: ActionAttempt): void {
+        try {
+            this.options.factionStockpile?.recordAttempt({
+                resident: this.name,
+                factionId: this.options.soul.frontmatter.factionId,
+                attempt,
+            });
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'faction_stockpile_observe_failed',
                 error: error instanceof Error ? error.message : String(error),
             });
         }
