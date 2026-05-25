@@ -157,6 +157,83 @@ describe('NervousSystem', () => {
             cause: 'nervous:patron-ask-acknowledge',
         });
     });
+    describe('requestAttentionReaction (M3)', () => {
+        it('appeals for attention when attention is below floor + buffer', () => {
+            const state = runtimeState(100);
+            state.attention = 4000;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect(reaction?.action?.kind).toBe('say');
+        });
+
+        it('does not appeal when attention is at or above floor + buffer', () => {
+            const state = runtimeState(100);
+            state.attention = 10001;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:request-attention');
+        });
+
+        it('does not appeal when attention is zero (already exhausted)', () => {
+            const state = runtimeState(100);
+            state.attention = 0;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:request-attention');
+        });
+
+        it('does not repeat the appeal within the cooldown window', () => {
+            const state = runtimeState(100);
+            state.attention = 4000;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const first = sys.react(healthyPerception(100));
+            expect(first?.action?.cause).toBe('nervous:request-attention');
+
+            state.tick = 200;
+            const second = sys.react(healthyPerception(200));
+            expect(second?.action?.cause).not.toBe('nervous:request-attention');
+        });
+
+        it('re-appeals after the cooldown expires', () => {
+            const state = runtimeState(100);
+            state.attention = 4000;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            sys.react(healthyPerception(100));
+
+            state.tick = 701;
+            const later = sys.react(healthyPerception(701));
+            expect(later?.action?.cause).toBe('nervous:request-attention');
+        });
+
+        it('does not appeal for residents without a declared attention floor', () => {
+            const state = runtimeState(100);
+            state.attention = 1;
+            const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:request-attention');
+        });
+
+        it('prefixes the message with the hero public name when available', () => {
+            const state = runtimeState(100);
+            state.attention = 4000;
+            const sys = new NervousSystem({ soul: heroSoulWithName('Hans', 5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+            const text = (reaction?.action as { kind: string; text?: string; cause?: string }).text ?? '';
+            expect(text.startsWith('Hans:')).toBe(true);
+        });
+    });
 });
 
 function soul(): Soul {
@@ -191,6 +268,29 @@ function memoryWith(memories: string[]): MemoryStore {
         ensureResident: jest.fn(() => '/tmp/res-agent'),
         retrieve: jest.fn(() => memories),
     } as unknown as MemoryStore;
+}
+
+function soulWithFloor(floor: number): Soul {
+    return {
+        sourcePath: '/tmp/res-hero.md',
+        body: '# Hero soul',
+        frontmatter: {
+            name: 'res:hans',
+            archetype: 'mentor',
+            attentionProfile: { startingAttention: 14000, decayCurve: 'standard', floor },
+            behavior: { kind: 'hybrid-agent' },
+        },
+    };
+}
+
+function heroSoulWithName(publicName: string, floor: number): Soul {
+    return {
+        ...soulWithFloor(floor),
+        frontmatter: {
+            ...soulWithFloor(floor).frontmatter,
+            heroProfile: { publicName, tier: 'hero', signatureAction: 'guards the courtyard' },
+        },
+    };
 }
 
 function healthyPerception(tick: number): Record<string, unknown> {

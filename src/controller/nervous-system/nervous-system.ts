@@ -18,6 +18,18 @@ type Item = { itemId?: number; key?: string; amount?: number };
 const LOW_HEALTH_FOOD_THRESHOLD = 0.4;
 const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+
+/** Ticks between attention-appeal says (~10 minutes at 1 tick/s). */
+const REQUEST_ATTENTION_COOLDOWN_TICKS = 600;
+/** Buffer above the declared attention floor at which the appeal fires. */
+const LOW_ATTENTION_REQUEST_BUFFER = 5000;
+/** Rotating phrases for the low-attention appeal (index = tick % length). */
+const APPEAL_PHRASES = [
+    'My attention grows thin. If you have Shards to spare, even a small offering helps.',
+    'I can feel myself fading. An offering at the embassy would keep me here a while longer.',
+    "I won't last at this pace. If anyone has earned Shards today, I'd welcome the support.",
+] as const;
+
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
     priority: 100,
@@ -96,7 +108,17 @@ export class NervousSystem {
         }
 
         const memoryDir = this.options.memory.ensureResident(this.options.soul.frontmatter.name);
-        return evaluateNervousRules(this.rules(memoryDir), this.options.state, perception, this.options.state.variables || {});
+        const soulReaction = evaluateNervousRules(
+            this.rules(memoryDir),
+            this.options.state,
+            perception,
+            this.options.state.variables || {},
+        );
+        if (soulReaction) {
+            return soulReaction;
+        }
+
+        return this.requestAttentionReaction(perception);
     }
 
     private patronAskReaction(perception: Perception): NervousReaction | undefined {
@@ -210,6 +232,46 @@ export class NervousSystem {
 
     private rules(memoryDir: string): NervousRule[] {
         return [...this.soulRules(), ...readNervousRulesMd(memoryDir).rules];
+    }
+
+    private requestAttentionReaction(perception: Perception): NervousReaction | undefined {
+        const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
+        if (floor <= 0) {
+            return undefined;
+        }
+        const threshold = floor + LOW_ATTENTION_REQUEST_BUFFER;
+        const attention = this.options.state.attention;
+        if (attention <= 0 || attention >= threshold) {
+            return undefined;
+        }
+        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const cooldownKey = 'request-attention:appeal';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
+        if (coolingUntil > tick) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + REQUEST_ATTENTION_COOLDOWN_TICKS;
+
+        const basePhrase = APPEAL_PHRASES[tick % APPEAL_PHRASES.length];
+        const publicName = this.options.soul.frontmatter.heroProfile?.publicName;
+        const message = publicName ? `${publicName}: ${basePhrase}` : basePhrase;
+
+        const rule: NervousRule = {
+            id: 'request-attention-appeal',
+            priority: 85,
+            condition: { kind: 'always' },
+            action: { kind: 'say', text: message },
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { kind: 'say', text: message, cause: 'nervous:request-attention' },
+            suppressThinking: true,
+            interruptThinking: false,
+        };
     }
 
     private soulRules(): NervousRule[] {
