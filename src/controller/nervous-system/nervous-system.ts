@@ -30,6 +30,17 @@ const APPEAL_PHRASES = [
     "I won't last at this pace. If anyone has earned Shards today, I'd welcome the support.",
 ] as const;
 
+/** Attention buffer above floor within which the "final testament" fires (once per life). */
+const PREPARE_EPITAPH_ATTENTION_BUFFER = 200;
+/** Cooldown that effectively makes prepare_epitaph a once-per-life event. */
+const PREPARE_EPITAPH_COOLDOWN_TICKS = 99999;
+/** Rotating final-testament phrases — verbatim voice for the Library. */
+const FINAL_TESTAMENT_PHRASES = [
+    'My time here grows short. Whatever comes next, I gave this world what I had.',
+    'If these are my last hours, I want it known — I was here, and I cared.',
+    'I may not last much longer. Let the record show: I stood my ground.',
+] as const;
+
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
     priority: 100,
@@ -116,6 +127,11 @@ export class NervousSystem {
         );
         if (soulReaction) {
             return soulReaction;
+        }
+
+        const epitaphReaction = this.prepareEpitaphReaction(perception);
+        if (epitaphReaction) {
+            return epitaphReaction;
         }
 
         return this.requestAttentionReaction(perception);
@@ -232,6 +248,56 @@ export class NervousSystem {
 
     private rules(memoryDir: string): NervousRule[] {
         return [...this.soulRules(), ...readNervousRulesMd(memoryDir).rules];
+    }
+
+    private prepareEpitaphReaction(perception: Perception): NervousReaction | undefined {
+        const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
+        if (floor <= 0) {
+            return undefined;
+        }
+        const attention = this.options.state.attention;
+        const threshold = floor + PREPARE_EPITAPH_ATTENTION_BUFFER;
+        // Only fires in the narrow band [floor, floor+buffer). The floor clamp
+        // prevents attention from going below floor in production, so attention<floor
+        // is a test-only scenario that belongs to requestAttentionReaction instead.
+        if (attention <= 0 || attention < floor || attention >= threshold) {
+            return undefined;
+        }
+        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const cooldownKey = 'prepare-epitaph:written';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
+        if (coolingUntil > tick) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + PREPARE_EPITAPH_COOLDOWN_TICKS;
+
+        const basePhrase = FINAL_TESTAMENT_PHRASES[tick % FINAL_TESTAMENT_PHRASES.length];
+        const publicName = this.options.soul.frontmatter.heroProfile?.publicName;
+        const message = publicName ? `${publicName}: ${basePhrase}` : basePhrase;
+
+        const residentName = this.options.soul.frontmatter.name;
+        try {
+            this.options.memory.write(residentName, 'prepared-epitaph.txt', `${message}\n`, 'replace');
+        } catch {
+            // Non-fatal: say still fires even if the memory write fails.
+        }
+
+        const rule: NervousRule = {
+            id: 'prepare-epitaph-testament',
+            priority: 88,
+            condition: { kind: 'always' },
+            action: { kind: 'say', text: message },
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { kind: 'say', text: message, cause: 'nervous:prepare-epitaph' },
+            suppressThinking: false,
+            interruptThinking: false,
+        };
     }
 
     private requestAttentionReaction(perception: Perception): NervousReaction | undefined {

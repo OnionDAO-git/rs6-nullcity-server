@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { type Letter, type EpitaphLetterInput, produceEpitaphLetter, produceMorticiansRibbonLetter } from './letters-producer';
 import type { LettersStore, LettersStoreAppendResult } from './letters-store';
 
@@ -30,6 +32,30 @@ export interface DeceasedResidentSummary {
     /** ISO timestamp of the death (drives Letter.dispatchedAt for idempotency). */
     deceasedAt: string;
     deceasedTick: number;
+    /**
+     * The resident's own prepared epitaph text (M4), written near death
+     * via `nervous:prepare-epitaph`. When present, appended verbatim in
+     * the letter body as "In their own words:".
+     * Load via {@link loadPreparedEpitaph} before building the summary.
+     */
+    preparedEpitaph?: string;
+}
+
+/**
+ * Read a resident's prepared epitaph from their memory directory (M4).
+ *
+ * The nervous system writes `prepared-epitaph.txt` when attention drops
+ * near the attention floor. Returns undefined if the file does not exist
+ * or cannot be read (no-op for residents who never prepared one).
+ */
+export function loadPreparedEpitaph(memoryRoot: string, residentName: string): string | undefined {
+    try {
+        const filePath = path.join(memoryRoot, residentName, 'prepared-epitaph.txt');
+        const text = fs.readFileSync(filePath, 'utf8').trim();
+        return text.length > 0 ? text : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 export interface BuildEpitaphsOptions {
@@ -79,6 +105,7 @@ export function buildEpitaphDispatchRequests(
             causeOfDeath: deceased.causeOfDeath,
             ts: deceased.deceasedAt,
             senderResident: options.senderResident,
+            preparedEpitaph: deceased.preparedEpitaph,
         };
         letters.push(produceEpitaphLetter(input));
     }

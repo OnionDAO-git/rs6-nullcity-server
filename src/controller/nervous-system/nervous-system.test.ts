@@ -234,6 +234,86 @@ describe('NervousSystem', () => {
             expect(text.startsWith('Hans:')).toBe(true);
         });
     });
+
+    describe('prepareEpitaphReaction (M4)', () => {
+        it('fires when attention is within the final-testament buffer of the floor', () => {
+            const state = runtimeState(100);
+            state.attention = 5050; // floor=5000, buffer=200 → threshold=5200; 5050 < 5200
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:prepare-epitaph');
+            expect(reaction?.action?.kind).toBe('say');
+        });
+
+        it('does not fire when attention is above the final-testament threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 5300; // 5300 >= floor(5000) + buffer(200) = 5200
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:prepare-epitaph');
+        });
+
+        it('does not fire for residents without a declared attention floor', () => {
+            const state = runtimeState(100);
+            state.attention = 50;
+            const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:prepare-epitaph');
+        });
+
+        it('does not fire a second time once the one-time cooldown is set', () => {
+            const state = runtimeState(100);
+            state.attention = 5050;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const first = sys.react(healthyPerception(100));
+            expect(first?.action?.cause).toBe('nervous:prepare-epitaph');
+
+            state.tick = 200;
+            const second = sys.react(healthyPerception(200));
+            expect(second?.action?.cause).not.toBe('nervous:prepare-epitaph');
+        });
+
+        it('writes prepared-epitaph.txt to memory when the testament fires', () => {
+            const writeFunc = jest.fn();
+            const mem = { ...memoryWith([]), write: writeFunc } as unknown as MemoryStore;
+            const state = runtimeState(100);
+            state.attention = 5050;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: mem });
+
+            sys.react(healthyPerception(100));
+
+            expect(writeFunc).toHaveBeenCalledWith('res:hans', 'prepared-epitaph.txt', expect.stringContaining('my'), 'replace');
+        });
+
+        it('prefixes the message with the hero public name', () => {
+            const state = runtimeState(100);
+            state.attention = 5050;
+            const sys = new NervousSystem({ soul: heroSoulWithName('Hans', 5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+            const text = (reaction?.action as { kind: string; text?: string }).text ?? '';
+            expect(text.startsWith('Hans:')).toBe(true);
+        });
+
+        it('fires before the requestAttention appeal (lower attention still triggers testament first)', () => {
+            // attention=5050 is also < floor+buffer(5200) AND < floor+requestBuffer(10000)
+            // prepare_epitaph should take precedence because it runs first in react()
+            const state = runtimeState(100);
+            state.attention = 5050;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:prepare-epitaph');
+        });
+    });
 });
 
 function soul(): Soul {

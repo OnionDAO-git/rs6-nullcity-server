@@ -176,6 +176,12 @@ export interface EpitaphLetterInput {
      * their patron).
      */
     senderResident?: string;
+    /**
+     * The resident's own prepared epitaph text (M4), written near death
+     * via `nervous:prepare-epitaph`. When present, appended verbatim to
+     * the letter body as "In their own words:" — voice preservation rule.
+     */
+    preparedEpitaph?: string;
 }
 
 /**
@@ -209,7 +215,7 @@ function renderEpitaphBody(input: EpitaphLetterInput): string {
         input.causeOfDeath && input.causeOfDeath.length > 0
             ? `The cause was ${input.causeOfDeath}.`
             : 'The circumstances are unrecorded; the city saw them last as a quiet outline at dusk.';
-    return [
+    const lines = [
         `${input.humanId},`,
         '',
         `${input.residentName} has died.`,
@@ -220,9 +226,14 @@ function renderEpitaphBody(input: EpitaphLetterInput): string {
         causeLine,
         '',
         `Your patronage stayed with them through it. That mattered, in a way the registers don't quite know how to write down. We are writing it down here.`,
-        '',
-        '— Embassy Clerk',
-    ].join('\n');
+    ];
+    if (input.preparedEpitaph && input.preparedEpitaph.trim().length > 0) {
+        lines.push('');
+        lines.push(`In their own words: "${input.preparedEpitaph.trim()}"`);
+    }
+    lines.push('');
+    lines.push('— Embassy Clerk');
+    return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------

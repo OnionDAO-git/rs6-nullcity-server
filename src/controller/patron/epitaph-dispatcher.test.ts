@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { buildEpitaphDispatchRequests, dispatchEpitaphs, type DeceasedResidentSummary } from './epitaph-dispatcher';
+import { buildEpitaphDispatchRequests, dispatchEpitaphs, loadPreparedEpitaph, type DeceasedResidentSummary } from './epitaph-dispatcher';
 import { LettersStore } from './letters-store';
 
 const summary = (overrides: Partial<DeceasedResidentSummary> = {}): DeceasedResidentSummary => ({
@@ -213,5 +213,49 @@ describe('dispatchEpitaphs (EVENT-D4)', () => {
             const aliceRibbons = store.readInbox('alice@onion').filter(l => l.kind === 'civic_milestone');
             expect(aliceRibbons).toHaveLength(1);
         });
+    });
+});
+
+describe('loadPreparedEpitaph (M4)', () => {
+    it('returns the text of prepared-epitaph.txt when the file exists', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'epitaph-test-'));
+        const residentDir = path.join(dir, 'res:hans');
+        fs.mkdirSync(residentDir);
+        fs.writeFileSync(path.join(residentDir, 'prepared-epitaph.txt'), 'Hans: My time here grows short.\n');
+
+        expect(loadPreparedEpitaph(dir, 'res:hans')).toBe('Hans: My time here grows short.');
+        fs.rmSync(dir, { recursive: true });
+    });
+
+    it('returns undefined when the file does not exist', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'epitaph-test-'));
+        expect(loadPreparedEpitaph(dir, 'res:nobody')).toBeUndefined();
+        fs.rmSync(dir, { recursive: true });
+    });
+
+    it('returns undefined for an empty file', () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'epitaph-test-'));
+        const residentDir = path.join(dir, 'res:hans');
+        fs.mkdirSync(residentDir);
+        fs.writeFileSync(path.join(residentDir, 'prepared-epitaph.txt'), '   \n');
+
+        expect(loadPreparedEpitaph(dir, 'res:hans')).toBeUndefined();
+        fs.rmSync(dir, { recursive: true });
+    });
+});
+
+describe('buildEpitaphDispatchRequests with preparedEpitaph (M4)', () => {
+    it('includes prepared epitaph in letter body when set on DeceasedResidentSummary', () => {
+        const deceased = summary({ preparedEpitaph: 'I stood my ground to the end.' });
+        const letters = buildEpitaphDispatchRequests(deceased, ['alice@onion']);
+
+        expect(letters[0].body).toMatch(/In their own words:/);
+        expect(letters[0].body).toMatch(/I stood my ground to the end\./);
+    });
+
+    it('does not include "In their own words" when preparedEpitaph is absent', () => {
+        const letters = buildEpitaphDispatchRequests(summary(), ['alice@onion']);
+
+        expect(letters[0].body).not.toMatch(/In their own words:/);
     });
 });
