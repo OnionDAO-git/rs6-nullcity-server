@@ -3,7 +3,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
-import { INTERACTION_APPROACH_RADIUS, LUMBRIDGE_STARTER_FISHING_STAND_SPOT } from '../spark/runescape-body-routines';
+import { STARTER_FISHING_SPOT_DISCOVERY_RANGE } from '../spark/runescape-body-routines';
 import type { Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 
@@ -2533,8 +2533,8 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'move_to',
-                target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-                range: INTERACTION_APPROACH_RADIUS,
+                target: { x: 3241, y: 3242, level: 0 },
+                range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
                 cause: 'starter_fishing_seek_spot',
             },
         ]);
@@ -5870,7 +5870,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
-    it('repositions to the proven Lumbridge bank tile after a visible starter fishing spot times out', async () => {
+    it('tries another visible starter fishing spot after one Lumbridge spot times out', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
         state.cognition = {
@@ -5887,6 +5887,8 @@ describe('HybridAgentThinkingModule', () => {
             },
         };
         const agent = hybridAgent(llm, state);
+        const failedSpot = npc('Fishing spot', 3239, 3244);
+        const alternateSpot = npc('Fishing spot', 3241, 3242);
 
         const result = await agent.think(
             perception({
@@ -5895,19 +5897,19 @@ describe('HybridAgentThinkingModule', () => {
                     ...residentAt(3235, 3242),
                     inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
                 },
-                npcs: [npc('Fishing spot', 3239, 3244), npc('Fishing spot', 3241, 3242)],
+                npcs: [failedSpot, alternateSpot],
             }),
         );
 
         expect(result.actions).toEqual([
             {
-                kind: 'move_to',
-                target: { x: 3240, y: 3244, level: 0 },
-                range: INTERACTION_APPROACH_RADIUS,
-                cause: 'starter_fishing_reposition_to_bank',
+                kind: 'interact',
+                target: alternateSpot,
+                option: 'net',
+                cause: 'starter_fishing_net',
             },
         ]);
-        expect(result.cause).toBe('starter_fishing_reposition_to_bank');
+        expect(result.cause).toBe('starter_fishing_net');
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
@@ -6094,6 +6096,75 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('starter_fishing_net');
     });
 
+    it('frees inventory space before retrying starter fishing when the benchmark pack is full', async () => {
+        const fishingSpot = npc('Fishing spot', 3241, 3242);
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3240, 3244),
+                    inventory: fullInventory([
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 7954, key: 'rs:burnt_shrimp', amount: 1 },
+                        { itemId: 315, key: 'rs:shrimps', amount: 1 },
+                    ]),
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'drop', slot: 2, cause: 'starter_fishing_clear_burnt_fish' }]);
+        expect(result.cause).toBe('starter_fishing_clear_burnt_fish');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
+    it('frees inventory space even when the starter fishing spot is temporarily out of view', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3234, 3237),
+                    inventory: fullInventory([
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 7954, key: 'rs:burnt_shrimp', amount: 1 },
+                    ]),
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'drop', slot: 1, cause: 'starter_fishing_clear_burnt_fish' }]);
+        expect(result.cause).toBe('starter_fishing_clear_burnt_fish');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
     it('routes toward starter fishing instead of firemaking before any raw fish is caught', async () => {
         const normalTree = { objectId: 1278, position: { x: 3243, y: 3242, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
@@ -6133,9 +6204,8 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([
             {
-                kind: 'move_to',
-                target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-                range: INTERACTION_APPROACH_RADIUS,
+                kind: 'say',
+                text: 'I am at the Lumbridge fishing water and looking for a net spot.',
                 cause: 'starter_fishing_seek_spot',
             },
         ]);
@@ -6484,6 +6554,46 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
+    it('beacons cooking as the next starter-fishing step once raw fish is carried', async () => {
+        const fishingSpot = npc('Fishing spot', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                npcs: [fishingSpot],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net, then cook the catch on a fire or range. Next: find a fire or range to cook my raw fish.',
+            },
+        ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
     it('beacons a concrete nearby opportunity with its active goal', async () => {
         const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
         const llm = scriptedLlm([]);
@@ -6511,6 +6621,35 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
         ]);
+        expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not beacon dropped burnt fish as a useful nearby opportunity', async () => {
+        const burnt = { itemId: 7954, key: 'rs:burnt_shrimp', amount: 1, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Practice scouting.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3218, 3201),
+                worldItems: [burnt],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -7935,6 +8074,14 @@ function residentAt(x: number, y: number): Record<string, unknown> {
         inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
         equipment: [],
     };
+}
+
+function fullInventory(seed: Array<Record<string, unknown> | null>): Array<Record<string, unknown> | null> {
+    const inventory = [...seed];
+    while (inventory.length < 28) {
+        inventory.push({ itemId: 995, key: 'rs:coins', amount: 1 });
+    }
+    return inventory;
 }
 
 function chatFromCodex(text: string, x: number, y: number): Record<string, unknown> {

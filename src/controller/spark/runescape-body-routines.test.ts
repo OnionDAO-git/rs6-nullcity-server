@@ -16,10 +16,9 @@ import {
     explorationPatrolCooldownKey,
     factionLandmarkWorkAction,
     firemakingAction,
-    INTERACTION_APPROACH_RADIUS,
     LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
-    LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+    STARTER_FISHING_SPOT_DISCOVERY_RANGE,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
     opportunisticPickupAction,
@@ -37,6 +36,14 @@ const FIRE_OBJECT_ID = objectIds.fire;
 
 function item(itemId: number, key?: string, amount = 1): BodyItem {
     return { itemId, key, amount };
+}
+
+function fullInventory(seed: Array<BodyItem | null>): Array<BodyItem | null> {
+    const inventory = [...seed];
+    while (inventory.length < 28) {
+        inventory.push(item(995, 'rs:coins'));
+    }
+    return inventory;
 }
 
 function perception(overrides: Partial<BodyHybridPerception> = {}): BodyHybridPerception {
@@ -221,6 +228,8 @@ describe('levelOneWoodcuttingAction', () => {
 
 describe('starterFishingAction', () => {
     const SMALL_NET = 303;
+    const BURNT_SHRIMP = 7954;
+    const COOKED_SHRIMP = 315;
 
     function fishingSpot(x: number, y: number, key = 'rs:fishing_spot_net_bait'): BodyActor {
         return {
@@ -246,6 +255,55 @@ describe('starterFishingAction', () => {
             target: spot,
             option: 'net',
             cause: 'starter_fishing_net',
+        });
+    });
+
+    it('drops burnt starter fish before netting when the inventory is full', () => {
+        const spot = fishingSpot(101, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(BURNT_SHRIMP, 'rs:burnt_shrimp'), item(COOKED_SHRIMP, 'rs:shrimps')]),
+                },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'drop', slot: 1, cause: 'starter_fishing_clear_burnt_fish' });
+    });
+
+    it('eats cooked starter fish to free a slot when no burnt fish is available', () => {
+        const spot = fishingSpot(101, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(COOKED_SHRIMP, 'rs:shrimps')]),
+                },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'eat', slot: 1, cause: 'starter_fishing_eat_cooked_fish_for_space' });
+    });
+
+    it('reports full inventory instead of retrying a fishing click that cannot produce a catch', () => {
+        const spot = fishingSpot(101, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(590, 'rs:tinderbox')]),
+                },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'My inventory is full; I need to cook, eat, drop, or bank something before I can fish.',
+            cause: 'starter_fishing_inventory_full',
         });
     });
 
@@ -345,6 +403,7 @@ describe('starterFishingAction', () => {
 
 describe('starterFishingRouteAction', () => {
     const SMALL_NET = 303;
+    const BURNT_SHRIMP = 7954;
 
     function fishingSpot(x: number, y: number, key = 'rs:fishing_spot_net_bait'): BodyActor {
         return {
@@ -374,7 +433,21 @@ describe('starterFishingRouteAction', () => {
         });
     });
 
-    it('routes a Lumbridge starter angler toward the river stand spot when no spot is visible', () => {
+    it('clears full inventory pressure before route recovery when no spot is visible', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: {
+                    position: { x: 3234, y: 3237, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(BURNT_SHRIMP, 'rs:burnt_shrimp')]),
+                },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'drop', slot: 1, cause: 'starter_fishing_clear_burnt_fish' });
+    });
+
+    it('routes a Lumbridge starter angler toward fishing-spot discovery range when no spot is visible', () => {
         const action = starterFishingRouteAction(
             perception({
                 resident: { position: { x: 3228, y: 3204, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -384,16 +457,16 @@ describe('starterFishingRouteAction', () => {
 
         expect(action).toEqual({
             kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-            range: INTERACTION_APPROACH_RADIUS,
+            target: { x: 3241, y: 3242, level: 0 },
+            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
             cause: 'starter_fishing_seek_spot',
         });
     });
 
-    it('does not keep pathing when already close to the stand spot but no spot is visible', () => {
+    it('does not keep pathing when already close enough to rediscover a known spot', () => {
         const action = starterFishingRouteAction(
             perception({
-                resident: { position: { x: 3240, y: 3243, level: 0 }, inventory: [item(SMALL_NET)] },
+                resident: { position: { x: 3234, y: 3237, level: 0 }, inventory: [item(SMALL_NET)] },
                 nearby: { npcs: [] },
             }),
         );
@@ -405,7 +478,7 @@ describe('starterFishingRouteAction', () => {
         });
     });
 
-    it('keeps moving to the stand spot instead of loose range oscillation when nearby spawns are quiet', () => {
+    it('reports a blocker instead of oscillating toward an unreachable stand tile when nearby spawns are quiet', () => {
         const action = starterFishingRouteAction(
             perception({
                 resident: { position: { x: 3232, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -414,9 +487,8 @@ describe('starterFishingRouteAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-            range: INTERACTION_APPROACH_RADIUS,
+            kind: 'say',
+            text: 'I am at the Lumbridge fishing water and looking for a net spot.',
             cause: 'starter_fishing_seek_spot',
         });
     });
@@ -803,6 +875,7 @@ describe('opportunisticPickupAction', () => {
     const COINS = 995;
     const BONES = 526;
     const LOGS = 1511;
+    const BURNT_SHRIMP = 7954;
 
     function ground(itemId: number, x: number, y: number, key?: string, ownerId?: string): BodyWorldItem {
         return { itemId, amount: 1, position: { x, y, level: 0 }, key, ownerId };
@@ -892,6 +965,34 @@ describe('opportunisticPickupAction', () => {
             option: 'pick-up',
             cause: 'opportunistic_pickup',
         });
+    });
+
+    it('ignores burnt starter fish because it cannot help survival or skilling', () => {
+        const burnt = ground(BURNT_SHRIMP, 100, 100, 'rs:burnt_shrimp');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [burnt] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('does not treat burnt starter fish as emergency food when low on health', () => {
+        const burnt = ground(BURNT_SHRIMP, 100, 100, 'rs:burnt_shrimp');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                nearby: { worldItems: [burnt] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
     });
 
     it('skips logs when a nearby fire is present (suppress firemaking-log pickup)', () => {

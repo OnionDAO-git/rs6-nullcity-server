@@ -61,6 +61,8 @@ describe('FishingTask', () => {
 
         const task = new FishingTask(player as never, npc as never, FISHING_METHODS.net);
 
+        expect(player.busy).toBe(true);
+
         task.execute();
 
         expect(player.busy).toBe(true);

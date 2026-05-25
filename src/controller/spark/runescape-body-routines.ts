@@ -111,7 +111,7 @@ export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 /** Canonical level-1 net fishing spot in this server's npc-spawns/fishing config. */
 export const LUMBRIDGE_STARTER_FISHING_SPOT: BodyPos = { x: 3239, y: 3244, level: 0 };
 
-/** Live-proven tile where level-1 residents can stand while netting the Lumbridge river spot. */
+/** Legacy exact river tile; use discovery-range routing rather than forcing this coordinate. */
 export const LUMBRIDGE_STARTER_FISHING_STAND_SPOT: BodyPos = { x: 3240, y: 3244, level: 0 };
 
 /** Secondary fixed net/bait spot in this server's Lumbridge fishing spawn config. */
@@ -160,6 +160,12 @@ export const COIN_ITEM_IDS: ReadonlySet<number> = new Set([995]);
 /** Item-key pattern matched against food-shaped ground items by the pickup routine. */
 export const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+
+/** Cooked starter net fish useful as food and safe to eat when clearing fishing space. */
+const STARTER_COOKED_FISH_ITEM_IDS: ReadonlySet<number> = new Set([315, 319]);
+
+/** Burnt starter net fish that should be discarded before more fishing. */
+const STARTER_BURNT_FISH_ITEM_IDS: ReadonlySet<number> = new Set([7954, 323]);
 
 /** Item-key pattern for raw food that must be cooked before it can heal. */
 export const RAW_FOOD_KEY_PATTERN = /(^|[:_-])raw([:_-]|$)/i;
@@ -224,7 +230,7 @@ export function findSlot(items: Array<BodyItem | null>, predicate: (item: BodyIt
 /** True when an item is ready-to-eat food rather than a raw ingredient. */
 export function isEdibleFood(item: BodyItem): boolean {
     const key = item.key || '';
-    return FOOD_KEY_PATTERN.test(key) && !RAW_FOOD_KEY_PATTERN.test(key) && !isStarterRawFish(item);
+    return FOOD_KEY_PATTERN.test(key) && !RAW_FOOD_KEY_PATTERN.test(key) && !isStarterRawFish(item) && !isBurntFood(item);
 }
 
 /** Returns the first inventory slot containing ready-to-eat food, or undefined. */
@@ -458,6 +464,11 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
         return undefined;
     }
 
+    const inventoryPressureAction = starterFishingInventoryPressureAction(perception);
+    if (inventoryPressureAction) {
+        return inventoryPressureAction;
+    }
+
     const target = (perception.nearby?.npcs || [])
         .filter(isNetCapableFishingSpot)
         .sort((a, b) => starterFishingSpotScore(here, a.position) - starterFishingSpotScore(here, b.position))[0];
@@ -475,6 +486,50 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
     }
 
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
+}
+
+function starterFishingInventoryPressureAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const inventory = perception.resident?.inventory || [];
+    if (inventoryHasFreeSlot(inventory)) {
+        return undefined;
+    }
+
+    const burntSlot = findSlot(inventory, isStarterBurntFish);
+    if (burntSlot !== undefined) {
+        return { kind: 'drop', slot: burntSlot, cause: 'starter_fishing_clear_burnt_fish' };
+    }
+
+    const cookedSlot = findSlot(inventory, isStarterCookedFish);
+    if (cookedSlot !== undefined) {
+        return { kind: 'eat', slot: cookedSlot, cause: 'starter_fishing_eat_cooked_fish_for_space' };
+    }
+
+    return {
+        kind: 'say',
+        text: 'My inventory is full; I need to cook, eat, drop, or bank something before I can fish.',
+        cause: 'starter_fishing_inventory_full',
+    };
+}
+
+function isStarterBurntFish(item: BodyItem): boolean {
+    if (STARTER_BURNT_FISH_ITEM_IDS.has(item.itemId)) {
+        return true;
+    }
+    return /burnt.*(shrimp|fish|anchov)/i.test(item.key || '');
+}
+
+function isStarterCookedFish(item: BodyItem): boolean {
+    if (STARTER_COOKED_FISH_ITEM_IDS.has(item.itemId)) {
+        return true;
+    }
+    return /(^|[:_-])(shrimps?|anchovies)([:_-]|$)/i.test(item.key || '');
+}
+
+function isBurntFood(item: BodyItem): boolean {
+    if (isStarterBurntFish(item)) {
+        return true;
+    }
+    return /burnt.*(shrimp|fish|anchov|meat|food)|(shrimp|fish|anchov|meat|food).*burnt/i.test(item.key || '');
 }
 
 function isNetCapableFishingSpot(actor: BodyActor): boolean {
@@ -499,6 +554,14 @@ function starterFishingSpotScore(here: BodyPos, target: BodyPos): number {
     return 1_000 + distance(here, target);
 }
 
+function nearestLumbridgeStarterFishingSpot(here: BodyPos): BodyPos {
+    return [...LUMBRIDGE_STARTER_FISHING_SPOTS].sort((a, b) => distance(here, a) - distance(here, b))[0] || LUMBRIDGE_STARTER_FISHING_SPOT;
+}
+
+function nearLumbridgeStarterFishingDiscovery(here: BodyPos): boolean {
+    return LUMBRIDGE_STARTER_FISHING_SPOTS.some(position => distance(here, position) <= STARTER_FISHING_SPOT_DISCOVERY_RANGE);
+}
+
 /**
  * Continue the starter fishing loop even when the spot has fallen out of
  * perception after cooking. The visible-spot action remains authoritative;
@@ -516,16 +579,22 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
         return undefined;
     }
 
-    const routeDistance = distance(here, LUMBRIDGE_STARTER_FISHING_STAND_SPOT);
-    if (here.level !== LUMBRIDGE_STARTER_FISHING_STAND_SPOT.level || routeDistance > STARTER_FISHING_ROUTE_MAX_DISTANCE) {
+    const inventoryPressureAction = starterFishingInventoryPressureAction(perception);
+    if (inventoryPressureAction) {
+        return inventoryPressureAction;
+    }
+
+    const routeTarget = nearestLumbridgeStarterFishingSpot(here);
+    const routeDistance = distance(here, routeTarget);
+    if (here.level !== routeTarget.level || routeDistance > STARTER_FISHING_ROUTE_MAX_DISTANCE) {
         return undefined;
     }
 
-    if (routeDistance > INTERACTION_APPROACH_RADIUS) {
+    if (!nearLumbridgeStarterFishingDiscovery(here)) {
         return {
             kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-            range: INTERACTION_APPROACH_RADIUS,
+            target: routeTarget,
+            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
             cause: 'starter_fishing_seek_spot',
         };
     }
@@ -663,6 +732,9 @@ export function inventoryHasFreeSlot(inventory: Array<BodyItem | null>): boolean
 
 /** True when the ground item is worth picking up. */
 export function isUsefulGroundItem(item: BodyItem): boolean {
+    if (isBurntFood(item)) {
+        return false;
+    }
     return (
         COIN_ITEM_IDS.has(item.itemId) ||
         /coins?/i.test(item.key || '') ||

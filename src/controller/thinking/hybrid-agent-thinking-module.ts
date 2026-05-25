@@ -18,13 +18,13 @@ import {
     LEVEL_ONE_TREE_IDS,
     LUMBRIDGE_CASTLE_RANGE,
     LUMBRIDGE_STARTER_FISHING_SPOTS,
-    LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
     LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
     MAX_INVENTORY_SLOTS,
     PICKUP_TARGET_COOLDOWN_TICKS,
     PRAYER_TRAINING_WAYPOINTS,
     PRAYER_TRAINING_WAYPOINT_RANGE,
     STARTER_FISHING_ROUTE_MAX_DISTANCE,
+    STARTER_FISHING_SPOT_DISCOVERY_RANGE,
     actionWithCause,
     buryBonesAction,
     combatLootOrPrayerAction,
@@ -1062,23 +1062,37 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const failedLumbridgeSpot = LUMBRIDGE_STARTER_FISHING_SPOTS.some(position => this.targetFailureCooldownActive(position));
-        if (!failedLumbridgeSpot || positionsEqual(here, LUMBRIDGE_STARTER_FISHING_STAND_SPOT)) {
+        if (!failedLumbridgeSpot || this.nearStarterFishingDiscovery(here)) {
+            return undefined;
+        }
+        const routeTarget = this.starterFishingRecoveryRouteTarget(here);
+        if (!routeTarget) {
             return undefined;
         }
         if (
-            here.level !== LUMBRIDGE_STARTER_FISHING_STAND_SPOT.level ||
-            distance(here, LUMBRIDGE_STARTER_FISHING_STAND_SPOT) > STARTER_FISHING_ROUTE_MAX_DISTANCE ||
-            this.targetFailureCooldownActive(LUMBRIDGE_STARTER_FISHING_STAND_SPOT)
+            here.level !== routeTarget.level ||
+            distance(here, routeTarget) > STARTER_FISHING_ROUTE_MAX_DISTANCE ||
+            this.targetFailureCooldownActive(routeTarget)
         ) {
             return undefined;
         }
 
         return {
             kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
-            range: INTERACTION_APPROACH_RADIUS,
+            target: routeTarget,
+            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
             cause: 'starter_fishing_reposition_to_bank',
         };
+    }
+
+    private nearStarterFishingDiscovery(here: Pos): boolean {
+        return LUMBRIDGE_STARTER_FISHING_SPOTS.some(position => distance(here, position) <= STARTER_FISHING_SPOT_DISCOVERY_RANGE);
+    }
+
+    private starterFishingRecoveryRouteTarget(here: Pos): Pos | undefined {
+        return [...LUMBRIDGE_STARTER_FISHING_SPOTS]
+            .filter(position => !this.targetFailureCooldownActive(position))
+            .sort((a, b) => distance(here, a) - distance(here, b))[0];
     }
 
     private visibilityAnchorReturnAction(
@@ -3553,6 +3567,19 @@ function workflowGoalNextStepSuggestion(perception: HybridPerception, here: Pos,
     if (isStarterFishingGoal(goal)) {
         if (!hasSmallFishingNet(perception)) {
             return 'find a small fishing net.';
+        }
+        const inventory = perception.resident?.inventory || [];
+        if (findSlot(inventory, isStarterRawFish) !== undefined) {
+            const heatSource = (perception.nearby?.objects || [])
+                .filter(object => COOKING_HEAT_OBJECT_IDS.has(object.objectId))
+                .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+            if (heatSource) {
+                return `cook my raw fish at ${heatSource.position.x},${heatSource.position.y}.`;
+            }
+            if (findSlot(inventory, isTinderbox) !== undefined && findSlot(inventory, isFiremakingLog) !== undefined) {
+                return 'make a cooking fire for my raw fish.';
+            }
+            return 'find a fire or range to cook my raw fish.';
         }
         const fishingSpot = (perception.nearby?.npcs || [])
             .filter(isFishingSpot)

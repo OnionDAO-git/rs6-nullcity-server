@@ -20,6 +20,7 @@ export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
         private readonly method: FishingMethod,
     ) {
         super(player, npc, false, FISHING_SPOT_INTERACTION_DISTANCE);
+        this.actor.busy = true;
     }
 
     public execute(): void {

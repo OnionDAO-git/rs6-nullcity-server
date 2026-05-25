@@ -35,3 +35,14 @@ describe('findNpc', () => {
         });
     });
 });
+
+describe('item configuration', () => {
+    const { loadItemConfigurations } = require('@engine/config/item-config');
+
+    it('registers burnt shrimp so residents can drop failed starter-cooking output', async () => {
+        const config = await loadItemConfigurations('data/config/items/');
+
+        expect(config.itemIds[7954]).toBe('rs:burnt_shrimp');
+        expect(config.items['rs:burnt_shrimp']).toMatchObject({ gameId: 7954 });
+    });
+});
