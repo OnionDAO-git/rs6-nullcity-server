@@ -718,4 +718,5 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 11:25 codex branch=agents/wip workstream=D2 HANDOFF - wall roster merges config+SOUL cohort incl 4 flagships. SHA=78035a61 tests=59+fin1892+build+smoke45 collision=none.
 2026-05-25 16:35 antigravity branch=agents/wip workstream=HD-044,HD-048 STARTING — update HD-044 and HD-048 decision status to Decided/Closed in docs.
 2026-05-25 16:40 antigravity branch=agents/wip workstream=HD-044,HD-048 HANDOFF — updated HD-044 and HD-048 to Decided/Closed in docs/human-decisions.md and docs/pre-chicago-readiness.md. collision=none.
-
+2026-05-25 11:46 codex branch=agents/wip workstream=PATRON-LIVE-QA STARTING - prove grant->offer->inbox->wall live. Files: docs/agent-status.md.
+2026-05-25 11:46 codex branch=agents/wip workstream=PATRON-LIVE-QA HANDOFF - live patron:smoke --http passed for Hans. SHA=none tests=patron-smoke-http collision=none.
