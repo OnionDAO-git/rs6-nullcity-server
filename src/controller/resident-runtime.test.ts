@@ -2848,6 +2848,85 @@ describe('ResidentRuntime modules', () => {
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
 
+    it('does not decay attention for an already-deceased resident on subsequent ticks (O1 alive guard)', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-deceased-no-decay-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 0;
+        state.deceased = {
+            date: '2026-05-24T12:00:00.000Z',
+            tick: 100,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 5000, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+        });
+
+        await runtime.onPerception({ tick: 101, events: [] });
+        expect(state.attention).toBe(0);
+        expect(state.deceased?.cause).toBe('attention_exhausted');
+
+        await runtime.onPerception({ tick: 102, events: [] });
+        expect(state.attention).toBe(0);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('does not decay attention for a combat-deceased resident (O1 alive guard)', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-combat-deceased-no-decay-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 3500;
+        state.deceased = {
+            date: '2026-05-24T12:00:00.000Z',
+            tick: 99,
+            cause: 'combat_death',
+            processed: true,
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 5000, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+        });
+
+        await runtime.onPerception({ tick: 100, events: [] });
+        expect(state.attention).toBe(3500);
+        expect(state.deceased?.cause).toBe('combat_death');
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
     it('adopts an operator revive written to runtime state while the controller is still running', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-operator-revive-memory-'));
 

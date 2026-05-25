@@ -542,7 +542,10 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Reusable infrastructure patterns from v2 and RuneBench that don't fit in other workstreams. Spec: *not needed* — items are independently scoped enough that no autonomous-dev spec is required.
 
-- `[ ]` **O1: Tick worker discipline.** Graceful SIGTERM, per-tick stats log line, `status='alive'` guard on decrement UPDATE.
+- `[~]` **O1: Tick worker discipline.** Graceful SIGTERM, per-tick stats log line, `status='alive'` guard on decrement UPDATE.
+  - Graceful SIGTERM: DONE (index.ts lines 35-36 handle SIGINT+SIGTERM since early sprint).
+  - `status='alive'` guard: DONE (2026-05-25 O1-ALIVE-GUARD, `resident-runtime.ts`). Deceased residents no longer decay attention on subsequent ticks; prevents deeply-negative attention state and corrupted revival preconditions.
+  - Per-tick stats log line: deferred (not a Chicago blocker).
 - `[ ]` **O2: Shard + attention ledger discipline.** Append-only ledgers with denormalised balance caches updated in same tx.
 - `[x]` **O3: Static catalog in code audit.** Confirm rs6 factions/resources/achievements/rooms/emotions live in typed catalogs, not DB rows.
   - Verified 2026-05-24 on `agents/wip`: completed static catalog audit confirming compliance with Critical Design Invariant #6. Saved results in artifact `static_catalog_audit.md`.
