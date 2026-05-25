@@ -1,5 +1,4 @@
 import { runInferenceHealthProbe } from './inference-health';
-import type { LlmClient } from './llm-client';
 
 describe('runInferenceHealthProbe', () => {
     it('passes when the configured endpoint returns the expected health JSON', async () => {
@@ -12,7 +11,7 @@ describe('runInferenceHealthProbe', () => {
         }));
 
         const result = await runInferenceHealthProbe({
-            llm: { complete } as unknown as LlmClient,
+            complete,
             endpoints: {
                 default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
             },
@@ -42,7 +41,7 @@ describe('runInferenceHealthProbe', () => {
         const complete = jest.fn();
 
         const result = await runInferenceHealthProbe({
-            llm: { complete } as unknown as LlmClient,
+            complete,
             endpoints: { default: { timeoutMs: 30000 } },
         });
 
@@ -62,7 +61,7 @@ describe('runInferenceHealthProbe', () => {
         }));
 
         const result = await runInferenceHealthProbe({
-            llm: { complete } as unknown as LlmClient,
+            complete,
             endpoints: {
                 default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
             },
@@ -84,7 +83,7 @@ describe('runInferenceHealthProbe', () => {
         }));
 
         const result = await runInferenceHealthProbe({
-            llm: { complete } as unknown as LlmClient,
+            complete,
             endpoints: {
                 default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
             },
@@ -106,7 +105,7 @@ describe('runInferenceHealthProbe', () => {
         }));
 
         const result = await runInferenceHealthProbe({
-            llm: { complete } as unknown as LlmClient,
+            complete,
             endpoints: {
                 default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
             },
@@ -117,6 +116,67 @@ describe('runInferenceHealthProbe', () => {
             status: 'unexpected_completion',
             endpoint: 'default',
             model: 'qwen-health',
+        });
+    });
+
+    it('accepts an exact JSON answer after stripping Qwen thinking text', async () => {
+        const complete = jest.fn(async () => ({
+            text: '<think>checking</think>\n{"health":"ok","probe":"nullcity-inference-health"}',
+            model: 'qwen-health',
+            nooped: false,
+        }));
+
+        const result = await runInferenceHealthProbe({
+            complete,
+            endpoints: {
+                default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            status: 'ok',
+            endpoint: 'default',
+        });
+    });
+
+    it('rejects prose wrapped around the expected JSON health object', async () => {
+        const complete = jest.fn(async () => ({
+            text: 'Sure: {"health":"ok","probe":"nullcity-inference-health"}',
+            model: 'qwen-health',
+            nooped: false,
+        }));
+
+        const result = await runInferenceHealthProbe({
+            complete,
+            endpoints: {
+                default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: false,
+            status: 'unexpected_completion',
+        });
+    });
+
+    it('rejects extra keys in the expected JSON health object', async () => {
+        const complete = jest.fn(async () => ({
+            text: '{"health":"ok","probe":"nullcity-inference-health","extra":true}',
+            model: 'qwen-health',
+            nooped: false,
+        }));
+
+        const result = await runInferenceHealthProbe({
+            complete,
+            endpoints: {
+                default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: false,
+            status: 'unexpected_completion',
         });
     });
 });

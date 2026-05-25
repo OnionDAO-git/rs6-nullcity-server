@@ -1,5 +1,5 @@
 import type { LlmEndpointConfig } from '../config';
-import type { LlmClient } from './llm-client';
+import type { LlmResponse } from './llm-client';
 
 export type InferenceHealthStatus =
     | 'ok'
@@ -23,11 +23,21 @@ export interface InferenceHealthResult {
 }
 
 export interface InferenceHealthProbeOptions {
-    llm: Pick<LlmClient, 'complete'>;
     endpoints: Record<string, LlmEndpointConfig>;
     endpoint?: string;
     timeoutMs?: number;
     now?: () => number;
+    complete?: (request: InferenceHealthCompletionRequest) => Promise<LlmResponse>;
+}
+
+export interface InferenceHealthCompletionRequest {
+    endpoint: string;
+    config: LlmEndpointConfig;
+    model: string;
+    prompt: string;
+    temperature: number;
+    thinking: boolean;
+    signal: AbortSignal;
 }
 
 const HEALTH_PROBE_PROMPT = [
@@ -51,13 +61,14 @@ export async function runInferenceHealthProbe(options: InferenceHealthProbeOptio
     const signal = AbortSignal.timeout(options.timeoutMs ?? config.timeoutMs ?? 30000);
 
     try {
-        const response = await options.llm.complete({
+        const complete = options.complete || postHealthCompletion;
+        const response = await complete({
             endpoint,
+            config,
             model,
             prompt: HEALTH_PROBE_PROMPT,
             temperature: 0,
             thinking: false,
-            priority: 100,
             signal,
         });
         const latencyMs = Math.max(0, now() - startedAt);
@@ -138,18 +149,16 @@ function stripThinkBlocks(text: string): string {
 
 function isExpectedHealthResponse(text: string): boolean {
     const jsonText = extractJsonObject(text);
-    if (!jsonText) {
+    if (!jsonText || jsonText !== text.trim()) {
         return false;
     }
     try {
         const parsed = JSON.parse(jsonText) as unknown;
-        return (
-            typeof parsed === 'object' &&
-            parsed !== null &&
-            !Array.isArray(parsed) &&
-            (parsed as Record<string, unknown>).health === 'ok' &&
-            (parsed as Record<string, unknown>).probe === 'nullcity-inference-health'
-        );
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+            return false;
+        }
+        const record = parsed as Record<string, unknown>;
+        return Object.keys(record).length === 2 && record.health === 'ok' && record.probe === 'nullcity-inference-health';
     } catch {
         return false;
     }
@@ -166,4 +175,53 @@ function extractJsonObject(text: string): string | undefined {
 
 function preview(text: string): string {
     return text.length > 240 ? `${text.slice(0, 237)}...` : text;
+}
+
+async function postHealthCompletion(request: InferenceHealthCompletionRequest): Promise<LlmResponse> {
+    const response = await fetch(`${request.config.baseUrl?.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            ...(request.config.apiKey ? { authorization: `Bearer ${request.config.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+            model: request.model,
+            messages: [{ role: 'user', content: request.prompt }],
+            temperature: request.temperature,
+            reasoning: { enabled: request.thinking },
+            chat_template_kwargs: { enable_thinking: request.thinking },
+            response_format: {
+                type: 'json_schema',
+                json_schema: {
+                    name: 'controller_health_probe',
+                    strict: false,
+                    schema: { type: 'object' },
+                },
+            },
+        }),
+        signal: request.signal,
+    });
+    if (!response.ok) {
+        throw new Error(`LLM health probe failed: ${response.status} ${response.statusText}`);
+    }
+
+    const json = (await response.json()) as unknown;
+    const payload = isRecord(json) ? json : {};
+    const choices = Array.isArray(payload.choices) ? payload.choices : [];
+    const first = isRecord(choices[0]) ? choices[0] : {};
+    const message = isRecord(first.message) ? first.message : {};
+    const usage = isRecord(payload.usage) ? payload.usage : {};
+    const content = typeof message.content === 'string' && message.content.trim().length > 0 ? message.content : message.reasoning_content;
+
+    return {
+        text: typeof content === 'string' ? content : '',
+        model: typeof payload.model === 'string' ? payload.model : undefined,
+        nooped: false,
+        promptTokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
+        completionTokens: typeof usage.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+    };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -46,9 +46,6 @@ async function main(): Promise<void> {
             process.stderr.write(`[controller] MCP HTTP listening at ${mcpHttpServer.url}\n`);
         }
         if (args.lettersHttpPort !== undefined) {
-            // Keep the health probe off the resident Brain/Body queue so an
-            // operator can distinguish provider health from resident backlog.
-            const healthLlm = new LlmClient(config.llm.endpoints, 1);
             // EVENT-D2c: spin up the letters inbox HTTP server when configured.
             // LettersStore is filesystem-rooted at memory.dir — a fresh
             // instance here shares the same files PatronGateway writes to via
@@ -62,7 +59,7 @@ async function main(): Promise<void> {
                 path: args.lettersHttpPath,
                 lettersRoot: config.memory.dir,
                 wallRedact: args.lettersHttpWallRedact,
-                health: () => runInferenceHealthProbe({ llm: healthLlm, endpoints: config.llm.endpoints }),
+                health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints }),
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
         }

@@ -514,7 +514,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` **O1: Tick worker discipline.** Graceful SIGTERM, per-tick stats log line, `status='alive'` guard on decrement UPDATE.
 - `[ ]` **O2: Shard + attention ledger discipline.** Append-only ledgers with denormalised balance caches updated in same tx.
-- `[ ]` **O3: Static catalog in code audit.** Confirm rs6 factions/resources/achievements/rooms/emotions live in typed catalogs, not DB rows.
+- `[x]` **O3: Static catalog in code audit.** Confirm rs6 factions/resources/achievements/rooms/emotions live in typed catalogs, not DB rows.
+  - Verified 2026-05-24 on `agents/wip`: completed static catalog audit confirming compliance with Critical Design Invariant #6. Saved results in artifact `static_catalog_audit.md`.
 - `[x]` **O4: Real-completion inference health check.** Health endpoint exercises a real LLM call, not just connect.
   - Verified 2026-05-24 on `agents/wip`: added real `/v1/health` inference probe on the controller HTTP surface. Checked and tested with focused tests. Passes typecheck, biome lint, and Jest.
 - `[ ]` **O5: Layered Docker base image.** Pre-cache engine + deps to cut per-iteration build time.

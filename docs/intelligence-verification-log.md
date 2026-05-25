@@ -3126,5 +3126,26 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 
 **Suggested next step.** None. Task O4 is fully completed.
 
+---
 
+### E64 — O3: Static catalog in code audit (O3 verification)
 
+**Status:** RESOLVED-by-antigravity (this entry documents the verification)
+**Tier:** 1 (read-only code audit)
+**Date:** 2026-05-24 22:40 antigravity
+
+**Hypothesis.** We expect that factions, resources, achievements, rooms, and emotions live entirely in typed code catalogs and static local files, preserving Critical Design Invariant #6 ("Static catalogs in code, not DB").
+
+**Repro.**
+- Code inspection across `src/controller/soul/soul-schema.ts`, `src/controller/spark/runescape-workflows.ts`, `src/controller/spark/runescape-body-routines.ts`, `src/controller/patron/letters-producer.ts`, `src/controller/embassy/embassy.ts`, `src/controller/memory/memory-store.ts`.
+
+**Observation.**
+- **Factions**: Modeled statically as Types/Schemas (`FactionAffinity`, `dominantFaction`) in `soul-schema.ts`; no DB rows exist. Faction specs (`2026-05-22-rs6-factions-design.md`) specify static TS constants for event-day factions.
+- **Resources**: Defined as static matcher helpers and constants (`isFiremakingLog`, `LEVEL_ONE_TREE_IDS`, etc.) in workflows and routines TS files. Detailed resource indices are maintained as Markdown playbooks (e.g. `items.md`).
+- **Achievements**: Statically typed as a TypeScript union (`CivicAchievementKind`) and mapped using switch blocks (`headlineForAchievement`) in `letters-producer.ts`.
+- **Rooms**: Statically configured as Types/Constants (`EMBASSY_REGION` and `POIS`) in `src/controller/embassy/embassy.ts` and factions specs.
+- **Emotions**: Statically defined inside local SOUL YAML frontmatter files, which are directly injected into LLM prompt envelopes. No database persistence layer is used.
+
+**Classification.** ENGINE-tool VERIFIED. The audit confirms complete compliance with Invariant #6.
+
+**Suggested next step.** None. Task O3 is fully completed.
