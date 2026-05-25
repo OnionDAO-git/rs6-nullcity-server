@@ -10,13 +10,19 @@
 
 ## Quick run
 
-The fastest go/no-go check is the smoke script written this sprint:
+Two complementary go/no-go checks land in ~2 minutes total:
 
 ```sh
+# (1) ops health — process / HTTP / wall snapshot / library / patron registry
 bash scripts/post-restart-smoke.sh
+
+# (2) behavior health — per-resident action/result/say evidence from trajectories
+npm run controller:smoke
 ```
 
-Exit code 0 = ready; 1 = blocking red. If the script reports `READY` or `READY WITH WARNINGS`, you can open doors. If it reports `NOT READY`, address the red items first.
+**`post-restart-smoke.sh`** reports `READY` / `READY WITH WARNINGS` / `NOT READY` — if `NOT READY`, address the red items first. Exit 0 = ready; 1 = blocking red.
+
+**`controller:smoke`** reports per-resident `OK <name> tick=N actions=A results=R success=S timeout=T fail=F says=Y lastAction=K lastResult=R lastSay="…"`. Useful for confirming heroes are emitting their soul-distinctive personality lines (Hans "A good day in the courtyard, friend.", Aereck "Bless this ground beneath us.", Wise "Pick your fights…", Duke "Well met. The duchy stands open to you.", Pip "Oh — hello!", Thrand "Still here as Thrand…") and that cohort residents are action-active (qa-woodcutter / qa-forager hit 15-19 actions per window). If a hero shows 0 says or a cohort resident shows 0 actions over a few minutes, something is off.
 
 ---
 

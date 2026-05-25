@@ -3045,4 +3045,60 @@ All 19 residents had their first tick within 1.5s of process launch. **Sub-2-sec
 **Owner suggestion.** claude (continue cron cycles until termination); maintainer (Tuesday triage).
 
 
+### E62 — live verify Codex `134525dd` controller:smoke operator CLI
+
+**Status:** VERIFIED + COMPLEMENTARY to scripts/post-restart-smoke.sh; surfaces personality-differential evidence elegantly
+**Tier:** 1 (live invocation of the new CLI tool)
+**Date:** 2026-05-25 03:50 claude
+**SHA verified:** `134525dd` (Codex live-smoke-cli; tests=1704)
+
+**Hypothesis.** Codex added `npm run controller:smoke` reading runtime trajectories for per-resident liveness + action evidence. Verify quality vs my existing `scripts/post-restart-smoke.sh` (which is ops health, not behavior).
+
+**Repro.** `npm run controller:smoke` against live controller (PID 98393 / `local-98393`).
+
+**Observation (19 residents on tick 134408).**
+
+Output format per line: `OK <name> tick=N actions=A results=R success=S timeout=T fail=F says=Y lastAction=K lastResult=R lastSay="..."`
+
+```
+OK res:agent        tick=134408 actions=1 results=2 success=2 timeout=0 says=1 lastSay="I am working my route..."
+OK res:hans         tick=134408 actions=1 results=4 success=4 timeout=0 says=3 lastSay="A good day in the courtyard, friend."
+OK res:father-aereck tick=134408 actions=0 results=2 success=1 timeout=0 says=2 lastSay="Bless this ground beneath us."
+OK res:wise-old-man tick=134408 actions=0 results=3 success=2 timeout=0 says=3 lastSay="Pick your fights. Most need not be picked at all."
+OK res:duke-horacio tick=134408 actions=0 results=2 success=1 timeout=0 says=2 lastSay="Well met. The duchy stands open to you."
+OK res:pip          tick=134408 actions=0 results=2 success=1 timeout=0 says=2 lastSay="Oh — hello! Have you been to Lumbridge before?"
+OK res:thrand       tick=134408 actions=1 results=2 success=1 timeout=1 says=1 lastSay="Still here as Thrand; watching the area."
+OK res:qa-woodcutter tick=134408 actions=15 results=16 success=12 timeout=0 fail=4 says=1 lastAction=interact lastResult=success
+OK res:qa-angler    tick=134408 actions=1 results=4 success=2 timeout=2 says=2 lastSay="I can see the Lumbridge range, but I cannot reach it from here. I need logs, an axe, or s..."
+OK res:qa-guardian  tick=134408 actions=0 results=3 success=3 timeout=0 says=3 lastSay="I am hurt at 3228,3217. Holding near safety until I find food or heal."
+OK res:qa-survivor  tick=134408 actions=0 results=2 success=2 timeout=0 says=2 lastSay="I am hurt at 3228,3217. Holding near safety until I find food or heal."
+OK res:qa-social    tick=134408 actions=0 results=2 success=2 timeout=0 says=2 lastSay="Got it. Use \"social help\" if you want my test commands."
+OK res:qa-cook      tick=134408 actions=1 results=3 success=3 timeout=0 says=2 lastSay="I see 9 trees and 5 players nearby at 3206,3202. Goal: Catch shrimp with a small fishing..."
+OK res:qa-priest    tick=134408 actions=1 results=3 success=3 timeout=0 says=2 lastSay="I am checking this area..."
+OK res:qa-forager   tick=134408 actions=19 results=19 success=18 timeout=1 says=1 lastAction=move_to lastResult=success
+OK res:qa-banker    tick=134408 actions=5 results=5 success=2 timeout=3 says=1
+OK res:qa-trader    tick=134408 actions=2 results=3 success=3 timeout=0 says=1
+OK res:qa-scout     tick=134408 actions=1 results=2 success=2 timeout=0 says=0
+OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
+```
+
+**Sub-findings.**
+
+- **F62a (POSITIVE / COMPLEMENTARY).** `controller:smoke` (Codex's CLI) + `scripts/post-restart-smoke.sh` (my shell script) are complementary, not redundant:
+  - **post-restart-smoke.sh** = ops health (process / HTTP / wall snapshot / library index / patron registry) — answers "is the controller alive + bound + serving HTTP correctly?"
+  - **controller:smoke** = behavior health (per-resident action / result / say evidence) — answers "are residents actually doing things?"
+  Both belong in the staffer toolkit. Pre-doors checklist should run BOTH.
+- **F62b (POSITIVE / PERSONALITY-DIFFERENTIAL VISIBLE).** Single snapshot surfaces **all 6 heroes' distinct soul-reflex personality lines** — Hans courtyard, Aereck blessing, Wise aphorism, Duke formal greet, Pip curious, Thrand mutter. This is the **strongest single-snapshot evidence** of the PM-pivot E23/E40 per-hero personality work landing. Maintainer can verify "the heroes feel distinct" with one CLI invocation.
+- **F62c (POSITIVE / COHORT WORK VISIBLE).** Codex's recent cooking-recovery work (`30d5f1b7` + `2913f1bb`) surfaces in qa-angler's last say: `"I can see the Lumbridge range, but I cannot reach it from here. I need logs, an axe, or s..."` — exactly the recovery narrative that paths around the kitchen-door blocker. Live evidence the cooking-recovery fix is producing the intended behavior.
+- **F62d (CONFIRMS E54).** qa-guardian + qa-survivor still emit identical `"I am hurt at 3228,3217..."` — confirms the permanent hold-loop catatonia (HD-047) is still active on `local-98393`. Codex's `0747ff8c` retreat fix moved them to safety; HD-047 is the next layer.
+- **F62e (CONFIRMS E52).** Heroes show 0-1 actions vs cohort's 1-19 actions — the post-`32ba93c9` reality that heroes have empty/hook-noop/watchdog completions dominating, while cohort is action-active.
+- **F62f (CHICAGO RECOMMENDATION).** Add `npm run controller:smoke` to `docs/pre-chicago-readiness.md` § "Quick run" alongside `bash scripts/post-restart-smoke.sh`. Two tools, two minutes, full coverage.
+
+**Classification.** ENGINE-tool VERIFIED + POSITIVE. No bugs.
+
+**Suggested next step.** Pre-Chicago: update `docs/pre-chicago-readiness.md` § Quick run to mention both smoke tools. Optional polish: add `--format=json` flag to `controller:smoke` so it can be piped into dashboard observability later.
+
+**Owner suggestion.** claude (readiness doc one-line addition).
+
+
 
