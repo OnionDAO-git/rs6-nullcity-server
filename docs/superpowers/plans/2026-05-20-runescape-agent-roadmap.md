@@ -616,7 +616,9 @@ Safe public module facade building blocks are implemented, but the public member
 
 ## Immediate Recommended Next Slice
 
-- `[ ]` Build the consumption safety and proof loop next.
+- `[x]` Build the consumption safety and proof loop next.
+  - Started 2026-05-24 on `agents/wip`: add timed `controller:smoke` observation so live QA can prove residents produce new actions/speech/progress over a real window.
+  - Verified 2026-05-24 on `agents/wip`: `controller:smoke --observe-seconds` now compares before/after trajectory entries by stable entry keys, handles trajectory rotation and controller tick resets, fails timed warnings by default, and reports observed action/result/speech deltas. Live `res:agent` 60s proof passed with +100 ticks, 3 new actions, 5 results, 4 successes, 1 timeout, and fresh scouting speech.
   - Safe facade foundation A2-A7 is now implemented as reviewed in-repo building blocks. Member-safe module authoring still needs the next public module contract slice to consume only those facades instead of `TrustedSparkModuleContext`.
   - Benchmark proof is now visible in the dashboard; the next proof-loop slice should make new autonomous benchmark runs easier to launch/compare from a single operator command or dashboard action.
   - Human-like next slice: finish F3 help-request behavior when no recovery move exists, then build a broader multi-loop routine that chains woodcutting, fishing, cooking, and status chat.

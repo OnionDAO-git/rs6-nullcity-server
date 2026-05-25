@@ -11,8 +11,27 @@ export interface LiveSmokeCliOptions {
     residents: string[];
     windowTicks: number;
     maxStuckTicks: number;
+    observeSeconds: number;
+    pollMs: number;
+    minObservedActions: number;
+    minObservedSays: number;
     json: boolean;
     failOnWarn: boolean;
+}
+
+export interface LiveSmokeObservedDelta {
+    durationMs: number;
+    startTick?: number;
+    endTick?: number;
+    tickDelta?: number;
+    actions: number;
+    results: number;
+    successes: number;
+    failures: number;
+    timeouts: number;
+    says: number;
+    decisions: number;
+    visibleEvents: number;
 }
 
 export interface LiveSmokeSummary {
@@ -34,6 +53,7 @@ export interface LiveSmokeSummary {
     lastSay?: string;
     lastAction?: string;
     lastResult?: string;
+    observed?: LiveSmokeObservedDelta;
     issues: string[];
 }
 
@@ -42,6 +62,14 @@ export interface SummarizeLiveResidentsOptions {
     residents?: string[];
     windowTicks?: number;
     maxStuckTicks?: number;
+}
+
+export interface ObserveLiveResidentsOptions extends SummarizeLiveResidentsOptions {
+    observeMs: number;
+    pollMs?: number;
+    minObservedActions?: number;
+    minObservedSays?: number;
+    sleep?: (ms: number) => Promise<void>;
 }
 
 interface RuntimeStateSnapshot {
@@ -54,6 +82,7 @@ interface RuntimeStateSnapshot {
 interface TrajectoryEntry {
     tick?: number;
     kind?: string;
+    sessionId?: string;
     action?: string | { kind?: string };
     status?: string;
     cause?: string;
@@ -61,8 +90,18 @@ interface TrajectoryEntry {
     text?: string;
 }
 
+interface ParsedTrajectoryEntry extends TrajectoryEntry {
+    entryKey: string;
+    sourceFile: string;
+    sourceIndex: number;
+    lineIndex: number;
+}
+
 const DEFAULT_WINDOW_TICKS = 120;
 const DEFAULT_MAX_STUCK_TICKS = 90;
+const DEFAULT_OBSERVE_SECONDS = 0;
+const DEFAULT_POLL_MS = 1000;
+const MAX_TRAJECTORY_FILES = 4;
 
 export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
     const options: LiveSmokeCliOptions = {
@@ -70,6 +109,10 @@ export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
         residents: [],
         windowTicks: DEFAULT_WINDOW_TICKS,
         maxStuckTicks: DEFAULT_MAX_STUCK_TICKS,
+        observeSeconds: DEFAULT_OBSERVE_SECONDS,
+        pollMs: DEFAULT_POLL_MS,
+        minObservedActions: 0,
+        minObservedSays: 0,
         json: false,
         failOnWarn: false,
     };
@@ -111,6 +154,34 @@ export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
             i += 1;
         } else if (arg.startsWith('--max-stuck-ticks=')) {
             options.maxStuckTicks = parsePositiveInteger(arg.slice('--max-stuck-ticks='.length), '--max-stuck-ticks');
+        } else if (arg === '--observe-seconds') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--observe-seconds requires a value');
+            options.observeSeconds = parsePositiveInteger(next, '--observe-seconds');
+            i += 1;
+        } else if (arg.startsWith('--observe-seconds=')) {
+            options.observeSeconds = parsePositiveInteger(arg.slice('--observe-seconds='.length), '--observe-seconds');
+        } else if (arg === '--poll-ms') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--poll-ms requires a value');
+            options.pollMs = parsePositiveInteger(next, '--poll-ms');
+            i += 1;
+        } else if (arg.startsWith('--poll-ms=')) {
+            options.pollMs = parsePositiveInteger(arg.slice('--poll-ms='.length), '--poll-ms');
+        } else if (arg === '--min-observed-actions') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--min-observed-actions requires a value');
+            options.minObservedActions = parsePositiveInteger(next, '--min-observed-actions');
+            i += 1;
+        } else if (arg.startsWith('--min-observed-actions=')) {
+            options.minObservedActions = parsePositiveInteger(arg.slice('--min-observed-actions='.length), '--min-observed-actions');
+        } else if (arg === '--min-observed-says') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--min-observed-says requires a value');
+            options.minObservedSays = parsePositiveInteger(next, '--min-observed-says');
+            i += 1;
+        } else if (arg.startsWith('--min-observed-says=')) {
+            options.minObservedSays = parsePositiveInteger(arg.slice('--min-observed-says='.length), '--min-observed-says');
         } else if (arg === '--json') {
             options.json = true;
         } else if (arg === '--fail-on-warn') {
@@ -131,18 +202,65 @@ export function summarizeLiveResidents(options: SummarizeLiveResidentsOptions): 
     return residents.map(resident => summarizeResident(options.memoryDir, resident, windowTicks, maxStuckTicks));
 }
 
+export async function observeLiveResidents(options: ObserveLiveResidentsOptions): Promise<LiveSmokeSummary[]> {
+    const windowTicks = options.windowTicks ?? DEFAULT_WINDOW_TICKS;
+    const maxStuckTicks = options.maxStuckTicks ?? DEFAULT_MAX_STUCK_TICKS;
+    const residents = options.residents?.length ? options.residents : discoverResidents(options.memoryDir);
+    const startSnapshots = new Map(residents.map(resident => [resident, readResidentObservationSnapshot(options.memoryDir, resident)]));
+
+    await sleepForDuration(options.observeMs, options.pollMs ?? DEFAULT_POLL_MS, options.sleep ?? defaultSleep);
+
+    return residents.map(requestedResident => {
+        const summary = summarizeResident(options.memoryDir, requestedResident, windowTicks, maxStuckTicks);
+        const observed = diffObservationSnapshots(
+            startSnapshots.get(requestedResident),
+            readResidentObservationSnapshot(options.memoryDir, requestedResident),
+            options.observeMs,
+        );
+        summary.observed = observed;
+        if (observed.visibleEvents === 0) {
+            summary.issues.push('no_observed_visible_activity');
+        }
+        if ((observed.tickDelta ?? 0) <= 0) {
+            summary.issues.push('no_observed_tick_progress');
+        }
+        if (options.minObservedActions && observed.actions < options.minObservedActions) {
+            summary.issues.push(`observed_actions_below_${options.minObservedActions}`);
+        }
+        if (options.minObservedSays && observed.says < options.minObservedSays) {
+            summary.issues.push(`observed_says_below_${options.minObservedSays}`);
+        }
+        if (summary.issues.length) {
+            summary.status = summary.status === 'missing' ? 'missing' : 'warn';
+        }
+        return summary;
+    });
+}
+
 export async function runLiveSmokeCli(argv: string[]): Promise<number> {
     try {
         const options = parseLiveSmokeCliArgs(argv);
         const config = !options.memoryDir || options.residents.length === 0 ? loadControllerConfig(options.configPath) : undefined;
         const memoryDir = options.memoryDir || config?.memory.dir || 'data/controller/memory';
         const residents = options.residents.length > 0 ? options.residents : options.memoryDir ? undefined : config?.residents;
-        const summaries = summarizeLiveResidents({
-            memoryDir,
-            residents,
-            windowTicks: options.windowTicks,
-            maxStuckTicks: options.maxStuckTicks,
-        });
+        const summaries =
+            options.observeSeconds > 0
+                ? await observeLiveResidents({
+                      memoryDir,
+                      residents,
+                      windowTicks: options.windowTicks,
+                      maxStuckTicks: options.maxStuckTicks,
+                      observeMs: options.observeSeconds * 1000,
+                      pollMs: options.pollMs,
+                      minObservedActions: options.minObservedActions,
+                      minObservedSays: options.minObservedSays,
+                  })
+                : summarizeLiveResidents({
+                      memoryDir,
+                      residents,
+                      windowTicks: options.windowTicks,
+                      maxStuckTicks: options.maxStuckTicks,
+                  });
 
         if (options.json) {
             console.log(JSON.stringify({ memoryDir, summaries }, null, 2));
@@ -153,7 +271,7 @@ export async function runLiveSmokeCli(argv: string[]): Promise<number> {
         if (summaries.length === 0 || summaries.some(summary => summary.status === 'missing')) {
             return 1;
         }
-        if (options.failOnWarn && summaries.some(summary => summary.status !== 'ok')) {
+        if ((options.failOnWarn || options.observeSeconds > 0) && summaries.some(summary => summary.status !== 'ok')) {
             return 1;
         }
         return 0;
@@ -167,11 +285,14 @@ export function formatLiveSmokeSummary(memoryDir: string, summaries: LiveSmokeSu
     const lines = [`[controller:smoke] memory=${memoryDir} residents=${summaries.length}`];
     for (const summary of summaries) {
         const issueText = summary.issues.length ? ` issues=${summary.issues.join(',')}` : '';
+        const observed = summary.observed
+            ? ` observed=${summary.observed.durationMs}ms/+${summary.observed.tickDelta ?? 0}t actions=${summary.observed.actions} results=${summary.observed.results} success=${summary.observed.successes} timeout=${summary.observed.timeouts} fail=${summary.observed.failures} says=${summary.observed.says}`
+            : '';
         const lastAction = summary.lastAction ? ` lastAction=${summary.lastAction}` : '';
         const lastResult = summary.lastResult ? ` lastResult=${summary.lastResult}` : '';
         const lastSay = summary.lastSay ? ` lastSay="${truncate(summary.lastSay, 90)}"` : '';
         lines.push(
-            `${summary.status.toUpperCase()} ${summary.resident} tick=${summary.tick ?? '?'} actions=${summary.recent.actions} results=${summary.recent.results} success=${summary.recent.successes} timeout=${summary.recent.timeouts} fail=${summary.recent.failures} says=${summary.recent.says}${lastAction}${lastResult}${lastSay}${issueText}`,
+            `${summary.status.toUpperCase()} ${summary.resident} tick=${summary.tick ?? '?'} actions=${summary.recent.actions} results=${summary.recent.results} success=${summary.recent.successes} timeout=${summary.recent.timeouts} fail=${summary.recent.failures} says=${summary.recent.says}${observed}${lastAction}${lastResult}${lastSay}${issueText}`,
         );
     }
     return lines.join('\n');
@@ -180,9 +301,10 @@ export function formatLiveSmokeSummary(memoryDir: string, summaries: LiveSmokeSu
 function summarizeResident(memoryDir: string, resident: string, windowTicks: number, maxStuckTicks: number): LiveSmokeSummary {
     const residentDir = path.join(memoryDir, residentSlug(resident));
     const state = readJson<RuntimeStateSnapshot>(path.join(residentDir, 'runtime-state.json'));
-    const entries = readLatestTrajectoryEntries(residentDir);
+    const stateTick = numberOrUndefined(state?.tick);
+    const entries = currentSessionEntries(readTrajectoryEntries(residentDir), stateTick);
     const lastTrajectoryTick = latestTick(entries);
-    const tick = numberOrUndefined(state?.tick) ?? lastTrajectoryTick;
+    const tick = stateTick ?? lastTrajectoryTick;
     const referenceTick = Math.max(tick ?? 0, lastTrajectoryTick ?? 0);
     const recentEntries = entries.filter(entry => typeof entry.tick !== 'number' || entry.tick >= referenceTick - windowTicks);
     const decisionCauses = new Map<string, number>();
@@ -270,6 +392,74 @@ function dominantDecisionCause(
     return dominant ? { ...dominant, share: dominant.count / decisionCount } : undefined;
 }
 
+interface ObservationSnapshot {
+    tick?: number;
+    entries: ParsedTrajectoryEntry[];
+    entryKeys: Set<string>;
+}
+
+interface ObservationCounts {
+    actions: number;
+    results: number;
+    successes: number;
+    failures: number;
+    timeouts: number;
+    says: number;
+    decisions: number;
+}
+
+function readResidentObservationSnapshot(memoryDir: string, resident: string): ObservationSnapshot {
+    const residentDir = path.join(memoryDir, residentSlug(resident));
+    const state = readJson<RuntimeStateSnapshot>(path.join(residentDir, 'runtime-state.json'));
+    const stateTick = numberOrUndefined(state?.tick);
+    const entries = currentSessionEntries(readTrajectoryEntries(residentDir), stateTick);
+    return {
+        tick: stateTick ?? latestTick(entries),
+        entries,
+        entryKeys: new Set(entries.map(entry => entry.entryKey)),
+    };
+}
+
+function diffObservationSnapshots(
+    start: ObservationSnapshot | undefined,
+    end: ObservationSnapshot,
+    durationMs: number,
+): LiveSmokeObservedDelta {
+    const counts = countTrajectoryEntries(end.entries.filter(entry => !start?.entryKeys.has(entry.entryKey)));
+    return {
+        durationMs,
+        startTick: start?.tick,
+        endTick: end.tick,
+        tickDelta: start?.tick !== undefined && end.tick !== undefined ? Math.max(0, end.tick - start.tick) : undefined,
+        ...counts,
+        visibleEvents: counts.actions + counts.results + counts.says,
+    };
+}
+
+function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {
+    const counts: ObservationCounts = {
+        actions: 0,
+        results: 0,
+        successes: 0,
+        failures: 0,
+        timeouts: 0,
+        says: 0,
+        decisions: 0,
+    };
+    for (const entry of entries) {
+        if (entry.kind === 'action') counts.actions += 1;
+        if (entry.kind === 'say') counts.says += 1;
+        if (entry.kind === 'decision') counts.decisions += 1;
+        if (entry.kind === 'action_result') {
+            counts.results += 1;
+            if (entry.status === 'success') counts.successes += 1;
+            if (entry.status === 'failure') counts.failures += 1;
+            if (entry.status === 'timeout') counts.timeouts += 1;
+        }
+    }
+    return counts;
+}
+
 function discoverResidents(memoryDir: string): string[] {
     if (!fs.existsSync(memoryDir)) {
         return [];
@@ -284,30 +474,51 @@ function discoverResidents(memoryDir: string): string[] {
         .sort();
 }
 
-function readLatestTrajectoryEntries(residentDir: string): TrajectoryEntry[] {
+function readTrajectoryEntries(residentDir: string): ParsedTrajectoryEntry[] {
     const trajectoryDir = path.join(residentDir, 'evidence', 'trajectory');
     if (!fs.existsSync(trajectoryDir)) {
         return [];
     }
-    const latest = fs
+    const files = fs
         .readdirSync(trajectoryDir)
         .filter(file => file.endsWith('.jsonl'))
         .sort()
-        .at(-1);
-    if (!latest) {
+        .slice(-MAX_TRAJECTORY_FILES);
+    if (files.length === 0) {
         return [];
     }
-    return fs
-        .readFileSync(path.join(trajectoryDir, latest), 'utf8')
-        .split('\n')
-        .filter(Boolean)
-        .flatMap(line => {
-            try {
-                return [JSON.parse(line) as TrajectoryEntry];
-            } catch {
-                return [];
-            }
-        });
+    return files.flatMap((file, sourceIndex) =>
+        fs
+            .readFileSync(path.join(trajectoryDir, file), 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .flatMap((line, lineIndex) => {
+                try {
+                    return [
+                        {
+                            ...(JSON.parse(line) as TrajectoryEntry),
+                            entryKey: `${file}:${lineIndex}`,
+                            sourceFile: file,
+                            sourceIndex,
+                            lineIndex,
+                        },
+                    ];
+                } catch {
+                    return [];
+                }
+            }),
+    );
+}
+
+function currentSessionEntries(entries: ParsedTrajectoryEntry[], runtimeTick: number | undefined): ParsedTrajectoryEntry[] {
+    const boundedEntries =
+        runtimeTick === undefined ? entries : entries.filter(entry => typeof entry.tick !== 'number' || entry.tick <= runtimeTick);
+    const latestSessionId = [...boundedEntries].reverse().find(entry => typeof entry.sessionId === 'string')?.sessionId;
+    if (latestSessionId) {
+        return boundedEntries.filter(entry => entry.sessionId === latestSessionId);
+    }
+    const latestSourceFile = boundedEntries.at(-1)?.sourceFile;
+    return latestSourceFile ? boundedEntries.filter(entry => entry.sourceFile === latestSourceFile) : boundedEntries;
 }
 
 function readJson<T>(file: string): T | undefined {
@@ -345,6 +556,19 @@ function parsePositiveInteger(value: string, flag: string): number {
         throw new Error(`${flag} must be a positive integer.`);
     }
     return parsed;
+}
+
+async function sleepForDuration(totalMs: number, pollMs: number, sleep: (ms: number) => Promise<void>): Promise<void> {
+    let remainingMs = totalMs;
+    while (remainingMs > 0) {
+        const stepMs = Math.min(remainingMs, pollMs);
+        await sleep(stepMs);
+        remainingMs -= stepMs;
+    }
+}
+
+function defaultSleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function truncate(value: string, maxLength: number): string {
