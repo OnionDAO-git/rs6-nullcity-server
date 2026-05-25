@@ -20,6 +20,7 @@ export type PatronCliAction =
     | 'ask'
     | 'witness'
     | 'register'
+    | 'bulk-register'
     | 'checkin'
     | 'referral'
     | 'balance'
@@ -49,6 +50,8 @@ export interface PatronCliOptions {
     referredId: string;
     /** For --standing: which faction ledger to query. Defaults to 'embassy'. */
     faction: string;
+    /** For --bulk-register: path to a plain-text file with one patron handle per line. */
+    filePath: string;
     configPath: string;
 }
 
@@ -113,6 +116,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
         kind: 'patron_gift',
         referredId: '',
         faction: 'embassy',
+        filePath: '',
         configPath: 'controller.yml',
     };
 
@@ -138,6 +142,15 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.action = 'standing';
         } else if (arg === '--whisper') {
             options.action = 'whisper';
+        } else if (arg === '--bulk-register') {
+            options.action = 'bulk-register';
+        } else if (arg === '--file') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--file requires a path');
+            options.filePath = next;
+            i += 1;
+        } else if (arg.startsWith('--file=')) {
+            options.filePath = arg.slice('--file='.length);
         } else if (arg === '--faction') {
             const next = argv[i + 1];
             if (!next) throw new Error('--faction requires a value');
@@ -206,11 +219,14 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
 
     if (!options.action) {
         throw new Error(
-            'One of --grant, --offer, --ask, --witness, --register, --checkin, --referral, --balance, --standing, or --whisper must be specified.',
+            'One of --grant, --offer, --ask, --witness, --register, --bulk-register, --checkin, --referral, --balance, --standing, or --whisper must be specified.',
         );
     }
-    if (!options.humanId) {
+    if (!options.humanId && options.action !== 'bulk-register') {
         throw new Error('--human <id> is required.');
+    }
+    if (options.action === 'bulk-register' && !options.filePath) {
+        throw new Error('--file <path> is required for --bulk-register.');
     }
 
     // Per-action validation. `--ask` and `--witness` do not require --amount
@@ -692,6 +708,36 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             } else {
                 console.log(`[patron:register] "${result.handle}" already registered (kind: ${result.kind}); no-op.`);
                 console.log(`[patron:register] controller.yml#patrons[] has ${result.total} entr${result.total === 1 ? 'y' : 'ies'}.`);
+            }
+            return 0;
+        }
+
+        if (options.action === 'bulk-register') {
+            const raw = fs.readFileSync(options.filePath, 'utf8');
+            const handles = raw
+                .split('\n')
+                .map(l => l.trim())
+                .filter(l => l.length > 0 && !l.startsWith('#'));
+            if (handles.length === 0) {
+                console.log('[patron:bulk-register] File contains no handles to register (all lines blank or comments).');
+                return 0;
+            }
+            let added = 0;
+            let skipped = 0;
+            let lastTotal = 0;
+            for (const handle of handles) {
+                const result = registerPatronInConfig(options.configPath, handle, options.kind);
+                lastTotal = result.total;
+                if (result.added) {
+                    console.log(`[patron:bulk-register] Added "${handle}".`);
+                    added += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            console.log(`[patron:bulk-register] Done — ${added} added, ${skipped} already registered, ${lastTotal} total in registry.`);
+            if (added > 0) {
+                console.log('[patron:bulk-register] Restart the controller for new registrations to take effect.');
             }
             return 0;
         }

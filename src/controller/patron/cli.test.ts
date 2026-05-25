@@ -60,6 +60,7 @@ describe('Patron CLI', () => {
                 kind: 'patron_gift',
                 referredId: '',
                 faction: 'embassy',
+                filePath: '',
                 configPath: 'my-config.yml',
             });
         });
@@ -76,6 +77,7 @@ describe('Patron CLI', () => {
                 kind: 'patron_gift',
                 referredId: '',
                 faction: 'embassy',
+                filePath: '',
                 configPath: 'controller.yml',
             });
         });
@@ -92,6 +94,7 @@ describe('Patron CLI', () => {
                 kind: 'patron_gift',
                 referredId: '',
                 faction: 'embassy',
+                filePath: '',
                 configPath: 'controller.yml',
             });
         });
@@ -108,6 +111,7 @@ describe('Patron CLI', () => {
                 kind: 'patron_gift',
                 referredId: '',
                 faction: 'embassy',
+                filePath: '',
                 configPath: 'controller.yml',
             });
         });
@@ -180,6 +184,7 @@ describe('Patron CLI', () => {
                 kind: 'patron_gift',
                 referredId: '',
                 faction: 'embassy',
+                filePath: '',
                 configPath: 'controller.yml',
             });
         });
@@ -276,6 +281,28 @@ describe('Patron CLI', () => {
                 expect(() => parsePatronCliArgs(['--register'])).toThrow('--human <id> is required.');
             });
         });
+
+        describe('HD-011 --bulk-register parser', () => {
+            it('parses --bulk-register with --file path', () => {
+                const opts = parsePatronCliArgs(['--bulk-register', '--file', '/tmp/patrons.txt']);
+                expect(opts.action).toBe('bulk-register');
+                expect(opts.filePath).toBe('/tmp/patrons.txt');
+                expect(opts.kind).toBe('patron_gift');
+            });
+
+            it('parses --file= form', () => {
+                const opts = parsePatronCliArgs(['--bulk-register', '--file=/tmp/list.txt']);
+                expect(opts.filePath).toBe('/tmp/list.txt');
+            });
+
+            it('throws when --file is missing for --bulk-register', () => {
+                expect(() => parsePatronCliArgs(['--bulk-register'])).toThrow('--file <path> is required for --bulk-register.');
+            });
+
+            it('does not require --human for --bulk-register', () => {
+                expect(() => parsePatronCliArgs(['--bulk-register', '--file', '/tmp/x.txt'])).not.toThrow();
+            });
+        });
     });
 
     describe('HD-011 registerPatronInConfig', () => {
@@ -338,6 +365,56 @@ describe('Patron CLI', () => {
         it('throws when configPath does not parse to a YAML mapping', () => {
             fs.writeFileSync(configPath, 'not_a_map\n- list_at_root\n', 'utf8');
             expect(() => registerPatronInConfig(configPath, 'a', 'patron_gift')).toThrow(/YAML mapping/);
+        });
+    });
+
+    describe('HD-011 runPatronCli --bulk-register', () => {
+        let listFile: string;
+        beforeEach(() => {
+            listFile = path.join(tempDir, 'patrons.txt');
+        });
+
+        it('registers all handles from a file and reports total', async () => {
+            fs.writeFileSync(listFile, 'alice@onion\nbob@onion\ncharlie@onion\n', 'utf8');
+            const logs: string[] = [];
+            jest.spyOn(console, 'log').mockImplementation(msg => logs.push(String(msg)));
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string }> };
+            expect(parsed.patrons.map(p => p.handle)).toEqual(['alice@onion', 'bob@onion', 'charlie@onion']);
+            expect(logs.join('\n')).toMatch(/3 added/);
+        });
+
+        it('skips blank lines and comment lines', async () => {
+            fs.writeFileSync(listFile, '# event attendees\nalice@onion\n\n  \n# second block\nbob@onion\n', 'utf8');
+            jest.spyOn(console, 'log').mockImplementation(() => {});
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string }> };
+            expect(parsed.patrons.map(p => p.handle)).toEqual(['alice@onion', 'bob@onion']);
+        });
+
+        it('reports already-registered as skipped without double-adding', async () => {
+            fs.writeFileSync(listFile, 'alice@onion\nalice@onion\nbob@onion\n', 'utf8');
+            const logs: string[] = [];
+            jest.spyOn(console, 'log').mockImplementation(msg => logs.push(String(msg)));
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
+            const summary = logs.join('\n');
+            expect(summary).toMatch(/1 already registered/);
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string }> };
+            expect(parsed.patrons).toHaveLength(2);
+        });
+
+        it('exits cleanly for an empty file', async () => {
+            fs.writeFileSync(listFile, '', 'utf8');
+            jest.spyOn(console, 'log').mockImplementation(() => {});
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
         });
     });
 

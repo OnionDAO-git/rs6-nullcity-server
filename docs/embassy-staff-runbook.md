@@ -29,18 +29,32 @@ Operational guide for the staff at the door during the IRL event. Written for no
    [controller] MCP HTTP listening at http://127.0.0.1:43594/controller/mcp
    [controller] letters HTTP listening at http://127.0.0.1:43596/v1/inbox
    ```
-2. **Verify the embassy event window** is active: open `data/controller/embassy-schedule.json` and confirm `activeWindows[0]` is today and covers the entire event. If it's not — DO NOT EDIT THE FILE LIVE. Ask the on-call engineer.
-3. **Sanity-check the inbox endpoint:**
+2. **Pre-register ALL expected attendee handles.** This is critical: since Codex `fd575281`, the D3 in-world greeting fires ONLY for handles in `controller.yml#patrons[]`. An empty registry means no in-world greetings even if the patron speaks directly to a hero. Use batch registration from the attendee list:
+   ```bash
+   # Write one handle per line to a plain text file, e.g.:
+   cat > /tmp/event-patrons.txt << 'EOF'
+   alice@onion
+   bob@onion
+   # blank lines and comments are skipped
+   carol@onion
+   EOF
+   npm run patron:bulk-register -- --file /tmp/event-patrons.txt
+   # → prints "N added, M already registered, total in registry"
+   # Then restart the controller so the registry takes effect.
+   ```
+   For one-off additions during the event: `npm run patron:register -- --human <handle>` (then restart).
+3. **Verify the embassy event window** is active: open `data/controller/embassy-schedule.json` and confirm `activeWindows[0]` is today and covers the entire event. If it's not — DO NOT EDIT THE FILE LIVE. Ask the on-call engineer.
+4. **Sanity-check the inbox endpoint:**
    ```bash
    curl http://127.0.0.1:43596/v1/inbox?human=test@onion
    # → {"letters":[]}
    ```
-4. **Open the patron inbox page** in a browser tab pointing at the event LAN address:
+5. **Open the patron inbox page** in a browser tab pointing at the event LAN address:
    ```
    http://<laptop-LAN-IP>/inbox/?human=staff-test&api=http://<laptop-LAN-IP>:43596/v1/inbox
    ```
    Replace `<laptop-LAN-IP>` with the laptop's actual address (e.g. `192.168.1.50`). Bookmark.
-5. **Print 20 blank lanyard cards** in advance. We'll print letters onto them on demand.
+6. **Print 20 blank lanyard cards** in advance. We'll print letters onto them on demand.
 
 ---
 
@@ -60,11 +74,17 @@ Expected stdout:
 
 ### 2. She picks a resident to support
 You ask her: "Who would you like to support? We have:
-- **res:fern** — a young woodcutter learning firemaking
-- **res:hans** — a Lumbridge wanderer with a quiet sense of humor
-- **res:wise-old-man** — a Draynor mentor
+- **res:hans** — a Lumbridge wanderer with a quiet sense of humor (courtyard anchor)
 - **res:father-aereck** — a priest at the Lumbridge church
-- (etc — list from `ls src/controller/soul/starter-souls/`)"
+- **res:wise-old-man** — a Draynor mentor
+- **res:duke-horacio** — a noble at Lumbridge Castle
+- **res:pip** — a quick-moving young resident
+- **res:thrand** — a quiet observer near Lumbridge
+- **res:mother-anvil** *(Foundry flagship)* — a Falador forgemaster, maker-aligned
+- **res:severn-vesta** *(Bureau of Continuity flagship)* — a Lumbridge churchyard archivist, memory-aligned
+- **res:wren-calix** *(Ledger flagship)* — a Varrock Square witness, transparency-aligned
+- **res:the-hush** *(Veil flagship)* — an Edgeville shadow, concealment-aligned
+- (full list: `ls src/controller/soul/starter-souls/`)"
 
 Once she chooses (say, `res:fern`):
 
@@ -177,6 +197,10 @@ LettersStore slugs are case-insensitive: `Alice@Onion` and `alice@onion` are the
 | `patron:offer` | Patron spends Shards → resident gets attention + standing bumps. | The default action when a patron wants to support a resident. |
 | `patron:ask` | Patron asks a resident a free-text question; resident sees a `chat` perception event + the patron-acknowledge reflex fires within ~1s. | Patron wants a verbal interaction (resident may say something back). |
 | `patron:witness` | Patron records that they witnessed a resident's act (skill milestone, brave fight, etc.) — bumps standing without spending Shards. | Free-tier visitor moments; gives standing without requiring a Shard balance. |
+| `patron:balance` | Show a patron's current Shard balance (read-only). | Quick lookup at the door or when a patron asks "how many Shards do I have?" |
+| `patron:standing` | Show a patron's standing tier + pts + progress to next tier. | When a patron wants to know if they've reached Ally or Officer. |
+| `patron:whisper` | Send a private message from a patron to a specific resident (appears as a nervous-system perception). | When a patron wants to send a private note to a resident. |
+| `patron:bulk-register` | Register a file of attendee handles into `controller.yml#patrons[]` in one command. | Pre-event setup (REQUIRED before doors open to enable D3 in-world greetings). |
 
 > **Standing is permanent.** Once a patron reaches Acquaintance (≥10 pts), Ally (≥30), or Officer (≥75) of a faction, that tier is theirs forever. There is no decay, demotion, or expiration. Their inbox letters persist; their epitaph letters dispatch regardless of how long ago the support happened. See `intelligence-verification-log.md` § E43 + HD-046.
 
@@ -211,8 +235,13 @@ If the snapshot returns 404 the controller was started without `--letters-http-p
 ## Live in-event commands cheatsheet
 
 ```bash
-# Check a patron's balance
-npm run patron:grant -- --human alice@onion --amount 0  # 0 amount = balance check
+# Check a patron's Shard balance
+npm run patron:balance -- --human alice@onion
+# → [patron:balance] alice@onion: 42 Shards
+
+# Check a patron's standing tier + progress
+npm run patron:standing -- --human alice@onion
+# → [patron:standing] alice@onion @ embassy: 35 pts | tier: ally | next: officer at 75 pts (40 more)
 
 # Read a patron's inbox (raw)
 cat data/controller/memory/data/letters/aliceonion/inbox.jsonl
