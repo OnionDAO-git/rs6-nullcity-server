@@ -109,8 +109,12 @@ export class PatronGateway {
         const attentionPerShard = 2;
         runtime.incrementAttention(req.amount * attentionPerShard);
 
-        // 3. Record standing
+        // 3. Record standing — snapshot `before` first (HD-037 HIGH-2: same
+        // pattern applied to witnessAt; compute before recordSupport so the
+        // delta is correct even if future decay/cap makes the net change differ
+        // from `amount`).
         const faction = (runtime.getState() as any).faction || 'embassy';
+        const standingBefore = this.options.standingLedger.points(req.humanId, faction);
         const standingResult = this.options.standingLedger.recordSupport(req.humanId, faction, req.amount, {
             reason: 'mercy_infusion',
             ts: nowString,
@@ -158,7 +162,7 @@ export class PatronGateway {
             eventId,
             standingDelta: {
                 factionId: faction,
-                before: this.options.standingLedger.points(req.humanId, faction) - req.amount,
+                before: standingBefore,
                 after: this.options.standingLedger.points(req.humanId, faction),
                 tierCrossed: standingResult.tierCrossed || undefined,
                 tiersCrossed: standingResult.tiersCrossed,
@@ -213,7 +217,9 @@ export class PatronGateway {
         this.options.currencyLedger.debit(req.humanId, partCost, { reason: 'birth_sponsorship', ts: nowString });
         this.options.currencyLedger.debit(req.humanId, req.cost - 2 * partCost, { reason: 'birth_sponsorship', ts: nowString });
 
-        // Record standing (+10 standing points, instantly making them an acquaintance)
+        // Record standing (+10 standing points, instantly making them an acquaintance).
+        // HD-037 HIGH-2: snapshot `before` BEFORE recordSupport (same fix as witnessAt).
+        const sponsorBefore = this.options.standingLedger.points(req.humanId, req.factionId);
         const standingResult = this.options.standingLedger.recordSupport(req.humanId, req.factionId, 10, {
             reason: 'birth_sponsorship',
             ts: nowString,
@@ -245,7 +251,7 @@ export class PatronGateway {
             eventId,
             standingDelta: {
                 factionId: req.factionId,
-                before: this.options.standingLedger.points(req.humanId, req.factionId) - 10,
+                before: sponsorBefore,
                 after: this.options.standingLedger.points(req.humanId, req.factionId),
                 tierCrossed: standingResult.tierCrossed || undefined,
                 tiersCrossed: standingResult.tiersCrossed,

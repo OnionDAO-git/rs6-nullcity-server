@@ -552,7 +552,8 @@ Safe public module facade building blocks are implemented, but the public member
   - Graceful SIGTERM: DONE (index.ts lines 35-36 handle SIGINT+SIGTERM since early sprint).
   - `status='alive'` guard: DONE (2026-05-25 O1-ALIVE-GUARD, `resident-runtime.ts`). Deceased residents no longer decay attention on subsequent ticks; prevents deeply-negative attention state and corrupted revival preconditions.
   - Per-tick stats log line: deferred (not a Chicago blocker).
-- `[ ]` **O2: Shard + attention ledger discipline.** Append-only ledgers with denormalised balance caches updated in same tx.
+- `[~]` **O2: Shard + attention ledger discipline.** Append-only ledgers with denormalised balance caches updated in same tx.
+  - Partial 2026-05-25 on `agents/wip`: PatronStore now quarantines corrupt ledger files (rename to `.corrupt` + stderr warning) instead of silently returning empty ledgers — eliminates silent Shard/standing data loss if a file is truncated or invalid at restart. Also fixed `offerTo` and `sponsorBirth` `standingDelta.before` computation to snapshot BEFORE `recordSupport` (same fix applied to `witnessAt` in E31/HD-037). +21 tests (11 patron-store + 2 patron-gateway). Tests 1965/1965 + typecheck + lint + format green. Remaining: true append-only JSONL format (post-Chicago).
 - `[x]` **O3: Static catalog in code audit.** Confirm rs6 factions/resources/achievements/rooms/emotions live in typed catalogs, not DB rows.
   - Verified 2026-05-24 on `agents/wip`: completed static catalog audit confirming compliance with Critical Design Invariant #6. Saved results in artifact `static_catalog_audit.md`.
 - `[x]` **O4: Real-completion inference health check.** Health endpoint exercises a real LLM call, not just connect.

@@ -123,6 +123,21 @@ describe('PatronGateway', () => {
             expect(res.ok).toBe(true);
             expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
         });
+
+        // HD-037 HIGH-2 (same fix as witnessAt): standingDelta.before must
+        // snapshot BEFORE recordSupport so non-zero prior standing is reported
+        // correctly, not back-computed as (after - amount).
+        it('standingDelta.before reports the pre-offer value (HD-037)', async () => {
+            // Pre-seed james with 7 standing from an unrelated path.
+            standingLedger.recordSupport('james', 'embassy', 7, { reason: 'pre-existing' });
+            currencyLedger.credit('james', 10, { reason: 'workshop' });
+
+            const res = await gateway.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 5 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.before).toBe(7);
+            expect(res.standingDelta?.after).toBe(12);
+        });
     });
 
     describe('sponsorBirth', () => {
@@ -186,6 +201,26 @@ describe('PatronGateway', () => {
             });
             expect(resCooldown.ok).toBe(false);
             expect(resCooldown.error).toBe('cooldown_active');
+        });
+
+        // HD-037 HIGH-2: standingDelta.before must snapshot BEFORE recordSupport.
+        it('standingDelta.before reports pre-birth standing value (HD-037)', async () => {
+            // Pre-seed james with 5 standing from the foundry via an unrelated path.
+            standingLedger.recordSupport('james', 'foundry', 5, { reason: 'pre-existing' });
+            currencyLedger.credit('james', 24, { reason: 'workshop' });
+
+            const res = await gateway.sponsorBirth({
+                humanId: 'james',
+                factionId: 'foundry',
+                name: 'res:born-second',
+                cost: 24,
+            });
+
+            expect(res.ok).toBe(true);
+            // before = 5 (pre-existing), not 15 - 10 = 5 (happens to match here but
+            // semantically wrong if recordSupport had side-effects beyond +10).
+            expect(res.standingDelta?.before).toBe(5);
+            expect(res.standingDelta?.after).toBe(15);
         });
     });
 

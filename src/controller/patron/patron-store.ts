@@ -16,16 +16,14 @@ export class PatronStore {
     }
 
     loadCurrency(options = {}): CurrencyLedger {
-        if (!fs.existsSync(this.currencyPath)) {
-            return new CurrencyLedger(options);
-        }
-        try {
-            const raw = fs.readFileSync(this.currencyPath, 'utf8');
-            const snap = JSON.parse(raw) as CurrencyLedgerSnapshot;
-            return CurrencyLedger.fromSnapshot(snap, options);
-        } catch {
-            return new CurrencyLedger(options);
-        }
+        return this.loadOrQuarantine(
+            this.currencyPath,
+            raw => {
+                const snap = JSON.parse(raw) as CurrencyLedgerSnapshot;
+                return CurrencyLedger.fromSnapshot(snap, options);
+            },
+            () => new CurrencyLedger(options),
+        );
     }
 
     saveCurrency(ledger: CurrencyLedger): void {
@@ -36,16 +34,14 @@ export class PatronStore {
     }
 
     loadStanding(options = {}): StandingLedger {
-        if (!fs.existsSync(this.standingPath)) {
-            return new StandingLedger(options);
-        }
-        try {
-            const raw = fs.readFileSync(this.standingPath, 'utf8');
-            const snap = JSON.parse(raw) as StandingLedgerSnapshot;
-            return StandingLedger.fromSnapshot(snap, options);
-        } catch {
-            return new StandingLedger(options);
-        }
+        return this.loadOrQuarantine(
+            this.standingPath,
+            raw => {
+                const snap = JSON.parse(raw) as StandingLedgerSnapshot;
+                return StandingLedger.fromSnapshot(snap, options);
+            },
+            () => new StandingLedger(options),
+        );
     }
 
     saveStanding(ledger: StandingLedger): void {
@@ -56,16 +52,14 @@ export class PatronStore {
     }
 
     loadCheckIn(ledger: CurrencyLedger): CheckInTracker {
-        if (!fs.existsSync(this.checkInPath)) {
-            return new CheckInTracker(ledger);
-        }
-        try {
-            const raw = fs.readFileSync(this.checkInPath, 'utf8');
-            const snap = JSON.parse(raw) as CheckInTrackerSnapshot;
-            return CheckInTracker.fromSnapshot(ledger, snap);
-        } catch {
-            return new CheckInTracker(ledger);
-        }
+        return this.loadOrQuarantine(
+            this.checkInPath,
+            raw => {
+                const snap = JSON.parse(raw) as CheckInTrackerSnapshot;
+                return CheckInTracker.fromSnapshot(ledger, snap);
+            },
+            () => new CheckInTracker(ledger),
+        );
     }
 
     saveCheckIn(tracker: CheckInTracker): void {
@@ -73,5 +67,39 @@ export class PatronStore {
         const tempPath = `${this.checkInPath}.tmp`;
         fs.writeFileSync(tempPath, JSON.stringify(tracker.snapshot(), null, 2), 'utf8');
         fs.renameSync(tempPath, this.checkInPath);
+    }
+
+    /**
+     * Load a ledger file, or quarantine it if corrupt.
+     *
+     * When a file exists but is malformed (truncated, zero-byte, invalid JSON,
+     * or fails schema validation), silently returning an empty ledger would
+     * silently erase all Shard/standing history — a real risk at a live event.
+     * Instead, the corrupt file is renamed to `<path>.corrupt` (preserving
+     * evidence for post-incident debugging) and a warning is written to stderr
+     * before returning a fresh fallback ledger.
+     */
+    private loadOrQuarantine<T>(filePath: string, parser: (raw: string) => T, fallback: () => T): T {
+        if (!fs.existsSync(filePath)) {
+            return fallback();
+        }
+        try {
+            const raw = fs.readFileSync(filePath, 'utf8');
+            return parser(raw);
+        } catch (err) {
+            const corruptPath = `${filePath}.corrupt`;
+            try {
+                fs.renameSync(filePath, corruptPath);
+            } catch {
+                // Quarantine rename failed (permissions, cross-device). The
+                // original file stays in place and will fail to load again on
+                // the next startup, giving operators a consistent signal.
+            }
+            const message = err instanceof Error ? err.message : String(err);
+            process.stderr.write(
+                `[PatronStore] WARN: corrupt ledger at ${filePath} (${message}) — quarantined to ${corruptPath}. Starting fresh.\n`,
+            );
+            return fallback();
+        }
     }
 }
