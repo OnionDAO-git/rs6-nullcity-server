@@ -542,6 +542,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[x]` **O10: Operator live resident smoke CLI.** Give Codex/Claude/Gemini and humans a quick command to verify real resident liveness from runtime state plus trajectory evidence.
   - Verified 2026-05-24 on `agents/wip`: added `npm run controller:smoke`, a tested admin summarizer for recent actions/results/speech/stuck issues. Defaults use configured residents from `controller.yml` so stale disposable benchmark folders do not pollute normal QA. Live smoke showed all 19 configured residents active, and `res:agent` passed `--fail-on-warn` with recent movement/speech/action evidence.
   - Hardened 2026-05-24 on `agents/wip`: live QA showed `qa-guardian` and `qa-survivor` repeatedly emitting `low_health_hold_position` while occasional speech/result rows made the smoke read OK. `controller:smoke` now warns on dominant no-action decision loops so "talking but inert" residents are visible to operators.
+  - QA gap 2026-05-25 on `agents/wip`: a 30s all-resident smoke still warned on several low-cadence heroes and QA residents with no observed visible events, while `res:agent` passed the same 30s fail-on-warn window. Next slice should either tune per-resident visible cadence or add smoke profiles for "single hero", "all QA", and "whole city soak" instead of one strict 30s floor for every resident.
 
 ## Workstream P: Deeper Game-Skill Knowledge
 
