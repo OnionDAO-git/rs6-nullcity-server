@@ -353,6 +353,58 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             expect(snap.residents[0].slug).toBe('res-pip');
         });
 
+        it('populates factionId and factionColor from SOUL factionId when it resolves in the catalog', () => {
+            const soulsDir = path.join(root, 'souls');
+            writeRuntimeState(root, 'res-mother-anvil', { attention: 7000 });
+            writeSoul(soulsDir, 'res-mother-anvil.md', {
+                name: 'res:mother-anvil',
+                display: 'Mother Anvil',
+                archetype: 'achiever',
+                factionId: 'foundry',
+            });
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-25T16:00:00.000Z'), soulsDir });
+
+            expect(snap.residents).toHaveLength(1);
+            const [anvil] = snap.residents;
+            expect(anvil.factionId).toBe('foundry');
+            expect(anvil.factionDisplayName).toBe('The Foundry');
+            expect(anvil.factionColor).toBe('#B87333');
+        });
+
+        it('leaves factionId/factionColor absent when the SOUL has no factionId', () => {
+            const soulsDir = path.join(root, 'souls');
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            writeSoul(soulsDir, 'res-hans.md', {
+                name: 'res:hans',
+                display: 'Hans',
+                archetype: 'endurer',
+            });
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-25T16:00:00.000Z'), soulsDir });
+
+            expect(snap.residents[0].factionId).toBeUndefined();
+            expect(snap.residents[0].factionDisplayName).toBeUndefined();
+            expect(snap.residents[0].factionColor).toBeUndefined();
+        });
+
+        it('leaves factionColor/factionDisplayName absent when factionId is unknown to the catalog', () => {
+            const soulsDir = path.join(root, 'souls');
+            writeRuntimeState(root, 'res-orphan', { attention: 5000 });
+            writeSoul(soulsDir, 'res-orphan.md', {
+                name: 'res:orphan',
+                display: 'Orphan',
+                archetype: 'endurer',
+                factionId: 'no-such-faction',
+            });
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-25T16:00:00.000Z'), soulsDir });
+
+            expect(snap.residents[0].factionId).toBe('no-such-faction');
+            expect(snap.residents[0].factionDisplayName).toBeUndefined();
+            expect(snap.residents[0].factionColor).toBeUndefined();
+        });
+
         it('can limit the wall roster to configured residents so stale benchmark folders stay hidden', () => {
             writeRuntimeState(root, 'res-agent', { attention: 9000 });
             writeRuntimeState(root, 'res-hans', { attention: 8000 });
@@ -396,7 +448,7 @@ function writeRuntimeState(root: string, slug: string, partial: Partial<RuntimeS
 function writeSoul(
     soulsDir: string,
     fileName: string,
-    frontmatter: { name: string; display?: string; archetype: string; goals?: string[] },
+    frontmatter: { name: string; display?: string; archetype: string; goals?: string[]; factionId?: string },
 ): void {
     fs.mkdirSync(soulsDir, { recursive: true });
     const lines = [
@@ -404,6 +456,7 @@ function writeSoul(
         `name: ${frontmatter.name}`,
         frontmatter.display ? `display: ${frontmatter.display}` : undefined,
         `archetype: ${frontmatter.archetype}`,
+        frontmatter.factionId ? `factionId: ${frontmatter.factionId}` : undefined,
         frontmatter.goals && frontmatter.goals.length > 0 ? 'goals:' : undefined,
         ...(frontmatter.goals || []).map(goal => `  - ${goal}`),
         '---',

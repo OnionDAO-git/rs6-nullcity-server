@@ -157,6 +157,19 @@
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
+        .resident-faction {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+            padding: 0.1rem 0.45rem;
+            border-radius: 3px;
+            margin-left: 0.4rem;
+            vertical-align: middle;
+            opacity: 0.88;
+            white-space: nowrap;
+        }
+        .resident-row.dead .resident-faction { opacity: 0.4; }
 
         /* ── RIGHT: letters ticker ───────────────────────────────────── */
         .letters {
@@ -401,6 +414,18 @@
                     const name = document.createElement('div');
                     name.className = 'resident-name';
                     name.textContent = String(r.displayName || r.slug || '?');
+
+                    if (r.factionDisplayName && r.factionColor) {
+                        const badge = document.createElement('span');
+                        badge.className = 'resident-faction';
+                        // Use a translucent fill derived from the faction color.
+                        badge.style.background = r.factionColor + '28';
+                        badge.style.border = '1px solid ' + r.factionColor + '55';
+                        badge.style.color = r.factionColor === '#0A0A0A' ? '#660000' : r.factionColor;
+                        badge.textContent = String(r.factionDisplayName);
+                        name.appendChild(badge);
+                    }
+
                     info.appendChild(name);
 
                     if (r.activeGoal) {

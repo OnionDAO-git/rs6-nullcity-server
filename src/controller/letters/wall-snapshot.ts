@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { lookupFaction } from '../factions/factions';
 import type { Letter } from '../patron/letters-producer';
 import { SoulLoader } from '../soul/soul-loader';
 
@@ -63,6 +64,12 @@ export interface ResidentSummary {
     attention: number;
     /** Current active goal description, if any. */
     activeGoal?: string;
+    /** Faction id from the resident's SOUL file, if declared. */
+    factionId?: string;
+    /** Faction display name (e.g. "The Foundry"), present when factionId resolves. */
+    factionDisplayName?: string;
+    /** Primary hex color for the faction, for wall UI rendering. */
+    factionColor?: string;
 }
 
 export interface WallSnapshot {
@@ -271,9 +278,19 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
                 : undefined;
         const activeGoal = runtimeActiveGoal || soulSummary?.fallbackGoal;
 
+        const factionId = soulSummary?.factionId;
+        const faction = factionId !== undefined ? lookupFaction(factionId) : undefined;
+
         const summary: ResidentSummary = { slug, displayName, alive, attention: parsed.attention };
         if (activeGoal !== undefined) {
             summary.activeGoal = activeGoal;
+        }
+        if (factionId !== undefined) {
+            summary.factionId = factionId;
+        }
+        if (faction !== undefined) {
+            summary.factionDisplayName = faction.displayName;
+            summary.factionColor = faction.color;
         }
         summaries.push(summary);
     }
@@ -297,12 +314,16 @@ function slugToResidentName(slug: string): string {
     return slug.startsWith('res-') ? `res:${slug.slice('res-'.length)}` : slug;
 }
 
-function readSoulRosterSummary(loader: SoulLoader, residentName: string): { displayName?: string; fallbackGoal?: string } | undefined {
+function readSoulRosterSummary(
+    loader: SoulLoader,
+    residentName: string,
+): { displayName?: string; fallbackGoal?: string; factionId?: string } | undefined {
     try {
         const soul = loader.load(residentName);
         return {
             displayName: soul.frontmatter.display,
             fallbackGoal: soul.frontmatter.goals?.[0],
+            factionId: soul.frontmatter.factionId,
         };
     } catch {
         return undefined;
