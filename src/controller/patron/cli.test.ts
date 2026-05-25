@@ -498,12 +498,13 @@ describe('Patron CLI', () => {
             const inboxFile = path.join(memoryDir, 'data', 'letters', 'james', 'inbox.jsonl');
             expect(fs.existsSync(inboxFile)).toBe(true);
             const inboxLines = fs.readFileSync(inboxFile, 'utf8').trim().split('\n').filter(Boolean);
-            expect(inboxLines.length).toBeGreaterThanOrEqual(1);
-            const letter = JSON.parse(inboxLines[0]);
-            expect(letter.kind).toBe('standing_tier_crossed');
-            expect(letter.subject).toMatch(/acquaintance/i);
-            expect(letter.recipient).toBe('james');
-            expect(letter.senderResident).toBe('res:pip');
+            const letters = inboxLines.map((l: string) => JSON.parse(l));
+            // witness dispatches both a civic_milestone and (on tier crossing) a standing_tier_crossed letter
+            const tierLetter = letters.find((l: { kind: string }) => l.kind === 'standing_tier_crossed');
+            expect(tierLetter).toBeDefined();
+            expect(tierLetter.subject).toMatch(/acquaintance/i);
+            expect(tierLetter.recipient).toBe('james');
+            expect(tierLetter.senderResident).toBe('res:pip');
 
             logSpy.mockRestore();
         });

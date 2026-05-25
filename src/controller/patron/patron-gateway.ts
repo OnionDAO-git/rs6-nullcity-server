@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { CurrencyLedger } from './currency-ledger';
-import { produceStandingTierLetter } from './letters-producer';
+import { produceCivicAchievementLetter, produceStandingTierLetter } from './letters-producer';
 import type { LettersStore } from './letters-store';
 import { StandingLedger, StandingTier } from './standing-ledger';
 import { ResidentRuntime } from '../resident-runtime';
@@ -275,6 +275,7 @@ export class PatronGateway {
         if (residentName) {
             const runtime = this.options.runtimes.get(residentName);
             if (runtime) {
+                const faction = (runtime.getState() as any).faction || 'embassy';
                 const evidence = runtime.getEvidence();
                 if (evidence) {
                     evidence.trajectory.recordPatron({
@@ -291,8 +292,10 @@ export class PatronGateway {
                     });
                 }
 
+                // J4: civic milestone — one keepsake letter per witness event.
+                this.dispatchCivicLetter({ humanId, faction, residentName, landmarkId, ts: nowString });
+
                 if (amount > 0 && Number.isInteger(amount)) {
-                    const faction = (runtime.getState() as any).faction || 'embassy';
                     // E31 / HD-037 HIGH-2: snapshot `before` BEFORE recordSupport
                     // so the delta is correct even if a future decay/cap path
                     // makes recordSupport's net change differ from `amount`.
@@ -486,5 +489,27 @@ export class PatronGateway {
                 this.options.lettersStore.append(letter);
             }
         }
+    }
+
+    /** J4: dispatch a civic milestone `embassy_visit` letter to the patron's inbox. */
+    private dispatchCivicLetter(input: {
+        humanId: string;
+        faction: string;
+        residentName: string;
+        landmarkId: string;
+        ts: string;
+    }): void {
+        if (!this.options.lettersStore) {
+            return;
+        }
+        const letter = produceCivicAchievementLetter({
+            humanId: input.humanId,
+            faction: input.faction,
+            residentName: input.residentName,
+            achievementKind: 'embassy_visit',
+            achievementDetail: `Witnessed at ${input.landmarkId}`,
+            ts: input.ts,
+        });
+        this.options.lettersStore.append(letter);
     }
 }

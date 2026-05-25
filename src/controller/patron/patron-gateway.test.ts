@@ -530,4 +530,67 @@ describe('PatronGateway', () => {
             expect(inbox[2].subject).toMatch(/officer/i);
         });
     });
+
+    describe('J4: civic milestone letter on witnessAt', () => {
+        let lettersRoot: string;
+        let lettersStore: import('./letters-store').LettersStore;
+        let gatewayWithLetters: PatronGateway;
+
+        beforeEach(() => {
+            lettersRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-civic-letters-'));
+            const { LettersStore } = require('./letters-store');
+            lettersStore = new LettersStore(lettersRoot);
+            gatewayWithLetters = new PatronGateway({
+                currencyLedger,
+                standingLedger,
+                runtimes,
+                soulsDir,
+                lettersStore,
+                now: () => new Date('2026-05-23T04:00:00Z'),
+            });
+        });
+
+        afterEach(() => {
+            fs.rmSync(lettersRoot, { recursive: true, force: true });
+        });
+
+        it('dispatches a civic_milestone embassy_visit letter when a patron witnesses a resident', async () => {
+            const res = await gatewayWithLetters.witnessAt('alice@onion', 'lumbridge_churchyard', 'res:pip');
+            expect(res.ok).toBe(true);
+
+            const inbox = lettersStore.readInbox('alice@onion');
+            const civicLetters = inbox.filter(l => l.kind === 'civic_milestone');
+            expect(civicLetters).toHaveLength(1);
+            expect(civicLetters[0].recipient).toBe('alice@onion');
+            expect(civicLetters[0].senderResident).toBe('res:pip');
+            expect(civicLetters[0].subject).toMatch(/res:pip/i);
+            expect(civicLetters[0].body).toContain('lumbridge_churchyard');
+        });
+
+        it('dispatches BOTH a civic_milestone letter AND a standing_tier letter when the witness also crosses acquaintance', async () => {
+            const res = await gatewayWithLetters.witnessAt('alice@onion', 'lumbridge_churchyard', 'res:pip', 12);
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+
+            const inbox = lettersStore.readInbox('alice@onion');
+            expect(inbox).toHaveLength(2);
+            const kinds = inbox.map(l => l.kind).sort();
+            expect(kinds).toEqual(['civic_milestone', 'standing_tier_crossed']);
+        });
+
+        it('does NOT dispatch a civic_milestone letter when witnessAt has no residentName', async () => {
+            const res = await gatewayWithLetters.witnessAt('alice@onion', 'lumbridge_churchyard');
+            expect(res.ok).toBe(true);
+
+            const inbox = lettersStore.readInbox('alice@onion');
+            expect(inbox).toHaveLength(0);
+        });
+
+        it('does NOT dispatch a civic_milestone letter when no lettersStore is configured', async () => {
+            // gateway from outer describe block has no lettersStore
+            const res = await gateway.witnessAt('alice@onion', 'lumbridge_churchyard', 'res:pip');
+            expect(res.ok).toBe(true);
+            expect(fs.existsSync(path.join(lettersRoot, 'data', 'letters'))).toBe(false);
+        });
+    });
 });
