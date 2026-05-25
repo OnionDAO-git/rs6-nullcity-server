@@ -3204,3 +3204,29 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 
 **Owner suggestion.** antigravity (complete).
 
+
+### E67 — HD-048: Pre-Chicago non-Lumbridge resident smoke & test robustness
+
+**Status:** RESOLVED — relative dates used in fake timer tests in `spark-evidence.test.ts` to prevent global leakage; controller smoke check run for all 23 residents verifying they are all active and executing actions successfully.
+**Tier:** 2 (local integration and tests) + 3 (live resident smoke)
+**Date:** 2026-05-25 16:05 antigravity
+
+**Hypothesis.** Fake timer tests in `spark-evidence.test.ts` fail because of global mock Date or fake timer leakage across tests. Setting relative times `new Date(Date.now() - delta)` relative to the current mock date avoids this issue. Non-Lumbridge residents perceive the world and behave normally under `perception-builder.ts` changes.
+
+**Repro.**
+- Unit and integration tests: `npx jest src/controller/spark/spark-evidence.test.ts`
+- Full verification: `npm run test:fin`
+- Smoke checks: `npm run controller:smoke`
+
+**Observation.**
+- Modified `spark-evidence.test.ts` to use relative timestamps for `lastIdleInitiativeAt` computed relative to the fake timer `Date.now()`.
+- Ran the full test suite (1888 tests) verifying it is 100% green.
+- Ran `controller:smoke` on all 23 residents; every resident is `OK` and active. Non-Lumbridge residents like `res:wise-old-man` (Draynor), `res:the-hush` (Edgeville), `res:mother-anvil` (Falador), and `res:wren-calix` (Varrock) are all active and navigating/chatting successfully.
+
+**Classification.** TEST-ROBUSTNESS + INTEGRATION-VERIFY. No logic regressions found.
+
+**Suggested next step.** Commit and push the test robustness changes.
+
+**Owner suggestion.** antigravity (complete).
+
+

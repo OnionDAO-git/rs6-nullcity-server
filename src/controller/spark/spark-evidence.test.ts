@@ -359,7 +359,7 @@ describe('Spark evidence integration', () => {
             const state = runtimeState();
             state.tick = 130;
             state.lastIdleInitiativeTick = 120;
-            state.lastIdleInitiativeAt = '2026-05-25T05:13:00.000Z';
+            state.lastIdleInitiativeAt = new Date(Date.now() - 120000).toISOString();
             const spark = new Spark(heroSoul(), state, memory(), llm, { evidence: builder });
 
             const result = await spark.tick({ tick: 131, events: [] });
@@ -393,7 +393,7 @@ describe('Spark evidence integration', () => {
             const state = runtimeState();
             state.tick = 130;
             state.lastIdleInitiativeTick = 120;
-            state.lastIdleInitiativeAt = '2026-05-25T05:15:00.000Z';
+            state.lastIdleInitiativeAt = new Date(Date.now() - 31000).toISOString();
             const spark = new Spark(heroSoul(), state, memory(), llm);
 
             const result = await spark.tick({ tick: 131, events: [] });
