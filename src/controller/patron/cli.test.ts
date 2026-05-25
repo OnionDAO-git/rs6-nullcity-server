@@ -58,6 +58,7 @@ describe('Patron CLI', () => {
                 artifact: '',
                 kind: 'patron_gift',
                 referredId: '',
+                faction: 'embassy',
                 configPath: 'my-config.yml',
             });
         });
@@ -73,6 +74,7 @@ describe('Patron CLI', () => {
                 artifact: '',
                 kind: 'patron_gift',
                 referredId: '',
+                faction: 'embassy',
                 configPath: 'controller.yml',
             });
         });
@@ -88,6 +90,7 @@ describe('Patron CLI', () => {
                 artifact: '',
                 kind: 'patron_gift',
                 referredId: '',
+                faction: 'embassy',
                 configPath: 'controller.yml',
             });
         });
@@ -103,13 +106,14 @@ describe('Patron CLI', () => {
                 artifact: 'first-fire',
                 kind: 'patron_gift',
                 referredId: '',
+                faction: 'embassy',
                 configPath: 'controller.yml',
             });
         });
 
         it('throws error when action is missing', () => {
             expect(() => parsePatronCliArgs(['--human', 'james'])).toThrow(
-                'One of --grant, --offer, --ask, --witness, --register, --checkin, or --referral must be specified.',
+                /--grant.*--offer.*--ask.*--witness.*--register.*--checkin.*--referral.*--balance.*--standing/,
             );
         });
 
@@ -189,6 +193,33 @@ describe('Patron CLI', () => {
                 'patrol-2026-06-01-evening',
             ]);
             expect(options.artifact).toBe('patrol-2026-06-01-evening');
+        });
+
+        // HD-016 self-service UX: --balance + --standing read-only lookups.
+        describe('HD-016 --balance and --standing parser', () => {
+            it('parses --balance with default faction', () => {
+                const options = parsePatronCliArgs(['--balance', '--human', 'alice@onion']);
+                expect(options.action).toBe('balance');
+                expect(options.humanId).toBe('alice@onion');
+                expect(options.faction).toBe('embassy');
+            });
+
+            it('parses --standing with default faction', () => {
+                const options = parsePatronCliArgs(['--standing', '--human', 'alice@onion']);
+                expect(options.action).toBe('standing');
+                expect(options.humanId).toBe('alice@onion');
+                expect(options.faction).toBe('embassy');
+            });
+
+            it('parses --standing with explicit --faction', () => {
+                const options = parsePatronCliArgs(['--standing', '--human', 'alice@onion', '--faction', 'foundry']);
+                expect(options.faction).toBe('foundry');
+            });
+
+            it('parses --faction= inline syntax', () => {
+                const options = parsePatronCliArgs(['--standing', '--human', 'alice@onion', '--faction=ledger']);
+                expect(options.faction).toBe('ledger');
+            });
         });
 
         // HD-011 helper: --register adds a handle to controller.yml#patrons[]
@@ -608,6 +639,56 @@ describe('Patron CLI', () => {
 
                 expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('No bonus credited'));
                 logSpy.mockRestore();
+            });
+        });
+
+        describe('HD-016 patron:balance + patron:standing', () => {
+            it('balance shows 0 Shards for unknown patron', async () => {
+                const logs: string[] = [];
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--balance', '--human', 'nobody@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                expect(logs.join('\n')).toMatch(/nobody@onion.*0 Shards/);
+            });
+
+            it('balance shows correct balance after grant', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+                await runPatronCli(['--grant', '--human', 'alice@onion', '--amount', '42', '-c', configPath]);
+                const logs: string[] = [];
+                jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--balance', '--human', 'alice@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                expect(logs.join('\n')).toMatch(/alice@onion.*42 Shards/);
+            });
+
+            it('standing shows stranger tier and 0 pts for unknown patron', async () => {
+                const logs: string[] = [];
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--standing', '--human', 'nobody@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                const out = logs.join('\n');
+                expect(out).toMatch(/nobody@onion/);
+                expect(out).toMatch(/0 pts/);
+                expect(out).toMatch(/stranger/);
+            });
+
+            it('standing shows ally tier and next-tier hint after 30+ pts', async () => {
+                const logs: string[] = [];
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+                // Grant + offer to reach standing > 30 pts (ally tier)
+                await runPatronCli(['--grant', '--human', 'alice@onion', '--amount', '50', '-c', configPath]);
+                await runPatronCli(['--offer', '--human', 'alice@onion', '--resident', 'pip', '--amount', '35', '-c', configPath]);
+                jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--standing', '--human', 'alice@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                const out = logs.join('\n');
+                expect(out).toMatch(/ally/);
+                expect(out).toMatch(/officer/);
+                expect(out).toMatch(/35 pts/);
             });
         });
     });

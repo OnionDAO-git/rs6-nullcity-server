@@ -10,8 +10,9 @@ import { LettersStore } from './letters-store';
 import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
+import { STANDING_TIERS } from './standing-ledger';
 
-export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | 'checkin' | 'referral' | '';
+export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | 'checkin' | 'referral' | 'balance' | 'standing' | '';
 
 /**
  * Kind of patron registration: governs what nervous-system rules will treat
@@ -33,6 +34,8 @@ export interface PatronCliOptions {
     kind: PatronRegisterKind;
     /** For --referral: the new human being referred (--human is the referrer). */
     referredId: string;
+    /** For --standing: which faction ledger to query. Defaults to 'embassy'. */
+    faction: string;
     configPath: string;
 }
 
@@ -71,6 +74,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
         artifact: '',
         kind: 'patron_gift',
         referredId: '',
+        faction: 'embassy',
         configPath: 'controller.yml',
     };
 
@@ -90,6 +94,17 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.action = 'checkin';
         } else if (arg === '--referral') {
             options.action = 'referral';
+        } else if (arg === '--balance') {
+            options.action = 'balance';
+        } else if (arg === '--standing') {
+            options.action = 'standing';
+        } else if (arg === '--faction') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--faction requires a value');
+            options.faction = next;
+            i += 1;
+        } else if (arg.startsWith('--faction=')) {
+            options.faction = arg.slice('--faction='.length);
         } else if (arg === '--referred') {
             const next = argv[i + 1];
             if (!next) throw new Error('--referred requires a value');
@@ -150,7 +165,9 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
     }
 
     if (!options.action) {
-        throw new Error('One of --grant, --offer, --ask, --witness, --register, --checkin, or --referral must be specified.');
+        throw new Error(
+            'One of --grant, --offer, --ask, --witness, --register, --checkin, --referral, --balance, or --standing must be specified.',
+        );
     }
     if (!options.humanId) {
         throw new Error('--human <id> is required.');
@@ -623,6 +640,28 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
                 );
                 console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} Shards.`);
             }
+            return 0;
+        }
+
+        if (options.action === 'balance') {
+            const ledger = store.loadCurrency();
+            const bal = ledger.balance(options.humanId);
+            console.log(`[patron:balance] ${options.humanId}: ${bal} Shards`);
+            return 0;
+        }
+
+        if (options.action === 'standing') {
+            const standingLedger = store.loadStanding();
+            const pts = standingLedger.points(options.humanId, options.faction);
+            const tier = standingLedger.currentTier(options.humanId, options.faction);
+            // Find the next user-facing tier above current points.
+            const userFacingTiers = STANDING_TIERS.filter(t => t.name !== 'stranger');
+            const nextTier = userFacingTiers.find(t => t.minPoints > pts);
+            const nextLine = nextTier
+                ? `next: ${nextTier.name} at ${nextTier.minPoints} pts (${nextTier.minPoints - pts} more)`
+                : 'tier: officer (max tier reached)';
+            const tierLabel = tier === 'stranger' ? 'stranger (no standing yet)' : tier;
+            console.log(`[patron:standing] ${options.humanId} @ ${options.faction}: ${pts} pts | tier: ${tierLabel} | ${nextLine}`);
             return 0;
         }
 
