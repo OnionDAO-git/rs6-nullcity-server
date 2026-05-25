@@ -538,7 +538,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** IRL June 1 surfaces and their in-game counterparts. Most owned by Dev (dashboard) or shared with v2 (staff scanner, print queue), but rs6 needs its own placement decisions. Spec: `docs/superpowers/specs/2026-05-22-embassy-and-event-design.md`.
 
-- `[ ]` **N1: Pick the rs6 embassy POI in-game.** Location for handler interaction, ritual redemption, standing display.
+- `[x]` **N1: Pick the rs6 embassy POI in-game.** Location for handler interaction, ritual redemption, standing display.
+  - Completed 2026-05-25 on `agents/wip`: canonical POI is the Lumbridge churchyard region `3238..3248, 3204..3214, level 0` with center `(3243,3209,0)`. Verified in `src/controller/embassy/embassy.ts`, `src/controller/embassy/embassy.test.ts`, D3 reception greeting docs, and live wall/dashboard smoke.
 - `[~]` **N2: Wall-map projection coordination.** Decide whether rs6 events feed v2's wall ticker or rs6 gets its own wall view. Coordinate with Dev.
   - Started 2026-05-25 on `agents/wip`: Codex is codifying the rs6-local patron proof path with an admin smoke that verifies grant → offer → private inbox → redacted public wall snapshot.
   - Partial 2026-05-25 on `agents/wip`: rs6-local proof path is covered by `npm run patron:smoke`, including HTTP inbox and redacted wall snapshot checks. Remaining: explicit Dev decision on whether this replaces or feeds the v2 wall ticker.
