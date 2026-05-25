@@ -3008,4 +3008,41 @@ All 19 residents had their first tick within 1.5s of process launch. **Sub-2-sec
 **Owner suggestion.** claude (runbook annotation if time, otherwise defer to Tuesday handoff).
 
 
+### E61 — Tuesday sprint-handoff doc refresh (maintainer first-read prep)
+
+**Status:** SHIPPED — `docs/sprint-handoff-2026-05-26.md` TL;DR + tally + new section reflecting E38-E60 + HD-039-050 + 5-cycle Codex-claude closing loop
+**Tier:** 0 (documentation deliverable)
+**Date:** 2026-05-25 03:30 claude
+
+**Hypothesis.** Maintainer's first Tuesday read is `docs/sprint-handoff-2026-05-26.md`. Doc was last refreshed in SPRINT-QA2 (2026-05-24 22:00 CDT) and is now ~5 hours stale across major closures: HD-018 (D3 wire-in), HD-033 F20c (watchdog), HD-040 (multi-tier letters), HD-042 (hero cadence), HD-046 (standing decay), HD-039 partial, HD-041 not-a-bug, HD-045 false-alarm, plus 5 new HDs (HD-043/044/047/048/049/050). Tests went 1657 → 1699+.
+
+**Output.** Two edits to `docs/sprint-handoff-2026-05-26.md`:
+
+1. **TL;DR rewrite** — replaces SPRINT-QA2 era 7-bullet summary with current-state 5-bullet:
+   - Pillar-3 patron loop end-to-end (CLI path + HD-040 multi-tier + HD-031 patron-ack)
+   - D3 in-world implicit greeting now wired + tested live (`fd575281` + E58); **2-stage hero acknowledgement** at Chicago
+   - 13 weekend HD closures with cross-references
+   - 5 new HDs filed for next cycle (mostly post-Chicago)
+   - Chicago operational items (HD-011 re-upgraded to High; HD-015 dashboard; HD-048 pre-Chicago smoke)
+   - Tests 1699+; multi-agent closing-loop pattern in steady state
+
+2. **Sprint tally + "What changed since 22:00" section added** at the bottom:
+   - Updated to 61 E-entries, 50 HDs, 50+ commits, 1699+ tests
+   - 17-line bullet timeline E38-E60 with each cycle's one-sentence summary
+   - Two epigraph quotes at the end (the existing "quantify what works" + new one about multi-agent closing loop being the durable pattern)
+
+**Sub-findings.**
+
+- **F61a (POSITIVE / TUESDAY-READY).** Maintainer Tuesday-morning first-read now reflects current state. They can skim the TL;DR + "what changed since 22:00" timeline + open list (HD-011 + HD-015 + HD-048 + HD-043 + HD-044 + HD-047) in ~5 minutes and have full context.
+- **F61b (CLOSING-LOOP HIGHLIGHTED).** The Codex-claude multi-agent pattern (Codex ships fix + cites observable; claude replays + verifies) is now explicitly called out as a durable artifact of this sprint. 5 consecutive closing cycles in 3 hours is the strongest evidence yet that it scales.
+- **F61c (DEFERRED).** Cron-prompt PID + scope fix (task #180) noted but not addressed — that's for whoever picks up post-Chicago process work. F55b/c/d patron-lifecycle.md verification gaps similarly deferred (single-line fact-checks, not blocking).
+- **F61d (NEXT-CYCLE PROMPT).** When the maintainer reads Tuesday, they may want to delete the cron via `CronDelete bd5f7e3f` per the termination protocol — the doc cites this in the existing "What's next" section.
+
+**Classification.** DOC-DELIVERABLE for handoff. No bugs.
+
+**Suggested next step.** Continue closing-loop pattern through Monday-Tuesday cycles. If maintainer takes over Tuesday, smoke-script enhancement (F59b) + roadmap re-sync (E49) + patron-lifecycle verification gaps (F55b/c/d) are cheap polish.
+
+**Owner suggestion.** claude (continue cron cycles until termination); maintainer (Tuesday triage).
+
+
 

@@ -3,19 +3,18 @@
 **For:** James (maintainer), Tuesday morning recovery context.
 **Sprint window:** 2026-05-24 (Saturday) → 2026-05-26 (Tuesday).
 **Author:** claude (with Codex as the depth-fix partner; see § Codex contribution).
-**Linked artifacts:** `docs/intelligence-verification-log.md` (E1-E37), `docs/human-decisions.md` (HD-001 through HD-041), `docs/agent-status.md` (append-only multi-agent log).
+**Linked artifacts:** `docs/intelligence-verification-log.md` (E1-E61), `docs/human-decisions.md` (HD-001 through HD-050), `docs/agent-status.md` (append-only multi-agent log), `docs/patron-lifecycle.md` (NEW Sunday — staffer + maintainer onboarding narrative), `docs/pre-chicago-readiness.md` (single-page Chicago-day go/no-go).
 
 ---
 
 ## TL;DR
 
-- **The Pillar-3 patron loop is end-to-end functional for a 19-resident roster** (6 heroes + res:agent + 12-soul Codex QA cohort). Patron offers Shards → letter dispatches → resident says thanks by name → letter visible at `/v1/inbox?human=...` → wall projection masks recipient + body for public display.
-- **All 19 residents are alive** (zero deaths in 50+ min post-restart per E32 + E33, validated again in SPRINT-QA2 / E36).
-- **HD-008 hero attention floor CLOSED end-to-end** (E30 substrate + E32/E33 live verify). Soul-declared `attentionProfile.floor` clamps spend outcomes: Hans/Aereck/Wise/Duke=5000, Pip/Thrand=3000. Three heroes were observed resting exactly at floor under live load, three above floor with patron offers lifting them. The recurring hero-death pattern (4 deaths during E29 sprint window before E30) is permanently closed at the source.
-- **Two intelligence gaps remain (not Chicago blockers):** Brain LLM completion is empty 84-100% of the time for heroes (F20 quantified); resident speech rarely references the 50 knowledge entries (F21 / E22 partial close, residual). Reflex layer + per-hero nervous rules carry the experience.
-- **Three new findings from SPRINT-QA2 (E36, late Saturday):** (a) qa-guardian + qa-survivor catatonic — both stuck emitting `low_health_hold_position` 2192/2177 times consecutively with no escape path (HD-039 filed for Codex); (b) standing-tier letter dispatcher LOSSY when one grant crosses multiple tiers (HD-040 filed — codex-hour-qa + codex-live each missing 3 tier letters; total ~8 of 15 expected tier letters missing); (c) zero cross-resident chat events observed across 9 residents in a 14-min window (HD-041 filed for L-α/L-β regression check).
-- **Three Chicago-relevant operational items still need maintainer attention:** populate `controller.yml#patrons[]` (HD-011 — sole remaining smoke-script yellow), file the dashboard Pillar-3 patch package with Dev (HD-015), and confirm HD-039/040/041 priorities with Codex Monday morning.
-- **Tests: 1657/1657 passing as of 22:00 UTC.** Action volume on cohort residents reaches 75 actions / 5min on the most active (qa-scout / qa-woodcutter). The pre-E30 hero death pattern has NOT recurred since the floor landed.
+- **Pillar-3 patron loop is end-to-end functional for all 19 residents.** Patron `patron:grant` → `patron:offer` → multi-tier letters dispatch in ascending order (HD-040 fix `ae60cb9d` + E38 substrate) → resident says thanks by name within ~3s via `nervous:patron-memory-acknowledge` (HD-031) → letter visible at `/v1/inbox?human=...` → wall projection redacts recipient + body (HD-013 / HD-029).
+- **D3 in-world implicit greeting now wired AND tested live (`fd575281` + E58).** When a patron in `controller.yml#patrons[]` chats inside the Lumbridge churchyard region, Hans (or another hero in range) emits `"Welcome to the embassy, <handle>."` with witness-only-on-say-success — Chicago has **2-stage hero acknowledgement**: implicit D3 + explicit CLI.
+- **13 weekend HDs CLOSED or MITIGATED via tight Codex-claude closing loop** (5 consecutive cycles): HD-008 (hero attention floor, E30), HD-018 (D3 wire-in, `fd575281`), HD-030 (revive CLI), HD-031 (patron-acknowledge reflex), HD-032 (heroes frozen, mitigated), HD-033 (45s/60s watchdog mismatch CLOSED by `8eae437f` / E53; F20a Qwen3 empty still upstream), HD-037+038+040 (patron-gateway correctness + tier dispatcher), HD-039 (qa-guardian/survivor partial-decided — retreat fixed, hold-loop in HD-047), HD-041 (LoreBus dead-in-prod, not-a-bug), HD-042 (hero decision cadence CLOSED by `32ba93c9`/`aed50245`), HD-045+046 (false-alarm + standing-permanent-by-default), HD-021 (de-facto-counter-proposed closing-loop protocol).
+- **5 new HDs filed this weekend for next cycle:** HD-043 (L-α + L-β + whisper post-Chicago wire-in workstream); HD-044 (damage-edge perception events missing — 15 hit/death reflexes unfireable); HD-047 (qa-guardian/survivor permanent hold-loop at safe waypoint, post-Chicago); HD-048 (perception-builder integration smoke pre-Chicago); HD-049+050 (post-Chicago tech debt — recovery decision tree refactor + SPARK cause taxonomy doc).
+- **Chicago-day operational items still pending maintainer:** **HD-011 (RE-UPGRADED High)** populate `controller.yml#patrons[]` ~24h before doors — now D3 is wired, this is THE binding constraint for in-world greeting. HD-015 (dashboard Pillar-3 patch package, Dev-owned). HD-048 pre-Chicago perception-builder smoke (Codex/claude joint cycle).
+- **Tests: 1699+ passing** (was 1657 at SPRINT-QA2 end — Codex+claude added ~42 across HD closures). Pipelines green throughout. Multi-agent loop pattern in steady state: Codex ships fix + cites observable claim + live controller id; claude replays + verifies + extends with sub-finding analysis. 5 consecutive E50→fd575281→E58 / E51→32ba93c9→E52 / E20→8eae437f→E53 / etc. closing cycles in ~3 hours.
 
 **Single command Chicago-day go/no-go:** `bash scripts/post-restart-smoke.sh`
 **Single-page operational checklist:** `docs/pre-chicago-readiness.md`
@@ -193,6 +192,33 @@ Per HD-021, claude commits to providing action-kind histograms for each Codex fi
 
 ---
 
-*Sprint tally (refreshed 2026-05-24 22:00 UTC): 37 E-entries, 41 HDs, 30+ Codex+claude commits, 1657 tests, all 19 residents alive (6 heroes + res:agent + 12-soul Codex QA cohort), Pillar-3 functional end-to-end for the full roster. HD-008 closed via E30 substrate. New HD-039/040/041 filed from SPRINT-QA2 E36.*
+*Sprint tally (refreshed 2026-05-25 03:25 CDT): **61 E-entries, 50 HDs, 50+ Codex+claude commits, 1699+ tests**, all 19 residents alive (6 heroes + res:agent + 12-soul Codex QA cohort), Pillar-3 functional end-to-end for the full roster. **13 HDs closed/mitigated this sprint** (HD-008/018/030/031/033/037/038/040/041/042/045/046 closed; HD-032/033/039 mitigated/partially). **5 new HDs filed for next cycle** (HD-043/044/047/048/049/050 — all post-Chicago except HD-048). **Multi-agent closing-loop protocol working in steady state** — Codex ships fix + observable claim; claude replays + verifies. 5 consecutive closing cycles tonight: E50→fd575281→E58, E51→32ba93c9→E52, E20→8eae437f→E53.*
+
+## What changed since 2026-05-24 22:00 (SPRINT-QA2 freeze)
+
+**E38-E60 verification cycles + late-Sunday Codex closures.** A summary:
+
+- **E38**: HD-040 patron multi-tier dispatcher fix (3-file substrate; `ae60cb9d`). Per-tier letters now dispatch in ascending order.
+- **E39**: HD-040 live-verified on `local-46903`: 30-Shard offer → 2 letters; 75-Shard → 3 letters.
+- **E40-E42**: SPRINT-QA3 — reflex firing coverage + HD-041 LoreBus dead-in-prod + soul personality differential.
+- **E43**: standing-decay policy audit — no decay anywhere; HD-046 Decided-by-default-permanent.
+- **E44**: library-memories revival renderer polish — task #156 closed (`903914e1`).
+- **E45**: Codex starter-cooking-recovery (`30d5f1b7`).
+- **E46-E49**: SPRINT-QA4 — 3 staffer-UX fixes shipped inline (`52b99a12`: tiersCrossed CLI + inbox URL hint + auto-gen witness artifact); HD-021 closed de-facto.
+- **E50**: D3 embassy hero greeting dead-in-prod found.
+- **E51**: tick-budget profile — sharpened HD-042 framing.
+- **E52**: HD-042 closed by Codex `32ba93c9` — `_none` count = 0 across all heroes; new cause taxonomy.
+- **E53**: HD-033 F20c closed by Codex `8eae437f` — watchdog now aligns to 65s; F20a + F20b remain upstream.
+- **E54**: qa-guardian/survivor retreat verified firing (`0747ff8c`) but hold-loop unchanged — HD-039 partial, HD-047 filed.
+- **E55**: `docs/patron-lifecycle.md` shipped (subagent B, 264 lines, 2418 words).
+- **E56**: code-review of 6 Codex commits — net Chicago risk LOW.
+- **E57**: pre-Chicago readiness doc refreshed (subagent D).
+- **E58**: HD-018 D3 wire-in closed by Codex `fd575281` — `trySubmitReceptionGreeting` with per-patron cooldown + witness-only-on-success.
+- **E59**: cold-start metrics — 1.2-1.5s first tick across all 19 residents; first reflex say at 2-5s.
+- **E60**: multi-controller lock substrate verified across 5 live test scenarios — robust.
+
+---
 
 *"The honest assessment: today's biggest contribution might be quantifying what works precisely enough that we can recognize when something stops working."*
+
+*"The biggest contribution Tuesday morning might be a multi-agent feedback loop that closed 13 HDs in 30 hours by treating Codex's commit SHAs + observable claims as ground truth and claude's trajectory replays as the audit. That pattern is reusable for any future sprint."*
