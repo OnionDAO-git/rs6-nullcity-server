@@ -96,6 +96,35 @@ describe('createThinkingModule', () => {
         });
     });
 
+    it('includes authored hero ambitions in watchdog fallback speech', () => {
+        const module = createThinkingModule({
+            soul: soul({
+                goals: ['greet every visible human at least once per day'],
+                heroProfile: {
+                    tier: 'hero',
+                    publicName: 'Hans',
+                    signatureAction: 'asks how long someone has been around',
+                    anchor: [3221, 3218, 0],
+                },
+            }),
+            state: runtimeState(),
+            memory: {} as MemoryStore,
+            llm: {} as LlmClient,
+        });
+
+        const result = module.onWatchdogTimeout?.({
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+            },
+        });
+
+        expect(result?.actions[0]).toEqual({
+            kind: 'say',
+            text: 'Still here as Hans; getting my bearings near my post. I am still trying to greet every visible human at least once per day.',
+            cause: 'watchdog_fallback',
+        });
+    });
+
     it('personalizes default Spark watchdog fallback speech for named residents without anchors', () => {
         const module = createThinkingModule({
             soul: soul({ display: 'Pip' }),

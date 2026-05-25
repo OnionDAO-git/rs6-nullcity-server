@@ -459,23 +459,38 @@ function sha256(value: string): string {
 function watchdogFallbackSpeech(soul: Soul): string {
     const residentName = soul.frontmatter.heroProfile?.publicName || soul.frontmatter.display;
     if (!residentName) {
-        return 'I am still here; getting my bearings.';
+        return withAuthoredGoal('I am still here; getting my bearings.', soul);
     }
 
     if (soul.frontmatter.heroProfile?.anchor) {
-        return `Still here as ${residentName}; getting my bearings near my post.`;
+        return withAuthoredGoal(`Still here as ${residentName}; getting my bearings near my post.`, soul);
     }
 
-    return `Still here as ${residentName}; getting my bearings.`;
+    return withAuthoredGoal(`Still here as ${residentName}; getting my bearings.`, soul);
 }
 
 function idleInitiativeSpeech(soul: Soul): string {
     const residentName = soul.frontmatter.heroProfile?.publicName || soul.frontmatter.display;
     if (!residentName) {
-        return 'I am still here; watching the area.';
+        return withAuthoredGoal('I am still here; watching the area.', soul);
     }
 
-    return `Still here as ${residentName}; watching the area.`;
+    return withAuthoredGoal(`Still here as ${residentName}; watching the area.`, soul);
+}
+
+function withAuthoredGoal(base: string, soul: Soul): string {
+    const goal = soul.frontmatter.goals?.find(value => value.trim().length > 0);
+    if (!goal) {
+        return base;
+    }
+    const normalized = goal
+        .trim()
+        .replace(/^to\s+/i, '')
+        .replace(/[.!?]+$/g, '');
+    if (!normalized) {
+        return base;
+    }
+    return `${base} I am still trying to ${normalized}.`;
 }
 
 function heroAnchorPatrolAction(soul: Soul, state: RuntimeState): AgentAction | undefined {
