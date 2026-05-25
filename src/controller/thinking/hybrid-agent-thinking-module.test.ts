@@ -5725,6 +5725,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
+    it('repositions to the proven Lumbridge bank tile after a visible starter fishing spot times out', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 20,
+            lastBodyTick: 20,
+            targetFailureCooldowns: {
+                'actor:npc:69:3239,3244,0': 20,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 28,
+                resident: {
+                    ...residentAt(3235, 3242),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+                npcs: [npc('Fishing spot', 3239, 3244), npc('Fishing spot', 3241, 3242)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: { x: 3240, y: 3244, level: 0 },
+                range: 0,
+                cause: 'starter_fishing_reposition_to_bank',
+            },
+        ]);
+        expect(result.cause).toBe('starter_fishing_reposition_to_bank');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
     it('does not repeat the castle entrance cooking route after that route times out', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
@@ -5953,7 +5994,7 @@ describe('HybridAgentThinkingModule', () => {
             },
         ]);
         expect(result.cause).toBe('starter_fishing_seek_spot');
-        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
     it('seeds combat prayer as the active benchmark goal without initial Brain drift', async () => {

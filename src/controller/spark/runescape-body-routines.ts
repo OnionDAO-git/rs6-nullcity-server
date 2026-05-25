@@ -111,6 +111,9 @@ export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 /** Canonical level-1 net fishing spot in this server's npc-spawns/fishing config. */
 export const LUMBRIDGE_STARTER_FISHING_SPOT: BodyPos = { x: 3239, y: 3244, level: 0 };
 
+/** Live-proven tile where level-1 residents can stand while netting the Lumbridge river spot. */
+export const LUMBRIDGE_STARTER_FISHING_STAND_SPOT: BodyPos = { x: 3240, y: 3244, level: 0 };
+
 /** Secondary fixed net/bait spot in this server's Lumbridge fishing spawn config. */
 export const LUMBRIDGE_STARTER_FISHING_SPOTS: ReadonlyArray<BodyPos> = [LUMBRIDGE_STARTER_FISHING_SPOT, { x: 3241, y: 3242, level: 0 }];
 

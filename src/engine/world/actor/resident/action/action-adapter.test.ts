@@ -422,6 +422,29 @@ describe('ActionAdapter', () => {
         );
     });
 
+    it('recovers stale NPC world-index refs by matching key and position', () => {
+        const staleNpc = { type: 'npc', key: 'rs:runescape_guide', position: { x: 3229, y: 3238, level: 0 } };
+        const fishingSpot = { type: 'npc', key: 'rs:fishing_spot_net_bait', position: { x: 3241, y: 3242, level: 0 } };
+        (activeWorld.npcList as unknown[])[70] = staleNpc;
+        (activeWorld.npcList as unknown[])[69] = fishingSpot;
+
+        const actingResident = resident();
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'interact',
+            target: {
+                id: 'npc:70',
+                kind: 'npc',
+                key: 'rs:fishing_spot_net_bait',
+                name: 'Fishing spot',
+                position: { x: 3241, y: 3242, level: 0 },
+            },
+            option: 'net',
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('npc_interaction', actingResident, fishingSpot, fishingSpot.position, 'net');
+    });
+
     it('dispatches generic inventory item actions through the engine item pipe', () => {
         const actingResident = resident();
 

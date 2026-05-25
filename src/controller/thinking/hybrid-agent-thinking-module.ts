@@ -17,11 +17,14 @@ import {
     INTERACTION_APPROACH_RADIUS,
     LEVEL_ONE_TREE_IDS,
     LUMBRIDGE_CASTLE_RANGE,
+    LUMBRIDGE_STARTER_FISHING_SPOTS,
+    LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
     LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
     MAX_INVENTORY_SLOTS,
     PICKUP_TARGET_COOLDOWN_TICKS,
     PRAYER_TRAINING_WAYPOINTS,
     PRAYER_TRAINING_WAYPOINT_RANGE,
+    STARTER_FISHING_ROUTE_MAX_DISTANCE,
     actionWithCause,
     buryBonesAction,
     combatLootOrPrayerAction,
@@ -1028,12 +1031,43 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
         }
 
+        const bankRecoveryAction = this.starterFishingBankRecoveryAction(perception);
+        if (bankRecoveryAction) {
+            return { action: bankRecoveryAction, cause: bankRecoveryAction.cause || 'starter_fishing_reposition_to_bank' };
+        }
+
         const fishingAction = starterFishingRouteAction(perception);
         if (fishingAction) {
             return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
         }
 
         return undefined;
+    }
+
+    private starterFishingBankRecoveryAction(perception: HybridPerception): AgentAction | undefined {
+        const here = perception.resident?.position;
+        if (!here || !hasSmallFishingNet(perception)) {
+            return undefined;
+        }
+
+        const failedLumbridgeSpot = LUMBRIDGE_STARTER_FISHING_SPOTS.some(position => this.targetFailureCooldownActive(position));
+        if (!failedLumbridgeSpot || positionsEqual(here, LUMBRIDGE_STARTER_FISHING_STAND_SPOT)) {
+            return undefined;
+        }
+        if (
+            here.level !== LUMBRIDGE_STARTER_FISHING_STAND_SPOT.level ||
+            distance(here, LUMBRIDGE_STARTER_FISHING_STAND_SPOT) > STARTER_FISHING_ROUTE_MAX_DISTANCE ||
+            this.targetFailureCooldownActive(LUMBRIDGE_STARTER_FISHING_STAND_SPOT)
+        ) {
+            return undefined;
+        }
+
+        return {
+            kind: 'move_to',
+            target: LUMBRIDGE_STARTER_FISHING_STAND_SPOT,
+            range: 0,
+            cause: 'starter_fishing_reposition_to_bank',
+        };
     }
 
     private visibilityAnchorReturnAction(
@@ -1121,13 +1155,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (isStarterFishingGoal(goal)) {
-            const cookingAction = this.starterFishingCookingAction(perception);
-            if (cookingAction) {
-                return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
-            }
-            const fishingAction = starterFishingAction(perception);
-            if (fishingAction) {
-                return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
+            const starterFishing = this.starterFishingGoalAction(perception);
+            if (starterFishing) {
+                return starterFishing;
             }
         }
 
