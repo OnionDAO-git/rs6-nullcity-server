@@ -1541,6 +1541,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         cognition.routineLoopKey = undefined;
         cognition.lastRoutineLoopBreakTick = this.options.state.tick;
 
+        const label = `${cause} ${action.cause || ''}`;
         const explore = explorationAction(
             perception,
             anchor,
@@ -1548,7 +1549,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.pickupCooldowns(),
             this.options.state.tick,
             this.explorationCooldowns(),
-            { interactWithOpenables: false },
+            { interactWithNpcs: !/starter_fishing_missing_heat/i.test(label), interactWithOpenables: false },
         );
         return {
             action: explore
@@ -3448,11 +3449,17 @@ function isLocalRoutineCause(cause: string, action: AgentAction): boolean {
     if (action.kind === 'use_item_on_item') {
         return false;
     }
-    return /woodcutting_level1_routine|firemaking_fallback|firemaking_gather_logs/i.test(`${cause} ${action.cause || ''}`);
+    return /woodcutting_level1_routine|firemaking_fallback|firemaking_gather_logs|starter_fishing_missing_heat/i.test(
+        `${cause} ${action.cause || ''}`,
+    );
 }
 
 function routineLoopFamily(cause: string, action: AgentAction): string {
-    if (/woodcutting|firemaking/i.test(`${cause} ${action.cause || ''}`)) {
+    const label = `${cause} ${action.cause || ''}`;
+    if (/starter_fishing_missing_heat/i.test(label)) {
+        return 'starter-fishing-cooking';
+    }
+    if (/woodcutting|firemaking/i.test(label)) {
         return 'woodcutting-firemaking';
     }
     return cause;

@@ -1030,7 +1030,7 @@ export function explorationAction(
     pickupCooldowns?: Record<string, number>,
     currentTick = perception.tick ?? 0,
     explorationCooldowns?: Record<string, number>,
-    options?: { interactWithOpenables?: boolean },
+    options?: { interactWithNpcs?: boolean; interactWithOpenables?: boolean },
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
@@ -1043,16 +1043,18 @@ export function explorationAction(
         return pickup;
     }
 
-    const npc = (perception.nearby?.npcs || [])
-        .filter(
-            candidate =>
-                !isFishingSpot(candidate) &&
-                !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
-                !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick),
-        )
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (npc) {
-        return npcTalkAction(perception, npc, 'explore_talk_to_npc');
+    if (options?.interactWithNpcs ?? true) {
+        const npc = (perception.nearby?.npcs || [])
+            .filter(
+                candidate =>
+                    !isFishingSpot(candidate) &&
+                    !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                    !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick),
+            )
+            .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        if (npc) {
+            return npcTalkAction(perception, npc, 'explore_talk_to_npc');
+        }
     }
 
     if (options?.interactWithOpenables ?? true) {

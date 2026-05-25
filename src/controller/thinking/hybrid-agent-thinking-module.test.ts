@@ -5698,6 +5698,69 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
+    it('scouts for supplies instead of endlessly repeating a starter-fishing missing-heat blocker', async () => {
+        const tree = { objectId: 1278, position: { x: 3209, y: 3213, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                steps: [
+                    'Carry a small fishing net',
+                    'Catch raw shrimp or anchovies',
+                    'Find or make a fire',
+                    'Use raw fish on the fire or range',
+                ],
+                success: 'Raw fish turn into cooked food or a clear blocker is explained.',
+                ttlTicks: 900,
+                createdAtTick: 1,
+            },
+            lastPresenceBeaconTick: 39,
+            lastGoalShareTick: 39,
+            targetFailureCooldowns: {
+                'target:3208,3213,0': 12,
+                'target:3217,3218,0': 12,
+            },
+            routineLoopKey: 'starter-fishing-cooking|3204,3213,0',
+            routineLoopCount: 2,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'fishing-cooking-10m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 40,
+                resident: {
+                    ...residentAt(3204, 3213),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                        { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    ],
+                },
+                npcs: [
+                    {
+                        id: 'npc:85',
+                        kind: 'npc',
+                        key: 'rs:lumbridge_castle_cook',
+                        name: 'Cook',
+                        position: { x: 3206, y: 3215, level: 0 },
+                    },
+                ],
+                objects: [tree],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'move_to', target: tree.position, range: 2, cause: 'routine_loop_break' }]);
+        expect(result.cause).toBe('routine_loop_break');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
     it('tries the castle entrance route before declaring the range unreachable', async () => {
         const door = { objectId: 1530, position: { x: 3208, y: 3211, level: 0 } };
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
