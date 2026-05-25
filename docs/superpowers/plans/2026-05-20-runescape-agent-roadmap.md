@@ -109,6 +109,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: tests simulate perception and assert typed `AgentAction` sequences.
   - Partial 2026-05-23 on `nullcity`: starter fishing Body routine now approaches distant visible Fishing spots to interaction range before netting, and interaction range checks treat diagonal adjacency as valid. Remaining extraction work still includes generalizing the typed routine library beyond fishing/firemaking.
   - Partial 2026-05-23 on `nullcity`: object and item-on-object action pipes now run matching hooks immediately when the resident is already in object interaction range instead of enqueueing a redundant walk task. Regression tests cover adjacent diagonal object/item-on-object targets and far targets that should still enqueue `WalkToObjectPluginTask`.
+  - Partial 2026-05-25 on `agents/wip`: NPC interaction hooks can declare custom interaction distance, fishing spots use a shoreline casting range, and `ignoreDestination` pathing can fall back to reachable adjacent tiles. Verified with focused tests and a live autonomous `starter-fishing-5m` pass (`score=1`, `changed=skills,inventory`, artifact `/tmp/oniondao-starter-fishing-live-codex/bench_20260525102747_starter_fishing_5m.json`). Remaining extraction work still includes generalizing the typed routine library beyond fishing/firemaking.
 
 - `[ ]` **B4: Extract Brain goal planner.**
   - Files: `src/controller/spark/runescape-brain-planner.ts`, `src/controller/spark/runescape-brain-planner.test.ts`

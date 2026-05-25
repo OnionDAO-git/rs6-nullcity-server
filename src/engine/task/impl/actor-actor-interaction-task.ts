@@ -22,12 +22,12 @@ export abstract class ActorActorInteractionTask<TActor extends Actor = Actor, TO
      * @param walkOnStart Whether to walk to the other actor on task start.
      *                    Defaults to `false` as the client generally inits a walk on interaction.
      */
-    constructor(actor: TActor, otherActor: TOtherActor, walkOnStart = false) {
+    constructor(actor: TActor, otherActor: TOtherActor, walkOnStart = false, interactionDistance = 1) {
         super(
             actor,
             () => otherActor.position,
             // TODO (jkm) handle other actor size
-            1,
+            interactionDistance,
             walkOnStart,
         );
 

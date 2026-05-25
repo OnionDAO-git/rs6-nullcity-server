@@ -460,6 +460,15 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
         return undefined;
     }
 
+    if (distance(here, target.position) > STARTER_FISHING_SPOT_DISCOVERY_RANGE) {
+        return {
+            kind: 'move_to',
+            target: target.position,
+            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+            cause: 'starter_fishing_approach_spot',
+        };
+    }
+
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
 }
 

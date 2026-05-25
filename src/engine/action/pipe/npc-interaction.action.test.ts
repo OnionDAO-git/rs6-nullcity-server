@@ -36,6 +36,7 @@ describe('npcInteractionActionPipe', () => {
 
     beforeEach(() => {
         hook.handler.mockClear();
+        delete (hook as { interactionDistance?: number }).interactionDistance;
         (getActionHooks as jest.Mock).mockReturnValue([hook]);
     });
 
@@ -77,5 +78,19 @@ describe('npcInteractionActionPipe', () => {
         expect(result).toBeNull();
         expect(player.enqueueBaseTask).toHaveBeenCalledTimes(1);
         expect(player.pathfinding.walkTo).toHaveBeenCalledWith(npc.position, { pathingSearchRadius: 64, ignoreDestination: true });
+    });
+
+    it('runs walk-to hooks immediately when the player is inside a custom interaction distance', () => {
+        (hook as { interactionDistance?: number }).interactionDistance = 7;
+        const player = playerAt(new Position(3235, 3241, 0));
+        const npc = npcAt(new Position(3239, 3244, 0));
+
+        const result = (npcInteractionActionPipe[1] as (...args: unknown[]) => unknown)(player, npc, npc.position, 'net');
+
+        expect(player.enqueueBaseTask).not.toHaveBeenCalled();
+        expect(result).toEqual({
+            hooks: [hook],
+            action: { player, npc, position: npc.position, option: 'net' },
+        });
     });
 });

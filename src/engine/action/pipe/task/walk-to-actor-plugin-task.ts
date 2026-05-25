@@ -52,9 +52,10 @@ export class WalkToActorPluginTask<
         actorKey: TActorKey,
         other: TOtherActor,
         data: ActorActionData<TAction>,
+        interactionDistance = 1,
     ) {
-        const needsWalk = !player.position.withinInteractionDistance(other.position, 1);
-        super(player, other, false);
+        const needsWalk = !player.position.withinInteractionDistance(other.position, interactionDistance);
+        super(player, other, false, interactionDistance);
         if (needsWalk) {
             player.pathfinding.walkTo(other.position, {
                 pathingSearchRadius: ACTOR_INTERACTION_PATHING_SEARCH_RADIUS,

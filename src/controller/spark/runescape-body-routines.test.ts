@@ -246,8 +246,8 @@ describe('starterFishingAction', () => {
         });
     });
 
-    it('clicks a visible distant fishing spot and lets the game walk to it', () => {
-        const spot = fishingSpot(102, 100);
+    it('moves within shoreline range of a visible distant fishing spot before netting it', () => {
+        const spot = fishingSpot(110, 100);
         const action = starterFishingAction(
             perception({
                 resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -256,10 +256,10 @@ describe('starterFishingAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'interact',
-            target: spot,
-            option: 'net',
-            cause: 'starter_fishing_net',
+            kind: 'move_to',
+            target: spot.position,
+            range: 7,
+            cause: 'starter_fishing_approach_spot',
         });
     });
 
