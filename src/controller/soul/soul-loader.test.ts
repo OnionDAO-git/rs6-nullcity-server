@@ -73,9 +73,24 @@ describe('SoulLoader', () => {
             expect(soul.frontmatter.factionAffinity?.guthix).toBe(10);
         });
 
-        it('lists all three heroes among the starter resident names', () => {
+        it('loads Pip and Thrand with hero anchors and authored goals', () => {
+            const pip = loader.load('res:pip');
+            const thrand = loader.load('res:thrand');
+
+            expect(pip.frontmatter.heroProfile?.tier).toBe('hero');
+            expect(pip.frontmatter.heroProfile?.anchor).toEqual([3208, 3209, 0]);
+            expect(pip.frontmatter.goals?.length).toBeGreaterThanOrEqual(2);
+
+            expect(thrand.frontmatter.heroProfile?.tier).toBe('hero');
+            expect(thrand.frontmatter.heroProfile?.anchor).toEqual([3235, 3234, 0]);
+            expect(thrand.frontmatter.goals?.length).toBeGreaterThanOrEqual(2);
+        });
+
+        it('lists all six heroes among the starter resident names', () => {
             const names = loader.listResidentNames();
-            expect(names).toEqual(expect.arrayContaining(['res:wise-old-man', 'res:hans', 'res:father-aereck']));
+            expect(names).toEqual(
+                expect.arrayContaining(['res:wise-old-man', 'res:hans', 'res:father-aereck', 'res:duke-horacio', 'res:pip', 'res:thrand']),
+            );
         });
     });
 

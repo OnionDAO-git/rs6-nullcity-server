@@ -328,6 +328,7 @@ describe('Spark evidence integration', () => {
         const state = runtimeState();
         state.tick = 130;
         state.lastIdleInitiativeTick = 120;
+        state.lastIdleInitiativeAt = new Date().toISOString();
         const spark = new Spark(heroSoul(), state, memory(), llm, { evidence: builder });
 
         const result = await spark.tick({ tick: 131, events: [] });
@@ -343,6 +344,41 @@ describe('Spark evidence integration', () => {
                 expect.objectContaining({ kind: 'end_tick', reason: 'tick_complete' }),
             ]),
         );
+    });
+
+    it('uses visible idle initiative after long wall-clock waits even when resident ticks barely advanced', async () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-05-25T05:15:00.000Z'));
+        try {
+            const { builder, trajectoryPath } = evidence();
+            const llm = {
+                complete: jest.fn(async () => ({
+                    text: JSON.stringify({}),
+                    nooped: true,
+                })),
+            } as unknown as LlmClient;
+            const state = runtimeState();
+            state.tick = 130;
+            state.lastIdleInitiativeTick = 120;
+            state.lastIdleInitiativeAt = '2026-05-25T05:13:00.000Z';
+            const spark = new Spark(heroSoul(), state, memory(), llm, { evidence: builder });
+
+            const result = await spark.tick({ tick: 131, events: [] });
+
+            expect(result.cause).toBe('empty_completion_idle_initiative');
+            expect(result.actions.map(action => action.kind)).toEqual(['say', 'move_to']);
+            expect(state.lastIdleInitiativeAt).toBe('2026-05-25T05:15:00.000Z');
+            expect(readJsonl(trajectoryPath)).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'decision',
+                        cause: 'empty_completion_idle_initiative',
+                        actionKinds: ['say', 'move_to'],
+                    }),
+                ]),
+            );
+        } finally {
+            jest.useRealTimers();
+        }
     });
 });
 

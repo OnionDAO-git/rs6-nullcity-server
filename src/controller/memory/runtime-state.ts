@@ -25,6 +25,7 @@ export interface RuntimeState {
     shadowedHooks?: Array<{ tick: number; id: string; priority: number; shadowedBy: string }>;
     previousIntent?: unknown;
     lastIdleInitiativeTick?: number;
+    lastIdleInitiativeAt?: string;
     lastMeaningfulProgressAt?: number;
     stuckSince?: number;
     deceased?: {

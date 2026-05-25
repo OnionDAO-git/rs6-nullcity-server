@@ -15,6 +15,12 @@ green()  { echo "${G}[GREEN]${N}  $*"; }
 section(){ echo; echo "${B}== $* ==${N}"; }
 
 HEROES=(res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand)
+hero_floor() {
+  case "$1" in
+    res-pip|res-thrand) echo 3000 ;;
+    *) echo 5000 ;;
+  esac
+}
 # Glob the full active roster: heroes + res:agent + Codex QA cohort (qa-angler, qa-banker, ...).
 # Falls back to the hardcoded heroes if the memory dir doesn't exist yet.
 # Avoids bash-4 `mapfile` so it runs under macOS default bash 3.2.
@@ -89,14 +95,15 @@ for slug in "${RESIDENTS[@]}"; do
 done
 if [[ ${#DEAD[@]} -eq 0 ]]; then green "all ${#RESIDENTS[@]} residents alive"; else red "dead/missing: ${DEAD[*]}"; fi
 
-section "5. Hero attention floors (>5000)"
+section "5. Hero attention floors"
 for slug in "${HEROES[@]}"; do
   f="data/controller/memory/${slug}/runtime-state.json"
   [[ -f "$f" ]] || { yellow "$slug: runtime-state missing"; continue; }
   att=$(python3 -c "import json; print(json.load(open('$f')).get('attention',0))" 2>/dev/null)
-  awk -v a="$att" 'BEGIN{exit !(a+0 > 5000)}' \
-    && green "$slug attention=$att" \
-    || yellow "$slug attention=$att (<5000, heading toward death)"
+  floor=$(hero_floor "$slug")
+  awk -v a="$att" -v f="$floor" 'BEGIN{exit !(a+0 >= f+0)}' \
+    && green "$slug attention=$att (floor=$floor)" \
+    || yellow "$slug attention=$att (<floor $floor, investigate attention clamp)"
 done
 
 section "6. Library index health"

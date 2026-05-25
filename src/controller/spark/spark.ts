@@ -24,6 +24,7 @@ import { type VariableDefinition, recomputeVariables } from './variables';
 
 const IDLE_INITIATIVE_FIRST_TICK = 120;
 const IDLE_INITIATIVE_INTERVAL_TICKS = 120;
+const IDLE_INITIATIVE_INTERVAL_MS = 45_000;
 
 export interface SparkTickResult {
     actions: AgentAction[];
@@ -295,10 +296,8 @@ export class Spark {
         if (this.state.tick < IDLE_INITIATIVE_FIRST_TICK) {
             return undefined;
         }
-        if (
-            this.state.lastIdleInitiativeTick !== undefined &&
-            this.state.tick - this.state.lastIdleInitiativeTick < IDLE_INITIATIVE_INTERVAL_TICKS
-        ) {
+        const nowMs = Date.now();
+        if (this.idleInitiativeCoolingDown(nowMs)) {
             return undefined;
         }
 
@@ -314,7 +313,17 @@ export class Spark {
             this.state.attention = spendForAction(this.state.attention, action.kind, this.soul.frontmatter.attentionProfile?.floor);
         }
         this.state.lastIdleInitiativeTick = this.state.tick;
+        this.state.lastIdleInitiativeAt = new Date(nowMs).toISOString();
         return { actions, cause: 'idle_initiative', nooped: false };
+    }
+
+    private idleInitiativeCoolingDown(nowMs: number): boolean {
+        const lastTick = this.state.lastIdleInitiativeTick;
+        const tickCoolingDown = lastTick !== undefined && this.state.tick - lastTick < IDLE_INITIATIVE_INTERVAL_TICKS;
+        const lastAtMs = this.state.lastIdleInitiativeAt ? Date.parse(this.state.lastIdleInitiativeAt) : Number.NaN;
+        const wallCoolingDown = Number.isFinite(lastAtMs) && nowMs - lastAtMs < IDLE_INITIATIVE_INTERVAL_MS;
+
+        return tickCoolingDown && wallCoolingDown;
     }
 
     abortInflight(cause: string): void {
