@@ -128,7 +128,13 @@ export class RuntimeStateStore {
             return this.create(resident, initialAttention, legacyKind);
         }
 
-        const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as RuntimeState;
+        let parsed: RuntimeState;
+        try {
+            parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as RuntimeState;
+        } catch {
+            this.quarantineCorruptState(statePath);
+            return this.create(resident, initialAttention, legacyKind);
+        }
         return {
             ...this.create(resident, initialAttention, legacyKind),
             ...parsed,
@@ -139,7 +145,9 @@ export class RuntimeStateStore {
     save(state: RuntimeState): void {
         const statePath = this.statePath(state.resident);
         fs.mkdirSync(path.dirname(statePath), { recursive: true });
-        fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+        const tmpPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(tmpPath, `${JSON.stringify(state, null, 2)}\n`);
+        fs.renameSync(tmpPath, statePath);
     }
 
     private create(resident: string, attention: number, legacyKind: string): RuntimeState {
@@ -167,6 +175,14 @@ export class RuntimeStateStore {
 
     private statePath(resident: string): string {
         return path.join(this.memoryRoot, residentSlug(resident), 'runtime-state.json');
+    }
+
+    private quarantineCorruptState(statePath: string): void {
+        const suffix = new Date()
+            .toISOString()
+            .replace(/[^0-9A-Za-z]+/g, '-')
+            .replace(/-$/g, '');
+        fs.renameSync(statePath, `${statePath}.corrupt-${suffix}`);
     }
 }
 

@@ -1,5 +1,7 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
+import { readFile } from 'fs/promises';
 import type { AddressInfo } from 'net';
+import path from 'path';
 import type { InferenceHealthResult } from '../llm/inference-health';
 import type { LettersStore } from '../patron/letters-store';
 import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
@@ -53,6 +55,8 @@ export interface LettersHttpServerOptions {
     health?: () => Promise<InferenceHealthResult>;
     /** Health route path. Defaults to {@link DEFAULT_HEALTH_PATH}. */
     healthPath?: string;
+    /** Static public page root. Defaults to `<cwd>/public`. */
+    staticRoot?: string;
     /**
      * When true, the wall snapshot is passed through
      * {@link redactWallSnapshot} before being returned: recipients are
@@ -122,13 +126,19 @@ async function handle(
     const isInboxRoute = url.pathname === routePath;
     const isWallRoute = url.pathname === wallRoutePath && options.lettersRoot !== undefined;
     const isHealthRoute = url.pathname === healthRoutePath && options.health !== undefined;
+    const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
-    if (!isInboxRoute && !isWallRoute && !isHealthRoute) {
+    if (!isInboxRoute && !isWallRoute && !isHealthRoute && !staticPagePath) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
     if (request.method !== 'GET') {
         writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
+    if (staticPagePath) {
+        await writeStaticHtml(response, staticPagePath);
         return;
     }
 
@@ -188,6 +198,38 @@ function writeJson(response: ServerResponse, status: number, payload: unknown): 
     response.end(JSON.stringify(payload));
 }
 
+async function writeStaticHtml(response: ServerResponse, filePath: string): Promise<void> {
+    try {
+        const body = await readFile(filePath, 'utf8');
+        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        response.end(body);
+    } catch (error) {
+        if (isMissingFile(error)) {
+            writeJson(response, 404, { error: 'Not Found' });
+            return;
+        }
+        throw error;
+    }
+}
+
 function normalizePath(value: string): string {
     return value.startsWith('/') ? value : `/${value}`;
+}
+
+function resolveStaticPagePath(requestPath: string, staticRoot?: string): string | undefined {
+    const publicRoot = staticRoot || path.resolve(process.cwd(), 'public');
+    const normalizedPath = normalizePath(requestPath).replace(/\/+$/, '');
+    const pagePath = normalizedPath.endsWith('/index.html') ? normalizedPath.slice(0, -'/index.html'.length) : normalizedPath;
+    switch (pagePath) {
+        case '/wall':
+            return path.join(publicRoot, 'wall', 'index.html');
+        case '/inbox':
+            return path.join(publicRoot, 'inbox', 'index.html');
+        default:
+            return undefined;
+    }
+}
+
+function isMissingFile(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
 }

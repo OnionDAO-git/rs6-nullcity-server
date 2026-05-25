@@ -262,6 +262,44 @@ describe('letters HTTP server (EVENT-D2a)', () => {
         });
     });
 
+    describe('static embassy pages', () => {
+        it('serves the wall ticker page from the documented /wall/ route', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const wallPageUrl = server.url.replace('/v1/inbox', '/wall/');
+
+            const response = await get(wallPageUrl);
+
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            expect(response.body).toContain('Null City Embassy');
+            expect(response.body).toContain('/v1/wall/snapshot');
+        });
+
+        it('serves the patron inbox page from the documented /inbox/ route', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const inboxPageUrl = server.url.replace('/v1/inbox', '/inbox/');
+
+            const response = await get(inboxPageUrl);
+
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            expect(response.body).toContain('Null City Embassy');
+            expect(response.body).toContain('/v1/inbox');
+        });
+
+        it('also accepts explicit index.html URLs for operator copy/paste', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+
+            const wall = await get(server.url.replace('/v1/inbox', '/wall/index.html'));
+            const inbox = await get(server.url.replace('/v1/inbox', '/inbox/index.html'));
+
+            expect(wall.status).toBe(200);
+            expect(inbox.status).toBe(200);
+            expect(wall.contentType).toMatch(/text\/html/);
+            expect(inbox.contentType).toMatch(/text\/html/);
+        });
+    });
+
     describe('GET /v1/health (O4)', () => {
         it('returns 404 when no health probe is configured', async () => {
             server = await startLettersHttpServer({ store, port: 0 });
