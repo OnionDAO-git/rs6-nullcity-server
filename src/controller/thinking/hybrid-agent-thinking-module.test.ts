@@ -3,6 +3,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
+import { LUMBRIDGE_STARTER_FISHING_SPOT } from '../spark/runescape-body-routines';
 import type { Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 
@@ -2355,6 +2356,44 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
         expect((result.actions[0] as { target?: unknown }).target).not.toEqual(failedPatrolTarget);
         expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('routes a stuck starter angler back toward Lumbridge fishing before generic stuck patrol', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 31920;
+        state.stuckSince = 31900;
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Cook the catch', 'Return to the river'],
+                createdAtTick: 30200,
+            },
+            lastBrainTick: 31800,
+            lastBodyTick: 31880,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 31928,
+                resident: {
+                    ...residentAt(3228, 3204),
+                    inventory: [
+                        { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                        { itemId: 315, key: 'rs:shrimps', amount: 5 },
+                    ],
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: LUMBRIDGE_STARTER_FISHING_SPOT, range: 8, cause: 'starter_fishing_seek_spot' },
+        ]);
+        expect(result.cause).toBe('starter_fishing_seek_spot');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -5495,8 +5534,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
-        expect(result.cause).toBe('starter_fishing_approach');
+        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
+        expect(result.cause).toBe('starter_fishing_net');
     });
 
     it('cooks raw starter fish on a visible fire before continuing the starter fishing loop', async () => {
@@ -5597,8 +5636,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
-        expect(result.cause).toBe('starter_fishing_approach');
+        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
+        expect(result.cause).toBe('starter_fishing_net');
         expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
@@ -5865,11 +5904,11 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'move_to', target: fishingSpot.position, range: 1, cause: 'starter_fishing_approach' }]);
-        expect(result.cause).toBe('starter_fishing_approach');
+        expect(result.actions).toEqual([{ kind: 'interact', target: fishingSpot, option: 'net', cause: 'starter_fishing_net' }]);
+        expect(result.cause).toBe('starter_fishing_net');
     });
 
-    it('does not turn a fishing-cooking goal into firemaking before any raw fish is caught', async () => {
+    it('routes toward starter fishing instead of firemaking before any raw fish is caught', async () => {
         const normalTree = { objectId: 1278, position: { x: 3243, y: 3242, level: 0 }, orientation: 0 };
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
@@ -5906,8 +5945,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([]);
-        expect(result.cause).toBe('body_step');
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: LUMBRIDGE_STARTER_FISHING_SPOT, range: 0, cause: 'starter_fishing_seek_spot' },
+        ]);
+        expect(result.cause).toBe('starter_fishing_seek_spot');
         expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 

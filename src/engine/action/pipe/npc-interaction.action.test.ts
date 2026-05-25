@@ -44,6 +44,7 @@ describe('npcInteractionActionPipe', () => {
         position,
         getMorphedNpcDetails: jest.fn(() => undefined),
         enqueueBaseTask: jest.fn(),
+        pathfinding: { walkTo: jest.fn() },
         outgoingPackets: { chatboxMessage: jest.fn() },
         walkingQueue: { movementQueued$: new Subject() },
     });
@@ -75,5 +76,6 @@ describe('npcInteractionActionPipe', () => {
 
         expect(result).toBeNull();
         expect(player.enqueueBaseTask).toHaveBeenCalledTimes(1);
+        expect(player.pathfinding.walkTo).toHaveBeenCalledWith(npc.position, {});
     });
 });

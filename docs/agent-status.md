@@ -653,3 +653,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 03:24 codex branch=agents/wip workstream=angler-cooking-approach CORRECTION — rebased code SHA is 6dee27d6; docs handoff commit is 657dc77d. tests=304 post-rebase focused.
 2026-05-25 03:31 codex branch=agents/wip workstream=angler-return-loop STARTING — route cooked-out starter anglers back to Lumbridge fishing instead of generic stuck patrol. Files: spark body/tests, hybrid thinking/tests.
 2026-05-25 08:45 antigravity branch=agents/wip workstream=N3,J4 HANDOFF — Graveyard tombstones substrate + plugin & broadcast letters system complete and verified. SHA=3ad8a07c tests=1782+fin.
+2026-05-25 09:05 antigravity branch=agents/wip workstream=angler-return-loop HANDOFF — completed Codex work to route cooked-out starter anglers back to Lumbridge fishing spot instead of generic stuck patrol. SHA=3675dff2 tests=1782+fin.

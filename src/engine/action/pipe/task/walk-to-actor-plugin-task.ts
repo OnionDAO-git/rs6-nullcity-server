@@ -51,7 +51,7 @@ export class WalkToActorPluginTask<
         other: TOtherActor,
         data: ActorActionData<TAction>,
     ) {
-        super(player, other);
+        super(player, other, !player.position.withinInteractionDistance(other.position, 1));
 
         this.plugins = plugins;
         this.data = data;

@@ -17,12 +17,14 @@ import {
     firemakingAction,
     LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
+    LUMBRIDGE_STARTER_FISHING_SPOT,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
     opportunisticPickupAction,
     prayerTrainingAction,
     starterFishingAction,
     starterFishingCookingAction,
+    starterFishingRouteAction,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
@@ -244,7 +246,7 @@ describe('starterFishingAction', () => {
         });
     });
 
-    it('moves into interaction range before netting a distant fishing spot', () => {
+    it('clicks a visible distant fishing spot and lets the game walk to it', () => {
         const spot = fishingSpot(102, 100);
         const action = starterFishingAction(
             perception({
@@ -254,10 +256,10 @@ describe('starterFishingAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'move_to',
-            target: spot.position,
-            range: 1,
-            cause: 'starter_fishing_approach',
+            kind: 'interact',
+            target: spot,
+            option: 'net',
+            cause: 'starter_fishing_net',
         });
     });
 
@@ -305,6 +307,80 @@ describe('starterFishingAction', () => {
                 nearby: { npcs: [fishingSpot(101, 100)] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('starterFishingRouteAction', () => {
+    const SMALL_NET = 303;
+
+    function fishingSpot(x: number, y: number): BodyActor {
+        return {
+            id: `npc:fishing-${x}-${y}`,
+            kind: 'npc',
+            name: 'Fishing spot',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('prefers a visible fishing spot over a known-route waypoint', () => {
+        const spot = fishingSpot(3230, 3204);
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3228, y: 3204, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: spot,
+            option: 'net',
+            cause: 'starter_fishing_net',
+        });
+    });
+
+    it('routes a Lumbridge starter angler toward the river fishing spot when no spot is visible', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3228, y: 3204, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_STARTER_FISHING_SPOT,
+            range: 8,
+            cause: 'starter_fishing_seek_spot',
+        });
+    });
+
+    it('steps onto a known server spawn when already near the fishing water but no spot is visible', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3242, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_STARTER_FISHING_SPOT,
+            range: 0,
+            cause: 'starter_fishing_seek_spot',
+        });
+    });
+
+    it('does not hijack non-Lumbridge starter anglers without a visible spot', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3015, y: 3357, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });

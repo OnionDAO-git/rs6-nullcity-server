@@ -108,6 +108,12 @@ export const EXPLORATION_OPENABLE_OBJECT_IDS: ReadonlySet<number> = new Set([
 /** Lumbridge Castle kitchen range fallback for raw starter fish when no local fire is available. */
 export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 
+/** Canonical level-1 net fishing spot in this server's npc-spawns/fishing config. */
+export const LUMBRIDGE_STARTER_FISHING_SPOT: BodyPos = { x: 3241, y: 3242, level: 0 };
+
+/** Secondary fixed net/bait spot in this server's Lumbridge fishing spawn config. */
+export const LUMBRIDGE_STARTER_FISHING_SPOTS: ReadonlyArray<BodyPos> = [LUMBRIDGE_STARTER_FISHING_SPOT, { x: 3239, y: 3244, level: 0 }];
+
 /** Reachable castle entry used when west-side kitchen doors are visible but not pathable. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY: BodyPos = { x: 3217, y: 3218, level: 0 };
 
@@ -119,6 +125,12 @@ export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPEN_DOOR_IDS: ReadonlySet<number> =
 
 /** Range close enough for a raw-fish use action against the fallback kitchen range. */
 export const COOKING_RANGE_APPROACH_RADIUS = 1;
+
+/** Route radius for getting close enough to reveal Lumbridge river Fishing spots. */
+export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = 8;
+
+/** Conservative guard so the Lumbridge waypoint only claims nearby starter-area anglers. */
+export const STARTER_FISHING_ROUTE_MAX_DISTANCE = 128;
 
 /** Visible door/gate radius considered useful for reaching a cooking heat source. */
 export const COOKING_ROUTE_OPENABLE_MAX_DISTANCE = 8;
@@ -446,11 +458,62 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
         return undefined;
     }
 
-    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
-        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'starter_fishing_approach' };
+    return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
+}
+
+/**
+ * Continue the starter fishing loop even when the spot has fallen out of
+ * perception after cooking. The visible-spot action remains authoritative;
+ * this only routes Lumbridge-area anglers back toward the server river
+ * spot so they can rediscover a net-capable NPC instead of generic patrolling.
+ */
+export function starterFishingRouteAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const visibleSpotAction = starterFishingAction(perception);
+    if (visibleSpotAction) {
+        return visibleSpotAction;
     }
 
-    return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
+    const here = perception.resident?.position;
+    if (!here || !hasSmallFishingNet(perception)) {
+        return undefined;
+    }
+
+    const target = nearestStarterFishingSearchPoint(here);
+    const routeDistance = target ? distance(here, target) : Number.POSITIVE_INFINITY;
+    if (!target || here.level !== target.level || routeDistance > STARTER_FISHING_ROUTE_MAX_DISTANCE) {
+        return undefined;
+    }
+
+    if (routeDistance > STARTER_FISHING_SPOT_DISCOVERY_RANGE) {
+        return {
+            kind: 'move_to',
+            target,
+            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+            cause: 'starter_fishing_seek_spot',
+        };
+    }
+
+    if (routeDistance > 0) {
+        return {
+            kind: 'move_to',
+            target,
+            range: routeDistance > INTERACTION_APPROACH_RADIUS ? INTERACTION_APPROACH_RADIUS : 0,
+            cause: 'starter_fishing_seek_spot',
+        };
+    }
+
+    return {
+        kind: 'say',
+        text: 'I am at the Lumbridge fishing water and looking for a net spot.',
+        cause: 'starter_fishing_seek_spot',
+    };
+}
+
+function nearestStarterFishingSearchPoint(here: BodyPos): BodyPos | undefined {
+    const candidates = LUMBRIDGE_STARTER_FISHING_SPOTS.filter(position => position.level === here.level).sort(
+        (a, b) => distance(here, a) - distance(here, b),
+    );
+    return candidates.find(position => distance(here, position) > 0) || candidates[0];
 }
 
 /**

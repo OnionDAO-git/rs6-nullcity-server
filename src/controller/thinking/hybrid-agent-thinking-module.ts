@@ -61,6 +61,7 @@ import {
     safeCombatTarget,
     starterFishingAction,
     starterFishingCookingAction,
+    starterFishingRouteAction,
     stuckRecoveryPatrolTarget,
     usefulGroundItemPriority,
 } from '../spark/runescape-body-routines';
@@ -685,6 +686,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
         if (typeof this.options.state.stuckSince === 'number') {
             const here = perception.resident?.position;
+            const goalAction = this.starterFishingGoalAction(perception);
+            if (
+                goalAction &&
+                !moveTargetFailureCooldownActive(goalAction.action, this.cognition().targetFailureCooldowns, this.options.state.tick)
+            ) {
+                if (visibility.returnDue) {
+                    this.deferVisibilityAnchorReturn();
+                }
+                return this.preInferenceResult(goalAction.action, goalAction.cause, perception, visibility);
+            }
+
             const exploratory = explorationAction(
                 perception,
                 visibility.anchor,
@@ -966,14 +978,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }
 
-        const cookingAction = goal && isStarterFishingGoal(goal) ? this.starterFishingCookingAction(view) : undefined;
-        if (cookingAction) {
-            return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
-        }
-
-        const fishingAction = goal && isStarterFishingGoal(goal) ? starterFishingAction(view) : undefined;
-        if (fishingAction) {
-            return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
+        const starterFishing = this.starterFishingGoalAction(view);
+        if (starterFishing) {
+            return starterFishing;
         }
 
         const fireAction =
@@ -1005,6 +1012,25 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         const fallbackAnchorReturn = this.visibilityAnchorReturnAction(view, visibility);
         if (fallbackAnchorReturn) {
             return fallbackAnchorReturn;
+        }
+
+        return undefined;
+    }
+
+    private starterFishingGoalAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const goal = this.activeGoal();
+        if (!goal || !isStarterFishingGoal(goal)) {
+            return undefined;
+        }
+
+        const cookingAction = this.starterFishingCookingAction(perception);
+        if (cookingAction) {
+            return { action: cookingAction, cause: cookingAction.cause || 'starter_fishing_cooking' };
+        }
+
+        const fishingAction = starterFishingRouteAction(perception);
+        if (fishingAction) {
+            return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
         }
 
         return undefined;

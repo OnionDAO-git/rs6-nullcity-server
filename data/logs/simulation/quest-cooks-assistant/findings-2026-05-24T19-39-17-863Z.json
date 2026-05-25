@@ -1,0 +1,281 @@
+{
+    "runStartedAt": "2026-05-24T19:39:17.863Z",
+    "options": {
+        "resident": "res:cookquester",
+        "controllerId": "quest-investigator",
+        "gatewayUrl": "ws://127.0.0.1:43595/agent",
+        "durationMs": 20000,
+        "stockInventory": true,
+        "talk": true,
+        "findingsDir": "/Users/james/Code/OnionDAO/rs6-nullcity-server/data/logs/simulation/quest-cooks-assistant"
+    },
+    "summary": {
+        "totalChecks": 17,
+        "passed": 10,
+        "failed": 7,
+        "inconclusive": 0
+    },
+    "checks": [
+        {
+            "id": "engine.quest_plugin_loaded",
+            "description": "Cook's Assistant quest plugin exists in src/plugins/quests/",
+            "status": "PASS",
+            "evidence": "/Users/james/Code/OnionDAO/rs6-nullcity-server/src/plugins/quests/cooks-assistant-quest.plugin.ts exists; defines Quest id=rs:cooks_assistant with stages 0/50/complete, hooks for talk-to Cook NPC."
+        },
+        {
+            "id": "knowledge.entry_exists",
+            "description": "Knowledge retriever has a quest-cooks-assistant entry surfaced to the Brain",
+            "status": "PASS",
+            "evidence": "knowledge-retriever.ts contains entry id \"quest-cooks-assistant\" with cook coords + ingredient list."
+        },
+        {
+            "id": "perception.exposes_quest_state",
+            "description": "Resident perception payload includes a quests field the agent can read",
+            "status": "FAIL",
+            "evidence": "perception-types.ts has NO 'quest' field. The resident cannot observe its own quest stage; ingredient progress must be inferred from inventory deltas only."
+        },
+        {
+            "id": "planner.quest_goal_factory",
+            "description": "Brain planner has a canonical quest Active Goal factory (analogous to firemakingGoal)",
+            "status": "FAIL",
+            "evidence": "Brain planner has factories for firemaking, woodcutting, fishing, cooking, prayer, combat, exploration, follow — but no quest-* factory. Without one, the orchestrator cannot seed a deterministic Cook's Assistant goal; the Brain has to invent one from prose, and there is no predicate (isQuestGoal) to route it to a Body routine."
+        },
+        {
+            "id": "planner.quest_goal_predicate",
+            "description": "Brain planner has an isQuestGoal predicate to route a goal to a quest Body routine",
+            "status": "FAIL",
+            "evidence": "No isQuestGoal predicate. Even if the Brain says \"do Cook's Assistant\", nothing classifies that intent for the Body."
+        },
+        {
+            "id": "body.quest_routine",
+            "description": "Body has a quest routine that walks to the quest-giver, opens dialogue, and chooses options",
+            "status": "FAIL",
+            "evidence": "runescape-body-routines.ts has no quest routine. Body has fishing/cooking/woodcutting/firemaking/exploration loops; a quest needs dialogue choice navigation that none of these provide."
+        },
+        {
+            "id": "gateway.quest_query",
+            "description": "Agent gateway protocol has a quest-state query / event frame",
+            "status": "FAIL",
+            "evidence": "Gateway protocol has no quest frame. The controller cannot poll quest progress; the simulation can only infer it from inventory and chat deltas."
+        },
+        {
+            "id": "action.dialogue_primitives",
+            "description": "AgentAction codec supports move_to + interact talk-to + dialogue_continue + dialogue_choice",
+            "status": "PASS",
+            "evidence": "All primitives present in agentActionSchema: move_to=true, interact=true, dialogue_continue=true, dialogue_choice=true."
+        },
+        {
+            "id": "engine.cook_npc_spawned",
+            "description": "Cook NPC rs:lumbridge_castle_cook is spawned in the world",
+            "status": "PASS",
+            "evidence": "Cook spawned at 3210,3215,0 (lumbridge-general.json)."
+        },
+        {
+            "id": "gateway.reachable",
+            "description": "Agent gateway is reachable on the configured URL",
+            "status": "PASS",
+            "evidence": "Connected to ws://127.0.0.1:43595/agent as controllerId=quest-investigator."
+        },
+        {
+            "id": "resident.created",
+            "description": "Quest tester resident was created",
+            "status": "PASS",
+            "evidence": "Created res:cookquester at 3210,3216,0 with initialInventory=egg+milk+flour."
+        },
+        {
+            "id": "resident.controlled",
+            "description": "Harness can take exclusive control of the quest tester resident",
+            "status": "PASS",
+            "evidence": "connect_resident ok. Initial perception present."
+        },
+        {
+            "id": "network.action_loop",
+            "description": "At least one submitted action returned ok from the engine",
+            "status": "PASS",
+            "evidence": "Submitted 3 action(s); 3 ok, 0 not ok. First non-ok reason: n/a."
+        },
+        {
+            "id": "network.cook_in_perception",
+            "description": "The Cook NPC appeared in the resident perception while observed",
+            "status": "PASS",
+            "evidence": "Saw Cook at 3207,3215,0. Final chebyshev distance: 1."
+        },
+        {
+            "id": "network.inventory_pre_stock_present",
+            "description": "Quest ingredients (egg, milk, flour) appeared in the resident inventory",
+            "status": "PASS",
+            "evidence": "Final inventory ingredient flags: egg=true, milk=true, flour=true. Pre-stocking was enabled — missing items indicate create_resident.initialInventory dropped them."
+        },
+        {
+            "id": "network.ingredient_drain_observed",
+            "description": "After talking to the Cook, an item_lost event drained at least one quest ingredient",
+            "status": "FAIL",
+            "evidence": "Quest-ingredient events observed: 0. If pre-stock+talk were both enabled and the Cook accepted ingredients, we should see item_lost events for itemIds {1944,1927,1933}. Their absence suggests either: (a) the talk-to never opened the right dialogue branch, (b) the dialogue completed but the engine's hand-off path was not exercised by dialogue_continue alone, or (c) the dialogue requires specific dialogue_choice optionIndex values we did not select."
+        },
+        {
+            "id": "network.quest_chat_observed",
+            "description": "Quest-related chat (Cook dialogue lines) was observed in perception",
+            "status": "FAIL",
+            "evidence": "No quest-related chat seen across 2 captured chat message(s). If talk-to opened the dialogue, the Cook's lines may not be surfaced as chat events to the agent layer — they likely render as interface widgets the gateway does not relay."
+        }
+    ],
+    "observed": {
+        "perceptionTicks": 35,
+        "events": [
+            {
+                "tick": 91588,
+                "event": {
+                    "kind": "arrived"
+                }
+            },
+            {
+                "event": {
+                    "kind": "arrived"
+                }
+            },
+            {
+                "tick": 91603,
+                "event": {
+                    "kind": "chat",
+                    "from": {
+                        "id": "resident:res:hans",
+                        "kind": "resident",
+                        "name": "res:hans",
+                        "position": {
+                            "x": 3221,
+                            "y": 3217,
+                            "level": 0
+                        },
+                        "hpFraction": 1
+                    },
+                    "text": "Still here as Hans; getting my bearings near my post.",
+                    "to": "public"
+                }
+            },
+            {
+                "event": {
+                    "kind": "chat",
+                    "from": {
+                        "id": "resident:res:hans",
+                        "kind": "resident",
+                        "name": "res:hans",
+                        "position": {
+                            "x": 3221,
+                            "y": 3217,
+                            "level": 0
+                        },
+                        "hpFraction": 1
+                    },
+                    "text": "Still here as Hans; getting my bearings near my post.",
+                    "to": "public"
+                }
+            }
+        ],
+        "actionsSubmitted": [
+            {
+                "action": {
+                    "kind": "move_to",
+                    "target": {
+                        "x": 3207,
+                        "y": 3214,
+                        "level": 0
+                    }
+                },
+                "requestId": "sim-1779651557888-5"
+            },
+            {
+                "action": {
+                    "kind": "move_to",
+                    "target": {
+                        "x": 3207,
+                        "y": 3214,
+                        "level": 0
+                    }
+                },
+                "requestId": "sim-1779651558193-6"
+            },
+            {
+                "action": {
+                    "kind": "interact",
+                    "target": {
+                        "id": "npc:85",
+                        "kind": "npc",
+                        "key": "rs:lumbridge_castle_cook",
+                        "name": "Cook",
+                        "position": {
+                            "x": 3207,
+                            "y": 3214,
+                            "level": 0
+                        }
+                    },
+                    "option": "talk-to"
+                },
+                "requestId": "sim-1779651558795-7"
+            }
+        ],
+        "actionResults": [
+            {
+                "requestId": "sim-1779651557888-5",
+                "result": {
+                    "ok": true
+                }
+            },
+            {
+                "requestId": "sim-1779651558193-6",
+                "result": {
+                    "ok": true
+                }
+            },
+            {
+                "requestId": "sim-1779651558795-7",
+                "result": {
+                    "ok": true
+                }
+            }
+        ],
+        "chatMessages": [
+            {
+                "tick": 91603,
+                "text": "Still here as Hans; getting my bearings near my post."
+            },
+            {
+                "text": "Still here as Hans; getting my bearings near my post."
+            }
+        ],
+        "inventorySnapshots": [
+            {
+                "tick": 91583,
+                "items": [
+                    {
+                        "slot": 0,
+                        "itemId": 1944,
+                        "amount": 1
+                    },
+                    {
+                        "slot": 1,
+                        "itemId": 1927,
+                        "amount": 1
+                    },
+                    {
+                        "slot": 2,
+                        "itemId": 1933,
+                        "amount": 1
+                    }
+                ]
+            }
+        ],
+        "cookSeen": true,
+        "finalInventoryHasQuestItems": {
+            "egg": true,
+            "milk": true,
+            "flour": true
+        },
+        "cookPosition": {
+            "x": 3207,
+            "y": 3215,
+            "level": 0
+        },
+        "distanceToCookFinal": 1
+    },
+    "runFinishedAt": "2026-05-24T19:39:38.200Z"
+}
