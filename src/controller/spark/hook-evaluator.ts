@@ -1,5 +1,6 @@
 import type { RuntimeState } from '../memory/runtime-state';
 import type { HookDefinition } from './hooks';
+import { matchEventKind } from '../perception/event-matcher';
 
 export interface FiredHook {
     id: string;
@@ -106,7 +107,8 @@ function hasEventKind(value: unknown, kind: string): boolean {
     if (!isRecord(value)) {
         return false;
     }
-    if (value.kind === kind || value.type === kind || value.event === kind) {
+    const actualKind = String(value.kind || value.type || value.event || '');
+    if (actualKind && matchEventKind(actualKind, kind)) {
         return true;
     }
     return Object.values(value).some(item => Array.isArray(item) && item.some(child => hasEventKind(child, kind)));
