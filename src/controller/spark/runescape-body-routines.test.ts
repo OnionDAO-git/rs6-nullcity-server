@@ -15,6 +15,7 @@ import {
     explorationObjectCooldownKey,
     explorationPatrolCooldownKey,
     firemakingAction,
+    LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
@@ -437,7 +438,7 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
-    it('opens a visible castle entrance door instead of walking onto the door tile', () => {
+    it('approaches a visible castle entrance door before opening it from a distance', () => {
         const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
         const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
         const castleDoor = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
@@ -449,14 +450,14 @@ describe('starterFishingCookingAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'interact',
-            target: castleDoor,
-            option: 'open',
+            kind: 'move_to',
+            target: castleDoor.position,
+            range: 1,
             cause: 'starter_fishing_open_cooking_route',
         });
     });
 
-    it('uses the range when the castle entrance is already open', () => {
+    it('approaches the range when the castle entrance is already open but the range is distant', () => {
         const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
         const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
         const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
@@ -468,10 +469,27 @@ describe('starterFishingCookingAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'use_item_on',
-            itemSlot: 0,
-            target: range,
-            cause: 'starter_fishing_cook_catch',
+            kind: 'move_to',
+            target: range.position,
+            range: 1,
+            cause: 'starter_fishing_find_range',
+        });
+    });
+
+    it('routes southern Lumbridge range approaches through the castle entrance', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3209, y: 3202, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
         });
     });
 
@@ -487,9 +505,9 @@ describe('starterFishingCookingAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'interact',
-            target: closedCastleDoor,
-            option: 'open',
+            kind: 'move_to',
+            target: closedCastleDoor.position,
+            range: 1,
             cause: 'starter_fishing_open_cooking_route',
         });
     });
@@ -508,6 +526,24 @@ describe('starterFishingCookingAction', () => {
             kind: 'interact',
             target: door,
             option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('approaches a visible cooking route door before opening it from a distance', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 108, y: 100, level: 0 } };
+        const door = { objectId: KITCHEN_DOOR, position: { x: 104, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: door.position,
+            range: 1,
             cause: 'starter_fishing_open_cooking_route',
         });
     });
@@ -612,6 +648,20 @@ describe('starterFishingCookingAction', () => {
             target: LUMBRIDGE_CASTLE_RANGE,
             range: 1,
             cause: 'starter_fishing_find_range',
+        });
+    });
+
+    it('routes southern fallback range approaches through the castle entrance when no heat is visible', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3209, y: 3202, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
         });
     });
 
