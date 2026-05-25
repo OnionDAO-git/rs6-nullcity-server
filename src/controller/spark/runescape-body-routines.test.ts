@@ -744,6 +744,40 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
+    it('routes river anglers to the castle entrance instead of opening unrelated doors near the river', () => {
+        const riverDoor = { objectId: KITCHEN_DOOR, position: { x: 3230, y: 3235, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3229, y: 3235, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [riverDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('keeps river anglers on the castle entrance route when an unrelated door is adjacent', () => {
+        const adjacentRiverDoor = { objectId: KITCHEN_DOOR, position: { x: 3226, y: 3223, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3226, y: 3223, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [adjacentRiverDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
     it('opens the castle entrance door when the cooking route reaches it', () => {
         const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
         const door = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
@@ -833,7 +867,7 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
-    it('walks toward Lumbridge Castle range when raw fish are carried without visible heat or logs', () => {
+    it('routes river anglers toward the castle entrance when raw fish are carried without visible heat or logs', () => {
         const action = starterFishingCookingAction(
             perception({
                 resident: { position: { x: 3240, y: 3244, level: 0 }, inventory: [item(RAW_SHRIMP)] },
@@ -841,9 +875,9 @@ describe('starterFishingCookingAction', () => {
         );
         expect(action).toEqual({
             kind: 'move_to',
-            target: LUMBRIDGE_CASTLE_RANGE,
-            range: 1,
-            cause: 'starter_fishing_find_range',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
         });
     });
 

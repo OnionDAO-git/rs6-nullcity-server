@@ -145,6 +145,9 @@ export const COOKING_ROUTE_OPENABLE_MAX_DISTANCE = 8;
 /** Visible radius for clicking the large Lumbridge Castle entry instead of walking onto its blocked tile. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPENABLE_MAX_DISTANCE = 18;
 
+/** Conservative radius for routing starter anglers from the river back to Lumbridge Castle's south entrance. */
+export const LUMBRIDGE_CASTLE_KITCHEN_ROUTE_MAX_DISTANCE = 32;
+
 /** Farthest nearby log the cooking routine will grab to make its own fire. */
 export const COOKING_LOG_PICKUP_MAX_DISTANCE = 8;
 
@@ -275,6 +278,13 @@ function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPercept
         return undefined;
     }
 
+    const shouldPrioritizeCastleEntry =
+        shouldRouteViaLumbridgeKitchenEntry(here, target) &&
+        (here.x > LUMBRIDGE_CASTLE_KITCHEN_ENTRY.x || here.y > LUMBRIDGE_CASTLE_KITCHEN_ENTRY.y);
+    if (shouldPrioritizeCastleEntry) {
+        return lumbridgeKitchenEntryRouteAction(perception, here, true);
+    }
+
     const adjacentOpenable = (perception.nearby?.objects || [])
         .filter(
             candidate =>
@@ -292,7 +302,23 @@ function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPercept
         return undefined;
     }
 
+    return lumbridgeKitchenEntryRouteAction(perception, here);
+}
+
+function lumbridgeKitchenEntryRouteAction(
+    perception: BodyHybridPerception,
+    here: BodyPos,
+    continueThroughOpenEntry = false,
+): AgentAction | undefined {
     if (isLumbridgeCastleKitchenEntryOpen(perception)) {
+        if (continueThroughOpenEntry && distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) > 0) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+                range: 0,
+                cause: 'starter_fishing_reach_castle_entrance',
+            };
+        }
         return undefined;
     }
 
@@ -347,9 +373,7 @@ function shouldRouteViaLumbridgeKitchenEntry(here: BodyPos, target: BodyPos): bo
     return (
         isLumbridgeKitchenTarget(target) &&
         here.level === LUMBRIDGE_CASTLE_KITCHEN_ENTRY.level &&
-        here.x <= LUMBRIDGE_CASTLE_KITCHEN_ENTRY.x &&
-        here.y <= LUMBRIDGE_CASTLE_KITCHEN_ENTRY.y &&
-        distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPENABLE_MAX_DISTANCE
+        distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= LUMBRIDGE_CASTLE_KITCHEN_ROUTE_MAX_DISTANCE
     );
 }
 

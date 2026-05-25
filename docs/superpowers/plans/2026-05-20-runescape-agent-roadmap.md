@@ -118,6 +118,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Repair 2026-05-25 on `agents/wip`: live qa-angler had a full pack of cooked/burnt shrimp; inventory-full prevented the fishing plugin from queueing work, while burnt shrimp was not registered so it could not be dropped. Starter fishing now clears burnt starter fish, eats cooked starter fish when needed, says when blocked, and registers burnt shrimp/fish config.
   - Repair 2026-05-25 on `agents/wip`: dropped burnt starter fish is no longer considered useful ground loot or emergency food, preventing beacons like "Next: pick up burnt shrimp" immediately after the resident intentionally discarded it.
   - Repair 2026-05-25 on `agents/wip`: starter-fishing beacons now say to cook carried raw fish before advertising another fishing click, so observers can tell when the resident is in the cooking half of the loop.
+  - Repair 2026-05-25 on `agents/wip`: river-side starter anglers with raw fish now route through the known Lumbridge Castle south entrance before chasing the kitchen range, avoiding unrelated river doors that previously trapped the cooking half of the loop.
 
 - `[x]` **B4: Extract Brain goal planner.**
   - Files: `src/controller/spark/runescape-brain-planner.ts`, `src/controller/spark/runescape-brain-planner.test.ts`
