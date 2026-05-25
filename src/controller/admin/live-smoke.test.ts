@@ -547,6 +547,24 @@ describe('live smoke CLI helpers', () => {
         logSpy.mockRestore();
     });
 
+    it('uses configured residents plus discovered soul residents by default to match ControllerHost desired cohort', async () => {
+        const configPath = writeControllerConfig(['res:agent']);
+        writeSoul('res:mother-anvil');
+        writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
+        writeTrajectory('res:agent', [{ tick: 119, kind: 'action_result', status: 'success' }]);
+        writeResidentState('res:mother-anvil', { tick: 120, lastMeaningfulProgressAt: 119 });
+        writeTrajectory('res:mother-anvil', [{ tick: 119, kind: 'say', text: 'Hot metal will not wait.' }]);
+        writeResidentState('res:bmk_fire_5m_deadbeef', { tick: 10 });
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+        const code = await runLiveSmokeCli(['--config', configPath, '--json']);
+
+        expect(code).toBe(0);
+        const payload = JSON.parse(String(logSpy.mock.calls.at(-1)?.[0])) as { summaries: Array<{ resident: string }> };
+        expect(payload.summaries.map(summary => summary.resident)).toEqual(['res:agent', 'res:mother-anvil']);
+        logSpy.mockRestore();
+    });
+
     function writeResidentState(resident: string, state: Record<string, unknown>): void {
         const dir = residentDir(resident);
         fs.mkdirSync(dir, { recursive: true });
@@ -582,6 +600,13 @@ describe('live smoke CLI helpers', () => {
             'utf8',
         );
         return configPath;
+    }
+
+    function writeSoul(resident: string): void {
+        const soulsDir = path.join(memoryDir, 'souls');
+        fs.mkdirSync(soulsDir, { recursive: true });
+        const slug = resident.replace(/^res:/, 'res-');
+        fs.writeFileSync(path.join(soulsDir, `${slug}.md`), `---\nname: ${resident}\narchetype: endurer\n---\n# ${resident}\n`, 'utf8');
     }
 
     function residentDir(resident: string): string {

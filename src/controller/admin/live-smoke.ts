@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { loadControllerConfig } from '../config';
 import { residentSlug } from '../memory/runtime-state';
+import { SoulLoader } from '../soul/soul-loader';
 
 export type LiveSmokeStatus = 'ok' | 'warn' | 'missing';
 
@@ -258,7 +259,14 @@ export async function runLiveSmokeCli(argv: string[]): Promise<number> {
         const options = parseLiveSmokeCliArgs(argv);
         const config = !options.memoryDir || options.residents.length === 0 ? loadControllerConfig(options.configPath) : undefined;
         const memoryDir = options.memoryDir || config?.memory.dir || 'data/controller/memory';
-        const residents = options.residents.length > 0 ? options.residents : options.memoryDir ? undefined : config?.residents;
+        const residents =
+            options.residents.length > 0
+                ? options.residents
+                : options.memoryDir
+                  ? undefined
+                  : config
+                    ? desiredResidentsFromConfig(config)
+                    : undefined;
         const summaries =
             options.observeSeconds > 0
                 ? await observeLiveResidents({
@@ -296,6 +304,19 @@ export async function runLiveSmokeCli(argv: string[]): Promise<number> {
         console.error(`[controller:smoke] ${error instanceof Error ? error.message : String(error)}`);
         return 1;
     }
+}
+
+function desiredResidentsFromConfig(config: ReturnType<typeof loadControllerConfig>): string[] {
+    const residents = new Set(config.residents);
+    try {
+        for (const name of new SoulLoader(config.souls.dir).listResidentNames()) {
+            residents.add(name);
+        }
+    } catch {
+        // Fall back to configured residents; smoke should still run if an
+        // operator points at an older config without a readable SOUL dir.
+    }
+    return [...residents];
 }
 
 export function formatLiveSmokeSummary(memoryDir: string, summaries: LiveSmokeSummary[]): string {
