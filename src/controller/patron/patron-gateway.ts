@@ -265,12 +265,7 @@ export class PatronGateway {
      * an `offerTo` (since no Shards changed hands) but still enough that the
      * 4th witness-without-a-prior-offer pushes a patron over `acquaintance`.
      */
-    async witnessAt(
-        humanId: string,
-        landmarkId: string,
-        residentName?: string,
-        amount: number = 3,
-    ): Promise<PatronEventOutcome> {
+    async witnessAt(humanId: string, landmarkId: string, residentName?: string, amount: number = 3): Promise<PatronEventOutcome> {
         const now = this.resolveTime();
         const nowString = now.toISOString();
         const eventId = `witness-${humanId}-${landmarkId}-${now.getTime()}`;
@@ -349,11 +344,7 @@ export class PatronGateway {
      * @returns event metadata including `eventId` and no `standingDelta`
      *   (ask is a "free" signal — no Shards moved, no standing bump).
      */
-    async askResident(
-        humanId: string,
-        residentName: string,
-        question: string,
-    ): Promise<PatronEventOutcome> {
+    async askResident(humanId: string, residentName: string, question: string): Promise<PatronEventOutcome> {
         if (!humanId || !residentName || !question || question.trim().length === 0) {
             // E31 / HD-037 HIGH-1: ask has no amount; route empty args to
             // 'invalid_input' instead of misappropriating 'invalid_amount'.
@@ -369,8 +360,10 @@ export class PatronGateway {
         // to keep timeline + future prompt envelope bounded. The question
         // landing on disk forever and being re-included in every Brain prompt
         // makes a 10MB --text payload a long-term prompt-budget burden.
-        // biome-ignore lint/suspicious/noControlCharactersInRegex: Patron questions may arrive from CLI/HTTP and need control chars flattened before persistence.
-        const normalizedQuestion = String(question).replace(/[\x00-\x1F\x7F]/g, ' ').slice(0, 500);
+        const normalizedQuestion = String(question)
+            // biome-ignore lint/suspicious/noControlCharactersInRegex: patron questions may arrive from CLI/HTTP and need control chars flattened before persistence.
+            .replace(/[\x00-\x1F\x7F]/g, ' ')
+            .slice(0, 500);
 
         const now = this.resolveTime();
         const nowString = now.toISOString();

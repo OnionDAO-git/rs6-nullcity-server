@@ -7,134 +7,204 @@
     <style>
         :root {
             --ink: #f5ecd6;
-            --bg: #0f0a05;
-            --bg-card: #1a120a;
-            --bg-card-fresh: #2a1f10;
+            --ink-soft: rgba(245, 236, 214, 0.7);
+            --ink-fade: rgba(245, 236, 214, 0.45);
+            --bg: #0e0905;
+            --bg-mid: #1a120a;
+            --bg-card: #1f160c;
+            --bg-card-fresh: #3a2914;
             --edge: #4f3a1c;
+            --edge-soft: rgba(79, 58, 28, 0.55);
             --accent: #d49b4a;
+            --accent-deep: #a06f2a;
             --death: #c14a3a;
-            --celebrate: #6aa64f;
-            --civic: #6a8fc4;
+            --death-deep: #6e2218;
+            --celebrate: #7eb056;
+            --celebrate-deep: #3a5d1f;
+            --civic: #7a9fd0;
+            --civic-deep: #2a4666;
+            --rule: rgba(212, 155, 74, 0.25);
         }
         * { box-sizing: border-box; }
         html, body {
             margin: 0;
-            background: var(--bg);
             color: var(--ink);
-            font-family: 'Georgia', 'Times New Roman', serif;
+            font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Georgia', serif;
             min-height: 100vh;
             overflow: hidden;
         }
         body {
+            /* layered parchment-y background: deep ink + soft warm glow + grain */
+            background:
+                radial-gradient(ellipse at 50% 0%, rgba(212, 155, 74, 0.08), transparent 60%),
+                radial-gradient(ellipse at 50% 100%, rgba(193, 74, 58, 0.05), transparent 55%),
+                linear-gradient(180deg, var(--bg) 0%, var(--bg-mid) 100%);
             display: grid;
             grid-template-rows: auto 1fr auto;
             height: 100vh;
         }
         header {
             text-align: center;
-            padding: 1.5rem 1rem 0.75rem;
+            padding: 1.75rem 1rem 1rem;
             border-bottom: 1px solid var(--edge);
+            position: relative;
         }
+        header::before, header::after {
+            content: "❦";
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--accent-deep);
+            font-size: 1.4rem;
+            opacity: 0.55;
+        }
+        header::before { left: 2.5rem; }
+        header::after { right: 2.5rem; }
         header h1 {
             margin: 0;
-            font-size: 2rem;
+            font-size: 2.25rem;
             font-weight: normal;
             font-variant: small-caps;
-            letter-spacing: 0.15em;
+            letter-spacing: 0.18em;
+            color: var(--ink);
+            text-shadow: 0 0 24px rgba(212, 155, 74, 0.15);
         }
         header .subtitle {
-            opacity: 0.65;
+            margin-top: 0.45rem;
+            color: var(--ink-soft);
             font-style: italic;
-            font-size: 0.95rem;
-            margin-top: 0.3rem;
+            font-size: 1rem;
+            letter-spacing: 0.04em;
         }
         main {
             overflow: hidden;
-            padding: 1.5rem 2rem;
+            padding: 1.5rem 2.25rem;
             display: flex;
             flex-direction: column;
             gap: 0.85rem;
+            position: relative;
         }
+        /* faint vertical "scroll edge" guides */
+        main::before, main::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: linear-gradient(180deg, transparent, var(--edge-soft) 30%, var(--edge-soft) 70%, transparent);
+        }
+        main::before { left: 1rem; }
+        main::after  { right: 1rem; }
+
         .card {
-            background: var(--bg-card);
+            background:
+                linear-gradient(90deg, rgba(212, 155, 74, 0.04), transparent 8%, transparent 92%, rgba(212, 155, 74, 0.04)),
+                var(--bg-card);
             border: 1px solid var(--edge);
-            border-radius: 4px;
-            padding: 1rem 1.25rem;
+            border-left: 3px solid var(--accent-deep);
+            border-radius: 3px;
+            padding: 0.95rem 1.4rem;
             display: grid;
             grid-template-columns: auto 1fr auto;
-            gap: 0.85rem 1rem;
+            gap: 0.6rem 1.25rem;
             align-items: baseline;
-            transition: background 600ms ease-out, opacity 600ms ease-out;
-            opacity: 0.85;
+            transition: background 700ms ease-out, opacity 700ms ease-out, border-left-color 700ms ease-out, transform 700ms ease-out;
+            opacity: 0.82;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
         }
         .card.fresh {
-            background: var(--bg-card-fresh);
+            background:
+                linear-gradient(90deg, rgba(212, 155, 74, 0.1), transparent 6%, transparent 94%, rgba(212, 155, 74, 0.1)),
+                var(--bg-card-fresh);
             opacity: 1;
+            animation: freshPulse 1.6s ease-out 2;
         }
+        @keyframes freshPulse {
+            0%   { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(212, 155, 74, 0.25); }
+            70%  { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 0 14px rgba(212, 155, 74, 0); }
+            100% { box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(212, 155, 74, 0); }
+        }
+
+        /* tier/kind badge — wax-seal feel */
         .card .kind {
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             font-variant: small-caps;
-            letter-spacing: 0.1em;
-            padding: 0.15rem 0.55rem;
-            border-radius: 2px;
+            letter-spacing: 0.14em;
+            padding: 0.2rem 0.7rem;
+            border-radius: 999px;
             white-space: nowrap;
+            box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18), 0 1px 0 rgba(255, 255, 255, 0.06);
+            text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
         }
-        .card .kind.standing { background: var(--celebrate); color: var(--bg); }
-        .card .kind.epitaph  { background: var(--death);    color: var(--ink); }
-        .card .kind.civic    { background: var(--civic);    color: var(--bg); }
+        .card .kind.standing { background: linear-gradient(180deg, var(--celebrate), var(--celebrate-deep)); color: var(--ink); border: 1px solid var(--celebrate-deep); }
+        .card .kind.epitaph  { background: linear-gradient(180deg, var(--death),     var(--death-deep));     color: var(--ink); border: 1px solid var(--death-deep);     }
+        .card .kind.civic    { background: linear-gradient(180deg, var(--civic),     var(--civic-deep));     color: var(--ink); border: 1px solid var(--civic-deep);     }
+        .card.epitaph-card   { border-left-color: var(--death); }
+        .card.civic-card     { border-left-color: var(--civic); }
+        .card.standing-card  { border-left-color: var(--celebrate); }
+
         .card .subject {
-            font-size: 1.1rem;
+            font-size: 1.18rem;
             line-height: 1.35;
+            color: var(--ink);
         }
         .card .ts {
             font-size: 0.85rem;
-            opacity: 0.55;
+            color: var(--ink-fade);
             white-space: nowrap;
             font-variant: tabular-nums;
+            letter-spacing: 0.02em;
         }
         .card .recipient {
             grid-column: 2 / 3;
-            font-size: 0.85rem;
-            opacity: 0.6;
+            font-size: 0.86rem;
+            color: var(--ink-soft);
             font-style: italic;
         }
         .card .from {
             grid-column: 3 / 4;
-            font-size: 0.85rem;
-            opacity: 0.55;
+            font-size: 0.86rem;
+            color: var(--ink-fade);
             text-align: right;
         }
+
         footer {
             border-top: 1px solid var(--edge);
-            padding: 0.75rem 2rem;
+            padding: 0.85rem 2.25rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 0.9rem;
-            opacity: 0.85;
+            font-size: 0.92rem;
+            color: var(--ink-soft);
+            background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.35));
         }
         footer .deaths {
             color: var(--death);
             font-variant: small-caps;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.1em;
+            text-shadow: 0 0 12px rgba(193, 74, 58, 0.25);
         }
         footer .asof {
-            opacity: 0.6;
+            color: var(--ink-fade);
             font-variant: tabular-nums;
+            letter-spacing: 0.02em;
         }
         .empty {
-            opacity: 0.45;
+            color: var(--ink-soft);
             text-align: center;
-            padding: 4rem 1rem;
+            padding: 4.5rem 1rem;
             font-style: italic;
+            font-size: 1.1rem;
+            letter-spacing: 0.02em;
         }
         .error {
-            color: #ffcccc;
-            background: rgba(120, 30, 30, 0.45);
+            color: #ffd6d0;
+            background: linear-gradient(180deg, rgba(110, 34, 24, 0.5), rgba(60, 18, 12, 0.4));
             border: 1px solid var(--death);
-            padding: 0.85rem 1.25rem;
-            border-radius: 2px;
-            margin: 1rem 0;
+            padding: 1rem 1.4rem;
+            border-radius: 3px;
+            margin: 1.25rem 0;
+            font-style: italic;
         }
     </style>
 </head>
@@ -183,7 +253,8 @@
 
             function renderCard(letter) {
                 const card = document.createElement('article');
-                card.className = 'card';
+                const klass = classifyKind(letter.kind);
+                card.className = 'card ' + klass + '-card';
                 const key = letterKey(letter);
                 if (!seen.has(key) && firstFetchDone) {
                     card.classList.add('fresh');
@@ -192,7 +263,7 @@
                 seen.add(key);
 
                 const kind = document.createElement('span');
-                kind.className = 'kind ' + classifyKind(letter.kind);
+                kind.className = 'kind ' + klass;
                 kind.textContent = String(letter.kind || '').replace(/_/g, ' ');
                 card.appendChild(kind);
 
