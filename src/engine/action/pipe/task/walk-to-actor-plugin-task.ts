@@ -24,6 +24,8 @@ type ActorKey = 'otherPlayer' | 'npc';
  */
 type ActorActionData<TAction extends ActorAction> = Omit<TAction, 'player' | ActorKey | 'position'>;
 
+const ACTOR_INTERACTION_PATHING_SEARCH_RADIUS = 64;
+
 /**
  * This is a task to migrate old `walkTo` item interaction actions to the new task system.
  *
@@ -51,7 +53,11 @@ export class WalkToActorPluginTask<
         other: TOtherActor,
         data: ActorActionData<TAction>,
     ) {
-        super(player, other, !player.position.withinInteractionDistance(other.position, 1));
+        const needsWalk = !player.position.withinInteractionDistance(other.position, 1);
+        super(player, other, false);
+        if (needsWalk) {
+            player.pathfinding.walkTo(other.position, { pathingSearchRadius: ACTOR_INTERACTION_PATHING_SEARCH_RADIUS });
+        }
 
         this.plugins = plugins;
         this.data = data;

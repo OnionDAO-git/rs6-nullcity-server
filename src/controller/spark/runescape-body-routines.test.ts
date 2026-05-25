@@ -352,12 +352,12 @@ describe('starterFishingRouteAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: LUMBRIDGE_STARTER_FISHING_SPOT,
-            range: 8,
+            range: 7,
             cause: 'starter_fishing_seek_spot',
         });
     });
 
-    it('steps onto a known server spawn when already near the fishing water but no spot is visible', () => {
+    it('does not path onto a known server spawn when already at bank-visible range but no spot is visible', () => {
         const action = starterFishingRouteAction(
             perception({
                 resident: { position: { x: 3242, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -366,9 +366,8 @@ describe('starterFishingRouteAction', () => {
         );
 
         expect(action).toEqual({
-            kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_SPOT,
-            range: 0,
+            kind: 'say',
+            text: 'I am at the Lumbridge fishing water and looking for a net spot.',
             cause: 'starter_fishing_seek_spot',
         });
     });

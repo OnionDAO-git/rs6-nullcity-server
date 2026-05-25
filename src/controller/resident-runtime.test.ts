@@ -12,7 +12,7 @@ import type { MemoryStore } from './memory/memory-store';
 import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
 import { LettersStore } from './patron/letters-store';
-import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
+import { ResidentRuntime, actionEffectTimeoutMs, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
 import type { ThinkingModule } from './thinking';
@@ -26,6 +26,26 @@ jest.mock('./config', () => ({
 }));
 
 describe('ResidentRuntime modules', () => {
+    it('waits long enough for distant walk-to interactions to produce effects', () => {
+        const timeoutMs = actionEffectTimeoutMs(
+            {
+                kind: 'interact',
+                option: 'net',
+                target: {
+                    id: 'npc:69',
+                    kind: 'npc',
+                    name: 'Fishing spot',
+                    position: { x: 3239, y: 3244, level: 0 },
+                },
+            },
+            {
+                resident: { position: { x: 3233, y: 3236, level: 0 } },
+            },
+        );
+
+        expect(timeoutMs).toBeGreaterThan(5_000);
+    });
+
     it('writes runtime evidence around decisions and action results', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-evidence-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-evidence-'));

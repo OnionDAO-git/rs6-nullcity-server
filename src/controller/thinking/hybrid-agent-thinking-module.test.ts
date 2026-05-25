@@ -2391,7 +2391,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: LUMBRIDGE_STARTER_FISHING_SPOT, range: 8, cause: 'starter_fishing_seek_spot' },
+            { kind: 'move_to', target: LUMBRIDGE_STARTER_FISHING_SPOT, range: 7, cause: 'starter_fishing_seek_spot' },
         ]);
         expect(result.cause).toBe('starter_fishing_seek_spot');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -5946,7 +5946,11 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: LUMBRIDGE_STARTER_FISHING_SPOT, range: 0, cause: 'starter_fishing_seek_spot' },
+            {
+                kind: 'say',
+                text: 'I am at the Lumbridge fishing water and looking for a net spot.',
+                cause: 'starter_fishing_seek_spot',
+            },
         ]);
         expect(result.cause).toBe('starter_fishing_seek_spot');
         expect(llm.complete).toHaveBeenCalledTimes(1);

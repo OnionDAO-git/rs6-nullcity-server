@@ -1596,8 +1596,18 @@ function actionEffectObserved(action: AgentAction, before: Perception | undefine
     return changedEffectSections(before, after, action).length > 0 || eventSummaries(after, action).length > 0;
 }
 
-function actionEffectTimeoutMs(action: AgentAction, before: Perception | undefined): number {
-    return isFiremakingUseItemOnItemAction(action, before) ? 15000 : 5000;
+export function actionEffectTimeoutMs(action: AgentAction, before: Perception | undefined): number {
+    if (isFiremakingUseItemOnItemAction(action, before)) {
+        return 15000;
+    }
+
+    const startPosition = before ? perceptionPosition(before) : undefined;
+    const targetPosition = actionTargetPositionForEffect(action);
+    if (targetPosition) {
+        return Math.min(MOVE_EFFECT_TIMEOUT_MAX_MS, movementEffectTimeoutMs(startPosition, targetPosition) + 5_000);
+    }
+
+    return 5000;
 }
 
 function isFiremakingUseItemOnItemAction(action: AgentAction, perception: Perception | undefined): boolean {
@@ -1639,6 +1649,27 @@ function firemakingEffectObserved(perception: Perception): boolean {
         const text = typeof eventRecord.text === 'string' ? eventRecord.text.toLowerCase() : '';
         return eventRecord.kind === 'fire_lit' || /fire catches|logs begin to burn/.test(text);
     });
+}
+
+function actionTargetPositionForEffect(action: AgentAction): Position | undefined {
+    const actionRecord = record(action);
+    const target = actionRecord.target;
+    if (!target || typeof target !== 'object') {
+        return undefined;
+    }
+
+    const directPosition = isPosition(target) ? target : undefined;
+    const nestedPosition = record(record(target).position);
+    const position = directPosition || nestedPosition;
+    if (typeof position.x !== 'number' || typeof position.y !== 'number') {
+        return undefined;
+    }
+
+    return {
+        x: position.x,
+        y: position.y,
+        level: typeof position.level === 'number' ? position.level : undefined,
+    };
 }
 
 function effectState(perception: Perception | undefined, action?: AgentAction): Record<string, unknown> {

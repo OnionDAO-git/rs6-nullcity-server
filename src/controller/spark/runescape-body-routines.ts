@@ -127,7 +127,9 @@ export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_OPEN_DOOR_IDS: ReadonlySet<number> =
 export const COOKING_RANGE_APPROACH_RADIUS = 1;
 
 /** Route radius for getting close enough to reveal Lumbridge river Fishing spots. */
-export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = 8;
+// Resident perception currently sees NPCs inside a 15x15 box, so dx=8 can
+// still be invisible. Stop at dx<=7 and let the next tick click the spot.
+export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = 7;
 
 /** Conservative guard so the Lumbridge waypoint only claims nearby starter-area anglers. */
 export const STARTER_FISHING_ROUTE_MAX_DISTANCE = 128;
@@ -489,15 +491,6 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
             kind: 'move_to',
             target,
             range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
-            cause: 'starter_fishing_seek_spot',
-        };
-    }
-
-    if (routeDistance > 0) {
-        return {
-            kind: 'move_to',
-            target,
-            range: routeDistance > INTERACTION_APPROACH_RADIUS ? INTERACTION_APPROACH_RADIUS : 0,
             cause: 'starter_fishing_seek_spot',
         };
     }
