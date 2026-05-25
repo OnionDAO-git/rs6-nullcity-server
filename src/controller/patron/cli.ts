@@ -9,7 +9,7 @@ import { PatronGateway } from './patron-gateway';
 import { LettersStore } from './letters-store';
 import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
-import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
+import { LibraryUpdater } from '../evidence';
 import { STANDING_TIERS } from './standing-ledger';
 
 export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | 'checkin' | 'referral' | 'balance' | 'standing' | '';
@@ -289,9 +289,9 @@ interface ResidentRuntimeBundle {
 /**
  * Build the patron-CLI "mock runtime" sandbox used by every verb that targets
  * a specific resident (offer / ask / witness). This is a thin wrapper around
- * the SoulLoader + RuntimeStateStore + EvidenceStore stack that the
- * ControllerHost normally wires together - extracted so the four verbs share
- * the same wiring instead of each rebuilding it ad-hoc.
+ * the SoulLoader + RuntimeStateStore + LibraryUpdater stack used by staff CLI
+ * flows. It intentionally does not start a resident evidence session: the
+ * running controller owns live trajectory/current pointers.
  */
 function buildResidentBundle(
     options: PatronCliOptions,
@@ -320,14 +320,10 @@ function buildResidentBundle(
     const legacyKind = soul.frontmatter.archetype ?? 'default';
     const state = stateStore.load(residentName, initialAttention, legacyKind);
 
-    const evidenceStore = new EvidenceStore(residentName, config.memory.dir);
-    const sessionId = `cli-patron-${verbTag}-${Date.now()}`;
-    evidenceStore.beginSession(sessionId, soul.sourcePath || 'unknown-soul');
-
     const evidence = {
-        store: evidenceStore,
-        sessionId,
-        trajectory: new TrajectoryBuilder(evidenceStore),
+        trajectory: {
+            recordPatron: () => undefined,
+        },
         library: new LibraryUpdater(residentName, config.memory.dir),
     };
 

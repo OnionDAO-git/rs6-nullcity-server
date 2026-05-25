@@ -506,7 +506,9 @@ Safe public module facade building blocks are implemented, but the public member
 **Purpose:** IRL June 1 surfaces and their in-game counterparts. Most owned by Dev (dashboard) or shared with v2 (staff scanner, print queue), but rs6 needs its own placement decisions. Spec: `docs/superpowers/specs/2026-05-22-embassy-and-event-design.md`.
 
 - `[ ]` **N1: Pick the rs6 embassy POI in-game.** Location for handler interaction, ritual redemption, standing display.
-- `[ ]` **N2: Wall-map projection coordination.** Decide whether rs6 events feed v2's wall ticker or rs6 gets its own wall view. Coordinate with Dev.
+- `[~]` **N2: Wall-map projection coordination.** Decide whether rs6 events feed v2's wall ticker or rs6 gets its own wall view. Coordinate with Dev.
+  - Started 2026-05-25 on `agents/wip`: Codex is codifying the rs6-local patron proof path with an admin smoke that verifies grant → offer → private inbox → redacted public wall snapshot.
+  - Partial 2026-05-25 on `agents/wip`: rs6-local proof path is covered by `npm run patron:smoke`, including HTTP inbox and redacted wall snapshot checks. Remaining: explicit Dev decision on whether this replaces or feeds the v2 wall ticker.
 - `[x]` **N3: In-game graveyard zone.** Tombstones examinable for name/faction/epitaph/cause/ticks-lived. Mirror on dashboard library page.
   - Completed 2026-05-25 on `agents/wip`: Tombstones dynamically spawned in Lumbridge graveyard (`objectId: 402`) and refreshed every 500 ticks. Tombstone examination/reading displays formatted biography message `<name>, <faction>. <epitaph>. Lived <N> ticks. Died of <cause>.` using coordinate lookup.
 - `[ ]` **N4: IRL graveyard wall at the embassy.** Printed epitaphs at the physical embassy; refresh cadence + printing pipeline.

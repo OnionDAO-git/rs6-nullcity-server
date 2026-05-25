@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
+import { EvidenceStore } from '../evidence';
 import { findRecentSay, parsePatronCliArgs, registerPatronInConfig, runPatronCli } from './cli';
 
 describe('Patron CLI', () => {
@@ -370,6 +371,40 @@ describe('Patron CLI', () => {
             expect(firstLetter.kind).toBe('standing_tier_crossed');
             expect(firstLetter.recipient).toBe('james');
             expect(firstLetter.body).toMatch(/james/);
+
+            logSpy.mockRestore();
+        });
+
+        it('does not steal the resident active evidence pointer from a running controller session', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const liveStore = new EvidenceStore('res:pip', memoryDir);
+            const liveSession = liveStore.beginSession('local-live-res-pip', 'soul-v1');
+
+            await runPatronCli(['--grant', '--human', 'james', '--amount', '50', '-c', configPath]);
+            const code = await runPatronCli(['--offer', '--human', 'james', '--resident', 'pip', '--amount', '10', '-c', configPath]);
+
+            expect(code).toBe(0);
+            expect(readCurrentTarget(path.join(memoryDir, 'res-pip', 'evidence', 'trajectory'))).toBe(
+                path.basename(liveSession.trajectoryPath),
+            );
+            expect(readCurrentTarget(path.join(memoryDir, 'res-pip', 'evidence', 'progress'))).toBe(
+                path.basename(liveSession.progressPath),
+            );
+            const index = JSON.parse(fs.readFileSync(path.join(memoryDir, 'res-pip', 'evidence', 'index.json'), 'utf8'));
+            expect(index.currentSessionId).toBe('local-live-res-pip');
+            expect(index.sessions.some((session: { sessionId?: string }) => session.sessionId?.startsWith('cli-patron-offer-'))).toBe(
+                false,
+            );
+
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            const patronEvents = fs
+                .readFileSync(timelinePath, 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map(line => JSON.parse(line))
+                .filter((entry: { kind?: string }) => entry.kind === 'patron_gift');
+            expect(patronEvents).toHaveLength(1);
 
             logSpy.mockRestore();
         });
@@ -750,3 +785,12 @@ describe('Patron CLI', () => {
         });
     });
 });
+
+function readCurrentTarget(dir: string): string {
+    const currentPath = path.join(dir, 'current');
+    try {
+        return fs.readlinkSync(currentPath);
+    } catch {
+        return fs.readFileSync(currentPath, 'utf8').trim();
+    }
+}
