@@ -710,5 +710,6 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 10:57 codex branch=agents/wip workstream=O10-SOUL-COHORT HANDOFF - default controller:smoke now checks config+SOUL desired cohort; live 45s saw 23 OK. SHA=85d8fe37 tests=22+fin1888+build+live45 collision=none.
 2026-05-25 16:05 antigravity branch=agents/wip workstream=HD-048 STARTING — resolve fake timer leak in spark-evidence.test.ts and run HD-048 smoke tests.
 2026-05-25 16:10 antigravity branch=agents/wip workstream=HD-048 HANDOFF — resolved fake timer leak in spark-evidence.test.ts. SHA=8775108b tests=1888+fin. all 23 residents OK in smoke check.
+2026-05-25 16:08 claude branch=agents/wip workstream=PILLAR3-FACTION-ROSTER STARTING — Add faction affiliation (id + color + displayName) to /v1/wall/snapshot resident entries so Chicago wall shows which faction each resident belongs to. Files: src/controller/letters/wall-snapshot.ts (add factionId/factionColor/factionDisplayName to ResidentSummary; update readSoulRosterSummary + readResidents to call lookupFaction), src/controller/letters/wall-snapshot.test.ts (+3 faction tests; update writeSoul helper), public/wall/index.html (faction badge in roster). Pillar 3 rotation. Collision: letters/ + public/ entirely mine; Codex last HANDOFF O10-SOUL-COHORT (live-smoke.ts, not letters/).
 
 
