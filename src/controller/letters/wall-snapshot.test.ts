@@ -420,6 +420,33 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
 
             expect(snap.residents.map(r => r.slug)).toEqual(['res-agent', 'res-hans']);
         });
+
+        it('includes live SOUL-discovered residents when configured residents are supplied', () => {
+            const soulsDir = path.join(root, 'souls');
+            writeRuntimeState(root, 'res-agent', { attention: 9000 });
+            writeRuntimeState(root, 'res-mother-anvil', { attention: 7000 });
+            writeRuntimeState(root, 'res-bmk-fire-5m-002e9qp0', { attention: 5000 });
+            writeSoul(soulsDir, 'res-mother-anvil.md', {
+                name: 'res:mother-anvil',
+                display: 'Mother Anvil',
+                archetype: 'achiever',
+                factionId: 'foundry',
+                goals: ['keep the Foundry hammering'],
+            });
+
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-25T16:00:00.000Z'),
+                residentIds: ['res:agent'],
+                soulsDir,
+            });
+
+            expect(snap.residents.map(r => r.slug)).toEqual(['res-agent', 'res-mother-anvil']);
+            expect(snap.residents[1]).toMatchObject({
+                displayName: 'Mother Anvil',
+                activeGoal: 'keep the Foundry hammering',
+                factionId: 'foundry',
+            });
+        });
     });
 });
 

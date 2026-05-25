@@ -41,8 +41,9 @@ export interface BuildWallSnapshotOptions {
     /** Cap on recentLetters length. Defaults to {@link DEFAULT_WALL_LIMIT}. */
     limit?: number;
     /**
-     * Optional configured resident ids/slugs to include in the wall roster.
-     * When omitted, every res-* runtime-state directory is considered.
+     * Optional configured resident ids/slugs to include in the wall roster. If
+     * soulsDir is supplied, SOUL-discovered residents are merged into this set
+     * so live starter/flagship souls appear while stale benchmark folders stay hidden.
      */
     residentIds?: readonly string[];
     /**
@@ -230,8 +231,13 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
         return [];
     }
 
-    const allowedSlugs = residentIds !== undefined ? new Set(residentIds.map(toResidentSlug)) : undefined;
     const soulLoader = soulsDir !== undefined ? new SoulLoader(soulsDir) : undefined;
+    const allowedSlugs = residentIds !== undefined ? new Set(residentIds.map(toResidentSlug)) : undefined;
+    if (allowedSlugs !== undefined && soulLoader !== undefined) {
+        for (const name of soulLoader.listResidentNames()) {
+            allowedSlugs.add(toResidentSlug(name));
+        }
+    }
     const summaries: ResidentSummary[] = [];
     for (const entry of entries) {
         if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
