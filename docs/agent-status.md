@@ -736,3 +736,5 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 14:00 codex branch=agents/wip workstream=M6-STOCKPILE STARTING - runtime wire. Files: src/controller/resident-runtime.ts, src/controller/resident-runtime.test.ts, src/controller/controller-host.ts, src/controller/controller-host.test.ts
 2026-05-25 14:04 codex branch=agents/wip workstream=M6-STOCKPILE STARTING - wall surfacing. Files: src/controller/letters/wall-snapshot.ts, src/controller/letters/wall-snapshot.test.ts, public/wall/index.html
 2026-05-25 19:05 antigravity branch=agents/wip workstream=M6-STOCKPILE HANDOFF — stockpile ledger substrate and runtime/wall/MCP wiring fully verified and tested. SHA=f0acf9fa tests=1938+fin collision=none.
+2026-05-25 14:05 codex branch=agents/wip workstream=M6-LIVE-QA STARTING - restart and verify stockpile/dashboard/wall live. Files: docs/agent-status.md
+2026-05-25 14:10 codex branch=agents/wip workstream=M6-LIVE-QA HANDOFF - restarted; 23 live, stockpile persisted+wall+MCP OK. SHA=f0acf9fa tests=fin1938+build+post-smoke+smoke90 collision=none.
