@@ -260,6 +260,20 @@ describe('controller config', () => {
         );
     });
 
+    it('accepts CONTROLLER_ONCE, CONTROLLER_LOG_ENVELOPE, and CONTROLLER_WALL_REDACT env variables', () => {
+        process.env.CONTROLLER_ONCE = 'true';
+        process.env.CONTROLLER_LOG_ENVELOPE = '1';
+        process.env.CONTROLLER_WALL_REDACT = 'true';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                once: true,
+                logEnvelope: true,
+                lettersHttpWallRedact: true,
+            }),
+        );
+    });
+
     it('rejects invalid letters HTTP ports (EVENT-D2c)', () => {
         delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
         expect(() => parseControllerArgs(['--letters-http-port', 'nope'])).toThrow('--letters-http-port must be an integer port');

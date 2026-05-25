@@ -67,15 +67,16 @@ const DEFAULT_CONFIG_PATH = 'controller.yml';
 
 export function parseControllerArgs(argv: string[]): ControllerCliOptions {
     let configPath = process.env.CONTROLLER_CONFIG || DEFAULT_CONFIG_PATH;
-    let once = false;
-    let logEnvelope = false;
+    let once = readEnvBoolean(process.env.CONTROLLER_ONCE, false);
+    let logEnvelope = readEnvBoolean(process.env.CONTROLLER_LOG_ENVELOPE, false);
     let mcpHttpPort = readOptionalPort(process.env.CONTROLLER_MCP_HTTP_PORT, 'CONTROLLER_MCP_HTTP_PORT');
     let mcpHttpHost = process.env.CONTROLLER_MCP_HTTP_HOST || '127.0.0.1';
     let mcpHttpPath = process.env.CONTROLLER_MCP_HTTP_PATH || '/controller/mcp';
     let lettersHttpPort = readOptionalPort(process.env.CONTROLLER_LETTERS_HTTP_PORT, 'CONTROLLER_LETTERS_HTTP_PORT');
     let lettersHttpHost = process.env.CONTROLLER_LETTERS_HTTP_HOST || '127.0.0.1';
     let lettersHttpPath = process.env.CONTROLLER_LETTERS_HTTP_PATH || '/v1/inbox';
-    let lettersHttpWallRedact = readEnvBoolean(process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT, false);
+    let lettersHttpWallRedact =
+        readEnvBoolean(process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT, false) || readEnvBoolean(process.env.CONTROLLER_WALL_REDACT, false);
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];

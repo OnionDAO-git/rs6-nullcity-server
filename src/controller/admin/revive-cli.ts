@@ -9,10 +9,13 @@ export interface ReviveCliOptions {
 }
 
 export function parseReviveCliArgs(argv: string[]): ReviveCliOptions {
+    const envForce = process.env.CONTROLLER_REVIVE_FORCE;
+    const envAttention = process.env.CONTROLLER_REVIVE_ATTENTION;
     const options: ReviveCliOptions = {
-        residentName: '',
-        force: false,
+        residentName: process.env.CONTROLLER_REVIVE_RESIDENT || '',
+        force: envForce === 'true' || envForce === '1',
         configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
+        attention: envAttention ? Number(envAttention) : undefined,
     };
 
     for (let i = 0; i < argv.length; i += 1) {

@@ -208,6 +208,41 @@ describe('live smoke CLI helpers', () => {
         });
     });
 
+    it('parses live-smoke options from environment variables', () => {
+        const oldEnv = { ...process.env };
+        process.env.CONTROLLER_CONFIG = 'controller.env.yml';
+        process.env.CONTROLLER_MEMORY_DIR = '/env/memory';
+        process.env.CONTROLLER_SMOKE_RESIDENTS = 'res:agent,res:mother-anvil';
+        process.env.CONTROLLER_SMOKE_WINDOW_TICKS = '100';
+        process.env.CONTROLLER_SMOKE_MAX_STUCK_TICKS = '50';
+        process.env.CONTROLLER_SMOKE_OBSERVE_SECONDS = '30';
+        process.env.CONTROLLER_SMOKE_POLL_MS = '500';
+        process.env.CONTROLLER_SMOKE_MIN_OBSERVED_ACTIONS = '5';
+        process.env.CONTROLLER_SMOKE_MIN_OBSERVED_SAYS = '3';
+        process.env.CONTROLLER_SMOKE_ALLOW_RECENT_VISIBLE = 'true';
+        process.env.CONTROLLER_SMOKE_JSON = '1';
+        process.env.CONTROLLER_SMOKE_FAIL_ON_WARN = 'true';
+
+        try {
+            expect(parseLiveSmokeCliArgs([])).toEqual({
+                configPath: 'controller.env.yml',
+                memoryDir: '/env/memory',
+                residents: ['res:agent', 'res:mother-anvil'],
+                windowTicks: 100,
+                maxStuckTicks: 50,
+                observeSeconds: 30,
+                pollMs: 500,
+                minObservedActions: 5,
+                minObservedSays: 3,
+                allowRecentVisible: true,
+                json: true,
+                failOnWarn: true,
+            });
+        } finally {
+            process.env = oldEnv;
+        }
+    });
+
     it('observes new visible activity over a timed live window', async () => {
         writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
         writeTrajectory('res:agent', [{ tick: 119, kind: 'action_result', status: 'success' }]);

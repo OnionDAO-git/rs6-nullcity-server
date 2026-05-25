@@ -106,18 +106,43 @@ export interface FindRecentSayOptions {
 }
 
 export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
+    const envAction = process.env.CONTROLLER_PATRON_ACTION;
+    let action: PatronCliAction = '';
+    if (envAction) {
+        if (
+            [
+                'grant',
+                'offer',
+                'ask',
+                'witness',
+                'register',
+                'bulk-register',
+                'checkin',
+                'referral',
+                'balance',
+                'standing',
+                'whisper',
+            ].includes(envAction)
+        ) {
+            action = envAction as PatronCliAction;
+        } else {
+            throw new Error(`Unknown patron action in CONTROLLER_PATRON_ACTION env variable: ${envAction}`);
+        }
+    }
+    const envKind = process.env.CONTROLLER_PATRON_KIND;
+
     const options: PatronCliOptions = {
-        action: '',
-        humanId: '',
-        amount: 0,
-        residentName: '',
-        text: '',
-        artifact: '',
-        kind: 'patron_gift',
-        referredId: '',
-        faction: 'embassy',
-        filePath: '',
-        configPath: 'controller.yml',
+        action,
+        humanId: process.env.CONTROLLER_PATRON_HUMAN || '',
+        amount: process.env.CONTROLLER_PATRON_AMOUNT ? Number(process.env.CONTROLLER_PATRON_AMOUNT) : 0,
+        residentName: process.env.CONTROLLER_PATRON_RESIDENT || '',
+        text: process.env.CONTROLLER_PATRON_TEXT || '',
+        artifact: process.env.CONTROLLER_PATRON_ARTIFACT || '',
+        kind: envKind ? assertPatronKind(envKind) : 'patron_gift',
+        referredId: process.env.CONTROLLER_PATRON_REFERRED_ID || '',
+        faction: process.env.CONTROLLER_PATRON_FACTION || 'embassy',
+        filePath: process.env.CONTROLLER_PATRON_FILE_PATH || '',
+        configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
     };
 
     for (let i = 0; i < argv.length; i += 1) {

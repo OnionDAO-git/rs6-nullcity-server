@@ -79,6 +79,24 @@ describe('revive CLI', () => {
         expect(() => parseReviveCliArgs(['--resident', 'hans', '--configg', 'wrong.yml'])).toThrow('Unknown argument --configg');
     });
 
+    it('parses options from environment variables', () => {
+        const oldEnv = { ...process.env };
+        process.env.CONTROLLER_REVIVE_RESIDENT = 'hans';
+        process.env.CONTROLLER_REVIVE_ATTENTION = '9000';
+        process.env.CONTROLLER_REVIVE_FORCE = 'true';
+        process.env.CONTROLLER_CONFIG = 'controller.env.yml';
+        try {
+            expect(parseReviveCliArgs([])).toEqual({
+                residentName: 'hans',
+                attention: 9000,
+                force: true,
+                configPath: 'controller.env.yml',
+            });
+        } finally {
+            process.env = oldEnv;
+        }
+    });
+
     it('revives a configured resident from the command line', async () => {
         const stateStore = new RuntimeStateStore(memoryDir);
         const state = stateStore.load('res:hans', 1, 'mentor');

@@ -107,20 +107,44 @@ const DEFAULT_POLL_MS = 1000;
 const MAX_TRAJECTORY_FILES = 4;
 
 export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
+    const envResidents = process.env.CONTROLLER_SMOKE_RESIDENTS || process.env.CONTROLLER_SMOKE_RESIDENT;
+    const envWindowTicks = process.env.CONTROLLER_SMOKE_WINDOW_TICKS;
+    const envMaxStuckTicks = process.env.CONTROLLER_SMOKE_MAX_STUCK_TICKS;
+    const envObserveSeconds = process.env.CONTROLLER_SMOKE_OBSERVE_SECONDS;
+    const envPollMs = process.env.CONTROLLER_SMOKE_POLL_MS;
+    const envMinObservedActions = process.env.CONTROLLER_SMOKE_MIN_OBSERVED_ACTIONS;
+    const envMinObservedSays = process.env.CONTROLLER_SMOKE_MIN_OBSERVED_SAYS;
+    const envAllowRecentVisible = process.env.CONTROLLER_SMOKE_ALLOW_RECENT_VISIBLE;
+    const envJson = process.env.CONTROLLER_SMOKE_JSON;
+    const envFailOnWarn = process.env.CONTROLLER_SMOKE_FAIL_ON_WARN;
+
     const options: LiveSmokeCliOptions = {
         configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
-        residents: [],
-        windowTicks: DEFAULT_WINDOW_TICKS,
-        maxStuckTicks: DEFAULT_MAX_STUCK_TICKS,
-        observeSeconds: DEFAULT_OBSERVE_SECONDS,
-        pollMs: DEFAULT_POLL_MS,
-        minObservedActions: 0,
-        minObservedSays: 0,
-        allowRecentVisible: false,
-        json: false,
-        failOnWarn: false,
+        memoryDir: process.env.CONTROLLER_MEMORY_DIR,
+        residents: envResidents
+            ? envResidents
+                  .split(',')
+                  .map(r => r.trim())
+                  .filter(Boolean)
+            : [],
+        windowTicks: envWindowTicks ? parsePositiveInteger(envWindowTicks, 'CONTROLLER_SMOKE_WINDOW_TICKS') : DEFAULT_WINDOW_TICKS,
+        maxStuckTicks: envMaxStuckTicks
+            ? parsePositiveInteger(envMaxStuckTicks, 'CONTROLLER_SMOKE_MAX_STUCK_TICKS')
+            : DEFAULT_MAX_STUCK_TICKS,
+        observeSeconds: envObserveSeconds
+            ? parsePositiveInteger(envObserveSeconds, 'CONTROLLER_SMOKE_OBSERVE_SECONDS')
+            : DEFAULT_OBSERVE_SECONDS,
+        pollMs: envPollMs ? parsePositiveInteger(envPollMs, 'CONTROLLER_SMOKE_POLL_MS') : DEFAULT_POLL_MS,
+        minObservedActions: envMinObservedActions
+            ? parsePositiveInteger(envMinObservedActions, 'CONTROLLER_SMOKE_MIN_OBSERVED_ACTIONS')
+            : 0,
+        minObservedSays: envMinObservedSays ? parsePositiveInteger(envMinObservedSays, 'CONTROLLER_SMOKE_MIN_OBSERVED_SAYS') : 0,
+        allowRecentVisible: envAllowRecentVisible === 'true' || envAllowRecentVisible === '1',
+        json: envJson === 'true' || envJson === '1',
+        failOnWarn: envFailOnWarn === 'true' || envFailOnWarn === '1',
     };
 
+    let hasCliResident = false;
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
         if (arg === '--config' || arg === '-c') {
@@ -140,9 +164,17 @@ export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
         } else if (arg === '--resident') {
             const next = argv[i + 1];
             if (!next) throw new Error('--resident requires a value');
+            if (!hasCliResident) {
+                options.residents = [];
+                hasCliResident = true;
+            }
             options.residents.push(next);
             i += 1;
         } else if (arg.startsWith('--resident=')) {
+            if (!hasCliResident) {
+                options.residents = [];
+                hasCliResident = true;
+            }
             options.residents.push(arg.slice('--resident='.length));
         } else if (arg === '--window-ticks') {
             const next = argv[i + 1];

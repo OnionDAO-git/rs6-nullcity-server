@@ -303,6 +303,46 @@ describe('Patron CLI', () => {
                 expect(() => parsePatronCliArgs(['--bulk-register', '--file', '/tmp/x.txt'])).not.toThrow();
             });
         });
+
+        describe('parsePatronCliArgs from environment variables', () => {
+            const originalEnv = { ...process.env };
+
+            beforeEach(() => {
+                process.env = { ...originalEnv };
+            });
+
+            afterEach(() => {
+                process.env = { ...originalEnv };
+            });
+
+            it('parses options from env variables', () => {
+                process.env.CONTROLLER_PATRON_ACTION = 'offer';
+                process.env.CONTROLLER_PATRON_HUMAN = 'james';
+                process.env.CONTROLLER_PATRON_AMOUNT = '10';
+                process.env.CONTROLLER_PATRON_RESIDENT = 'res:pip';
+                process.env.CONTROLLER_PATRON_TEXT = 'hello';
+                process.env.CONTROLLER_PATRON_ARTIFACT = 'witness-1';
+                process.env.CONTROLLER_PATRON_KIND = 'patron_witness';
+                process.env.CONTROLLER_PATRON_REFERRED_ID = 'alice';
+                process.env.CONTROLLER_PATRON_FACTION = 'ledger';
+                process.env.CONTROLLER_PATRON_FILE_PATH = 'file.txt';
+                process.env.CONTROLLER_CONFIG = 'controller.env.yml';
+
+                expect(parsePatronCliArgs([])).toEqual({
+                    action: 'offer',
+                    humanId: 'james',
+                    amount: 10,
+                    residentName: 'res:pip',
+                    text: 'hello',
+                    artifact: 'witness-1',
+                    kind: 'patron_witness',
+                    referredId: 'alice',
+                    faction: 'ledger',
+                    filePath: 'file.txt',
+                    configPath: 'controller.env.yml',
+                });
+            });
+        });
     });
 
     describe('HD-011 registerPatronInConfig', () => {

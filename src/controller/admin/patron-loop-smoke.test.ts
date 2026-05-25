@@ -4,15 +4,17 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { startLettersHttpServer, closeLettersHttpServer } from '../letters/letters-http-server';
 import { LettersStore } from '../patron/letters-store';
-import { runPatronLoopSmokeCli } from './patron-loop-smoke';
+import { parsePatronLoopSmokeArgs, runPatronLoopSmokeCli } from './patron-loop-smoke';
 
 describe('patron loop smoke CLI', () => {
+    const originalEnv = { ...process.env };
     let tempDir: string;
     let configPath: string;
     let soulsDir: string;
     let memoryDir: string;
 
     beforeEach(() => {
+        process.env = { ...originalEnv };
         tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-patron-smoke-test-'));
         soulsDir = path.join(tempDir, 'souls');
         memoryDir = path.join(tempDir, 'memory');
@@ -49,6 +51,7 @@ describe('patron loop smoke CLI', () => {
 
     afterEach(() => {
         fs.rmSync(tempDir, { recursive: true, force: true });
+        process.env = { ...originalEnv };
     });
 
     it('proves grant -> offer -> private inbox -> local redacted wall snapshot', async () => {
@@ -103,5 +106,23 @@ describe('patron loop smoke CLI', () => {
             await closeLettersHttpServer(server.server);
             logSpy.mockRestore();
         }
+    });
+
+    it('parses options from environment variables', () => {
+        process.env.CONTROLLER_CONFIG = 'controller.env.yml';
+        process.env.CONTROLLER_PATRON_SMOKE_HUMAN = 'human@onion';
+        process.env.CONTROLLER_PATRON_SMOKE_RESIDENT = 'res:hans';
+        process.env.CONTROLLER_PATRON_SMOKE_AMOUNT = '20';
+        process.env.CONTROLLER_PATRON_SMOKE_HTTP = 'true';
+        process.env.CONTROLLER_LETTERS_HTTP_BASE_URL = 'http://letters.env';
+
+        expect(parsePatronLoopSmokeArgs([])).toEqual({
+            configPath: 'controller.env.yml',
+            humanId: 'human@onion',
+            residentName: 'res:hans',
+            amount: 20,
+            http: true,
+            lettersBaseUrl: 'http://letters.env',
+        });
     });
 });

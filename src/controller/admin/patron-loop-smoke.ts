@@ -21,13 +21,19 @@ const DEFAULT_AMOUNT = 10;
 const DEFAULT_LETTERS_BASE_URL = 'http://127.0.0.1:43596';
 
 export function parsePatronLoopSmokeArgs(argv: string[]): PatronLoopSmokeOptions {
+    const envHuman = process.env.CONTROLLER_PATRON_SMOKE_HUMAN || process.env.CONTROLLER_PATRON_HUMAN;
+    const envResident = process.env.CONTROLLER_PATRON_SMOKE_RESIDENT || process.env.CONTROLLER_PATRON_RESIDENT;
+    const envAmount = process.env.CONTROLLER_PATRON_SMOKE_AMOUNT || process.env.CONTROLLER_PATRON_AMOUNT;
+    const envHttp = process.env.CONTROLLER_PATRON_SMOKE_HTTP;
+    const envLettersBaseUrl = process.env.CONTROLLER_LETTERS_HTTP_BASE_URL || process.env.CONTROLLER_PATRON_SMOKE_LETTERS_BASE_URL;
+
     const options: PatronLoopSmokeOptions = {
         configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
-        humanId: `codex-patron-smoke-${Date.now()}@onion`,
-        residentName: 'res:hans',
-        amount: DEFAULT_AMOUNT,
-        http: false,
-        lettersBaseUrl: process.env.CONTROLLER_LETTERS_HTTP_BASE_URL || DEFAULT_LETTERS_BASE_URL,
+        humanId: envHuman || `codex-patron-smoke-${Date.now()}@onion`,
+        residentName: envResident ? normalizeResidentName(envResident) : 'res:hans',
+        amount: envAmount ? parsePositiveInteger(envAmount, 'CONTROLLER_PATRON_SMOKE_AMOUNT') : DEFAULT_AMOUNT,
+        http: envHttp === 'true' || envHttp === '1',
+        lettersBaseUrl: envLettersBaseUrl || DEFAULT_LETTERS_BASE_URL,
     };
 
     for (let i = 0; i < argv.length; i += 1) {
