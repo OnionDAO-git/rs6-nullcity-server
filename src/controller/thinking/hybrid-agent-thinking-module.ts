@@ -9,6 +9,8 @@ import {
     COIN_ITEM_IDS,
     COMBAT_LOOT_MAX_DISTANCE,
     COOKING_HEAT_OBJECT_IDS,
+    EXPLORATION_PATROL_MAX_DISTANCE,
+    EXPLORATION_PATROL_STEP_DISTANCE,
     EXPLORATION_TARGET_COOLDOWN_TICKS,
     FIRE_OBJECT_IDS,
     FOOD_KEY_PATTERN,
@@ -45,12 +47,14 @@ import {
     isUsefulGroundItem,
     itemLabel,
     levelOneWoodcuttingAction,
+    localPatrolDirections,
     lowHealthRecoveryAction as bodyLowHealthRecoveryAction,
     nearestLowHealthRecoveryWaypoint,
     nearestPrayerTrainingWaypoint,
     normalizeActorId,
     npcTalkAction,
     opportunisticPickupAction,
+    patrolDirectionIndex,
     pickupItemKey,
     prayerTrainingAction,
     safeBoneSourceTarget,
@@ -825,7 +829,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         perception: HybridPerception,
         anchor?: Pos,
     ): { action: AgentAction; cause: string } | undefined {
-        const exploreAction = explorationAction(
+        let exploreAction = explorationAction(
             perception,
             anchor,
             this.options.state.resident,
@@ -834,6 +838,29 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.explorationCooldowns(),
             { interactWithOpenables: false },
         );
+        if (moveTargetFailureCooldownActive(exploreAction, this.cognition().targetFailureCooldowns, this.options.state.tick)) {
+            const here = perception.resident?.position;
+            if (!here) {
+                exploreAction = undefined;
+            } else {
+                const patrolTarget = targetFailureAwarePatrolTarget(
+                    perception,
+                    here,
+                    anchor,
+                    this.options.state.tick,
+                    this.explorationCooldowns(),
+                    this.cognition().targetFailureCooldowns,
+                );
+                exploreAction = patrolTarget
+                    ? {
+                          kind: 'move_to',
+                          target: patrolTarget,
+                          range: distance(here, patrolTarget) <= 1 ? 0 : 1,
+                          cause: 'explore_patrol',
+                      }
+                    : undefined;
+            }
+        }
         const opportunity = this.scoutingSkillOpportunityAction(perception);
         if (opportunity && shouldPreferScoutingSkillOpportunity(exploreAction)) {
             return opportunity;
@@ -3478,6 +3505,40 @@ function isStuckRecoveryAction(action: AgentAction): boolean {
     );
 }
 
+function targetFailureAwarePatrolTarget(
+    perception: HybridPerception,
+    here: Pos,
+    anchor: Pos | undefined,
+    currentTick: number,
+    explorationCooldowns: Record<string, number>,
+    targetFailureCooldowns?: Record<string, number>,
+): Pos | undefined {
+    const blockedTiles = objectOccupiedTiles(perception);
+    const baseTarget = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedTiles);
+    if (!stuckPatrolCandidateUnavailable(baseTarget, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+        return baseTarget;
+    }
+
+    let fallback: Pos | undefined;
+    for (let step = EXPLORATION_PATROL_STEP_DISTANCE; step <= EXPLORATION_PATROL_MAX_DISTANCE; step += EXPLORATION_PATROL_STEP_DISTANCE) {
+        const directions = localPatrolDirections(step);
+        const startIndex = patrolDirectionIndex(here, currentTick, directions.length);
+        const candidates = directions.map(direction => ({ x: here.x + direction.dx, y: here.y + direction.dy, level: here.level }));
+        for (let offset = 0; offset < candidates.length; offset += 1) {
+            const candidate = candidates[(startIndex + offset) % candidates.length];
+            if (stuckPatrolCandidateUnavailable(candidate, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+                continue;
+            }
+            fallback ??= candidate;
+            if (!isExplorationOnCooldown(explorationPatrolCooldownKey(candidate), explorationCooldowns, currentTick)) {
+                return candidate;
+            }
+        }
+    }
+
+    return fallback;
+}
+
 function stuckPreInferencePatrolTarget(
     perception: HybridPerception,
     here: Pos,
@@ -3532,11 +3593,11 @@ function stuckPatrolCandidateUnavailable(
 }
 
 function moveTargetFailureCooldownActive(
-    action: AgentAction,
+    action: AgentAction | undefined,
     targetFailureCooldowns: Record<string, number> | undefined,
     currentTick: number,
 ): boolean {
-    if (action.kind !== 'move_to' || !('target' in action)) {
+    if (!action || action.kind !== 'move_to' || !('target' in action)) {
         return false;
     }
     const target = positionLike(action.target);

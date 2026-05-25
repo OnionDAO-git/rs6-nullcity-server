@@ -144,6 +144,36 @@ describe('HybridAgentThinkingModule', () => {
         expect(complete).not.toHaveBeenCalled();
     });
 
+    it('avoids target-failed generated patrol coordinates during normal scouting', async () => {
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
+            throw new Error('Body inference should not gate local exploration');
+        });
+        const failedPatrolTarget = { x: 3200, y: 3197, level: 0 };
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-nearby-area',
+                description: 'Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                ttlTicks: 450,
+                createdAtTick: 50,
+            },
+            lastBrainTick: 50,
+            brainBackoffUntilTick: 650,
+            lastBodyTick: 119,
+            targetFailureCooldowns: {
+                'target:3200,3197,0': 119,
+            },
+        };
+        const agent = hybridAgent({ complete }, state);
+
+        const result = await agent.think(perception({ tick: 120, resident: residentAt(3200, 3200) }));
+
+        expect(result.cause).toBe('exploration_fallback');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'explore_patrol' }));
+        expect((result.actions[0] as { target?: unknown }).target).not.toEqual(failedPatrolTarget);
+        expect(complete).not.toHaveBeenCalled();
+    });
+
     it('switches from a completed firemaking goal into scouting instead of grinding another tree', async () => {
         const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
             throw new Error('Completed local firemaking should not need inference');
