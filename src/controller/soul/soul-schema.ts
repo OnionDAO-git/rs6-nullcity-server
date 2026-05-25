@@ -308,10 +308,11 @@ const soulSparkModuleSchema = z
         config: z.record(z.string(), z.unknown()).optional(),
     })
     .strict();
+const runtimeResidentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/, 'name must match live resident pattern res:[a-z0-9_-]{1,20}');
 
 export const soulFrontmatterSchema = z
     .object({
-        name: z.string().min(1),
+        name: runtimeResidentNameSchema,
         display: z.string().optional(),
         archetype: soulArchetypeSchema,
         voice: z

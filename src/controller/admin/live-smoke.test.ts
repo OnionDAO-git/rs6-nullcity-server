@@ -271,6 +271,34 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).not.toContain('no_observed_visible_activity');
     });
 
+    it('uses trajectory tick progress when runtime ticks are cumulative and unchanged during observation', async () => {
+        writeResidentState('res:pip', { tick: 138_252, lastMeaningfulProgressAt: 138_245, stuckSince: 138_252 });
+        writeTrajectory('res:pip', [{ tick: 21_620, kind: 'end_tick', reason: 'tick_complete', sessionId: 'current-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:pip'],
+            observeMs: 50,
+            sleep: async () => {
+                writeResidentState('res:pip', { tick: 138_252, lastMeaningfulProgressAt: 138_245, stuckSince: 138_252 });
+                writeTrajectory('res:pip', [
+                    { tick: 21_620, kind: 'end_tick', reason: 'tick_complete', sessionId: 'current-session' },
+                    { tick: 21_621, kind: 'begin_tick', sessionId: 'current-session' },
+                    {
+                        tick: 21_622,
+                        kind: 'say',
+                        text: 'Still here as Pip; getting my bearings near my post.',
+                        sessionId: 'current-session',
+                    },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.observed).toMatchObject({ startTick: 21_620, endTick: 21_622, tickDelta: 2, says: 1 });
+        expect(summary.issues).not.toContain('no_observed_tick_progress');
+    });
+
     it('observes activity across trajectory file rotation', async () => {
         writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
         writeTrajectory('res:agent', [{ tick: 119, kind: 'action_result', status: 'success' }], '20260525T012900Z-local-test.jsonl');

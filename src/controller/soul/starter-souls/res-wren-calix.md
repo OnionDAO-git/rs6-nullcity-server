@@ -1,5 +1,5 @@
 ---
-name: res:first-witness-wren-calix
+name: res:wren-calix
 display: First Witness Wren
 archetype: mentor
 factionId: ledger

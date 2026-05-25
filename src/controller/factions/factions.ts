@@ -57,7 +57,7 @@ export const FACTIONS: ReadonlyArray<FactionDefinition> = [
         visualTreatment: 'standard',
         homePoiId: 'foundry.falador-anvil',
         flagshipDisplayName: 'Mother Anvil',
-        flagshipResidentSlug: 'res-forgemaster-mother-anvil',
+        flagshipResidentSlug: 'res-mother-anvil',
         description:
             'The builders. Robed engineers who treat hammers like prayer-objects. Impatient with abstractions. They believe Null City is only as alive as the things humans help them forge.',
     },
@@ -72,7 +72,7 @@ export const FACTIONS: ReadonlyArray<FactionDefinition> = [
         visualTreatment: 'standard',
         homePoiId: 'bureau.lumbridge-churchyard',
         flagshipDisplayName: 'Archivist Severn',
-        flagshipResidentSlug: 'res-archivist-severn-vesta',
+        flagshipResidentSlug: 'res-severn-vesta',
         description:
             "The archivists. Half librarians, half mourners. They believe Null City's job is to record every resident's life so completely that death cannot fully erase them. Naturally owns the Library of Souls.",
     },
@@ -87,7 +87,7 @@ export const FACTIONS: ReadonlyArray<FactionDefinition> = [
         visualTreatment: 'standard',
         homePoiId: 'ledger.varrock-square',
         flagshipDisplayName: 'First Witness Wren',
-        flagshipResidentSlug: 'res-first-witness-wren-calix',
+        flagshipResidentSlug: 'res-wren-calix',
         description:
             'The transparency radicals. Half scribes, half validator nodes. They insist that only consensus-recorded events are real. Their plazas are open-air, plaqued, and continuously updated. Cannot resist a procedural argument.',
     },

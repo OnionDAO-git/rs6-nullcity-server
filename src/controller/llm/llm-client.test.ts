@@ -214,6 +214,41 @@ describe('LlmClient retry and endpoint pause', () => {
         );
         expect(fetchMock).toHaveBeenCalledTimes(1);
     });
+
+    it('times out queued requests against their per-request deadline before a slot opens', async () => {
+        let releaseFirst: (() => void) | undefined;
+        const firstResponse = new Promise<Response>(resolve => {
+            releaseFirst = () => resolve(completionResponse('first'));
+        });
+        const fetchMock = jest.fn().mockReturnValueOnce(firstResponse);
+        global.fetch = fetchMock;
+
+        const client = new LlmClient(
+            {
+                default: {
+                    baseUrl: 'https://llm.test',
+                    model: 'test-model',
+                    timeoutMs: 1000,
+                },
+            },
+            1,
+        );
+
+        const first = client.complete({ endpoint: 'default', prompt: 'first', timeoutMs: 1000 });
+        const queued = client.complete({ endpoint: 'default', prompt: 'queued', timeoutMs: 5 });
+
+        jest.advanceTimersByTime(6);
+
+        await expect(queued).resolves.toMatchObject({
+            text: JSON.stringify({ actions: [] }),
+            nooped: true,
+            cancelledBy: 'request_timeout',
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        releaseFirst?.();
+        await expect(first).resolves.toMatchObject({ text: 'first' });
+    });
 });
 
 function clientFor(endpoint: string): LlmClient {

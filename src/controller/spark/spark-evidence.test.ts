@@ -380,6 +380,30 @@ describe('Spark evidence integration', () => {
             jest.useRealTimers();
         }
     });
+
+    it('uses hero visible idle initiative before a 45s broad-smoke window can miss them', async () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-05-25T05:15:31.000Z'));
+        try {
+            const llm = {
+                complete: jest.fn(async () => ({
+                    text: JSON.stringify({}),
+                    nooped: true,
+                })),
+            } as unknown as LlmClient;
+            const state = runtimeState();
+            state.tick = 130;
+            state.lastIdleInitiativeTick = 120;
+            state.lastIdleInitiativeAt = '2026-05-25T05:15:00.000Z';
+            const spark = new Spark(heroSoul(), state, memory(), llm);
+
+            const result = await spark.tick({ tick: 131, events: [] });
+
+            expect(result.cause).toBe('empty_completion_idle_initiative');
+            expect(result.actions.map(action => action.kind)).toEqual(['say', 'move_to']);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
 });
 
 function runtimeState(): RuntimeState {

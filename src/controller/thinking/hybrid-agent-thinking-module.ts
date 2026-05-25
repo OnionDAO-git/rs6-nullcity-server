@@ -177,6 +177,7 @@ type HybridPerception = {
 
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
+const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const PRESENCE_BEACON_VARIETY_AFTER_TICKS = 1000;
@@ -523,7 +524,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             prompt,
             temperature: this.temperatureFor(behavior.brain, 0.7),
             thinking: behavior.brain?.thinking ?? true,
-            timeoutMs: this.timeoutFor(behavior.brain),
+            timeoutMs: this.timeoutFor(behavior.brain, DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS),
             priority: 5,
             ...(this.modelFor(behavior.brain) ? { model: this.modelFor(behavior.brain) } : {}),
         });
@@ -1865,7 +1866,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 prompt,
                 temperature: this.temperatureFor(this.behavior().brain, 0.7),
                 thinking: this.behavior().brain?.thinking ?? true,
-                timeoutMs: this.timeoutFor(this.behavior().brain),
+                timeoutMs: this.timeoutFor(this.behavior().brain, DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS),
                 priority: 5,
                 ...(this.modelFor(this.behavior().brain) ? { model: this.modelFor(this.behavior().brain) } : {}),
             });

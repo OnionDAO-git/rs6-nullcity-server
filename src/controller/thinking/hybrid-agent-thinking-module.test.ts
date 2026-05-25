@@ -420,7 +420,7 @@ describe('HybridAgentThinkingModule', () => {
         const brainRequest = llm.complete.mock.calls[0][0];
         const bodyRequest = llm.complete.mock.calls[1][0];
         expect(brainRequest.thinking).toBe(true);
-        expect(brainRequest.timeoutMs).toBeUndefined();
+        expect(brainRequest.timeoutMs).toBe(20_000);
         expect(brainRequest.prompt).toContain('/think');
         expect(brainRequest.prompt).toContain('RuneBench-style loop');
         expect(brainRequest.prompt).toContain('Measurable goals');
@@ -7378,6 +7378,7 @@ describe('HybridAgentThinkingModule', () => {
             expect(result.chat_reply_emitted).toBe(true);
             expect(result.chat_reply_kind).toBe('small_talk');
             expect(result.voiceSource).toBe('inference');
+            expect(llm.complete.mock.calls[0]?.[0].timeoutMs).toBe(20_000);
         });
 
         it('F2-T1b: Small talk prompt includes recent Library memories so the resident can answer recall questions.', async () => {

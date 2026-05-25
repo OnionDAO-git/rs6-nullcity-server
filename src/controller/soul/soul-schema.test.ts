@@ -101,6 +101,18 @@ describe('validateSoulFrontmatter modules', () => {
         ).toThrow('Invalid soul frontmatter');
     });
 
+    it('rejects resident names that the live gateway cannot create or connect', () => {
+        expect(() =>
+            validateSoulFrontmatter(
+                {
+                    name: 'res:forgemaster-mother-anvil',
+                    archetype: 'achiever',
+                },
+                '/tmp/res-forgemaster-mother-anvil.md',
+            ),
+        ).toThrow('Invalid soul frontmatter');
+    });
+
     describe('heroProfile (M-α)', () => {
         it('accepts a hero soul with tier=hero, publicName, signatureAction, and anchor', () => {
             const frontmatter = validateSoulFrontmatter(
@@ -234,7 +246,7 @@ describe('validateSoulFrontmatter modules', () => {
     describe('factionId (K3)', () => {
         it('accepts a valid Null City faction id', () => {
             const frontmatter = validateSoulFrontmatter(
-                { name: 'res:forgemaster-mother-anvil', archetype: 'achiever', factionId: 'foundry' },
+                { name: 'res:mother-anvil', archetype: 'achiever', factionId: 'foundry' },
                 '/tmp/anvil.md',
             );
             expect(frontmatter.factionId).toBe('foundry');

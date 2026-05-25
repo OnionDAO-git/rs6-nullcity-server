@@ -1,5 +1,5 @@
 ---
-name: res:archivist-severn-vesta
+name: res:severn-vesta
 display: Archivist Severn
 archetype: mentor
 factionId: bureau-of-continuity

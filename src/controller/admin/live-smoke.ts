@@ -412,6 +412,8 @@ function dominantDecisionCause(
 
 interface ObservationSnapshot {
     tick?: number;
+    runtimeTick?: number;
+    trajectoryTick?: number;
     entries: ParsedTrajectoryEntry[];
     entryKeys: Set<string>;
 }
@@ -431,8 +433,11 @@ function readResidentObservationSnapshot(memoryDir: string, resident: string): O
     const state = readJson<RuntimeStateSnapshot>(path.join(residentDir, 'runtime-state.json'));
     const stateTick = numberOrUndefined(state?.tick);
     const entries = currentSessionEntries(readTrajectoryEntries(residentDir), stateTick);
+    const trajectoryTick = latestTick(entries);
     return {
-        tick: stateTick ?? latestTick(entries),
+        tick: stateTick ?? trajectoryTick,
+        runtimeTick: stateTick,
+        trajectoryTick,
         entries,
         entryKeys: new Set(entries.map(entry => entry.entryKey)),
     };
@@ -444,14 +449,50 @@ function diffObservationSnapshots(
     durationMs: number,
 ): LiveSmokeObservedDelta {
     const counts = countTrajectoryEntries(end.entries.filter(entry => !start?.entryKeys.has(entry.entryKey)));
+    const progress = observationProgress(start, end);
     return {
         durationMs,
-        startTick: start?.tick,
-        endTick: end.tick,
-        tickDelta: start?.tick !== undefined && end.tick !== undefined ? Math.max(0, end.tick - start.tick) : undefined,
+        startTick: progress.startTick,
+        endTick: progress.endTick,
+        tickDelta: progress.tickDelta,
         ...counts,
         visibleEvents: counts.actions + counts.results + counts.says,
     };
+}
+
+function observationProgress(
+    start: ObservationSnapshot | undefined,
+    end: ObservationSnapshot,
+): { startTick?: number; endTick?: number; tickDelta?: number } {
+    let runtimeProgress: { startTick: number; endTick: number; tickDelta: number } | undefined;
+    let trajectoryProgress: { startTick: number; endTick: number; tickDelta: number } | undefined;
+    if (start?.runtimeTick !== undefined && end.runtimeTick !== undefined) {
+        runtimeProgress = {
+            startTick: start.runtimeTick,
+            endTick: end.runtimeTick,
+            tickDelta: Math.max(0, end.runtimeTick - start.runtimeTick),
+        };
+    }
+    if (start?.trajectoryTick !== undefined && end.trajectoryTick !== undefined) {
+        trajectoryProgress = {
+            startTick: start.trajectoryTick,
+            endTick: end.trajectoryTick,
+            tickDelta: Math.max(0, end.trajectoryTick - start.trajectoryTick),
+        };
+    }
+    if (runtimeProgress && runtimeProgress.tickDelta > 0) {
+        return runtimeProgress;
+    }
+    if (
+        trajectoryProgress &&
+        (!runtimeProgress || end.runtimeTick === undefined || end.runtimeTick !== end.trajectoryTick || trajectoryProgress.tickDelta === 0)
+    ) {
+        return trajectoryProgress;
+    }
+    if (runtimeProgress) {
+        return runtimeProgress;
+    }
+    return { startTick: start?.tick, endTick: end.tick };
 }
 
 function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {

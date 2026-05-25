@@ -1,5 +1,5 @@
 ---
-name: res:forgemaster-mother-anvil
+name: res:mother-anvil
 display: Mother Anvil
 archetype: achiever
 factionId: foundry

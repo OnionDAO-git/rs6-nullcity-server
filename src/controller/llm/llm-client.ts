@@ -39,12 +39,16 @@ export class LlmClient {
         if (request.signal?.aborted) {
             return cancelledResponse(request.signal);
         }
-        return this.enqueue(request, () => this.completeNow(request));
+        const deadlineAt = request.timeoutMs !== undefined ? Date.now() + request.timeoutMs : undefined;
+        return this.enqueue(request, () => this.completeNow(this.withRemainingTimeout(request, deadlineAt)), deadlineAt);
     }
 
     private async completeNow(request: LlmRequest): Promise<LlmResponse> {
         if (request.signal?.aborted) {
             return { text: '', nooped: true, cancelledBy: String(request.signal.reason || 'aborted') };
+        }
+        if (request.timeoutMs !== undefined && request.timeoutMs <= 0) {
+            return timeoutResponse();
         }
 
         const endpointKey = this.endpoints[request.endpoint] ? request.endpoint : 'default';
@@ -95,12 +99,13 @@ export class LlmClient {
         }
     }
 
-    private enqueue(request: LlmRequest, run: () => Promise<LlmResponse>): Promise<LlmResponse> {
+    private enqueue(request: LlmRequest, run: () => Promise<LlmResponse>, deadlineAt?: number): Promise<LlmResponse> {
         if (this.maxConcurrent <= 0 || this.active < this.maxConcurrent) {
             return this.runQueued(run);
         }
 
         return new Promise<LlmResponse>((resolve, reject) => {
+            const cleanupFns: Array<() => void> = [];
             const queued: QueuedRequest = {
                 priority: request.priority || 0,
                 sequence: ++this.sequence,
@@ -123,11 +128,42 @@ export class LlmClient {
                     return;
                 }
                 request.signal.addEventListener('abort', abortQueued, { once: true });
-                queued.cleanup = () => request.signal?.removeEventListener('abort', abortQueued);
+                cleanupFns.push(() => request.signal?.removeEventListener('abort', abortQueued));
+            }
+            if (deadlineAt !== undefined) {
+                const remainingMs = deadlineAt - Date.now();
+                if (remainingMs <= 0) {
+                    resolve(timeoutResponse());
+                    return;
+                }
+                const timeout = setTimeout(() => {
+                    const index = this.queue.indexOf(queued);
+                    if (index < 0) {
+                        return;
+                    }
+                    this.queue.splice(index, 1);
+                    queued.cleanup?.();
+                    resolve(timeoutResponse());
+                }, remainingMs);
+                cleanupFns.push(() => clearTimeout(timeout));
+            }
+            if (cleanupFns.length > 0) {
+                queued.cleanup = () => {
+                    for (const cleanup of cleanupFns) {
+                        cleanup();
+                    }
+                };
             }
             this.queue.push(queued);
             this.queue.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
         });
+    }
+
+    private withRemainingTimeout(request: LlmRequest, deadlineAt?: number): LlmRequest {
+        if (deadlineAt === undefined) {
+            return request;
+        }
+        return { ...request, timeoutMs: deadlineAt - Date.now() };
     }
 
     private async runQueued<T>(run: () => Promise<T>): Promise<T> {
@@ -275,6 +311,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function cancelledResponse(signal?: AbortSignal): LlmResponse {
     return { text: '', nooped: true, cancelledBy: String(signal?.reason || 'aborted') };
+}
+
+function timeoutResponse(): LlmResponse {
+    return { text: JSON.stringify({ actions: [] }), nooped: true, cancelledBy: 'request_timeout' };
 }
 
 interface QueuedRequest {

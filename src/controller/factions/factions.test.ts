@@ -1,6 +1,9 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { SoulLoader } from '../soul/soul-loader';
 import { FACTIONS, FACTIONS_BY_ID, POIS, POIS_BY_ID, TENSION_AXES, lookupFaction, type FactionId } from './factions';
+
+const GATEWAY_RESIDENT_NAME_PATTERN = /^res:[a-z0-9_-]{1,20}$/;
 
 describe('rs6 faction catalog integrity', () => {
     test('exactly four factions defined', () => {
@@ -136,6 +139,21 @@ describe('rs6 faction catalog integrity', () => {
         for (const faction of FACTIONS) {
             const soulFile = path.join(soulsDir, `${faction.flagshipResidentSlug}.md`);
             expect(fs.existsSync(soulFile)).toBe(true);
+        }
+    });
+
+    test('K3: each faction flagship slug maps to a live-loadable gateway resident name', () => {
+        const soulsDir = path.join(__dirname, '..', 'soul', 'starter-souls');
+        const loader = new SoulLoader(soulsDir);
+
+        for (const faction of FACTIONS) {
+            const residentName = faction.flagshipResidentSlug.replace(/^res-/, 'res:');
+            expect(residentName).toMatch(GATEWAY_RESIDENT_NAME_PATTERN);
+
+            const soul = loader.load(residentName);
+            expect(soul.frontmatter.name).toBe(residentName);
+            expect(soul.frontmatter.display).toBe(faction.flagshipDisplayName);
+            expect(soul.frontmatter.factionId).toBe(faction.id);
         }
     });
 });

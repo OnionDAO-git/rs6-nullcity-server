@@ -25,6 +25,7 @@ import { type VariableDefinition, recomputeVariables } from './variables';
 const IDLE_INITIATIVE_FIRST_TICK = 120;
 const IDLE_INITIATIVE_INTERVAL_TICKS = 120;
 const IDLE_INITIATIVE_INTERVAL_MS = 45_000;
+const HERO_IDLE_INITIATIVE_INTERVAL_MS = 30_000;
 const DEFAULT_SPARK_INFERENCE_TIMEOUT_MS = 10_000;
 
 export interface SparkTickResult {
@@ -323,7 +324,8 @@ export class Spark {
         const lastTick = this.state.lastIdleInitiativeTick;
         const tickCoolingDown = lastTick !== undefined && this.state.tick - lastTick < IDLE_INITIATIVE_INTERVAL_TICKS;
         const lastAtMs = this.state.lastIdleInitiativeAt ? Date.parse(this.state.lastIdleInitiativeAt) : Number.NaN;
-        const wallCoolingDown = Number.isFinite(lastAtMs) && nowMs - lastAtMs < IDLE_INITIATIVE_INTERVAL_MS;
+        const wallIntervalMs = this.soul.frontmatter.heroProfile ? HERO_IDLE_INITIATIVE_INTERVAL_MS : IDLE_INITIATIVE_INTERVAL_MS;
+        const wallCoolingDown = Number.isFinite(lastAtMs) && nowMs - lastAtMs < wallIntervalMs;
 
         return tickCoolingDown && wallCoolingDown;
     }
