@@ -757,3 +757,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 16:26 codex branch=agents/wip workstream=B3-LIVE-DURABILITY STARTING - run longer qa-angler fishing/cooking live proof after latest pulls. Files: docs/agent-status.md. Collision: none.
 2026-05-25 21:30 antigravity branch=agents/wip workstream=O8 STARTING — env + CLI dual config audit across rs6 entry points. Collision: none.
 2026-05-25 21:42 antigravity branch=agents/wip workstream=O8 HANDOFF — audited and aligned all 7 CLIs/entry points for consistent dual env + CLI option parsing. SHA=65acb7ac tests=1988+fin. Collision: none.
+2026-05-25 16:42 codex branch=agents/wip workstream=B3-LIVE-DURABILITY HANDOFF - fishing-cooking bench passed; qa-angler 10m smoke OK (+998t,41 actions,46 success/2 timeout,0 fail). SHA=f2f2d530 tests=bench+smoke600+post-smoke collision=none.
