@@ -708,3 +708,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 10:45 codex branch=agents/wip workstream=LIVE-CADENCE-K3 HANDOFF - fixed LLM queue deadlines, smoke tick domains, hero cadence, K3 gateway ids. SHA=e7973482 tests=314+fin1887+build+post-restart+live45+K3 collision=none.
 2026-05-25 10:51 codex branch=agents/wip workstream=O10-SOUL-COHORT STARTING - make default controller:smoke include discovered SOUL residents like live ControllerHost. Files: live-smoke.ts/test, roadmap/status.
 2026-05-25 10:57 codex branch=agents/wip workstream=O10-SOUL-COHORT HANDOFF - default controller:smoke now checks config+SOUL desired cohort; live 45s saw 23 OK. SHA=85d8fe37 tests=22+fin1888+build+live45 collision=none.
+2026-05-25 16:05 antigravity branch=agents/wip workstream=HD-048 STARTING — resolve fake timer leak in spark-evidence.test.ts and run HD-048 smoke tests.
+2026-05-25 16:10 antigravity branch=agents/wip workstream=HD-048 HANDOFF — resolved fake timer leak in spark-evidence.test.ts. SHA=8775108b tests=1888+fin. all 23 residents OK in smoke check.
+
+
