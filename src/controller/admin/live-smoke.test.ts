@@ -188,6 +188,7 @@ describe('live smoke CLI helpers', () => {
                 '--min-observed-actions',
                 '2',
                 '--min-observed-says=1',
+                '--allow-recent-visible',
                 '--json',
                 '--fail-on-warn',
             ]),
@@ -201,6 +202,7 @@ describe('live smoke CLI helpers', () => {
             pollMs: 25,
             minObservedActions: 2,
             minObservedSays: 1,
+            allowRecentVisible: true,
             json: true,
             failOnWarn: true,
         });
@@ -236,6 +238,36 @@ describe('live smoke CLI helpers', () => {
             says: 1,
             decisions: 1,
         });
+        expect(summary.issues).not.toContain('no_observed_visible_activity');
+    });
+
+    it('allows recently visible ticking residents to stay ok in cohort observation mode', async () => {
+        writeResidentState('res:hans', { tick: 200, lastMeaningfulProgressAt: 198, stuckSince: 200 });
+        writeTrajectory('res:hans', [
+            { tick: 196, kind: 'say', text: 'Still here as Hans; watching the area.' },
+            { tick: 197, kind: 'action', action: { kind: 'move_to', cause: 'idle_initiative' } },
+            { tick: 198, kind: 'action_result', status: 'success' },
+        ]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:hans'],
+            observeMs: 100,
+            allowRecentVisible: true,
+            sleep: async () => {
+                writeResidentState('res:hans', { tick: 204, lastMeaningfulProgressAt: 198, stuckSince: 204 });
+                writeTrajectory('res:hans', [
+                    { tick: 196, kind: 'say', text: 'Still here as Hans; watching the area.' },
+                    { tick: 197, kind: 'action', action: { kind: 'move_to', cause: 'idle_initiative' } },
+                    { tick: 198, kind: 'action_result', status: 'success' },
+                    { tick: 201, kind: 'decision', cause: 'hook_noop' },
+                    { tick: 202, kind: 'decision', cause: 'hook_noop' },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.observed).toMatchObject({ tickDelta: 4, visibleEvents: 0 });
         expect(summary.issues).not.toContain('no_observed_visible_activity');
     });
 

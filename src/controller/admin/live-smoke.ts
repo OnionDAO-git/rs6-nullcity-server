@@ -15,6 +15,7 @@ export interface LiveSmokeCliOptions {
     pollMs: number;
     minObservedActions: number;
     minObservedSays: number;
+    allowRecentVisible: boolean;
     json: boolean;
     failOnWarn: boolean;
 }
@@ -69,6 +70,7 @@ export interface ObserveLiveResidentsOptions extends SummarizeLiveResidentsOptio
     pollMs?: number;
     minObservedActions?: number;
     minObservedSays?: number;
+    allowRecentVisible?: boolean;
     sleep?: (ms: number) => Promise<void>;
 }
 
@@ -113,6 +115,7 @@ export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
         pollMs: DEFAULT_POLL_MS,
         minObservedActions: 0,
         minObservedSays: 0,
+        allowRecentVisible: false,
         json: false,
         failOnWarn: false,
     };
@@ -182,6 +185,8 @@ export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
             i += 1;
         } else if (arg.startsWith('--min-observed-says=')) {
             options.minObservedSays = parsePositiveInteger(arg.slice('--min-observed-says='.length), '--min-observed-says');
+        } else if (arg === '--allow-recent-visible') {
+            options.allowRecentVisible = true;
         } else if (arg === '--json') {
             options.json = true;
         } else if (arg === '--fail-on-warn') {
@@ -218,7 +223,10 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
             options.observeMs,
         );
         summary.observed = observed;
-        if (observed.visibleEvents === 0) {
+        if (
+            observed.visibleEvents === 0 &&
+            (!options.allowRecentVisible || summary.recent.actions + summary.recent.results + summary.recent.says === 0)
+        ) {
             summary.issues.push('no_observed_visible_activity');
         }
         if ((observed.tickDelta ?? 0) <= 0) {
@@ -262,6 +270,7 @@ export async function runLiveSmokeCli(argv: string[]): Promise<number> {
                       pollMs: options.pollMs,
                       minObservedActions: options.minObservedActions,
                       minObservedSays: options.minObservedSays,
+                      allowRecentVisible: options.allowRecentVisible,
                   })
                 : summarizeLiveResidents({
                       memoryDir,
