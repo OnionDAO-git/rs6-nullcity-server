@@ -691,3 +691,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 08:45 codex branch=agents/wip workstream=O10 HANDOFF - broad 30s smoke cadence gap logged; res:agent 30s smoke OK. SHA=265e9658 tests=smoke collision=none.
 2026-05-25 08:46 codex branch=agents/wip workstream=O10 CORRECTION - prior smoke cadence docs SHA is d0beadee. tests=smoke collision=none.
 2026-05-25 09:00 codex branch=agents/wip workstream=O10 STARTING - add cohort-tolerant live smoke mode. Files: src/controller/admin/live-smoke.ts, src/controller/admin/live-smoke.test.ts, docs/status+roadmap.
+2026-05-25 09:05 codex branch=agents/wip workstream=O10 HANDOFF - cohort smoke mode shipped. SHA=6cd6dc94 tests=20+fin1851+live45s19/19 collision=none.
