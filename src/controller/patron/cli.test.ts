@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { findRecentSay, runPatronCli, parsePatronCliArgs } from './cli';
+import { findRecentSay, parsePatronCliArgs, registerPatronInConfig, runPatronCli } from './cli';
 
 describe('Patron CLI', () => {
     let tempDir: string;
@@ -56,6 +56,7 @@ describe('Patron CLI', () => {
                 residentName: '',
                 text: '',
                 artifact: '',
+                kind: 'patron_gift',
                 configPath: 'my-config.yml',
             });
         });
@@ -69,6 +70,7 @@ describe('Patron CLI', () => {
                 residentName: 'res:pip',
                 text: '',
                 artifact: '',
+                kind: 'patron_gift',
                 configPath: 'controller.yml',
             });
         });
@@ -82,6 +84,7 @@ describe('Patron CLI', () => {
                 residentName: 'pip',
                 text: 'What did the fire teach you?',
                 artifact: '',
+                kind: 'patron_gift',
                 configPath: 'controller.yml',
             });
         });
@@ -95,13 +98,14 @@ describe('Patron CLI', () => {
                 residentName: 'res:pip',
                 text: '',
                 artifact: 'first-fire',
+                kind: 'patron_gift',
                 configPath: 'controller.yml',
             });
         });
 
         it('throws error when action is missing', () => {
             expect(() => parsePatronCliArgs(['--human', 'james'])).toThrow(
-                'One of --grant, --offer, --ask, or --witness must be specified.',
+                'One of --grant, --offer, --ask, --witness, or --register must be specified.',
             );
         });
 
@@ -162,6 +166,95 @@ describe('Patron CLI', () => {
                 'patrol-2026-06-01-evening',
             ]);
             expect(options.artifact).toBe('patrol-2026-06-01-evening');
+        });
+
+        // HD-011 helper: --register adds a handle to controller.yml#patrons[]
+        // safely without hand-editing the YAML at event-day door pressure.
+        describe('HD-011 --register parser', () => {
+            it('parses --register with default kind = patron_gift', () => {
+                const options = parsePatronCliArgs(['--register', '--human', 'alice@onion']);
+                expect(options.action).toBe('register');
+                expect(options.humanId).toBe('alice@onion');
+                expect(options.kind).toBe('patron_gift');
+            });
+
+            it('accepts --kind override', () => {
+                const options = parsePatronCliArgs(['--register', '--human', 'bob@onion', '--kind', 'patron_witness']);
+                expect(options.kind).toBe('patron_witness');
+            });
+
+            it('rejects unknown --kind value', () => {
+                expect(() => parsePatronCliArgs(['--register', '--human', 'a', '--kind', 'patron_zombie'])).toThrow(
+                    /--kind must be one of/,
+                );
+            });
+
+            it('still requires --human for register', () => {
+                expect(() => parsePatronCliArgs(['--register'])).toThrow('--human <id> is required.');
+            });
+        });
+    });
+
+    describe('HD-011 registerPatronInConfig', () => {
+        let tmpDir: string;
+        let configPath: string;
+        beforeEach(() => {
+            tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'patron-register-'));
+            configPath = path.join(tmpDir, 'controller.yml');
+            fs.writeFileSync(
+                configPath,
+                yaml.dump({
+                    residents: ['res:agent', 'res:hans'],
+                    gateway: { url: 'ws://127.0.0.1:43595', controllerId: 'nullcity-controller' },
+                    memory: { dir: './data/memory' },
+                }),
+                'utf8',
+            );
+        });
+        afterEach(() => {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        });
+
+        it('appends a new handle to controller.yml#patrons[] (idempotent on re-run)', () => {
+            const first = registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            expect(first).toEqual({ added: true, total: 1, handle: 'alice@onion', kind: 'patron_gift' });
+            const second = registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            expect(second).toEqual({ added: false, total: 1, handle: 'alice@onion', kind: 'patron_gift' });
+
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string; kind: string }> };
+            expect(parsed.patrons).toEqual([{ handle: 'alice@onion', kind: 'patron_gift' }]);
+        });
+
+        it('preserves existing non-patron sections (residents, gateway, memory) after write', () => {
+            registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+            expect(parsed.residents).toEqual(['res:agent', 'res:hans']);
+            expect(parsed.gateway).toEqual({ url: 'ws://127.0.0.1:43595', controllerId: 'nullcity-controller' });
+            expect(parsed.memory).toEqual({ dir: './data/memory' });
+        });
+
+        it('appends a second handle without clobbering the first', () => {
+            registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            const result = registerPatronInConfig(configPath, 'bob@onion', 'patron_witness');
+            expect(result).toEqual({ added: true, total: 2, handle: 'bob@onion', kind: 'patron_witness' });
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string; kind: string }> };
+            expect(parsed.patrons).toEqual([
+                { handle: 'alice@onion', kind: 'patron_gift' },
+                { handle: 'bob@onion', kind: 'patron_witness' },
+            ]);
+        });
+
+        it('re-registration with a different kind is a no-op (original kind wins)', () => {
+            registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            const result = registerPatronInConfig(configPath, 'alice@onion', 'patron_sponsor');
+            expect(result).toEqual({ added: false, total: 1, handle: 'alice@onion', kind: 'patron_gift' });
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string; kind: string }> };
+            expect(parsed.patrons).toEqual([{ handle: 'alice@onion', kind: 'patron_gift' }]);
+        });
+
+        it('throws when configPath does not parse to a YAML mapping', () => {
+            fs.writeFileSync(configPath, 'not_a_map\n- list_at_root\n', 'utf8');
+            expect(() => registerPatronInConfig(configPath, 'a', 'patron_gift')).toThrow(/YAML mapping/);
         });
     });
 

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import yaml from 'js-yaml';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { loadControllerConfig } from '../config';
@@ -10,7 +11,16 @@ import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 
-export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | '';
+export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | '';
+
+/**
+ * Kind of patron registration: governs what nervous-system rules will treat
+ * this handle as eligible for. `patron_gift` is the default (general patron
+ * able to grant + offer); `patron_witness` is restricted to witness verbs;
+ * `patron_sponsor` is for birth-ritual ceremonies. Per
+ * `src/controller/config.ts:readPatronArray` enum.
+ */
+export type PatronRegisterKind = 'patron_gift' | 'patron_witness' | 'patron_sponsor';
 
 export interface PatronCliOptions {
     action: PatronCliAction;
@@ -19,6 +29,8 @@ export interface PatronCliOptions {
     residentName: string;
     text: string;
     artifact: string;
+    /** For --register: which patron kind to record. Defaults to 'patron_gift'. */
+    kind: PatronRegisterKind;
     configPath: string;
 }
 
@@ -55,6 +67,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
         residentName: '',
         text: '',
         artifact: '',
+        kind: 'patron_gift',
         configPath: 'controller.yml',
     };
 
@@ -68,6 +81,15 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.action = 'ask';
         } else if (arg === '--witness') {
             options.action = 'witness';
+        } else if (arg === '--register') {
+            options.action = 'register';
+        } else if (arg === '--kind') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--kind requires a value');
+            options.kind = assertPatronKind(next);
+            i += 1;
+        } else if (arg.startsWith('--kind=')) {
+            options.kind = assertPatronKind(arg.slice('--kind='.length));
         } else if (arg === '--human') {
             const next = argv[i + 1];
             if (!next) throw new Error('--human requires a value');
@@ -114,7 +136,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
     }
 
     if (!options.action) {
-        throw new Error('One of --grant, --offer, --ask, or --witness must be specified.');
+        throw new Error('One of --grant, --offer, --ask, --witness, or --register must be specified.');
     }
     if (!options.humanId) {
         throw new Error('--human <id> is required.');
@@ -451,9 +473,89 @@ function uniquePaths(paths: string[]): string[] {
     return [...new Set(paths)];
 }
 
+const PATRON_KINDS: ReadonlyArray<PatronRegisterKind> = ['patron_gift', 'patron_witness', 'patron_sponsor'];
+
+function assertPatronKind(raw: string): PatronRegisterKind {
+    if ((PATRON_KINDS as ReadonlyArray<string>).includes(raw)) {
+        return raw as PatronRegisterKind;
+    }
+    throw new Error(`--kind must be one of ${PATRON_KINDS.join(' | ')}; got "${raw}"`);
+}
+
+/**
+ * Append a patron entry to `controller.yml#patrons[]` atomically and
+ * idempotently. HD-011 helper: event-day staff would otherwise hand-edit
+ * the YAML to populate the attendee list, which is error-prone under door
+ * pressure. This CLI lets them run a single line per attendee:
+ *
+ *     npm run patron:register -- --human alice@onion --kind patron_gift
+ *
+ * Re-running with the same handle is a no-op (returns the existing entry).
+ * Re-running with a different kind for an existing handle is a no-op too —
+ * the original registration wins. Use a YAML edit if you need to change
+ * the kind of an already-registered patron.
+ *
+ * Returns:
+ *   { added: true, total: N }   when the handle was newly appended
+ *   { added: false, total: N }  when the handle was already present
+ *
+ * Throws on YAML parse / write failures.
+ */
+export interface RegisterPatronResult {
+    added: boolean;
+    total: number;
+    handle: string;
+    kind: PatronRegisterKind;
+}
+
+export function registerPatronInConfig(configPath: string, handle: string, kind: PatronRegisterKind): RegisterPatronResult {
+    // Read raw YAML so we preserve formatting + comments + non-patron blocks
+    // exactly. Don't round-trip through the typed parser — that would drop
+    // any keys the typed parser doesn't know about.
+    const raw = fs.readFileSync(configPath, 'utf8');
+    const doc = yaml.load(raw);
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        throw new Error(`${configPath} did not parse to a YAML mapping`);
+    }
+    const root = doc as Record<string, unknown>;
+    const existing = Array.isArray(root.patrons) ? (root.patrons as Array<Record<string, unknown>>) : [];
+    const present = existing.find(p => typeof p?.handle === 'string' && p.handle === handle);
+    if (present) {
+        const presentKind = typeof present.kind === 'string' ? (present.kind as PatronRegisterKind) : kind;
+        return { added: false, total: existing.length, handle, kind: presentKind };
+    }
+    const nextPatrons = [...existing, { handle, kind }];
+    root.patrons = nextPatrons;
+    const nextYaml = yaml.dump(root, { lineWidth: 100, noRefs: true });
+    // Atomic write: tmp file in the same dir + rename. Avoids torn writes
+    // if the operator's process is interrupted mid-flush.
+    const tmpPath = `${configPath}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpPath, nextYaml, 'utf8');
+    fs.renameSync(tmpPath, configPath);
+    return { added: true, total: nextPatrons.length, handle, kind };
+}
+
 export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = {}): Promise<number> {
     try {
         const options = parsePatronCliArgs(argv);
+
+        // HD-011 helper — register before loading the typed config so a
+        // brand-new operator can add the first patron entry to an otherwise
+        // valid controller.yml without needing every other section to be
+        // typed-parser-clean first.
+        if (options.action === 'register') {
+            const result = registerPatronInConfig(options.configPath, options.humanId, options.kind);
+            if (result.added) {
+                console.log(`[patron:register] Added "${result.handle}" (kind: ${result.kind}) to ${options.configPath}.`);
+                console.log(`[patron:register] controller.yml#patrons[] now has ${result.total} entr${result.total === 1 ? 'y' : 'ies'}.`);
+                console.log('[patron:register] Restart the controller for the registry to take effect.');
+            } else {
+                console.log(`[patron:register] "${result.handle}" already registered (kind: ${result.kind}); no-op.`);
+                console.log(`[patron:register] controller.yml#patrons[] has ${result.total} entr${result.total === 1 ? 'y' : 'ies'}.`);
+            }
+            return 0;
+        }
+
         const config = loadControllerConfig(options.configPath);
         const store = new PatronStore(config.memory.dir);
 
