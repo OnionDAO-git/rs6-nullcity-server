@@ -70,7 +70,7 @@ npm run controller:smoke
 | **HD-041** | **Decided-not-a-bug** | Zero cross-resident chat observed in 14-min window | Closed by E41: LoreBus + whisper substrates exist + tested but are dead-in-prod (never wired). Resident copy fixed to stop falsely advertising perception they cannot have. Wire-in tracked separately as HD-043. |
 | **HD-042** | **CLOSED 2026-05-25 00:05 UTC** | Heroes 100% `watchdog_fallback` cause | Closed by Codex `32ba93c9` (hero decision cadence) + `aed50245` (harden unnamed SPARK completion causes). E52 live-verified `cause=_none` count = 0 across all 6 heroes. |
 | **HD-043** | Open (Normal, post-Chicago) | LoreBus + whisper + D3-greeting wire-ins all unwired in resident-runtime.ts | ~90 LOC workstream blocked on resident-runtime.ts being continuously Codex-active. Substrates + tests exist; no callers. Same root cause as HD-018 and HD-044. |
-| **HD-044** | Open (Normal) | Damage-edge `PerceptionEvent` missing — 15 hit/death soul reflexes unfireable | Same substrate-ready-but-unwired pattern as HD-018 / HD-043. ENGINE-debug. |
+| **HD-044** | **Decided** | Damage-edge event kind mismatch — 15 hit/death soul reflexes unfireable | Closed by b1e9c12a (amended to 601634f2): implemented event kind aliasing via matchEventKind helper in rules.ts, plan-executor.ts, and hook-evaluator.ts. |
 
 ---
 
@@ -98,7 +98,7 @@ Verified end-to-end this sprint (E14-E19):
 - **HD-015**: dashboard does not surface patron / Shards / letters. Staff reads disk files directly.
 - **HD-033 F20a**: Qwen3 thinking-mode returns empty 87.5% of calls (upstream LLM behavior; reflex layer carries experience). F20b uniform ~44s endpoint queueing also upstream. F20c CLOSED by `8eae437f`; F20d (promptTokens missing on empty) is observability polish only.
 - **HD-043**: LoreBus + whisper + D3-greeting wire-ins all unwired (post-Chicago ~90 LOC workstream). Cross-resident chat won't happen organically at the event.
-- **HD-018 / HD-044**: same root cause as HD-043 — substrate-ready-but-unwired in `resident-runtime.ts`. The file has been continuously Codex-active all weekend (cooking-recovery / low-health-recovery / cadence / etc), preventing safe wire-in.
+- **HD-018**: same root cause as HD-043 — substrate-ready-but-unwired in `resident-runtime.ts` (cooking-recovery / low-health-recovery / cadence / etc), preventing safe wire-in. (HD-044 event kind mismatch was resolved via `matchEventKind`).
 
 ---
 
@@ -122,10 +122,10 @@ Verified end-to-end this sprint (E14-E19):
 
 - Controller healthy through SPRINT-E53; SPRINT-QA5 (4 subagents, deep QA pass #5) currently dispatched
 - **All 19 residents alive** — 6 heroes + res:agent + 12-soul Codex QA cohort (qa-angler, qa-banker, qa-cook, qa-forager, qa-guardian, qa-guide, qa-priest, qa-scout, qa-social, qa-survivor, qa-trader, qa-woodcutter)
-- Tests: **1677/1677** passing on `agents/wip` (SPRINT-QA4 closure; subsequent E38/E43/E44/E50/E51/E52/E53 cycles pure-docs)
-- Verification log range covered this refresh: **E30 → E53** (plus QA2 → QA5 deep passes); next dispatch is SPRINT-QA5 in flight + a separate E54 re-verify of HD-039
-- **13 HDs CLOSED or MITIGATED across this weekend's sprint**: HD-008 (CLOSED), HD-030 / HD-031 (CLOSED), HD-032 (Mitigated), HD-033 (Mitigated — F20c CLOSED), HD-037 / HD-038 (CLOSED, patron-gateway), HD-039 (Decided-by-codex `0747ff8c`, E54 re-verify in flight), HD-040 (CLOSED `ae60cb9d` + E39), HD-041 (Decided-not-a-bug), HD-042 (CLOSED `32ba93c9` + `aed50245`), HD-046 (CLOSED Decided-by-default, standing permanent by design)
-- Open Chicago-relevant HDs remaining: **HD-011 downgraded Normal** (CLI path works), **HD-018 reconfirmed dead-in-prod** (D3 greeting), **HD-043 / HD-044** (post-Chicago wire-in workstream), **HD-015 / HD-016** (UX scope decisions)
+- Tests: **1891/1891** passing on `agents/wip`.
+- Verification log range covered this refresh: **E30 → E67**.
+- **15 HDs CLOSED or MITIGATED across this weekend's sprint**: HD-008 (CLOSED), HD-030 / HD-031 (CLOSED), HD-032 (Mitigated), HD-033 (Mitigated — F20c CLOSED), HD-037 / HD-038 (CLOSED, patron-gateway), HD-039 (Decided-by-codex `0747ff8c`), HD-040 (CLOSED `ae60cb9d` + E39), HD-041 (Decided-not-a-bug), HD-042 (CLOSED `32ba93c9` + `aed50245`), HD-044 (CLOSED via `matchEventKind`), HD-046 (CLOSED Decided-by-default), HD-048 (CLOSED pre-Chicago non-Lumbridge resident smoke check).
+- Open Chicago-relevant HDs remaining: **HD-011 downgraded Normal** (CLI path works), **HD-018 reconfirmed dead-in-prod** (D3 greeting), **HD-043** (post-Chicago wire-in workstream), **HD-015 / HD-016** (UX scope decisions)
 - Smoke script (post E37 ship): globs all 19 residents; READY WITH WARNINGS (no remaining Chicago-day blockers — HD-011 is now Normal and the CLI staffer recipe is the working path)
 
 See `docs/sprint-handoff-2026-05-26.md` for the maintainer's Tuesday recovery context.
