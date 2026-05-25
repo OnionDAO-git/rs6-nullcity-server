@@ -49,6 +49,8 @@ export interface LettersHttpServerOptions {
      * be the same root the store writes to (`config.memory.dir`).
      */
     lettersRoot?: string;
+    /** Configured residents to include in the public wall roster. */
+    residentIds?: readonly string[];
     /** Wall ticker route path. Defaults to {@link DEFAULT_WALL_PATH}. */
     wallPath?: string;
     /** Real inference health probe for {@link DEFAULT_HEALTH_PATH}. */
@@ -176,7 +178,7 @@ async function handle(
     if (isWallRoute) {
         const now = options.now ? options.now() : new Date();
         // lettersRoot guaranteed non-undefined here by the isWallRoute check above.
-        const snapshot = buildWallSnapshot(options.lettersRoot as string, { now });
+        const snapshot = buildWallSnapshot(options.lettersRoot as string, { now, residentIds: options.residentIds });
         // HD-013: optionally pass the snapshot through the public-display
         // redactor before serving it on the wall route.
         writeJson(response, 200, options.wallRedact ? redactWallSnapshot(snapshot) : snapshot);

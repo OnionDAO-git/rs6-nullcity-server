@@ -260,6 +260,25 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             const authed = await get(wallUrl, { Authorization: 'Bearer wall-secret' });
             expect(authed.status).toBe(200);
         });
+
+        it('can limit the wall roster to configured residents', async () => {
+            writeRuntimeState(tmp, 'res-agent', { attention: 9000 });
+            writeRuntimeState(tmp, 'res-hans', { attention: 8000 });
+            writeRuntimeState(tmp, 'res-bmk-fire-5m-002e9qp0', { attention: 5000 });
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                lettersRoot: tmp,
+                residentIds: ['res:agent', 'res:hans'],
+                now: () => new Date('2026-05-23T16:00:00.000Z'),
+            });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/wall/snapshot'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { residents: Array<{ slug: string }> };
+            expect(payload.residents.map(r => r.slug)).toEqual(['res-agent', 'res-hans']);
+        });
     });
 
     describe('static embassy pages', () => {
@@ -386,3 +405,27 @@ describe('letters HTTP server (EVENT-D2a)', () => {
         });
     });
 });
+
+function writeRuntimeState(root: string, slug: string, partial: { attention: number; [key: string]: unknown }): void {
+    const dir = path.join(root, slug);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+        path.join(dir, 'runtime-state.json'),
+        JSON.stringify(
+            {
+                resident: slug.replace(/^res-/, 'res:'),
+                tick: 0,
+                legacy: { kind: 'gather', progress: {}, complete: false },
+                budgets: {
+                    minuteStartedAt: '2026-05-23T00:00:00.000Z',
+                    dayStartedAt: '2026-05-23T00:00:00.000Z',
+                    requestsThisMinute: 0,
+                    requestsToday: 0,
+                },
+                ...partial,
+            },
+            null,
+            2,
+        ),
+    );
+}

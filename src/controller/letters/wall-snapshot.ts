@@ -38,6 +38,11 @@ export interface BuildWallSnapshotOptions {
     now: Date;
     /** Cap on recentLetters length. Defaults to {@link DEFAULT_WALL_LIMIT}. */
     limit?: number;
+    /**
+     * Optional configured resident ids/slugs to include in the wall roster.
+     * When omitted, every res-* runtime-state directory is considered.
+     */
+    residentIds?: readonly string[];
 }
 
 /** One resident's live status for the wall roster panel. */
@@ -68,7 +73,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     const lettersDir = path.join(lettersRoot, 'data', 'letters');
 
     if (!fs.existsSync(lettersDir)) {
-        return { recentLetters: [], deathsToday: 0, residents: readResidents(lettersRoot), asOf };
+        return { recentLetters: [], deathsToday: 0, residents: readResidents(lettersRoot, options.residentIds), asOf };
     }
 
     const allLetters: Letter[] = [];
@@ -130,7 +135,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         deceasedResidents.add(letter.senderResident);
     }
 
-    const residents = readResidents(lettersRoot);
+    const residents = readResidents(lettersRoot, options.residentIds);
 
     return {
         recentLetters,
@@ -204,7 +209,7 @@ function redactHandle(handle: string): string {
  * of all residents (alive and deceased), sorted alive-first then by slug.
  * Resilient: missing dir, unreadable files, and malformed JSON are skipped.
  */
-function readResidents(lettersRoot: string): ResidentSummary[] {
+function readResidents(lettersRoot: string, residentIds?: readonly string[]): ResidentSummary[] {
     let entries: fs.Dirent[];
     try {
         entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
@@ -212,12 +217,16 @@ function readResidents(lettersRoot: string): ResidentSummary[] {
         return [];
     }
 
+    const allowedSlugs = residentIds !== undefined ? new Set(residentIds.map(toResidentSlug)) : undefined;
     const summaries: ResidentSummary[] = [];
     for (const entry of entries) {
         if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
             continue;
         }
         const slug = entry.name;
+        if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
         const statePath = path.join(lettersRoot, slug, 'runtime-state.json');
         if (!fs.existsSync(statePath)) {
             continue;
@@ -268,6 +277,10 @@ function readResidents(lettersRoot: string): ResidentSummary[] {
     });
 
     return summaries;
+}
+
+function toResidentSlug(value: string): string {
+    return value.startsWith('res:') ? `res-${value.slice('res:'.length).replace(/:/g, '-')}` : value;
 }
 
 function humanizeName(slug: string): string {

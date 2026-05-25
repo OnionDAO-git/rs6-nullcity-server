@@ -317,6 +317,22 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             expect(snap.residents).toHaveLength(1);
             expect(snap.residents[0].slug).toBe('res-pip');
         });
+
+        it('can limit the wall roster to configured residents so stale benchmark folders stay hidden', () => {
+            writeRuntimeState(root, 'res-agent', { attention: 9000 });
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            writeRuntimeState(root, 'res-bmk-fire-5m-002e9qp0', {
+                attention: 5000,
+                cognition: { activeGoal: { id: 'bench', description: 'Use tinderbox on logs to make a fire.', createdAtTick: 0 } },
+            });
+
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-23T16:00:00.000Z'),
+                residentIds: ['res:agent', 'res:hans'],
+            });
+
+            expect(snap.residents.map(r => r.slug)).toEqual(['res-agent', 'res-hans']);
+        });
     });
 });
 
