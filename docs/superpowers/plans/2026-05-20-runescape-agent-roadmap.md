@@ -447,8 +447,8 @@ Safe public module facade building blocks are implemented, but the public member
   - *Completed: Implemented in PatronGateway.offerTo to deduct player shards, boost resident attention, and log standing points.*
 - `[x]` **J3: Standing tier system.** Four-tier rs6 reputation thresholds (canonical 10/30/75 from v2, rs6 names TBD via maintainer decision).
   - *Completed: StandingLedger implemented with canonical thresholds (Stranger/Acquaintance/Ally/Officer).*
-- `[~]` **J4: Letters system.** Four canonical kinds (`standing | epitaph | civic | broadcast`). In-game scroll/postbag delivery + web inbox parity. Denormalised sender snapshot preserved post-death.
-  - Partial 2026-05-25 on `agents/wip`: `standing_tier_crossed` and `epitaph` dispatch already working. `civic_milestone / embassy_visit` letters now dispatched by `PatronGateway.witnessAt` whenever a patron witnesses a named resident — patron gets a keepsake letter naming the landmark. `broadcast` kind still not yet implemented.
+- `[x]` **J4: Letters system.** Four canonical kinds (`standing | epitaph | civic | broadcast`). In-game scroll/postbag delivery + web inbox parity. Denormalised sender snapshot preserved post-death.
+  - Completed 2026-05-25 on `agents/wip`: `standing_tier_crossed` and `epitaph` dispatch already working. `civic_milestone / embassy_visit` letters now dispatched by `PatronGateway.witnessAt` whenever a patron witnesses a named resident. Added `broadcast` kind to letters-producer and wired it to send letters to all active patrons on resident death.
 - `[x]` **J5: Credit surfaces near landmarks.** "Funded by / founded by / witnessed by" plaques readable in-game; mirrored on dashboard.
   - *Completed: Landmark witnessing implemented via witnessAt on PatronGateway, logging patron actions to library timeline.*
 - `[x]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
@@ -503,7 +503,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` **N1: Pick the rs6 embassy POI in-game.** Location for handler interaction, ritual redemption, standing display.
 - `[ ]` **N2: Wall-map projection coordination.** Decide whether rs6 events feed v2's wall ticker or rs6 gets its own wall view. Coordinate with Dev.
-- `[ ]` **N3: In-game graveyard zone.** Tombstones examinable for name/faction/epitaph/cause/ticks-lived. Mirror on dashboard library page.
+- `[x]` **N3: In-game graveyard zone.** Tombstones examinable for name/faction/epitaph/cause/ticks-lived. Mirror on dashboard library page.
+  - Completed 2026-05-25 on `agents/wip`: Tombstones dynamically spawned in Lumbridge graveyard (`objectId: 402`) and refreshed every 500 ticks. Tombstone examination/reading displays formatted biography message `<name>, <faction>. <epitaph>. Lived <N> ticks. Died of <cause>.` using coordinate lookup.
 - `[ ]` **N4: IRL graveyard wall at the embassy.** Printed epitaphs at the physical embassy; refresh cadence + printing pipeline.
 - `[ ]` **N5: Mortician's Ribbon civic achievement.** Bestowed for humans witnessing N resident deaths (N TBD). In-game cape/title + lanyard variant.
 - `[x]` **N6: EVENT-D3 embassy reception greeting wire-in.** Registered patrons who chat while a hero resident is inside the Lumbridge churchyard embassy trigger a deterministic welcome and `PatronGateway.witnessAt(...)`.

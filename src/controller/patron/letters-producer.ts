@@ -12,7 +12,7 @@ import { type StandingTier, isUserFacingTier } from './standing-ledger';
  */
 export interface Letter {
     /** Discriminator. Only 'standing_tier_crossed' is produced in this slice. */
-    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone';
+    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast';
     /** humanId (badge handle, e.g. 'alice@onion'). */
     recipient: string;
     /**
@@ -36,7 +36,7 @@ export interface Letter {
 }
 
 export const letterSchema = z.object({
-    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone']),
+    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast']),
     recipient: z.string().min(1),
     senderResident: z.string().min(1),
     subject: z.string().min(1),
@@ -286,4 +286,40 @@ function headlineForAchievement(kind: CivicAchievementKind): string {
         case 'embassy_visit':
             return 'Walked the embassy floor';
     }
+}
+
+/** Input for {@link produceBroadcastLetter}. */
+export interface BroadcastLetterInput {
+    recipient: string;
+    residentName: string;
+    faction: string;
+    livedTicks: number;
+    causeOfDeath: string;
+    ts: string;
+}
+
+/**
+ * Generate a broadcast letter notifying all patrons of a resident's death.
+ */
+export function produceBroadcastLetter(input: BroadcastLetterInput): Letter {
+    const subject = `[Broadcast] On the passing of ${input.residentName}`;
+    const body = [
+        `All Patrons,`,
+        '',
+        `This is an official broadcast notifying Null City of the passing of resident ${input.residentName} (${input.faction}).`,
+        '',
+        `They lived for ${input.livedTicks} ticks and passed away due to ${input.causeOfDeath}.`,
+        '',
+        '— Embassy Clerk',
+    ].join('\n');
+
+    return {
+        kind: 'broadcast',
+        recipient: input.recipient,
+        senderResident: input.residentName,
+        subject,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
+    };
 }

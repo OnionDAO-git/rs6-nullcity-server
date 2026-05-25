@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import type { LlmClient } from './llm/llm-client';
 import { ActionCoordinator, type ActionCoordinatorSubmitInput } from './actions/action-coordinator';
 import { PatronConfig, PatronRegistry } from './patron/patron-registry';
@@ -37,6 +39,8 @@ import { PerceptionHistory } from './perception/perception-history';
 import { type Soul, dominantFaction } from './soul/soul-schema';
 import { LettersStore } from './patron/letters-store';
 import { buildEpitaphDispatchRequests, dispatchEpitaphs, type DeceasedResidentSummary } from './patron/epitaph-dispatcher';
+import { produceBroadcastLetter, type Letter } from './patron/letters-producer';
+import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import { initialAttention, spendAttention } from './spark/attention';
 import { explorationGoal, isStandaloneFiremakingGoal } from './spark/runescape-brain-planner';
@@ -838,6 +842,68 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 const letters = buildEpitaphDispatchRequests(summary, patronHandles);
                 if (letters.length > 0) {
                     dispatchEpitaphs(letters, store);
+                }
+
+                const uniquePatrons = new Set<string>();
+                const seenPatronsLower = new Set<string>();
+
+                const addPatron = (handle: string) => {
+                    const h = handle.trim();
+                    if (h.length > 0) {
+                        const lower = h.toLowerCase();
+                        if (!seenPatronsLower.has(lower)) {
+                            seenPatronsLower.add(lower);
+                            uniquePatrons.add(h);
+                        }
+                    }
+                };
+
+                const standingPath = path.join(lettersStoreDir, 'patron-standing.json');
+                if (fs.existsSync(standingPath)) {
+                    try {
+                        const raw = fs.readFileSync(standingPath, 'utf8');
+                        const snap = JSON.parse(raw);
+                        if (snap && snap.points) {
+                            for (const key of Object.keys(snap.points)) {
+                                const parts = key.split('|');
+                                if (parts.length > 0) {
+                                    addPatron(parts[0]);
+                                }
+                            }
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                try {
+                    const config = loadControllerConfig();
+                    if (config && Array.isArray(config.patrons)) {
+                        for (const p of config.patrons) {
+                            if (p && p.handle) {
+                                addPatron(p.handle);
+                            }
+                        }
+                    }
+                } catch {
+                    // ignore
+                }
+
+                const broadcastLetters: Letter[] = [];
+                for (const recipient of uniquePatrons) {
+                    const broadcastInput = {
+                        recipient,
+                        residentName: summary.residentName,
+                        faction: summary.residentFaction,
+                        livedTicks: summary.livedTicks,
+                        causeOfDeath: summary.causeOfDeath || 'unknown causes',
+                        ts: summary.deceasedAt,
+                    };
+                    broadcastLetters.push(produceBroadcastLetter(broadcastInput));
+                }
+
+                if (broadcastLetters.length > 0) {
+                    dispatchEpitaphs(broadcastLetters, store);
                 }
             }
         }

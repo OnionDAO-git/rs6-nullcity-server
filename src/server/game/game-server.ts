@@ -9,6 +9,7 @@ import { activateGameWorld } from '@engine/world';
 import { AgentGateway } from '@server/agent/gateway';
 import type { GameServerConfig } from '@server/game/game-server-config';
 import { GatewayServer } from '@server/gateway/gateway-server';
+import { GraveyardRefreshTask } from '../../controller/embassy/graveyard';
 
 /**
  * The singleton instance containing the server's active configuration settings.
@@ -50,6 +51,7 @@ export async function launchGameServer(): Promise<void> {
     }
     await loadPackets();
     const world = await activateGameWorld();
+    world.enqueueTask(new GraveyardRefreshTask());
 
     if (serverConfig.agentGateway?.enabled) {
         await new AgentGateway({

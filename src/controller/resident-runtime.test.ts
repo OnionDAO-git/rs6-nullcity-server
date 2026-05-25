@@ -17,6 +17,13 @@ import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
 import type { ThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
+import { loadControllerConfig } from './config';
+
+jest.mock('./config', () => ({
+    loadControllerConfig: jest.fn(() => ({
+        patrons: [],
+    })),
+}));
 
 describe('ResidentRuntime modules', () => {
     it('writes runtime evidence around decisions and action results', async () => {
@@ -2209,6 +2216,104 @@ describe('ResidentRuntime modules', () => {
         expect(aliceLetters[0].body).toContain('res:pip');
         expect(aliceLetters[0].body).toContain('killed by guard');
         expect(aliceLetters[0].body).toContain('firemaking');
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+        fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    });
+
+    it('triggers broadcast letter building and dispatching on onPerception when state.deceased is set, querying standing ledger and config patrons', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-broadcast-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-broadcast-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot);
+
+        // Pre-create the patron-standing.json file in evidenceRoot
+        const standingLedgerData = {
+            schemaVersion: 1,
+            points: {
+                'james|embassy': 15,
+                'alice|foundry': 30,
+            },
+            history: {},
+        };
+        fs.writeFileSync(path.join(evidenceRoot, 'patron-standing.json'), JSON.stringify(standingLedgerData, null, 2), 'utf8');
+
+        // Mock loadControllerConfig to return config with patrons
+        (loadControllerConfig as jest.Mock).mockReturnValue({
+            patrons: [
+                { handle: 'clara', kind: 'patron_sponsor' },
+                { handle: 'james', kind: 'patron_gift' }, // duplicate of ledger 'james'
+            ],
+        });
+
+        const state = stateFor('res:pip');
+        state.deceased = {
+            date: '2026-05-23T16:00:00.000Z',
+            tick: 100,
+            cause: 'killed by guard',
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            evidence: {
+                store,
+                sessionId: 'session-2',
+                trajectory: {
+                    beginTick: jest.fn(),
+                    endTick: jest.fn(),
+                    recordDecision: jest.fn(),
+                } as unknown as TrajectoryBuilder,
+                library: {
+                    getPatronHandles: jest.fn(() => ['james']),
+                } as unknown as LibraryUpdater,
+            },
+        });
+
+        await runtime.onPerception({
+            tick: 101,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [],
+                skills: {
+                    woodcutting: { xp: 1000 },
+                    firemaking: { xp: 5000 },
+                },
+            },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        expect(state.deceased.processed).toBe(true);
+
+        const lettersStore = new LettersStore(evidenceRoot);
+
+        // james should get 1 epitaph and 1 broadcast letter
+        const jamesLetters = lettersStore.readInbox('james');
+        // alice should get 1 broadcast letter
+        const aliceLetters = lettersStore.readInbox('alice');
+        // clara should get 1 broadcast letter
+        const claraLetters = lettersStore.readInbox('clara');
+
+        expect(jamesLetters.filter(l => l.kind === 'epitaph')).toHaveLength(1);
+        expect(jamesLetters.filter(l => l.kind === 'broadcast')).toHaveLength(1);
+        expect(aliceLetters.filter(l => l.kind === 'broadcast')).toHaveLength(1);
+        expect(claraLetters.filter(l => l.kind === 'broadcast')).toHaveLength(1);
+
+        expect(aliceLetters.find(l => l.kind === 'broadcast')?.subject).toContain('[Broadcast] On the passing of res:pip');
+        expect(aliceLetters.find(l => l.kind === 'broadcast')?.body).toContain('killed by guard');
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
         fs.rmSync(evidenceRoot, { recursive: true, force: true });

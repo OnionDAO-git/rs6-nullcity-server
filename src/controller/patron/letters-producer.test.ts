@@ -3,10 +3,12 @@ import {
     type EpitaphLetterInput,
     type Letter,
     type StandingTierLetterInput,
+    type BroadcastLetterInput,
     letterSchema,
     produceCivicAchievementLetter,
     produceEpitaphLetter,
     produceStandingTierLetter,
+    produceBroadcastLetter,
 } from './letters-producer';
 
 describe('produceStandingTierLetter', () => {
@@ -215,6 +217,41 @@ describe('produceCivicAchievementLetter (J-δ-γ)', () => {
 
     it('round-trips through letterSchema', () => {
         const letter = produceCivicAchievementLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceBroadcastLetter (J4)', () => {
+    const baseInput: BroadcastLetterInput = {
+        recipient: 'bob@onion',
+        residentName: 'res:hans',
+        faction: 'embassy',
+        livedTicks: 12000,
+        causeOfDeath: 'attention exhaustion',
+        ts: '2026-05-25T12:00:00.000Z',
+    };
+
+    it('returns a Letter with kind=broadcast', () => {
+        const letter = produceBroadcastLetter(baseInput);
+        expect(letter.kind).toBe('broadcast');
+    });
+
+    it('sets recipient and matches body placeholders', () => {
+        const letter = produceBroadcastLetter(baseInput);
+        expect(letter.recipient).toBe('bob@onion');
+        expect(letter.body).toMatch(/res:hans/);
+        expect(letter.body).toMatch(/embassy/);
+        expect(letter.body).toMatch(/12000/);
+        expect(letter.body).toMatch(/attention exhaustion/);
+    });
+
+    it('delivers strictly to web-inbox', () => {
+        const letter = produceBroadcastLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('round-trips through letterSchema', () => {
+        const letter = produceBroadcastLetter(baseInput);
         expect(() => letterSchema.parse(letter)).not.toThrow();
     });
 });
