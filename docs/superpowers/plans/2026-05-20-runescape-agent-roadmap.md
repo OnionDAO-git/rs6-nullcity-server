@@ -196,6 +196,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Hardened 2026-05-25 on `agents/wip`: the public wall roster now filters to configured controller residents, so stale disposable benchmark runtime folders no longer appear in the "Who's Here" panel. Verified with focused wall snapshot/HTTP tests and live `/v1/wall/snapshot` after controller restart.
   - Improved 2026-05-25 on `agents/wip`: public wall roster can use SOUL display names and first authored SOUL goal as a fallback when runtime cognition has not selected an active goal yet. Runtime active goals still win. Verified with wall snapshot/HTTP tests and direct real-memory snapshot proof for Hans, Father Aereck, Wise Old Man, Pip, and Thrand.
   - Improved 2026-05-25 in `rs6-nullcity-residents-dashboard`: `/api/residents` now filters gateway residents to controller-discoverable SOULs when a SOUL catalog exists, dropping stale disposable benchmark residents from the dashboard list. Verified with dashboard runtime tests, typecheck, check, build, and live API smoke showing 19 residents instead of 182.
+  - Improved 2026-05-25 in `rs6-nullcity-residents-dashboard`: `/api/residents` and overview resident rows now keep compact feed/action/SPARK/progress summaries but omit raw perception/event/save blobs; detail runtime endpoints still expose full state. Verified with red/green dashboard tests, typecheck, check, build, full Bun tests, and live API proof.
 
 - `[x]` **D3: Add benchmark run list and detail pages.**
   - Files: dashboard benchmark routes/components
