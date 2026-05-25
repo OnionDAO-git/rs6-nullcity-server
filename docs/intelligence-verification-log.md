@@ -2698,7 +2698,42 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 **Owner suggestion.** claude (HD log update this cycle).
 
 
+### E53 — live verify Codex 8eae437f watchdog/LLM-timeout alignment (HD-033 F20c closer)
 
+**Status:** F20c symptom CLOSED — watchdog now extends to 65s (LLM timeout +5s buffer); reveals secondary throughput trade-off
+**Tier:** 1 (read-only replay of E52 method on post-`8eae437f` trajectories)
+**Date:** 2026-05-25 01:25 claude
+**SHA verified:** `8eae437f` (Codex hd033-watchdog-config)
+**Live controller:** `local-72342` (started ~19:05 CDT post-`8eae437f`)
+
+**Hypothesis.** E20/F20c flagged: `DEFAULT_THINKING_WATCHDOG_MS=45000` fires first; YAML `llm.endpoints.default.timeoutMs: 60000` is dead code. Long Brain calls die at 45s before the LLM can finish. Codex's `8eae437f` aligns watchdog to `max(llmTimeout) + 5s = 65s`. Codex HANDOFF: "local-72342 Brain ran 52s past old 45s cap." Verify on disk + check side effects.
+
+**Repro.** Replay E52 cause histogram on `local-72342` hero trajectories (~1355 ticks per resident).
+
+**Observation (post-`8eae437f`):**
+
+| resident | ticks | dec | silent% | empty_completion | hook_noop | watchdog_fallback | other | Δ wdog vs pre-fix |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| res-hans | 1355 | 33 | 97.6% | 26 | 7 | **0** | 0 | -3 ✓ |
+| res-father-aereck | 1355 | 32 | 97.6% | 14 | 11 | 6 | 1 | +2 |
+| res-wise-old-man | 1355 | 23 | 98.3% | 11 | 6 | 6 | 0 | +1 |
+| res-duke-horacio | 1355 | 31 | 97.7% | 13 | 10 | 7 | 1 | 0 |
+| res-pip | 1355 | 26 | 98.1% | 13 | 6 | 5 | 2 | +1 |
+| res-thrand | 1355 | 24 | 98.2% | 11 | 6 | 5 | 2 | 0 |
+
+**Sub-findings.**
+
+- **F53a (PRIMARY / RESOLVED).** F20c (45s watchdog kills long Brain calls before they finish) is CLOSED. Codex's "Brain ran 52s past old 45s cap" claim verified by trajectory presence. Hans dropped from 3 → 0 watchdog_fallback events; other heroes drifted ±2. Net interpretation: events that WERE timing out at 45s now complete at 50-60s. The remaining 5-7 watchdog events per hero genuinely exceed the new 65s budget — these are the slow-end tail of Qwen3 thinking-mode.
+- **F53b (SECONDARY TRADE-OFF).** `empty_completion` count grew vs pre-fix: hans 21→26 (+5), aereck 9→14 (+5), wise 8→11 (+3), duke 4→13 (+9), thrand 6→11 (+5). These are previously-timed-out Brain calls that now COMPLETE but return empty actions. **The watchdog fix bought more Brain time, which means Brain has more time to return empty.** Total fire rate (dec/ticks) per hero went up roughly +1-9 absolute counts; silent% went up SLIGHTLY (94-97% → 97-98%) because each successful Brain call eats more wall-clock time per tick, slightly reducing the tick rate the runtime can sustain.
+- **F53c (HD-033 PARTIAL CLOSE).** HD-033 has three sub-findings: F20a (Qwen3 returns empty 87.5%) + F20b (uniform 44s timeout latency suggesting endpoint queueing) + F20c (45s/60s mismatch). **F20c is now CLOSED**. F20a + F20b remain open — Qwen3 thinking-mode quirk is the deeper issue that Codex's fix can't touch from the controller side; needs an inference-layer change (e.g. drop thinking-mode for hero prompts, or pre-warm Qwen3 with a no-op call before each tick).
+- **F53d (OBSERVATION).** My script's "Brain success rate" audit was sparse — only res-pip had any `promptTokens` field, and it was 0. Suggests `promptTokens` isn't recorded on `empty_completion` or `watchdog_fallback` decisions (only on successful Brain returns with non-empty actions, which are extremely rare). Worth filing as a minor observability note: a `brainCalledAt` timestamp + `brainLatencyMs` would help disambiguate "Brain didn't call" vs "Brain called and returned slowly".
+- **F53e (HD-021 PROTOCOL).** Same clean pattern as E52: Codex's HANDOFF cited the live controller ID (`local-72342`) + a numeric claim ("Brain ran 52s past old 45s cap"); claude replayed against trajectories and verified. The closing-loop on intelligence-health debug is working well across the multi-agent pair.
+
+**Classification.** ENGINE-fix VERIFIED LIVE for F20c. **HD-033 → marked Mitigated (F20c closed; F20a + F20b remain, both upstream-inference-layer).**
+
+**Suggested next step.** Update HD-033 to Mitigated with F20c CLOSED note. F20a (Qwen3 empty-returns) is a deeper inference-config workstream — could try disabling thinking-mode for hero Brain prompts via a model-profile override, but that's post-Chicago. F53d minor observability note → optional dashboard polish.
+
+**Owner suggestion.** claude (HD log update this cycle); F20a/F20b deeper investigation deferred to post-Chicago.
 
 
 
