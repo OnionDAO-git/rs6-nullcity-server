@@ -145,9 +145,14 @@ Wrong resident name. Check `ls src/controller/soul/starter-souls/` for valid nam
 - Check the firewall isn't blocking port 43596
 
 ### Patron is not greeted when they enter the embassy
-**Important Chicago-day reality (E50 / HD-018):** the automated implicit greeting reflex (D3) is substrate-ready but **NOT yet wired into the live runtime**. Hans / Father Aereck will NOT auto-greet a patron just because the patron walked into Lumbridge churchyard and spoke in-game. The substrate exists at `src/controller/embassy/reception-reflex.ts` and the wire-in template is at `docs/next-week-handoff-2026-05-26.md` § Slice 1 (post-Chicago workstream).
+**First check the build/controller.** The D3 implicit greeting path is wired in `agents/wip` after the EVENT-D3 runtime slice: when a registered patron chats in-game while a hero resident is inside the Lumbridge churchyard embassy, the hero should say `Welcome to the embassy, <handle>.` and the controller records `PatronGateway.witnessAt(<handle>, 'embassy', <resident>)`. If no greeting appears, the most common causes are:
 
-**What DOES work today** (verified E47 walkthrough): the CLI-driven path. Run `npm run patron:ask --human <handle> --resident res:hans --text "hi"` from the staffer console — Hans's `nervous:patron-memory-acknowledge` reflex (HD-031) fires within ~1-3 seconds and the hero says e.g. `"Thank you for the Shards, <handle>, and everyone backing me!"`. The patron's in-world experience is similar: they speak (via CLI proxy), the hero responds by name. Just the mechanism differs from a fully-wired implicit greeting.
+1. The controller is running a stale `dist/` build. Run `npm run build` and restart the controller.
+2. `controller.yml#patrons[]` does not include the exact attendee handle used in chat.
+3. The hero resident is not inside the embassy region (`3238-3248, 3204-3214, level 0`).
+4. The patron recently triggered the same greeting cooldown.
+
+The deterministic CLI path still works as the fallback. Run `npm run patron:ask -- --human <handle> --resident res:hans --text "hi"` from the staffer console; Hans's `nervous:patron-memory-acknowledge` reflex (HD-031) should fire within a few seconds.
 
 If a staffer wants an unambiguous welcome moment for a new arrival:
 1. Run `npm run patron:grant -- --human <handle> --amount 10` to credit a starter Shard balance.

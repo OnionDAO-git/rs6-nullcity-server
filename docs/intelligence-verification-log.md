@@ -2736,5 +2736,126 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 **Owner suggestion.** claude (HD log update this cycle); F20a/F20b deeper investigation deferred to post-Chicago.
 
 
+### E54 — qa-guardian/survivor live re-verify of Codex `0747ff8c` (SPRINT-QA5 subagent A) — FIX PARTIAL
 
+**Status:** PARTIAL — retreat half VERIFIED firing; permanent hold-loop at safe waypoint is a NEW failure mode (HD-047 filed)
+**Tier:** 1 (read-only replay of E36 method on post-fix trajectories)
+**Date:** 2026-05-25 01:40 claude
+
+**Hypothesis.** Codex `0747ff8c` added `LOW_HEALTH_RECOVERY_WAYPOINTS = [{x:3222, y:3218}]` + threat-aware retreat in `lowHealthRecoveryAction`. HANDOFF claimed "guardian/survivor retreat to 3228,3217 then hold." Replay E36 against `local-72342` trajectories to confirm cause histogram shifted.
+
+**Observation.**
+
+| resident | latest trajectory | ticks | dec | silent% | top cause |
+|---|---|---:|---:|---:|---|
+| res-qa-guardian | `20260525T000552Z-local-72342-...` | 2897 | 2860 | 1.3% | `low_health_hold_position` **2860/2860 (100%)** |
+| res-qa-survivor | `20260525T000552Z-local-72342-...` | 2897 | 2879 | 0.6% | `low_health_hold_position` **2879/2879 (100%)** |
+
+**Position evidence:** both moved from spawn (3254,3230 / 3254,3231) → final 3228,3217 (within `LOW_HEALTH_RECOVERY_WAYPOINT_RANGE` of the 3222,3218 waypoint). Last `say` text on both: `"I am hurt at 3228,3217. Holding near safety until I find food or heal."` (repeated 51 / 32 times). No deaths.
+
+**Sub-findings.**
+
+- **F54a (HALF VERIFIED).** Retreat path fires correctly. The new `lowHealthRecoveryAction` + `nearestLowHealthRecoveryWaypoint` + `hasNearbyRecoveryThreat` decision tree IS routing both residents to the safe zone. No deaths in 2897 ticks since restart.
+- **F54b (NEW FAILURE MODE — HD-047 filed).** Once parked at the safe waypoint with no food + no nearby threat + no nearby cookable raw fish + no nearby ground food, `lowHealthRecoveryAction` returns `undefined` every tick → falls through to `low_health_hold_position` forever. Both residents are **functionally bricked alive** at the recovery waypoint — 100% of decisions are nooped holds, burning attention (~47-48K each), zero learning signal. Identical "I am hurt" line spammed 51 / 32× (speech dedup also not firing).
+- **F54c (DESIGN ESCALATION GAP).** Subagent observed there's no exit edge from low-health-stranded state. Suggested additions: (a) after N ticks at the recovery waypoint with no food acquisition, escalate to `seek_food` body routine OR `request_food_from_kin` via L-β whisper; (b) Brain re-plan trigger (`low_health_no_recovery_path` cause distinct from active-retreat `low_health_hold_position`); (c) dedup the "I am hurt at X,Y" say so it doesn't fire every speech-eligible tick.
+
+**Classification.** **HD-039 → Partially-decided (downgrade from Decided-by-codex).** Codex's retreat fix is correct AS FAR AS IT GOES but doesn't break the noop loop — it just relocates the catatonia from spawn-tile to recovery-tile. HD-047 filed for the permanent-hold-loop follow-up.
+
+**Suggested next step.** File HD-047 (qa-guardian/survivor permanent-hold-loop at recovery waypoint). Defer the actual fix post-Chicago: cohort QA souls aren't Chicago-day blockers (only res:agent + 6 heroes need to be visibly active on event day). Cohort permanent-hold is a DESIGN extension, not a Chicago risk.
+
+**Owner suggestion.** Codex (substrate fix); claude (HD update this cycle).
+
+
+### E55 — patron-lifecycle.md written (SPRINT-QA5 subagent B)
+
+**Status:** SHIPPED — `docs/patron-lifecycle.md` created (264 lines, 2418 words). Closes tasks #162 + #175.
+**Tier:** 0 (documentation deliverable)
+**Date:** 2026-05-25 01:40 claude
+
+**Hypothesis.** Maintainer reads `docs/sprint-handoff-2026-05-26.md` + `docs/embassy-staff-runbook.md` + `docs/pre-chicago-readiness.md` Tuesday morning. Missing piece: a single-page **narrative** doc that walks through the patron lifecycle as a story (first encounter → tier crossings → death-loop legacy). Also serves as Chicago volunteer onboarding for someone who's never used the patron CLI.
+
+**Output.** Subagent shipped two-layer structure:
+1. **5-minute quickstart** at the top (3 CLI commands a Chicago volunteer can run cold and see a hero say their patron's name within seconds).
+2. **Phase-by-phase narrative** (Phase 1 first encounter T+0, Phase 2 growing relationship T+5min, Phase 3 persistent relationship T+days, Phase 4 death-loop legacy T+hours-to-days), with annotated CLI stdout pulled from `cli.ts` not invented.
+3. **What's wired vs not** (Chicago-day expectations) — explicitly enumerates the working CLI path + the deferred wire-ins (D3 / L-α / L-β) so volunteers don't expect implicit greeting.
+4. **Failure mode triage** + **what the patron carries away** tables.
+5. **Cross-references** to existing docs.
+
+**Sub-findings / open gaps the subagent flagged.**
+- **F55a (POSITIVE).** Two-layer audience model (quickstart for volunteers + narrative for maintainer Tuesday read) — should fit both readers without rewriting.
+- **F55b (ASSERTION-WITHOUT-VERIFY).** Subagent asserted `patron:witness` is "+3 standing per witness by default" but didn't verify against `patron-gateway.ts`. Worth a code spot-check before volunteers use the doc.
+- **F55c (TEMPLATE GAP).** The epitaph letter body example in Phase 4 is invented prose; real template lives in `letters-producer.ts:produceEpitaphLetter`. Worth a follow-up pass to quote the actual body so what staffers describe to patrons matches what letters say.
+- **F55d (CROSS-CHECK).** Hero attention floor list cites Hans/Aereck/Wise/Duke=5000 and Pip/Thrand=3000 from HD-008. Duke Horacio is a recent ship (task #146); subagent didn't verify Duke's soul still has the floor field. Quick grep can confirm.
+
+**Classification.** DOC-DELIVERABLE shipped. No bugs found.
+
+**Suggested next step.** Light verification pass on F55b/F55c/F55d before doc goes to volunteers. Verify witness amount in `patron-gateway.ts:witnessAt`, quote real epitaph body, grep duke soul for floor. ~10 min.
+
+**Owner suggestion.** claude (verification pass next cycle).
+
+
+### E56 — code-review of recent Codex weekend ships (SPRINT-QA5 subagent C)
+
+**Status:** Net Chicago-day risk LOW — 4 CLEAN + 2 SMALL-CONCERN across 6 commits
+**Tier:** 1 (static code review on `0747ff8c`, `30d5f1b7`, `2913f1bb`, `32ba93c9`, `aed50245`, `8eae437f`)
+**Date:** 2026-05-25 01:40 claude
+
+**Per-commit classification.**
+
+| SHA | files | LOC | class | note |
+|---|---|---|---|---|
+| `0747ff8c` HD-039 recovery | 4 | +199/-2 | CLEAN | recovery waypoint substrate; partial-fix per E54 |
+| `30d5f1b7` cooking recovery | 6 | +595/-17 | **SMALL-CONCERN** | perception-builder rework affects EVERY resident, not just cooks |
+| `2913f1bb` angler fire | 8 | +87/-3 | CLEAN | starter cooking fallback |
+| `32ba93c9` hero cadence | 5 | +126/-9 | **SMALL-CONCERN** | nooped semantic shift in `spark.ts:282` |
+| `aed50245` Lovelace hardening | 4 | +43/-0 | CLEAN | inferUnnamedCompletionCause ladder well-ordered |
+| `8eae437f` watchdog align | 3 | +40/-0 | CLEAN | robust; handles edge cases like empty `endpoints: {}` |
+
+**Specific findings.**
+
+- **F56a (SMALL-CONCERN / NEW HD-048 candidate).** `30d5f1b7` perception-builder change (`src/engine/world/actor/resident/perception/perception-builder.ts:163-200`) routes EVERY chunk-resident object through `activeWorld.findObjectAtLocation(player, ...)`. Tests cover the kitchen-door dedupe case but NOT non-Lumbridge residents (e.g. heroes at the embassy, qa-banker at the bank, qa-priest in the chapel). Net effect: any reflex/body routine that previously saw cached chunk-original objects when an instance overlay hid them will now only see the active overlay. **Recommendation:** add an integration smoke that runs a non-Lumbridge resident through 100 ticks to confirm no blinding effect.
+- **F56b (NEUTRAL).** `32ba93c9` changed `nooped: response.nooped || actions.length === 0` → `nooped: actions.length === 0`. Sole consumer is `inference-log` line in `resident-runtime.ts:388`. No runtime behavior break, but subtle inference-log signal shift. Worth noting in dashboard cause taxonomy.
+- **F56c (POSITIVE).** No public function signatures changed across the 6 commits. `SparkTickResult` interface unchanged. Decision shape unchanged. Dashboard / inference-log / library-updater consumers will not break — `recordDecision.cause` accepts freeform string + new causes are opaque to consumers.
+- **F56d (TECH DEBT).** 3 commits (`0747ff8c`, `30d5f1b7`, `2913f1bb`) all touch `lowHealthRecoveryAction` + `starterFishingCookingAction` and accrete to a 200+ LOC decision tree in `runescape-body-routines.ts`. Refactor candidate post-Chicago.
+- **F56e (CROSS-COMMIT PATTERN).** Hero-cadence + Lovelace commits (`32ba93c9` + `aed50245`) added a flurry of new SPARK decision causes (`hook_noop`, `empty_completion`, `empty_completion_idle_initiative`, `candidate_fallback`, `completion_action`, `plan_generated`, `completion_self_modification`, `completion_memory_update`, `completion`). These flow through `evidence/trajectory-builder.ts:recordDecision` which accepts any string — no schema validator break. But the cause taxonomy isn't documented anywhere except `inferUnnamedCompletionCause` source code. Reference doc candidate post-Chicago.
+- **F56f (CODEX-ZONE OVERLAP).** None affecting my pending work. `evidence/library-memories.ts` (E44 task #156) untouched. `patron-gateway.ts` (E38/E47 staffer UX) untouched. `embassy/` (E50 D3 audit) untouched.
+
+**Sub-findings.**
+
+- **F56g (NET ASSESSMENT).** Chicago-day risk LOW. Highest risk is the perception-builder breadth-of-impact in `30d5f1b7` — but tests pass + live `local-7787` qa-angler verification passed in commit body. HD-048 candidate for pre-Chicago integration smoke is a good safety net.
+- **F56h (NEW HDs proposed).** Subagent flagged 4 candidates; renumbering to avoid collision with my HD-045/HD-046 closures: **HD-048** (perception-builder integration smoke, pre-Chicago Normal); **HD-049** (refactor recovery decision tree, post-Chicago Low); **HD-050** (SPARK cause taxonomy reference doc, post-Chicago Low); HD-051 (nooped contract doc, optional). I'll file HD-048 + HD-049 + HD-050 as part of this cycle; HD-051 deferred (one-line concern).
+
+**Classification.** ENGINE-quality. No regressions, 3 small follow-ups.
+
+**Suggested next step.** File HD-048 pre-Chicago + HD-049/050 post-Chicago.
+
+**Owner suggestion.** claude (HD log update this cycle).
+
+
+### E57 — pre-Chicago readiness doc refresh (SPRINT-QA5 subagent D)
+
+**Status:** SHIPPED — `docs/pre-chicago-readiness.md` updated with 13 weekend HD closures + new behaviors
+**Tier:** 0 (documentation refresh)
+**Date:** 2026-05-25 01:40 claude
+
+**Hypothesis.** The readiness doc was last refreshed in SPRINT-QA2 (2026-05-24 22:00 CDT). Since then HD-033/039/040/041/042/043/044/045/046/047 have all moved + new behaviors verified. Refresh inline so maintainer Tuesday gets the current picture.
+
+**Output.** Subagent shipped 27 insertions / 8 deletions to `docs/pre-chicago-readiness.md` (now 125 lines, +19 vs prior). Edits:
+- Open-decisions table: 8 rows added/updated (HD-011 downgraded; HD-018/032/033/039/040/041/042 statuses refreshed; HD-043/044 new rows).
+- "Behaviors residents will exhibit" list: +4 items (per-tier letter dispatch, revival narrative in Brain prompt, hero death prevention via floor+waypoint, CLI staffer recipe for guaranteed acknowledgement).
+- "Known residual gaps": +F20a/F20b/F20d Qwen3 + HD-043 + HD-018/044 shared-root-cause note.
+- "In case of fire" table: +3 rows (hero silent >5min, Officer-without-Acq-Ally, qa-guardian/survivor stuck).
+- "Live state" section: bumped to 2026-05-25 01:35 CDT, tests 1657→1677, log range E30→E53.
+
+**Sub-findings.**
+
+- **F57a (POSITIVE).** Doc structure preserved; same table format; no rewriting from scratch. Should merge cleanly with any future maintainer-driven edits.
+- **F57b (FLAGGED).** Subagent flagged HD-039 as "Decided-by-codex" but added "E54 re-verify in flight" caveat — this cycle's E54 found PARTIAL fix (retreat works, hold-loop persists). Doc should be updated to reflect Partially-decided. claude can patch this inline post-E54 (one-line edit).
+- **F57c (TEST COUNT).** Subagent used 1677 (last known concrete count from `52b99a12`). Current count post-Codex evening is 1693+ per recent HANDOFFs. Minor drift — worth a one-line bump if a clean number is available.
+
+**Classification.** DOC-REFRESH shipped.
+
+**Suggested next step.** Two small follow-ups inline: (1) HD-039 row → Partially-decided per E54; (2) test count → 1693+ per Codex HANDOFFs.
+
+**Owner suggestion.** claude (small inline patches this cycle if time; otherwise deferred to Tuesday rollup).
 

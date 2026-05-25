@@ -52,11 +52,19 @@ Exit code 0 = ready; 1 = blocking red. If the script reports `READY` or `READY W
 
 | ID | Priority | Decision needed | Current default |
 |---|---|---|---|
-| **HD-011** | High | Who populates `controller.yml#patrons[]` with attendee handles? | Event-staff onboarding step ~24h before doors |
+| **HD-011** | Normal (DOWNGRADED) | Who populates `controller.yml#patrons[]` with attendee handles? | Event-staff onboarding step ~24h before doors. **E50 downgrade rationale: D3 in-world greeting is dead-in-prod (HD-018), so an empty patrons[] does not block the CLI staffer path which works regardless.** |
 | **HD-015** | High | Will the dashboard surface patron / Shards / letters / standing UI? | No — staff reads files directly via this runbook |
 | **HD-016** | High | Which Shards UX verb ships first beyond `patron:grant`/`patron:offer`? | C/D (balance lookup + tier visibility) |
 | **HD-008** | **CLOSED 2026-05-24 21:30 UTC** | Hero attention calibration | Soul-declared `attentionProfile.floor` clamps spend outcomes. Hans/Aereck/Wise/Duke=5000, Pip/Thrand=3000. **E32 live-verify: zero hero deaths in 50+ min post-restart; 3 heroes resting exactly at floor (clamp firing); 3 above floor (patron offers lifting).** |
-| **HD-032** | Critical-Mitigated | Heroes alive but Brain conversation poor | Fallback covers; rich conversation gated on inference health |
+| **HD-018** | Open (RECONFIRMED) | D3 embassy reception greeting unwired | reception-reflex.ts substrate + 15 tests exist; zero callers in resident-runtime.ts / controller-host.ts / nervous-system.ts. **E50 grep + live trajectory both show DEAD CODE in prod.** Cross-ref HD-043: same root cause (substrate-ready-but-unwired; resident-runtime.ts continuously Codex-active prevents wire-in). CLI staffer recipe is the working alternative for Chicago. |
+| **HD-032** | Critical-Mitigated | Heroes alive but Brain conversation poor | Fallback covers; rich conversation gated on inference health. ENGINE-still-residual (upstream inference layer). |
+| **HD-033** | **Mitigated 2026-05-25 00:30 UTC** | Heroes' Brain returns empty 84-100% under load | **F20c CLOSED by Codex `8eae437f` (watchdog/LLM-timeout aligned to 65s); E53 live-verified +3-9 successful Brain calls/hero post-fix.** F20a (Qwen3 thinking-mode empty-returns 87.5%) + F20b (uniform ~44s endpoint queueing) remain upstream-inference-layer; F20d (promptTokens missing on empty) is minor observability polish. |
+| **HD-039** | **Decided-by-codex** | qa-guardian + qa-survivor catatonic (2192+ back-to-back `low_health_hold_position` decisions) | Closed by Codex `0747ff8c` (recover hurt combat residents safely). **Note: a separate E54 subagent re-verify is in flight; flag if live confirmation has not landed before doors.** |
+| **HD-040** | **CLOSED 2026-05-24 23:55 UTC** | Standing-tier letter dispatcher LOSSY on multi-tier crosses | Fixed by E38 / `ae60cb9d` (per-tier emission); E39 live-verified end-to-end. 75-Shard sponsor now produces Acquaintance + Ally + Officer letters; CLI surfaces `Tiers crossed: …` via new `standingDelta.tiersCrossed` field. |
+| **HD-041** | **Decided-not-a-bug** | Zero cross-resident chat observed in 14-min window | Closed by E41: LoreBus + whisper substrates exist + tested but are dead-in-prod (never wired). Resident copy fixed to stop falsely advertising perception they cannot have. Wire-in tracked separately as HD-043. |
+| **HD-042** | **CLOSED 2026-05-25 00:05 UTC** | Heroes 100% `watchdog_fallback` cause | Closed by Codex `32ba93c9` (hero decision cadence) + `aed50245` (harden unnamed SPARK completion causes). E52 live-verified `cause=_none` count = 0 across all 6 heroes. |
+| **HD-043** | Open (Normal, post-Chicago) | LoreBus + whisper + D3-greeting wire-ins all unwired in resident-runtime.ts | ~90 LOC workstream blocked on resident-runtime.ts being continuously Codex-active. Substrates + tests exist; no callers. Same root cause as HD-018 and HD-044. |
+| **HD-044** | Open (Normal) | Damage-edge `PerceptionEvent` missing — 15 hit/death soul reflexes unfireable | Same substrate-ready-but-unwired pattern as HD-018 / HD-043. ENGINE-debug. |
 
 ---
 
@@ -71,6 +79,10 @@ Verified end-to-end this sprint (E14-E19):
 5. **Tier-crossing letters** (E6 / E7): patron's first ≥10 Shards crosses them to `acquaintance`; the embassy clerk's letter lands in their inbox immediately and the resident says thanks within ~30 sec. **2000 Shards crosses straight to `officer`** (observed today with `claude-mega-rescue`).
 6. **Death + epitaph** (D4): if a resident dies, all their patrons receive an epitaph letter naming the resident's lived ticks + cause + lasting impressions.
 7. **Wall ticker** (E13): public projection masks recipients (`alice@onion` → `a***@onion`) and clears bodies. Per-patron `/v1/inbox` URL preserves full content for their own private viewing.
+8. **Per-tier letter dispatch** (HD-040 fix `ae60cb9d` / E38 + E39 live): a single 75-Shard sponsor that crosses Acquaintance + Ally + Officer now produces **all three letters** (was 1; LOSSY before). CLI surfaces `Tiers crossed: acquaintance, ally, officer (3 letters dispatched)` via new `standingDelta.tiersCrossed` field.
+9. **Revival narrative in Brain prompt envelope** (E44 / task #156 closure, `903914e1`): every hero revived after `attention_exhausted` sees `"I returned to life — this is my Nth life — humanized cause"` in their next prompt envelope. 18 revival events across 6 residents render via the new `case 'revival'` in `library-memories.ts`. Combined with HD-008 floor, heroes can now narratively reflect on continuity breaks.
+10. **Hero death prevention** (HD-008 attention floor + Codex `0747ff8c` qa-guardian/survivor recovery waypoint): heroes clamp at declared floor instead of decaying to zero; catatonic low-health combat residents now seek a recovery waypoint instead of locking on `low_health_hold_position` forever.
+11. **CLI staffer recipe for guaranteed hero acknowledgement** (E50 / HD-018 dead-in-prod workaround): the 3-step `patron:grant → patron:offer → show inbox URL` flow produces explicit hero acknowledgement even though D3 in-world greeting is unwired. See `embassy-staff-runbook.md § "Patron is not greeted when they enter the embassy"`.
 
 ## Known residual gaps (not blockers)
 
@@ -78,6 +90,9 @@ Verified end-to-end this sprint (E14-E19):
 - **F19d / Codex F6**: `res:thrand` is the quietest hero — separate Codex workstream `7669f384` shipped idle_initiative no-hook pulse.
 - **F9a**: scout-template "Goal: ... Next: ..." tail still identical across consecutive says. Polish, not a blocker.
 - **HD-015**: dashboard does not surface patron / Shards / letters. Staff reads disk files directly.
+- **HD-033 F20a**: Qwen3 thinking-mode returns empty 87.5% of calls (upstream LLM behavior; reflex layer carries experience). F20b uniform ~44s endpoint queueing also upstream. F20c CLOSED by `8eae437f`; F20d (promptTokens missing on empty) is observability polish only.
+- **HD-043**: LoreBus + whisper + D3-greeting wire-ins all unwired (post-Chicago ~90 LOC workstream). Cross-resident chat won't happen organically at the event.
+- **HD-018 / HD-044**: same root cause as HD-043 — substrate-ready-but-unwired in `resident-runtime.ts`. The file has been continuously Codex-active all weekend (cooking-recovery / low-health-recovery / cadence / etc), preventing safe wire-in.
 
 ---
 
@@ -91,16 +106,20 @@ Verified end-to-end this sprint (E14-E19):
 | Patron offer returns "resident_not_found" | Resident dead/missing | Check `data/controller/memory/<slug>/runtime-state.json`; revive if deceased |
 | Inbox URL 404 | Controller HTTP port not bound | `curl http://127.0.0.1:43596/v1/inbox?human=test` to confirm; restart with `--letters-http-port=43596` |
 | All residents stop moving simultaneously | LLM endpoint dead/saturated | Check `http://inf.nullcity.ai:1234` reachability; reflex layer should still produce fallback says |
+| Hero says nothing for >5 minutes | Likely `empty_completion` (HD-033 F20a Qwen3 thinking-mode quirk); 87.5% of Brain calls return empty | Restart controller; reflex layer should still produce fallback says + identity beacons within ~30s. If silence persists, suspect a deeper freeze and run smoke script. |
+| Patron got Officer letter but no Acquaintance/Ally | Pre-HD-040-fix bug (single letter on multi-tier cross) | Should not occur post-`ae60cb9d` (E38 + E39 verified). If it does, the controller is running a stale binary — `npm run build` and restart. |
+| qa-guardian / qa-survivor stuck saying "I am hurt" | HD-039 catatonic combat residents (2192+ back-to-back `low_health_hold_position`) | Verify Codex `0747ff8c` is in the live dist (`git log --oneline dist/ \| grep 0747ff8c`). If not, restart controller after `npm run build`. E54 re-verify may still be in flight — flag the maintainer if not yet confirmed. |
 
 ---
 
-## Live state as of this writing (2026-05-24 22:00 CDT)
+## Live state as of this writing (2026-05-25 01:35 CDT)
 
-- Controller `local-39827` (PID 15751) healthy; Codex's multi-resident-live-qa cohort spawn
+- Controller healthy through SPRINT-E53; SPRINT-QA5 (4 subagents, deep QA pass #5) currently dispatched
 - **All 19 residents alive** — 6 heroes + res:agent + 12-soul Codex QA cohort (qa-angler, qa-banker, qa-cook, qa-forager, qa-guardian, qa-guide, qa-priest, qa-scout, qa-social, qa-survivor, qa-trader, qa-woodcutter)
-- Tests: 1657/1657 passing on `agents/wip`
-- HD-008 hero attention floor: **CLOSED** (E30 substrate + E32 + E33 live verify; 50+ min zero hero deaths)
-- Open critical HDs after SPRINT-QA2: HD-032 still mitigated (inference health residual); HD-033/034/036 quantified; new HD-039 (qa-guardian + qa-survivor catatonic, 2192+ `low_health_hold_position` decisions back-to-back), HD-040 (standing-tier letter dispatcher lossy when multi-tier crossed in single grant), HD-041 (zero cross-resident chat observed in 14-min window)
-- Smoke script (post E37 ship): globs all 19 residents; READY WITH WARNINGS (HD-011 empty patrons[] is the only Chicago-day blocker remaining)
+- Tests: **1677/1677** passing on `agents/wip` (SPRINT-QA4 closure; subsequent E38/E43/E44/E50/E51/E52/E53 cycles pure-docs)
+- Verification log range covered this refresh: **E30 → E53** (plus QA2 → QA5 deep passes); next dispatch is SPRINT-QA5 in flight + a separate E54 re-verify of HD-039
+- **13 HDs CLOSED or MITIGATED across this weekend's sprint**: HD-008 (CLOSED), HD-030 / HD-031 (CLOSED), HD-032 (Mitigated), HD-033 (Mitigated — F20c CLOSED), HD-037 / HD-038 (CLOSED, patron-gateway), HD-039 (Decided-by-codex `0747ff8c`, E54 re-verify in flight), HD-040 (CLOSED `ae60cb9d` + E39), HD-041 (Decided-not-a-bug), HD-042 (CLOSED `32ba93c9` + `aed50245`), HD-046 (CLOSED Decided-by-default, standing permanent by design)
+- Open Chicago-relevant HDs remaining: **HD-011 downgraded Normal** (CLI path works), **HD-018 reconfirmed dead-in-prod** (D3 greeting), **HD-043 / HD-044** (post-Chicago wire-in workstream), **HD-015 / HD-016** (UX scope decisions)
+- Smoke script (post E37 ship): globs all 19 residents; READY WITH WARNINGS (no remaining Chicago-day blockers — HD-011 is now Normal and the CLI staffer recipe is the working path)
 
 See `docs/sprint-handoff-2026-05-26.md` for the maintainer's Tuesday recovery context.
