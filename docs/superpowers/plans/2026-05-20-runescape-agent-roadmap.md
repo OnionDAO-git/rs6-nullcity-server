@@ -471,11 +471,15 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** rs6 needs its own four factions; v2's Solder Saints / Hatchery / Locksmiths / Ledgerwrights are Onion-DAO-flavored and don't translate to RuneScape lore. The four-faction shape + two tension axes + flagship NPCs + home rooms patterns transfer. Spec: `docs/superpowers/specs/2026-05-22-rs6-factions-design.md`. **This workstream requires maintainer creative input before any K-task can ship.**
 
-- `[~]` **K1: Name the four rs6 factions.** Defaulted from Notion + drafted in spec: **The Foundry / The Bureau of Continuity / The Ledger / The Veil**. Mottos, colors, archetypes drafted. Maintainer to confirm or edit; an autonomous agent should USE the drafts to unblock work.
-- `[~]` **K2: Define the two rs6 tension axes.** Drafted: **Making vs Remembering** (Foundry vs Bureau) + **Transparency vs Concealment** (Ledger vs Veil).
+- `[x]` **K1: Name the four rs6 factions.** Defaulted from Notion + drafted in spec: **The Foundry / The Bureau of Continuity / The Ledger / The Veil**. Mottos, colors, archetypes drafted. Maintainer to confirm or edit; an autonomous agent should USE the drafts to unblock work.
+  - Verified 2026-05-25 on `agents/wip`: `src/controller/factions/factions.ts` exports `FactionId`, `FactionDefinition`, `FACTIONS` (4 entries), `FACTIONS_BY_ID`. All 4 factions have unique ids, display names, colors, and mottos. Catalog integrity tests (15 cases) all pass.
+- `[x]` **K2: Define the two rs6 tension axes.** Drafted: **Making vs Remembering** (Foundry vs Bureau) + **Transparency vs Concealment** (Ledger vs Veil).
+  - Verified 2026-05-25 on `agents/wip`: `TensionAxis`, `TensionPole` types exported. Each axis has exactly 2 factions, one at each pole. `TENSION_AXES` constant exported for consumers.
 - `[~]` **K3: Seed four flagship NPCs.** Drafted (full soul fields) in spec: **Forgemaster Mother Anvil** (Foundry), **Archivist Severn** (Bureau), **First Witness Wren** (Ledger), **The Hush** (Veil). Maintainer to confirm voices; agent can ship them as-is via the seed script.
-- `[~]` **K4: Place the five rs6 rooms in-game.** Drafted coordinates (verify against RuneJS world): Atrium → Lumbridge Castle courtyard `(3222,3218,0)`; Foundry → Falador anvil `(3015,3357,0)`; Bureau → Lumbridge churchyard `(3242,3208,0)`; Ledger → Varrock Square `(3210,3424,0)`; Veil → Edgeville shadow `(3093,3493,0)`.
-- `[~]` **K5: Visual treatment for The Veil.** Drafted: redacted-black `#0A0A0A` with `#660000` accent (carries forward v2's Locksmith treatment).
+- `[x]` **K4: Place the five rs6 rooms in-game.** Drafted coordinates (verify against RuneJS world): Atrium → Lumbridge Castle courtyard `(3222,3218,0)`; Foundry → Falador anvil `(3015,3357,0)`; Bureau → Lumbridge churchyard `(3242,3208,0)`; Ledger → Varrock Square `(3210,3424,0)`; Veil → Edgeville shadow `(3093,3493,0)`.
+  - Verified 2026-05-25 on `agents/wip`: `PoiDefinition`, `POIS` (5 entries), `POIS_BY_ID` exported from `factions.ts`. Each faction's `homePoiId` resolves to a POI with matching `factionId`. One neutral atrium POI defined.
+- `[x]` **K5: Visual treatment for The Veil.** Drafted: redacted-black `#0A0A0A` with `#660000` accent (carries forward v2's Locksmith treatment).
+  - Verified 2026-05-25 on `agents/wip`: `VisualTreatment` type exported. Veil has `visualTreatment: 'redacted'`, `accentColor: '#660000'`. Non-Veil factions have `visualTreatment: 'standard'`. Tests assert this invariant.
 
 ## Workstream L: Cross-Resident Memory And Lore
 
