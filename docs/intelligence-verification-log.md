@@ -2969,4 +2969,43 @@ All 19 residents had their first tick within 1.5s of process launch. **Sub-2-sec
 **Owner suggestion.** claude (runbook annotation if time); post-Chicago smoke-script polish.
 
 
+### E60 — multi-controller safety verification (task #177)
+
+**Status:** POSITIVE — lock substrate is robust across 5 live test scenarios; no bugs found
+**Tier:** 1 (read-only substrate audit + 5 live node-eval tests against live controller + sandbox tmpdir)
+**Date:** 2026-05-25 02:55 claude
+
+**Hypothesis.** Chicago disaster-recovery concern: what if staff accidentally double-clicks the launch script (or two operators kick off `node dist/controller/index.js` simultaneously)? Audit `controller-lock.ts` substrate + test edge cases live.
+
+**Substrate inspection.** `src/controller/controller-lock.ts` (~90 LOC) provides:
+- Lock file at `<memory.dir>/<sanitized-controllerId>.lock` with JSON `{controllerId, pid, cwd, acquiredAt}`
+- Atomic creation via `fs.writeFileSync(..., {flag: 'wx'})` (create-if-not-exists, fails on existing)
+- Stale-lock recovery: on EEXIST, reads existing → checks `process.kill(pid, 0)` for liveness → if dead, rm + retry
+- Defensive release: only removes lock if `existing.controllerId === own && existing.pid === own.pid`
+- Pre-existing tests: 3 (create+release; reject second live; replace stale)
+
+**Live tests.**
+
+| # | scenario | result |
+|---|---|---|
+| 1 | Acquire lock while live controller (PID 98393) holds it | ✅ REJECTED with clear error: `"controller lock already held by pid 98393: data/controller/memory/nullcity-controller.lock"` |
+| 2 | Different controllerId same memory.dir | ✅ ALLOWED — separate `<id>.lock` files, no collision |
+| 3 | Stale-lock recovery (faked pid 99999999) | ✅ REPLACED CLEANLY — `process.kill(99999999, 0)` returns false → lock removed → new lock written |
+| 4 | Corrupt-JSON lock (`"not valid json {{{"`) | ✅ REPLACED — `readLock` returns undefined → treated as no-pid → `isProcessAlive(undefined)` false → lock cleanly replaced |
+| 5 | Defensive release (controller-1 lock manually overwritten by foreign content; controller-1 calls release()) | ✅ FOREIGN LOCK SURVIVES — release sees mismatched pid → leaves the file alone |
+
+**Sub-findings.**
+
+- **F60a (POSITIVE / OPERATIONAL CONFIDENCE).** Lock substrate handles every scenario I could construct without throwing or leaving the system in a broken state. Staff accidentally double-clicking the launch script will produce a CLEAR error message (`controller lock already held by pid 98393`) instead of two controllers fighting over the memory.dir.
+- **F60b (NEUTRAL / POTENTIAL EDGE CASE — UNLIKELY).** PID rollover risk: macOS PIDs wrap at ~99998. If the controller dies + the OS reuses its PID for a different process before stale-lock recovery runs, the check would falsely report "still alive" and the lock would block legitimate restart. Takes ~hours to ~days of PID churn before this could happen; not a Chicago concern. Workaround: include process start time (`/proc/<pid>/stat` on linux, `ps -o lstart` on macOS) in lock + verify match. Defer post-Chicago.
+- **F60c (NEUTRAL / DISASTER RECOVERY).** No cleanup on unclean exit (SIGKILL / crash / OOM). Next launch correctly detects the dead PID and recovers via stale-lock cleanup, so this is self-healing. Brief window where the file appears valid but isn't — only matters for liveness probes that read the lock without going through `acquireControllerLock`.
+- **F60d (NEUTRAL / SECOND-INSTANCE NUANCE).** If staff actually want to run a second controller for testing (different memory.dir + different controllerId), the lock substrate cleanly allows it. E.g. `--controller-id=test-instance --memory-dir=/tmp/test-memory` works without disrupting production. Useful for the "spin up a second controller for verification" pattern that I followed throughout this sprint with HD-029's `--letters-http-port=43596` separation.
+
+**Classification.** POSITIVE — substrate WORKING. No new HDs.
+
+**Suggested next step.** Document the 5 verified scenarios in `docs/embassy-staff-runbook.md` "Common error recovery" section so staff know the "controller lock already held by pid X" message is the EXPECTED behavior (not a bug) when a second launch is attempted. ~5-line addition. Optional polish.
+
+**Owner suggestion.** claude (runbook annotation if time, otherwise defer to Tuesday handoff).
+
+
 
