@@ -670,3 +670,7 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 06:27 codex branch=agents/wip workstream=qa-angler-primary-spot HANDOFF - stale NPC refs recover by key/position; qa-angler netted shrimp live after restart. SHA=5a77b597 tests=1813+build+smoke+live collision=pulled wall roster.
 2026-05-25 06:31 codex branch=agents/wip workstream=live-wall-restart STARTING - restart fresh dist and verify wall roster/dashboard/runtime surfaces. Files: status only unless smoke finds a code bug.
 2026-05-25 11:35 codex branch=agents/wip workstream=live-wall-restart HANDOFF — verified fresh dist restart, wall roster/dashboard/runtime online. SHA=f25f40af tests=1815+smoke+live collision=none.
+2026-05-25 11:36 antigravity branch=agents/wip workstream=L STARTING — Wire LoreBus, FireLitReflex, and Whisper inbox into live controller and resident runtime. Files: src/controller/controller-host.ts, src/controller/resident-runtime.ts, src/controller/evidence/trajectory-builder.ts
+
+2026-05-25 06:42 codex branch=agents/wip workstream=restart-tick-drift STARTING - fix modest post-restart tick drift idling residents. Files: thinking module/tests/status.
+2026-05-25 07:00 codex branch=agents/wip workstream=restart-tick-drift HANDOFF - restart drift + 10s body/SPARK LLM timeouts; post-restart/live observe smoke green. SHA=389ec4c1 tests=1817+build+smoke collision=none.
