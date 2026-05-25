@@ -113,10 +113,11 @@ describe('dispatchEpitaphs (EVENT-D4)', () => {
 
         const aliceInbox = store.readInbox('alice@onion');
         const bobInbox = store.readInbox('bob@onion');
-        expect(aliceInbox).toHaveLength(1);
-        expect(bobInbox).toHaveLength(1);
-        expect(aliceInbox[0].kind).toBe('epitaph');
-        expect(bobInbox[0].kind).toBe('epitaph');
+        // N5: each patron gets epitaph + Mortician's Ribbon (2 letters).
+        expect(aliceInbox).toHaveLength(2);
+        expect(bobInbox).toHaveLength(2);
+        expect(aliceInbox.find(l => l.kind === 'epitaph')).toBeDefined();
+        expect(bobInbox.find(l => l.kind === 'epitaph')).toBeDefined();
     });
 
     it('is idempotent — re-dispatching the same request batch does not duplicate inbox entries', () => {
@@ -125,7 +126,8 @@ describe('dispatchEpitaphs (EVENT-D4)', () => {
         const secondPass = dispatchEpitaphs(letters, store);
 
         expect(secondPass[0].deduped).toBe(true);
-        expect(store.readInbox('alice@onion')).toHaveLength(1);
+        // N5: epitaph + ribbon both deduped on re-dispatch → still 2 letters, not 4.
+        expect(store.readInbox('alice@onion')).toHaveLength(2);
     });
 
     it('returns [] without writing when given an empty letter array', () => {
@@ -154,7 +156,62 @@ describe('dispatchEpitaphs (EVENT-D4)', () => {
         expect(results[0].error).toBe('disk full');
         expect(results[1].deduped).toBe(false);
         expect(results[1].error).toBeUndefined();
-        // bob's letter still went through.
-        expect(store.readInbox('bob@onion')).toHaveLength(1);
+        // N5: bob's epitaph + ribbon both went through (flaky only throws on call 1).
+        expect(store.readInbox('bob@onion')).toHaveLength(2);
+    });
+
+    describe("N5: Mortician's Ribbon", () => {
+        it('dispatches a civic_milestone ribbon for each patron alongside the epitaph', () => {
+            const letters = buildEpitaphDispatchRequests(summary(), ['alice@onion']);
+            dispatchEpitaphs(letters, store);
+
+            const aliceInbox = store.readInbox('alice@onion');
+            const ribbon = aliceInbox.find(l => l.kind === 'civic_milestone');
+            expect(ribbon).toBeDefined();
+            expect(ribbon!.recipient).toBe('alice@onion');
+            expect(ribbon!.senderResident).toBe('res:fern');
+            expect(ribbon!.subject).toMatch(/Mortician's Ribbon/);
+            expect(ribbon!.body).toMatch(/res:fern/);
+            expect(ribbon!.body).toMatch(/alice@onion/);
+            expect(ribbon!.deliveryChannels).toContain('lanyard-card');
+            expect(ribbon!.dispatchedAt).toBe('2026-05-23T15:00:00.000Z');
+        });
+
+        it('dispatches ribbons for all patrons in a multi-patron batch', () => {
+            const letters = buildEpitaphDispatchRequests(summary(), ['alice@onion', 'bob@onion']);
+            dispatchEpitaphs(letters, store);
+
+            expect(store.readInbox('alice@onion').find(l => l.kind === 'civic_milestone')).toBeDefined();
+            expect(store.readInbox('bob@onion').find(l => l.kind === 'civic_milestone')).toBeDefined();
+        });
+
+        it('does NOT dispatch a ribbon for broadcast-kind letters (only for epitaphs)', () => {
+            // Simulate a broadcast letter (not an epitaph) dispatched through the same path.
+            const { produceBroadcastLetter } = require('./letters-producer');
+            const broadcastLetter = produceBroadcastLetter({
+                recipient: 'alice@onion',
+                residentName: 'res:fern',
+                faction: 'embassy',
+                livedTicks: 1240,
+                causeOfDeath: 'goblin',
+                ts: '2026-05-23T15:00:00.000Z',
+            });
+            dispatchEpitaphs([broadcastLetter], store);
+
+            const aliceInbox = store.readInbox('alice@onion');
+            // Only the broadcast letter; no ribbon for a non-epitaph dispatch.
+            expect(aliceInbox).toHaveLength(1);
+            expect(aliceInbox[0].kind).toBe('broadcast');
+            expect(aliceInbox.find(l => l.kind === 'civic_milestone')).toBeUndefined();
+        });
+
+        it('is idempotent per death — re-dispatching the same death does not add a second ribbon', () => {
+            const letters = buildEpitaphDispatchRequests(summary(), ['alice@onion']);
+            dispatchEpitaphs(letters, store);
+            dispatchEpitaphs(letters, store);
+
+            const aliceRibbons = store.readInbox('alice@onion').filter(l => l.kind === 'civic_milestone');
+            expect(aliceRibbons).toHaveLength(1);
+        });
     });
 });

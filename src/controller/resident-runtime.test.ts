@@ -2365,12 +2365,15 @@ describe('ResidentRuntime modules', () => {
         const aliceLetters = lettersStore.readInbox('patron:alice');
         const bobLetters = lettersStore.readInbox('patron:bob');
 
-        expect(aliceLetters).toHaveLength(1);
-        expect(bobLetters).toHaveLength(1);
-        expect(aliceLetters[0].kind).toBe('epitaph');
-        expect(aliceLetters[0].body).toContain('res:pip');
-        expect(aliceLetters[0].body).toContain('killed by guard');
-        expect(aliceLetters[0].body).toContain('firemaking');
+        // N5: each patron gets an epitaph + a Mortician's Ribbon (2 letters each).
+        expect(aliceLetters).toHaveLength(2);
+        expect(bobLetters).toHaveLength(2);
+        const aliceEpitaph = aliceLetters.find(l => l.kind === 'epitaph');
+        expect(aliceEpitaph).toBeDefined();
+        expect(aliceEpitaph!.body).toContain('res:pip');
+        expect(aliceEpitaph!.body).toContain('killed by guard');
+        expect(aliceEpitaph!.body).toContain('firemaking');
+        expect(aliceLetters.find(l => l.kind === 'civic_milestone' && l.subject.includes("Mortician's Ribbon"))).toBeDefined();
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
         fs.rmSync(evidenceRoot, { recursive: true, force: true });

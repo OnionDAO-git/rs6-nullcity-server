@@ -323,3 +323,48 @@ export function produceBroadcastLetter(input: BroadcastLetterInput): Letter {
         deliveryChannels: ['web-inbox'],
     };
 }
+
+// ---------------------------------------------------------------------------
+// N5: Mortician's Ribbon
+
+/** Input for {@link produceMorticiansRibbonLetter}. */
+export interface MorticiansRibbonLetterInput {
+    /** The patron who witnessed the death. */
+    humanId: string;
+    /** The resident who died. */
+    deceasedResidentName: string;
+    /** ISO timestamp of the death. */
+    ts: string;
+}
+
+/**
+ * Generate a Mortician's Ribbon letter — a civic achievement awarded when a
+ * patron witnesses a resident's death (threshold N=1 per vision doc).
+ *
+ * Dispatched alongside the epitaph so every patron who receives an epitaph
+ * automatically earns the ribbon. The subject "Mortician's Ribbon — <name>"
+ * makes the LettersStore's natural dedup idempotent per-death per-patron.
+ */
+export function produceMorticiansRibbonLetter(input: MorticiansRibbonLetterInput): Letter {
+    const subject = `Mortician's Ribbon — ${input.deceasedResidentName}`;
+    const body = [
+        `${input.humanId},`,
+        '',
+        `You were present for the passing of ${input.deceasedResidentName}.`,
+        '',
+        `In Null City, those who remain long enough to witness a resident die become part of the city's record. The Mortician's Ribbon is a mark of that witness — it stays with you regardless of how many lives pass after.`,
+        '',
+        `The Embassy Clerk has noted this in your name.`,
+        '',
+        '— Embassy Clerk',
+    ].join('\n');
+    return {
+        kind: 'civic_milestone',
+        recipient: input.humanId,
+        senderResident: input.deceasedResidentName,
+        subject,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox', 'lanyard-card'],
+    };
+}

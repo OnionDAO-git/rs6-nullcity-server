@@ -1,4 +1,4 @@
-import { type Letter, type EpitaphLetterInput, produceEpitaphLetter } from './letters-producer';
+import { type Letter, type EpitaphLetterInput, produceEpitaphLetter, produceMorticiansRibbonLetter } from './letters-producer';
 import type { LettersStore, LettersStoreAppendResult } from './letters-store';
 
 /**
@@ -100,6 +100,13 @@ export interface DispatchEpitaphResult {
  * result, but does NOT short-circuit the rest of the batch. The
  * cascade of "everyone who supported this resident hears about it" is
  * the whole point — one bad disk write shouldn't silence the others.
+ *
+ * N5: After dispatching all epitaph letters, also dispatches a
+ * Mortician's Ribbon civic milestone letter for each unique patron.
+ * Ribbon dispatch failures are silently swallowed so a broken ribbon
+ * write never prevents the epitaph from landing. The LettersStore's
+ * natural dedup (kind + dispatchedAt + subject + recipient) makes
+ * re-dispatching the same death idempotent.
  */
 export function dispatchEpitaphs(letters: readonly Letter[], store: LettersStore): DispatchEpitaphResult[] {
     const results: DispatchEpitaphResult[] = [];
@@ -115,5 +122,24 @@ export function dispatchEpitaphs(letters: readonly Letter[], store: LettersStore
             });
         }
     }
+
+    // N5: Mortician's Ribbon — one per unique patron per dispatched epitaph.
+    // Only fires for epitaph-kind letters so broadcast/civic batches are safe.
+    for (const letter of letters) {
+        if (letter.kind !== 'epitaph') {
+            continue;
+        }
+        try {
+            const ribbon = produceMorticiansRibbonLetter({
+                humanId: letter.recipient,
+                deceasedResidentName: letter.senderResident,
+                ts: letter.dispatchedAt,
+            });
+            store.append(ribbon);
+        } catch {
+            // Ribbon dispatch failure is non-fatal.
+        }
+    }
+
     return results;
 }
