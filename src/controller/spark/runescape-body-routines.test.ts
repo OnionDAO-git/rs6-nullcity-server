@@ -11,6 +11,7 @@ import {
     combatLootOrPrayerAction,
     combatTrainingAction,
     explorationAction,
+    factionLandmarkWorkAction,
     explorationItemCooldownKey,
     explorationObjectCooldownKey,
     explorationPatrolCooldownKey,
@@ -1682,5 +1683,109 @@ describe('explorationAction', () => {
     it('returns undefined when resident has no position', () => {
         const action = explorationAction(perception({ resident: { position: undefined, inventory: [] } }));
         expect(action).toBeUndefined();
+    });
+});
+
+describe('factionLandmarkWorkAction', () => {
+    const anchor = { x: 3015, y: 3357, level: 0 };
+
+    it('moves a faction hero back toward its landmark before doing local work', () => {
+        const action = factionLandmarkWorkAction({
+            perception: perception({ resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] } }),
+            factionId: 'foundry',
+            landmark: anchor,
+        });
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: anchor,
+            range: 6,
+            cause: 'faction_landmark_return',
+        });
+    });
+
+    it('uses Foundry work to gather forge fuel from visible trees', () => {
+        const tree = { objectId: 1278, position: { x: 3017, y: 3357, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { position: anchor, inventory: [item(1351, 'rs:bronze_axe')] },
+                nearby: { objects: [tree] },
+            }),
+            factionId: 'foundry',
+            landmark: anchor,
+        });
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: tree.position,
+            range: 1,
+            cause: 'faction_foundry_fuel_work',
+        });
+    });
+
+    it('keeps Foundry work visible by patrolling for fuel when no materials are visible', () => {
+        const action = factionLandmarkWorkAction({
+            perception: perception({ tick: 21, resident: { position: anchor, inventory: [item(1351, 'rs:bronze_axe')] } }),
+            factionId: 'foundry',
+            landmark: anchor,
+        });
+
+        expect(action).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'faction_foundry_fuel_work' }));
+    });
+
+    it('uses Bureau work to bury carried bones for the record', () => {
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { position: { x: 3242, y: 3208, level: 0 }, inventory: [item(526, 'rs:bones')] },
+            }),
+            factionId: 'bureau-of-continuity',
+            landmark: { x: 3242, y: 3208, level: 0 },
+        });
+
+        expect(action).toEqual({
+            kind: 'item_action',
+            slot: 0,
+            option: 'bury',
+            cause: 'faction_bureau_witness_work',
+        });
+    });
+
+    it('uses Ledger work to audit nearby public evidence', () => {
+        const plaque = { objectId: 879, position: { x: 3213, y: 3424, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { position: { x: 3210, y: 3424, level: 0 }, inventory: [] },
+                nearby: { objects: [plaque] },
+            }),
+            factionId: 'ledger',
+            landmark: { x: 3210, y: 3424, level: 0 },
+        });
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: plaque.position,
+            range: 2,
+            cause: 'faction_ledger_audit_work',
+        });
+    });
+
+    it('uses Veil work to pick up overlooked useful items', () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 3, position: { x: 3094, y: 3493, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { id: 'resident:res:the-hush', position: { x: 3093, y: 3493, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coins] },
+            }),
+            factionId: 'veil',
+            landmark: { x: 3093, y: 3493, level: 0 },
+            residentId: 'res:the-hush',
+        });
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: coins,
+            option: 'pick-up',
+            cause: 'faction_veil_shadow_work',
+        });
     });
 });

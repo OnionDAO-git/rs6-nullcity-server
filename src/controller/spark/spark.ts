@@ -20,6 +20,20 @@ import { LegacyTracker } from './legacy';
 import { type SparkModeState, idleMode } from './modes';
 import { type Plan, type PlanIntent, installPlan, remainingIntent } from './plan';
 import { PlanExecutor } from './plan-executor';
+import {
+    EXPLORATION_TARGET_COOLDOWN_TICKS,
+    PICKUP_TARGET_COOLDOWN_TICKS,
+    type BodyActor,
+    type BodyPos,
+    type BodyWorldItem,
+    explorationActorCooldownKey,
+    explorationActorFamilyCooldownKey,
+    explorationItemCooldownKey,
+    explorationObjectCooldownKey,
+    explorationPatrolCooldownKey,
+    factionLandmarkWorkAction,
+    pickupItemKey,
+} from './runescape-body-routines';
 import { type VariableDefinition, recomputeVariables } from './variables';
 
 const IDLE_INITIATIVE_FIRST_TICK = 120;
@@ -304,14 +318,26 @@ export class Spark {
             return undefined;
         }
 
+        const factionWork = factionLandmarkAction(this.soul, this.state, perception);
         const candidate =
-            heroAnchorPatrolAction(this.soul, this.state) || generateFirstStepCandidates(perception).find(action => action.kind !== 'noop');
+            factionWork ||
+            heroAnchorPatrolAction(this.soul, this.state) ||
+            generateFirstStepCandidates(perception).find(action => action.kind !== 'noop');
         const visiblePulse: AgentAction = {
             kind: 'say',
             text: idleInitiativeSpeech(this.soul),
             cause: 'idle_initiative',
         };
-        const actions: AgentAction[] = candidate ? [visiblePulse, { ...candidate, cause: 'idle_initiative' }] : [visiblePulse];
+        const candidateCause = factionWork ? candidate?.cause || 'faction_landmark_work' : 'idle_initiative';
+        const candidateAction = candidate ? { ...candidate, cause: candidateCause } : undefined;
+        const actions: AgentAction[] = candidateAction
+            ? candidateAction.kind === 'say'
+                ? [candidateAction]
+                : [visiblePulse, candidateAction]
+            : [visiblePulse];
+        if (factionWork && candidateAction) {
+            rememberFactionLandmarkAttempt(this.state, candidateAction);
+        }
         for (const action of actions) {
             this.state.attention = spendForAction(this.state.attention, action.kind, this.soul.frontmatter.attentionProfile?.floor);
         }
@@ -337,23 +363,30 @@ export class Spark {
 
     watchdogFallback(perception: Perception): SparkTickResult {
         this.abortInflight('thinking_watchdog_timeout');
+        const factionWork = factionLandmarkAction(this.soul, this.state, perception);
         const action =
+            factionWork ||
             heroAnchorPatrolAction(this.soul, this.state) ||
             generateFirstStepCandidates(perception).find(candidate => candidate.kind !== 'noop');
         if (!action) {
             return { actions: [], cause: 'thinking_watchdog_timeout', nooped: true };
         }
 
-        const fallbackAction = { ...action, cause: 'watchdog_fallback' };
+        const fallbackAction = { ...action, cause: factionWork ? action.cause || 'faction_landmark_work' : 'watchdog_fallback' };
         const visiblePulse: AgentAction = {
             kind: 'say',
             text: watchdogFallbackSpeech(this.soul),
             cause: 'watchdog_fallback',
         };
-        this.state.attention = spendForAction(this.state.attention, visiblePulse.kind, this.soul.frontmatter.attentionProfile?.floor);
-        this.state.attention = spendForAction(this.state.attention, fallbackAction.kind, this.soul.frontmatter.attentionProfile?.floor);
+        if (factionWork) {
+            rememberFactionLandmarkAttempt(this.state, fallbackAction);
+        }
+        const actions = fallbackAction.kind === 'say' ? [fallbackAction] : [visiblePulse, fallbackAction];
+        for (const pendingAction of actions) {
+            this.state.attention = spendForAction(this.state.attention, pendingAction.kind, this.soul.frontmatter.attentionProfile?.floor);
+        }
         return {
-            actions: [visiblePulse, fallbackAction],
+            actions,
             cause: 'watchdog_fallback',
             nooped: false,
         };
@@ -525,4 +558,151 @@ function heroAnchorPatrolAction(soul: Soul, state: RuntimeState): AgentAction | 
         range: 1,
         cause: 'watchdog_fallback',
     };
+}
+
+function factionLandmarkAction(soul: Soul, state: RuntimeState, perception: Perception): AgentAction | undefined {
+    const { factionId, heroProfile } = soul.frontmatter;
+    const anchor = heroProfile?.anchor;
+    if (!anchor || !factionId || heroProfile?.tier !== 'hero' || soul.frontmatter.legacy?.parameters?.benchmarkTask) {
+        return undefined;
+    }
+
+    state.cognition ||= {};
+    state.cognition.pickupCooldowns ||= {};
+    state.cognition.explorationCooldowns ||= {};
+    return factionLandmarkWorkAction({
+        perception,
+        factionId,
+        landmark: { x: anchor[0], y: anchor[1], level: anchor[2] },
+        residentId: state.resident,
+        currentTick: state.tick,
+        pickupCooldowns: state.cognition.pickupCooldowns,
+        explorationCooldowns: state.cognition.explorationCooldowns,
+    });
+}
+
+function rememberFactionLandmarkAttempt(state: RuntimeState, action: AgentAction): void {
+    state.cognition ||= {};
+    const item = pickupActionWorldItem(action);
+    if (item) {
+        const cooldowns = (state.cognition.pickupCooldowns ||= {});
+        cooldowns[pickupItemKey(item)] = state.tick;
+        pruneCooldowns(cooldowns, state.tick, PICKUP_TARGET_COOLDOWN_TICKS);
+    }
+
+    const key = explorationCooldownKeyFromAction(action);
+    if (!key) {
+        return;
+    }
+
+    const cooldowns = (state.cognition.explorationCooldowns ||= {});
+    cooldowns[key] = state.tick;
+    const actor = actorLike(actionTarget(action));
+    if (actor?.kind === 'npc') {
+        cooldowns[explorationActorFamilyCooldownKey(actor)] = state.tick;
+    }
+    pruneCooldowns(cooldowns, state.tick, EXPLORATION_TARGET_COOLDOWN_TICKS);
+}
+
+function pruneCooldowns(cooldowns: Record<string, number>, currentTick: number, ttlTicks: number): void {
+    for (const [key, tick] of Object.entries(cooldowns)) {
+        if (currentTick - tick > ttlTicks) {
+            delete cooldowns[key];
+        }
+    }
+}
+
+function explorationCooldownKeyFromAction(action: AgentAction): string | undefined {
+    const target = actionTarget(action);
+    const directPosition = positionLike(target);
+    if (directPosition) {
+        return action.cause === 'faction_landmark_return' ? undefined : explorationPatrolCooldownKey(directPosition);
+    }
+
+    const actor = actorLike(target);
+    if (actor?.kind === 'npc') {
+        return explorationActorCooldownKey(actor);
+    }
+
+    if (isRecord(target)) {
+        const position = positionLike(target.position);
+        if (!position) {
+            return undefined;
+        }
+        if (typeof target.objectId === 'number') {
+            return explorationObjectCooldownKey({ objectId: target.objectId, position });
+        }
+        if (typeof target.itemId === 'number' && typeof target.amount === 'number') {
+            return explorationItemCooldownKey({
+                itemId: target.itemId,
+                key: typeof target.key === 'string' ? target.key : undefined,
+                amount: target.amount,
+                position,
+                ownerId: typeof target.ownerId === 'string' ? target.ownerId : undefined,
+            });
+        }
+    }
+
+    return undefined;
+}
+
+function pickupActionWorldItem(action: AgentAction): BodyWorldItem | undefined {
+    if (action.kind !== 'interact' || !/pick[- ]?up/i.test(String(action.option || ''))) {
+        return undefined;
+    }
+
+    const target = actionTarget(action);
+    if (!isRecord(target)) {
+        return undefined;
+    }
+    const position = positionLike(target.position);
+    if (typeof target.itemId !== 'number' || typeof target.amount !== 'number' || !position) {
+        return undefined;
+    }
+    return {
+        itemId: target.itemId,
+        key: typeof target.key === 'string' ? target.key : undefined,
+        amount: target.amount,
+        position,
+        ownerId: typeof target.ownerId === 'string' ? target.ownerId : undefined,
+    };
+}
+
+function actionTarget(action: AgentAction): unknown {
+    return 'target' in action ? action.target : undefined;
+}
+
+function actorLike(value: unknown): BodyActor | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const position = positionLike(value.position);
+    if (!position || typeof value.id !== 'string') {
+        return undefined;
+    }
+    const kind = value.kind;
+    if (kind !== 'player' && kind !== 'npc' && kind !== 'resident') {
+        return undefined;
+    }
+    return {
+        id: value.id,
+        kind,
+        name: typeof value.name === 'string' ? value.name : undefined,
+        key: typeof value.key === 'string' ? value.key : undefined,
+        position,
+        hpFraction: typeof value.hpFraction === 'number' ? value.hpFraction : undefined,
+        combatLevel: typeof value.combatLevel === 'number' ? value.combatLevel : undefined,
+    };
+}
+
+function positionLike(value: unknown): BodyPos | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const { x, y, level } = value;
+    return typeof x === 'number' && typeof y === 'number' && typeof level === 'number' ? { x, y, level } : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
 }

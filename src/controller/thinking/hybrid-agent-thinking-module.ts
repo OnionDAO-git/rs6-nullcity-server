@@ -37,6 +37,7 @@ import {
     explorationObjectCooldownKey,
     explorationPatrolCooldownKey,
     explorationPatrolTarget,
+    factionLandmarkWorkAction,
     findSlot,
     firemakingAction,
     firstFoodSlot,
@@ -100,12 +101,14 @@ import {
     cleanTarget,
     combatGoal,
     explorationGoal,
+    factionLandmarkWorkGoal,
     firemakingGoal,
     followGoal,
     goalId,
     isCombatTrainingGoal,
     isDedicatedExplorationGoal,
     isExplorationGoal,
+    isFactionLandmarkWorkGoal,
     isFiremakingGoal,
     isFollowGoal,
     isPrayerTrainingGoal,
@@ -247,6 +250,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.ensureCognition();
             this.cognition().tickTelemetry = undefined;
             this.ensureBenchmarkGoal();
+            this.ensureFactionLandmarkGoal();
             this.observeCompletedLocalGoal(perception as HybridPerception);
 
             const directChat = await this.directChatAction(perception as HybridPerception, thinkId, { includeSmallTalk: false });
@@ -1138,6 +1142,21 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const goalText = `${goal.description} ${(goal.steps || []).join(' ')}`;
+        if (isFactionLandmarkWorkGoal(goal)) {
+            const factionWork = factionLandmarkWorkAction({
+                perception,
+                factionId: this.options.soul.frontmatter.factionId,
+                landmark: this.heroLandmarkAnchor(),
+                residentId: this.options.state.resident,
+                pickupCooldowns: this.pickupCooldowns(),
+                currentTick: this.options.state.tick,
+                explorationCooldowns: this.explorationCooldowns(),
+            });
+            if (factionWork) {
+                return { action: factionWork, cause: factionWork.cause || 'faction_landmark_work' };
+            }
+        }
+
         if (isPrayerTrainingGoal(goal)) {
             const prayerAction = prayerTrainingAction(perception);
             if (prayerAction) {
@@ -2996,6 +3015,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return { x: configured.x, y: configured.y, level: configured.level ?? 0 };
     }
 
+    private heroLandmarkAnchor(): Pos | undefined {
+        const anchor = this.options.soul.frontmatter.heroProfile?.anchor;
+        if (anchor) {
+            return { x: anchor[0], y: anchor[1], level: anchor[2] };
+        }
+        return this.visibilityAnchor();
+    }
+
     private behavior(): HybridAgentBehaviorDefinition {
         const behavior = this.options.soul.frontmatter.behavior;
         return behavior?.kind === 'hybrid-agent' ? behavior : { kind: 'hybrid-agent' };
@@ -3152,6 +3179,30 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             cognition.lastGoalShareTick ??= this.options.state.tick;
         }
         cognition.lastBrainTick = this.options.state.tick;
+    }
+
+    private ensureFactionLandmarkGoal(): void {
+        if (this.options.soul.frontmatter.legacy?.parameters?.benchmarkTask) {
+            return;
+        }
+        const { factionId, heroProfile } = this.options.soul.frontmatter;
+        if (!factionId || heroProfile?.tier !== 'hero') {
+            return;
+        }
+
+        const cognition = this.cognition();
+        if (cognition.activeGoal && !isFactionLandmarkWorkGoal(cognition.activeGoal) && !this.goalExpired(cognition.activeGoal)) {
+            return;
+        }
+
+        const goal = factionLandmarkWorkGoal(factionId, this.options.state.tick);
+        if (!cognition.activeGoal || cognition.activeGoal.id !== goal.id || this.goalExpired(cognition.activeGoal)) {
+            this.clearGoalMomentum();
+            cognition.activeGoal = goal;
+            cognition.lastPresenceBeaconTick ??= this.options.state.tick;
+            cognition.lastGoalShareTick = undefined;
+            cognition.lastBrainTick ??= this.options.state.tick;
+        }
     }
 
     private cognition() {

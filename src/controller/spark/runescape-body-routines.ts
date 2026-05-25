@@ -1002,6 +1002,101 @@ export function combatTrainingAction(
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
 }
 
+export interface FactionLandmarkWorkInput {
+    perception: BodyHybridPerception;
+    factionId?: string;
+    landmark?: BodyPos;
+    residentId?: string;
+    pickupCooldowns?: Record<string, number>;
+    currentTick?: number;
+    explorationCooldowns?: Record<string, number>;
+}
+
+/** Deterministic visible work loop for flagship heroes near their faction landmarks. */
+export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): AgentAction | undefined {
+    const { perception, factionId, landmark, residentId, pickupCooldowns, explorationCooldowns } = input;
+    const here = perception.resident?.position;
+    if (!here || !factionId || !landmark) {
+        return undefined;
+    }
+
+    if (here.level !== landmark.level || distance(here, landmark) > 6) {
+        return { kind: 'move_to', target: landmark, range: 6, cause: 'faction_landmark_return' };
+    }
+
+    const currentTick = input.currentTick ?? perception.tick ?? 0;
+    if (factionId === 'foundry') {
+        const fire = firemakingAction(perception);
+        if (fire) {
+            return actionWithCause(fire, 'faction_foundry_fuel_work');
+        }
+        const woodcutting = levelOneWoodcuttingAction(perception);
+        if (woodcutting) {
+            return actionWithCause(woodcutting, 'faction_foundry_fuel_work');
+        }
+        const search = explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns, {
+            interactWithNpcs: false,
+            interactWithOpenables: false,
+        });
+        if (search && search.kind !== 'say') {
+            return actionWithCause(search, 'faction_foundry_fuel_work');
+        }
+        return {
+            kind: 'say',
+            text: 'The Foundry is on post. I need logs, bars, or a human project to turn into work.',
+            cause: 'faction_foundry_fuel_work',
+        };
+    }
+
+    if (factionId === 'bureau-of-continuity') {
+        const bones = buryBonesAction(perception) || prayerTrainingAction(perception);
+        if (bones) {
+            return actionWithCause(bones, 'faction_bureau_witness_work');
+        }
+        return {
+            kind: 'say',
+            text: 'The Bureau is keeping the record. Bring bones, names, or a story and I will witness it.',
+            cause: 'faction_bureau_witness_work',
+        };
+    }
+
+    if (factionId === 'ledger') {
+        const audit = explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns, {
+            interactWithNpcs: false,
+            interactWithOpenables: false,
+        });
+        if (audit) {
+            return actionWithCause(audit, 'faction_ledger_audit_work');
+        }
+        return {
+            kind: 'say',
+            text: 'The Ledger is auditing the public square. I am watching for objects, people, and changes.',
+            cause: 'faction_ledger_audit_work',
+        };
+    }
+
+    if (factionId === 'veil') {
+        const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick, explorationCooldowns);
+        if (pickup) {
+            return actionWithCause(pickup, 'faction_veil_shadow_work');
+        }
+        const scout = explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns, {
+            interactWithNpcs: false,
+            interactWithOpenables: true,
+        });
+        if (scout) {
+            return actionWithCause(scout, 'faction_veil_shadow_work');
+        }
+        return {
+            kind: 'say',
+            text: 'The Veil is scouting quietly. I am looking for what others missed.',
+            cause: 'faction_veil_shadow_work',
+        };
+    }
+
+    return explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns);
+}
+
 // --- Exploration helpers (moved verbatim from the monolith). ---
 
 /** Speech helper used by exploration to approach and talk to a nearby NPC. */

@@ -145,6 +145,96 @@ describe('HybridAgentThinkingModule', () => {
         expect(complete).not.toHaveBeenCalled();
     });
 
+    it('seeds faction landmark work for flagship faction heroes and acts without Body inference', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const hero = {
+            ...soul(),
+            frontmatter: {
+                ...soul().frontmatter,
+                name: 'res:mother-anvil',
+                display: 'Mother Anvil',
+                archetype: 'achiever' as const,
+                factionId: 'foundry',
+                heroProfile: {
+                    tier: 'hero' as const,
+                    publicName: 'Mother Anvil',
+                    signatureAction: 'works the forge',
+                    anchor: [3015, 3357, 0] as [number, number, number],
+                },
+            },
+        };
+        const agent = hybridAgent(llm, state, hero);
+        const tree = { objectId: 1278, position: { x: 3017, y: 3357, level: 0 }, orientation: 0 };
+
+        const result = await agent.think(
+            perception({
+                tick: 12,
+                resident: {
+                    id: 'resident:res:mother-anvil',
+                    position: { x: 3015, y: 3357, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(state.cognition?.activeGoal?.id).toBe('faction-landmark-work-foundry');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: tree.position, range: 1, cause: 'faction_foundry_fuel_work' }]);
+        expect(result.cause).toBe('faction_foundry_fuel_work');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('replaces an expired ordinary goal with faction landmark work for flagship heroes', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'old-local-errand',
+                description: 'An old local errand from before restart.',
+                createdAtTick: 1,
+                ttlTicks: 5,
+            },
+            lastBodyTick: 19,
+        };
+        const hero = {
+            ...soul(),
+            frontmatter: {
+                ...soul().frontmatter,
+                name: 'res:mother-anvil',
+                display: 'Mother Anvil',
+                archetype: 'achiever' as const,
+                factionId: 'foundry',
+                heroProfile: {
+                    tier: 'hero' as const,
+                    publicName: 'Mother Anvil',
+                    signatureAction: 'works the forge',
+                    anchor: [3015, 3357, 0] as [number, number, number],
+                },
+            },
+        };
+        const tree = { objectId: 1278, position: { x: 3017, y: 3357, level: 0 }, orientation: 0 };
+        const agent = hybridAgent(llm, state, hero);
+
+        const result = await agent.think(
+            perception({
+                tick: 20,
+                resident: {
+                    id: 'resident:res:mother-anvil',
+                    position: { x: 3015, y: 3357, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [tree],
+            }),
+        );
+
+        expect(state.cognition?.activeGoal?.id).toBe('faction-landmark-work-foundry');
+        expect(result.cause).toBe('faction_foundry_fuel_work');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('avoids target-failed generated patrol coordinates during normal scouting', async () => {
         const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
             throw new Error('Body inference should not gate local exploration');

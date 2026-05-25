@@ -12,12 +12,14 @@ import {
     cleanTarget,
     combatGoal,
     explorationGoal,
+    factionLandmarkWorkGoal,
     firemakingGoal,
     followGoal,
     goalId,
     isCombatTrainingGoal,
     isDedicatedExplorationGoal,
     isExplorationGoal,
+    isFactionLandmarkWorkGoal,
     cleanSpeech,
     isFiremakingGoal,
     isFollowGoal,
@@ -283,6 +285,20 @@ describe('goal factories', () => {
         expect(g.id).toBe('follow-target');
         expect(g.description).toContain('target');
     });
+
+    it.each([
+        ['foundry', 'forge fuel'],
+        ['bureau-of-continuity', 'witness and record'],
+        ['ledger', 'publicly audit'],
+        ['veil', 'quietly scout'],
+    ])('factionLandmarkWorkGoal builds a %s landmark-work goal', (factionId, expectedPhrase) => {
+        const g = factionLandmarkWorkGoal(factionId, 13);
+        expect(g.id).toBe(`faction-landmark-work-${factionId}`);
+        expect(g.description.toLowerCase()).toContain(expectedPhrase);
+        expect(g.steps?.join(' ').toLowerCase()).toContain('landmark');
+        expect(g.ttlTicks).toBe(900);
+        expect(g.createdAtTick).toBe(13);
+    });
 });
 
 describe('benchmarkGoalForTask', () => {
@@ -371,5 +387,11 @@ describe('goal-identity predicates', () => {
         expect(isFollowGoal(followGoal('Alice', 0))).toBe(true);
         expect(isFollowGoal(firemakingGoal(0))).toBe(false);
         expect(isFollowGoal(undefined)).toBe(false);
+    });
+
+    it('isFactionLandmarkWorkGoal only matches faction work goals', () => {
+        expect(isFactionLandmarkWorkGoal(factionLandmarkWorkGoal('foundry', 0))).toBe(true);
+        expect(isFactionLandmarkWorkGoal(explorationGoal(0))).toBe(false);
+        expect(isFactionLandmarkWorkGoal(undefined)).toBe(false);
     });
 });

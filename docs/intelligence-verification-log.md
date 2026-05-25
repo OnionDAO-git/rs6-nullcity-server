@@ -3161,7 +3161,7 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 **Repro.**
 - Typecheck: `npm run typecheck`
 - Focused unit and integration tests: `npx jest src/controller/resident-runtime.test.ts src/controller/patron/cli.test.ts`
-- Verification suite: `npm run fin`
+- Verification suite: `npm run fin` (1930/1930)
 
 **Observation.**
 - Added two integration tests to `src/controller/resident-runtime.test.ts`:
@@ -3277,3 +3277,27 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 **Suggested next step.** Commit and push the test robustness changes.
 
 **Owner suggestion.** antigravity (complete).
+
+### E70 — M6: Flagship faction landmark work reaches live standard Spark residents
+
+**Status:** PARTIAL — faction flagships now do visible, faction-specific landmark work instead of only idling at their anchors; faction stockpile persistence remains a follow-up.
+**Tier:** 3 (unit + full suite + live controller trajectory proof)
+**Date:** 2026-05-25 13:18 codex
+
+**Hypothesis.** Shipping faction work only in `HybridAgentThinkingModule` is insufficient because the four K3 flagship SOULs run through the standard `Spark` path. M6 needs both Brain/Body support and standard Spark idle/watchdog support.
+
+**Repro.**
+- Focused tests: `npx jest src/controller/spark/runescape-brain-planner.test.ts src/controller/spark/runescape-body-routines.test.ts src/controller/thinking/hybrid-agent-thinking-module.test.ts src/controller/spark/spark-candidates.test.ts --runInBand`
+- Verification suite: `npm run fin`
+- Build: `npm run build`
+- Live proof: restart controller from fresh dist, run `scripts/post-restart-smoke.sh --no-color`, then `npm run controller:smoke -- --observe-seconds 90 --allow-recent-visible`
+
+**Observation.**
+- Added canonical faction landmark goals and deterministic Body routines for Foundry fuel work, Bureau witness work, Ledger audit work, and Veil shadow work.
+- Wired the routines into hybrid active-goal execution and standard Spark idle/watchdog fallback. This was the key live lesson: flagship SOULs are standard Spark residents unless their SOUL declares hybrid behavior.
+- Added a Foundry no-material fallback that patrols/searches instead of only saying it needs logs, so Mother Anvil visibly moves even when no tree/log is immediately visible.
+- Live controller `local-81692` recorded faction-specific trajectory actions for all four flagships: Mother Anvil (`faction_foundry_fuel_work`), Severn Vesta (`faction_bureau_witness_work`), Wren Calix (`faction_ledger_audit_work`), and The Hush (`faction_veil_shadow_work` plus return-to-landmark recovery).
+
+**Classification.** BODY + STANDARD SPARK + HERO CADENCE. Faction NPCs now show distinct jobs on the real controller without waiting on slow inference, but this slice intentionally stops at action selection/trajectory proof.
+
+**Suggested next step.** Build M1/M5 faction stockpile and patron-guided project loops so these visible jobs produce named story outcomes and trade/resource offers.
