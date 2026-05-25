@@ -3,7 +3,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
-import { LUMBRIDGE_STARTER_FISHING_SPOT } from '../spark/runescape-body-routines';
+import { LUMBRIDGE_STARTER_FISHING_SPOT, STARTER_FISHING_SPOT_DISCOVERY_RANGE } from '../spark/runescape-body-routines';
 import type { Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 
@@ -5898,7 +5898,7 @@ describe('HybridAgentThinkingModule', () => {
             {
                 kind: 'move_to',
                 target: { x: 3240, y: 3244, level: 0 },
-                range: 0,
+                range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
                 cause: 'starter_fishing_reposition_to_bank',
             },
         ]);

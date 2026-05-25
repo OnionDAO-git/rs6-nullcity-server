@@ -1803,6 +1803,7 @@ function effectState(perception: Perception | undefined, action?: AgentAction): 
     const nearby = record(root.nearby);
     const state: Record<string, unknown> = {
         hp: resident.hp,
+        busy: resident.busy,
         skills: resident.skills,
         inCombat: resident.inCombat,
         combatTarget: resident.combatTarget,
@@ -1824,7 +1825,7 @@ function changedEffectSections(before: Perception | undefined, after: Perception
 
 function effectStateSections(action?: AgentAction): string[] {
     if (isStarterFishingInteractAction(action)) {
-        return ['skills', 'inventory'];
+        return ['busy', 'skills', 'inventory'];
     }
 
     switch (action?.kind) {
