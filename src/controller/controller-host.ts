@@ -157,8 +157,7 @@ export class ControllerHost {
         await this.gameSkill.flush?.();
         // Persist patron balance and standing states on shutdown defensively
         try {
-            this.patronStore.saveCurrency(this.currencyLedger);
-            this.patronStore.saveStanding(this.standingLedger);
+            this.persistPatronLedgers();
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('[controller-host] patron ledger persist failed during shutdown', error);
@@ -188,6 +187,16 @@ export class ControllerHost {
         }
         runtime.onEvent(event);
         return true;
+    }
+
+    public persistPatronLedgers(): void {
+        this.patronStore.saveCurrency(this.currencyLedger);
+        this.patronStore.saveStanding(this.standingLedger);
+    }
+
+    public refreshPatronLedgersFromDisk(): void {
+        this.currencyLedger.replaceWithSnapshot(this.patronStore.loadCurrency().snapshot());
+        this.standingLedger.replaceWithSnapshot(this.patronStore.loadStanding().snapshot());
     }
 
     async reconcile(): Promise<void> {

@@ -40,6 +40,7 @@ const FINAL_TESTAMENT_PHRASES = [
     'If these are my last hours, I want it known — I was here, and I cared.',
     'I may not last much longer. Let the record show: I stood my ground.',
 ] as const;
+const RESTART_COOLDOWN_COMPAT_WINDOW_TICKS = 1_000;
 
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
@@ -77,9 +78,9 @@ export class NervousSystem {
                         const patronKind = this.options.patronRegistry.getKind(fromName);
                         if (patronKind) {
                             const cooldownKey = `patron-thank:${fromName.toLowerCase()}`;
-                            const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+                            const tick = cooldownTick(this.options.state, perception);
                             const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
-                            if (coolingUntil <= tick) {
+                            if (!isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
                                 this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
                                 this.options.state.hookCooldowns[cooldownKey] = tick + 30;
 
@@ -142,7 +143,7 @@ export class NervousSystem {
             return undefined;
         }
 
-        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const tick = cooldownTick(this.options.state, perception);
         for (const event of perception.events) {
             if (event.kind !== 'chat' || event.source !== 'patron:ask' || !event.from || typeof event.from !== 'object') {
                 continue;
@@ -154,7 +155,7 @@ export class NervousSystem {
 
             const cooldownKey = `patron-ask-acknowledge:${fromName.toLowerCase()}`;
             const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
-            if (coolingUntil > tick) {
+            if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
                 continue;
             }
 
@@ -181,13 +182,13 @@ export class NervousSystem {
     }
 
     private patronMemoryReaction(perception: Perception): NervousReaction | undefined {
-        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const tick = cooldownTick(this.options.state, perception);
         const coolingUntil = this.options.state.hookCooldowns?.['patron-memory-acknowledge:any'] || 0;
-        if (coolingUntil > tick) {
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
             return undefined;
         }
         const scanCoolingUntil = this.options.state.hookCooldowns?.['patron-memory-acknowledge:scan'] || 0;
-        if (scanCoolingUntil > tick) {
+        if (isCooldownActive(scanCoolingUntil, tick, this.options.state.tick)) {
             return undefined;
         }
 
@@ -209,7 +210,7 @@ export class NervousSystem {
 
             const ackKey = `patron-memory-acknowledge:${stableKey(memory)}`;
             const ackCoolingUntil = this.options.state.hookCooldowns?.[ackKey] || 0;
-            if (ackCoolingUntil > tick) {
+            if (isCooldownActive(ackCoolingUntil, tick, this.options.state.tick)) {
                 continue;
             }
 
@@ -263,10 +264,10 @@ export class NervousSystem {
         if (attention <= 0 || attention < floor || attention >= threshold) {
             return undefined;
         }
-        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const tick = cooldownTick(this.options.state, perception);
         const cooldownKey = 'prepare-epitaph:written';
         const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
-        if (coolingUntil > tick) {
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
             return undefined;
         }
 
@@ -310,10 +311,10 @@ export class NervousSystem {
         if (attention <= 0 || attention >= threshold) {
             return undefined;
         }
-        const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+        const tick = cooldownTick(this.options.state, perception);
         const cooldownKey = 'request-attention:appeal';
         const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
-        if (coolingUntil > tick) {
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
             return undefined;
         }
 
@@ -424,4 +425,25 @@ function stableKey(value: string): string {
             .replace(/^-+|-+$/g, '')
             .slice(0, 80) || 'unknown'
     );
+}
+
+function cooldownTick(state: RuntimeState, perception: Perception): number {
+    return typeof perception.tick === 'number' ? perception.tick : state.tick;
+}
+
+function isCooldownActive(coolingUntil: number, tick: number, stateTick: number): boolean {
+    if (coolingUntil <= tick) {
+        return false;
+    }
+
+    // After a controller restart, world/perception ticks can start from a
+    // smaller session-local value while persisted hook cooldowns still carry
+    // the prior runtime tick domain. Non-sentinel cooldowns that are already
+    // behind the restored state tick should be considered expired, while
+    // Number.MAX_SAFE_INTEGER one-shot acknowledgements remain active.
+    if (tick < stateTick && coolingUntil <= stateTick + RESTART_COOLDOWN_COMPAT_WINDOW_TICKS) {
+        return false;
+    }
+
+    return true;
 }

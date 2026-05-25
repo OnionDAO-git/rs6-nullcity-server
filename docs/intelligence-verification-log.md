@@ -3177,6 +3177,31 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 
 **Owner suggestion.** antigravity (complete).
 
+### E68 — J10: Live patron offer ingestion and visible thanks after restart
+
+**Status:** RESOLVED — `patron:offer` uses the running controller MCP path and Hans visibly thanks live Shards offers.
+**Tier:** 3 (live controller + dashboard/wall verification)
+**Date:** 2026-05-25 12:16 codex
+
+**Hypothesis.** Staff `patron:offer` must route through the live controller when MCP is configured; otherwise it mutates a disk/mock runtime and residents do not visibly ingest or thank the patron.
+
+**Repro.**
+- Focused tests: `npm test -- --runInBand src/controller/nervous-system/nervous-system.test.ts src/controller/patron/cli.test.ts src/controller/mcp/server.test.ts src/controller/controller-host.test.ts`
+- Full verification: `npm run fin`
+- Build: `npm run build`
+- Live proof: restart controller with `--mcp-http-port=43610 --letters-http-port=43596 --wall-redact`, run `patron:grant`, then `CONTROLLER_MCP_HTTP_PORT=43610 CONTROLLER_MCP_TOKENS=operator-token npm run patron:offer -- --resident hans`.
+
+**Observation.**
+- Added `patron_offer` MCP tool and CLI live-path preference for `patron:offer`.
+- The live controller refreshes patron ledgers from disk before MCP offers so a staff `patron:grant` immediately funds the running process, then persists ledgers after successful live offers.
+- Fixed Nervous patron-memory cooldowns across restart tick-domain skew: expired old-domain cooldowns no longer block thanks, new short cooldowns use the active perception tick domain, and permanent one-shot acknowledgements stay permanent.
+- Live proof: `codex-live-final-1779729348@onion` offered 10 Shards to Hans. Trajectory recorded `patron_gift` at `2026-05-25T17:16:02.115Z`; Hans said `Thank you for the Shards, codex-live-final-1779729348@onion, and everyone backing me!` at `2026-05-25T17:16:02.968Z`; social memory and Library timeline both recorded it.
+- `controller:smoke --observe-seconds 45 --allow-recent-visible --json` returned 23/23 OK. Dashboard `/api/residents`, wall snapshot, and inbox routes responded with live data.
+
+**Classification.** PATRON LOOP + NERVOUS SYSTEM. Human Shard gifts now affect live residents visibly instead of silently mutating offline files.
+
+**Suggested next step.** Curate the coordination/status commits later; continue live QA on patron ask/whisper/trade flows.
+
 **Resolution.** Wired `LoreBus` in the controller host and runtime; added unit and integration tests in `resident-runtime.test.ts` and `cli.test.ts`; verified full test suite passes. Commit SHA in status log.
 
 
@@ -3228,5 +3253,4 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 **Suggested next step.** Commit and push the test robustness changes.
 
 **Owner suggestion.** antigravity (complete).
-
 

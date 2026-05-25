@@ -73,6 +73,77 @@ describe('NervousSystem', () => {
         expect(system.react(healthyPerception(72))).toBeUndefined();
     });
 
+    it('uses runtime tick cooldowns when perception ticks restart after controller restart', () => {
+        const state = runtimeState(150_772);
+        state.hookCooldowns = {
+            'patron-memory-acknowledge:any': 110_096,
+            'patron-memory-acknowledge:scan': 136_301,
+        };
+        const system = new NervousSystem({
+            soul: soul(),
+            state,
+            memory: memoryWith([
+                'Patron gift from codex-live-mcp-1779728689@onion: 10 Shards (you are now acquaintance to them) (2026-05-25 17:05:10)',
+            ]),
+        });
+
+        const reaction = system.react(healthyPerception(33_300));
+
+        expect(reaction?.action).toEqual({
+            kind: 'say',
+            text: 'Thank you for the Shards, codex-live-mcp-1779728689@onion!',
+            cause: 'nervous:patron-memory-acknowledge',
+        });
+    });
+
+    it('expires short old-domain patron cooldowns left just ahead of restored state tick', () => {
+        const state = runtimeState(150_772);
+        state.hookCooldowns = {
+            'patron-memory-acknowledge:any': 150_776,
+        };
+        const system = new NervousSystem({
+            soul: soul(),
+            state,
+            memory: memoryWith(['Patron gift from fresh-live@onion: 10 Shards (2026-05-25 17:09:04)']),
+        });
+
+        const reaction = system.react(healthyPerception(33_300));
+
+        expect(reaction?.action).toEqual({
+            kind: 'say',
+            text: 'Thank you for the Shards, fresh-live@onion!',
+            cause: 'nervous:patron-memory-acknowledge',
+        });
+    });
+
+    it('expires new patron-memory cooldowns in the active perception tick domain after restart', () => {
+        const state = runtimeState(150_772);
+        state.hookCooldowns = {
+            'patron-memory-acknowledge:any': 110_096,
+        };
+        const memories = [
+            'Patron gift from old-live@onion: 10 Shards (2026-05-25 17:05:10)',
+            'Patron gift from fresh-live@onion: 10 Shards (2026-05-25 17:09:04)',
+        ];
+        const memory = memoryWith([memories[0]]);
+        const system = new NervousSystem({ soul: soul(), state, memory });
+
+        expect(system.react(healthyPerception(33_300))?.action).toEqual({
+            kind: 'say',
+            text: 'Thank you for the Shards, old-live@onion!',
+            cause: 'nervous:patron-memory-acknowledge',
+        });
+
+        (memory.retrieve as jest.Mock).mockReturnValue(memories);
+        const later = system.react(healthyPerception(33_331));
+
+        expect(later?.action).toEqual({
+            kind: 'say',
+            text: 'Thank you for the Shards, fresh-live@onion!',
+            cause: 'nervous:patron-memory-acknowledge',
+        });
+    });
+
     it('keeps survival reflexes ahead of patron-memory thanks', () => {
         const system = new NervousSystem({
             soul: soul(),

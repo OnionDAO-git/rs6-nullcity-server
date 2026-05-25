@@ -364,6 +364,44 @@ export class ControllerMcpServer {
         );
 
         server.tool(
+            'patron_offer',
+            'Offer Shards to a running resident and update live attention/evidence',
+            {
+                human: z.string().min(1).describe('Human or patron handle offering Shards'),
+                resident: z.string().min(1).describe('Resident name, with or without res: prefix'),
+                amount: z.number().int().positive().describe('Shard amount to offer'),
+            },
+            async ({ human, resident, amount }) => {
+                const residentName = normalizeResidentName(resident);
+                this.host.refreshPatronLedgersFromDisk();
+                const outcome = await this.host.patronGateway.offerTo({
+                    humanId: human,
+                    residentName,
+                    amount,
+                    interactionContext: 'mcp_offer',
+                });
+
+                if (outcome.ok) {
+                    this.host.persistPatronLedgers();
+                }
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify({
+                                ok: outcome.ok,
+                                eventId: outcome.eventId,
+                                ...(outcome.standingDelta ? { standingDelta: outcome.standingDelta } : {}),
+                                ...(outcome.error ? { error: outcome.error } : {}),
+                            }),
+                        },
+                    ],
+                };
+            },
+        );
+
+        server.tool(
             'patron_ask',
             'Ask a running resident a patron question and enqueue it as live chat perception',
             {

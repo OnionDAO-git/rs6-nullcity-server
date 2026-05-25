@@ -5,7 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { loadControllerConfig } from '../config';
 import { PatronStore } from './patron-store';
-import { PatronGateway } from './patron-gateway';
+import { PatronGateway, type PatronEventOutcome } from './patron-gateway';
 import { LettersStore } from './letters-store';
 import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
@@ -67,6 +67,16 @@ export interface RunningControllerAskResult {
     error?: string;
 }
 
+export interface RunningControllerOfferInput {
+    url: string;
+    token: string;
+    humanId: string;
+    residentName: string;
+    amount: number;
+}
+
+export type RunningControllerOfferResult = PatronEventOutcome;
+
 export interface RunningControllerWhisperInput {
     url: string;
     token: string;
@@ -83,6 +93,7 @@ export interface RunningControllerWhisperResult {
 export interface PatronCliRuntimeDeps {
     env?: Record<string, string | undefined>;
     askRunningController?: (input: RunningControllerAskInput) => Promise<RunningControllerAskResult>;
+    offerRunningController?: (input: RunningControllerOfferInput) => Promise<RunningControllerOfferResult>;
     whisperRunningController?: (input: RunningControllerWhisperInput) => Promise<RunningControllerWhisperResult>;
 }
 
@@ -298,7 +309,30 @@ export async function askRunningControllerViaMcp(input: RunningControllerAskInpu
     }
 }
 
-function mcpAskConfigFromEnv(env: Record<string, string | undefined>): Pick<RunningControllerAskInput, 'url' | 'token'> | undefined {
+export async function offerRunningControllerViaMcp(input: RunningControllerOfferInput): Promise<RunningControllerOfferResult> {
+    const client = new Client({ name: 'nullcity-patron-cli', version: '0.1.0' });
+    await client.connect(
+        new StreamableHTTPClientTransport(new URL(input.url), {
+            requestInit: { headers: { Authorization: `Bearer ${input.token}` } },
+        }),
+    );
+    try {
+        const result = await client.callTool({
+            name: 'patron_offer',
+            arguments: {
+                human: input.humanId,
+                resident: input.residentName,
+                amount: input.amount,
+            },
+        });
+        const text = firstTextContent(result);
+        return JSON.parse(text) as RunningControllerOfferResult;
+    } finally {
+        await client.close();
+    }
+}
+
+function mcpConfigFromEnv(env: Record<string, string | undefined>): Pick<RunningControllerAskInput, 'url' | 'token'> | undefined {
     const token = env.CONTROLLER_MCP_TOKEN || firstToken(env.CONTROLLER_MCP_TOKENS);
     if (!token) {
         return undefined;
@@ -566,6 +600,19 @@ function uniquePaths(paths: string[]): string[] {
     return [...new Set(paths)];
 }
 
+function logOfferStandingDelta(delta: NonNullable<PatronEventOutcome['standingDelta']>): void {
+    console.log(`[patron:offer] Standing with faction "${delta.factionId}": ${delta.before} -> ${delta.after}`);
+    if (delta.tierCrossed) {
+        // E46 staffer UX: report EVERY tier crossed + matching letter count so
+        // a multi-tier grant doesn't look single-tier in chat. `tiersCrossed`
+        // is canonical (HD-040 / E38); fall back for stale outcomes.
+        const tiers = delta.tiersCrossed && delta.tiersCrossed.length > 0 ? delta.tiersCrossed : [delta.tierCrossed];
+        const letterCount = tiers.length;
+        const letterWord = letterCount === 1 ? 'letter' : 'letters';
+        console.log(`[patron:offer] Tiers crossed: ${tiers.join(', ')} (${letterCount} ${letterWord} dispatched)`);
+    }
+}
+
 const PATRON_KINDS: ReadonlyArray<PatronRegisterKind> = ['patron_gift', 'patron_witness', 'patron_sponsor'];
 
 function assertPatronKind(raw: string): PatronRegisterKind {
@@ -723,6 +770,33 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
         }
 
         if (options.action === 'offer') {
+            const residentName = normalizeResidentName(options.residentName);
+            const liveConfig = mcpConfigFromEnv(deps.env || process.env);
+            if (liveConfig) {
+                const offerRunningController = deps.offerRunningController || offerRunningControllerViaMcp;
+                const outcome = await offerRunningController({
+                    ...liveConfig,
+                    humanId: options.humanId,
+                    residentName,
+                    amount: options.amount,
+                });
+
+                if (!outcome.ok) {
+                    throw new Error(`Live offer failed: ${outcome.error || 'unknown_error'}`);
+                }
+
+                console.log('[patron:offer] Live controller accepted the offer.');
+                console.log(
+                    `[patron:offer] Successfully offered ${options.amount} Shards from human "${options.humanId}" to resident "${residentName}".`,
+                );
+                console.log(`[patron:offer] Event ID: ${outcome.eventId}`);
+                if (outcome.standingDelta) {
+                    logOfferStandingDelta(outcome.standingDelta);
+                }
+                console.log(`[patron:offer] Inbox: http://127.0.0.1:43596/v1/inbox?human=${encodeURIComponent(options.humanId)}`);
+                return 0;
+            }
+
             const bundle = buildResidentBundle(options, config, store, 'offer');
 
             const outcome = await bundle.gateway.offerTo({
@@ -739,18 +813,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
                 );
                 console.log(`[patron:offer] Event ID: ${outcome.eventId}`);
                 if (outcome.standingDelta) {
-                    const delta = outcome.standingDelta;
-                    console.log(`[patron:offer] Standing with faction "${delta.factionId}": ${delta.before} -> ${delta.after}`);
-                    if (delta.tierCrossed) {
-                        // E46 staffer UX: report EVERY tier crossed + matching letter
-                        // count so a multi-tier grant doesn't look single-tier in chat.
-                        // `tiersCrossed` is the canonical list (HD-040 / E38); fall
-                        // back to `tierCrossed` alone if a stale outcome is missing it.
-                        const tiers = delta.tiersCrossed && delta.tiersCrossed.length > 0 ? delta.tiersCrossed : [delta.tierCrossed];
-                        const letterCount = tiers.length;
-                        const letterWord = letterCount === 1 ? 'letter' : 'letters';
-                        console.log(`[patron:offer] Tiers crossed: ${tiers.join(', ')} (${letterCount} ${letterWord} dispatched)`);
-                    }
+                    logOfferStandingDelta(outcome.standingDelta);
                 }
                 // E46 staffer UX: print the inbox URL hint so the staffer can
                 // hand off the link without memorizing port + path. Uses the
@@ -764,7 +827,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
         if (options.action === 'ask') {
             const residentName = normalizeResidentName(options.residentName);
             const startedAt = new Date().toISOString();
-            const liveConfig = mcpAskConfigFromEnv(deps.env || process.env);
+            const liveConfig = mcpConfigFromEnv(deps.env || process.env);
             if (liveConfig) {
                 const askRunningController = deps.askRunningController || askRunningControllerViaMcp;
                 const outcome = await askRunningController({
@@ -821,7 +884,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
 
         if (options.action === 'whisper') {
             const residentName = normalizeResidentName(options.residentName);
-            const liveConfig = mcpAskConfigFromEnv(deps.env || process.env);
+            const liveConfig = mcpConfigFromEnv(deps.env || process.env);
             if (liveConfig) {
                 const whisperRunningController = deps.whisperRunningController || whisperRunningControllerViaMcp;
                 const outcome = await whisperRunningController({

@@ -437,6 +437,43 @@ describe('Patron CLI', () => {
             logSpy.mockRestore();
         });
 
+        it('offer uses the running controller MCP route when configured', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const offerRunningController = jest.fn(async () => ({
+                ok: true,
+                eventId: 'offer-live-1',
+                standingDelta: {
+                    factionId: 'embassy',
+                    before: 0,
+                    after: 10,
+                    tierCrossed: 'acquaintance' as const,
+                    tiersCrossed: ['acquaintance' as const],
+                },
+            }));
+
+            await runPatronCli(['--grant', '--human', 'james', '--amount', '50', '-c', configPath]);
+            const code = await runPatronCli(['--offer', '--human', 'james', '--resident', 'pip', '--amount', '10', '-c', configPath], {
+                env: {
+                    CONTROLLER_MCP_HTTP_PORT: '43594',
+                    CONTROLLER_MCP_TOKENS: 'operator-token',
+                },
+                offerRunningController,
+            });
+
+            expect(code).toBe(0);
+            expect(offerRunningController).toHaveBeenCalledWith({
+                url: 'http://127.0.0.1:43594/controller/mcp',
+                token: 'operator-token',
+                humanId: 'james',
+                residentName: 'res:pip',
+                amount: 10,
+            });
+            expect(fs.existsSync(path.join(memoryDir, 'res-pip', 'runtime-state.json'))).toBe(false);
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:offer] Live controller accepted the offer.'));
+
+            logSpy.mockRestore();
+        });
+
         it('fails and returns exit code 1 if resident soul is missing', async () => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 

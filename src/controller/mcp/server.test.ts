@@ -674,6 +674,93 @@ describe('ControllerMcpServer', () => {
         });
     });
 
+    describe('patron_offer tool', () => {
+        beforeEach(() => {
+            mockHost.patronGateway = {
+                offerTo: jest.fn().mockResolvedValue({
+                    ok: true,
+                    eventId: 'mercy-hd-live-res:pip-123',
+                    standingDelta: {
+                        factionId: 'embassy',
+                        before: 0,
+                        after: 10,
+                        tierCrossed: 'acquaintance',
+                        tiersCrossed: ['acquaintance'],
+                    },
+                }),
+            };
+            mockHost.persistPatronLedgers = jest.fn();
+            mockHost.refreshPatronLedgersFromDisk = jest.fn();
+        });
+
+        it('is registered under name patron_offer with correct properties', () => {
+            const mcpServer = serverInstance.createServer();
+            const registeredTools = (mcpServer as any)._registeredTools;
+
+            const tool = registeredTools.patron_offer;
+            expect(tool).toBeDefined();
+            expect(tool.description).toContain('Offer Shards');
+            expect(tool.inputSchema).toBeDefined();
+        });
+
+        it('applies the offer through the live PatronGateway', async () => {
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.patron_offer;
+
+            const result = await tool.handler({
+                human: 'hd-live',
+                resident: 'pip',
+                amount: 10,
+            });
+
+            expect(mockHost.patronGateway.offerTo).toHaveBeenCalledWith({
+                humanId: 'hd-live',
+                residentName: 'res:pip',
+                amount: 10,
+                interactionContext: 'mcp_offer',
+            });
+            expect(mockHost.refreshPatronLedgersFromDisk).toHaveBeenCalledTimes(1);
+            expect(mockHost.persistPatronLedgers).toHaveBeenCalledTimes(1);
+            const parsed = JSON.parse(result.content[0].text);
+            expect(parsed).toEqual({
+                ok: true,
+                eventId: 'mercy-hd-live-res:pip-123',
+                standingDelta: {
+                    factionId: 'embassy',
+                    before: 0,
+                    after: 10,
+                    tierCrossed: 'acquaintance',
+                    tiersCrossed: ['acquaintance'],
+                },
+            });
+        });
+
+        it('reports gateway errors without inventing a live update', async () => {
+            mockHost.patronGateway.offerTo.mockResolvedValueOnce({
+                ok: false,
+                eventId: '',
+                error: 'resident_not_found',
+            });
+            const mcpServer = serverInstance.createServer();
+            const tool = (mcpServer as any)._registeredTools.patron_offer;
+
+            const result = await tool.handler({
+                human: 'hd-live',
+                resident: 'missing',
+                amount: 10,
+            });
+
+            const parsed = JSON.parse(result.content[0].text);
+            expect(mockHost.refreshPatronLedgersFromDisk).toHaveBeenCalledTimes(1);
+            expect(mockHost.persistPatronLedgers).not.toHaveBeenCalled();
+            expect(parsed).toEqual({
+                ok: false,
+                eventId: '',
+                error: 'resident_not_found',
+            });
+        });
+    });
+
     describe('Plan RB-MCP-ε run_workflow_card tool', () => {
         const logFilePath = path.join(process.cwd(), 'data', 'mcp-call-log.jsonl');
 

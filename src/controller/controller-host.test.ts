@@ -5,6 +5,7 @@ import path from 'path';
 import type { ControllerConfig } from './config';
 import { ControllerHost, type ControllerHostOptions } from './controller-host';
 import { LettersStore } from './patron/letters-store';
+import { PatronStore } from './patron/patron-store';
 import type { LlmClient } from './llm/llm-client';
 import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
@@ -482,6 +483,30 @@ describe('ControllerHost patron wiring (EVENT-D1a)', () => {
         expect(inbox[0].recipient).toBe('alice@onion');
     });
 
+    it('refreshes patron ledgers from disk before live MCP offers use them', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+        const store = new PatronStore(tmpMemory);
+
+        const diskCurrency = store.loadCurrency();
+        diskCurrency.credit('alice@onion', 20, { reason: 'staff_grant', ts: '2026-05-25T16:00:00.000Z' });
+        store.saveCurrency(diskCurrency);
+
+        const diskStanding = store.loadStanding();
+        diskStanding.recordSupport('alice@onion', 'embassy', 7, { reason: 'preexisting', ts: '2026-05-25T16:01:00.000Z' });
+        store.saveStanding(diskStanding);
+
+        expect(currencyLedgerOf(host.patronGateway)?.balance('alice@onion')).toBe(0);
+        expect(standingLedgerOf(host.patronGateway)?.points('alice@onion', 'embassy')).toBe(0);
+
+        host.refreshPatronLedgersFromDisk();
+
+        expect(currencyLedgerOf(host.patronGateway)?.balance('alice@onion')).toBe(20);
+        expect(standingLedgerOf(host.patronGateway)?.points('alice@onion', 'embassy')).toBe(7);
+    });
+
     it('preserves dependency-injected PatronGateway when caller provides one', () => {
         const gateway = new FakeGateway();
         const cfg = config();
@@ -500,6 +525,15 @@ function lettersStoreOf(gateway: ControllerHost['patronGateway']): LettersStore 
 
 function memoryDirOf(gateway: ControllerHost['patronGateway']): string | undefined {
     return (gateway as unknown as { options: { memoryDir?: string } }).options.memoryDir;
+}
+
+function currencyLedgerOf(gateway: ControllerHost['patronGateway']) {
+    return (gateway as unknown as { options: { currencyLedger?: { balance: (humanId: string) => number } } }).options.currencyLedger;
+}
+
+function standingLedgerOf(gateway: ControllerHost['patronGateway']) {
+    return (gateway as unknown as { options: { standingLedger?: { points: (humanId: string, faction: string) => number } } }).options
+        .standingLedger;
 }
 
 function dependencies(gateway: FakeGateway): ControllerHostOptions {

@@ -106,13 +106,20 @@ export class StandingLedger {
     static fromSnapshot(snapshot: StandingLedgerSnapshot, options: StandingLedgerOptions = {}): StandingLedger {
         const parsed = standingLedgerSnapshotSchema.parse(snapshot);
         const ledger = new StandingLedger(options);
+        ledger.replaceWithSnapshot(parsed);
+        return ledger;
+    }
+
+    replaceWithSnapshot(snapshot: StandingLedgerSnapshot): void {
+        const parsed = standingLedgerSnapshotSchema.parse(snapshot);
+        this.pointsByPair.clear();
+        this.historyByPair.clear();
         for (const [key, value] of Object.entries(parsed.points)) {
-            ledger.pointsByPair.set(key, value);
+            this.pointsByPair.set(key, value);
         }
         for (const [key, entries] of Object.entries(parsed.history)) {
-            ledger.historyByPair.set(key, [...entries]);
+            this.historyByPair.set(key, [...entries]);
         }
-        return ledger;
     }
 
     points(humanId: string, faction: string): number {
