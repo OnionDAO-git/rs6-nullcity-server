@@ -679,3 +679,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 07:02 codex branch=agents/wip workstream=N2 STARTING - add patron loop smoke proof for inbox/wall. Files: src/controller/admin/patron-loop-smoke.ts, src/controller/admin/patron-loop-smoke.test.ts, package.json, roadmap.
 2026-05-25 07:06 codex branch=agents/wip workstream=N2 STARTING - fix patron CLI hijacking live evidence current. Files: src/controller/patron/cli.ts, src/controller/patron/cli.test.ts.
 2026-05-25 07:23 codex branch=agents/wip workstream=N2 HANDOFF - patron smoke proves grant->offer->inbox->redacted wall; CLI no longer steals live evidence. SHA=59c8be7e tests=44+fin1820+live smoke collision=Antigravity runtime untouched.
+2026-05-25 07:33 codex branch=agents/wip workstream=D2 STARTING - wall roster should show authored SOUL ambitions when runtime activeGoal is blank. Files: letters wall snapshot/tests, http server/tests, index wiring, status.

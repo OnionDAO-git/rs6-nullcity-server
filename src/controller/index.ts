@@ -59,6 +59,7 @@ async function main(): Promise<void> {
                 path: args.lettersHttpPath,
                 lettersRoot: config.memory.dir,
                 residentIds: config.residents,
+                soulsDir: config.souls.dir,
                 wallRedact: args.lettersHttpWallRedact,
                 health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints }),
             });

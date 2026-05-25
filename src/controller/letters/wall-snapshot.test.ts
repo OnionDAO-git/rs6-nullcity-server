@@ -268,6 +268,41 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
             expect(snap.residents[0].displayName).toBe('Wise Old Man');
         });
 
+        it('falls back to the first authored SOUL goal when runtime cognition has no active goal', () => {
+            const soulsDir = path.join(root, 'souls');
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            writeSoul(soulsDir, 'res-hans.md', {
+                name: 'res:hans',
+                display: 'Hans the Courtyard Watcher',
+                archetype: 'endurer',
+                goals: ['greet every visible human at least once per day', 'keep a mental count of visitors'],
+            });
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z'), soulsDir });
+
+            expect(snap.residents).toHaveLength(1);
+            expect(snap.residents[0].displayName).toBe('Hans the Courtyard Watcher');
+            expect(snap.residents[0].activeGoal).toBe('greet every visible human at least once per day');
+        });
+
+        it('keeps runtime active goals ahead of authored SOUL fallback goals', () => {
+            const soulsDir = path.join(root, 'souls');
+            writeRuntimeState(root, 'res-hans', {
+                attention: 8000,
+                cognition: { activeGoal: { id: 'runtime', description: 'Greet Codex by the gate', createdAtTick: 42 } },
+            });
+            writeSoul(soulsDir, 'res-hans.md', {
+                name: 'res:hans',
+                display: 'Hans',
+                archetype: 'endurer',
+                goals: ['greet every visible human at least once per day'],
+            });
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-23T16:00:00.000Z'), soulsDir });
+
+            expect(snap.residents[0].activeGoal).toBe('Greet Codex by the gate');
+        });
+
         it('marks a resident with a deceased field as alive=false', () => {
             writeRuntimeState(root, 'res-fern', {
                 attention: 0,
@@ -356,4 +391,25 @@ function writeRuntimeState(root: string, slug: string, partial: Partial<RuntimeS
         ...partial,
     };
     fs.writeFileSync(path.join(dir, 'runtime-state.json'), JSON.stringify(state, null, 2));
+}
+
+function writeSoul(
+    soulsDir: string,
+    fileName: string,
+    frontmatter: { name: string; display?: string; archetype: string; goals?: string[] },
+): void {
+    fs.mkdirSync(soulsDir, { recursive: true });
+    const lines = [
+        '---',
+        `name: ${frontmatter.name}`,
+        frontmatter.display ? `display: ${frontmatter.display}` : undefined,
+        `archetype: ${frontmatter.archetype}`,
+        frontmatter.goals && frontmatter.goals.length > 0 ? 'goals:' : undefined,
+        ...(frontmatter.goals || []).map(goal => `  - ${goal}`),
+        '---',
+        '',
+        '# Test soul',
+        '',
+    ].filter((line): line is string => line !== undefined);
+    fs.writeFileSync(path.join(soulsDir, fileName), `${lines.join('\n')}\n`);
 }

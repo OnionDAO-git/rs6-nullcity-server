@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import type { Letter } from '../patron/letters-producer';
+import { SoulLoader } from '../soul/soul-loader';
 
 /**
  * Wall ticker snapshot (workstream EVENT-D6).
@@ -43,6 +44,11 @@ export interface BuildWallSnapshotOptions {
      * When omitted, every res-* runtime-state directory is considered.
      */
     residentIds?: readonly string[];
+    /**
+     * Optional SOUL directory used to fill public roster display names and
+     * fallback ambitions when runtime cognition has not chosen an active goal.
+     */
+    soulsDir?: string;
 }
 
 /** One resident's live status for the wall roster panel. */
@@ -73,7 +79,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     const lettersDir = path.join(lettersRoot, 'data', 'letters');
 
     if (!fs.existsSync(lettersDir)) {
-        return { recentLetters: [], deathsToday: 0, residents: readResidents(lettersRoot, options.residentIds), asOf };
+        return { recentLetters: [], deathsToday: 0, residents: readResidents(lettersRoot, options.residentIds, options.soulsDir), asOf };
     }
 
     const allLetters: Letter[] = [];
@@ -135,7 +141,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         deceasedResidents.add(letter.senderResident);
     }
 
-    const residents = readResidents(lettersRoot, options.residentIds);
+    const residents = readResidents(lettersRoot, options.residentIds, options.soulsDir);
 
     return {
         recentLetters,
@@ -209,7 +215,7 @@ function redactHandle(handle: string): string {
  * of all residents (alive and deceased), sorted alive-first then by slug.
  * Resilient: missing dir, unreadable files, and malformed JSON are skipped.
  */
-function readResidents(lettersRoot: string, residentIds?: readonly string[]): ResidentSummary[] {
+function readResidents(lettersRoot: string, residentIds?: readonly string[], soulsDir?: string): ResidentSummary[] {
     let entries: fs.Dirent[];
     try {
         entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
@@ -218,6 +224,7 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[]): Re
     }
 
     const allowedSlugs = residentIds !== undefined ? new Set(residentIds.map(toResidentSlug)) : undefined;
+    const soulLoader = soulsDir !== undefined ? new SoulLoader(soulsDir) : undefined;
     const summaries: ResidentSummary[] = [];
     for (const entry of entries) {
         if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
@@ -246,9 +253,11 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[]): Re
         if (!isRuntimeStateShape(parsed)) {
             continue;
         }
-        const displayName = humanizeName(slug);
+        const residentName = slugToResidentName(slug);
+        const soulSummary = soulLoader !== undefined ? readSoulRosterSummary(soulLoader, residentName) : undefined;
+        const displayName = soulSummary?.displayName || humanizeName(slug);
         const alive = parsed.deceased === undefined || parsed.deceased === null;
-        const activeGoal =
+        const runtimeActiveGoal =
             parsed.cognition !== undefined &&
             parsed.cognition !== null &&
             typeof parsed.cognition === 'object' &&
@@ -260,6 +269,7 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[]): Re
             typeof (parsed.cognition.activeGoal as Record<string, unknown>).description === 'string'
                 ? ((parsed.cognition.activeGoal as Record<string, unknown>).description as string)
                 : undefined;
+        const activeGoal = runtimeActiveGoal || soulSummary?.fallbackGoal;
 
         const summary: ResidentSummary = { slug, displayName, alive, attention: parsed.attention };
         if (activeGoal !== undefined) {
@@ -281,6 +291,22 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[]): Re
 
 function toResidentSlug(value: string): string {
     return value.startsWith('res:') ? `res-${value.slice('res:'.length).replace(/:/g, '-')}` : value;
+}
+
+function slugToResidentName(slug: string): string {
+    return slug.startsWith('res-') ? `res:${slug.slice('res-'.length)}` : slug;
+}
+
+function readSoulRosterSummary(loader: SoulLoader, residentName: string): { displayName?: string; fallbackGoal?: string } | undefined {
+    try {
+        const soul = loader.load(residentName);
+        return {
+            displayName: soul.frontmatter.display,
+            fallbackGoal: soul.frontmatter.goals?.[0],
+        };
+    } catch {
+        return undefined;
+    }
 }
 
 function humanizeName(slug: string): string {

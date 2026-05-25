@@ -279,6 +279,31 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             const payload = JSON.parse(response.body) as { residents: Array<{ slug: string }> };
             expect(payload.residents.map(r => r.slug)).toEqual(['res-agent', 'res-hans']);
         });
+
+        it('uses SOUL goals for wall roster residents that have not planned a runtime goal yet', async () => {
+            const soulsDir = path.join(tmp, 'souls');
+            writeRuntimeState(tmp, 'res-hans', { attention: 8000 });
+            writeSoul(soulsDir, 'res-hans.md', {
+                name: 'res:hans',
+                display: 'Hans',
+                archetype: 'endurer',
+                goals: ['greet every visible human at least once per day'],
+            });
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                lettersRoot: tmp,
+                residentIds: ['res:hans'],
+                soulsDir,
+                now: () => new Date('2026-05-23T16:00:00.000Z'),
+            });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/wall/snapshot'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { residents: Array<{ activeGoal?: string }> };
+            expect(payload.residents[0].activeGoal).toBe('greet every visible human at least once per day');
+        });
     });
 
     describe('static embassy pages', () => {
@@ -428,4 +453,25 @@ function writeRuntimeState(root: string, slug: string, partial: { attention: num
             2,
         ),
     );
+}
+
+function writeSoul(
+    soulsDir: string,
+    fileName: string,
+    frontmatter: { name: string; display?: string; archetype: string; goals?: string[] },
+): void {
+    fs.mkdirSync(soulsDir, { recursive: true });
+    const lines = [
+        '---',
+        `name: ${frontmatter.name}`,
+        frontmatter.display ? `display: ${frontmatter.display}` : undefined,
+        `archetype: ${frontmatter.archetype}`,
+        frontmatter.goals && frontmatter.goals.length > 0 ? 'goals:' : undefined,
+        ...(frontmatter.goals || []).map(goal => `  - ${goal}`),
+        '---',
+        '',
+        '# Test soul',
+        '',
+    ].filter((line): line is string => line !== undefined);
+    fs.writeFileSync(path.join(soulsDir, fileName), `${lines.join('\n')}\n`);
 }
