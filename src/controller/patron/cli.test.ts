@@ -57,6 +57,7 @@ describe('Patron CLI', () => {
                 text: '',
                 artifact: '',
                 kind: 'patron_gift',
+                referredId: '',
                 configPath: 'my-config.yml',
             });
         });
@@ -71,6 +72,7 @@ describe('Patron CLI', () => {
                 text: '',
                 artifact: '',
                 kind: 'patron_gift',
+                referredId: '',
                 configPath: 'controller.yml',
             });
         });
@@ -85,6 +87,7 @@ describe('Patron CLI', () => {
                 text: 'What did the fire teach you?',
                 artifact: '',
                 kind: 'patron_gift',
+                referredId: '',
                 configPath: 'controller.yml',
             });
         });
@@ -99,13 +102,33 @@ describe('Patron CLI', () => {
                 text: '',
                 artifact: 'first-fire',
                 kind: 'patron_gift',
+                referredId: '',
                 configPath: 'controller.yml',
             });
         });
 
         it('throws error when action is missing', () => {
             expect(() => parsePatronCliArgs(['--human', 'james'])).toThrow(
-                'One of --grant, --offer, --ask, --witness, or --register must be specified.',
+                'One of --grant, --offer, --ask, --witness, --register, --checkin, or --referral must be specified.',
+            );
+        });
+
+        it('parses --checkin options correctly', () => {
+            const parsed = parsePatronCliArgs(['--checkin', '--human', 'alice']);
+            expect(parsed.action).toBe('checkin');
+            expect(parsed.humanId).toBe('alice');
+        });
+
+        it('parses --referral options correctly', () => {
+            const parsed = parsePatronCliArgs(['--referral', '--human', 'bob', '--referred', 'alice']);
+            expect(parsed.action).toBe('referral');
+            expect(parsed.humanId).toBe('bob');
+            expect(parsed.referredId).toBe('alice');
+        });
+
+        it('throws error when --referred is missing for --referral', () => {
+            expect(() => parsePatronCliArgs(['--referral', '--human', 'bob'])).toThrow(
+                '--referred <new-human> is required for --referral.',
             );
         });
 
@@ -502,6 +525,89 @@ describe('Patron CLI', () => {
             expect(code).toBe(1);
 
             errSpy.mockRestore();
+        });
+
+        // J7: daily check-in + referral drips
+        describe('J7 check-in (daily +1 Shard)', () => {
+            it('credits +1 Shard on first check-in and writes patron-check-in.json', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.alice).toBe(1);
+
+                const checkInFile = path.join(memoryDir, 'patron-check-in.json');
+                expect(fs.existsSync(checkInFile)).toBe(true);
+                const checkIn = JSON.parse(fs.readFileSync(checkInFile, 'utf8'));
+                expect(Object.keys(checkIn.checkInDates)).toContain('alice');
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:checkin] Credited +1'));
+                logSpy.mockRestore();
+            });
+
+            it('is idempotent — second call same UTC day is a no-op', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
+                const code = await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.alice).toBe(1);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('already checked in today'));
+                logSpy.mockRestore();
+            });
+        });
+
+        describe('J7 referral (+2 Shards to referrer)', () => {
+            it('credits +2 Shards to referrer for a first-time referred human', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.bob).toBe(2);
+                expect(currency.balances.alice ?? 0).toBe(0);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:referral] Credited +2 Shards'));
+                logSpy.mockRestore();
+            });
+
+            it('second referral call for same referred human is a no-op', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
+                const code = await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.bob).toBe(2);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('No bonus credited'));
+                logSpy.mockRestore();
+            });
+
+            it('self-referral is rejected (no bonus credited)', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli(['--referral', '--human', 'alice', '--referred', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const balance = fs.existsSync(currencyFile) ? (JSON.parse(fs.readFileSync(currencyFile, 'utf8')).balances?.alice ?? 0) : 0;
+                expect(balance).toBe(0);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('No bonus credited'));
+                logSpy.mockRestore();
+            });
         });
     });
 

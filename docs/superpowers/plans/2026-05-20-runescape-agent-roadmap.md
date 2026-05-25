@@ -452,7 +452,8 @@ Safe public module facade building blocks are implemented, but the public member
   - *Completed: Landmark witnessing implemented via witnessAt on PatronGateway, logging patron actions to library timeline.*
 - `[x]` **J6: Visitor-born resident ritual.** Three-part cost (rs6-flavored kindling/inscription/vow) totaling ~24 currency + 24h cooldown per Handler.
   - *Completed: Birth sponsorship implemented via sponsorBirth in PatronGateway with three-part debits and 24h cooldown validation.*
-- `[ ]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
+- `[x]` **J7: Daily check-in + referral drips.** +1/day, +2/referral via staff scan.
+  - Verified 2026-05-25 on `agents/wip`: `CheckInTracker` substrate was already complete; wired to CLI + persistent `PatronStore` (`patron-check-in.json`). `patron:checkin --human <id>` credits +1 Shard idempotently per UTC day; `patron:referral --human <referrer> --referred <new>` credits +2 Shards to referrer on first attendance (no double-credit, no self-referral). +7 tests (3 parser + 4 runPatronCli). Tests 1760/1760 + typecheck + lint + format green.
 - `[x]` **J8: Patron event ingestion.** Wire patron offering / mercy infusion / birth sponsorship / parcel ratification events into the Evidence Layer's `patron` line shape (consumer side is Workstream I's library).
   - *Completed: Integrated in PatronGateway to record all actions to both the trajectory builder and the library timeline.*
 - `[x]` **J9: Visible patron acknowledgement loop.** Residents should visibly thank patrons after out-of-band Shards/support events reach Library memory, without relying on the LLM to notice.

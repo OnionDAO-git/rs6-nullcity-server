@@ -28,6 +28,8 @@
         "patron:ask": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --ask",
         "patron:witness": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --witness",
         "patron:register": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --register",
+        "patron:checkin": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --checkin",
+        "patron:referral": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --referral",
         "controller:knowledge:review": "npm run build && node dist/controller/knowledge/review-suggestions.js",
         "simulation": "npm run build && npm run build:simulation && node dist/simulation/index.js",
         "simulation:birth": "npm run build:simulation && node dist/simulation/birth.js",

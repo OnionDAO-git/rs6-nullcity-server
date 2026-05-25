@@ -2,14 +2,17 @@ import fs from 'fs';
 import path from 'path';
 import { CurrencyLedger, CurrencyLedgerSnapshot } from './currency-ledger';
 import { StandingLedger, StandingLedgerSnapshot } from './standing-ledger';
+import { CheckInTracker, CheckInTrackerSnapshot } from './check-in-tracker';
 
 export class PatronStore {
     private readonly currencyPath: string;
     private readonly standingPath: string;
+    private readonly checkInPath: string;
 
     constructor(private readonly memoryRoot: string) {
         this.currencyPath = path.join(memoryRoot, 'patron-currency.json');
         this.standingPath = path.join(memoryRoot, 'patron-standing.json');
+        this.checkInPath = path.join(memoryRoot, 'patron-check-in.json');
     }
 
     loadCurrency(options = {}): CurrencyLedger {
@@ -50,5 +53,25 @@ export class PatronStore {
         const tempPath = `${this.standingPath}.tmp`;
         fs.writeFileSync(tempPath, JSON.stringify(ledger.snapshot(), null, 2), 'utf8');
         fs.renameSync(tempPath, this.standingPath);
+    }
+
+    loadCheckIn(ledger: CurrencyLedger): CheckInTracker {
+        if (!fs.existsSync(this.checkInPath)) {
+            return new CheckInTracker(ledger);
+        }
+        try {
+            const raw = fs.readFileSync(this.checkInPath, 'utf8');
+            const snap = JSON.parse(raw) as CheckInTrackerSnapshot;
+            return CheckInTracker.fromSnapshot(ledger, snap);
+        } catch {
+            return new CheckInTracker(ledger);
+        }
+    }
+
+    saveCheckIn(tracker: CheckInTracker): void {
+        fs.mkdirSync(path.dirname(this.checkInPath), { recursive: true });
+        const tempPath = `${this.checkInPath}.tmp`;
+        fs.writeFileSync(tempPath, JSON.stringify(tracker.snapshot(), null, 2), 'utf8');
+        fs.renameSync(tempPath, this.checkInPath);
     }
 }

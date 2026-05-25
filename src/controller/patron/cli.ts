@@ -11,7 +11,7 @@ import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 
-export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | '';
+export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | 'checkin' | 'referral' | '';
 
 /**
  * Kind of patron registration: governs what nervous-system rules will treat
@@ -31,6 +31,8 @@ export interface PatronCliOptions {
     artifact: string;
     /** For --register: which patron kind to record. Defaults to 'patron_gift'. */
     kind: PatronRegisterKind;
+    /** For --referral: the new human being referred (--human is the referrer). */
+    referredId: string;
     configPath: string;
 }
 
@@ -68,6 +70,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
         text: '',
         artifact: '',
         kind: 'patron_gift',
+        referredId: '',
         configPath: 'controller.yml',
     };
 
@@ -83,6 +86,17 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.action = 'witness';
         } else if (arg === '--register') {
             options.action = 'register';
+        } else if (arg === '--checkin') {
+            options.action = 'checkin';
+        } else if (arg === '--referral') {
+            options.action = 'referral';
+        } else if (arg === '--referred') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--referred requires a value');
+            options.referredId = next;
+            i += 1;
+        } else if (arg.startsWith('--referred=')) {
+            options.referredId = arg.slice('--referred='.length);
         } else if (arg === '--kind') {
             const next = argv[i + 1];
             if (!next) throw new Error('--kind requires a value');
@@ -136,7 +150,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
     }
 
     if (!options.action) {
-        throw new Error('One of --grant, --offer, --ask, --witness, or --register must be specified.');
+        throw new Error('One of --grant, --offer, --ask, --witness, --register, --checkin, or --referral must be specified.');
     }
     if (!options.humanId) {
         throw new Error('--human <id> is required.');
@@ -172,6 +186,11 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             // synthesize a timestamp-based fallback so a real embassy clerk
             // doesn't have to learn yet another required-flag pattern.
             options.artifact = `witness-${residentSlug(options.residentName)}-${Date.now()}`;
+        }
+    }
+    if (options.action === 'referral') {
+        if (!options.referredId) {
+            throw new Error('--referred <new-human> is required for --referral.');
         }
     }
 
@@ -568,6 +587,42 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             store.saveCurrency(ledger);
             console.log(`[patron:grant] Successfully credited ${options.amount} Shards to human "${options.humanId}".`);
             console.log(`[patron:grant] New balance: ${ledger.balance(options.humanId)} Shards.`);
+            return 0;
+        }
+
+        if (options.action === 'checkin') {
+            const ledger = store.loadCurrency();
+            const tracker = store.loadCheckIn(ledger);
+            const result = tracker.checkIn(options.humanId);
+            store.saveCurrency(ledger);
+            store.saveCheckIn(tracker);
+            if (result.credited) {
+                console.log(`[patron:checkin] Credited +${result.shards} Shard(s) to "${options.humanId}" (daily check-in).`);
+                console.log(`[patron:checkin] New balance: ${ledger.balance(options.humanId)} Shards.`);
+            } else {
+                console.log(`[patron:checkin] "${options.humanId}" already checked in today (UTC). No change.`);
+                console.log(`[patron:checkin] Balance: ${ledger.balance(options.humanId)} Shards.`);
+            }
+            return 0;
+        }
+
+        if (options.action === 'referral') {
+            const ledger = store.loadCurrency();
+            const tracker = store.loadCheckIn(ledger);
+            const result = tracker.recordWorkshopAttendance(options.referredId, { referredBy: options.humanId });
+            store.saveCurrency(ledger);
+            store.saveCheckIn(tracker);
+            if (result.referralCredited) {
+                console.log(
+                    `[patron:referral] Credited +2 Shards to referrer "${options.humanId}" for introducing "${options.referredId}".`,
+                );
+                console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} Shards.`);
+            } else {
+                console.log(
+                    `[patron:referral] No bonus credited — "${options.referredId}" was already referred, or self-referral attempted.`,
+                );
+                console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} Shards.`);
+            }
             return 0;
         }
 
