@@ -201,23 +201,26 @@ function buildRelationships(events: Array<Record<string, unknown>>): PortraitRel
     return [...relationships.values()].sort((a, b) => a.firstMet.tick - b.firstMet.tick);
 }
 
+const WANTS_CAP = 5;
+
 function buildWants(events: Array<Record<string, unknown>>, deceased: boolean): PortraitWants {
-    const wants = events
-        .filter(event => event.kind === 'say')
-        .map(event => stringField(event, 'text') || '')
-        .filter(isWantText);
+    const wantEvents = events.filter(event => event.kind === 'say' && isWantText(stringField(event, 'text') || ''));
+    // Keep the most-recent occurrence of each distinct want text (residents often repeat the same need
+    // every tick while blocked; the portrait should read like a biography, not a log dedupe).
+    const seen = new Set<string>();
+    const distinct: Array<{ text: string; lifeIndex: number }> = [];
+    for (const event of [...wantEvents].reverse()) {
+        const text = stringField(event, 'text') || '';
+        if (!text || seen.has(text)) {
+            continue;
+        }
+        seen.add(text);
+        distinct.unshift({ text, lifeIndex: numberField(event, 'lifeIndex', 1) });
+    }
+    const capped = distinct.slice(-WANTS_CAP);
     return {
-        current: deceased ? [] : wants,
-        unfulfilledAtDeath: deceased
-            ? wants.map(want => ({
-                  lifeIndex: numberField(
-                      events.find(event => stringField(event, 'text') === want),
-                      'lifeIndex',
-                      1,
-                  ),
-                  want,
-              }))
-            : [],
+        current: deceased ? [] : capped.map(entry => entry.text),
+        unfulfilledAtDeath: deceased ? capped.map(entry => ({ lifeIndex: entry.lifeIndex, want: entry.text })) : [],
     };
 }
 

@@ -1,0 +1,90 @@
+import { renderPortrait, type PortraitIndex } from './portrait-template';
+
+describe('renderPortrait wants quality', () => {
+    const index: PortraitIndex = {
+        resident: 'res:qa-guardian',
+        createdAt: '2026-05-25T03:09:13.635Z',
+        updatedAt: '2026-05-25T04:09:13.635Z',
+        lives: 1,
+        currentState: 'living',
+    };
+
+    it('deduplicates identical wants in the current-life list', () => {
+        const sayText = 'I am too hurt to start combat without food. I need to heal or get food first.';
+        const timeline = Array.from({ length: 30 }, (_, i) => ({
+            kind: 'say',
+            tick: 22 + i,
+            ts: `2026-05-25T03:0${i % 10}:13.635Z`,
+            text: sayText,
+            lifeIndex: 1,
+        }));
+        const rendered = renderPortrait('res:qa-guardian', index, timeline);
+        expect(rendered.portrait.wants.current).toEqual([sayText]);
+    });
+
+    it('caps the current-life wants list at 5 distinct entries', () => {
+        const distinct = Array.from({ length: 12 }, (_, i) => `I want item-${i} from the merchant.`);
+        const timeline = distinct.map((text, i) => ({
+            kind: 'say',
+            tick: 100 + i,
+            ts: `2026-05-25T04:00:0${i}.000Z`,
+            text,
+            lifeIndex: 1,
+        }));
+        const rendered = renderPortrait('res:qa-guardian', index, timeline);
+        expect(rendered.portrait.wants.current).toHaveLength(5);
+        // Should keep the most recent distinct wants (last 5)
+        expect(rendered.portrait.wants.current).toEqual(distinct.slice(-5));
+    });
+
+    it('preserves non-want says (no false matches when wants are deduped)', () => {
+        const timeline = [
+            { kind: 'say', tick: 1, ts: '2026-05-25T04:00:01.000Z', text: 'I need to heal.', lifeIndex: 1 },
+            { kind: 'say', tick: 2, ts: '2026-05-25T04:00:02.000Z', text: 'Just admiring the trees.', lifeIndex: 1 },
+            { kind: 'say', tick: 3, ts: '2026-05-25T04:00:03.000Z', text: 'I need to heal.', lifeIndex: 1 },
+        ];
+        const rendered = renderPortrait('res:qa-guardian', index, timeline);
+        // Current wants: only the deduped want text — not the non-want say.
+        expect(rendered.portrait.wants.current).toEqual(['I need to heal.']);
+        // Voice quotes still include the non-want.
+        expect(rendered.portrait.voice.quotes.map(q => q.text)).toContain('Just admiring the trees.');
+    });
+
+    it('falls back to unfulfilledAtDeath when deceased and dedups there too', () => {
+        const sayText = 'I need to find safer training grounds.';
+        const timeline = [
+            ...Array.from({ length: 5 }, (_, i) => ({
+                kind: 'say',
+                tick: 10 + i,
+                ts: `2026-05-25T04:00:0${i}.000Z`,
+                text: sayText,
+                lifeIndex: 1,
+            })),
+            { kind: 'legacy_event', tick: 20, ts: '2026-05-25T04:10:00.000Z', event: { cause: 'goblin' }, lifeIndex: 1 },
+        ];
+        const deceasedIndex: PortraitIndex = { ...index, currentState: 'ended' };
+        const rendered = renderPortrait('res:qa-guardian', deceasedIndex, timeline);
+        expect(rendered.portrait.wants.current).toEqual([]);
+        expect(rendered.portrait.wants.unfulfilledAtDeath).toEqual([{ lifeIndex: 1, want: sayText }]);
+    });
+
+    it('renders deduped wants in the markdown (no 42-line repeat)', () => {
+        const sayText = 'I need to heal or get food first.';
+        const timeline = Array.from({ length: 42 }, (_, i) => ({
+            kind: 'say',
+            tick: 22 + i,
+            ts: `2026-05-25T03:0${i % 10}:13.635Z`,
+            text: sayText,
+            lifeIndex: 1,
+        }));
+        const rendered = renderPortrait('res:qa-guardian', index, timeline);
+        const wantsSection = rendered.markdown.split('## Who they knew')[0];
+        // Should contain the line once, not 42 times.
+        const matches = wantsSection.match(new RegExp(escapeRegExp(`- ${sayText}`), 'g')) ?? [];
+        expect(matches).toHaveLength(1);
+    });
+});
+
+function escapeRegExp(input: string): string {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
