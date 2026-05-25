@@ -18,6 +18,7 @@ import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
 import { evaluateReceptionGreeting } from './embassy/reception-reflex';
+import { canInteract } from './actions/interact-resident';
 import {
     EVIDENCE_SCHEMA_VERSION,
     ProgressTracker,
@@ -474,6 +475,28 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 });
 
                 for (const action of result.actions) {
+                    const interactReasons = canInteract(this.state, action, compressedPerception, this.options.soul);
+                    if (interactReasons.length > 0) {
+                        const tick = typeof compressedPerception.tick === 'number' ? compressedPerception.tick : this.state.tick;
+                        const requestId = `gate:${tick}:${action.kind}`;
+                        this.recordEvidence(trajectory => {
+                            const line = trajectory.recordAction(action, requestId);
+                            this.evidence?.library?.observeTrajectory(line);
+                            trajectory.recordActionResult(requestId, {
+                                status: 'failure',
+                                reason: interactReasons.join('; '),
+                            });
+                        });
+                        this.options.inferenceLog.append(this.name, {
+                            tick: this.state.tick,
+                            cause: 'interact_resident_precondition_failed',
+                            actionKind: action.kind,
+                            reasons: interactReasons.join('; '),
+                            sparkModule: this.thinkingSparkModule,
+                        });
+                        continue;
+                    }
+
                     const attempt = await this.submitActionWithWatchdog({
                         producer: 'body',
                         action,

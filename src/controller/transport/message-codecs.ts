@@ -51,6 +51,9 @@ export type AgentAction = (
     | { kind: 'trade_offer_item'; cause?: string; itemId: number; quantity: number; slot?: number }
     | { kind: 'trade_accept'; cause?: string }
     | { kind: 'trade_decline'; cause?: string; reason?: string }
+    | { kind: 'gift'; target: string; artifact: string; quantity: number; note?: string; cause?: string }
+    | { kind: 'assist_skill'; target: string; skill: string; durationTicks: number; cause?: string }
+    | { kind: 'challenge_duel'; target: string; stake?: { artifact: string; quantity: number }; cause?: string }
     | ({ kind: string; cause?: string } & Record<string, unknown>)
 ) & {
     voiceSource?: 'phrasebook' | 'inference' | 'scripted';
@@ -227,6 +230,32 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
     // G4: collapsed single-step accept verb for brain/body authoring.
     z.object({ kind: z.literal('trade_accept'), cause: z.string().optional() }),
     z.object({ kind: z.literal('trade_decline'), cause: z.string().optional(), reason: z.string().optional() }),
+    z.object({
+        kind: z.literal('gift'),
+        target: z.string(),
+        artifact: z.string(),
+        quantity: z.number().int().positive(),
+        note: z.string().optional(),
+        cause: z.string().optional(),
+    }),
+    z.object({
+        kind: z.literal('assist_skill'),
+        target: z.string(),
+        skill: z.string(),
+        durationTicks: z.number().int().positive().max(10),
+        cause: z.string().optional(),
+    }),
+    z.object({
+        kind: z.literal('challenge_duel'),
+        target: z.string(),
+        stake: z
+            .object({
+                artifact: z.string(),
+                quantity: z.number().int().positive(),
+            })
+            .optional(),
+        cause: z.string().optional(),
+    }),
 ]) as z.ZodType<AgentAction>;
 
 export const gatewayEnvelopeSchema = z.object({

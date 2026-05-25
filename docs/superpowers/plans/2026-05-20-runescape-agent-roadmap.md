@@ -499,7 +499,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Residents that affect each other beyond independent action — interactions, projects, rumor. Largely unmined in v2. Spec: `docs/superpowers/specs/2026-05-22-cross-resident-lore-design.md` *(deferred until after J/K land — not load-bearing for June 1)*.
 
-- `[ ]` **L1: `interact_resident` action verbs.** `whisper`, `gift`, `assist_skill`, `challenge_duel` with typed preconditions.
+- `[x]` **L1: `interact_resident` action verbs.** `whisper`, `gift`, `assist_skill`, `challenge_duel` with typed preconditions.
+  - Verified 2026-05-25 on `agents/wip`: implemented typed preconditions substrate (`interact-resident.ts`) and ResidentRuntime gating loop for whisper, gift, assist_skill, and challenge_duel. Added extensive unit testing for all validation rules.
 - `[ ]` **L2: Resident-owned projects.** Long-running funded artifacts (shop, citadel room, herb patch). Pick three project archetypes for rs6 MVP.
 - `[ ]` **L3: `world_events` or broadcast channel.** Shared data surface; ambient utterances propagate to adjacent rooms.
 - `[ ]` **L4: Resident-perceived in-game events.** Player level-ups, PKs, quest completions, faction territory shifts in the perception envelope.

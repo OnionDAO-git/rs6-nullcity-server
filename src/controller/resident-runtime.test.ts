@@ -134,6 +134,58 @@ describe('ResidentRuntime modules', () => {
         ]);
     });
 
+    it('gates invalid interact_resident actions returned by thinking and records failure evidence', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gate-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gate-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-21T08:45:00.000Z') });
+        const session = store.beginSession('session-gate', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-21T08:45:01.000Z') }),
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'whisper', to: 'res:non-existent', text: 'hello' }],
+                cause: 'gate-test',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        await runtime.onPerception({ tick: 8, events: [] });
+
+        expect(body.submit).not.toHaveBeenCalled();
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                tick: 8,
+                requestId: 'gate:8:whisper',
+                status: 'failure',
+                reason: 'Target res:non-existent is not visible',
+            }),
+        );
+    });
+
     it('remembers target_not_found failures so thinking can avoid stale targets', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-target-failure-'));
         const state = stateFor('res:pip');
