@@ -114,6 +114,25 @@ describe('evaluateReceptionGreeting (EVENT-D3)', () => {
             );
             expect(result).toBeNull();
         });
+
+        it('returns null for synthetic patron ask chat events so the CLI fallback can answer', () => {
+            const result = evaluateReceptionGreeting(
+                makeInput({
+                    perception: {
+                        resident: { position: { x: 3243, y: 3209, level: 0 } },
+                        events: [
+                            {
+                                kind: 'chat',
+                                source: 'patron:ask',
+                                text: 'Can you greet me?',
+                                from: { name: 'alice@onion' },
+                            },
+                        ],
+                    },
+                }),
+            );
+            expect(result).toBeNull();
+        });
     });
 
     describe('picks the most-recent patron chat when multiple are present', () => {

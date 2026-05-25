@@ -506,6 +506,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[ ]` **N5: Mortician's Ribbon civic achievement.** Bestowed for humans witnessing N resident deaths (N TBD). In-game cape/title + lanyard variant.
 - `[x]` **N6: EVENT-D3 embassy reception greeting wire-in.** Registered patrons who chat while a hero resident is inside the Lumbridge churchyard embassy trigger a deterministic welcome and `PatronGateway.witnessAt(...)`.
   - Verified 2026-05-24 on `agents/wip`: `ResidentRuntime` runs `evaluateReceptionGreeting(...)` before the generic patron-thank reflex and before Brain inference, submits `say` with cause `embassy_reception_greeting`, records the witness only after the say action succeeds, and `ControllerHost` passes the live `PatronGateway` into each runtime. Focused red/green tests cover production wiring and the failed-say no-witness guard. Live use still requires `controller.yml#patrons[]` to contain the attendee handle and a built/restarted controller.
+  - Hardened 2026-05-24 on `agents/wip`: D3 now ignores synthetic `source=patron:ask` chat events, preserving the CLI/MCP patron ask acknowledgement path after `controller.yml#patrons[]` is populated. Focused red/green tests cover the pure evaluator and runtime order-of-operations regression.
 
 ## Workstream O: Engineering And Tooling Polish
 

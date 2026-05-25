@@ -104,6 +104,10 @@ export function evaluateReceptionGreeting(input: ReceptionGreetingInput): Recept
         if (e.kind !== 'chat') {
             continue;
         }
+        // Synthetic operator asks have their own acknowledgement path; D3 is for in-world patron chat.
+        if (e.source === 'patron:ask') {
+            continue;
+        }
         const from = e.from;
         if (!from || typeof from !== 'object') {
             continue;

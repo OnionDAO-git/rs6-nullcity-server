@@ -1664,6 +1664,62 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).not.toHaveBeenCalled();
     });
 
+    it('lets synthetic patron asks use the patron-ask acknowledgement instead of the embassy greeting', async () => {
+        const state = stateFor('res:hans');
+        const thinking = thinkingModule();
+        const askAck = 'I heard you, alice@onion. I will answer what I can while I keep moving.';
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'patron-ask-ack-1' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(async () => ({
+                ok: true,
+                observation: {
+                    seq: 1,
+                    observedAt: Date.now(),
+                    value: {
+                        kind: 'chat',
+                        text: askAck,
+                        from: { name: 'res:hans' },
+                    },
+                },
+            })),
+        } as unknown as ResidentBody;
+        const patronGateway = { witnessAt: jest.fn(async () => undefined) };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:hans'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            patrons: [{ handle: 'alice@onion', kind: 'patron_witness' }],
+            patronGateway,
+        } as ConstructorParameters<typeof ResidentRuntime>[0]);
+
+        runtime.onEvent({
+            kind: 'chat',
+            source: 'patron:ask',
+            from: { id: 'player:aliceonion', kind: 'player', name: 'alice@onion', position: { x: 0, y: 0, level: 0 } },
+            text: 'Can you answer me?',
+            to: 'public',
+            ts: '2026-05-25T01:00:00Z',
+        });
+        await runtime.onPerception({ tick: 1, resident: { position: { x: 3243, y: 3209, level: 0 } }, events: [] });
+
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'say', text: askAck, cause: 'nervous:patron-ask-acknowledge' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'patron-ask-acknowledge-alice-onion' }),
+        );
+        expect(patronGateway.witnessAt).not.toHaveBeenCalled();
+        expect(thinking.think).not.toHaveBeenCalled();
+    });
+
     it('uses follow_player routine params to target the named nearby player at requested distance', async () => {
         const state = stateFor('res:pip');
         const body = {
