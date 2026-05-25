@@ -3177,6 +3177,30 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 
 **Owner suggestion.** antigravity (complete).
 
+### E69 — M3: Hero attention appeals stop replaying after restart
+
+**Status:** RESOLVED — newly written Nervous cooldowns stay active when perception ticks restart below persisted state ticks.
+**Tier:** 3 (unit + full suite + live controller/dashboard/wall smoke)
+**Date:** 2026-05-25 12:33 codex
+
+**Hypothesis.** The earlier restart-compat cooldown fix expired old-domain cooldowns correctly, but also expired new short cooldowns written in the fresh perception-tick domain. That made heroes at their attention floor repeat `request_attention` every visible tick after a controller restart.
+
+**Repro.**
+- Red tests: `npm test -- --runInBand src/controller/nervous-system/nervous-system.test.ts -t "newly written .* cooldown"`
+- Full verification: `npm run fin`
+- Build: `npm run build`
+- Live proof: restart controller on fresh dist, then run `npm run controller:smoke -- --observe-seconds 45 --allow-recent-visible --json`.
+
+**Observation.**
+- Added red/green coverage for new appeal and prepare-epitaph cooldowns when `state.tick` is high but `perception.tick` has restarted low.
+- `isCooldownActive(...)` now treats cooldowns close to the active perception tick as active-domain, while expiring cooldowns far ahead of perception but close to restored state tick as old-domain drift.
+- Long prepare-epitaph cooldowns pass their own active window, so final-testament one-shot behavior is preserved across the same restart skew.
+- Live `local-67694`: 23 residents online; dashboard and wall snapshots showed 23 residents; Hans/Duke/Pip/etc. produced authored SOUL/idle status lines and movement, not repeated embassy-offering appeal spam.
+
+**Classification.** NERVOUS SYSTEM + HERO CADENCE. The residents look less desperate and more authored after restart, while real low-attention appeals still retain their cooldown.
+
+**Suggested next step.** Continue hero behavior QA on richer faction landmark actions (M6) and patron-guided project loops (M1/M5/L2).
+
 ### E68 — J10: Live patron offer ingestion and visible thanks after restart
 
 **Status:** RESOLVED — `patron:offer` uses the running controller MCP path and Hans visibly thanks live Shards offers.
@@ -3253,4 +3277,3 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 **Suggested next step.** Commit and push the test robustness changes.
 
 **Owner suggestion.** antigravity (complete).
-

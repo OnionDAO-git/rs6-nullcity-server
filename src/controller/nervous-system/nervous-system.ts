@@ -267,7 +267,7 @@ export class NervousSystem {
         const tick = cooldownTick(this.options.state, perception);
         const cooldownKey = 'prepare-epitaph:written';
         const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
-        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick, PREPARE_EPITAPH_COOLDOWN_TICKS)) {
             return undefined;
         }
 
@@ -431,18 +431,25 @@ function cooldownTick(state: RuntimeState, perception: Perception): number {
     return typeof perception.tick === 'number' ? perception.tick : state.tick;
 }
 
-function isCooldownActive(coolingUntil: number, tick: number, stateTick: number): boolean {
+function isCooldownActive(
+    coolingUntil: number,
+    tick: number,
+    stateTick: number,
+    maxActiveCooldownTicks = RESTART_COOLDOWN_COMPAT_WINDOW_TICKS,
+): boolean {
     if (coolingUntil <= tick) {
         return false;
     }
 
     // After a controller restart, world/perception ticks can start from a
     // smaller session-local value while persisted hook cooldowns still carry
-    // the prior runtime tick domain. Non-sentinel cooldowns that are already
-    // behind the restored state tick should be considered expired, while
-    // Number.MAX_SAFE_INTEGER one-shot acknowledgements remain active.
+    // the prior runtime tick domain. A cooldown close to the new perception
+    // tick is active-domain and should still hold; a cooldown far ahead of
+    // the new tick but close to the restored state tick is old-domain drift
+    // and should expire. Number.MAX_SAFE_INTEGER one-shot acknowledgements
+    // remain active because they are far beyond the restored state tick.
     if (tick < stateTick && coolingUntil <= stateTick + RESTART_COOLDOWN_COMPAT_WINDOW_TICKS) {
-        return false;
+        return coolingUntil <= tick + maxActiveCooldownTicks;
     }
 
     return true;

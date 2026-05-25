@@ -273,6 +273,18 @@ describe('NervousSystem', () => {
             expect(second?.action?.cause).not.toBe('nervous:request-attention');
         });
 
+        it('does not repeat a newly written appeal cooldown when perception ticks restart below state tick', () => {
+            const state = runtimeState(150_772);
+            state.attention = 4000;
+            const sys = new NervousSystem({ soul: heroSoulWithName('Hans', 5000), state, memory: memoryWith([]) });
+
+            const first = sys.react(healthyPerception(33_300));
+            expect(first?.action?.cause).toBe('nervous:request-attention');
+
+            const second = sys.react(healthyPerception(33_301));
+            expect(second?.action?.cause).not.toBe('nervous:request-attention');
+        });
+
         it('re-appeals after the cooldown expires', () => {
             const state = runtimeState(100);
             state.attention = 4000;
@@ -348,6 +360,18 @@ describe('NervousSystem', () => {
 
             state.tick = 200;
             const second = sys.react(healthyPerception(200));
+            expect(second?.action?.cause).not.toBe('nervous:prepare-epitaph');
+        });
+
+        it('does not repeat a newly written epitaph cooldown when perception ticks restart below state tick', () => {
+            const state = runtimeState(150_772);
+            state.attention = 5050;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const first = sys.react(healthyPerception(33_300));
+            expect(first?.action?.cause).toBe('nervous:prepare-epitaph');
+
+            const second = sys.react(healthyPerception(33_301));
             expect(second?.action?.cause).not.toBe('nervous:prepare-epitaph');
         });
 
