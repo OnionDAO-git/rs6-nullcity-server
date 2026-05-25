@@ -519,6 +519,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[ ]` **O8: env + CLI dual config audit.** Document conventions and apply across rs6 CLIs.
 - `[x]` **O9: Watchdog fallback and LLM queue abort hygiene.** Prevent inference timeouts from freezing residents invisibly.
   - Verified 2026-05-24 on `agents/wip`: queued LLM aborts settle immediately, runtime consumes module watchdog fallbacks, hybrid Brain timeout backoff applies immediately, and default-SPARK heroes say a fallback line before attempting a safe step. Live `local-63709`: res:agent 9/9 action results succeeded; all six heroes produced `watchdog_fallback` speech, Hans moved twice successfully, and blocked hero steps were visible as movement timeouts instead of silent freezes. Remaining follow-up: O4 real-completion inference health check/provider failover.
+  - Hardened 2026-05-24 on `agents/wip`: controller-created runtimes now derive `watchdog.thinkingMs` from the maximum configured LLM endpoint timeout plus a 5s grace window, so `controller.yml`'s 60s Qwen endpoint timeout is no longer shadowed by the old 45s runtime default. Focused host/runtime/config tests cover the wiring.
 
 ## Workstream P: Deeper Game-Skill Knowledge
 

@@ -19,6 +19,8 @@ import { StandingLedger } from './patron/standing-ledger';
 import { LettersStore } from './patron/letters-store';
 import type { PerceptionEvent } from './transport/message-codecs';
 
+const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
+
 export interface ControllerHostOptions {
     once?: boolean;
     logEnvelope?: boolean;
@@ -34,6 +36,16 @@ export interface ControllerHostOptions {
     runtimeFactory?: (options: ConstructorParameters<typeof ResidentRuntime>[0]) => ResidentRuntime;
     patronStore?: PatronStore;
     patronGateway?: PatronGateway;
+}
+
+function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefined {
+    const endpointTimeouts = Object.values(config.llm.endpoints)
+        .map(endpoint => endpoint.timeoutMs)
+        .filter(timeout => Number.isFinite(timeout) && timeout > 0);
+    if (!endpointTimeouts.length) {
+        return undefined;
+    }
+    return Math.max(...endpointTimeouts) + THINKING_WATCHDOG_ENDPOINT_GRACE_MS;
 }
 
 export class ControllerHost {
@@ -255,6 +267,7 @@ export class ControllerHost {
         if (this.runtimes.has(soul.frontmatter.name)) {
             return;
         }
+        const thinkingWatchdogMs = configuredThinkingWatchdogMs(this.config);
 
         const runtimeOptions = {
             soul,
@@ -268,6 +281,7 @@ export class ControllerHost {
             sparkModules: this.sparkModules,
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,
+            watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
         };
         this.runtimes.set(
             soul.frontmatter.name,

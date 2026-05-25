@@ -220,6 +220,31 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('derives the thinking watchdog from configured LLM endpoint timeouts', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: { watchdog?: { thinkingMs?: number } }) => {
+            void options;
+            return runtime;
+        });
+        const cfg = {
+            ...config(),
+            llm: {
+                endpoints: {
+                    default: { timeoutMs: 60_000 },
+                    fast: { timeoutMs: 12_000 },
+                },
+            },
+        };
+        const host = new ControllerHost(cfg, { ...dependencies(gateway), runtimeFactory });
+
+        await host.start();
+
+        expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ watchdog: { thinkingMs: 65_000 } }));
+
+        await host.stop();
+    });
+
     it('opens a runtime evidence session for created residents', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
