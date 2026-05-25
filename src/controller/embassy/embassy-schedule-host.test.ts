@@ -41,9 +41,7 @@ describe('embassy-schedule-host (EVENT-D1c-wire-host)', () => {
             fs.writeFileSync(
                 file,
                 JSON.stringify({
-                    activeWindows: [
-                        { startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'Chicago' },
-                    ],
+                    activeWindows: [{ startsAt: '2026-06-01T18:00:00.000Z', endsAt: '2026-06-02T03:00:00.000Z', label: 'Chicago' }],
                 }),
             );
             process.env[CONTROLLER_EMBASSY_SCHEDULE_PATH_ENV] = file;

@@ -103,10 +103,14 @@ function ordinal(n: number): string {
         return `${n}th`;
     }
     switch (n % 10) {
-        case 1: return `${n}st`;
-        case 2: return `${n}nd`;
-        case 3: return `${n}rd`;
-        default: return `${n}th`;
+        case 1:
+            return `${n}st`;
+        case 2:
+            return `${n}nd`;
+        case 3:
+            return `${n}rd`;
+        default:
+            return `${n}th`;
     }
 }
 
@@ -148,12 +152,11 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
             // first-person narrative so the Brain's prompt envelope sees the
             // continuity break and can reflect on it instead of treating
             // revival as anonymous noise.
-            const cause = typeof event.cause === 'string' && event.cause.length > 0
-                ? humanizeRevivalCause(event.cause)
-                : 'cause unknown';
-            const lifeIndex = typeof event.lifeIndex === 'number' && Number.isFinite(event.lifeIndex) && event.lifeIndex > 0
-                ? event.lifeIndex
-                : undefined;
+            const cause = typeof event.cause === 'string' && event.cause.length > 0 ? humanizeRevivalCause(event.cause) : 'cause unknown';
+            const lifeIndex =
+                typeof event.lifeIndex === 'number' && Number.isFinite(event.lifeIndex) && event.lifeIndex > 0
+                    ? event.lifeIndex
+                    : undefined;
             const livesClause = lifeIndex !== undefined ? `this is my ${ordinal(lifeIndex)} life — ` : '';
             return `I returned to life — ${livesClause}${cause} (${ts})`;
         }

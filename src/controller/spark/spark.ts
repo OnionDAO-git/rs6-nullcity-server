@@ -74,7 +74,12 @@ export class Spark {
         let endReason: EndTickReason = 'tick_complete';
         this.options.evidence?.beginTick(this.state.tick, perception);
         try {
-            this.state.attention = spendAttention(this.state.attention, this.soul.frontmatter.attentionProfile?.decayCurve || 'standard', 1, this.soul.frontmatter.attentionProfile?.floor);
+            this.state.attention = spendAttention(
+                this.state.attention,
+                this.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
+                1,
+                this.soul.frontmatter.attentionProfile?.floor,
+            );
             this.state.variables = recomputeVariables(this.variableDefinitions(), this.state.variables, {
                 attention: this.state.attention,
                 tick: this.state.tick,
@@ -297,7 +302,8 @@ export class Spark {
             return undefined;
         }
 
-        const candidate = heroAnchorPatrolAction(this.soul, this.state) || generateFirstStepCandidates(perception).find(action => action.kind !== 'noop');
+        const candidate =
+            heroAnchorPatrolAction(this.soul, this.state) || generateFirstStepCandidates(perception).find(action => action.kind !== 'noop');
         const visiblePulse: AgentAction = {
             kind: 'say',
             text: idleInitiativeSpeech(this.soul),
@@ -318,7 +324,9 @@ export class Spark {
 
     watchdogFallback(perception: Perception): SparkTickResult {
         this.abortInflight('thinking_watchdog_timeout');
-        const action = heroAnchorPatrolAction(this.soul, this.state) || generateFirstStepCandidates(perception).find(candidate => candidate.kind !== 'noop');
+        const action =
+            heroAnchorPatrolAction(this.soul, this.state) ||
+            generateFirstStepCandidates(perception).find(candidate => candidate.kind !== 'noop');
         if (!action) {
             return { actions: [], cause: 'thinking_watchdog_timeout', nooped: true };
         }
@@ -429,7 +437,13 @@ function inferUnnamedCompletionCause(parsed: ParsedCompletion, actions: AgentAct
     if (actions.length > 0) {
         return parsed.actions.some(action => action.kind === 'noop') ? 'candidate_fallback' : 'completion_action';
     }
-    if (parsed.proposeHook?.length || parsed.retireHook?.length || parsed.proposeNervousRule?.length || parsed.retireNervousRule?.length || parsed.proposeVariables?.length) {
+    if (
+        parsed.proposeHook?.length ||
+        parsed.retireHook?.length ||
+        parsed.proposeNervousRule?.length ||
+        parsed.retireNervousRule?.length ||
+        parsed.proposeVariables?.length
+    ) {
         return 'completion_self_modification';
     }
     if (parsed.memo?.length || parsed.indexPatch?.append?.length) {

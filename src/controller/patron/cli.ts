@@ -251,9 +251,7 @@ function buildResidentBundle(
     try {
         soul = loader.load(residentName);
     } catch (err) {
-        throw new Error(
-            `Failed to load resident soul for "${residentName}": ${err instanceof Error ? err.message : String(err)}`,
-        );
+        throw new Error(`Failed to load resident soul for "${residentName}": ${err instanceof Error ? err.message : String(err)}`);
     }
 
     const currencyLedger = store.loadCurrency();
@@ -285,9 +283,7 @@ function buildResidentBundle(
         incrementAttention: (amount: number) => {
             addAttention(state, amount);
             stateStore.save(state);
-            console.log(
-                `[patron:${verbTag}] Attention for "${residentName}" increased by ${amount}. New attention: ${state.attention}.`,
-            );
+            console.log(`[patron:${verbTag}] Attention for "${residentName}" increased by ${amount}. New attention: ${state.attention}.`);
         },
     };
 
@@ -333,12 +329,7 @@ function buildResidentBundle(
  * terminal can surface a live reply when the MCP path injects the ask into a
  * running controller, while preserving the offline fallback.
  */
-export function findRecentSay(
-    memoryDir: string,
-    residentName: string,
-    sinceTs: string,
-    options: FindRecentSayOptions = {},
-): string | null {
+export function findRecentSay(memoryDir: string, residentName: string, sinceTs: string, options: FindRecentSayOptions = {}): string | null {
     const slug = residentSlug(residentName);
     const candidates = recentTrajectoryCandidates(memoryDir, slug);
     let latestSay: { text: string; ts: string } | null = null;
@@ -405,7 +396,8 @@ function recentTrajectoryCandidates(memoryDir: string, slug: string): string[] {
                 sessions?: Array<{ sessionId?: string; trajectoryPath?: string }>;
             };
             const current =
-                index.sessions?.find(session => session.sessionId === index.currentSessionId) || index.sessions?.[index.sessions.length - 1];
+                index.sessions?.find(session => session.sessionId === index.currentSessionId) ||
+                index.sessions?.[index.sessions.length - 1];
             if (current?.trajectoryPath) {
                 candidates.push(path.join(evidenceRoot, current.trajectoryPath));
             }
@@ -501,22 +493,16 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
                         // count so a multi-tier grant doesn't look single-tier in chat.
                         // `tiersCrossed` is the canonical list (HD-040 / E38); fall
                         // back to `tierCrossed` alone if a stale outcome is missing it.
-                        const tiers = delta.tiersCrossed && delta.tiersCrossed.length > 0
-                            ? delta.tiersCrossed
-                            : [delta.tierCrossed];
+                        const tiers = delta.tiersCrossed && delta.tiersCrossed.length > 0 ? delta.tiersCrossed : [delta.tierCrossed];
                         const letterCount = tiers.length;
                         const letterWord = letterCount === 1 ? 'letter' : 'letters';
-                        console.log(
-                            `[patron:offer] Tiers crossed: ${tiers.join(', ')} (${letterCount} ${letterWord} dispatched)`,
-                        );
+                        console.log(`[patron:offer] Tiers crossed: ${tiers.join(', ')} (${letterCount} ${letterWord} dispatched)`);
                     }
                 }
                 // E46 staffer UX: print the inbox URL hint so the staffer can
                 // hand off the link without memorizing port + path. Uses the
                 // standard EVENT-D2c letters HTTP port 43596 (HD-026 / HD-029).
-                console.log(
-                    `[patron:offer] Inbox: http://127.0.0.1:43596/v1/inbox?human=${encodeURIComponent(options.humanId)}`,
-                );
+                console.log(`[patron:offer] Inbox: http://127.0.0.1:43596/v1/inbox?human=${encodeURIComponent(options.humanId)}`);
                 return 0;
             }
             throw new Error(`Offer failed: ${outcome.error}`);
@@ -563,9 +549,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
 
             if (outcome.ok) {
                 bundle.persistLedgers();
-                console.log(
-                    `[patron:ask] Successfully asked resident "${bundle.residentName}" on behalf of human "${options.humanId}":`,
-                );
+                console.log(`[patron:ask] Successfully asked resident "${bundle.residentName}" on behalf of human "${options.humanId}":`);
                 console.log(`[patron:ask]   "${options.text}"`);
                 console.log(`[patron:ask] Event ID: ${outcome.eventId}`);
 
@@ -586,12 +570,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             const bundle = buildResidentBundle(options, config, store, 'witness');
 
             const witnessAmount = options.amount > 0 ? options.amount : 3;
-            const outcome = await bundle.gateway.witnessAt(
-                options.humanId,
-                options.artifact,
-                bundle.residentName,
-                witnessAmount,
-            );
+            const outcome = await bundle.gateway.witnessAt(options.humanId, options.artifact, bundle.residentName, witnessAmount);
 
             if (outcome.ok) {
                 bundle.persistLedgers();

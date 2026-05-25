@@ -950,7 +950,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const fireAction =
-            goal && !isStarterFishingGoal(goal) && /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
+            goal &&
+            !isStarterFishingGoal(goal) &&
+            /fire|burn|logs|tinderbox|light/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
                 ? firemakingAction(view)
                 : undefined;
         if (fireAction) {
@@ -2555,10 +2557,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         perception: HybridPerception,
     ): { actions: AgentAction[]; cause: string; nooped: boolean } | undefined {
         const goal = this.activeGoal();
-        if (
-            !isLowHealth(perception) ||
-            firstFoodSlot(perception.resident?.inventory || []) !== undefined
-        ) {
+        if (!isLowHealth(perception) || firstFoodSlot(perception.resident?.inventory || []) !== undefined) {
             return undefined;
         }
 

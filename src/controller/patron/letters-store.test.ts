@@ -92,15 +92,36 @@ describe('LettersStore', () => {
         it('allows multiple standing_tier_crossed letters at the same ts when subjects differ (HD-040)', () => {
             const store = new LettersStore(tmpRoot);
             const ts = '2026-05-23T04:00:00.000Z';
-            store.append(letter({ kind: 'standing_tier_crossed', dispatchedAt: ts, subject: 'You are now Acquaintance of embassy', body: 'Acquaintance body' }));
-            store.append(letter({ kind: 'standing_tier_crossed', dispatchedAt: ts, subject: 'You are now Ally of embassy', body: 'Ally body' }));
-            store.append(letter({ kind: 'standing_tier_crossed', dispatchedAt: ts, subject: 'You are now Officer of embassy', body: 'Officer body' }));
+            store.append(
+                letter({
+                    kind: 'standing_tier_crossed',
+                    dispatchedAt: ts,
+                    subject: 'You are now Acquaintance of embassy',
+                    body: 'Acquaintance body',
+                }),
+            );
+            store.append(
+                letter({ kind: 'standing_tier_crossed', dispatchedAt: ts, subject: 'You are now Ally of embassy', body: 'Ally body' }),
+            );
+            store.append(
+                letter({
+                    kind: 'standing_tier_crossed',
+                    dispatchedAt: ts,
+                    subject: 'You are now Officer of embassy',
+                    body: 'Officer body',
+                }),
+            );
             expect(store.readInbox('alice@onion')).toHaveLength(3);
         });
 
         it('still dedupes identical (kind, dispatchedAt, subject, recipient) on second append', () => {
             const store = new LettersStore(tmpRoot);
-            const args = { kind: 'standing_tier_crossed' as const, dispatchedAt: '2026-05-23T04:00:00.000Z', subject: 'You are now Ally of embassy', body: 'Ally body' };
+            const args = {
+                kind: 'standing_tier_crossed' as const,
+                dispatchedAt: '2026-05-23T04:00:00.000Z',
+                subject: 'You are now Ally of embassy',
+                body: 'Ally body',
+            };
             const first = store.append(letter(args));
             const second = store.append(letter(args));
             expect(first.deduped).toBe(false);

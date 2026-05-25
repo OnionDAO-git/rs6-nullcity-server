@@ -145,9 +145,9 @@ export class StandingLedger {
         // each crossing so the J-δ-β-2 dispatcher can emit one letter per
         // tier. `stranger` (minPoints: 0) is the no-standing sentinel and can
         // never be "crossed" — filtered out by `minPoints > 0`.
-        const tiersCrossed: StandingTier[] = STANDING_TIERS
-            .filter(t => t.minPoints > 0 && t.minPoints > previousPoints && t.minPoints <= nextPoints)
-            .map(t => t.name);
+        const tiersCrossed: StandingTier[] = STANDING_TIERS.filter(
+            t => t.minPoints > 0 && t.minPoints > previousPoints && t.minPoints <= nextPoints,
+        ).map(t => t.name);
 
         return {
             previousTier,

@@ -1,10 +1,10 @@
 {
-  "_comment": "Embassy event-day schedule consumed by isEmbassyEventActiveAt() (src/controller/embassy/embassy-schedule.ts). Operators add windows here ahead of an event; the runtime ORs the result into perception.embassyEventActive so the Brain knows to greet humans by name. Times are UTC. Update before doors open; the file is read on each tick once the host-loader is wired.",
-  "activeWindows": [
-    {
-      "startsAt": "2026-06-01T18:00:00.000Z",
-      "endsAt": "2026-06-02T03:00:00.000Z",
-      "label": "OnionDAO Chicago 2026 (Mon 1–8pm CT)"
-    }
-  ]
+    "_comment": "Embassy event-day schedule consumed by isEmbassyEventActiveAt() (src/controller/embassy/embassy-schedule.ts). Operators add windows here ahead of an event; the runtime ORs the result into perception.embassyEventActive so the Brain knows to greet humans by name. Times are UTC. Update before doors open; the file is read on each tick once the host-loader is wired.",
+    "activeWindows": [
+        {
+            "startsAt": "2026-06-01T18:00:00.000Z",
+            "endsAt": "2026-06-02T03:00:00.000Z",
+            "label": "OnionDAO Chicago 2026 (Mon 1–8pm CT)"
+        }
+    ]
 }

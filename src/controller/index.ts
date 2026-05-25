@@ -2,6 +2,8 @@ import { assertProductionControllerConfig, loadControllerConfig, parseController
 import { acquireControllerLock } from './controller-lock';
 import { ControllerHost } from './controller-host';
 import { closeLettersHttpServer, startLettersHttpServer } from './letters/letters-http-server';
+import { LlmClient } from './llm/llm-client';
+import { runInferenceHealthProbe } from './llm/inference-health';
 import { closeControllerMcpHttpServer, startControllerMcpHttpServer } from './mcp/http-server';
 import { LettersStore } from './patron/letters-store';
 
@@ -11,7 +13,8 @@ async function main(): Promise<void> {
     assertProductionControllerConfig(config);
     process.stderr.write(`[controller] ${sanitizedControllerConfigSummary(config)}\n`);
     const lock = acquireControllerLock({ lockDir: config.memory.dir, controllerId: config.gateway.controllerId });
-    const host = new ControllerHost(config, { once: args.once, logEnvelope: args.logEnvelope });
+    const llm = new LlmClient(config.llm.endpoints, config.inference.maxConcurrent);
+    const host = new ControllerHost(config, { once: args.once, logEnvelope: args.logEnvelope, llm });
     let mcpHttpServer: Awaited<ReturnType<typeof startControllerMcpHttpServer>> | undefined;
     let lettersHttpServer: Awaited<ReturnType<typeof startLettersHttpServer>> | undefined;
 
@@ -43,6 +46,9 @@ async function main(): Promise<void> {
             process.stderr.write(`[controller] MCP HTTP listening at ${mcpHttpServer.url}\n`);
         }
         if (args.lettersHttpPort !== undefined) {
+            // Keep the health probe off the resident Brain/Body queue so an
+            // operator can distinguish provider health from resident backlog.
+            const healthLlm = new LlmClient(config.llm.endpoints, 1);
             // EVENT-D2c: spin up the letters inbox HTTP server when configured.
             // LettersStore is filesystem-rooted at memory.dir — a fresh
             // instance here shares the same files PatronGateway writes to via
@@ -56,6 +62,7 @@ async function main(): Promise<void> {
                 path: args.lettersHttpPath,
                 lettersRoot: config.memory.dir,
                 wallRedact: args.lettersHttpWallRedact,
+                health: () => runInferenceHealthProbe({ llm: healthLlm, endpoints: config.llm.endpoints }),
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
         }

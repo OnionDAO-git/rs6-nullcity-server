@@ -261,4 +261,90 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(authed.status).toBe(200);
         });
     });
+
+    describe('GET /v1/health (O4)', () => {
+        it('returns 404 when no health probe is configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/health'));
+            expect(response.status).toBe(404);
+        });
+
+        it('runs the configured health probe and returns 200 when inference is usable', async () => {
+            const health = jest.fn(async () => ({
+                ok: true,
+                status: 'ok' as const,
+                endpoint: 'default',
+                latencyMs: 42,
+            }));
+            server = await startLettersHttpServer({ store, port: 0, health });
+            const healthUrl = server.url.replace('/v1/inbox', '/v1/health');
+
+            const response = await get(healthUrl);
+
+            expect(response.status).toBe(200);
+            expect(health).toHaveBeenCalledTimes(1);
+            expect(JSON.parse(response.body)).toMatchObject({
+                ok: true,
+                controller: 'ok',
+                inference: { ok: true, status: 'ok', endpoint: 'default', latencyMs: 42 },
+            });
+        });
+
+        it('returns 503 when the health probe reports an inference failure', async () => {
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                health: async () => ({
+                    ok: false,
+                    status: 'empty_completion',
+                    endpoint: 'default',
+                    latencyMs: 60_000,
+                }),
+            });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/health'));
+
+            expect(response.status).toBe(503);
+            expect(JSON.parse(response.body)).toMatchObject({
+                ok: false,
+                controller: 'ok',
+                inference: { ok: false, status: 'empty_completion', endpoint: 'default' },
+            });
+        });
+
+        it('returns 503 when the health probe throws', async () => {
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                health: async () => {
+                    throw new Error('probe exploded');
+                },
+            });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/health'));
+
+            expect(response.status).toBe(503);
+            expect(JSON.parse(response.body)).toMatchObject({
+                ok: false,
+                controller: 'ok',
+                inference: { ok: false, status: 'error', error: 'probe exploded' },
+            });
+        });
+
+        it('applies bearer-token auth to health checks', async () => {
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                auth: { bearerToken: 'health-secret' },
+                health: async () => ({ ok: true, status: 'ok', endpoint: 'default' }),
+            });
+            const healthUrl = server.url.replace('/v1/inbox', '/v1/health');
+
+            const unauthed = await get(healthUrl);
+            const authed = await get(healthUrl, { Authorization: 'Bearer health-secret' });
+
+            expect(unauthed.status).toBe(401);
+            expect(authed.status).toBe(200);
+        });
+    });
 });

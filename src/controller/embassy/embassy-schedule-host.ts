@@ -1,9 +1,5 @@
 import path from 'path';
-import {
-    DEFAULT_EMBASSY_EVENT_SCHEDULE,
-    type EmbassyEventSchedule,
-    loadEmbassyEventSchedule,
-} from './embassy-schedule';
+import { DEFAULT_EMBASSY_EVENT_SCHEDULE, type EmbassyEventSchedule, loadEmbassyEventSchedule } from './embassy-schedule';
 
 /**
  * Process-wide embassy schedule loader (workstream EVENT-D1c-wire-host).

@@ -547,11 +547,7 @@ describe('ControllerMcpServer', () => {
                 text: 'Can you answer me right now?',
             });
 
-            expect(mockHost.patronGateway.askResident).toHaveBeenCalledWith(
-                'hd035-smoke',
-                'res:pip',
-                'Can you answer me right now?',
-            );
+            expect(mockHost.patronGateway.askResident).toHaveBeenCalledWith('hd035-smoke', 'res:pip', 'Can you answer me right now?');
             expect(mockHost.enqueuePerceptionEvent).toHaveBeenCalledWith(
                 'res:pip',
                 expect.objectContaining({

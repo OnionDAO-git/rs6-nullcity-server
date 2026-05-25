@@ -124,9 +124,7 @@ describe('SoulLoader', () => {
         });
 
         it('assigns each QA resident a distinct seeded behavior target', () => {
-            expect(loader.load('res:qa-woodcutter').frontmatter.legacy?.parameters?.benchmarkTask).toBe(
-                'woodcutting-firemaking-10m',
-            );
+            expect(loader.load('res:qa-woodcutter').frontmatter.legacy?.parameters?.benchmarkTask).toBe('woodcutting-firemaking-10m');
             expect(loader.load('res:qa-angler').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-guardian').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-social').frontmatter.behavior).toEqual(

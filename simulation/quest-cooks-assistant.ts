@@ -83,14 +83,7 @@
 import fs from 'fs';
 import path from 'path';
 import { SimulationGatewayClient } from './lib/client';
-import type {
-    ActionResult,
-    AgentAction,
-    ItemRef,
-    Perception,
-    PerceptionEvent,
-    Position,
-} from './lib/types';
+import type { ActionResult, AgentAction, ItemRef, Perception, PerceptionEvent, Position } from './lib/types';
 
 // --- Quest-specific constants. -------------------------------------------
 
@@ -261,7 +254,7 @@ function runStaticChecks(findings: Findings): void {
     const questPluginExists = fs.existsSync(questPluginPath);
     recordCheck(findings, {
         id: 'engine.quest_plugin_loaded',
-        description: 'Cook\'s Assistant quest plugin exists in src/plugins/quests/',
+        description: "Cook's Assistant quest plugin exists in src/plugins/quests/",
         status: questPluginExists ? 'PASS' : 'FAIL',
         evidence: questPluginExists
             ? `${questPluginPath} exists; defines Quest id=rs:cooks_assistant with stages 0/50/complete, hooks for talk-to Cook NPC.`
@@ -282,10 +275,7 @@ function runStaticChecks(findings: Findings): void {
     });
 
     // 3. Perception schema exposes quest state.
-    const perceptionTypesPath = path.resolve(
-        process.cwd(),
-        'src/engine/world/actor/resident/perception/perception-types.ts',
-    );
+    const perceptionTypesPath = path.resolve(process.cwd(), 'src/engine/world/actor/resident/perception/perception-types.ts');
     const perceptionText = fs.existsSync(perceptionTypesPath) ? fs.readFileSync(perceptionTypesPath, 'utf8') : '';
     const hasQuestPerception = /\bquest/i.test(perceptionText);
     recordCheck(findings, {
@@ -481,15 +471,9 @@ function snapshotInventory(perception: Perception, findings: Findings): void {
 function recordEvent(findings: Findings, event: PerceptionEvent, tick?: number): void {
     findings.observed.events.push({ tick, event });
     // chat events surface dialogue too; capture text if any.
-    const maybeText =
-        (typeof event.text === 'string' && event.text) ||
-        (typeof event.message === 'string' && event.message) ||
-        undefined;
+    const maybeText = (typeof event.text === 'string' && event.text) || (typeof event.message === 'string' && event.message) || undefined;
     if (maybeText) {
-        const speaker =
-            (typeof event.speaker === 'string' && event.speaker) ||
-            (typeof event.from === 'string' && event.from) ||
-            undefined;
+        const speaker = (typeof event.speaker === 'string' && event.speaker) || (typeof event.from === 'string' && event.from) || undefined;
         findings.observed.chatMessages.push({ tick, speaker, text: maybeText });
     }
 }
@@ -537,9 +521,11 @@ async function runNetworkHarness(findings: Findings, options: HarnessOptions): P
                 : undefined;
             // The simulation client's createResident does not accept initialInventory;
             // we issue the raw request via the same socket. Hand-craft the frame.
-            await (gateway as unknown as {
-                request(kind: string, payload?: unknown): Promise<unknown>;
-            }).request('create_resident', {
+            await (
+                gateway as unknown as {
+                    request(kind: string, payload?: unknown): Promise<unknown>;
+                }
+            ).request('create_resident', {
                 name: options.resident,
                 spawnPosition: SPAWN_POSITION,
                 initialInventory,
@@ -661,9 +647,7 @@ async function runNetworkHarness(findings: Findings, options: HarnessOptions): P
         id: 'network.inventory_pre_stock_present',
         description: 'Quest ingredients (egg, milk, flour) appeared in the resident inventory',
         status:
-            obs.finalInventoryHasQuestItems.egg &&
-            obs.finalInventoryHasQuestItems.milk &&
-            obs.finalInventoryHasQuestItems.flour
+            obs.finalInventoryHasQuestItems.egg && obs.finalInventoryHasQuestItems.milk && obs.finalInventoryHasQuestItems.flour
                 ? 'PASS'
                 : options.stockInventory
                   ? 'FAIL'
@@ -695,9 +679,7 @@ async function runNetworkHarness(findings: Findings, options: HarnessOptions): P
                 : `Events: ${questItemEvents.map(e => `${e.event.kind}:${(e.event.item as ItemRef).itemId}`).join(', ')}.`),
     });
 
-    const questChat = obs.chatMessages.filter(m =>
-        /cook|cake|flour|milk|egg|ingredient|duke/i.test(m.text),
-    );
+    const questChat = obs.chatMessages.filter(m => /cook|cake|flour|milk|egg|ingredient|duke/i.test(m.text));
     recordCheck(findings, {
         id: 'network.quest_chat_observed',
         description: 'Quest-related chat (Cook dialogue lines) was observed in perception',
@@ -745,8 +727,7 @@ function renderMarkdown(findings: Findings): string {
     lines.push(`## Checks`);
     lines.push('');
     for (const check of findings.checks) {
-        const badge =
-            check.status === 'PASS' ? '[PASS]' : check.status === 'FAIL' ? '[FAIL]' : '[INCONCLUSIVE]';
+        const badge = check.status === 'PASS' ? '[PASS]' : check.status === 'FAIL' ? '[FAIL]' : '[INCONCLUSIVE]';
         lines.push(`### ${badge} ${check.id}`);
         lines.push('');
         lines.push(`**${check.description}**`);
@@ -851,8 +832,6 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-    process.stderr.write(
-        `[quest-cooks-assistant] FATAL: ${error instanceof Error ? error.stack || error.message : String(error)}\n`,
-    );
+    process.stderr.write(`[quest-cooks-assistant] FATAL: ${error instanceof Error ? error.stack || error.message : String(error)}\n`);
     process.exitCode = 1;
 });

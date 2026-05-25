@@ -1,5 +1,6 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
+import type { InferenceHealthResult } from '../llm/inference-health';
 import type { LettersStore } from '../patron/letters-store';
 import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
 
@@ -24,6 +25,7 @@ import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
  */
 export const DEFAULT_LETTERS_PATH = '/v1/inbox';
 export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
+export const DEFAULT_HEALTH_PATH = '/v1/health';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -47,6 +49,10 @@ export interface LettersHttpServerOptions {
     lettersRoot?: string;
     /** Wall ticker route path. Defaults to {@link DEFAULT_WALL_PATH}. */
     wallPath?: string;
+    /** Real inference health probe for {@link DEFAULT_HEALTH_PATH}. */
+    health?: () => Promise<InferenceHealthResult>;
+    /** Health route path. Defaults to {@link DEFAULT_HEALTH_PATH}. */
+    healthPath?: string;
     /**
      * When true, the wall snapshot is passed through
      * {@link redactWallSnapshot} before being returned: recipients are
@@ -70,10 +76,11 @@ export interface StartedLettersHttpServer {
 export async function startLettersHttpServer(options: LettersHttpServerOptions): Promise<StartedLettersHttpServer> {
     const routePath = normalizePath(options.path || DEFAULT_LETTERS_PATH);
     const wallRoutePath = normalizePath(options.wallPath || DEFAULT_WALL_PATH);
+    const healthRoutePath = normalizePath(options.healthPath || DEFAULT_HEALTH_PATH);
     const bindHost = options.host || '127.0.0.1';
 
     const server = http.createServer((request, response) => {
-        handle(request, response, options, routePath, wallRoutePath).catch(error => {
+        handle(request, response, options, routePath, wallRoutePath, healthRoutePath).catch(error => {
             if (!response.headersSent) {
                 writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
             } else if (!response.writableEnded) {
@@ -109,12 +116,14 @@ async function handle(
     options: LettersHttpServerOptions,
     routePath: string,
     wallRoutePath: string,
+    healthRoutePath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const isInboxRoute = url.pathname === routePath;
     const isWallRoute = url.pathname === wallRoutePath && options.lettersRoot !== undefined;
+    const isHealthRoute = url.pathname === healthRoutePath && options.health !== undefined;
 
-    if (!isInboxRoute && !isWallRoute) {
+    if (!isInboxRoute && !isWallRoute && !isHealthRoute) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
@@ -130,6 +139,28 @@ async function handle(
             writeJson(response, 401, { error: 'Unauthorized' });
             return;
         }
+    }
+
+    if (isHealthRoute) {
+        try {
+            const inference = await (options.health as () => Promise<InferenceHealthResult>)();
+            writeJson(response, inference.ok ? 200 : 503, {
+                ok: inference.ok,
+                controller: 'ok',
+                inference,
+            });
+        } catch (error) {
+            writeJson(response, 503, {
+                ok: false,
+                controller: 'ok',
+                inference: {
+                    ok: false,
+                    status: 'error',
+                    error: error instanceof Error ? error.message : String(error),
+                },
+            });
+        }
+        return;
     }
 
     if (isWallRoute) {

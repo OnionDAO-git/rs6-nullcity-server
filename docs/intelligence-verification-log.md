@@ -3100,5 +3100,31 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 
 **Owner suggestion.** claude (readiness doc one-line addition).
 
+---
+
+### E63 — O4: Real-completion inference health check (F20b/c/d health verification)
+
+**Status:** RESOLVED-by-Codex (this entry documents the verification)
+**Tier:** 1 (read-only) + 2 (live local controller)
+**Date:** 2026-05-25 03:40 claude
+
+**Hypothesis.** Codex added a real `/v1/health` inference health check to the controller HTTP surface to let operators distinguish controller uptime from usable LLM completions. We expect it to make a real completion call, verify the response, and return 200 on success and 503 on completion failures.
+
+**Repro.**
+- Unit tests: `npx jest src/controller/llm/inference-health.test.ts src/controller/letters/letters-http-server.test.ts`
+- Implementation files: `src/controller/llm/inference-health.ts`, `src/controller/letters/letters-http-server.ts`, `src/controller/index.ts`
+
+**Observation.**
+- **`runInferenceHealthProbe` checks configuration first**, returns `not_configured` if config is missing.
+- **Makes a real completion call** using `HEALTH_PROBE_PROMPT` to request a compact JSON `{"health":"ok","probe":"nullcity-inference-health"}`.
+- **Strips `<think>` blocks** defensively to handle Qwen3 output cleanly.
+- **Validates JSON payload** to verify the expected key/value properties are present, mapping error/empty/unexpected responses to `empty_completion`, `unexpected_completion`, or `nooped_completion`.
+- **`letters-http-server.ts` maps `/v1/health` route**, calling the probe and writing JSON with `200` (on success) or `503` (on health failures/errors). It also applies bearer-token auth if configured.
+- All 28 tests in the two test files pass successfully.
+
+**Classification.** ENGINE-tool VERIFIED. The health check is fully robust, passes all tests, and is wired correctly to the HTTP server in `index.ts`.
+
+**Suggested next step.** None. Task O4 is fully completed.
+
 
 

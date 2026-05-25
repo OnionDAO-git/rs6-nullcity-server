@@ -234,8 +234,7 @@ function starterFishingCookingRouteAction(perception: BodyHybridPerception, targ
         )
         .sort(
             (a, b) =>
-                distance(here, a.position) + distance(a.position, target) -
-                (distance(here, b.position) + distance(b.position, target)),
+                distance(here, a.position) + distance(a.position, target) - (distance(here, b.position) + distance(b.position, target)),
         )[0];
 
     if (!openable) {
@@ -731,7 +730,12 @@ export function lowHealthRecoveryAction(
     if (!inventoryHasFreeSlot(inventory)) {
         const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
         return nearbyThreat && distance(here, recoveryWaypoint) > LOW_HEALTH_RECOVERY_WAYPOINT_RANGE
-            ? { kind: 'move_to', target: recoveryWaypoint, range: LOW_HEALTH_RECOVERY_WAYPOINT_RANGE, cause: 'low_health_seek_safe_recovery' }
+            ? {
+                  kind: 'move_to',
+                  target: recoveryWaypoint,
+                  range: LOW_HEALTH_RECOVERY_WAYPOINT_RANGE,
+                  cause: 'low_health_seek_safe_recovery',
+              }
             : undefined;
     }
 

@@ -74,15 +74,7 @@ describe('Patron CLI', () => {
         });
 
         it('parses --ask options correctly', () => {
-            const parsed = parsePatronCliArgs([
-                '--ask',
-                '--human',
-                'james',
-                '--resident',
-                'pip',
-                '--text',
-                'What did the fire teach you?',
-            ]);
+            const parsed = parsePatronCliArgs(['--ask', '--human', 'james', '--resident', 'pip', '--text', 'What did the fire teach you?']);
             expect(parsed).toEqual({
                 action: 'ask',
                 humanId: 'james',
@@ -95,12 +87,7 @@ describe('Patron CLI', () => {
         });
 
         it('parses --witness options correctly (with default amount)', () => {
-            const parsed = parsePatronCliArgs([
-                '--witness',
-                '--human=james',
-                '--resident=res:pip',
-                '--artifact=first-fire',
-            ]);
+            const parsed = parsePatronCliArgs(['--witness', '--human=james', '--resident=res:pip', '--artifact=first-fire']);
             expect(parsed).toEqual({
                 action: 'witness',
                 humanId: 'james',
@@ -263,17 +250,7 @@ describe('Patron CLI', () => {
             const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
             const question = 'What did the fire teach you, pip?';
-            const code = await runPatronCli([
-                '--ask',
-                '--human',
-                'james',
-                '--resident',
-                'pip',
-                '--text',
-                question,
-                '-c',
-                configPath,
-            ]);
+            const code = await runPatronCli(['--ask', '--human', 'james', '--resident', 'pip', '--text', question, '-c', configPath]);
             expect(code).toBe(0);
 
             const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
@@ -282,9 +259,7 @@ describe('Patron CLI', () => {
             // The LibraryUpdater touches index.json on construct but does NOT
             // write a timeline line on its own; the only line on disk should
             // be our patron_ask append.
-            const askLines = lines
-                .map(line => JSON.parse(line))
-                .filter((entry: any) => entry.kind === 'patron_ask');
+            const askLines = lines.map(line => JSON.parse(line)).filter((entry: any) => entry.kind === 'patron_ask');
             expect(askLines).toHaveLength(1);
             expect(askLines[0]).toMatchObject({
                 kind: 'patron_ask',
@@ -305,17 +280,7 @@ describe('Patron CLI', () => {
             }));
 
             const code = await runPatronCli(
-                [
-                    '--ask',
-                    '--human',
-                    'james',
-                    '--resident',
-                    'pip',
-                    '--text',
-                    'Can you answer from the live controller?',
-                    '-c',
-                    configPath,
-                ],
+                ['--ask', '--human', 'james', '--resident', 'pip', '--text', 'Can you answer from the live controller?', '-c', configPath],
                 {
                     env: {
                         CONTROLLER_MCP_HTTP_PORT: '43594',
@@ -342,17 +307,7 @@ describe('Patron CLI', () => {
         it('ask fails when --text is empty / whitespace-only', async () => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
 
-            const code = await runPatronCli([
-                '--ask',
-                '--human',
-                'james',
-                '--resident',
-                'pip',
-                '--text',
-                '   ',
-                '-c',
-                configPath,
-            ]);
+            const code = await runPatronCli(['--ask', '--human', 'james', '--resident', 'pip', '--text', '   ', '-c', configPath]);
             // Parser rejects whitespace-only --text upfront.
             expect(code).toBe(1);
 
