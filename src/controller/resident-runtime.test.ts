@@ -3081,6 +3081,125 @@ describe('ResidentRuntime modules', () => {
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
 
+    it('does not write begin_tick/end_tick trajectory evidence for an already-processed deceased resident (HD-019)', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-dead-tick-hd019-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 0;
+        state.deceased = {
+            date: '2026-05-25T12:00:00.000Z',
+            tick: 100,
+            cause: 'attention_exhausted',
+            processed: true,
+        };
+
+        const beginTick = jest.fn();
+        const endTick = jest.fn();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 5000, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: {
+                think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            },
+            evidence: {
+                store: {
+                    root: memoryDir,
+                    appendProgress: jest.fn(),
+                    appendTrajectory: jest.fn(),
+                } as unknown as EvidenceStore,
+                sessionId: 'session-hd019',
+                trajectory: {
+                    beginTick,
+                    endTick,
+                    recordDecision: jest.fn(),
+                    recordAction: jest.fn(),
+                    recordActionResult: jest.fn(),
+                } as unknown as TrajectoryBuilder,
+            },
+        });
+
+        await runtime.onPerception({ tick: 101, events: [] });
+        await runtime.onPerception({ tick: 102, events: [] });
+
+        expect(beginTick).not.toHaveBeenCalled();
+        expect(endTick).not.toHaveBeenCalled();
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('still writes begin_tick/end_tick on the initial death tick before processed is set (HD-019)', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-initial-death-tick-hd019-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-initial-death-evidence-hd019-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot);
+
+        const state = stateFor('res:pip');
+        state.attention = 0;
+        state.deceased = {
+            date: '2026-05-25T12:00:00.000Z',
+            tick: 100,
+            cause: 'combat_death',
+            // processed is absent (falsy) — death just happened, not yet processed
+        };
+
+        const beginTick = jest.fn();
+        const endTick = jest.fn();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: {
+                think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            },
+            evidence: {
+                store,
+                sessionId: 'session-hd019-initial',
+                trajectory: {
+                    beginTick,
+                    endTick,
+                    recordDecision: jest.fn(),
+                    recordAction: jest.fn(),
+                    recordActionResult: jest.fn(),
+                } as unknown as TrajectoryBuilder,
+                library: {
+                    getPatronHandles: jest.fn(() => []),
+                    observeProgress: jest.fn(),
+                    observeTrajectory: jest.fn(),
+                } as unknown as LibraryUpdater,
+            },
+        });
+
+        // First perception: processed is falsy → should record the tick
+        await runtime.onPerception({ tick: 101, events: [] });
+        expect(beginTick).toHaveBeenCalledTimes(1);
+        expect(endTick).toHaveBeenCalledTimes(1);
+        expect(state.deceased?.processed).toBe(true);
+
+        // Second perception: processed is now true → should NOT record
+        await runtime.onPerception({ tick: 102, events: [] });
+        expect(beginTick).toHaveBeenCalledTimes(1);
+        expect(endTick).toHaveBeenCalledTimes(1);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+        fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    });
+
     it('adopts an operator revive written to runtime state while the controller is still running', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-operator-revive-memory-'));
 

@@ -777,6 +777,14 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async withEvidenceTick(perception: Perception, run: () => Promise<void>): Promise<void> {
+        // HD-019: skip trajectory + progress evidence for already-processed deceased
+        // residents. handlePerception still runs so applyExternalOperatorRevive can
+        // re-animate them; it just stops polluting the trajectory file with empty
+        // begin_tick/end_tick pairs that accumulate indefinitely after death.
+        if (this.state.deceased?.processed) {
+            await run();
+            return;
+        }
         const tick = typeof perception.tick === 'number' ? perception.tick : this.state.tick;
         const began = this.recordEvidence(trajectory => trajectory.beginTick(tick, perception));
         this.observeRuntimeProgress(tick, perception);
