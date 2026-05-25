@@ -523,6 +523,8 @@ Safe public module facade building blocks are implemented, but the public member
 - `[x]` **O9: Watchdog fallback and LLM queue abort hygiene.** Prevent inference timeouts from freezing residents invisibly.
   - Verified 2026-05-24 on `agents/wip`: queued LLM aborts settle immediately, runtime consumes module watchdog fallbacks, hybrid Brain timeout backoff applies immediately, and default-SPARK heroes say a fallback line before attempting a safe step. Live `local-63709`: res:agent 9/9 action results succeeded; all six heroes produced `watchdog_fallback` speech, Hans moved twice successfully, and blocked hero steps were visible as movement timeouts instead of silent freezes. Remaining follow-up: O4 real-completion inference health check/provider failover.
   - Hardened 2026-05-24 on `agents/wip`: controller-created runtimes now derive `watchdog.thinkingMs` from the maximum configured LLM endpoint timeout plus a 5s grace window, so `controller.yml`'s 60s Qwen endpoint timeout is no longer shadowed by the old 45s runtime default. Focused host/runtime/config tests cover the wiring.
+- `[x]` **O10: Operator live resident smoke CLI.** Give Codex/Claude/Gemini and humans a quick command to verify real resident liveness from runtime state plus trajectory evidence.
+  - Verified 2026-05-24 on `agents/wip`: added `npm run controller:smoke`, a tested admin summarizer for recent actions/results/speech/stuck issues. Defaults use configured residents from `controller.yml` so stale disposable benchmark folders do not pollute normal QA. Live smoke showed all 19 configured residents active, and `res:agent` passed `--fail-on-warn` with recent movement/speech/action evidence.
 
 ## Workstream P: Deeper Game-Skill Knowledge
 
