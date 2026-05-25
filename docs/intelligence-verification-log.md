@@ -2907,4 +2907,66 @@ Final standing: 33 / Ally. Final inbox: 2 letters. Hans thanked patron BY NAME 2
 **Owner suggestion.** claude (HD updates this cycle); maintainer / Codex (populate test patron + observe live greeting once event handles are known).
 
 
+### E59 — cold-start metrics: controller boot timing (task #176)
+
+**Status:** Measured — fast cold start (~1.5s first tick, ~5s first reflex say). Operational baseline established.
+**Tier:** 1 (read-only process inspection + trajectory first-row scan + log inspection)
+**Date:** 2026-05-25 02:25 claude
+
+**Hypothesis.** Establish baseline for "how long does the controller take to boot" — useful for event-day staff so they know when the system is ready after restart. Measure: process-start → first tick per resident → first reflex say per resident → first knowledge_suggestion fire.
+
+**Repro.**
+- Process start: `ps -axo pid,lstart,command | grep dist/controller/index.js | grep -v SCREEN | grep -v grep` → 2026-05-24 20:05:42 CDT (= 01:05:42Z)
+- First tick per resident: earliest `kind: 'begin_tick'` row in `local-11694` trajectory files
+- First reflex say: earliest `kind: 'say'` row in same trajectory files
+- First knowledge_suggestion: earliest log entry in `/tmp/nullcity-controller-agents-wip-cohort.log`
+
+**Observation.**
+
+**Controller startup banner (4 lines, ~instantaneous):**
+```
+[controller] controllerId=nullcity-controller instanceId=local-11694 residents=19 knowledgeMode=persistent-volume suggestions=enabled wiki=disabled
+[controller] qmd unavailable; memory retrieval is limited to markdown files.
+[controller] MCP HTTP listening at http://127.0.0.1:43610/controller/mcp
+[controller] letters HTTP listening at http://127.0.0.1:43596/v1/inbox
+```
+
+**First-tick latency (all 19 residents, sub-second spread):**
+| residents | min Δ from start | max Δ | spread |
+|---|---:|---:|---:|
+| 19 residents | **1.2s** (res-agent, hans) | **1.5s** (qa-banker, forager, guide, priest, survivor) | ~300ms |
+
+All 19 residents had their first tick within 1.5s of process launch. **Sub-2-second cold-tick latency** under the 19-resident production load.
+
+**First-say latency (residents with reflex says in their first trajectory file, ~5-second window):**
+| resident | Δ from start | first say text |
+|---|---:|---|
+| res-qa-priest | 2.0s | "I am working my route. Nearby I see 1 NPC and 6 players at 3..." |
+| res-qa-survivor | 2.0s | "I am hurt at 3228,3217. Holding near safety..." (catatonic E54 evidence) |
+| res-hans | 2.6s | "A good day in the courtyard, friend." (hans-courtyard-greet-chat-on) |
+| res-qa-guardian | 2.6s | "I am hurt at 3228,3217. Holding near safety..." (catatonic E54 evidence) |
+| res-thrand | 3.2s | "Small steps. The river will still be there." (thrand-routine-mutter rule) |
+| res-qa-social | 5.0s | "Got it. Use 'social help' if you want my test commands." |
+
+**13 of 19 residents had no `kind:say` row in their first trajectory file** (which only spans 5-8 seconds before rotation). That's because non-reflex residents need either patron-chat or 1500+ ticks before their presence-beacon fires; they're not silent over the long window, just over the first 5s.
+
+**Knowledge-suggestion fire latency:**
+- First event 11s post-start (res:qa-angler at T+11s; first body action timed out, suggested workflow_hint review)
+- Spread: 4 distinct residents emitted suggestions across the first 7 minutes (qa-angler T+11s, qa-woodcutter T+48s, qa-priest T+115s, res:agent T+13s)
+
+**Sub-findings.**
+
+- **F59a (POSITIVE / OPERATIONAL BASELINE).** Cold-start is FAST. **Within 2 seconds of process launch all 19 residents are ticking; within 3 seconds the first heroes have spoken via reflex.** For Chicago day-of, staff can confidently expect a usable controller within 5 seconds of restart command.
+- **F59b (CHICAGO IMPACT).** The smoke script (`scripts/post-restart-smoke.sh`) currently doesn't measure first-tick latency — it just checks "is process alive + HTTP bound". Could add a `first-tick-under-3s` check that reads the newest trajectory file's first row and asserts the timestamp is recent. ~10 LOC enhancement. Optional polish.
+- **F59c (REFLEX-vs-BRAIN SPLIT).** First-say events are dominated by per-hero soul nervous rules (Hans courtyard greet, Thrand mutter, qa-priest route narration). Brain-driven says don't appear until much later (Brain calls take seconds; first empty_completion etc. only after Brain has had a chance to think). Confirms F52a-c: reflex layer is what carries the "feels alive" experience for the first few seconds post-restart.
+- **F59d (CATATONIC RESIDENTS' FIRST WORDS — irony).** qa-guardian + qa-survivor's first say post-restart is the SAME `"I am hurt at 3228,3217..."` low-health-hold-position phrase E54 identified. They were already at the safe waypoint with low HP from the prior run, immediately broadcast their stranded state on first tick. Confirms E54: the catatonia state is sticky across restarts because runtime-state carries HP forward.
+- **F59e (KNOWLEDGE-SUGGESTION FIRES SPARSE).** Only 9 knowledge_suggestion events across 7 minutes of live runtime, distributed across just 4 residents. Means the learning loop is firing but rarely — gated behind body-action outcomes that aren't happening for the silent 15 residents. Healthy substrate, opportunistic suggestion.
+
+**Classification.** ENGINE-quantification / operational-baseline. No bugs.
+
+**Suggested next step.** Optional smoke-script enhancement (F59b) — add a `first-tick-under-3s` assertion. Defer to post-Chicago. Document the 5-second-to-usable cold-start window in `docs/embassy-staff-runbook.md` pre-event setup section so staff know what to expect.
+
+**Owner suggestion.** claude (runbook annotation if time); post-Chicago smoke-script polish.
+
+
 
