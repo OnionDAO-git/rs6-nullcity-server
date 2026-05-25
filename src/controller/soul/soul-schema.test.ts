@@ -230,6 +230,25 @@ describe('validateSoulFrontmatter modules', () => {
             expect(frontmatter.factionAffinity).toBeUndefined();
         });
     });
+
+    describe('factionId (K3)', () => {
+        it('accepts a valid Null City faction id', () => {
+            const frontmatter = validateSoulFrontmatter(
+                { name: 'res:forgemaster-mother-anvil', archetype: 'achiever', factionId: 'foundry' },
+                '/tmp/anvil.md',
+            );
+            expect(frontmatter.factionId).toBe('foundry');
+        });
+
+        it('back-compat: soul without factionId still parses', () => {
+            const frontmatter = validateSoulFrontmatter({ name: 'res:agent', archetype: 'endurer' }, '/tmp/agent.md');
+            expect(frontmatter.factionId).toBeUndefined();
+        });
+
+        it('rejects an empty factionId string', () => {
+            expect(() => validateSoulFrontmatter({ name: 'res:test', archetype: 'endurer', factionId: '' }, '/tmp/test.md')).toThrow();
+        });
+    });
 });
 
 describe('dominantFaction', () => {

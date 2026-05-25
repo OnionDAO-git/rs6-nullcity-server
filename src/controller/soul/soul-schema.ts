@@ -145,6 +145,8 @@ export interface SoulFrontmatter {
     initialEquipment?: InitialContainerItem[];
     heroProfile?: HeroProfile;
     factionAffinity?: FactionAffinity;
+    /** Null City organizational faction (foundry / bureau-of-continuity / ledger / veil). */
+    factionId?: string;
 }
 
 export interface Soul {
@@ -371,6 +373,7 @@ export const soulFrontmatterSchema = z
                 unaligned: z.number().min(0).max(100).optional(),
             })
             .optional(),
+        factionId: z.string().min(1).optional(),
     })
     .strict();
 

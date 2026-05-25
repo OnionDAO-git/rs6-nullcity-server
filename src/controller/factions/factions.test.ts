@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { FACTIONS, FACTIONS_BY_ID, POIS, POIS_BY_ID, TENSION_AXES, lookupFaction, type FactionId } from './factions';
 
 describe('rs6 faction catalog integrity', () => {
@@ -126,6 +128,14 @@ describe('rs6 faction catalog integrity', () => {
         const usedAxes = new Set(FACTIONS.map(f => f.tensionAxis));
         for (const axis of usedAxes) {
             expect(TENSION_AXES).toContain(axis);
+        }
+    });
+
+    test('K3: each faction flagship soul file exists in starter-souls/', () => {
+        const soulsDir = path.join(__dirname, '..', 'soul', 'starter-souls');
+        for (const faction of FACTIONS) {
+            const soulFile = path.join(soulsDir, `${faction.flagshipResidentSlug}.md`);
+            expect(fs.existsSync(soulFile)).toBe(true);
         }
     });
 });
