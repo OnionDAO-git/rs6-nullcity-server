@@ -18,6 +18,7 @@ import {
     LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
     LUMBRIDGE_STARTER_FISHING_SPOT,
+    LUMBRIDGE_STARTER_FISHING_SPOTS,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
     opportunisticPickupAction,
@@ -280,6 +281,23 @@ describe('starterFishingAction', () => {
         });
     });
 
+    it('prefers the live-proven Lumbridge starter spot when both fixed river spots are visible', () => {
+        const primary = fishingSpot(3239, 3244);
+        const secondary = fishingSpot(3241, 3242);
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 3235, y: 3241, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [secondary, primary] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: primary,
+            option: 'net',
+            cause: 'starter_fishing_net',
+        });
+    });
+
     it('returns undefined when no small fishing net is carried', () => {
         const action = starterFishingAction(
             perception({
@@ -324,7 +342,7 @@ describe('starterFishingRouteAction', () => {
         };
     }
 
-    it('prefers a visible fishing spot over a known-route waypoint', () => {
+    it('prefers netting a visible fishing spot over a known-route waypoint', () => {
         const spot = fishingSpot(3230, 3204);
         const action = starterFishingRouteAction(
             perception({
@@ -382,7 +400,7 @@ describe('starterFishingRouteAction', () => {
 
         expect(action).toEqual({
             kind: 'move_to',
-            target: LUMBRIDGE_STARTER_FISHING_SPOT,
+            target: LUMBRIDGE_STARTER_FISHING_SPOTS[1],
             range: 7,
             cause: 'starter_fishing_seek_spot',
         });

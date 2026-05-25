@@ -109,10 +109,10 @@ export const EXPLORATION_OPENABLE_OBJECT_IDS: ReadonlySet<number> = new Set([
 export const LUMBRIDGE_CASTLE_RANGE: BodyPos = { x: 3208, y: 3213, level: 0 };
 
 /** Canonical level-1 net fishing spot in this server's npc-spawns/fishing config. */
-export const LUMBRIDGE_STARTER_FISHING_SPOT: BodyPos = { x: 3241, y: 3242, level: 0 };
+export const LUMBRIDGE_STARTER_FISHING_SPOT: BodyPos = { x: 3239, y: 3244, level: 0 };
 
 /** Secondary fixed net/bait spot in this server's Lumbridge fishing spawn config. */
-export const LUMBRIDGE_STARTER_FISHING_SPOTS: ReadonlyArray<BodyPos> = [LUMBRIDGE_STARTER_FISHING_SPOT, { x: 3239, y: 3244, level: 0 }];
+export const LUMBRIDGE_STARTER_FISHING_SPOTS: ReadonlyArray<BodyPos> = [LUMBRIDGE_STARTER_FISHING_SPOT, { x: 3241, y: 3242, level: 0 }];
 
 /** Reachable castle entry used when west-side kitchen doors are visible but not pathable. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY: BodyPos = { x: 3217, y: 3218, level: 0 };
@@ -455,7 +455,7 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
 
     const target = (perception.nearby?.npcs || [])
         .filter(isFishingSpot)
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+        .sort((a, b) => starterFishingSpotScore(here, a.position) - starterFishingSpotScore(here, b.position))[0];
     if (!target) {
         return undefined;
     }
@@ -470,6 +470,14 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
     }
 
     return { kind: 'interact', target, option: 'net', cause: 'starter_fishing_net' };
+}
+
+function starterFishingSpotScore(here: BodyPos, target: BodyPos): number {
+    const knownIndex = LUMBRIDGE_STARTER_FISHING_SPOTS.findIndex(position => bodyPositionKey(position) === bodyPositionKey(target));
+    if (knownIndex !== -1) {
+        return knownIndex * 100 + distance(here, target);
+    }
+    return 1_000 + distance(here, target);
 }
 
 /**
@@ -512,9 +520,7 @@ export function starterFishingRouteAction(perception: BodyHybridPerception): Age
 }
 
 function nextStarterFishingSearchPoint(here: BodyPos): BodyPos | undefined {
-    const candidates = LUMBRIDGE_STARTER_FISHING_SPOTS.filter(position => position.level === here.level).sort(
-        (a, b) => distance(here, a) - distance(here, b),
-    );
+    const candidates = LUMBRIDGE_STARTER_FISHING_SPOTS.filter(position => position.level === here.level);
     return (
         candidates.find(position => distance(here, position) > STARTER_FISHING_SPOT_DISCOVERY_RANGE) ||
         candidates.find(position => distance(here, position) > 0) ||
