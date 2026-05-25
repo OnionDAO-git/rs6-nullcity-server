@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { residentSlug } from '../memory/runtime-state';
 import { type Letter, type EpitaphLetterInput, produceEpitaphLetter, produceMorticiansRibbonLetter } from './letters-producer';
 import type { LettersStore, LettersStoreAppendResult } from './letters-store';
 
@@ -41,6 +42,15 @@ export interface DeceasedResidentSummary {
     preparedEpitaph?: string;
 }
 
+interface PreparedEpitaphMemoryReader {
+    read(resident: string, relativePath: string): string | undefined;
+}
+
+function cleanPreparedEpitaph(text: string | undefined): string | undefined {
+    const trimmed = text?.trim();
+    return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
 /**
  * Read a resident's prepared epitaph from their memory directory (M4).
  *
@@ -48,13 +58,24 @@ export interface DeceasedResidentSummary {
  * near the attention floor. Returns undefined if the file does not exist
  * or cannot be read (no-op for residents who never prepared one).
  */
-export function loadPreparedEpitaph(memoryRoot: string, residentName: string): string | undefined {
+export function loadPreparedEpitaph(memoryRoot: string | Partial<PreparedEpitaphMemoryReader>, residentName: string): string | undefined {
+    if (typeof memoryRoot !== 'string') {
+        if (typeof memoryRoot.read !== 'function') {
+            return undefined;
+        }
+        return cleanPreparedEpitaph(memoryRoot.read(residentName, 'prepared-epitaph.txt'));
+    }
+
     try {
-        const filePath = path.join(memoryRoot, residentName, 'prepared-epitaph.txt');
-        const text = fs.readFileSync(filePath, 'utf8').trim();
-        return text.length > 0 ? text : undefined;
+        const filePath = path.join(memoryRoot, residentSlug(residentName), 'prepared-epitaph.txt');
+        return cleanPreparedEpitaph(fs.readFileSync(filePath, 'utf8'));
     } catch {
-        return undefined;
+        try {
+            const legacyFilePath = path.join(memoryRoot, residentName, 'prepared-epitaph.txt');
+            return cleanPreparedEpitaph(fs.readFileSync(legacyFilePath, 'utf8'));
+        } catch {
+            return undefined;
+        }
     }
 }
 

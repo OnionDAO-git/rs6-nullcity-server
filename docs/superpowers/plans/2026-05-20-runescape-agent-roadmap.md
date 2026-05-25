@@ -499,6 +499,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[x]` **M3: `request_attention` action.** Hero NPC dialog or in-world begging surface; can also dispatch a letter to a recent patron.
   - Verified 2026-05-25 on `agents/wip`: nervous-system `requestAttentionReaction` fires after all soul rules as a fallback when hero `state.attention < floor + 5000`; cooldown 600 ticks; prefixes hero `publicName` in message; does not fire for residents without a declared floor. +7 tests (6 M3-named + 1 no-floor guard). Tests 1790/1790 + typecheck + lint + format.
 - `[x]` **M4: `prepare_epitaph` action.** When `lifespanTicks < threshold`, hero spends a tick writing its own epitaph that overrides the templated one at death.
+  - `[x]` Follow-up 2026-05-25 on `agents/wip`: runtime death dispatch loads `prepared-epitaph.txt` before building patron epitaph letters, so M4 final testaments reach patron inboxes verbatim. Verified with red/green runtime coverage, focused memory/epitaph/runtime suites, `npm run fin` (1878/1878), `npm run build`, and live `res:agent` smoke.
 - `[ ]` **M5: `trade_resource` action.** Hero proactively offers a resource to a patron who's neglected them.
 - `[ ]` **M6: Hero-as-resource-gatherer at faction landmarks.** Heroes skill-train at rs6 zones their faction controls; output → faction stockpile.
 - `[x]` **M7: Operator revive tooling for manual residents.** Add an explicit CLI/helper that can revive `attention_exhausted` manual heroes for local/event verification without changing long-term SOUL respawn policy.

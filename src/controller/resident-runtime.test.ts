@@ -8,7 +8,7 @@ import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import type { LlmClient } from './llm/llm-client';
 import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
-import type { MemoryStore } from './memory/memory-store';
+import { MemoryStore } from './memory/memory-store';
 import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
 import { LettersStore } from './patron/letters-store';
@@ -2306,9 +2306,11 @@ describe('ResidentRuntime modules', () => {
     });
 
     it('triggers epitaph building and dispatching on onPerception when state.deceased is set, and marks it processed', async () => {
-        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-deceased-memory-'));
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-deceased-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-deceased-evidence-'));
         const store = new EvidenceStore('res:pip', evidenceRoot);
+        const memory = new MemoryStore(memoryRoot, '');
+        memory.write('res:pip', 'prepared-epitaph.txt', 'Pip: Remember the small bright things.', 'replace');
 
         const state = stateFor('res:pip');
         state.deceased = {
@@ -2326,7 +2328,7 @@ describe('ResidentRuntime modules', () => {
         const runtime = new ResidentRuntime({
             soul: soul('res:pip'),
             gateway: {} as GatewayClient,
-            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            memory,
             stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
             llm: {} as LlmClient,
             actionLog: {} as ActionLog,
@@ -2375,9 +2377,11 @@ describe('ResidentRuntime modules', () => {
         expect(aliceEpitaph!.body).toContain('res:pip');
         expect(aliceEpitaph!.body).toContain('killed by guard');
         expect(aliceEpitaph!.body).toContain('firemaking');
+        expect(aliceEpitaph!.body).toContain('In their own words:');
+        expect(aliceEpitaph!.body).toContain('Pip: Remember the small bright things.');
         expect(aliceLetters.find(l => l.kind === 'civic_milestone' && l.subject.includes("Mortician's Ribbon"))).toBeDefined();
 
-        fs.rmSync(memoryDir, { recursive: true, force: true });
+        fs.rmSync(memoryRoot, { recursive: true, force: true });
         fs.rmSync(evidenceRoot, { recursive: true, force: true });
     });
 

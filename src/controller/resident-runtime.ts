@@ -38,7 +38,12 @@ import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import { type Soul, dominantFaction } from './soul/soul-schema';
 import { LettersStore } from './patron/letters-store';
-import { buildEpitaphDispatchRequests, dispatchEpitaphs, type DeceasedResidentSummary } from './patron/epitaph-dispatcher';
+import {
+    buildEpitaphDispatchRequests,
+    dispatchEpitaphs,
+    loadPreparedEpitaph,
+    type DeceasedResidentSummary,
+} from './patron/epitaph-dispatcher';
 import { produceBroadcastLetter, type Letter } from './patron/letters-producer';
 import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
@@ -904,6 +909,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 causeOfDeath: this.state.deceased.cause,
                 deceasedAt: this.state.deceased.date,
                 deceasedTick: this.state.deceased.tick,
+                preparedEpitaph: loadPreparedEpitaph(this.options.memory, this.name),
             };
             const lettersStoreDir = this.evidence?.store.root;
             if (lettersStoreDir) {

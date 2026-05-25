@@ -65,6 +65,12 @@ export class MemoryStore {
         return excerpts.filter(Boolean).slice(0, limit + 2 + libraryMemoryLimit + libraryPatronMemoryLimit);
     }
 
+    read(resident: string, relativePath: string): string | undefined {
+        const root = this.ensureResident(resident);
+        const target = this.resolveInside(root, relativePath);
+        return this.readIfExists(target);
+    }
+
     write(resident: string, relativePath: string, content: string, mode: 'append' | 'replace' = 'append'): string {
         const root = this.ensureResident(resident);
         const target = this.resolveInside(root, relativePath);
