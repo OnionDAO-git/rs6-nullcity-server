@@ -1566,6 +1566,104 @@ describe('ResidentRuntime modules', () => {
         expect(body.submit).not.toHaveBeenCalled();
     });
 
+    it('emits a reception greeting and records patron witness when a registered patron chats inside the embassy', async () => {
+        const state = stateFor('res:hans');
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'embassy-greeting-1' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(async () => ({
+                ok: true,
+                observation: {
+                    seq: 1,
+                    observedAt: Date.now(),
+                    value: {
+                        kind: 'chat',
+                        text: 'Welcome to the embassy, alice@onion.',
+                        from: { name: 'res:hans' },
+                    },
+                },
+            })),
+        } as unknown as ResidentBody;
+        const patronGateway = { witnessAt: jest.fn(async () => undefined) };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:hans'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            patrons: [{ handle: 'alice@onion', kind: 'patron_witness' }],
+            patronGateway,
+        } as ConstructorParameters<typeof ResidentRuntime>[0]);
+
+        runtime.onEvent({
+            kind: 'chat',
+            from: { id: 'player:alice', kind: 'player', name: 'alice@onion', position: { x: 3243, y: 3209, level: 0 } },
+            text: 'hello',
+            to: 'public',
+            ts: '2026-05-25T00:30:00Z',
+        });
+        await runtime.onPerception({ tick: 1, resident: { position: { x: 3243, y: 3209, level: 0 } }, events: [] });
+
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'say', text: 'Welcome to the embassy, alice@onion.', cause: 'embassy_reception_greeting' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'embassy_reception_greeting' }),
+        );
+        expect(patronGateway.witnessAt).toHaveBeenCalledWith('alice@onion', 'embassy', 'res:hans');
+        expect(thinking.think).not.toHaveBeenCalled();
+    });
+
+    it('does not record a patron witness when the embassy greeting action fails', async () => {
+        const state = stateFor('res:hans');
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: false, reason: 'say_failed', requestId: 'embassy-greeting-1' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(),
+        } as unknown as ResidentBody;
+        const patronGateway = { witnessAt: jest.fn(async () => undefined) };
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:hans'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            patrons: [{ handle: 'alice@onion', kind: 'patron_witness' }],
+            patronGateway,
+        } as ConstructorParameters<typeof ResidentRuntime>[0]);
+
+        runtime.onEvent({
+            kind: 'chat',
+            from: { id: 'player:alice', kind: 'player', name: 'alice@onion', position: { x: 3243, y: 3209, level: 0 } },
+            text: 'hello',
+            to: 'public',
+            ts: '2026-05-25T00:30:00Z',
+        });
+        await runtime.onPerception({ tick: 1, resident: { position: { x: 3243, y: 3209, level: 0 } }, events: [] });
+
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'say', text: 'Welcome to the embassy, alice@onion.', cause: 'embassy_reception_greeting' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'embassy_reception_greeting' }),
+        );
+        expect(patronGateway.witnessAt).not.toHaveBeenCalled();
+        expect(state.hookCooldowns?.['embassy-greeting:alice@onion']).toBeUndefined();
+        expect(thinking.think).not.toHaveBeenCalled();
+    });
+
     it('uses follow_player routine params to target the named nearby player at requested distance', async () => {
         const state = stateFor('res:pip');
         const body = {

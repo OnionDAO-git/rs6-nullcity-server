@@ -245,6 +245,27 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('passes the patron gateway into created runtimes for event reflex wiring', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const patronGateway = { witnessAt: jest.fn() };
+        const runtimeFactory = jest.fn((options: ConstructorParameters<typeof ResidentRuntime>[0]) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(config(), {
+            ...dependencies(gateway),
+            patronGateway: patronGateway as unknown as ControllerHostOptions['patronGateway'],
+            runtimeFactory,
+        });
+
+        await host.start();
+
+        expect(runtimeFactory.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ patronGateway }));
+
+        await host.stop();
+    });
+
     it('opens a runtime evidence session for created residents', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();

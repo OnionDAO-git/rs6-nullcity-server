@@ -15,6 +15,7 @@ import {
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
+import { evaluateReceptionGreeting } from './embassy/reception-reflex';
 import {
     EVIDENCE_SCHEMA_VERSION,
     ProgressTracker,
@@ -82,6 +83,9 @@ export interface ResidentRuntimeOptions {
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
     patrons?: PatronConfig[];
+    patronGateway?: {
+        witnessAt(patronHandle: string, landmarkId: 'embassy', residentName: string): Promise<unknown> | unknown;
+    };
     watchdog?: {
         thinkingMs?: number;
         actionMs?: number;
@@ -287,6 +291,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 return;
             }
 
+            if (this.options.patronGateway && (await this.trySubmitReceptionGreeting(perception))) {
+                return;
+            }
+
             const nervousPerception = this.peekWithPendingEvents(perception);
             const reaction = this.nervousSystem.react(nervousPerception);
             if (reaction) {
@@ -406,6 +414,73 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.checkDeceasedAndDispatchEpitaphs(perception);
             this.options.stateStore.save(this.state);
         }
+    }
+
+    private async trySubmitReceptionGreeting(perception: Perception): Promise<boolean> {
+        if (!this.options.patronGateway) {
+            return false;
+        }
+
+        const preview = this.peekWithPendingEvents(perception);
+        const greeting = evaluateReceptionGreeting({
+            perception: preview as Record<string, unknown>,
+            residentName: this.name,
+            registry: this.patronRegistry,
+        });
+        if (!greeting) {
+            return false;
+        }
+
+        const tick = typeof preview.tick === 'number' ? preview.tick : this.state.tick;
+        const cooldownKey = `embassy-greeting:${greeting.witness.patronHandle.toLowerCase()}`;
+        const coolingUntil = this.state.hookCooldowns?.[cooldownKey] || 0;
+        if (coolingUntil > tick) {
+            return false;
+        }
+
+        const decisionPerception = this.withPendingEvents(perception);
+        this.history.push(decisionPerception);
+        this.body.observePerception(decisionPerception);
+        const action: AgentAction = { ...greeting.action };
+
+        const attempt = await this.submitActionWithWatchdog({
+            producer: 'nervous-system',
+            action,
+            metadata: {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'nervous-system',
+                ruleId: 'embassy_reception_greeting',
+                sparkModule: this.nervousSourceModule
+                    ? { id: this.nervousSourceModule.manifest.id, version: this.nervousSourceModule.manifest.version }
+                    : undefined,
+            },
+            waitForEffect: this.effectWaitFor(action),
+            ...this.evidenceCallbacks(),
+        });
+        this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+        if (attempt.finalStatus !== 'success') {
+            return true;
+        }
+
+        this.state.hookCooldowns = this.state.hookCooldowns || {};
+        this.state.hookCooldowns[cooldownKey] = tick + 10;
+
+        try {
+            await this.options.patronGateway.witnessAt(
+                greeting.witness.patronHandle,
+                greeting.witness.landmarkId,
+                greeting.witness.residentName,
+            );
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'embassy_reception_witness_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+
+        return true;
     }
 
     private applyExternalOperatorRevive(): void {

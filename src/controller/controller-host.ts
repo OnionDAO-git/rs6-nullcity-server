@@ -281,6 +281,7 @@ export class ControllerHost {
             sparkModules: this.sparkModules,
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,
+            patronGateway: this.patronGateway,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
         };
         this.runtimes.set(

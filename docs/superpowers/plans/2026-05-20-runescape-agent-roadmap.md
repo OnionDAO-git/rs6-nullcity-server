@@ -504,6 +504,8 @@ Safe public module facade building blocks are implemented, but the public member
 - `[ ]` **N3: In-game graveyard zone.** Tombstones examinable for name/faction/epitaph/cause/ticks-lived. Mirror on dashboard library page.
 - `[ ]` **N4: IRL graveyard wall at the embassy.** Printed epitaphs at the physical embassy; refresh cadence + printing pipeline.
 - `[ ]` **N5: Mortician's Ribbon civic achievement.** Bestowed for humans witnessing N resident deaths (N TBD). In-game cape/title + lanyard variant.
+- `[x]` **N6: EVENT-D3 embassy reception greeting wire-in.** Registered patrons who chat while a hero resident is inside the Lumbridge churchyard embassy trigger a deterministic welcome and `PatronGateway.witnessAt(...)`.
+  - Verified 2026-05-24 on `agents/wip`: `ResidentRuntime` runs `evaluateReceptionGreeting(...)` before the generic patron-thank reflex and before Brain inference, submits `say` with cause `embassy_reception_greeting`, records the witness only after the say action succeeds, and `ControllerHost` passes the live `PatronGateway` into each runtime. Focused red/green tests cover production wiring and the failed-say no-witness guard. Live use still requires `controller.yml#patrons[]` to contain the attendee handle and a built/restarted controller.
 
 ## Workstream O: Engineering And Tooling Polish
 
