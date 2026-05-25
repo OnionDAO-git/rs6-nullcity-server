@@ -181,4 +181,102 @@ describe('reviveResident', () => {
         const timeline = fs.readFileSync(path.join(memoryDir, 'library', 'res-hans', 'timeline.jsonl'), 'utf8');
         expect(timeline).toContain('operator_force_revive');
     });
+
+    it('reopens completed flagship endurer legacy when force-reviving after an old short lifespan death', () => {
+        const heroFrontmatter = {
+            name: 'res:hans',
+            archetype: 'endurer',
+            attentionProfile: { startingAttention: 14000, decayCurve: 'gentle' },
+            respawnPolicy: 'manual',
+            heroProfile: {
+                tier: 'hero',
+                publicName: 'Hans',
+                signatureAction: 'patrols the courtyard',
+            },
+        };
+        fs.writeFileSync(path.join(soulsDir, 'hans.md'), `---\n${yaml.dump(heroFrontmatter)}---\n# Hans`, 'utf8');
+        const store = new RuntimeStateStore(memoryDir);
+        const state = store.load('res:hans', 1, 'endurer');
+        state.attention = 0;
+        state.legacy = {
+            kind: 'endurer',
+            complete: true,
+            progress: {
+                ticksLived: 50_000,
+                targetTicksLived: 50_000,
+                ratio: 1,
+            },
+        };
+        state.deceased = {
+            date: '2026-05-25T21:43:46.677Z',
+            tick: 174_706,
+            cause: 'endured',
+            processed: true,
+        };
+        store.save(state);
+
+        const result = reviveResident({
+            residentName: 'res:hans',
+            soulsDir,
+            memoryDir,
+            force: true,
+            now: () => new Date('2026-05-25T22:00:00.000Z'),
+        });
+
+        expect(result.revived).toBe(true);
+        const revivedState = store.load('res:hans', 1, 'endurer');
+        expect(revivedState.deceased).toBeUndefined();
+        expect(revivedState.legacy.complete).toBe(false);
+        expect(revivedState.legacy.progress.ticksLived).toBe(50_000);
+        expect(revivedState.legacy.progress.targetTicksLived).toBe(4_320_000);
+        expect(revivedState.legacy.progress.ratio).toBeCloseTo(50_000 / 4_320_000);
+    });
+
+    it('repairs an already-living flagship endurer legacy when force is explicit', () => {
+        const heroFrontmatter = {
+            name: 'res:hans',
+            archetype: 'endurer',
+            attentionProfile: { startingAttention: 14000, decayCurve: 'gentle' },
+            respawnPolicy: 'manual',
+            heroProfile: {
+                tier: 'hero',
+                publicName: 'Hans',
+                signatureAction: 'patrols the courtyard',
+            },
+        };
+        fs.writeFileSync(path.join(soulsDir, 'hans.md'), `---\n${yaml.dump(heroFrontmatter)}---\n# Hans`, 'utf8');
+        const store = new RuntimeStateStore(memoryDir);
+        const state = store.load('res:hans', 1, 'endurer');
+        state.attention = 13_970;
+        state.legacy = {
+            kind: 'endurer',
+            complete: true,
+            progress: {
+                ticksLived: 50_000,
+                targetTicksLived: 50_000,
+                ratio: 1,
+            },
+        };
+        store.save(state);
+
+        const result = reviveResident({
+            residentName: 'res:hans',
+            soulsDir,
+            memoryDir,
+            force: true,
+        });
+
+        expect(result).toMatchObject({
+            residentName: 'res:hans',
+            revived: false,
+            reason: 'repaired_legacy',
+            attentionBefore: 13_970,
+            attentionAfter: 13_970,
+        });
+        const repairedState = store.load('res:hans', 1, 'endurer');
+        expect(repairedState.deceased).toBeUndefined();
+        expect(repairedState.legacy.complete).toBe(false);
+        expect(repairedState.legacy.progress.targetTicksLived).toBe(4_320_000);
+        expect(repairedState.legacy.progress.ratio).toBeCloseTo(50_000 / 4_320_000);
+    });
 });

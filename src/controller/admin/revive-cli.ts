@@ -82,6 +82,13 @@ export async function runReviveCli(_argv: string[]): Promise<number> {
             return 0;
         }
 
+        if (result.reason === 'repaired_legacy') {
+            console.log(
+                `[controller:revive] Repaired ${result.residentName} legacy while already living; attention=${result.attentionAfter}.`,
+            );
+            return 0;
+        }
+
         if (result.reason === 'blocked_respawn_policy') {
             console.error(
                 `[controller:revive] Refusing to revive ${result.residentName}; respawn policy=${result.respawnPolicy}. Use --force for explicit operator override.`,

@@ -68,6 +68,53 @@ describe('LegacyTracker', () => {
         expect(state.deceased?.cause).toBe('endured');
         expect(state.attention).toBe(0);
     });
+
+    it('uses a 30-day default lifespan for flagship hero endurers without explicit target ticks', () => {
+        const state = runtimeState('endurer');
+        state.legacy.progress.ticksLived = 49_999;
+        const heroSoul = soul('endurer', {});
+        heroSoul.frontmatter.heroProfile = {
+            tier: 'hero',
+            publicName: 'Hans',
+            signatureAction: 'patrols the courtyard',
+        };
+        const tracker = new LegacyTracker(heroSoul, state);
+
+        const update = tracker.update({});
+
+        expect(update.complete).toBe(false);
+        expect(state.legacy.progress.ticksLived).toBe(50_000);
+        expect(state.legacy.progress.targetTicksLived).toBe(4_320_000);
+        expect(state.legacy.complete).toBe(false);
+        expect(state.deceased).toBeUndefined();
+        expect(state.attention).toBe(100);
+    });
+
+    it('reopens old completed short endurer progress when a flagship hero lifespan is now longer', () => {
+        const state = runtimeState('endurer');
+        state.legacy.complete = true;
+        state.legacy.progress = {
+            ticksLived: 50_000,
+            targetTicksLived: 50_000,
+            ratio: 1,
+        };
+        const heroSoul = soul('endurer', {});
+        heroSoul.frontmatter.heroProfile = {
+            tier: 'hero',
+            publicName: 'Hans',
+            signatureAction: 'patrols the courtyard',
+        };
+        const tracker = new LegacyTracker(heroSoul, state);
+
+        const update = tracker.update({});
+
+        expect(update.complete).toBe(false);
+        expect(state.legacy.complete).toBe(false);
+        expect(state.legacy.progress.ticksLived).toBe(50_001);
+        expect(state.legacy.progress.targetTicksLived).toBe(4_320_000);
+        expect(state.legacy.progress.ratio).toBeCloseTo(50_001 / 4_320_000);
+        expect(state.deceased).toBeUndefined();
+    });
 });
 
 function runtimeState(kind: 'mentor' | 'achiever' | 'endurer'): RuntimeState {

@@ -600,7 +600,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private applyExternalOperatorRevive(): void {
-        if (!this.state.deceased) {
+        if (!this.state.deceased && !this.state.legacy.complete) {
             return;
         }
 
@@ -614,7 +614,24 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             return;
         }
 
+        if (!this.state.deceased) {
+            if (this.state.legacy.complete && !external.legacy.complete) {
+                this.state.attention = Math.max(this.state.attention, external.attention);
+                this.state.legacy = {
+                    kind: external.legacy.kind,
+                    complete: external.legacy.complete,
+                    progress: { ...external.legacy.progress },
+                };
+            }
+            return;
+        }
+
         this.state.attention = Math.max(this.state.attention, external.attention);
+        this.state.legacy = {
+            kind: external.legacy.kind,
+            complete: external.legacy.complete,
+            progress: { ...external.legacy.progress },
+        };
         this.state.deceased = undefined;
         this.state.stuckSince = undefined;
         if (this.state.cognition?.activeMove) {

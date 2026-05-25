@@ -3205,6 +3205,15 @@ describe('ResidentRuntime modules', () => {
 
         const state = stateFor('res:hans');
         state.attention = 0;
+        state.legacy = {
+            kind: 'endurer',
+            complete: true,
+            progress: {
+                ticksLived: 50_000,
+                targetTicksLived: 50_000,
+                ratio: 1,
+            },
+        };
         state.stuckSince = 99;
         state.cognition = {
             activeMove: {
@@ -3225,6 +3234,15 @@ describe('ResidentRuntime modules', () => {
             attention: 14000,
             stuckSince: undefined,
             deceased: undefined,
+            legacy: {
+                kind: 'endurer',
+                complete: false,
+                progress: {
+                    ticksLived: 50_000,
+                    targetTicksLived: 4_320_000,
+                    ratio: 50_000 / 4_320_000,
+                },
+            },
             cognition: { ...state.cognition, activeMove: undefined },
         };
         const stateStore = {
@@ -3236,7 +3254,13 @@ describe('ResidentRuntime modules', () => {
         const runtime = new ResidentRuntime({
             soul: soul('res:hans', {
                 attentionProfile: { startingAttention: 14000, decayCurve: 'gentle' },
+                archetype: 'endurer',
                 respawnPolicy: 'manual',
+                heroProfile: {
+                    tier: 'hero',
+                    publicName: 'Hans',
+                    signatureAction: 'patrols the courtyard',
+                },
             } as Partial<Soul['frontmatter']>),
             gateway: {} as GatewayClient,
             memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
@@ -3253,8 +3277,79 @@ describe('ResidentRuntime modules', () => {
         expect(state.attention).toBeGreaterThan(13900);
         expect(state.stuckSince).toBeUndefined();
         expect(state.cognition?.activeMove).toBeUndefined();
+        expect(state.legacy.complete).toBe(false);
+        expect(state.legacy.progress.targetTicksLived).toBe(4_320_000);
         expect(thinking.think).toHaveBeenCalled();
         expect(stateStore.save).toHaveBeenLastCalledWith(expect.objectContaining({ resident: 'res:hans', deceased: undefined }));
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('adopts an operator legacy repair for an already-living resident while the controller is still running', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-operator-legacy-repair-memory-'));
+
+        const state = stateFor('res:hans');
+        state.attention = 13_900;
+        state.legacy = {
+            kind: 'endurer',
+            complete: true,
+            progress: {
+                ticksLived: 50_000,
+                targetTicksLived: 50_000,
+                ratio: 1,
+            },
+        };
+        const externallyRepaired = {
+            ...state,
+            attention: 13_900,
+            legacy: {
+                kind: 'endurer',
+                complete: false,
+                progress: {
+                    ticksLived: 50_000,
+                    targetTicksLived: 4_320_000,
+                    ratio: 50_000 / 4_320_000,
+                },
+            },
+        };
+        const stateStore = {
+            load: jest.fn().mockReturnValueOnce(state).mockReturnValueOnce(externallyRepaired),
+            save: jest.fn(),
+        } as unknown as RuntimeStateStore;
+        const thinking = thinkingModule();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:hans', {
+                attentionProfile: { startingAttention: 14000, decayCurve: 'gentle' },
+                archetype: 'endurer',
+                respawnPolicy: 'manual',
+                heroProfile: {
+                    tier: 'hero',
+                    publicName: 'Hans',
+                    signatureAction: 'patrols the courtyard',
+                },
+            } as Partial<Soul['frontmatter']>),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+        });
+
+        await runtime.onPerception({ tick: 100, events: [] });
+
+        expect(state.deceased).toBeUndefined();
+        expect(state.legacy.complete).toBe(false);
+        expect(state.legacy.progress.targetTicksLived).toBe(4_320_000);
+        expect(thinking.think).toHaveBeenCalled();
+        expect(stateStore.save).toHaveBeenLastCalledWith(
+            expect.objectContaining({
+                resident: 'res:hans',
+                legacy: expect.objectContaining({ complete: false }),
+            }),
+        );
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });

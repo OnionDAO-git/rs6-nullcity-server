@@ -2,6 +2,9 @@ import { type RuntimeState, markDeceased } from '../memory/runtime-state';
 import type { Soul, SoulArchetype } from '../soul/soul-schema';
 import type { AgentAction } from '../transport/message-codecs';
 
+export const DEFAULT_ENDURER_TARGET_TICKS = 50_000;
+export const HERO_ENDURER_TARGET_TICKS = 4_320_000;
+
 export interface LegacyProgress {
     kind: SoulArchetype;
     complete: boolean;
@@ -33,7 +36,9 @@ export class LegacyTracker {
 
     update(perception: unknown): LegacyUpdate {
         if (this.state.legacy.complete) {
-            return { complete: true, cause: this.completionCause() };
+            if (!this.reopenExtendedEndurerIfNeeded()) {
+                return { complete: true, cause: this.completionCause() };
+            }
         }
 
         switch (this.kind()) {
@@ -140,7 +145,7 @@ export class LegacyTracker {
     }
 
     private updateEndurer(): LegacyUpdate {
-        const target = numberParam(this.soul, ['targetTicksLived', 'targetTicks'], 50000);
+        const target = endurerTargetTicks(this.soul);
         const ticksLived = Number(this.state.legacy.progress.ticksLived || 0) + 1;
         const ratio = target <= 0 ? 1 : Math.min(1, ticksLived / target);
         this.state.legacy.progress.ticksLived = ticksLived;
@@ -150,6 +155,23 @@ export class LegacyTracker {
             return this.complete('endured');
         }
         return { complete: false };
+    }
+
+    private reopenExtendedEndurerIfNeeded(): boolean {
+        if (this.kind() !== 'endurer') {
+            return false;
+        }
+
+        const target = endurerTargetTicks(this.soul);
+        const ticksLived = Number(this.state.legacy.progress.ticksLived || 0);
+        if (!Number.isFinite(ticksLived) || ticksLived >= target) {
+            return false;
+        }
+
+        this.state.legacy.complete = false;
+        this.state.legacy.progress.targetTicksLived = target;
+        this.state.legacy.progress.ratio = target <= 0 ? 1 : Math.min(1, Math.max(0, ticksLived / target));
+        return true;
     }
 
     private complete(cause: string): LegacyUpdate {
@@ -178,7 +200,7 @@ export class LegacyTracker {
         if (kind === 'achiever') {
             return `Achiever legacy: ${this.state.legacy.complete ? 'complete' : 'in progress'} (${Math.round(ratio * 100)}%).`;
         }
-        return `Endurer legacy: ${Number(this.state.legacy.progress.ticksLived || 0)}/${Number(this.state.legacy.progress.targetTicksLived || 50000)} ticks lived.`;
+        return `Endurer legacy: ${Number(this.state.legacy.progress.ticksLived || 0)}/${Number(this.state.legacy.progress.targetTicksLived || DEFAULT_ENDURER_TARGET_TICKS)} ticks lived.`;
     }
 
     private completionCause(): string {
@@ -366,6 +388,14 @@ function numberParam(soul: Soul, keys: string[], fallback: number): number {
         }
     }
     return fallback;
+}
+
+export function endurerTargetTicks(soul: Soul): number {
+    return numberParam(
+        soul,
+        ['targetTicksLived', 'targetTicks'],
+        soul.frontmatter.heroProfile?.tier === 'hero' ? HERO_ENDURER_TARGET_TICKS : DEFAULT_ENDURER_TARGET_TICKS,
+    );
 }
 
 function objectArray<T>(value: unknown): T[] {
