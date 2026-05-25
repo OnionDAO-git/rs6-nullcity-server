@@ -411,9 +411,18 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 this.deciding = false;
             }
         } finally {
+            this.advanceRuntimeClock(perception);
             this.checkDeceasedAndDispatchEpitaphs(perception);
             this.options.stateStore.save(this.state);
         }
+    }
+
+    private advanceRuntimeClock(perception: Perception): void {
+        const perceptionTick = typeof perception.tick === 'number' ? perception.tick : undefined;
+        if (perceptionTick === undefined) {
+            return;
+        }
+        this.state.tick = Math.max(this.state.tick, perceptionTick);
     }
 
     private async trySubmitReceptionGreeting(perception: Perception): Promise<boolean> {
