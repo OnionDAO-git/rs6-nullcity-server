@@ -6,6 +6,7 @@ export interface LlmRequest {
     prompt: string;
     temperature?: number;
     thinking?: boolean;
+    timeoutMs?: number;
     signal?: AbortSignal;
     priority?: number;
 }
@@ -77,17 +78,20 @@ export class LlmClient {
         };
 
         try {
-            return await this.postCompletionWithRetry(endpointKey, endpoint, body, request.signal);
+            return await this.postCompletionWithRetry(endpointKey, endpoint, body, request.signal, request.timeoutMs);
         } catch (error) {
             if (request.signal?.aborted) {
                 return { text: '', model, nooped: true, cancelledBy: String(request.signal.reason || 'aborted') };
+            }
+            if (error instanceof LlmTimeoutError) {
+                return { text: JSON.stringify({ actions: [] }), model, nooped: true, cancelledBy: 'request_timeout' };
             }
             if (isRetryableError(error)) {
                 throw error;
             }
 
             const fallbackBody = { ...body, response_format: { type: 'text' } };
-            return this.postCompletionWithRetry(endpointKey, endpoint, fallbackBody, request.signal);
+            return this.postCompletionWithRetry(endpointKey, endpoint, fallbackBody, request.signal, request.timeoutMs);
         }
     }
 
@@ -161,11 +165,12 @@ export class LlmClient {
         endpoint: LlmEndpointConfig,
         body: unknown,
         signal?: AbortSignal,
+        timeoutMs?: number,
     ): Promise<LlmResponse> {
         let attempt = 0;
         while (true) {
             try {
-                const response = await this.postCompletion(endpoint, body, signal);
+                const response = await this.postCompletion(endpoint, body, signal, timeoutMs);
                 this.clearRetryableFailures(endpointKey);
                 return response;
             } catch (error) {
@@ -198,18 +203,31 @@ export class LlmClient {
         });
     }
 
-    private async postCompletion(endpoint: LlmEndpointConfig, body: unknown, signal?: AbortSignal): Promise<LlmResponse> {
-        const response = await fetch(`${endpoint.baseUrl?.replace(/\/$/, '')}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...(endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {}),
-            },
-            body: JSON.stringify(body),
-            signal: signal
-                ? AbortSignal.any([signal, AbortSignal.timeout(endpoint.timeoutMs || 30000)])
-                : AbortSignal.timeout(endpoint.timeoutMs || 30000),
-        });
+    private async postCompletion(
+        endpoint: LlmEndpointConfig,
+        body: unknown,
+        signal?: AbortSignal,
+        timeoutMs?: number,
+    ): Promise<LlmResponse> {
+        const timeoutSignal = AbortSignal.timeout(timeoutMs ?? endpoint.timeoutMs ?? 30000);
+        const completionSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+        let response: Response;
+        try {
+            response = await fetch(`${endpoint.baseUrl?.replace(/\/$/, '')}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    ...(endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {}),
+                },
+                body: JSON.stringify(body),
+                signal: completionSignal,
+            });
+        } catch (error) {
+            if (timeoutSignal.aborted && !signal?.aborted) {
+                throw new LlmTimeoutError();
+            }
+            throw error;
+        }
         if (!response.ok) {
             throw new LlmHttpError(response.status, response.statusText);
         }
@@ -238,6 +256,12 @@ class LlmHttpError extends Error {
         statusText: string,
     ) {
         super(`LLM completion failed: ${status} ${statusText}`);
+    }
+}
+
+class LlmTimeoutError extends Error {
+    constructor() {
+        super('LLM completion timed out');
     }
 }
 

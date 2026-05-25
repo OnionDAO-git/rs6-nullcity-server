@@ -74,6 +74,7 @@ describe('Spark candidate fallback', () => {
         expect(result.actions).toEqual([{ kind: 'move_to', target: { x: 3227, y: 3236, level: 0 }, cause: 'idle_step' }]);
         expect(result.cause).toBe('candidate_fallback');
         expect(result.nooped).toBe(false);
+        expect((llm.complete as jest.Mock).mock.calls[0][0].timeoutMs).toBe(10_000);
     });
 
     it('includes recent Library memories in the legacy SPARK prompt envelope', async () => {

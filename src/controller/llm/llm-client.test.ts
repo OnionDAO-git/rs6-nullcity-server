@@ -117,6 +117,23 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(body.model).toBe('resident-model');
     });
 
+    it('lets an individual request time out quickly without trying a second fallback call', async () => {
+        jest.useRealTimers();
+        const fetchMock = jest.fn(
+            (_url: URL | RequestInfo, init?: RequestInit) =>
+                new Promise<Response>((_resolve, reject) => {
+                    init?.signal?.addEventListener('abort', () => reject(init.signal?.reason || new Error('aborted')), { once: true });
+                }),
+        );
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        const response = await client.complete({ endpoint: 'default', prompt: 'decide quickly', timeoutMs: 5 });
+
+        expect(response).toMatchObject({ text: JSON.stringify({ actions: [] }), nooped: true, cancelledBy: 'request_timeout' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('admits queued requests by priority when concurrency is exhausted', async () => {
         let releaseFirst: (() => void) | undefined;
         const firstResponse = new Promise<Response>(resolve => {

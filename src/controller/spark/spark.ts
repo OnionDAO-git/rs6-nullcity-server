@@ -25,6 +25,7 @@ import { type VariableDefinition, recomputeVariables } from './variables';
 const IDLE_INITIATIVE_FIRST_TICK = 120;
 const IDLE_INITIATIVE_INTERVAL_TICKS = 120;
 const IDLE_INITIATIVE_INTERVAL_MS = 45_000;
+const DEFAULT_SPARK_INFERENCE_TIMEOUT_MS = 10_000;
 
 export interface SparkTickResult {
     actions: AgentAction[];
@@ -174,6 +175,7 @@ export class Spark {
                     prompt: envelope,
                     temperature: this.soul.frontmatter.model?.temperature,
                     signal: request.controller.signal,
+                    timeoutMs: this.soul.frontmatter.model?.timeoutMs ?? DEFAULT_SPARK_INFERENCE_TIMEOUT_MS,
                     priority: winner.priority,
                     ...(this.soul.frontmatter.model?.model ? { model: this.soul.frontmatter.model.model } : {}),
                 })

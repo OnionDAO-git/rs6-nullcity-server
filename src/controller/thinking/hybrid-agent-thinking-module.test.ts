@@ -420,10 +420,12 @@ describe('HybridAgentThinkingModule', () => {
         const brainRequest = llm.complete.mock.calls[0][0];
         const bodyRequest = llm.complete.mock.calls[1][0];
         expect(brainRequest.thinking).toBe(true);
+        expect(brainRequest.timeoutMs).toBeUndefined();
         expect(brainRequest.prompt).toContain('/think');
         expect(brainRequest.prompt).toContain('RuneBench-style loop');
         expect(brainRequest.prompt).toContain('Measurable goals');
         expect(bodyRequest.thinking).toBe(false);
+        expect(bodyRequest.timeoutMs).toBe(10_000);
         expect(bodyRequest.prompt).toContain('/no_think');
         expect(bodyRequest.prompt).toContain('Walk outside, stay visible to Codex');
         expect(bodyRequest.prompt).toContain('AgentAction tool surface');
@@ -610,6 +612,54 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.lastBodyTick).toBeUndefined();
         expect(state.cognition?.lastBodyActionKey).toBeUndefined();
         expect(state.cognition?.pickupCooldowns).toBeUndefined();
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('recovers from modest restarted-world tick drift before stale Brain backoff can idle the resident', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: {
+                        id: 'scout-after-restart',
+                        description: 'Re-orient after restart and choose a visible task.',
+                    },
+                    say: 'My clock looks reset, so I am re-orienting before I continue.',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        state.tick = 1074;
+        state.lastMeaningfulProgressAt = 1072;
+        state.stuckSince = 1074;
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                createdAtTick: 970,
+            },
+            lastBrainTick: 1074,
+            brainBackoffUntilTick: 1673,
+            lastBodyTick: 1056,
+            lastBodyActionKey:
+                '{"kind":"say","text":"I can see the Lumbridge range, but I cannot reach it from here.","cause":"starter_fishing_missing_heat"}',
+            lastBodyActionTick: 1056,
+            routineLoopKey: 'starter-fishing-cooking|3208,3239,0',
+            routineLoopCount: 11,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(perception({ tick: 923, resident: residentAt(3230, 3239) }));
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'My clock looks reset, so I am re-orienting before I continue.' }]);
+        expect(state.tick).toBe(923);
+        expect(state.stuckSince).toBeUndefined();
+        expect(state.lastMeaningfulProgressAt).toBeUndefined();
+        expect(state.cognition?.activeGoal?.id).toBe('scout-after-restart');
+        expect(state.cognition?.lastBrainTick).toBe(923);
+        expect(state.cognition?.lastBodyTick).toBeUndefined();
+        expect(state.cognition?.lastBodyActionKey).toBeUndefined();
+        expect(state.cognition?.brainBackoffUntilTick).toBeUndefined();
+        expect(state.cognition?.routineLoopKey).toBeUndefined();
         expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 

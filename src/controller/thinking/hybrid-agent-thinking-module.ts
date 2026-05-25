@@ -177,6 +177,7 @@ type HybridPerception = {
 
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
+const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const PRESENCE_BEACON_VARIETY_AFTER_TICKS = 1000;
 const BRAIN_TIMEOUT_BACKOFF_TICKS = 600;
@@ -202,7 +203,10 @@ const SCOUTING_SKILL_OPPORTUNITY_MIN_GOAL_AGE_TICKS = 120;
 const SCOUTING_SKILL_OPPORTUNITY_COOLDOWN_TICKS = 900;
 const COMBAT_AREA_ANCHOR_RECOVERY_DISTANCE = 28;
 const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
-const WORLD_TICK_RESET_DRIFT = 10_000;
+// Treat a persisted controller tick that is about a minute ahead of the
+// current game tick as a world restart. Leaving old Brain/Body tick markers in
+// place can otherwise idle a resident until the new world clock catches up.
+const WORLD_TICK_RESET_DRIFT = 60;
 const TARGET_FAILURE_COOLDOWN_TICKS = 600;
 // Item / actor classification predicates and their constant tables now live in
 // `../spark/runescape-workflows` (Plan R-α). Body-routine action helpers and
@@ -519,6 +523,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             prompt,
             temperature: this.temperatureFor(behavior.brain, 0.7),
             thinking: behavior.brain?.thinking ?? true,
+            timeoutMs: this.timeoutFor(behavior.brain),
             priority: 5,
             ...(this.modelFor(behavior.brain) ? { model: this.modelFor(behavior.brain) } : {}),
         });
@@ -601,6 +606,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             prompt,
             temperature: this.temperatureFor(behavior.body, 0.15),
             thinking: behavior.body?.thinking ?? false,
+            timeoutMs: this.timeoutFor(behavior.body, DEFAULT_BODY_INFERENCE_TIMEOUT_MS),
             priority: 2,
             ...(this.modelFor(behavior.body) ? { model: this.modelFor(behavior.body) } : {}),
         });
@@ -1859,6 +1865,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 prompt,
                 temperature: this.temperatureFor(this.behavior().brain, 0.7),
                 thinking: this.behavior().brain?.thinking ?? true,
+                timeoutMs: this.timeoutFor(this.behavior().brain),
                 priority: 5,
                 ...(this.modelFor(this.behavior().brain) ? { model: this.modelFor(this.behavior().brain) } : {}),
             });
@@ -2974,6 +2981,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     private temperatureFor(profile: InferenceProfileDefinition | undefined, fallback: number): number {
         return profile?.temperature ?? this.options.soul.frontmatter.model?.temperature ?? fallback;
+    }
+
+    private timeoutFor(profile: InferenceProfileDefinition | undefined, fallback?: number): number | undefined {
+        return profile?.timeoutMs ?? fallback;
     }
 
     private visibilityAnchor(): Pos | undefined {

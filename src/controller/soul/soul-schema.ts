@@ -115,6 +115,7 @@ export interface SoulFrontmatter {
         endpoint?: string;
         model?: string;
         temperature?: number;
+        timeoutMs?: number;
     };
     attentionProfile?: {
         startingAttention?: number;
@@ -223,6 +224,7 @@ export interface InferenceProfileDefinition {
     model?: string;
     temperature?: number;
     thinking?: boolean;
+    timeoutMs?: number;
 }
 
 const soulArchetypeSchema = z.enum(['mentor', 'achiever', 'endurer']);
@@ -267,6 +269,7 @@ const inferenceProfileSchema = z.object({
     model: z.string().min(1).optional(),
     temperature: z.number().min(0).max(2).optional(),
     thinking: z.boolean().optional(),
+    timeoutMs: z.number().int().positive().optional(),
 });
 const initialContainerItemSchema = z.union([
     z.number().int(),
@@ -325,6 +328,7 @@ export const soulFrontmatterSchema = z
                 endpoint: z.string().optional(),
                 model: z.string().min(1).optional(),
                 temperature: z.number().min(0).max(2).optional(),
+                timeoutMs: z.number().int().positive().optional(),
             })
             .optional(),
         attentionProfile: z
