@@ -318,7 +318,9 @@ export class ControllerHost {
             store,
             sessionId: session.sessionId,
             trajectory: new TrajectoryBuilder(store),
-            library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir),
+            library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir, {
+                factionId: soul.frontmatter.factionId,
+            }),
         };
     }
 

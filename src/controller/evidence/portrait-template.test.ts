@@ -1,5 +1,42 @@
 import { renderPortrait, type PortraitIndex } from './portrait-template';
 
+describe('renderPortrait faction enrichment', () => {
+    const index: PortraitIndex = {
+        resident: 'res:mother-anvil',
+        createdAt: '2026-05-25T14:00:00.000Z',
+        updatedAt: '2026-05-25T15:00:00.000Z',
+        lives: 1,
+        currentState: 'living',
+    };
+    const timeline = [{ kind: 'say', tick: 1, ts: '2026-05-25T14:00:01.000Z', text: 'At the forge again.', lifeIndex: 1 }];
+
+    it('populates portrait.faction display name when factionId is a known id', () => {
+        const rendered = renderPortrait('res:mother-anvil', index, timeline, { factionId: 'foundry' });
+        expect(rendered.portrait.faction).toBe('The Foundry');
+    });
+
+    it('includes faction in the markdown header line', () => {
+        const rendered = renderPortrait('res:mother-anvil', index, timeline, { factionId: 'foundry' });
+        expect(rendered.markdown).toContain('The Foundry');
+    });
+
+    it('leaves portrait.faction undefined when no factionId provided', () => {
+        const rendered = renderPortrait('res:mother-anvil', index, timeline);
+        expect(rendered.portrait.faction).toBeUndefined();
+    });
+
+    it('leaves portrait.faction undefined for an unknown factionId', () => {
+        const rendered = renderPortrait('res:mother-anvil', index, timeline, { factionId: 'unknown-faction' });
+        expect(rendered.portrait.faction).toBeUndefined();
+    });
+
+    it('renders The Veil faction correctly', () => {
+        const rendered = renderPortrait('res:the-hush', index, timeline, { factionId: 'veil' });
+        expect(rendered.portrait.faction).toBe('The Veil');
+        expect(rendered.markdown).toContain('The Veil');
+    });
+});
+
 describe('renderPortrait wants quality', () => {
     const index: PortraitIndex = {
         resident: 'res:qa-guardian',

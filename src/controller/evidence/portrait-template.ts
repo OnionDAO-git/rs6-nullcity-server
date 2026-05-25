@@ -1,3 +1,10 @@
+import { lookupFaction } from '../factions/factions';
+
+export interface PortraitRenderOptions {
+    /** SOUL factionId; looked up in the faction catalog to populate portrait.faction. */
+    factionId?: string;
+}
+
 export interface PortraitIndex {
     resident: string;
     createdAt: string;
@@ -65,7 +72,12 @@ export interface RenderedPortrait {
     markdown: string;
 }
 
-export function renderPortrait(residentName: string, index: PortraitIndex, timeline: Array<Record<string, unknown>>): RenderedPortrait {
+export function renderPortrait(
+    residentName: string,
+    index: PortraitIndex,
+    timeline: Array<Record<string, unknown>>,
+    options: PortraitRenderOptions = {},
+): RenderedPortrait {
     const events = [...timeline].sort((a, b) => numberField(a, 'tick') - numberField(b, 'tick'));
     const bornEvent = events[0];
     const lastEvent = events.at(-1);
@@ -76,10 +88,12 @@ export function renderPortrait(residentName: string, index: PortraitIndex, timel
     const wants = buildWants(events, index.currentState === 'ended');
     const artifacts = buildArtifacts(events);
     const epithet = lives.at(-1)?.epithet || 'the Remembered Resident';
+    const factionDef = options.factionId ? lookupFaction(options.factionId) : undefined;
     const portrait: Portrait = {
         schemaVersion: 1,
         residentName,
         epithet,
+        faction: factionDef?.displayName,
         born: {
             ts: stringField(bornEvent, 'ts') || index.createdAt,
             tick: numberField(bornEvent, 'tick'),
@@ -239,8 +253,10 @@ function buildArtifacts(events: Array<Record<string, unknown>>): string[] {
 }
 
 function renderMarkdown(portrait: Portrait): string {
+    const factionLine = portrait.faction ? `*${portrait.faction}*` : undefined;
     const lines = [
         `# ${portrait.residentName}, ${portrait.epithet || 'the Remembered Resident'}`,
+        ...(factionLine ? [factionLine] : []),
         `Born tick ${portrait.born.tick}, ${portrait.born.ts}. ${portrait.livesCount} ${portrait.livesCount === 1 ? 'life' : 'lives'}. ${portrait.currentState}.`,
         '',
         '## What they wanted',

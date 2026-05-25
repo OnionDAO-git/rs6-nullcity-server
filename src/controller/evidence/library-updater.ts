@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { residentSlug } from '../memory/runtime-state';
-import { renderPortrait, type PortraitIndex } from './portrait-template';
+import { renderPortrait, type PortraitIndex, type PortraitRenderOptions } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
 
@@ -34,6 +34,8 @@ export interface PatronEvent {
 
 export interface LibraryUpdaterOptions {
     now?: () => Date;
+    /** SOUL factionId forwarded to portrait rendering so portraits include faction affiliation. */
+    factionId?: string;
 }
 
 interface LibraryIndex extends PortraitIndex {
@@ -43,6 +45,7 @@ interface LibraryIndex extends PortraitIndex {
 
 export class LibraryUpdater {
     private readonly now: () => Date;
+    private readonly portraitOptions: PortraitRenderOptions;
     private readonly seenXpSkills = new Set<string>();
     private readonly seenPeers = new Set<string>();
     private readonly peerInteractionCounts = new Map<string, number>();
@@ -55,6 +58,7 @@ export class LibraryUpdater {
         options: LibraryUpdaterOptions = {},
     ) {
         this.now = options.now ?? (() => new Date());
+        this.portraitOptions = { factionId: options.factionId };
         this.writeIndex(this.readIndex());
         this.hydratePeerContext();
     }
@@ -170,7 +174,7 @@ export class LibraryUpdater {
     }
 
     async regeneratePortrait(): Promise<void> {
-        const rendered = renderPortrait(this.residentName, this.readIndex(), this.readTimeline());
+        const rendered = renderPortrait(this.residentName, this.readIndex(), this.readTimeline(), this.portraitOptions);
         this.writeAtomic(this.portraitJsonPath(), `${JSON.stringify(rendered.portrait, null, 2)}\n`);
         this.writeAtomic(this.portraitMarkdownPath(), rendered.markdown);
     }
