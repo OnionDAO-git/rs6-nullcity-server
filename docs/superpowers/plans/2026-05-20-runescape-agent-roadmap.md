@@ -98,10 +98,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Files: `src/controller/spark/standard-modules.ts`, `src/controller/soul/starter-souls/res-agent.md`
   - Verified as the first SPARK slice; future work should preserve this as the default stable module.
 
-- `[ ]` **B2: Extract starter workflow cards.**
+- `[x]` **B2: Extract starter workflow cards.**
   - Files: `src/controller/spark/runescape-workflows.ts`, `src/controller/spark/runescape-workflows.test.ts`, `src/controller/thinking/hybrid-agent-thinking-module.ts`
   - Deliverable: woodcutting, firemaking, fishing, prayer, safe combat, follow/chat, and exploration workflow definitions live outside the hybrid module.
   - Verification: existing hybrid tests still pass; new workflow tests verify prerequisites and next actions.
+  - *Completed: Extracted, unit tested, and integrated under Workstream R1.*
 
 - `[>]` **B3: Extract deterministic Body routines.**
   - Files: `src/controller/spark/runescape-body-routines.ts`, `src/controller/spark/runescape-body-routines.test.ts`
@@ -111,16 +112,19 @@ Safe public module facade building blocks are implemented, but the public member
   - Partial 2026-05-23 on `nullcity`: object and item-on-object action pipes now run matching hooks immediately when the resident is already in object interaction range instead of enqueueing a redundant walk task. Regression tests cover adjacent diagonal object/item-on-object targets and far targets that should still enqueue `WalkToObjectPluginTask`.
   - Partial 2026-05-25 on `agents/wip`: NPC interaction hooks can declare custom interaction distance, fishing spots use a shoreline casting range, and `ignoreDestination` pathing can fall back to reachable adjacent tiles. Verified with focused tests and a live autonomous `starter-fishing-5m` pass (`score=1`, `changed=skills,inventory`, artifact `/tmp/oniondao-starter-fishing-live-codex/bench_20260525102747_starter_fishing_5m.json`). Remaining extraction work still includes generalizing the typed routine library beyond fishing/firemaking.
   - Hardened 2026-05-25 on `agents/wip`: stale NPC world-index refs now recover by matching target key/position, and starter anglers can reposition to the live-proven Lumbridge bank tile after a spot timeout. Live `res:qa-angler` restarted, netted shrimp, gained Fishing XP, and passed `controller:smoke -- --resident res:qa-angler --fail-on-warn`.
+  - Hardened 2026-05-25 on `agents/wip` (ae49008f): accept fishing busy evidence and relax bank recovery range using `STARTER_FISHING_SPOT_DISCOVERY_RANGE`.
 
-- `[ ]` **B4: Extract Brain goal planner.**
+- `[x]` **B4: Extract Brain goal planner.**
   - Files: `src/controller/spark/runescape-brain-planner.ts`, `src/controller/spark/runescape-brain-planner.test.ts`
   - Deliverable: high-level goals are selected from skill progress, inventory, nearby affordances, SOUL preferences, and benchmark task hints.
   - Verification: tests cover goal choice for firemaking, fishing, combat survival, follow/chat, and exploration.
+  - *Completed: Extracted 23 brain-planner symbols to src/controller/spark/runescape-brain-planner.ts under Workstream R4.*
 
-- `[ ]` **B5: Extract Nervous survival rules into a module facet.**
+- `[x]` **B5: Extract Nervous survival rules into a module facet.**
   - Files: `src/controller/spark/runescape-nervous-rules.ts`, `src/controller/spark/runescape-nervous-rules.test.ts`, `src/controller/nervous-system/*`
   - Deliverable: survival behavior remains kernel-priority but can be supplied by first-party modules.
   - Verification: low HP, enemy attack, blocked/stuck, and dangerous area tests.
+  - *Completed: Extracted 7 nervous-system reflex symbols to src/controller/spark/runescape-nervous-rules.ts under Workstream R3.*
 
 ## Workstream C: Benchmark Harness
 
