@@ -763,3 +763,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 16:54 codex branch=agents/wip workstream=O10-CITY-SMOKE STARTING - verify whole-city visible cadence after O8/B3 pulls. Files: docs/agent-status.md, roadmap if note stale. Collision: none.
 2026-05-25 17:26 codex branch=agents/wip workstream=O10-CITY-SMOKE HANDOFF - fixed Hans endurer lifespan + live repair adoption; city smoke OK. SHA=c651ac6c tests=fin1993+build+Hans90+city90+post-smoke collision=none.
 2026-05-25 17:35 codex branch=agents/wip workstream=N1-READINESS STARTING - align pre-Chicago readiness with wired D3 and close embassy POI task. Files: docs/pre-chicago-readiness.md, docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md. collision=none.
+2026-05-25 17:40 codex branch=agents/wip workstream=N1-READINESS HANDOFF - closed N1 and fixed stale pre-Chicago D3/HD-011 state. SHA=7bb22a57 tests=fin1998+embassy50+post-smoke+smoke180+dash/wall collision=none.
