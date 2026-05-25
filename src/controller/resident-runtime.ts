@@ -48,6 +48,10 @@ import { createSparkRuntimeFacets } from './spark/runtime-facets';
 import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import type { AgentAction, Perception, PerceptionEvent } from './transport/message-codecs';
+import { LoreBus } from './lore/lore-bus';
+import { FireLitReflex } from './lore/fire-lit-reflex';
+import { MomentLabeler } from './evidence/moment-labeler';
+import { whisperInboxFor, type WhisperInbox } from './lore/whisper';
 
 const MAX_PENDING_EVENTS = 50;
 const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
@@ -95,6 +99,7 @@ export interface ResidentRuntimeOptions {
         thinkingMs?: number;
         actionMs?: number;
     };
+    loreBus?: LoreBus;
 }
 
 export interface ResidentRuntimeEvidence {
@@ -132,6 +137,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly evidence?: ResidentRuntimeEvidence;
     private readonly progressTracker = new ProgressTracker();
     private deciding = false;
+    private readonly loreBus?: LoreBus;
+    private readonly fireLitReflex?: FireLitReflex;
+    private readonly momentLabeler?: MomentLabeler;
+    private readonly whisperInbox?: WhisperInbox;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
@@ -177,6 +186,12 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     submit: (action, metadata) => this.body.submit(action, metadata as Omit<BodyActionLogEntry, 'action' | 'result'>),
                 },
             });
+        if (options.loreBus) {
+            this.loreBus = options.loreBus;
+            this.fireLitReflex = new FireLitReflex({ bus: options.loreBus });
+            this.whisperInbox = whisperInboxFor(options.loreBus, this.name);
+            this.momentLabeler = options.evidence ? new MomentLabeler({ builder: options.evidence.trajectory }) : undefined;
+        }
         this.options.stateStore.save(this.state);
     }
 
@@ -223,12 +238,60 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         this.options.stateStore.save(this.state);
     }
 
+    getPosition(): { x: number; y: number; level: number } | undefined {
+        const latest = this.body.getLatestPerception();
+        if (!latest) {
+            return undefined;
+        }
+        const pos = perceptionPosition(latest);
+        if (!pos) {
+            return undefined;
+        }
+        return {
+            x: pos.x,
+            y: pos.y,
+            level: pos.level ?? 0,
+        };
+    }
+
     async onPerception(perception: Perception): Promise<void> {
         return this.withEvidenceTick(perception, () => this.handlePerception(perception));
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
+        if (this.whisperInbox) {
+            const drainedWhispers = this.whisperInbox.drain();
+            for (const whisper of drainedWhispers) {
+                const fromName = whisper.from;
+                const isRes = fromName.startsWith('res:') || fromName.startsWith('resident:');
+                const fromKind = isRes ? 'resident' : 'player';
+                const fromId = isRes
+                    ? `resident:${fromName.replace(/^(res:|resident:)/, '')}`
+                    : `player:${fromName.replace(/[^a-z0-9:_-]+/gi, '-')}`;
+                this.pendingEvents.push({
+                    kind: 'whisper',
+                    text: whisper.text,
+                    from: {
+                        id: fromId,
+                        kind: fromKind,
+                        name: fromName,
+                        position: whisper.position,
+                    },
+                    to: this.name,
+                    ts: whisper.ts,
+                } as any);
+            }
+        }
+
         this.applyExternalOperatorRevive();
+
+        if (this.fireLitReflex && this.momentLabeler) {
+            const fireEvent = this.fireLitReflex.observe(perception as any, this.name);
+            if (fireEvent) {
+                const payload = fireEvent.payload as { position: { x: number; y: number; level: number } };
+                this.momentLabeler.noteFireLit({ position: payload.position });
+            }
+        }
         this.state.attention = spendAttention(
             this.state.attention,
             this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
@@ -630,7 +693,12 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
             this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
         }
-        if (event.kind === 'chat' && typeof event.text === 'string' && event.from && typeof event.from === 'object') {
+        if (
+            (event.kind === 'chat' || event.kind === 'whisper') &&
+            typeof event.text === 'string' &&
+            event.from &&
+            typeof event.from === 'object'
+        ) {
             const fromName = 'name' in event.from && typeof event.from.name === 'string' ? event.from.name : undefined;
             if (fromName) {
                 const patronKind = this.patronRegistry.getKind(fromName);
@@ -982,6 +1050,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     stop(cause = 'runtime_stopped'): void {
+        if (this.whisperInbox) {
+            this.whisperInbox.unsubscribe();
+        }
         this.thinking.stop(cause);
         this.recordEvidence(() => this.evidence?.store.endSession(this.evidence.sessionId, 'shutdown'));
         const sourceModules = new Set(

@@ -33,6 +33,7 @@
         "patron:referral": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --referral",
         "patron:balance": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --balance",
         "patron:standing": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --standing",
+        "patron:whisper": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --whisper",
         "controller:knowledge:review": "npm run build && node dist/controller/knowledge/review-suggestions.js",
         "simulation": "npm run build && npm run build:simulation && node dist/simulation/index.js",
         "simulation:birth": "npm run build:simulation && node dist/simulation/birth.js",

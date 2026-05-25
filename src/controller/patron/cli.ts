@@ -11,8 +11,21 @@ import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
 import { LibraryUpdater } from '../evidence';
 import { STANDING_TIERS } from './standing-ledger';
+import { LoreBus } from '../lore/lore-bus';
+import { publishWhisper } from '../lore/whisper';
 
-export type PatronCliAction = 'grant' | 'offer' | 'ask' | 'witness' | 'register' | 'checkin' | 'referral' | 'balance' | 'standing' | '';
+export type PatronCliAction =
+    | 'grant'
+    | 'offer'
+    | 'ask'
+    | 'witness'
+    | 'register'
+    | 'checkin'
+    | 'referral'
+    | 'balance'
+    | 'standing'
+    | 'whisper'
+    | '';
 
 /**
  * Kind of patron registration: governs what nervous-system rules will treat
@@ -54,9 +67,23 @@ export interface RunningControllerAskResult {
     error?: string;
 }
 
+export interface RunningControllerWhisperInput {
+    url: string;
+    token: string;
+    humanId: string;
+    residentName: string;
+    text: string;
+}
+
+export interface RunningControllerWhisperResult {
+    ok: boolean;
+    error?: string;
+}
+
 export interface PatronCliRuntimeDeps {
     env?: Record<string, string | undefined>;
     askRunningController?: (input: RunningControllerAskInput) => Promise<RunningControllerAskResult>;
+    whisperRunningController?: (input: RunningControllerWhisperInput) => Promise<RunningControllerWhisperResult>;
 }
 
 export interface FindRecentSayOptions {
@@ -98,6 +125,8 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.action = 'balance';
         } else if (arg === '--standing') {
             options.action = 'standing';
+        } else if (arg === '--whisper') {
+            options.action = 'whisper';
         } else if (arg === '--faction') {
             const next = argv[i + 1];
             if (!next) throw new Error('--faction requires a value');
@@ -166,7 +195,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
 
     if (!options.action) {
         throw new Error(
-            'One of --grant, --offer, --ask, --witness, --register, --checkin, --referral, --balance, or --standing must be specified.',
+            'One of --grant, --offer, --ask, --witness, --register, --checkin, --referral, --balance, --standing, or --whisper must be specified.',
         );
     }
     if (!options.humanId) {
@@ -211,7 +240,39 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
         }
     }
 
+    if (options.action === 'whisper') {
+        if (!options.residentName) {
+            throw new Error('--resident <name> is required for --whisper.');
+        }
+        if (!options.text || options.text.trim().length === 0) {
+            throw new Error('--text <message> is required for --whisper.');
+        }
+    }
+
     return options;
+}
+
+export async function whisperRunningControllerViaMcp(input: RunningControllerWhisperInput): Promise<RunningControllerWhisperResult> {
+    const client = new Client({ name: 'nullcity-patron-cli', version: '0.1.0' });
+    await client.connect(
+        new StreamableHTTPClientTransport(new URL(input.url), {
+            requestInit: { headers: { Authorization: `Bearer ${input.token}` } },
+        }),
+    );
+    try {
+        const result = await client.callTool({
+            name: 'patron_whisper',
+            arguments: {
+                human: input.humanId,
+                resident: input.residentName,
+                text: input.text,
+            },
+        });
+        const text = firstTextContent(result);
+        return JSON.parse(text) as RunningControllerWhisperResult;
+    } finally {
+        await client.close();
+    }
 }
 
 export async function askRunningControllerViaMcp(input: RunningControllerAskInput): Promise<RunningControllerAskResult> {
@@ -267,7 +328,7 @@ function firstTextContent(value: unknown): string {
     const content = (value as { content?: Array<{ text?: string }> }).content || [];
     const first = content.find(item => typeof item.text === 'string');
     if (!first?.text) {
-        throw new Error('patron_ask returned no text content');
+        throw new Error('MCP tool returned no text content');
     }
     return first.text;
 }
@@ -756,6 +817,45 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
                 return 0;
             }
             throw new Error(`Ask failed: ${outcome.error}`);
+        }
+
+        if (options.action === 'whisper') {
+            const residentName = normalizeResidentName(options.residentName);
+            const liveConfig = mcpAskConfigFromEnv(deps.env || process.env);
+            if (liveConfig) {
+                const whisperRunningController = deps.whisperRunningController || whisperRunningControllerViaMcp;
+                const outcome = await whisperRunningController({
+                    ...liveConfig,
+                    humanId: options.humanId,
+                    residentName,
+                    text: options.text,
+                });
+
+                if (!outcome.ok) {
+                    throw new Error(`Live whisper failed: ${outcome.error || 'unknown_error'}`);
+                }
+
+                console.log(`[patron:whisper] Live controller delivered the whisper.`);
+                console.log(`[patron:whisper] Resident: "${residentName}"`);
+                console.log(`[patron:whisper] Human: "${options.humanId}"`);
+                console.log(`[patron:whisper]   "${options.text}"`);
+                return 0;
+            }
+
+            // Offline fallback: write to a mock/temp bus
+            console.log(`[patron:whisper] Offline fallback (in-memory LoreBus):`);
+            const bus = new LoreBus();
+            const published = publishWhisper(bus, {
+                from: options.humanId,
+                to: residentName,
+                text: options.text,
+                position: { x: 0, y: 0, level: 0 },
+            });
+            if (!published) {
+                throw new Error('Whisper rejected (self-whisper or empty text)');
+            }
+            console.log(`[patron:whisper] Whisper published to offline LoreBus.`);
+            return 0;
         }
 
         if (options.action === 'witness') {

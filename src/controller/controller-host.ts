@@ -18,6 +18,7 @@ import { CurrencyLedger } from './patron/currency-ledger';
 import { StandingLedger } from './patron/standing-ledger';
 import { LettersStore } from './patron/letters-store';
 import type { PerceptionEvent } from './transport/message-codecs';
+import { LoreBus } from './lore/lore-bus';
 
 const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
 
@@ -36,6 +37,7 @@ export interface ControllerHostOptions {
     runtimeFactory?: (options: ConstructorParameters<typeof ResidentRuntime>[0]) => ResidentRuntime;
     patronStore?: PatronStore;
     patronGateway?: PatronGateway;
+    loreBus?: LoreBus;
 }
 
 function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefined {
@@ -72,6 +74,7 @@ export class ControllerHost {
     public readonly patronGateway: PatronGateway;
     private readonly currencyLedger: CurrencyLedger;
     private readonly standingLedger: StandingLedger;
+    public readonly loreBus: LoreBus;
 
     constructor(
         private readonly config: ControllerConfig,
@@ -128,6 +131,7 @@ export class ControllerHost {
                 lettersStore: new LettersStore(config.memory.dir),
                 memoryDir: config.memory.dir,
             });
+        this.loreBus = options.loreBus || new LoreBus();
         this.bindGatewayEvents();
     }
 
@@ -282,6 +286,7 @@ export class ControllerHost {
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,
             patronGateway: this.patronGateway,
+            loreBus: this.loreBus,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
         };
         this.runtimes.set(

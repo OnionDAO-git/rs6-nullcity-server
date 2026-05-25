@@ -10,6 +10,7 @@ import type { ControllerHost } from '../controller-host';
 import { z } from 'zod';
 import { RoutineRunner, type RoutineCapableRuntime, type RoutineId, type RunRoutineResponse } from '../routines/routine-runner';
 import type { PerceptionEvent } from '../transport/message-codecs';
+import { publishWhisper } from '../lore/whisper';
 
 export interface McpCallLogEntry {
     operator: string;
@@ -399,6 +400,53 @@ export class ControllerMcpServer {
                                 eventId: outcome.eventId,
                                 enqueued,
                                 ...(enqueued ? {} : { error: 'resident_not_found' }),
+                            }),
+                        },
+                    ],
+                };
+            },
+        );
+
+        server.tool(
+            'patron_whisper',
+            'Whisper to a running resident on behalf of a patron/human',
+            {
+                human: z.string().min(1).describe('Human or patron handle whispering'),
+                resident: z.string().min(1).describe('Resident name, with or without res: prefix'),
+                text: z.string().min(1).max(240).describe('Whisper message text'),
+            },
+            async ({ human, resident, text }) => {
+                const residentName = normalizeResidentName(resident);
+                const runtime = this.host.getRuntime(residentName);
+                if (!runtime) {
+                    return {
+                        content: [
+                            {
+                                type: 'text',
+                                text: JSON.stringify({
+                                    ok: false,
+                                    error: 'resident_not_found',
+                                }),
+                            },
+                        ],
+                    };
+                }
+
+                const position = runtime.getPosition() || { x: 0, y: 0, level: 0 };
+                const published = publishWhisper(this.host.loreBus, {
+                    from: human,
+                    to: residentName,
+                    text,
+                    position,
+                });
+
+                return {
+                    content: [
+                        {
+                            type: 'text',
+                            text: JSON.stringify({
+                                ok: published !== null,
+                                error: published !== null ? undefined : 'invalid_input',
                             }),
                         },
                     ],

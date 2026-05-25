@@ -3149,3 +3149,33 @@ OK res:qa-guide     tick=134408 actions=1 results=1 success=1 timeout=0 says=0
 **Classification.** ENGINE-tool VERIFIED. The audit confirms complete compliance with Invariant #6.
 
 **Suggested next step.** None. Task O3 is fully completed.
+
+### E65 — L-α-3 / L-β-2: Cross-Resident Lore Integration and Verification
+
+**Status:** RESOLVED-by-antigravity (this entry documents the verification)
+**Tier:** 2 (local integration and tests)
+**Date:** 2026-05-25 13:40 antigravity
+
+**Hypothesis.** Setting up the in-memory `LoreBus` and wiring it through the `ResidentRuntime` (with `FireLitReflex`, `MomentLabeler`, and `WhisperInbox`) will allow residents to receive whispers from other residents or patrons (without subscriber-side proximity gating) and automatically record `fire_lit` moments in their trajectory logs when a nearby fire is newly observed.
+
+**Repro.**
+- Typecheck: `npm run typecheck`
+- Focused unit and integration tests: `npx jest src/controller/resident-runtime.test.ts src/controller/patron/cli.test.ts`
+- Verification suite: `npm run fin`
+
+**Observation.**
+- Added two integration tests to `src/controller/resident-runtime.test.ts`:
+  1. `drains whispers from LoreBus and pushes them into the perception events queue` - verified that publishing a whisper to the `LoreBus` successfully populates the resident's next-tick perception events queue with a `'whisper'` event containing the sender's identifier (`resident:*` or `player:*`), text, and coordinates.
+  2. `emits a fire_lit moment to the trajectory file when a fire is newly observed nearby` - verified that newly observing an adjacent fire (Chebyshev distance ≤ 1, objectId `26185`) publishes a `fire_lit` event to the `LoreBus` and correctly writes a `fire_lit` moment to the resident's trajectory log.
+- Fixed a syntax error in `src/controller/patron/cli.ts` by relocating the `whisperRunningController` dependency declaration inside the `PatronCliRuntimeDeps` interface.
+- Resolved a compilation error in `src/controller/resident-runtime.ts` by casting `perception` to `any` on the `fireLitReflex.observe` call.
+- Executed `npm run fin` verifying that typechecking, Biome linting, Biome formatting, and all 1838 tests in the workspace pass cleanly.
+
+**Classification.** DESIGN + BODY. The wiring successfully matches the specifications for cross-resident interaction, whisper delivery, and trajectory logging.
+
+**Suggested next step.** Commit and push to remote.
+
+**Owner suggestion.** antigravity (complete).
+
+**Resolution.** Wired `LoreBus` in the controller host and runtime; added unit and integration tests in `resident-runtime.test.ts` and `cli.test.ts`; verified full test suite passes. Commit SHA in status log.
+

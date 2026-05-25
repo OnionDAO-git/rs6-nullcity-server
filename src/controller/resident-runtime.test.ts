@@ -18,6 +18,8 @@ import type { SparkModule } from './spark/modules';
 import type { ThinkingModule } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import { loadControllerConfig } from './config';
+import { LoreBus } from './lore/lore-bus';
+import { publishWhisper } from './lore/whisper';
 
 jest.mock('./config', () => ({
     loadControllerConfig: jest.fn(() => ({
@@ -2848,6 +2850,131 @@ describe('ResidentRuntime modules', () => {
         expect(stateStore.save).toHaveBeenLastCalledWith(expect.objectContaining({ resident: 'res:hans', deceased: undefined }));
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('drains whispers from LoreBus and pushes them into the perception events queue', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-whisper-memory-'));
+        const bus = new LoreBus();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+            getLatestPerception: jest.fn(() => undefined),
+        } as unknown as ResidentBody;
+        const thinking = thinkingModule();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            loreBus: bus,
+        });
+
+        // Publish a whisper to the bus
+        publishWhisper(bus, {
+            from: 'res:other',
+            to: 'res:pip',
+            text: 'Hello Pip!',
+            position: { x: 10, y: 20, level: 0 },
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        // Verify that the body observed a perception with the whisper event
+        expect(body.observePerception).toHaveBeenCalledWith(
+            expect.objectContaining({
+                events: expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'whisper',
+                        text: 'Hello Pip!',
+                        from: expect.objectContaining({
+                            name: 'res:other',
+                            id: 'resident:other',
+                            kind: 'resident',
+                            position: { x: 10, y: 20, level: 0 },
+                        }),
+                        to: 'res:pip',
+                    }),
+                ]),
+            }),
+        );
+
+        runtime.stop();
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('emits a fire_lit moment to the trajectory file when a fire is newly observed nearby', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-fire-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-fire-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-21T08:45:00.000Z') });
+        const session = store.beginSession('session-fire', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-21T08:45:01.000Z') }),
+        };
+        const bus = new LoreBus();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+            getLatestPerception: jest.fn(() => undefined),
+        } as unknown as ResidentBody;
+        const thinking = thinkingModule();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            loreBus: bus,
+        });
+
+        // Tick 1: No fire (baseline)
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 } },
+            events: [],
+        });
+
+        // Tick 2: Adjacent fire appears
+        await runtime.onPerception({
+            tick: 2,
+            resident: { position: { x: 3200, y: 3200, level: 0 } },
+            nearby: {
+                objects: [{ objectId: 26185, position: { x: 3200, y: 3200, level: 0 } }],
+            },
+            events: [],
+        });
+
+        const lines = readJsonl(session.trajectoryPath);
+        expect(lines).toContainEqual(
+            expect.objectContaining({
+                kind: 'moment',
+                moment: {
+                    kind: 'fire_lit',
+                    detail: {
+                        position: { x: 3200, y: 3200, level: 0 },
+                    },
+                },
+            }),
+        );
+
+        runtime.stop();
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+        fs.rmSync(evidenceRoot, { recursive: true, force: true });
     });
 });
 

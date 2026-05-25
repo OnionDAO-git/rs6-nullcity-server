@@ -168,6 +168,34 @@ describe('Patron CLI', () => {
             );
         });
 
+        it('parses --whisper options correctly', () => {
+            const parsed = parsePatronCliArgs(['--whisper', '--human', 'james', '--resident', 'pip', '--text', 'hello']);
+            expect(parsed).toEqual({
+                action: 'whisper',
+                humanId: 'james',
+                amount: 0,
+                residentName: 'pip',
+                text: 'hello',
+                artifact: '',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                configPath: 'controller.yml',
+            });
+        });
+
+        it('throws error when --resident is missing for --whisper', () => {
+            expect(() => parsePatronCliArgs(['--whisper', '--human', 'james', '--text', 'hello'])).toThrow(
+                '--resident <name> is required for --whisper.',
+            );
+        });
+
+        it('throws error when --text is missing for --whisper', () => {
+            expect(() => parsePatronCliArgs(['--whisper', '--human', 'james', '--resident', 'pip'])).toThrow(
+                '--text <message> is required for --whisper.',
+            );
+        });
+
         it('throws error when --resident is missing for --witness', () => {
             expect(() => parsePatronCliArgs(['--witness', '--human', 'james', '--artifact', 'first-fire'])).toThrow(
                 '--resident <name> is required for --witness.',
@@ -485,6 +513,46 @@ describe('Patron CLI', () => {
 
             logSpy.mockRestore();
         }, 10000);
+
+        it('whisper publishes successfully offline', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+            const code = await runPatronCli(['--whisper', '--human', 'james', '--resident', 'pip', '--text', 'hello', '-c', configPath]);
+            expect(code).toBe(0);
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Whisper published to offline LoreBus.'));
+
+            logSpy.mockRestore();
+        });
+
+        it('whisper uses the running controller MCP route when configured', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const whisperRunningController = jest.fn(async () => ({
+                ok: true,
+            }));
+
+            const code = await runPatronCli(
+                ['--whisper', '--human', 'james', '--resident', 'pip', '--text', 'hello live controller', '-c', configPath],
+                {
+                    env: {
+                        CONTROLLER_MCP_HTTP_PORT: '43594',
+                        CONTROLLER_MCP_TOKENS: 'operator-token',
+                    },
+                    whisperRunningController,
+                },
+            );
+
+            expect(code).toBe(0);
+            expect(whisperRunningController).toHaveBeenCalledWith({
+                url: 'http://127.0.0.1:43594/controller/mcp',
+                token: 'operator-token',
+                humanId: 'james',
+                residentName: 'res:pip',
+                text: 'hello live controller',
+            });
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:whisper] Live controller delivered the whisper.'));
+
+            logSpy.mockRestore();
+        });
 
         it('ask fails when --text is empty / whitespace-only', async () => {
             const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
