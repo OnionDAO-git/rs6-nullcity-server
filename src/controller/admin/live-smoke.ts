@@ -230,8 +230,16 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
         if (options.minObservedSays && observed.says < options.minObservedSays) {
             summary.issues.push(`observed_says_below_${options.minObservedSays}`);
         }
+        if (observed.timeouts > 0 && observed.successes === 0 && observed.actions + observed.says === 0) {
+            summary.issues.push('observed_only_timeouts');
+        }
+        if (observed.actions + observed.says > 0) {
+            summary.issues = summary.issues.filter(issue => issue !== 'no_recent_visible_activity');
+        }
         if (summary.issues.length) {
             summary.status = summary.status === 'missing' ? 'missing' : 'warn';
+        } else {
+            summary.status = 'ok';
         }
         return summary;
     });
@@ -305,8 +313,9 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     const entries = currentSessionEntries(readTrajectoryEntries(residentDir), stateTick);
     const lastTrajectoryTick = latestTick(entries);
     const tick = stateTick ?? lastTrajectoryTick;
-    const referenceTick = Math.max(tick ?? 0, lastTrajectoryTick ?? 0);
-    const recentEntries = entries.filter(entry => typeof entry.tick !== 'number' || entry.tick >= referenceTick - windowTicks);
+    const trajectoryReferenceTick = lastTrajectoryTick ?? tick ?? 0;
+    const stateReferenceTick = tick ?? trajectoryReferenceTick;
+    const recentEntries = entries.filter(entry => typeof entry.tick !== 'number' || entry.tick >= trajectoryReferenceTick - windowTicks);
     const decisionCauses = new Map<string, number>();
     const summary: LiveSmokeSummary = {
         resident: state?.resident || resident,
@@ -360,8 +369,8 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     if (summary.recent.actions + summary.recent.results + summary.recent.says === 0) {
         summary.issues.push('no_recent_visible_activity');
     }
-    if (summary.stuckSince !== undefined && referenceTick - summary.stuckSince >= maxStuckTicks) {
-        summary.issues.push(`stuck_for_${referenceTick - summary.stuckSince}_ticks`);
+    if (summary.stuckSince !== undefined && stateReferenceTick - summary.stuckSince >= maxStuckTicks) {
+        summary.issues.push(`stuck_for_${stateReferenceTick - summary.stuckSince}_ticks`);
     }
     if (summary.recent.results >= 3 && summary.recent.successes === 0) {
         summary.issues.push('recent_actions_not_succeeding');

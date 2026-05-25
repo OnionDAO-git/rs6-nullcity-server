@@ -152,6 +152,24 @@ describe('live smoke CLI helpers', () => {
         });
     });
 
+    it('uses current trajectory ticks for recent activity when runtime ticks are cumulative', () => {
+        writeResidentState('res:duke-horacio', { tick: 136_400, lastMeaningfulProgressAt: 136_395, stuckSince: 136_400 });
+        writeTrajectory('res:duke-horacio', [
+            { tick: 6645, kind: 'say', text: 'Still here as Duke Horacio; getting my bearings.', sessionId: 'current-session' },
+            { tick: 6646, kind: 'action', action: { kind: 'move_to', cause: 'watchdog_fallback' }, sessionId: 'current-session' },
+            { tick: 6646, kind: 'action_result', status: 'success', sessionId: 'current-session' },
+            { tick: 6769, kind: 'end_tick', reason: 'tick_complete', sessionId: 'current-session' },
+        ]);
+
+        const [summary] = summarizeLiveResidents({ memoryDir, residents: ['res:duke-horacio'], windowTicks: 130, maxStuckTicks: 90 });
+
+        expect(summary.tick).toBe(136_400);
+        expect(summary.lastTrajectoryTick).toBe(6769);
+        expect(summary.status).toBe('ok');
+        expect(summary.recent).toMatchObject({ actions: 1, results: 1, successes: 1, says: 1 });
+        expect(summary.issues).not.toContain('no_recent_visible_activity');
+    });
+
     it('parses config, memory, resident, window, and fail-on-warn CLI options', () => {
         expect(
             parseLiveSmokeCliArgs([
@@ -327,6 +345,54 @@ describe('live smoke CLI helpers', () => {
         expect(summary.status).toBe('warn');
         expect(summary.observed).toMatchObject({ says: 1, tickDelta: 0 });
         expect(summary.issues).toContain('no_observed_tick_progress');
+    });
+
+    it('lets timed fresh action or speech clear stale recent-window visibility warnings', async () => {
+        writeResidentState('res:agent', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [{ tick: 900, kind: 'end_tick', sessionId: 'same-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:agent'],
+            windowTicks: 30,
+            observeMs: 50,
+            sleep: async () => {
+                writeResidentState('res:agent', { tick: 1010, lastMeaningfulProgressAt: 1009 });
+                writeTrajectory('res:agent', [
+                    { tick: 900, kind: 'end_tick', sessionId: 'same-session' },
+                    { tick: 901, kind: 'say', text: 'Freshly observed despite an old trajectory tick.', sessionId: 'same-session' },
+                    { tick: 902, kind: 'action', action: { kind: 'move_to' }, sessionId: 'same-session' },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.recent).toMatchObject({ actions: 1, says: 1 });
+        expect(summary.observed).toMatchObject({ actions: 1, says: 1, tickDelta: 10 });
+        expect(summary.issues).not.toContain('no_recent_visible_activity');
+    });
+
+    it('warns when timed observation only sees a timeout result', async () => {
+        writeResidentState('res:agent', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [{ tick: 900, kind: 'end_tick', sessionId: 'same-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:agent'],
+            windowTicks: 30,
+            observeMs: 50,
+            sleep: async () => {
+                writeResidentState('res:agent', { tick: 1010, lastMeaningfulProgressAt: 999 });
+                writeTrajectory('res:agent', [
+                    { tick: 900, kind: 'end_tick', sessionId: 'same-session' },
+                    { tick: 901, kind: 'action_result', status: 'timeout', sessionId: 'same-session' },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.observed).toMatchObject({ actions: 0, results: 1, successes: 0, timeouts: 1, says: 0, tickDelta: 10 });
+        expect(summary.issues).toContain('observed_only_timeouts');
     });
 
     it('flags missing observed progress when the resident only keeps old evidence', async () => {
