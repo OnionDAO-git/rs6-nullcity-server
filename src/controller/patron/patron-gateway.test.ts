@@ -5,6 +5,7 @@ import { CurrencyLedger } from './currency-ledger';
 import { StandingLedger } from './standing-ledger';
 import { PatronGateway } from './patron-gateway';
 import { ResidentRuntime } from '../resident-runtime';
+import { SoulLoader } from '../soul/soul-loader';
 
 describe('PatronGateway', () => {
     let currencyLedger: CurrencyLedger;
@@ -187,10 +188,18 @@ describe('PatronGateway', () => {
             expect(fs.existsSync(soulFilePath)).toBe(true);
             const soulContent = fs.readFileSync(soulFilePath, 'utf8');
             expect(soulContent).toContain('name: res:newborn');
-            expect(soulContent).toContain('faction: foundry');
+            expect(soulContent).toContain('factionId: foundry');
             expect(soulContent).toContain('alignment: lawful-good');
             expect(soulContent).toContain('- Master Smithing');
             expect(soulContent).toContain('Sponsored by james.');
+
+            // Validate using SoulLoader to ensure it conforms to Zod strict schema
+            const loader = new SoulLoader(soulsDir);
+            const loadedSoul = loader.load('res:newborn');
+            expect(loadedSoul.frontmatter.heroProfile?.tier).toBe('novice');
+            expect(loadedSoul.frontmatter.heroProfile?.publicName).toBe('Newborn');
+            expect(loadedSoul.frontmatter.heroProfile?.signatureAction).toBe('explores Null City');
+            expect(loadedSoul.frontmatter.factionId).toBe('foundry');
 
             // Verify 24h cooldown is enforced
             const resCooldown = await birthGateway.sponsorBirth({

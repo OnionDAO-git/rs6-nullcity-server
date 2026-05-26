@@ -518,7 +518,7 @@ Safe public module facade building blocks are implemented, but the public member
 **Purpose:** Named residents who become event focal points for human players. Spec: `docs/superpowers/specs/2026-05-22-hero-residents-design.md`.
 
 - `[ ]` **M1: Hero story-arc shape.** Pitch → fund → progress → resolve → letter. Resolution event template + faction effect.
-- `[~]` **M2: Lifespan tiers.** Flagships ~30 days, visitor-borns ~24 hours. Asymmetry is intentional.
+- `[>]` **M2: Lifespan tiers.** Flagships ~30 days, visitor-borns ~24 hours. Asymmetry is intentional.
   - Partial 2026-05-25 on `agents/wip`: live whole-city smoke found Hans had completed the generic endurer default after 50k ticks and was no longer ticking. Flagship hero endurers without explicit `targetTicks` now default to 4,320,000 ticks (~30 days at 0.6s/tick), and forced operator revival reopens old completed short endurer legacies when the new target has not been reached. Remaining: explicit visitor-born ~24h tier defaults.
 - `[x]` **M3: `request_attention` action.** Hero NPC dialog or in-world begging surface; can also dispatch a letter to a recent patron.
   - Verified 2026-05-25 on `agents/wip`: nervous-system `requestAttentionReaction` fires after all soul rules as a fallback when hero `state.attention < floor + 5000`; cooldown 600 ticks; prefixes hero `publicName` in message; does not fire for residents without a declared floor. +7 tests (6 M3-named + 1 no-floor guard). Tests 1790/1790 + typecheck + lint + format.

@@ -778,3 +778,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 19:31 codex branch=dashboard-main workstream=HD-015 STARTING - patron summary panel. Files: shared index, server runtime/index/tests, web App. collision=F9a avoided
 2026-05-25 19:39 codex branch=agents/wip workstream=HD-015 UPDATE - docs for dashboard patron Shards/standing partial. Files: human-decisions, pre-Chicago readiness, roadmap. collision=none
 2026-05-25 19:48 codex branch=dashboard-main workstream=HD-015 HANDOFF - patron standing panel/API pushed. SHA=79d8339 tests=28+typecheck+check+build+api+browser review=Nash fixed collision=F9a avoided
+2026-05-26 01:05 antigravity branch=agents/wip workstream=M2 STARTING — visitor-born ~24h lifespan tier defaults (novice) and patron sponsor schema validation fix. Files: src/controller/spark/legacy.ts, src/controller/patron/patron-gateway.ts, src/controller/patron/cli.ts. Collision: none.

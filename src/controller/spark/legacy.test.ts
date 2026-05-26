@@ -90,6 +90,27 @@ describe('LegacyTracker', () => {
         expect(state.attention).toBe(100);
     });
 
+    it('uses a 24-hour default lifespan for visitor-born novice endurers without explicit target ticks', () => {
+        const state = runtimeState('endurer');
+        state.legacy.progress.ticksLived = 49_999;
+        const noviceSoul = soul('endurer', {});
+        noviceSoul.frontmatter.heroProfile = {
+            tier: 'novice',
+            publicName: 'Newborn',
+            signatureAction: 'explores Null City',
+        };
+        const tracker = new LegacyTracker(noviceSoul, state);
+
+        const update = tracker.update({});
+
+        expect(update.complete).toBe(false);
+        expect(state.legacy.progress.ticksLived).toBe(50_000);
+        expect(state.legacy.progress.targetTicksLived).toBe(144_000);
+        expect(state.legacy.complete).toBe(false);
+        expect(state.deceased).toBeUndefined();
+        expect(state.attention).toBe(100);
+    });
+
     it('reopens old completed short endurer progress when a flagship hero lifespan is now longer', () => {
         const state = runtimeState('endurer');
         state.legacy.complete = true;

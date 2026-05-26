@@ -193,13 +193,21 @@ export class PatronGateway {
         if (this.options.soulsDir) {
             const frontmatter = {
                 name: req.name,
-                archetype: 'default',
-                faction: req.factionId,
+                archetype: 'endurer',
+                factionId: req.factionId,
                 goals: req.soulFields?.goals ? [req.soulFields.goals] : [],
                 alignment: req.soulFields?.alignment || 'neutral',
-                quirks: req.soulFields?.quirks ? [req.soulFields.quirks] : [],
+                voice: req.soulFields?.quirks ? { quirks: [req.soulFields.quirks] } : undefined,
                 aesthetic: req.soulFields?.aesthetic || 'standard',
                 attentionProfile: { startingAttention: 100, decayCurve: 'standard' },
+                heroProfile: {
+                    tier: 'novice',
+                    publicName: req.name
+                        .replace(/^res:/, '')
+                        .replace(/-/g, ' ')
+                        .replace(/\b([a-z])/g, c => c.toUpperCase()),
+                    signatureAction: 'explores Null City',
+                },
             };
             const body = `# ${req.name}\n\nSponsored by ${req.humanId}.`;
             const slug = req.name.replace(/^res:/, '');

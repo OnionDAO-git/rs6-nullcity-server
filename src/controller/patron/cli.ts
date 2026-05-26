@@ -467,7 +467,7 @@ function buildResidentBundle(
         name: residentName,
         getState: () => ({
             tick: state.tick,
-            faction: soul.frontmatter.faction || 'embassy',
+            faction: soul.frontmatter.factionId || (soul.frontmatter as any).faction || 'embassy',
         }),
         getEvidence: () => evidence,
         incrementAttention: (amount: number) => {

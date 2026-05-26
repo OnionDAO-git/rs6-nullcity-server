@@ -4,6 +4,7 @@ import type { AgentAction } from '../transport/message-codecs';
 
 export const DEFAULT_ENDURER_TARGET_TICKS = 50_000;
 export const HERO_ENDURER_TARGET_TICKS = 4_320_000;
+export const NOVICE_ENDURER_TARGET_TICKS = 144_000;
 
 export interface LegacyProgress {
     kind: SoulArchetype;
@@ -394,7 +395,11 @@ export function endurerTargetTicks(soul: Soul): number {
     return numberParam(
         soul,
         ['targetTicksLived', 'targetTicks'],
-        soul.frontmatter.heroProfile?.tier === 'hero' ? HERO_ENDURER_TARGET_TICKS : DEFAULT_ENDURER_TARGET_TICKS,
+        soul.frontmatter.heroProfile?.tier === 'hero'
+            ? HERO_ENDURER_TARGET_TICKS
+            : soul.frontmatter.heroProfile?.tier === 'novice'
+              ? NOVICE_ENDURER_TARGET_TICKS
+              : DEFAULT_ENDURER_TARGET_TICKS,
     );
 }
 
