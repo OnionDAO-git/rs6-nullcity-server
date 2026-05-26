@@ -156,8 +156,12 @@ export interface LibraryEntry {
  * Read Library of Souls portraits from `<lettersRoot>/library/` and return
  * a summary per resident. Living first, then reborn, then deceased;
  * alphabetically within each group. Missing/malformed files are skipped.
+ *
+ * @param options.excludeSynthetic When true, residents whose slug matches
+ *   {@link SYNTHETIC_SLUG_PATTERN} (QA fixtures, benchmark synthetics) are
+ *   omitted from the result. Used by the public `/v1/library` route.
  */
-export function readLibraryEntries(lettersRoot: string): LibraryEntry[] {
+export function readLibraryEntries(lettersRoot: string, options?: { excludeSynthetic?: boolean }): LibraryEntry[] {
     const libraryDir = path.join(lettersRoot, 'library');
     let entries: fs.Dirent[];
     try {
@@ -172,6 +176,9 @@ export function readLibraryEntries(lettersRoot: string): LibraryEntry[] {
             continue;
         }
         const slug = entry.name;
+        if (options?.excludeSynthetic && isSyntheticSlug(slug)) {
+            continue;
+        }
         const portraitPath = path.join(libraryDir, slug, 'portrait.json');
         let raw: string;
         try {
@@ -345,6 +352,36 @@ export interface BuildWallSnapshotOptions {
      * fallback ambitions when runtime cognition has not chosen an active goal.
      */
     soulsDir?: string;
+    /**
+     * When true, residents whose slug matches the synthetic prefix set
+     * ({@link SYNTHETIC_SLUG_PATTERN}) are dropped from the public roster.
+     * Used by the public `/v1/wall/snapshot` route so QA/benchmark fixtures
+     * (e.g. `res-qa-cook`, `res-bmk_fire_5m_xxx`) don't appear on the wall
+     * ticker mixed in with named heroes. Default `false` preserves the
+     * full roster for operator/debug callers.
+     */
+    excludeSynthetic?: boolean;
+    /**
+     * When true, `recentLetters` is deduplicated by `subject` so multi-witness
+     * events (e.g. five identical "On the passing of res:hans" cards from five
+     * patrons present at the death) collapse to one entry — the newest — per
+     * subject. Used by the public wall ticker to avoid spam. Limit is applied
+     * AFTER dedup, so the wall shows N distinct subjects. Default `false`
+     * preserves the per-recipient detail for operator views.
+     */
+    dedupeBySubject?: boolean;
+}
+
+/**
+ * Slug pattern for residents that should be hidden from public-facing surfaces.
+ * Covers QA fixture residents (`res-qa-*`) and benchmark synthetics (`res-bmk_*`).
+ * Canonical demo residents like `res-agent` are intentionally NOT matched —
+ * they're real demo souls, not fixtures.
+ */
+export const SYNTHETIC_SLUG_PATTERN = /^res-(qa-|bmk_)/;
+
+export function isSyntheticSlug(slug: string): boolean {
+    return SYNTHETIC_SLUG_PATTERN.test(slug);
 }
 
 /** One resident's live status for the wall roster panel. */
@@ -401,7 +438,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         return {
             recentLetters: [],
             deathsToday: 0,
-            residents: readResidents(lettersRoot, options.residentIds, options.soulsDir),
+            residents: readResidents(lettersRoot, options.residentIds, options.soulsDir, options.excludeSynthetic),
             factionStockpiles: readFactionStockpiles(lettersRoot),
             asOf,
         };
@@ -436,7 +473,10 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
 
     // Newest first.
     allLetters.sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : a.dispatchedAt > b.dispatchedAt ? -1 : 0));
-    const recentLetters = allLetters.slice(0, limit);
+    // Optional public-display dedup: collapse repeats by subject, keep newest
+    // per subject. We dedup BEFORE limit so the wall shows N distinct subjects.
+    const dedupedLetters = options.dedupeBySubject ? dedupeLettersBySubject(allLetters) : allLetters;
+    const recentLetters = dedupedLetters.slice(0, limit);
 
     // Unique deceased residents whose epitaphs landed in the local-day
     // window containing `now`. We use the LOCAL day window because the
@@ -466,7 +506,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         deceasedResidents.add(letter.senderResident);
     }
 
-    const residents = readResidents(lettersRoot, options.residentIds, options.soulsDir);
+    const residents = readResidents(lettersRoot, options.residentIds, options.soulsDir, options.excludeSynthetic);
     const factionStockpiles = readFactionStockpiles(lettersRoot);
 
     return {
@@ -570,7 +610,27 @@ function redactHandle(handle: string): string {
  * of all residents (alive and deceased), sorted alive-first then by slug.
  * Resilient: missing dir, unreadable files, and malformed JSON are skipped.
  */
-function readResidents(lettersRoot: string, residentIds?: readonly string[], soulsDir?: string): ResidentSummary[] {
+function dedupeLettersBySubject(letters: Letter[]): Letter[] {
+    // `letters` is already sorted newest-first; the first occurrence of each
+    // subject is therefore the newest and is the one we keep.
+    const seen = new Set<string>();
+    const out: Letter[] = [];
+    for (const letter of letters) {
+        if (seen.has(letter.subject)) {
+            continue;
+        }
+        seen.add(letter.subject);
+        out.push(letter);
+    }
+    return out;
+}
+
+function readResidents(
+    lettersRoot: string,
+    residentIds?: readonly string[],
+    soulsDir?: string,
+    excludeSynthetic?: boolean,
+): ResidentSummary[] {
     let entries: fs.Dirent[];
     try {
         entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
@@ -592,6 +652,9 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
         }
         const slug = entry.name;
         if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
+        if (excludeSynthetic && isSyntheticSlug(slug)) {
             continue;
         }
         const statePath = path.join(lettersRoot, slug, 'runtime-state.json');

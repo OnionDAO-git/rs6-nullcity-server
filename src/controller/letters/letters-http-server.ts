@@ -236,7 +236,8 @@ async function handle(
     }
 
     if (isLibraryRoute) {
-        const residents = readLibraryEntries(options.lettersRoot as string);
+        // Public surface — hide QA fixtures and benchmark synthetics.
+        const residents = readLibraryEntries(options.lettersRoot as string, { excludeSynthetic: true });
         writeJson(response, 200, { residents, total: residents.length, asOf: new Date().toISOString() });
         return;
     }
@@ -244,10 +245,15 @@ async function handle(
     if (isWallRoute) {
         const now = options.now ? options.now() : new Date();
         // lettersRoot guaranteed non-undefined here by the isWallRoute check above.
+        // Public ticker — collapse duplicate-subject letters (multi-witness epitaphs
+        // would otherwise stack 5× on the wall) and hide QA/benchmark residents from
+        // the roster panel. Both filters are no-ops when there's nothing to filter.
         const snapshot = buildWallSnapshot(options.lettersRoot as string, {
             now,
             residentIds: options.residentIds,
             soulsDir: options.soulsDir,
+            excludeSynthetic: true,
+            dedupeBySubject: true,
         });
         // HD-013: optionally pass the snapshot through the public-display
         // redactor before serving it on the wall route.
@@ -330,6 +336,11 @@ function resolveStaticPagePath(requestPath: string, staticRoot?: string): string
     const normalizedPath = normalizePath(requestPath).replace(/\/+$/, '');
     const pagePath = normalizedPath.endsWith('/index.html') ? normalizedPath.slice(0, -'/index.html'.length) : normalizedPath;
     switch (pagePath) {
+        case '':
+            // `/` → landing page that links to the five public surfaces. Without it
+            // a cold visitor (or a demo Dev typing the bare URL) gets a 404 and
+            // has to know each route by hand.
+            return path.join(publicRoot, 'index.html');
         case '/wall':
             return path.join(publicRoot, 'wall', 'index.html');
         case '/inbox':

@@ -4,7 +4,7 @@ import path from 'path';
 import type { RuntimeState } from '../memory/runtime-state';
 import { LettersStore } from '../patron/letters-store';
 import { FactionStockpileLedger } from '../factions/stockpile-ledger';
-import { buildWallSnapshot, redactWallSnapshot, type WallSnapshot } from './wall-snapshot';
+import { buildWallSnapshot, readLibraryEntries, redactWallSnapshot, type WallSnapshot } from './wall-snapshot';
 
 describe('buildWallSnapshot (EVENT-D6)', () => {
     let root: string;
@@ -545,6 +545,243 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
                 },
             ]);
         });
+    });
+});
+
+describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
+    let root: string;
+    let store: LettersStore;
+
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'wall-snapshot-polish-'));
+        store = new LettersStore(root);
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    function seedLetter(args: {
+        recipient: string;
+        kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone';
+        subject: string;
+        dispatchedAt: string;
+        senderResident?: string;
+    }): void {
+        store.append({
+            kind: args.kind,
+            recipient: args.recipient,
+            senderResident: args.senderResident ?? 'res:hans',
+            subject: args.subject,
+            body: 'body text',
+            dispatchedAt: args.dispatchedAt,
+            deliveryChannels: ['web-inbox'],
+        });
+    }
+
+    describe('dedupeBySubject (#4 wall letter dedup)', () => {
+        it('collapses identical subjects to the newest occurrence when enabled', () => {
+            // Five witnesses, same epitaph. Wall should not spam the same card 5 times.
+            for (let i = 0; i < 5; i += 1) {
+                seedLetter({
+                    recipient: `witness-${i}@onion`,
+                    kind: 'epitaph',
+                    subject: 'On the passing of res:hans',
+                    dispatchedAt: `2026-05-26T10:0${i}:00.000Z`,
+                });
+            }
+            // A distinct second letter to make sure dedup doesn't drop unique items.
+            seedLetter({
+                recipient: 'alice@onion',
+                kind: 'civic_milestone',
+                subject: "Mortician's Ribbon — res:hans",
+                dispatchedAt: '2026-05-26T11:00:00.000Z',
+            });
+
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-26T12:00:00.000Z'),
+                dedupeBySubject: true,
+            });
+
+            expect(snap.recentLetters).toHaveLength(2);
+            // Newest distinct first.
+            expect(snap.recentLetters[0]?.subject).toBe("Mortician's Ribbon — res:hans");
+            expect(snap.recentLetters[0]?.dispatchedAt).toBe('2026-05-26T11:00:00.000Z');
+            // For the duplicated subject, only the newest survives.
+            expect(snap.recentLetters[1]?.subject).toBe('On the passing of res:hans');
+            expect(snap.recentLetters[1]?.dispatchedAt).toBe('2026-05-26T10:04:00.000Z');
+        });
+
+        it('does not dedupe when option is omitted (backward compat)', () => {
+            for (let i = 0; i < 3; i += 1) {
+                seedLetter({
+                    recipient: `witness-${i}@onion`,
+                    kind: 'epitaph',
+                    subject: 'On the passing of res:hans',
+                    dispatchedAt: `2026-05-26T10:0${i}:00.000Z`,
+                });
+            }
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z') });
+            expect(snap.recentLetters).toHaveLength(3);
+        });
+
+        it('keeps distinct subjects untouched even with dedupe enabled', () => {
+            seedLetter({
+                recipient: 'a@onion',
+                kind: 'epitaph',
+                subject: 'On the passing of res:hans',
+                dispatchedAt: '2026-05-26T10:00:00.000Z',
+            });
+            seedLetter({
+                recipient: 'b@onion',
+                kind: 'epitaph',
+                subject: 'On the passing of res:pip',
+                dispatchedAt: '2026-05-26T10:01:00.000Z',
+            });
+            seedLetter({
+                recipient: 'c@onion',
+                kind: 'standing_tier_crossed',
+                subject: 'You are now Ally of embassy',
+                dispatchedAt: '2026-05-26T10:02:00.000Z',
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z'), dedupeBySubject: true });
+            expect(snap.recentLetters).toHaveLength(3);
+        });
+
+        it('applies the limit AFTER dedup so the wall is N distinct subjects', () => {
+            // 4 duplicate-subject letters + 6 distinct subjects + limit=3
+            // Expected: top 3 distinct, not top 3 raw.
+            for (let i = 0; i < 4; i += 1) {
+                seedLetter({
+                    recipient: `dupe-${i}@onion`,
+                    kind: 'epitaph',
+                    subject: 'On the passing of res:hans',
+                    dispatchedAt: `2026-05-26T09:0${i}:00.000Z`,
+                });
+            }
+            for (let i = 0; i < 6; i += 1) {
+                seedLetter({
+                    recipient: `u-${i}@onion`,
+                    kind: 'standing_tier_crossed',
+                    subject: `Unique subject ${i}`,
+                    dispatchedAt: `2026-05-26T10:0${i}:00.000Z`,
+                });
+            }
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-26T12:00:00.000Z'),
+                dedupeBySubject: true,
+                limit: 3,
+            });
+            expect(snap.recentLetters).toHaveLength(3);
+            const subjects = snap.recentLetters.map(l => l.subject);
+            expect(new Set(subjects).size).toBe(3);
+        });
+    });
+
+    describe('excludeSynthetic (#3 QA/bench filter)', () => {
+        it('drops res-qa-* slugs from the residents roster when enabled', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 1000 });
+            writeRuntimeState(root, 'res-qa-cook', { attention: 800 });
+            writeRuntimeState(root, 'res-qa-woodcutter', { attention: 900 });
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-26T12:00:00.000Z'),
+                excludeSynthetic: true,
+            });
+            const slugs = snap.residents.map(r => r.slug);
+            expect(slugs).toEqual(['res-hans']);
+        });
+
+        it('drops res-bmk_* slugs from the residents roster when enabled', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 1000 });
+            writeRuntimeState(root, 'res-bmk_fire_5m_002e9qp0', { attention: 5 });
+            writeRuntimeState(root, 'res-bmk_fire_5m_01h3m5sy', { attention: 5 });
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-26T12:00:00.000Z'),
+                excludeSynthetic: true,
+            });
+            expect(snap.residents.map(r => r.slug)).toEqual(['res-hans']);
+        });
+
+        it('keeps res-agent (canonical demo soul, not synthetic) when enabled', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 1000 });
+            writeRuntimeState(root, 'res-agent', { attention: 500 });
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-26T12:00:00.000Z'),
+                excludeSynthetic: true,
+            });
+            const slugs = snap.residents.map(r => r.slug);
+            expect(slugs).toContain('res-agent');
+            expect(slugs).toContain('res-hans');
+        });
+
+        it('includes synthetic residents when option is omitted (backward compat)', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 1000 });
+            writeRuntimeState(root, 'res-qa-cook', { attention: 800 });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z') });
+            expect(snap.residents.map(r => r.slug).sort()).toEqual(['res-hans', 'res-qa-cook']);
+        });
+    });
+});
+
+describe('readLibraryEntries — public polish (PRE-MERGE-POLISH)', () => {
+    let root: string;
+
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'library-entries-polish-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    function writePortrait(slug: string, residentName: string, currentState: 'living' | 'deceased' | 'reborn'): void {
+        const dir = path.join(root, 'library', slug);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+            path.join(dir, 'portrait.json'),
+            JSON.stringify({
+                residentName,
+                currentState,
+                livesCount: 1,
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z' },
+                voice: { quotes: [{ text: 'a sample quote', tag: 'first' }] },
+                patrons: [],
+                wants: { current: [] },
+            }),
+        );
+    }
+
+    it('drops res-qa-* portraits when excludeSynthetic is enabled', () => {
+        writePortrait('res-hans', 'res:hans', 'living');
+        writePortrait('res-qa-cook', 'res:qa-cook', 'living');
+        writePortrait('res-qa-woodcutter', 'res:qa-woodcutter', 'deceased');
+
+        const entries = readLibraryEntries(root, { excludeSynthetic: true });
+        expect(entries.map(e => e.slug)).toEqual(['res-hans']);
+    });
+
+    it('drops res-bmk_* portraits when excludeSynthetic is enabled', () => {
+        writePortrait('res-hans', 'res:hans', 'living');
+        writePortrait('res-bmk_fire_5m_002e9qp0', 'res:bmk_fire_5m_002e9qp0', 'deceased');
+
+        const entries = readLibraryEntries(root, { excludeSynthetic: true });
+        expect(entries.map(e => e.slug)).toEqual(['res-hans']);
+    });
+
+    it('includes all portraits when option is omitted (backward compat)', () => {
+        writePortrait('res-hans', 'res:hans', 'living');
+        writePortrait('res-qa-cook', 'res:qa-cook', 'living');
+
+        const entries = readLibraryEntries(root);
+        expect(entries.map(e => e.slug).sort()).toEqual(['res-hans', 'res-qa-cook']);
+    });
+
+    it('keeps res-agent (canonical demo soul) when excludeSynthetic is enabled', () => {
+        writePortrait('res-hans', 'res:hans', 'living');
+        writePortrait('res-agent', 'res:agent', 'deceased');
+
+        const entries = readLibraryEntries(root, { excludeSynthetic: true });
+        expect(entries.map(e => e.slug).sort()).toEqual(['res-agent', 'res-hans']);
     });
 });
 

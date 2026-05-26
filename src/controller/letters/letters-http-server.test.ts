@@ -362,6 +362,111 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(response.status).toBe(200);
             expect(response.contentType).toMatch(/text\/html/);
         });
+
+        it('serves the landing page at the root URL with nav cards', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            // Strip the inbox path entirely so we hit `/`.
+            const root = server.url.replace('/v1/inbox', '/');
+
+            const response = await get(root);
+
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            // Has a recognisable header.
+            expect(response.body).toContain('Null City Embassy');
+            // Links to each of the 5 public surfaces.
+            expect(response.body).toContain('href="/wall/"');
+            expect(response.body).toContain('href="/inbox/"');
+            expect(response.body).toContain('href="/patron/"');
+            expect(response.body).toContain('href="/library/"');
+            expect(response.body).toContain('href="/graveyard/"');
+        });
+
+        it('also serves the landing page at /index.html', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/index.html'));
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            expect(response.body).toContain('Null City Embassy');
+        });
+    });
+
+    describe('public-surface filters (PRE-MERGE-POLISH)', () => {
+        it('GET /v1/wall/snapshot drops res-qa-* residents from the public roster', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            writeRuntimeState(tmp, 'res-hans', { attention: 1000 });
+            writeRuntimeState(tmp, 'res-qa-cook', { attention: 800 });
+            writeRuntimeState(tmp, 'res-bmk_fire_5m_xxx', { attention: 5 });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/wall/snapshot'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body);
+            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug);
+            expect(slugs).toEqual(['res-hans']);
+        });
+
+        it('GET /v1/wall/snapshot dedupes recentLetters by subject', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            for (let i = 0; i < 4; i += 1) {
+                store.append({
+                    kind: 'epitaph',
+                    recipient: `witness-${i}@onion`,
+                    senderResident: 'res:hans',
+                    subject: 'On the passing of res:hans',
+                    body: 'body text',
+                    dispatchedAt: `2026-05-26T10:0${i}:00.000Z`,
+                    deliveryChannels: ['web-inbox'],
+                });
+            }
+            store.append({
+                kind: 'civic_milestone',
+                recipient: 'alice@onion',
+                senderResident: 'res:hans',
+                subject: "Mortician's Ribbon — res:hans",
+                body: 'body text',
+                dispatchedAt: '2026-05-26T11:00:00.000Z',
+                deliveryChannels: ['web-inbox'],
+            });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/wall/snapshot'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body);
+            const subjects = (payload.recentLetters as Array<{ subject: string }>).map(l => l.subject);
+            // Five letters submitted but only TWO distinct subjects survive.
+            expect(subjects).toHaveLength(2);
+            expect(new Set(subjects).size).toBe(2);
+        });
+
+        it('GET /v1/library drops res-qa-* portraits from the public list', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            writePortraitJson(tmp, 'res-hans', {
+                residentName: 'res:hans',
+                currentState: 'living',
+                livesCount: 1,
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z' },
+                voice: { quotes: [{ text: 'A good day in the courtyard, friend.', tag: 'first' }] },
+                patrons: [],
+                wants: { current: [] },
+            });
+            writePortraitJson(tmp, 'res-qa-cook', {
+                residentName: 'res:qa-cook',
+                currentState: 'living',
+                livesCount: 1,
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z' },
+                voice: { quotes: [] },
+                patrons: [],
+                wants: { current: [] },
+            });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/library'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body);
+            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug);
+            expect(slugs).toEqual(['res-hans']);
+        });
     });
 
     describe('GET /v1/health (O4)', () => {
