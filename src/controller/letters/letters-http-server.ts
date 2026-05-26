@@ -36,6 +36,8 @@ export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
 export const DEFAULT_PATRON_CHECKIN_PATH = '/v1/patron/checkin';
 export const DEFAULT_GRAVEYARD_PATH = '/v1/graveyard';
 export const DEFAULT_LIBRARY_PATH = '/v1/library';
+/** Which residents this patron has supported (backed by library portrait patronHandles). */
+export const DEFAULT_PATRON_RESIDENTS_PATH = '/v1/patron/residents';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -104,6 +106,7 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
     const patronBalancePath = normalizePath(DEFAULT_PATRON_BALANCE_PATH);
     const patronStandingPath = normalizePath(DEFAULT_PATRON_STANDING_PATH);
     const patronCheckInPath = normalizePath(DEFAULT_PATRON_CHECKIN_PATH);
+    const patronResidentsPath = normalizePath(DEFAULT_PATRON_RESIDENTS_PATH);
     const bindHost = options.host || '127.0.0.1';
 
     const graveyardRoutePath = normalizePath(DEFAULT_GRAVEYARD_PATH);
@@ -123,6 +126,7 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
             patronCheckInPath,
             graveyardRoutePath,
             libraryRoutePath,
+            patronResidentsPath,
         ).catch(error => {
             if (!response.headersSent) {
                 writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
@@ -165,6 +169,7 @@ async function handle(
     patronCheckInPath: string,
     graveyardRoutePath: string,
     libraryRoutePath: string,
+    patronResidentsPath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const isInboxRoute = url.pathname === routePath;
@@ -175,6 +180,7 @@ async function handle(
     const isPatronCheckInRoute = url.pathname === patronCheckInPath && options.patronMemoryRoot !== undefined;
     const isGraveyardRoute = url.pathname === graveyardRoutePath && options.lettersRoot !== undefined;
     const isLibraryRoute = url.pathname === libraryRoutePath && options.lettersRoot !== undefined;
+    const isPatronResidentsRoute = url.pathname === patronResidentsPath && options.lettersRoot !== undefined;
     const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
     if (
@@ -186,6 +192,7 @@ async function handle(
         !isPatronCheckInRoute &&
         !isGraveyardRoute &&
         !isLibraryRoute &&
+        !isPatronResidentsRoute &&
         !staticPagePath
     ) {
         writeJson(response, 404, { error: 'Not Found' });
@@ -245,6 +252,21 @@ async function handle(
         // Public surface — hide QA fixtures and benchmark synthetics.
         const residents = readLibraryEntries(options.lettersRoot as string, { excludeSynthetic: true });
         writeJson(response, 200, { residents, total: residents.length, asOf: new Date().toISOString() });
+        return;
+    }
+
+    if (isPatronResidentsRoute) {
+        const human = url.searchParams.get('human');
+        if (!human || human.trim().length === 0) {
+            writeJson(response, 400, { error: 'Query parameter `human` is required' });
+            return;
+        }
+        const humanLower = human.toLowerCase();
+        // Re-use readLibraryEntries so QA fixtures and benchmark synthetics are
+        // automatically excluded — no ghost-residents in the patron profile.
+        const allEntries = readLibraryEntries(options.lettersRoot as string, { excludeSynthetic: true });
+        const supported = allEntries.filter(entry => entry.patronHandles.some(h => h.toLowerCase() === humanLower));
+        writeJson(response, 200, { residents: supported, total: supported.length, asOf: new Date().toISOString() });
         return;
     }
 

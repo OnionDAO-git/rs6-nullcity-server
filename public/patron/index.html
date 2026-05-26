@@ -255,6 +255,43 @@
             color: var(--ink-soft);
         }
 
+        .resident-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(214, 193, 136, 0.4);
+            padding: 0.55rem 0;
+        }
+        .resident-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .resident-name {
+            font-size: 0.92rem;
+            color: var(--ink);
+            flex: 1;
+        }
+        .resident-meta {
+            display: flex;
+            gap: 0.45rem;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .res-state {
+            font-size: 0.68rem;
+            font-variant: small-caps;
+            letter-spacing: 0.08em;
+            padding: 0.1rem 0.4rem;
+            border-radius: 2px;
+        }
+        .res-state-living   { background: rgba(60,130,60,0.12);  color: #2a5c2a; border: 1px solid rgba(60,130,60,0.3); }
+        .res-state-reborn   { background: rgba(80,100,160,0.12); color: #2a3a6a; border: 1px solid rgba(80,100,160,0.3); }
+        .res-state-deceased { background: rgba(90,50,30,0.12);  color: var(--accent); border: 1px solid rgba(138,51,36,0.3); }
+        .res-faction {
+            font-size: 0.72rem;
+            color: var(--ink-soft);
+            font-variant: small-caps;
+            letter-spacing: 0.05em;
+        }
+
         .empty, .error {
             text-align: center;
             color: rgba(245, 236, 214, 0.7);
@@ -303,6 +340,7 @@
             const balanceUrl = (apiHost || '') + '/v1/patron/balance?human=' + encodeURIComponent(handle);
             const standingUrl = (apiHost || '') + '/v1/patron/standing?human=' + encodeURIComponent(handle);
             const inboxUrl = (apiHost || '') + '/v1/inbox?human=' + encodeURIComponent(handle);
+            const residentsUrl = (apiHost || '') + '/v1/patron/residents?human=' + encodeURIComponent(handle);
 
             Promise.all([
                 fetch(balanceUrl).then(r => r.ok ? r.json() : Promise.reject(new Error('balance ' + r.status))),
@@ -314,6 +352,15 @@
                     const standing = results[1];
                     const inbox = results[2];
                     renderCard(handle, balance, standing, inbox);
+                    // Append residents card asynchronously — does not block the main render.
+                    fetch(residentsUrl)
+                        .then(function (r) { return r.ok ? r.json() : null; })
+                        .catch(function () { return null; })
+                        .then(function (data) {
+                            if (data && Array.isArray(data.residents) && data.residents.length > 0) {
+                                mainElement.appendChild(buildResidentsCard(data.residents));
+                            }
+                        });
                 })
                 .catch(function (error) {
                     showError('Could not load patron status: ' + (error.message || String(error)));
@@ -549,6 +596,55 @@
             function capitalise(str) {
                 if (!str) return '';
                 return str.charAt(0).toUpperCase() + str.slice(1);
+            }
+
+            function buildResidentsCard(residents) {
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                const heading = document.createElement('h2');
+                heading.textContent = 'Residents You’ve Known';
+                card.appendChild(heading);
+
+                residents.forEach(function (r) {
+                    const row = document.createElement('div');
+                    row.className = 'resident-row';
+
+                    const name = document.createElement('span');
+                    name.className = 'resident-name';
+                    name.textContent = r.displayName || r.slug;
+                    row.appendChild(name);
+
+                    const meta = document.createElement('span');
+                    meta.className = 'resident-meta';
+
+                    if (r.factionDisplayName) {
+                        const faction = document.createElement('span');
+                        faction.className = 'res-faction';
+                        faction.textContent = r.factionDisplayName;
+                        if (r.factionColor) { faction.style.color = r.factionColor; }
+                        meta.appendChild(faction);
+                    }
+
+                    const state = r.currentState || 'living';
+                    const badge = document.createElement('span');
+                    badge.className = 'res-state res-state-' + state;
+                    badge.textContent = state === 'deceased' ? 'gone' : state === 'reborn' ? 'reborn' : 'living';
+                    meta.appendChild(badge);
+
+                    row.appendChild(meta);
+                    card.appendChild(row);
+                });
+
+                const linkRow = document.createElement('div');
+                linkRow.className = 'link-row';
+                const link = document.createElement('a');
+                link.href = '/library/';
+                link.textContent = 'View all in the Library →';
+                linkRow.appendChild(link);
+                card.appendChild(linkRow);
+
+                return card;
             }
 
             function showError(message) {

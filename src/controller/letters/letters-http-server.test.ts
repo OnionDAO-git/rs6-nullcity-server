@@ -872,6 +872,93 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(response.body).toContain('/v1/library');
         });
     });
+
+    describe('GET /v1/patron/residents (Pillar 2 — residents you have known)', () => {
+        it('returns 404 when lettersRoot is not configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents?human=alice'));
+            expect(response.status).toBe(404);
+        });
+
+        it('returns 400 when human param is missing', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents'));
+            expect(response.status).toBe(400);
+            expect(JSON.parse(response.body)).toMatchObject({ error: expect.stringContaining('human') });
+        });
+
+        it('returns empty list when patron has not supported any residents', async () => {
+            writePortraitJson(tmp, 'res-fern', {
+                schemaVersion: 1,
+                residentName: 'Fern',
+                currentState: 'living',
+                livesCount: 1,
+                patrons: [{ handle: 'bob@onion', events: [], sentence: 'bob.' }],
+                voice: { quotes: [] },
+                wants: { current: [], unfulfilledAtDeath: [] },
+                born: { ts: '2026-05-26T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z', tick: 100 },
+                relationships: [],
+                artifacts: [],
+            });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents?human=alice%40onion'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { residents: unknown[]; total: number };
+            expect(payload.residents).toEqual([]);
+            expect(payload.total).toBe(0);
+        });
+
+        it('returns residents the patron has backed, with state and faction fields', async () => {
+            writePortraitJson(tmp, 'res-fern', {
+                schemaVersion: 1,
+                residentName: 'Fern',
+                currentState: 'living',
+                livesCount: 1,
+                epithet: 'the wanderer',
+                patrons: [
+                    { handle: 'alice@onion', events: [], sentence: 'alice supported.' },
+                    { handle: 'bob@onion', events: [], sentence: 'bob supported.' },
+                ],
+                voice: { quotes: [{ tick: 10, text: 'Hello world.', lifeIndex: 1, tag: 'first' }] },
+                wants: { current: ['explore'], unfulfilledAtDeath: [] },
+                born: { ts: '2026-05-26T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z', tick: 100 },
+                relationships: [],
+                artifacts: [],
+            });
+            writePortraitJson(tmp, 'res-oak', {
+                schemaVersion: 1,
+                residentName: 'Oak',
+                currentState: 'deceased',
+                livesCount: 2,
+                patrons: [{ handle: 'alice@onion', events: [], sentence: 'alice.' }],
+                voice: { quotes: [] },
+                wants: { current: [], unfulfilledAtDeath: ['find a tree'] },
+                born: { ts: '2026-05-25T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T08:00:00.000Z', tick: 200 },
+                relationships: [],
+                artifacts: [],
+            });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            // Case-insensitive handle matching: ALICE@ONION matches alice@onion portraits.
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents?human=ALICE%40onion'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                residents: Array<{ slug: string; displayName: string; currentState: string; livesCount: number }>;
+                total: number;
+            };
+            expect(payload.total).toBe(2);
+            const slugs = payload.residents.map(r => r.slug).sort();
+            expect(slugs).toEqual(['res-fern', 'res-oak']);
+            const fern = payload.residents.find(r => r.slug === 'res-fern');
+            expect(fern?.displayName).toBe('Fern');
+            expect(fern?.currentState).toBe('living');
+            const oak = payload.residents.find(r => r.slug === 'res-oak');
+            expect(oak?.currentState).toBe('deceased');
+            expect(oak?.livesCount).toBe(2);
+        });
+    });
 });
 
 function writeRuntimeState(root: string, slug: string, partial: { attention: number; [key: string]: unknown }): void {
