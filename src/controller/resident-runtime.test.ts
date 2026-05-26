@@ -832,6 +832,206 @@ describe('ResidentRuntime modules', () => {
         );
     });
 
+    it('executes a complete multi-tick trade_resource sequence', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-trade-resource-'));
+        const state = stateFor('res:pip');
+
+        let thinkingAction: any = {
+            kind: 'trade_resource',
+            target: { humanHandle: 'alice' },
+            artifact: 'rs:logs',
+            quantity: 5,
+            cause: 'give_logs',
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => {
+                if (thinkingAction) {
+                    const act = thinkingAction;
+                    thinkingAction = null; // Yield only once
+                    return { actions: [act], cause: 'give_logs', nooped: false };
+                }
+                return { actions: [], cause: 'idle', nooped: true };
+            }),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const submittedActions: any[] = [];
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async action => {
+                submittedActions.push(action);
+                return { ok: true, requestId: `req-${action.kind}` };
+            }),
+            getLatestPerception: jest.fn(() => ({
+                resident: {
+                    position: { x: 3200, y: 3200, level: 0 },
+                    inventory: [{ itemId: 1511, key: 'rs:logs', amount: 10 }],
+                },
+                nearby: {
+                    players: [{ name: 'alice', position: { x: 3200, y: 3201, level: 0 } }],
+                },
+            })),
+        } as unknown as ResidentBody;
+
+        const library = {
+            observeTrajectory: jest.fn(),
+            observePatron: jest.fn(),
+        } as unknown as LibraryUpdater;
+
+        const evidence = {
+            library,
+        } as unknown as ResidentRuntimeEvidence;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                heroProfile: {
+                    tier: 'hero',
+                    publicName: 'Pip',
+                    signatureAction: 'gives gifts',
+                    anchor: [3200, 3200, 0],
+                },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        // 1. First tick initiates the trade request
+        const perceptionTick1 = {
+            tick: 1,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [{ itemId: 1511, key: 'rs:logs', amount: 10 }],
+            },
+            nearby: {
+                players: [{ name: 'alice', position: { x: 3200, y: 3201, level: 0 } }],
+            },
+            events: [],
+        };
+        const p1 = runtime.onPerception(perceptionTick1);
+
+        // Wait a tiny bit for the async task processing the think/action flow
+        await settlesWithin(p1, 50);
+
+        expect(submittedActions[0]).toEqual({
+            kind: 'trade_request',
+            target: { playerHandle: 'alice' },
+            cause: 'give_logs',
+        });
+        expect(state.activeTradeResource?.status).toBe('initiating');
+
+        // 2. Next perception shows trade window open (status: initiating -> offering)
+        const perceptionTick2 = {
+            tick: 2,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [{ itemId: 1511, key: 'rs:logs', amount: 10 }],
+                activeTrade: {
+                    partner: { name: 'alice' },
+                    ours: [],
+                    theirs: [],
+                },
+            },
+            nearby: {
+                players: [{ name: 'alice', position: { x: 3200, y: 3201, level: 0 } }],
+            },
+            events: [],
+        };
+        await runtime.onPerception(perceptionTick2);
+
+        expect(submittedActions[1]).toEqual({
+            kind: 'trade_offer_item',
+            itemId: 1511,
+            quantity: 5,
+            slot: 0,
+            cause: 'give_logs',
+        });
+        expect(state.activeTradeResource?.status).toBe('offering');
+
+        // 3. Next perception shows item is offered (status: offering -> accepting_stage_1)
+        const perceptionTick3 = {
+            tick: 3,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [{ itemId: 1511, key: 'rs:logs', amount: 10 }],
+                activeTrade: {
+                    partner: { name: 'alice' },
+                    ours: [{ itemId: 1511, key: 'rs:logs', amount: 5 }],
+                    theirs: [],
+                },
+            },
+            nearby: {
+                players: [{ name: 'alice', position: { x: 3200, y: 3201, level: 0 } }],
+            },
+            events: [],
+        };
+        await runtime.onPerception(perceptionTick3);
+
+        expect(submittedActions[2]).toEqual({
+            kind: 'trade_accept_stage_1',
+            cause: 'give_logs',
+        });
+        expect(state.activeTradeResource?.status).toBe('accepting_stage_1');
+
+        // 4. Next perception shows our stage 1 accepted and partner accepted (status: accepting_stage_1 -> accepting_stage_2)
+        const perceptionTick4 = {
+            tick: 4,
+            resident: {
+                position: { x: 3200, y: 3200, level: 0 },
+                inventory: [{ itemId: 1511, key: 'rs:logs', amount: 10 }],
+                activeTrade: {
+                    partner: { name: 'alice' },
+                    ours: [{ itemId: 1511, key: 'rs:logs', amount: 5 }],
+                    theirs: [],
+                    ourStage: 'accepted_1',
+                    theirStage: 'accepted_1',
+                },
+            },
+            nearby: {
+                players: [{ name: 'alice', position: { x: 3200, y: 3201, level: 0 } }],
+            },
+            events: [],
+        };
+        await runtime.onPerception(perceptionTick4);
+
+        expect(submittedActions[3]).toEqual({
+            kind: 'trade_accept_stage_2',
+            cause: 'give_logs',
+        });
+        expect(state.activeTradeResource?.status).toBe('accepting_stage_2');
+
+        // 5. Fire trade completed event
+        runtime.onEvent({
+            kind: 'trade_completed',
+            ts: new Date().toISOString(),
+        });
+
+        // The promise should have resolved, and timeline should be logged
+        await p1;
+
+        expect(state.activeTradeResource).toBeUndefined();
+        expect(library.observePatron).toHaveBeenCalledWith(
+            expect.objectContaining({
+                kind: 'patron_gift',
+                patronHandle: 'alice',
+                artifact: 'rs:logs',
+                amount: 5,
+                direction: 'out',
+            }),
+        );
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
     it('gives selected SPARK modules a redacted telemetry sink', () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-module-telemetry-test-'));
         const state = stateFor('res:pip');

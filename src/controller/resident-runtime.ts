@@ -14,6 +14,9 @@ import {
     levelOneWoodcuttingAction,
 } from './spark/runescape-body-routines';
 
+import { HERO_TIERS } from './residents/hero-tier';
+import { canTradeResource, itemMatches } from './actions/hero-actions';
+
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
@@ -54,7 +57,7 @@ import { explorationGoal, isStandaloneFiremakingGoal } from './spark/runescape-b
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
 import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
-import type { AgentAction, Perception, PerceptionEvent } from './transport/message-codecs';
+import type { AgentAction, Perception, PerceptionEvent, ActionResult } from './transport/message-codecs';
 import { LoreBus } from './lore/lore-bus';
 import { FireLitReflex } from './lore/fire-lit-reflex';
 import { MomentLabeler } from './evidence/moment-labeler';
@@ -149,6 +152,11 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly evidence?: ResidentRuntimeEvidence;
     private readonly progressTracker = new ProgressTracker();
     private deciding = false;
+    private activeTradeResourceDeferred?: {
+        resolve: (attempt: ActionAttempt) => void;
+        reject: (err: Error) => void;
+        attempt: ActionAttempt;
+    };
     private readonly loreBus?: LoreBus;
     private readonly fireLitReflex?: FireLitReflex;
     private readonly momentLabeler?: MomentLabeler;
@@ -271,6 +279,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
+        if (this.state.activeTradeResource) {
+            await this.tickActiveTradeResource(perception);
+            return;
+        }
         if (this.whisperInbox) {
             const drainedWhispers = this.whisperInbox.drain();
             for (const whisper of drainedWhispers) {
@@ -696,6 +708,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async submitActionWithWatchdog(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        if (input.action.kind === 'trade_resource') {
+            return this.executeTradeResource(input);
+        }
         const timeoutMs = this.actionWatchdogTimeoutMs(input.action);
         let timer: NodeJS.Timeout | undefined;
         const timeout = new Promise<ActionAttempt>(resolve => {
@@ -745,6 +760,14 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     onEvent(event: PerceptionEvent): void {
         this.history.push(event);
         this.body.observeEvent(event);
+        if (this.state.activeTradeResource) {
+            const active = this.state.activeTradeResource;
+            if (event.kind === 'trade_completed') {
+                this.completeActiveTradeResource();
+            } else if (event.kind === 'trade_cancelled' || event.kind === 'trade_declined') {
+                this.declineActiveTradeResource(event.kind);
+            }
+        }
         this.pendingEvents.push(event);
         if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
             this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
@@ -1339,6 +1362,289 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             return { preempted: 'aborted' };
         }
         return 'no_progress';
+    }
+
+    private async executeTradeResource(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        const action = input.action as {
+            kind: 'trade_resource';
+            target: { humanHandle: string };
+            artifact: string;
+            quantity: number;
+            note?: string;
+            cause?: string;
+        };
+        const tier = this.options.soul.frontmatter.heroProfile?.tier ?? 'background';
+        const tierConfig = HERO_TIERS[tier];
+        const perception = this.body.getLatestPerception();
+        const nearby = record(record(perception).nearby);
+        const players = Array.isArray(nearby.players) ? (nearby.players as any[]) : [];
+        const targetVisible = players.some(p => p.name?.toLowerCase() === action.target.humanHandle.toLowerCase());
+        const resident = record(record(perception).resident);
+        const inventory = Array.isArray(resident.inventory) ? (resident.inventory as any[]) : [];
+
+        const check = canTradeResource(this.state, tierConfig, inventory as any, action.artifact, action.quantity, targetVisible);
+        if (!check.ok) {
+            const failAttempt: ActionAttempt = {
+                attemptId: `attempt-trade_resource-fail-${Date.now()}`,
+                resident: this.name,
+                producer: input.producer,
+                action: input.action,
+                submittedAt: new Date().toISOString(),
+                cause: action.cause,
+                evidence: [],
+                finalStatus: 'failure',
+                finalReason: check.reason || 'precondition_failed',
+                metadata: input.metadata,
+            };
+            this.recordEvidence(trajectory => {
+                const line = trajectory.recordAction(action, failAttempt.attemptId);
+                this.evidence?.library?.observeTrajectory(line);
+                trajectory.recordActionResult(failAttempt.attemptId, {
+                    status: 'failure',
+                    reason: check.reason || 'precondition_failed',
+                });
+            });
+            return failAttempt;
+        }
+
+        const attemptId = `attempt-trade_resource-${Date.now()}`;
+        const attempt: ActionAttempt = {
+            attemptId,
+            resident: this.name,
+            producer: input.producer,
+            action: input.action,
+            submittedAt: new Date().toISOString(),
+            cause: action.cause,
+            evidence: [],
+            finalStatus: 'accepted',
+            metadata: input.metadata,
+        };
+
+        this.state.activeTradeResource = {
+            targetHandle: action.target.humanHandle,
+            artifact: action.artifact,
+            quantity: action.quantity,
+            note: action.note,
+            cause: action.cause,
+            startTick: this.state.tick,
+            status: 'initiating',
+            attemptId,
+            producer: input.producer,
+        };
+        this.options.stateStore.save(this.state);
+
+        this.recordEvidence(trajectory => {
+            const line = trajectory.recordAction(action, attemptId);
+            this.evidence?.library?.observeTrajectory(line);
+        });
+
+        const promise = new Promise<ActionAttempt>((resolve, reject) => {
+            this.activeTradeResourceDeferred = { resolve, reject, attempt };
+        });
+
+        try {
+            await this.body.submit(
+                {
+                    kind: 'trade_request',
+                    target: { playerHandle: action.target.humanHandle },
+                    cause: action.cause || 'trade_resource_initiate',
+                } as any,
+                {
+                    tick: this.state.tick,
+                    attention_after: this.state.attention,
+                    source: sourceFromProducer(input.producer),
+                },
+            );
+        } catch (error) {
+            this.declineActiveTradeResource('request_submit_failed');
+        }
+
+        return promise;
+    }
+
+    private async tickActiveTradeResource(perception: Perception): Promise<void> {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            return;
+        }
+
+        const elapsed = this.state.tick - active.startTick;
+        if (elapsed >= 100) {
+            await this.declineActiveTradeResource('timeout');
+            return;
+        }
+
+        const resident = record(record(perception).resident);
+        const trade = resident.activeTrade ? (resident.activeTrade as any) : undefined;
+
+        if (active.status !== 'initiating' && !trade) {
+            await this.declineActiveTradeResource('cancelled');
+            return;
+        }
+
+        if (trade) {
+            if (active.status === 'initiating') {
+                if (trade.partner) {
+                    const partnerName = trade.partner.name || trade.partner.id;
+                    if (partnerName.toLowerCase() !== active.targetHandle.toLowerCase()) {
+                        await this.declineActiveTradeResource('partner_mismatch');
+                        return;
+                    }
+                }
+
+                const inventory = Array.isArray(resident.inventory) ? (resident.inventory as any[]) : [];
+                const itemIndex = inventory.findIndex(item => item && itemMatches(item, active.artifact));
+                if (itemIndex === -1) {
+                    await this.declineActiveTradeResource('insufficient_inventory');
+                    return;
+                }
+                const item = inventory[itemIndex];
+                if (!item || item.amount < active.quantity) {
+                    await this.declineActiveTradeResource('insufficient_inventory');
+                    return;
+                }
+
+                active.status = 'offering';
+                this.options.stateStore.save(this.state);
+
+                try {
+                    await this.submitSubAction({
+                        kind: 'trade_offer_item',
+                        itemId: item.itemId,
+                        quantity: active.quantity,
+                        slot: itemIndex,
+                        cause: active.cause,
+                    });
+                } catch {
+                    // ignore
+                }
+            } else if (active.status === 'offering') {
+                const offered = trade.ours?.find((item: any) => itemMatches(item, active.artifact) && item.amount === active.quantity);
+                if (offered) {
+                    active.status = 'accepting_stage_1';
+                    this.options.stateStore.save(this.state);
+                    try {
+                        await this.submitSubAction({
+                            kind: 'trade_accept_stage_1',
+                            cause: active.cause,
+                        });
+                    } catch {
+                        // ignore
+                    }
+                }
+            } else if (active.status === 'accepting_stage_1') {
+                if (trade.ourStage === 'accepted_1') {
+                    if (trade.theirStage === 'accepted_1' || trade.theirStage === 'accepted_2') {
+                        active.status = 'accepting_stage_2';
+                        this.options.stateStore.save(this.state);
+                        try {
+                            await this.submitSubAction({
+                                kind: 'trade_accept_stage_2',
+                                cause: active.cause,
+                            });
+                        } catch {
+                            // ignore
+                        }
+                    }
+                } else if (!trade.ourStage || trade.ourStage === 'editing') {
+                    try {
+                        await this.submitSubAction({
+                            kind: 'trade_accept_stage_1',
+                            cause: active.cause,
+                        });
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
+        }
+    }
+
+    private async submitSubAction(action: AgentAction): Promise<ActionResult> {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            throw new Error('No active trade resource transaction');
+        }
+        return this.body.submit(action, {
+            tick: this.state.tick,
+            attention_after: this.state.attention,
+            source: sourceFromProducer(active.producer),
+        });
+    }
+
+    private completeActiveTradeResource(): void {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            return;
+        }
+
+        const deferred = this.activeTradeResourceDeferred;
+        this.state.activeTradeResource = undefined;
+        this.activeTradeResourceDeferred = undefined;
+        this.options.stateStore.save(this.state);
+
+        if (this.evidence?.library) {
+            this.evidence.library.observePatron({
+                kind: 'patron_gift',
+                ts: new Date().toISOString(),
+                tick: this.state.tick,
+                patronHandle: active.targetHandle,
+                artifact: active.artifact,
+                amount: active.quantity,
+                direction: 'out',
+                note: active.note || 'hero_gift',
+            });
+        }
+
+        if (deferred) {
+            deferred.attempt.finalStatus = 'success';
+            this.recordEvidence(trajectory => {
+                trajectory.recordActionResult(active.attemptId, {
+                    status: 'success',
+                });
+            });
+            deferred.resolve(deferred.attempt);
+        }
+    }
+
+    private declineActiveTradeResource(reason: string): void {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            return;
+        }
+
+        const deferred = this.activeTradeResourceDeferred;
+        this.state.activeTradeResource = undefined;
+        this.activeTradeResourceDeferred = undefined;
+        this.options.stateStore.save(this.state);
+
+        this.body
+            .submit(
+                {
+                    kind: 'trade_decline',
+                    cause: 'trade_resource_decline',
+                    reason,
+                } as any,
+                {
+                    tick: this.state.tick,
+                    attention_after: this.state.attention,
+                    source: sourceFromProducer(active.producer),
+                },
+            )
+            .catch(() => {});
+
+        if (deferred) {
+            const finalStatus = reason === 'timeout' ? 'timeout' : 'failure';
+            deferred.attempt.finalStatus = finalStatus;
+            deferred.attempt.finalReason = reason;
+            this.recordEvidence(trajectory => {
+                trajectory.recordActionResult(active.attemptId, {
+                    status: finalStatus,
+                    reason,
+                });
+            });
+            deferred.resolve(deferred.attempt);
+        }
     }
 }
 
@@ -2052,4 +2358,10 @@ function findBestSkill(skillsValue: unknown): { name: string; level: number } | 
         }
     }
     return bestSkill;
+}
+
+function sourceFromProducer(producer: string): 'thinking' | 'nervous-system' | 'body' {
+    if (producer === 'nervous-system') return 'nervous-system';
+    if (producer === 'body' || producer === 'active-routine') return 'body';
+    return 'thinking';
 }

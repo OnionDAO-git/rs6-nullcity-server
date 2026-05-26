@@ -124,6 +124,7 @@ import {
     woodcuttingGoal,
 } from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
+import { PatronRegistry } from '../patron/patron-registry';
 import { estimateTokens } from '../util/token-count';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
 import type { ThinkingModule, ThoughtResult } from './thinking-module';
@@ -135,6 +136,7 @@ export interface HybridAgentThinkingModuleOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+    patronRegistry?: PatronRegistry;
 }
 
 type Pos = { x: number; y: number; level: number };
@@ -280,6 +282,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const pendingDirectTrade = this.pendingDirectTradeAction(perception as HybridPerception);
             if (pendingDirectTrade) {
                 return this.result([pendingDirectTrade.action], pendingDirectTrade.cause, 0, false);
+            }
+
+            const proactiveTrade = this.proactiveTradeAction(perception as HybridPerception);
+            if (proactiveTrade) {
+                return this.result([proactiveTrade.action], proactiveTrade.cause, 0, false);
             }
 
             if ((perception as HybridPerception).resident?.busy) {
@@ -1728,6 +1735,60 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             target: target.position,
             range: this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS,
             cause,
+        };
+    }
+
+    private proactiveTradeAction(perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+        const tier = this.options.soul.frontmatter.heroProfile?.tier ?? 'background';
+        if (tier === 'background') {
+            return undefined;
+        }
+
+        const registry = this.options.patronRegistry;
+        if (!registry) {
+            return undefined;
+        }
+
+        const resident = perception.resident;
+        const inventory = resident?.inventory || [];
+
+        const item = inventory.find(item => {
+            if (!item) return false;
+            const key = (item.key || '').toLowerCase();
+            return item.itemId === 1511 || key.includes('logs') || item.itemId === 526 || key.includes('bones');
+        });
+        if (!item) {
+            return undefined;
+        }
+
+        const players = perception.nearby?.players || [];
+        const patron = players.find(p => p.name && registry.isPatron(p.name));
+        if (!patron || !patron.name) {
+            return undefined;
+        }
+
+        const currentTick = this.options.state.tick;
+        const cooldownKey = `proactive-trade:${patron.name.toLowerCase()}`;
+        const cooldowns = (this.options.state.hookCooldowns ||= {});
+        const cooldownUntil = cooldowns[cooldownKey] || 0;
+        if (currentTick < cooldownUntil) {
+            return undefined;
+        }
+
+        cooldowns[cooldownKey] = currentTick + 100;
+
+        const artifactStr = item.itemId === 1511 ? 'logs' : item.itemId === 526 ? 'bones' : item.key || String(item.itemId);
+
+        return {
+            action: {
+                kind: 'trade_resource',
+                target: { humanHandle: patron.name },
+                artifact: artifactStr,
+                quantity: 1,
+                note: 'hero_gift',
+                cause: 'proactive_patron_gift',
+            },
+            cause: 'proactive_patron_gift',
         };
     }
 

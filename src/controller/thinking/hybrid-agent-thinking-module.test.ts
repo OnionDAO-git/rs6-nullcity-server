@@ -6,6 +6,7 @@ import type { Soul } from '../soul/soul-schema';
 import { STARTER_FISHING_SPOT_DISCOVERY_RANGE } from '../spark/runescape-body-routines';
 import type { Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
+import { PatronRegistry } from '../patron/patron-registry';
 
 describe('HybridAgentThinkingModule', () => {
     it('passes abort signals to inference and aborts the active completion when stopped', async () => {
@@ -8024,6 +8025,69 @@ describe('HybridAgentThinkingModule', () => {
             // Tick 5: Idle
             const res5 = await agent.think(perception({ tick: 5 }));
             expect(res5.actions).toEqual([]);
+        });
+    });
+
+    describe('Proactive trade action', () => {
+        it('proactively offers a resource to a nearby patron when carrying logs or bones', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            state.tick = 10;
+            const soulHero = soul();
+            soulHero.frontmatter.heroProfile = {
+                tier: 'hero',
+                publicName: 'Hero Agent',
+                signatureAction: 'helps patrons',
+                anchor: [3200, 3200, 0],
+            };
+            const patronRegistry = new PatronRegistry([{ handle: 'alice', role: 'sponsor', isPatron: true } as any]);
+            const agent = new HybridAgentThinkingModule({
+                soul: soulHero,
+                state,
+                memory: memory(),
+                llm: llm as unknown as LlmClient,
+                patronRegistry,
+            });
+
+            // 1. Tick with a patron nearby and logs in inventory -> should trigger trade
+            const result = await agent.think(
+                perception({
+                    tick: 10,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        inventory: [{ itemId: 1511, key: 'rs:logs', amount: 5 }],
+                    },
+                    players: [player('alice', 3200, 3201)],
+                }),
+            );
+
+            expect(result.actions).toEqual([
+                {
+                    kind: 'trade_resource',
+                    target: { humanHandle: 'alice' },
+                    artifact: 'logs',
+                    quantity: 1,
+                    note: 'hero_gift',
+                    cause: 'proactive_patron_gift',
+                },
+            ]);
+            expect(result.cause).toBe('proactive_patron_gift');
+            expect(state.hookCooldowns?.['proactive-trade:alice']).toBe(111);
+
+            // 2. Next tick, proactive trade should be on cooldown
+            state.cognition!.lastBodyTick = 10;
+            const resultCooldown = await agent.think(
+                perception({
+                    tick: 11,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        inventory: [{ itemId: 1511, key: 'rs:logs', amount: 5 }],
+                    },
+                    players: [player('alice', 3200, 3201)],
+                }),
+            );
+
+            expect(resultCooldown.actions).toEqual([]);
         });
     });
 });

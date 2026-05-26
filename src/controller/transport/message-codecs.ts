@@ -54,6 +54,7 @@ export type AgentAction = (
     | { kind: 'gift'; target: string; artifact: string; quantity: number; note?: string; cause?: string }
     | { kind: 'assist_skill'; target: string; skill: string; durationTicks: number; cause?: string }
     | { kind: 'challenge_duel'; target: string; stake?: { artifact: string; quantity: number }; cause?: string }
+    | { kind: 'trade_resource'; target: { humanHandle: string }; artifact: string; quantity: number; note?: string; cause?: string }
     | ({ kind: string; cause?: string } & Record<string, unknown>)
 ) & {
     voiceSource?: 'phrasebook' | 'inference' | 'scripted';
@@ -234,6 +235,14 @@ export const agentActionSchema: z.ZodType<AgentAction> = z.discriminatedUnion('k
         kind: z.literal('gift'),
         target: z.string(),
         artifact: z.string(),
+        quantity: z.number().int().positive(),
+        note: z.string().optional(),
+        cause: z.string().optional(),
+    }),
+    z.object({
+        kind: z.literal('trade_resource'),
+        target: z.object({ humanHandle: z.string().min(1) }),
+        artifact: z.string().min(1),
         quantity: z.number().int().positive(),
         note: z.string().optional(),
         cause: z.string().optional(),

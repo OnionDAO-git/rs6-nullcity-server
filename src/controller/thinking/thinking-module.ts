@@ -4,6 +4,7 @@ import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
+import { PatronRegistry } from '../patron/patron-registry';
 import {
     resolveSparkModules,
     sparkModuleIdentity,
@@ -33,6 +34,7 @@ export interface SparkThinkingModuleOptions {
     sparkModules?: SparkModule[];
     resolvedSparkModules?: ResolvedSparkModule[];
     moduleTelemetry?: (module: SparkModuleIdentity) => SparkModuleTelemetry;
+    patronRegistry?: PatronRegistry;
 }
 
 export interface ThinkingModuleSelection {

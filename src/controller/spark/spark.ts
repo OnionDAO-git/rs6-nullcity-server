@@ -35,6 +35,7 @@ import {
     pickupItemKey,
 } from './runescape-body-routines';
 import { type VariableDefinition, recomputeVariables } from './variables';
+import { HERO_TIERS } from '../residents/hero-tier';
 
 const IDLE_INITIATIVE_FIRST_TICK = 120;
 const IDLE_INITIATIVE_INTERVAL_TICKS = 120;
@@ -126,8 +127,36 @@ export class Spark {
                 };
             }
 
-            const planned = this.advancePlan(perception, winner?.priority ?? -1);
+            let planned = this.advancePlan(perception, winner?.priority ?? -1);
             if (planned) {
+                const tier = this.soul.frontmatter.heroProfile?.tier ?? 'background';
+                const tierConfig = HERO_TIERS[tier];
+                const validActions = planned.actions.filter(action => {
+                    if (action.kind === 'trade_resource' && !tierConfig.canTradeResource) {
+                        return false;
+                    }
+                    if (action.kind === 'request_attention' && !tierConfig.canRequestAttention) {
+                        return false;
+                    }
+                    if (action.kind === 'prepare_epitaph' && !tierConfig.canPrepareEpitaph) {
+                        return false;
+                    }
+                    return true;
+                });
+                if (validActions.length !== planned.actions.length) {
+                    planned = {
+                        ...planned,
+                        actions: validActions,
+                        nooped: validActions.length === 0,
+                        syntheticEvents: [
+                            ...(planned.syntheticEvents || []),
+                            {
+                                kind: 'nervous_system_decline',
+                                reason: `Tier '${tier}' does not permit gated action`,
+                            } as any,
+                        ],
+                    };
+                }
                 endReason = 'plan_continuation';
                 this.options.evidence?.recordPlan({ cause: planned.cause, actionKinds: planned.actions.map(action => action.kind) });
                 return planned;
@@ -261,6 +290,34 @@ export class Spark {
                 const next = this.planExecutor.tick(this.activePlan, { tick: this.state.tick, perception });
                 actions = next.action ? replaceNoopWithCandidate([next.action], candidates) : [];
             }
+
+            const syntheticEvents: PerceptionEvent[] = [];
+            const tier = this.soul.frontmatter.heroProfile?.tier ?? 'background';
+            const tierConfig = HERO_TIERS[tier];
+            actions = actions.filter(action => {
+                if (action.kind === 'trade_resource' && !tierConfig.canTradeResource) {
+                    syntheticEvents.push({
+                        kind: 'nervous_system_decline',
+                        reason: `Tier '${tier}' does not permit trade_resource`,
+                    } as any);
+                    return false;
+                }
+                if (action.kind === 'request_attention' && !tierConfig.canRequestAttention) {
+                    syntheticEvents.push({
+                        kind: 'nervous_system_decline',
+                        reason: `Tier '${tier}' does not permit request_attention`,
+                    } as any);
+                    return false;
+                }
+                if (action.kind === 'prepare_epitaph' && !tierConfig.canPrepareEpitaph) {
+                    syntheticEvents.push({
+                        kind: 'nervous_system_decline',
+                        reason: `Tier '${tier}' does not permit prepare_epitaph`,
+                    } as any);
+                    return false;
+                }
+                return true;
+            });
             if (isEmptyParsedCompletion(parsed, actions)) {
                 const idleInitiative = this.idleInitiative(perception);
                 if (idleInitiative) {
@@ -304,6 +361,7 @@ export class Spark {
                 cause: decisionCause,
                 envelopeTokens: estimateTokens(envelope),
                 nooped: actions.length === 0,
+                syntheticEvents,
             };
         } finally {
             this.options.evidence?.endTick(endReason);

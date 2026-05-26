@@ -297,6 +297,53 @@ describe('Spark candidate fallback', () => {
         expect((llm.complete as jest.Mock).mock.calls[0][0].thinking).toBe(false);
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
+
+    it('gates hero actions for background residents and adds nervous_system_decline event', async () => {
+        const state = runtimeState();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spark-gating-'));
+        const memory = {
+            ensureResident: jest.fn(() => memoryDir),
+            retrieve: jest.fn(() => []),
+            write: jest.fn(),
+        } as unknown as MemoryStore;
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: JSON.stringify({
+                    actions: [{ kind: 'trade_resource', target: { humanHandle: 'alice' }, artifact: 'rs:logs', quantity: 1 }],
+                    cause: 'try_trade',
+                }),
+                nooped: false,
+            })),
+        } as unknown as LlmClient;
+        const spark = new Spark(
+            soul({
+                heroProfile: {
+                    tier: 'background',
+                    publicName: 'Background NPC',
+                    signatureAction: 'wanders around',
+                    anchor: [3226, 3236, 0],
+                },
+            }),
+            state,
+            memory,
+            llm,
+        );
+
+        const result = await spark.tick({
+            resident: {
+                position: { x: 3226, y: 3236, level: 0 },
+            },
+        });
+
+        expect(result.actions).toEqual([]);
+        expect(result.syntheticEvents).toEqual([
+            {
+                kind: 'nervous_system_decline',
+                reason: "Tier 'background' does not permit trade_resource",
+            },
+        ]);
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
 });
 
 function runtimeState(): RuntimeState {

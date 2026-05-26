@@ -519,7 +519,8 @@ Safe public module facade building blocks are implemented, but the public member
 
 **Purpose:** Named residents who become event focal points for human players. Spec: `docs/superpowers/specs/2026-05-22-hero-residents-design.md`.
 
-- `[ ]` **M1: Hero story-arc shape.** Pitch → fund → progress → resolve → letter. Resolution event template + faction effect.
+- `[>]` **M1: Hero story-arc shape.** Pitch → fund → progress → resolve → letter. Resolution event template + faction effect.
+  - Partial 2026-05-25 on `agents/wip`: Library portraits now compute a structured `storyArc` from timeline evidence and render a compact `## Current arc` section. The first classifier is monotonic inside a visible arc (`pitch -> fund -> progress -> resolve -> letter`), recognizes patron funding/progress/resolution/letter events, and avoids treating ordinary exploratory speech as a pitch. Remaining: runtime resolution event template, faction effects, and dashboard use of the structured field.
 - `[x]` **M2: Lifespan tiers.** Flagships ~30 days, visitor-borns ~24 hours. Asymmetry is intentional.
   - Partial 2026-05-25 on `agents/wip`: live whole-city smoke found Hans had completed the generic endurer default after 50k ticks and was no longer ticking. Flagship hero endurers without explicit `targetTicks` now default to 4,320,000 ticks (~30 days at 0.6s/tick), and forced operator revival reopens old completed short endurer legacies when the new target has not been reached. Remaining: explicit visitor-born ~24h tier defaults.
   - Completed 2026-05-26 on `agents/wip`: visitor-born (novice) defaults to 144,000 endurer ticks (~24h at 0.6s/tick), and fixed patron sponsor schema validation errors (archetype/quirks/factionId).

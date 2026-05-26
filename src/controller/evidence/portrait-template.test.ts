@@ -122,6 +122,29 @@ describe('renderPortrait wants quality', () => {
     });
 });
 
+describe('renderPortrait story arc', () => {
+    const index: PortraitIndex = {
+        resident: 'res:arc-witness',
+        createdAt: '2026-05-25T05:00:00.000Z',
+        updatedAt: '2026-05-25T05:30:00.000Z',
+        lives: 1,
+        currentState: 'living',
+    };
+
+    it('surfaces the current arc phase in portrait JSON and markdown', () => {
+        const rendered = renderPortrait('res:arc-witness', index, [
+            { kind: 'say', tick: 1, ts: '2026-05-25T05:00:01.000Z', text: 'I need kindling for a patron fire.', lifeIndex: 1 },
+            { kind: 'patron_gift', tick: 2, ts: '2026-05-25T05:00:02.000Z', patronHandle: 'patron:ash', amount: 7, lifeIndex: 1 },
+            { kind: 'stuck_recovered', tick: 3, ts: '2026-05-25T05:00:03.000Z', lifeIndex: 1 },
+        ]);
+
+        expect(rendered.portrait.storyArc.phase).toBe('progress');
+        expect(rendered.portrait.storyArc.evidence.fundingEvents).toBe(1);
+        expect(rendered.markdown).toContain('## Current arc');
+        expect(rendered.markdown).toContain('Phase: progress');
+    });
+});
+
 function escapeRegExp(input: string): string {
     return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -34,6 +34,7 @@ export interface RuntimeState {
         cause: string;
         processed?: boolean;
     };
+    activeTradeResource?: ActiveTradeResourceState;
 }
 
 export interface CognitiveState {
@@ -87,6 +88,18 @@ export interface PendingDirectTradeState {
         combatLevel?: number;
     };
     setAtTick: number;
+}
+
+export interface ActiveTradeResourceState {
+    targetHandle: string;
+    artifact: string;
+    quantity: number;
+    note?: string;
+    cause?: string;
+    startTick: number;
+    status: 'initiating' | 'offering' | 'accepting_stage_1' | 'accepting_stage_2' | 'completed' | 'cancelled';
+    attemptId: string;
+    producer: string;
 }
 
 export interface PendingCombatNarrationState {

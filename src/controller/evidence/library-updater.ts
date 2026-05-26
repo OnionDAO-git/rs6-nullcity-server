@@ -12,6 +12,7 @@ export interface PatronEvent {
     patronHandle: string;
     artifact?: string;
     note?: string;
+    direction?: 'in' | 'out';
     /**
      * Shards transferred (patron_gift / patron_sponsor only). Surfaces in
      * the Brain's memory rendering so the resident can acknowledge the

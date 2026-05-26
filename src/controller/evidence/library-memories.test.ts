@@ -453,4 +453,30 @@ describe('renderEventAsMemory — HD-027 rendering gaps', () => {
         expect(memory).toContain('bob');
         expect(memory).toContain('How are you holding up?');
     });
+
+    it('renders outgoing patron_gift events as Gave gift to <handle>: <amount> <artifact>', () => {
+        writeTimeline('res:agent', [
+            {
+                ts: '2026-05-25T10:15:00.000Z',
+                kind: 'patron_gift',
+                patronHandle: 'james',
+                artifact: 'rs:logs',
+                amount: 5,
+                direction: 'out',
+            },
+            {
+                ts: '2026-05-25T10:16:00.000Z',
+                kind: 'patron_gift',
+                patronHandle: 'james',
+                artifact: 'rs:bones',
+                amount: 10,
+                note: 'hero_gift',
+            },
+        ]);
+
+        const memories = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
+        expect(memories).toHaveLength(2);
+        expect(memories[0]).toContain('Gave gift to james: 5 rs:logs');
+        expect(memories[1]).toContain('Gave gift to james: 10 rs:bones');
+    });
 });

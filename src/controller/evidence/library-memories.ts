@@ -128,6 +128,12 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
         }
         case 'patron_gift': {
             const handle = typeof event.patronHandle === 'string' ? event.patronHandle : 'an unknown patron';
+            const isOutgoing = event.direction === 'out' || event.note === 'hero_gift';
+            if (isOutgoing) {
+                const artifact = typeof event.artifact === 'string' ? event.artifact : 'a gift';
+                const amount = typeof event.amount === 'number' && Number.isFinite(event.amount) ? `${event.amount} ` : '';
+                return `Gave gift to ${handle}: ${amount}${artifact} (${ts})`;
+            }
             // E7 (intelligence-verification-log.md § E7): when the CLI /
             // PatronGateway path forwards `amount` (Shards) and
             // `standingTier` (the tier the patron crossed into), prefer

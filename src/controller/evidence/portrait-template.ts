@@ -1,4 +1,5 @@
 import { lookupFaction } from '../factions/factions';
+import { inferStoryArc, type StoryArcSummary } from './story-arc';
 
 export interface PortraitRenderOptions {
     /** SOUL factionId; looked up in the faction catalog to populate portrait.faction. */
@@ -28,6 +29,7 @@ export interface Portrait {
     patrons: PortraitPatron[];
     wants: PortraitWants;
     artifacts: string[];
+    storyArc: StoryArcSummary;
     cost?: { totalUsd: number; perLife: number[] };
 }
 
@@ -87,6 +89,7 @@ export function renderPortrait(
     const patrons = buildPatrons(events);
     const wants = buildWants(events, index.currentState === 'ended');
     const artifacts = buildArtifacts(events);
+    const storyArc = inferStoryArc(events);
     const epithet = lives.at(-1)?.epithet || 'the Remembered Resident';
     const factionDef = options.factionId ? lookupFaction(options.factionId) : undefined;
     const portrait: Portrait = {
@@ -110,6 +113,7 @@ export function renderPortrait(
         patrons,
         wants,
         artifacts,
+        storyArc,
     };
     return {
         portrait,
@@ -259,6 +263,9 @@ function renderMarkdown(portrait: Portrait): string {
         ...(factionLine ? [factionLine] : []),
         `Born tick ${portrait.born.tick}, ${portrait.born.ts}. ${portrait.livesCount} ${portrait.livesCount === 1 ? 'life' : 'lives'}. ${portrait.currentState}.`,
         '',
+        '## Current arc',
+        storyArcLine(portrait.storyArc),
+        '',
         '## What they wanted',
         portrait.wants.current.length > 0
             ? portrait.wants.current.map(want => `- ${want}`).join('\n')
@@ -295,6 +302,21 @@ function renderLife(life: PortraitLife): string[] {
         life.lastWords ? `\n> ${life.lastWords}` : '',
         '',
     ];
+}
+
+function storyArcLine(storyArc: StoryArcSummary): string {
+    const counts = [
+        `${storyArc.evidence.pitches} pitch`,
+        `${storyArc.evidence.fundingEvents} funding`,
+        `${storyArc.evidence.progressEvents} progress`,
+        `${storyArc.evidence.resolutionEvents} resolution`,
+        `${storyArc.evidence.letterEvents} letter`,
+    ].join(', ');
+    const latest =
+        storyArc.latestEventKind && storyArc.latestEventTick !== undefined
+            ? ` Latest evidence: ${storyArc.latestEventKind} at tick ${storyArc.latestEventTick}.`
+            : '';
+    return `Phase: ${storyArc.phase}. ${storyArc.summary}${latest} Evidence: ${counts}.`;
 }
 
 function lifeEpithet(events: Array<Record<string, unknown>>, deathCause?: string): string {
