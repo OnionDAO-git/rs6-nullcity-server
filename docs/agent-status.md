@@ -824,3 +824,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-26 02:55 codex branch=agents/wip workstream=O10-AGENT-STUCK STARTING Files: docs/agent-status.md, src/controller/thinking/hybrid-agent-thinking-module.ts/test.ts. collision=none.
 2026-05-26 03:25 codex branch=agents/wip workstream=O10-AGENT-STUCK HANDOFF - stuck recovery prefers adjacent probes over broad patrol hops. SHA=3c83e05 tests=hybrid233+fin2072+review collision=none.
 2026-05-26 02:40 codex branch=agents/wip workstream=O10-SMOKE STARTING Files: docs/agent-status.md, docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md, src/controller/admin/live-smoke.ts, src/controller/admin/live-smoke.test.ts. collision=hybrid-WIP.
+2026-05-26 02:44 codex branch=agents/wip workstream=O10-SMOKE HANDOFF - timed smoke warns on observed action windows with zero successes. SHA=e9505be tests=live-smoke26+biome+smoke60 collision=hybrid-WIP.
