@@ -3,7 +3,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
-import { STARTER_FISHING_SPOT_DISCOVERY_RANGE } from '../spark/runescape-body-routines';
+import { STARTER_FISHING_SPOT_DISCOVERY_RANGE, explorationPatrolCooldownKey } from '../spark/runescape-body-routines';
 import type { Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 import { PatronRegistry } from '../patron/patron-registry';
@@ -2505,6 +2505,49 @@ describe('HybridAgentThinkingModule', () => {
             { kind: 'move_to', target: { x: 3230, y: 3239, level: 0 }, range: 0, cause: 'stuck_pre_inference_explore' },
         ]);
         expect(result.cause).toBe('stuck_pre_inference_explore');
+    });
+
+    it('reuses a local stuck probe before widening when adjacent probes are cooling down', async () => {
+        const here = { x: 3201, y: 3212, level: 0 };
+        const adjacentProbes = [
+            { x: here.x + 1, y: here.y, level: here.level },
+            { x: here.x, y: here.y + 1, level: here.level },
+            { x: here.x - 1, y: here.y, level: here.level },
+            { x: here.x, y: here.y - 1, level: here.level },
+        ];
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 200;
+        state.stuckSince = 150;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 190,
+            lastBodyTick: 190,
+            explorationCooldowns: Object.fromEntries(adjacentProbes.map(probe => [explorationPatrolCooldownKey(probe), 200])),
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 201,
+                resident: residentAt(here.x, here.y),
+            }),
+        );
+
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        const action = result.actions[0] as { target?: { x: number; y: number; level: number } };
+        if (!action.target) {
+            throw new Error('Expected stuck pre-inference recovery to pick a movement target');
+        }
+        const stepDistance = Math.max(Math.abs(action.target.x - here.x), Math.abs(action.target.y - here.y));
+        expect(stepDistance).toBe(1);
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(llm.complete).not.toHaveBeenCalled();
     });
 
     it('steps away instead of repeating a landmark report while stuck before inference', async () => {

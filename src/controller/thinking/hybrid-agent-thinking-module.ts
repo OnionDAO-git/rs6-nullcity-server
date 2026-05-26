@@ -4054,6 +4054,10 @@ function stuckPreInferencePatrolTarget(
         }
     }
 
+    if (fallback) {
+        return fallback;
+    }
+
     const target = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedTiles);
     if (!stuckPatrolCandidateUnavailable(target, here, blockedTiles, targetFailureCooldowns, currentTick)) {
         return target;
