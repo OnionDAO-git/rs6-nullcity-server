@@ -6,7 +6,7 @@ This doc is the single source of truth for what was settled. Anything more nuanc
 
 - Existing capability reference: `RUNBOOK.md` (repo root)
 - Demo evidence: `docs/dev-demo-readiness.md` and `CHANGELOG.md` § `[2026-05-26]`
-- Model benchmark setup: `docs/model-benchmarking.md` (on `nullcity`; absorbs into `agents/wip` next squash)
+- Model benchmark setup: `docs/model-benchmarking.md` (now on both branches)
 - Stale strategy doc (now superseded): `docs/post-demo-team-brief.md`
 
 ## Decisions (settled — don't relitigate)
