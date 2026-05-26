@@ -2,6 +2,8 @@
 
 [![RuneJS](https://i.imgur.com/QSXNzwC.png)](https://github.com/runejs/)
 
+> Null City operators and demo hosts: start with [RUNBOOK.md](RUNBOOK.md). This README preserves the upstream RuneJS server notes.
+
 # RuneJS Game Server
 
 RuneJS is a RuneScape game server written in TypeScript and JavaScript. The aim of this project is to create a game server that is both fun and easy to use, while also providing simple content development systems.
