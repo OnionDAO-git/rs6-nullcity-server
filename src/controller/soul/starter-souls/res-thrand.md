@@ -38,6 +38,9 @@ heroProfile:
   publicName: Thrand
   signatureAction: measures the next useful step and says it plainly
   anchor: [3235, 3234, 0]
+siblings:
+  - res:pip
+  - res:duke-horacio
 spawnPosition:
   x: 3235
   y: 3234

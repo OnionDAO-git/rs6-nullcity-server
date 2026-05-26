@@ -167,6 +167,25 @@ export class RuntimeStateStore {
         fs.renameSync(tmpPath, statePath);
     }
 
+    /**
+     * Returns true when the resident's on-disk state exists and has no
+     * `deceased` entry. Used by the sibling-epitaph-sender seam (HD-012)
+     * to pick the first living sibling at death-time without loading the
+     * full state into memory.
+     */
+    isAlive(resident: string): boolean {
+        const statePath = this.statePath(resident);
+        if (!fs.existsSync(statePath)) {
+            return false;
+        }
+        try {
+            const raw = JSON.parse(fs.readFileSync(statePath, 'utf8')) as Partial<RuntimeState>;
+            return !raw.deceased;
+        } catch {
+            return false;
+        }
+    }
+
     private create(resident: string, attention: number, legacyKind: string): RuntimeState {
         const now = new Date().toISOString();
         return {

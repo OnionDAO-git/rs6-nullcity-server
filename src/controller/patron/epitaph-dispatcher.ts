@@ -91,6 +91,24 @@ export interface BuildEpitaphsOptions {
 }
 
 /**
+ * Pick the first sibling resident that is currently alive (HD-012).
+ * Returns `undefined` when the list is empty or all are deceased/unknown,
+ * which causes {@link buildEpitaphDispatchRequests} to fall back to the
+ * deceased themselves as sender.
+ *
+ * @param siblings Ordered list of resident names from soul frontmatter.
+ * @param isAlive  Predicate that returns true when the resident is alive on-disk.
+ */
+export function findLivingSibling(siblings: readonly string[], isAlive: (resident: string) => boolean): string | undefined {
+    for (const sibling of siblings) {
+        if (typeof sibling === 'string' && sibling.trim().length > 0 && isAlive(sibling.trim())) {
+            return sibling.trim();
+        }
+    }
+    return undefined;
+}
+
+/**
  * Build one {@link Letter} per unique patron handle. Returns [] when
  * the patron list is empty or contains only empty/whitespace handles.
  * Handle uniqueness is case-insensitive; the first-seen casing is

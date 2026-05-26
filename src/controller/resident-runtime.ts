@@ -46,6 +46,7 @@ import { LettersStore } from './patron/letters-store';
 import {
     buildEpitaphDispatchRequests,
     dispatchEpitaphs,
+    findLivingSibling,
     loadPreparedEpitaph,
     type DeceasedResidentSummary,
 } from './patron/epitaph-dispatcher';
@@ -1016,7 +1017,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const lettersStoreDir = this.evidence?.store.root;
             if (lettersStoreDir) {
                 const store = new LettersStore(lettersStoreDir);
-                const letters = buildEpitaphDispatchRequests(summary, patronHandles);
+                const senderResident = findLivingSibling(this.options.soul.frontmatter.siblings ?? [], r =>
+                    this.options.stateStore.isAlive(r),
+                );
+                const letters = buildEpitaphDispatchRequests(summary, patronHandles, { senderResident });
                 if (letters.length > 0) {
                     dispatchEpitaphs(letters, store);
                 }

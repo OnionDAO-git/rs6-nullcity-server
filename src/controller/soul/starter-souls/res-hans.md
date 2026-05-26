@@ -35,6 +35,9 @@ heroProfile:
   anchor: [3221, 3218, 0]
 factionAffinity:
   unaligned: 80
+siblings:
+  - res:father-aereck
+  - res:duke-horacio
 spawnPosition:
   x: 3221
   y: 3218

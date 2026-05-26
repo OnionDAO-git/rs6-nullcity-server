@@ -1,7 +1,13 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { buildEpitaphDispatchRequests, dispatchEpitaphs, loadPreparedEpitaph, type DeceasedResidentSummary } from './epitaph-dispatcher';
+import {
+    buildEpitaphDispatchRequests,
+    dispatchEpitaphs,
+    findLivingSibling,
+    loadPreparedEpitaph,
+    type DeceasedResidentSummary,
+} from './epitaph-dispatcher';
 import { LettersStore } from './letters-store';
 
 const summary = (overrides: Partial<DeceasedResidentSummary> = {}): DeceasedResidentSummary => ({
@@ -257,5 +263,34 @@ describe('buildEpitaphDispatchRequests with preparedEpitaph (M4)', () => {
         const letters = buildEpitaphDispatchRequests(summary(), ['alice@onion']);
 
         expect(letters[0].body).not.toMatch(/In their own words:/);
+    });
+});
+
+describe('findLivingSibling (HD-012)', () => {
+    it('returns undefined when siblings list is empty', () => {
+        expect(findLivingSibling([], () => true)).toBeUndefined();
+    });
+
+    it('returns undefined when all siblings are deceased', () => {
+        expect(findLivingSibling(['res:hans', 'res:aereck'], () => false)).toBeUndefined();
+    });
+
+    it('returns the first alive sibling', () => {
+        const alive = new Set(['res:aereck']);
+        expect(findLivingSibling(['res:hans', 'res:aereck'], r => alive.has(r))).toBe('res:aereck');
+    });
+
+    it('skips a dead sibling and returns the next alive one', () => {
+        const alive = new Set(['res:duke-horacio']);
+        expect(findLivingSibling(['res:hans', 'res:duke-horacio', 'res:thrand'], r => alive.has(r))).toBe('res:duke-horacio');
+    });
+
+    it('trims whitespace from sibling names', () => {
+        expect(findLivingSibling(['  res:hans  '], () => true)).toBe('res:hans');
+    });
+
+    it('skips empty-string entries and returns the next valid alive sibling', () => {
+        const alive = new Set(['res:pip']);
+        expect(findLivingSibling(['', '  ', 'res:pip'], r => alive.has(r))).toBe('res:pip');
     });
 });

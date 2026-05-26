@@ -38,6 +38,9 @@ heroProfile:
   publicName: Pip
   signatureAction: asks a careful starter question before suggesting a next step
   anchor: [3208, 3209, 0]
+siblings:
+  - res:thrand
+  - res:hans
 spawnPosition:
   x: 3208
   y: 3209

@@ -36,6 +36,8 @@ heroProfile:
   anchor: [3093, 3493, 0]
 factionAffinity:
   unaligned: 100
+siblings:
+  - res:wren-calix
 spawnPosition:
   x: 3093
   y: 3493

@@ -148,6 +148,14 @@ export interface SoulFrontmatter {
     factionAffinity?: FactionAffinity;
     /** Null City organizational faction (foundry / bureau-of-continuity / ledger / veil). */
     factionId?: string;
+    /**
+     * Ordered list of resident names who speak for this resident in their
+     * epitaph letter when they die (J-δ-3 / HD-012). The first living sibling
+     * at death-time becomes the senderResident on the dispatched epitaph
+     * letters, so patrons receive "a letter from Hans" rather than from the
+     * deceased. Falls back to the deceased themselves when none are alive.
+     */
+    siblings?: string[];
 }
 
 export interface Soul {
@@ -377,6 +385,7 @@ export const soulFrontmatterSchema = z
             })
             .optional(),
         factionId: z.string().min(1).optional(),
+        siblings: z.array(z.string().min(1)).optional(),
     })
     .strict();
 

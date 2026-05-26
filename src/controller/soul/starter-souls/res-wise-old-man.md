@@ -33,6 +33,9 @@ heroProfile:
   publicName: The Wise Old Man
   signatureAction: advises on quests with a sigh
   anchor: [3088, 3253, 0]
+siblings:
+  - res:father-aereck
+  - res:duke-horacio
 spawnPosition:
   x: 3088
   y: 3253
