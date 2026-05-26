@@ -257,12 +257,55 @@ export function followGoal(targetName: string, tick: number): ActiveGoalState {
     };
 }
 
+const FACTION_LANDMARK_WORK: Record<string, { description: string; steps: string[]; success: string }> = {
+    foundry: {
+        description: 'Work the faction landmark by gathering forge fuel and turning nearby materials into useful heat.',
+        steps: ['Return to the Foundry landmark', 'Gather ordinary logs or use carried logs', 'Light or prepare fire for forge fuel'],
+        success: 'Fuel work is underway near the Foundry landmark and the resident can report what it is doing.',
+    },
+    'bureau-of-continuity': {
+        description: 'Work the faction landmark to witness and record the dead by tending bones and nearby evidence.',
+        steps: ['Return to the Bureau landmark', 'Find bones or safe bone sources', 'Bury bones and report the witness record'],
+        success: 'Bones are buried or a clear witness action is underway near the Bureau landmark.',
+    },
+    ledger: {
+        description: 'Work the faction landmark to publicly audit visible evidence, objects, and passersby.',
+        steps: ['Return to the Ledger landmark', 'Check nearby public landmarks or useful objects', 'Report what was audited'],
+        success: 'A nearby public object, item, or person has been checked near the Ledger landmark.',
+    },
+    veil: {
+        description: 'Work the faction landmark to quietly scout overlooked items, routes, and shadows.',
+        steps: ['Return to the Veil landmark', 'Look for overlooked useful items or routes', 'Gather or report what the shadows missed'],
+        success: 'A useful item, route, or quiet scouting target has been checked near the Veil landmark.',
+    },
+};
+
+/** Build the canonical faction-landmark work goal used by flagship hero residents. */
+export function factionLandmarkWorkGoal(factionId: string, tick: number): ActiveGoalState {
+    const work = FACTION_LANDMARK_WORK[factionId] || {
+        description: `Work the ${factionId || 'unaligned'} faction landmark by finding useful local tasks and reporting progress.`,
+        steps: ['Return to the faction landmark', 'Find a nearby useful task', 'Act visibly and report progress'],
+        success: 'A visible local task is underway near the faction landmark.',
+    };
+    return {
+        id: `faction-landmark-work-${factionId || 'unaligned'}`,
+        description: work.description,
+        steps: work.steps,
+        success: work.success,
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
+}
+
 /**
  * Map a benchmark task id to the canonical Active Goal the orchestrator
  * should seed when that benchmark is selected. Returns undefined for
  * unknown task ids.
  */
 export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalState | undefined {
+    if (taskId === 'make-fire-5m' || taskId === 'woodcutting-firemaking-10m') {
+        return firemakingGoal(tick);
+    }
     if (taskId === 'starter-fishing-5m') {
         return starterFishingGoal(tick);
     }
@@ -337,10 +380,21 @@ export function isFiremakingGoal(goal: ActiveGoalState): boolean {
     return /fire|burn|tinderbox|light/i.test(`${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`);
 }
 
+/** True when the goal is specifically about making a fire, not a broader cooking/fishing plan that mentions fire. */
+export function isStandaloneFiremakingGoal(goal: ActiveGoalState): boolean {
+    const text = `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`;
+    return isFiremakingGoal(goal) && /make-fire|firemaking|make a fire|light a fire/i.test(text) && !/fish|fishing|cook/i.test(text);
+}
+
 /** True when the goal is a follow-someone goal. Handles undefined input. */
 export function isFollowGoal(goal?: ActiveGoalState): boolean {
     if (!goal) {
         return false;
     }
     return /^follow-/i.test(goal.id) || /\bfollow\b/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`);
+}
+
+/** True when the goal is the deterministic faction-landmark work goal seeded for flagship heroes. */
+export function isFactionLandmarkWorkGoal(goal?: ActiveGoalState): boolean {
+    return Boolean(goal && /^faction-landmark-work-/i.test(goal.id));
 }

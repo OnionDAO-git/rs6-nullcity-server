@@ -38,6 +38,36 @@ describe('evaluateNervousRules', () => {
 
         expect(reaction?.action).toEqual({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low' });
     });
+
+    it('aliases hit_taken to hit', () => {
+        const state = stateAt(4);
+        const rules: NervousRule[] = [
+            {
+                id: 'eat-on-hit',
+                priority: 80,
+                condition: { kind: 'event_kind', value: 'hit' },
+                action: { kind: 'eat', slot: 3 },
+            },
+        ];
+
+        const reaction = evaluateNervousRules(rules, state, { tick: 10, events: [{ kind: 'hit_taken' }] }, {});
+        expect(reaction?.action).toEqual({ kind: 'eat', slot: 3, cause: 'nervous:eat-on-hit' });
+    });
+
+    it('aliases died to death', () => {
+        const state = stateAt(4);
+        const rules: NervousRule[] = [
+            {
+                id: 'mourn-on-death',
+                priority: 80,
+                condition: { kind: 'event_kind', value: 'death' },
+                action: { kind: 'say', text: 'mourning' },
+            },
+        ];
+
+        const reaction = evaluateNervousRules(rules, state, { tick: 10, events: [{ kind: 'died' }] }, {});
+        expect(reaction?.action).toEqual({ kind: 'say', text: 'mourning', cause: 'nervous:mourn-on-death' });
+    });
 });
 
 function stateAt(tick: number): RuntimeState {

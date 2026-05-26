@@ -1,4 +1,4 @@
-import { LlmClient } from './llm-client';
+import { LlmClient, type LlmResponse } from './llm-client';
 
 describe('LlmClient retry and endpoint pause', () => {
     const originalFetch = global.fetch;
@@ -117,6 +117,23 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(body.model).toBe('resident-model');
     });
 
+    it('lets an individual request time out quickly without trying a second fallback call', async () => {
+        jest.useRealTimers();
+        const fetchMock = jest.fn(
+            (_url: URL | RequestInfo, init?: RequestInit) =>
+                new Promise<Response>((_resolve, reject) => {
+                    init?.signal?.addEventListener('abort', () => reject(init.signal?.reason || new Error('aborted')), { once: true });
+                }),
+        );
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        const response = await client.complete({ endpoint: 'default', prompt: 'decide quickly', timeoutMs: 5 });
+
+        expect(response).toMatchObject({ text: JSON.stringify({ actions: [] }), nooped: true, cancelledBy: 'request_timeout' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('admits queued requests by priority when concurrency is exhausted', async () => {
         let releaseFirst: (() => void) | undefined;
         const firstResponse = new Promise<Response>(resolve => {
@@ -150,6 +167,87 @@ describe('LlmClient retry and endpoint pause', () => {
         await expect(first).resolves.toMatchObject({ text: 'first' });
         await expect(high).resolves.toMatchObject({ text: 'high' });
         await expect(low).resolves.toMatchObject({ text: 'low' });
+    });
+
+    it('settles aborted queued requests immediately instead of waiting for an inference slot', async () => {
+        jest.useRealTimers();
+        let releaseFirst: (() => void) | undefined;
+        const firstResponse = new Promise<Response>(resolve => {
+            releaseFirst = () => resolve(completionResponse('first'));
+        });
+        const fetchMock = jest.fn().mockReturnValueOnce(firstResponse);
+        global.fetch = fetchMock;
+
+        const client = new LlmClient(
+            {
+                default: {
+                    baseUrl: 'https://llm.test',
+                    model: 'test-model',
+                    timeoutMs: 1000,
+                },
+            },
+            1,
+        );
+
+        const first = client.complete({ endpoint: 'default', prompt: 'first' });
+        const controller = new AbortController();
+        const queued = client.complete({ endpoint: 'default', prompt: 'queued', signal: controller.signal });
+
+        controller.abort('thinking_watchdog_timeout');
+        const settledBeforeSlotFreed = await Promise.race([
+            queued,
+            new Promise<LlmResponse | 'pending'>(resolve => setImmediate(() => resolve('pending'))),
+        ]);
+
+        releaseFirst?.();
+        await expect(first).resolves.toMatchObject({ text: 'first' });
+        await expect(queued).resolves.toMatchObject({
+            nooped: true,
+            cancelledBy: 'thinking_watchdog_timeout',
+        });
+
+        expect(settledBeforeSlotFreed).toEqual(
+            expect.objectContaining({
+                nooped: true,
+                cancelledBy: 'thinking_watchdog_timeout',
+            }),
+        );
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('times out queued requests against their per-request deadline before a slot opens', async () => {
+        let releaseFirst: (() => void) | undefined;
+        const firstResponse = new Promise<Response>(resolve => {
+            releaseFirst = () => resolve(completionResponse('first'));
+        });
+        const fetchMock = jest.fn().mockReturnValueOnce(firstResponse);
+        global.fetch = fetchMock;
+
+        const client = new LlmClient(
+            {
+                default: {
+                    baseUrl: 'https://llm.test',
+                    model: 'test-model',
+                    timeoutMs: 1000,
+                },
+            },
+            1,
+        );
+
+        const first = client.complete({ endpoint: 'default', prompt: 'first', timeoutMs: 1000 });
+        const queued = client.complete({ endpoint: 'default', prompt: 'queued', timeoutMs: 5 });
+
+        jest.advanceTimersByTime(6);
+
+        await expect(queued).resolves.toMatchObject({
+            text: JSON.stringify({ actions: [] }),
+            nooped: true,
+            cancelledBy: 'request_timeout',
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+
+        releaseFirst?.();
+        await expect(first).resolves.toMatchObject({ text: 'first' });
     });
 });
 

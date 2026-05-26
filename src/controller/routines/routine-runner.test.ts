@@ -8,12 +8,69 @@ describe('RoutineRunner', () => {
             expect(typeof ROUTINE_CATALOG.make_fire.impl).toBe('function');
         });
 
+        it('exposes all five RB-MCP-α + δ routines: make_fire, chop_tree, bury_bones, safe_combat, follow_player', () => {
+            expect(Object.keys(ROUTINE_CATALOG).sort()).toEqual(['bury_bones', 'chop_tree', 'follow_player', 'make_fire', 'safe_combat']);
+        });
+
         it('each routine entry has a Zod paramSchema', () => {
             for (const [id, entry] of Object.entries(ROUTINE_CATALOG)) {
                 expect(entry.paramSchema).toBeDefined();
                 expect(typeof entry.paramSchema.parse).toBe('function');
                 expect(entry.id).toBe(id);
             }
+        });
+
+        describe('per-routine param validation (RB-MCP-δ)', () => {
+            it('chop_tree accepts empty params and optional targetCoord', () => {
+                expect(() => ROUTINE_CATALOG.chop_tree.paramSchema.parse({})).not.toThrow();
+                expect(() => ROUTINE_CATALOG.chop_tree.paramSchema.parse({ targetCoord: { x: 3220, y: 3218, level: 0 } })).not.toThrow();
+            });
+
+            it('chop_tree rejects targetCoord with negative level', () => {
+                expect(() => ROUTINE_CATALOG.chop_tree.paramSchema.parse({ targetCoord: { x: 1, y: 2, level: -1 } })).toThrow();
+            });
+
+            it('bury_bones takes no params (strict empty object)', () => {
+                expect(() => ROUTINE_CATALOG.bury_bones.paramSchema.parse({})).not.toThrow();
+                expect(() => ROUTINE_CATALOG.bury_bones.paramSchema.parse({ extra: 1 })).toThrow();
+            });
+
+            it('safe_combat accepts killCount + optional target, defaults killCount=1', () => {
+                const parsed = ROUTINE_CATALOG.safe_combat.paramSchema.parse({}) as { killCount: number };
+                expect(parsed.killCount).toBe(1);
+                expect(() => ROUTINE_CATALOG.safe_combat.paramSchema.parse({ killCount: 5 })).not.toThrow();
+                expect(() => ROUTINE_CATALOG.safe_combat.paramSchema.parse({ killCount: 0 })).toThrow();
+                expect(() => ROUTINE_CATALOG.safe_combat.paramSchema.parse({ killCount: 100 })).toThrow();
+                expect(() =>
+                    ROUTINE_CATALOG.safe_combat.paramSchema.parse({
+                        target: { kind: 'npc', name: 'chicken' },
+                        killCount: 3,
+                    }),
+                ).not.toThrow();
+            });
+
+            it('safe_combat rejects unknown target.kind', () => {
+                expect(() =>
+                    ROUTINE_CATALOG.safe_combat.paramSchema.parse({
+                        target: { kind: 'monster' as any, name: 'chicken' },
+                    }),
+                ).toThrow();
+            });
+
+            it('follow_player requires player name and accepts default distance', () => {
+                const parsed = ROUTINE_CATALOG.follow_player.paramSchema.parse({ player: 'codex' }) as {
+                    player: string;
+                    distance: number;
+                };
+                expect(parsed.player).toBe('codex');
+                expect(parsed.distance).toBe(3);
+            });
+
+            it('follow_player rejects missing player, empty player, or distance over 15', () => {
+                expect(() => ROUTINE_CATALOG.follow_player.paramSchema.parse({})).toThrow();
+                expect(() => ROUTINE_CATALOG.follow_player.paramSchema.parse({ player: '' })).toThrow();
+                expect(() => ROUTINE_CATALOG.follow_player.paramSchema.parse({ player: 'codex', distance: 20 })).toThrow();
+            });
         });
     });
 
@@ -150,6 +207,86 @@ describe('RoutineRunner', () => {
 
             expect(result.status).toBe('completed');
             expect(result.trajectoryHints).toEqual(expect.arrayContaining(['tinderbox_used']));
+        });
+    });
+
+    describe('expanded routine validations', () => {
+        it('validates chop_tree params', async () => {
+            const runtime = mockRuntime();
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const badParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'chop_tree',
+                params: { targetCoord: { x: 'bad', y: 3200 } } as any,
+            });
+            expect(badParams.status).toBe('rejected');
+            expect(badParams.lastError).toBe('params_invalid');
+
+            runtime.tick = jest.fn().mockResolvedValueOnce('completed');
+            const goodParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'chop_tree',
+                params: { targetCoord: { x: 3200, y: 3200, level: 0 } },
+            });
+            expect(goodParams.status).toBe('completed');
+        });
+
+        it('validates safe_combat params and handles execution', async () => {
+            const runtime = mockRuntime();
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const badParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'safe_combat',
+                params: { killCount: 0 },
+            });
+            expect(badParams.status).toBe('rejected');
+            expect(badParams.lastError).toBe('params_invalid');
+
+            runtime.tick = jest.fn().mockResolvedValueOnce('completed');
+            const goodParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'safe_combat',
+                params: { target: { kind: 'npc', name: 'Goblin' }, killCount: 5 },
+            });
+            expect(goodParams.status).toBe('completed');
+        });
+
+        it('validates follow_player params', async () => {
+            const runtime = mockRuntime();
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const badParams = await runner.run({
+                resident: 'res:agent',
+                routine: 'follow_player',
+                params: { player: '', distance: -1 },
+            });
+            expect(badParams.status).toBe('rejected');
+            expect(badParams.lastError).toBe('params_invalid');
+        });
+    });
+
+    describe('routine context', () => {
+        it('passes the routine id and parsed params into runtime ticks', async () => {
+            const runtime = mockRuntime();
+            runtime.tick = jest.fn().mockResolvedValueOnce('completed');
+            const runner = new RoutineRunner({ runtimes: new Map([['res:agent', runtime]]) });
+
+            const result = await runner.run({
+                resident: 'res:agent',
+                routine: 'follow_player',
+                params: { player: 'Codex', distance: 2 },
+                maxTicks: 10,
+            });
+
+            expect(result.status).toBe('completed');
+            expect(runtime.tick).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    routineId: 'follow_player',
+                    params: { player: 'Codex', distance: 2 },
+                }),
+            );
         });
     });
 });

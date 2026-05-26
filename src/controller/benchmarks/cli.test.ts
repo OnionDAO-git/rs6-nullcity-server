@@ -20,8 +20,15 @@ jest.mock('./benchmark-runner', () => ({
 }));
 
 describe('benchmark CLI', () => {
+    const originalEnv = { ...process.env };
+
     beforeEach(() => {
         jest.clearAllMocks();
+        process.env = { ...originalEnv };
+    });
+
+    afterEach(() => {
+        process.env = { ...originalEnv };
     });
 
     it('parses task, module, config, output, and dry-run flags', () => {
@@ -44,6 +51,23 @@ describe('benchmark CLI', () => {
             moduleId: 'onion.runescape.standard',
             configPath: 'controller.yml',
             outputDir: 'data/benchmarks',
+            mode: 'autonomous',
+            dryRun: true,
+        });
+    });
+
+    it('parses benchmark options from environment variables', () => {
+        process.env.CONTROLLER_BENCHMARK_TASK = 'combat-prayer-10m';
+        process.env.CONTROLLER_BENCHMARK_MODULE = 'onion.runescape.test';
+        process.env.CONTROLLER_BENCHMARK_OUTPUT_DIR = 'data/test-benchmarks';
+        process.env.CONTROLLER_BENCHMARK_MODE = 'autonomous';
+        process.env.CONTROLLER_BENCHMARK_DRY_RUN = 'true';
+
+        expect(parseBenchmarkCliArgs([])).toEqual({
+            taskId: 'combat-prayer-10m',
+            moduleId: 'onion.runescape.test',
+            configPath: 'controller.yml',
+            outputDir: 'data/test-benchmarks',
             mode: 'autonomous',
             dryRun: true,
         });
@@ -115,7 +139,7 @@ describe('benchmark CLI', () => {
         });
 
         expect(exitCode).toBe(0);
-        expect(writes.join('')).toContain('"task":{"id":"follow-and-chat-5m","version":"0.2.0"');
+        expect(writes.join('')).toContain('"task":{"id":"follow-and-chat-5m","version":"0.3.0"');
     });
 
     it('can dry-run the woodcutting-firemaking benchmark task', async () => {

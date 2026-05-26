@@ -24,21 +24,27 @@ export interface RuntimeState {
     hookCooldowns?: Record<string, number>;
     shadowedHooks?: Array<{ tick: number; id: string; priority: number; shadowedBy: string }>;
     previousIntent?: unknown;
+    lastIdleInitiativeTick?: number;
+    lastIdleInitiativeAt?: string;
     lastMeaningfulProgressAt?: number;
     stuckSince?: number;
     deceased?: {
         date: string;
         tick: number;
         cause: string;
+        processed?: boolean;
     };
+    activeTradeResource?: ActiveTradeResourceState;
 }
 
 export interface CognitiveState {
     activeGoal?: ActiveGoalState;
     activeMove?: ActiveMoveState;
     followTarget?: FollowTargetState;
+    pendingDirectTrade?: PendingDirectTradeState;
     pendingCombatNarration?: PendingCombatNarrationState;
     lastBrainTick?: number;
+    brainBackoffUntilTick?: number;
     lastBodyTick?: number;
     lastGoalShareTick?: number;
     lastAnchorReturnTick?: number;
@@ -47,18 +53,24 @@ export interface CognitiveState {
     lastDirectChatKey?: string;
     manualPauseSinceTick?: number;
     lastPresenceBeaconTick?: number;
+    lastLowHealthSpeechTick?: number;
     routineLoopKey?: string;
     routineLoopCount?: number;
     lastRoutineLoopBreakTick?: number;
     lastExplorationReportTick?: number;
+    lastScoutingSkillOpportunityTick?: number;
     pickupCooldowns?: Record<string, number>;
     explorationCooldowns?: Record<string, number>;
+    targetFailureCooldowns?: Record<string, number>;
     consecutiveNonCombatTicks?: number;
     combatEpisodeActive?: boolean;
     combatEpisodeNarrated?: boolean;
     combatEndCelebrated?: boolean;
     tickTelemetry?: Record<string, any>;
     chatReplyTicks?: number[];
+    waitResumeTick?: number;
+    pausedGoal?: ActiveGoalState;
+    pausedFollowTarget?: FollowTargetState;
 }
 
 export interface FollowTargetState {
@@ -67,6 +79,31 @@ export interface FollowTargetState {
     kind?: string;
     paused?: boolean;
     setAtTick: number;
+}
+
+export interface PendingDirectTradeState {
+    target: {
+        id: string;
+        kind: string;
+        name?: string;
+        key?: string;
+        position: { x: number; y: number; level: number };
+        hpFraction?: number;
+        combatLevel?: number;
+    };
+    setAtTick: number;
+}
+
+export interface ActiveTradeResourceState {
+    targetHandle: string;
+    artifact: string;
+    quantity: number;
+    note?: string;
+    cause?: string;
+    startTick: number;
+    status: 'initiating' | 'offering' | 'accepting_stage_1' | 'accepting_stage_2' | 'completed' | 'cancelled';
+    attemptId: string;
+    producer: string;
 }
 
 export interface PendingCombatNarrationState {
@@ -83,6 +120,11 @@ export interface ActiveMoveState {
     lastTick: number;
     lastPositionKey?: string;
     stationaryCount?: number;
+    lastDistance?: number;
+    bestDistance?: number;
+    lastImprovedTick?: number;
+    nonImprovingCount?: number;
+    equalDistanceDetourCount?: number;
 }
 
 export interface ActiveGoalState {
@@ -103,7 +145,13 @@ export class RuntimeStateStore {
             return this.create(resident, initialAttention, legacyKind);
         }
 
-        const parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as RuntimeState;
+        let parsed: RuntimeState;
+        try {
+            parsed = JSON.parse(fs.readFileSync(statePath, 'utf8')) as RuntimeState;
+        } catch {
+            this.quarantineCorruptState(statePath);
+            return this.create(resident, initialAttention, legacyKind);
+        }
         return {
             ...this.create(resident, initialAttention, legacyKind),
             ...parsed,
@@ -114,7 +162,9 @@ export class RuntimeStateStore {
     save(state: RuntimeState): void {
         const statePath = this.statePath(state.resident);
         fs.mkdirSync(path.dirname(statePath), { recursive: true });
-        fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`);
+        const tmpPath = `${statePath}.${process.pid}.${Date.now()}.tmp`;
+        fs.writeFileSync(tmpPath, `${JSON.stringify(state, null, 2)}\n`);
+        fs.renameSync(tmpPath, statePath);
     }
 
     private create(resident: string, attention: number, legacyKind: string): RuntimeState {
@@ -143,6 +193,14 @@ export class RuntimeStateStore {
     private statePath(resident: string): string {
         return path.join(this.memoryRoot, residentSlug(resident), 'runtime-state.json');
     }
+
+    private quarantineCorruptState(statePath: string): void {
+        const suffix = new Date()
+            .toISOString()
+            .replace(/[^0-9A-Za-z]+/g, '-')
+            .replace(/-$/g, '');
+        fs.renameSync(statePath, `${statePath}.corrupt-${suffix}`);
+    }
 }
 
 export function residentSlug(resident: string): string {
@@ -158,4 +216,11 @@ export function markDeceased(state: RuntimeState, cause: string): void {
         tick: state.tick,
         cause,
     };
+}
+
+export function addAttention(state: RuntimeState, amount: number): void {
+    state.attention = Math.max(0, state.attention + amount);
+    if (state.attention > 0 && state.deceased?.cause === 'attention_exhausted') {
+        delete state.deceased;
+    }
 }

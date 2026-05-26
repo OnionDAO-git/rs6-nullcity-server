@@ -40,6 +40,10 @@ export interface RunRoutineResponse {
 export interface RoutineContext {
     /** Tick index within the routine run, starting at 0. */
     tickIndex: number;
+    /** Whitelisted routine currently owning the runtime tick. */
+    routineId: string;
+    /** Parsed, schema-validated params for this routine run. */
+    params: unknown;
     /** Caller's AbortSignal; impl should respect it. */
     signal: AbortSignal;
     /** Total maxTicks budget. */
@@ -78,11 +82,62 @@ export interface RoutineEntry<Params = unknown> {
     impl: (runtime: RoutineCapableRuntime, params: Params, ctx: RoutineContext) => Promise<RoutineTickOutcome>;
 }
 
+/** Coord tuple validator used by routines that take a target coord. */
+const coord3Schema = z
+    .object({
+        x: z.number().int(),
+        y: z.number().int(),
+        level: z.number().int().min(0),
+    })
+    .strict();
+
 /** Whitelisted routine catalog. Adding a routine requires a code change + tests. */
 export const ROUTINE_CATALOG: Record<string, RoutineEntry> = {
     make_fire: {
         id: 'make_fire',
         paramSchema: z.object({}).strict(),
+        impl: async (runtime, _params, ctx) => runtime.tick(ctx),
+    },
+    chop_tree: {
+        id: 'chop_tree',
+        // Optional explicit target coord; otherwise the runtime picks the
+        // nearest visible tree. Completion = inventory log delta observed.
+        paramSchema: z.object({ targetCoord: coord3Schema.optional() }).strict(),
+        impl: async (runtime, _params, ctx) => runtime.tick(ctx),
+    },
+    bury_bones: {
+        id: 'bury_bones',
+        // No params. Completion = inventory bones count hits zero.
+        paramSchema: z.object({}).strict(),
+        impl: async (runtime, _params, ctx) => runtime.tick(ctx),
+    },
+    safe_combat: {
+        id: 'safe_combat',
+        // killCount is the success threshold; target narrows the candidate pool.
+        // Nervous reflexes still preempt at the routine layer.
+        paramSchema: z
+            .object({
+                target: z
+                    .object({
+                        kind: z.enum(['npc', 'player']).default('npc'),
+                        name: z.string().min(1).optional(),
+                        coord: coord3Schema.optional(),
+                    })
+                    .strict()
+                    .optional(),
+                killCount: z.number().int().positive().max(50).default(1),
+            })
+            .strict(),
+        impl: async (runtime, _params, ctx) => runtime.tick(ctx),
+    },
+    follow_player: {
+        id: 'follow_player',
+        paramSchema: z
+            .object({
+                player: z.string().min(1),
+                distance: z.number().int().nonnegative().max(15).default(3),
+            })
+            .strict(),
         impl: async (runtime, _params, ctx) => runtime.tick(ctx),
     },
 };
@@ -143,7 +198,7 @@ export class RoutineRunner {
                 return preempted(tickIndex, 'aborted', hints, effectEvidenceCount);
             }
 
-            const ctx: RoutineContext = { tickIndex, signal, maxTicks };
+            const ctx: RoutineContext = { tickIndex, routineId: entry.id, params: parsedParams.data, signal, maxTicks };
             let outcome: RoutineTickOutcome;
             try {
                 outcome = await entry.impl(runtime, parsedParams.data, ctx);

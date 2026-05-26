@@ -117,7 +117,7 @@ export class TrajectoryBuilder {
         return this.append('end_tick', { reason });
     }
 
-    private append(kind: TrajectoryLine['kind'], fields: Record<string, unknown>): TrajectoryLine {
+    public append(kind: TrajectoryLine['kind'], fields: Record<string, unknown>): TrajectoryLine {
         const session = this.store.currentSession();
         if (!session) {
             throw new Error('Evidence session has not started');

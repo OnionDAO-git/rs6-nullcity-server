@@ -7,15 +7,22 @@ import { LlmClient } from './llm/llm-client';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryStore } from './memory/memory-store';
-import { residentSlug, RuntimeStateStore } from './memory/runtime-state';
+import { residentSlug, RuntimeStateStore, type RuntimeState } from './memory/runtime-state';
 import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
 import { SoulLoader } from './soul/soul-loader';
-import { standardSparkModules, type SparkModule } from './spark';
+import type { SparkModule } from './spark';
+import { standardSparkModules } from './spark/standard-modules';
 import { GatewayClient } from './transport/gateway-client';
 import { PatronStore } from './patron/patron-store';
 import { PatronGateway } from './patron/patron-gateway';
 import { CurrencyLedger } from './patron/currency-ledger';
 import { StandingLedger } from './patron/standing-ledger';
+import { LettersStore } from './patron/letters-store';
+import type { PerceptionEvent } from './transport/message-codecs';
+import { LoreBus } from './lore/lore-bus';
+import { FactionStockpileLedger } from './factions/stockpile-ledger';
+
+const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
 
 export interface ControllerHostOptions {
     once?: boolean;
@@ -32,6 +39,18 @@ export interface ControllerHostOptions {
     runtimeFactory?: (options: ConstructorParameters<typeof ResidentRuntime>[0]) => ResidentRuntime;
     patronStore?: PatronStore;
     patronGateway?: PatronGateway;
+    loreBus?: LoreBus;
+    factionStockpile?: FactionStockpileLedger;
+}
+
+function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefined {
+    const endpointTimeouts = Object.values(config.llm.endpoints)
+        .map(endpoint => endpoint.timeoutMs)
+        .filter(timeout => Number.isFinite(timeout) && timeout > 0);
+    if (!endpointTimeouts.length) {
+        return undefined;
+    }
+    return Math.max(...endpointTimeouts) + THINKING_WATCHDOG_ENDPOINT_GRACE_MS;
 }
 
 export class ControllerHost {
@@ -58,6 +77,8 @@ export class ControllerHost {
     public readonly patronGateway: PatronGateway;
     private readonly currencyLedger: CurrencyLedger;
     private readonly standingLedger: StandingLedger;
+    public readonly loreBus: LoreBus;
+    public readonly factionStockpile: FactionStockpileLedger;
 
     constructor(
         private readonly config: ControllerConfig,
@@ -99,6 +120,11 @@ export class ControllerHost {
         this.patronStore = options.patronStore || new PatronStore(config.memory.dir);
         this.currencyLedger = this.patronStore.loadCurrency();
         this.standingLedger = this.patronStore.loadStanding();
+        // EVENT-D1a: wire LettersStore rooted at memory.dir so every
+        // tier-crossing offer/sponsor/witness/gift produces a Letter that
+        // actually reaches disk. Prior to this wiring, PatronGateway was
+        // constructed without a lettersStore and dispatchTierLetter
+        // early-returned on every call — letters dropped on the floor.
         this.patronGateway =
             options.patronGateway ||
             new PatronGateway({
@@ -106,7 +132,11 @@ export class ControllerHost {
                 standingLedger: this.standingLedger,
                 runtimes: this.runtimes,
                 soulsDir: config.souls.dir,
+                lettersStore: new LettersStore(config.memory.dir),
+                memoryDir: config.memory.dir,
             });
+        this.loreBus = options.loreBus || new LoreBus();
+        this.factionStockpile = options.factionStockpile || new FactionStockpileLedger(config.memory.dir);
         this.bindGatewayEvents();
     }
 
@@ -132,13 +162,46 @@ export class ControllerHost {
         await this.gameSkill.flush?.();
         // Persist patron balance and standing states on shutdown defensively
         try {
-            this.patronStore.saveCurrency(this.currencyLedger);
-            this.patronStore.saveStanding(this.standingLedger);
+            this.persistPatronLedgers();
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('[controller-host] patron ledger persist failed during shutdown', error);
         }
         this.gateway.close();
+    }
+
+    public listResidents(): { name: string; state: RuntimeState }[] {
+        const list: { name: string; state: RuntimeState }[] = [];
+        for (const [name, runtime] of this.runtimes.entries()) {
+            list.push({
+                name,
+                state: runtime.getState(),
+            });
+        }
+        return list;
+    }
+
+    public getRuntime(name: string): ResidentRuntime | undefined {
+        return this.runtimes.get(name);
+    }
+
+    public enqueuePerceptionEvent(residentName: string, event: PerceptionEvent): boolean {
+        const runtime = this.runtimes.get(this.runtimeName(residentName));
+        if (!runtime) {
+            return false;
+        }
+        runtime.onEvent(event);
+        return true;
+    }
+
+    public persistPatronLedgers(): void {
+        this.patronStore.saveCurrency(this.currencyLedger);
+        this.patronStore.saveStanding(this.standingLedger);
+    }
+
+    public refreshPatronLedgersFromDisk(): void {
+        this.currencyLedger.replaceWithSnapshot(this.patronStore.loadCurrency().snapshot());
+        this.standingLedger.replaceWithSnapshot(this.patronStore.loadStanding().snapshot());
     }
 
     async reconcile(): Promise<void> {
@@ -222,6 +285,7 @@ export class ControllerHost {
         if (this.runtimes.has(soul.frontmatter.name)) {
             return;
         }
+        const thinkingWatchdogMs = configuredThinkingWatchdogMs(this.config);
 
         const runtimeOptions = {
             soul,
@@ -235,6 +299,10 @@ export class ControllerHost {
             sparkModules: this.sparkModules,
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,
+            patronGateway: this.patronGateway,
+            loreBus: this.loreBus,
+            factionStockpile: this.factionStockpile,
+            watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
         };
         this.runtimes.set(
             soul.frontmatter.name,
@@ -251,7 +319,9 @@ export class ControllerHost {
             store,
             sessionId: session.sessionId,
             trajectory: new TrajectoryBuilder(store),
-            library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir),
+            library: new LibraryUpdater(soul.frontmatter.name, this.config.memory.dir, {
+                factionId: soul.frontmatter.factionId,
+            }),
         };
     }
 

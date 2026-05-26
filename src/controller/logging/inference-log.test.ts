@@ -75,4 +75,98 @@ describe('InferenceLog', () => {
         expect(typeof lines[0].t).toBe('string');
         expect(() => new Date(lines[0].t as string).toISOString()).not.toThrow();
     });
+
+    // E26 / HD-034 fix #1: gated sample of prompt body so future audits
+    // (E14/E15/E21 all hit "can't quote prompt") have real prompt content
+    // to inspect at a controllable rate. Production passes
+    // includeEnvelope=false (default) + samplePromptRate=0.01 (~1/100
+    // calls keep their envelope); dev keeps includeEnvelope=true (always).
+    it('keeps envelope when sampleFn fires even though includeEnvelope=false (HD-034 #1)', () => {
+        const root = tmpDir('inflog-');
+        // Deterministic sampler that always fires (rate effectively 1.0).
+        const log = new InferenceLog(root, false, 1.0, () => 0);
+
+        log.append('res:agent', { moduleId: 'm', envelope: { messages: [{ role: 'user', content: 'hello' }] } });
+
+        const lines = readJsonl(findInferenceFile(root, 'res:agent')) as Array<Record<string, unknown>>;
+        expect(lines[0]).toMatchObject({
+            moduleId: 'm',
+            envelope: { messages: [{ role: 'user', content: 'hello' }] },
+            envelopeSampled: true,
+        });
+    });
+
+    it('strips envelope when sampleFn does NOT fire (HD-034 #1 — under-rate path)', () => {
+        const root = tmpDir('inflog-');
+        // Deterministic sampler that NEVER fires (rate vs 1.0 always exceeds).
+        const log = new InferenceLog(root, false, 0.5, () => 0.99);
+
+        log.append('res:agent', { moduleId: 'm', envelope: { secret: 'not-kept' }, completionTokens: 5 });
+
+        const lines = readJsonl(findInferenceFile(root, 'res:agent')) as Array<Record<string, unknown>>;
+        expect(lines[0]).toMatchObject({ moduleId: 'm', completionTokens: 5 });
+        expect(lines[0].envelope).toBeUndefined();
+        expect(lines[0].envelopeSampled).toBeUndefined();
+    });
+
+    it('does not sample when samplePromptRate is 0 or omitted (default behavior preserved)', () => {
+        const root = tmpDir('inflog-');
+        // Explicit rate 0; sampler would fire if checked, but should not be checked.
+        const sampler = jest.fn(() => 0);
+        const log = new InferenceLog(root, false, 0, sampler);
+
+        log.append('res:agent', { moduleId: 'm', envelope: { secret: 'should-strip' } });
+
+        const lines = readJsonl(findInferenceFile(root, 'res:agent')) as Array<Record<string, unknown>>;
+        expect(lines[0].envelope).toBeUndefined();
+        expect(sampler).not.toHaveBeenCalled();
+    });
+
+    // E28 QA finding MEDIUM-1: out-of-range samplePromptRate is silently
+    // clamped to [0, 1] (NaN → 0) so a misconfigured config doesn't crash
+    // the controller. Test the four boundary classes.
+    it('clamps samplePromptRate inputs to [0, 1] safely (HD-034 QA MEDIUM-1)', () => {
+        const root = tmpDir('inflog-');
+        // Negative collapses to 0 — never samples.
+        const negLog = new InferenceLog(root, false, -0.5, () => 0);
+        negLog.append('neg', { moduleId: 'm', envelope: { x: 1 } });
+        const negLine = readJsonl(findInferenceFile(root, 'neg'))[0] as Record<string, unknown>;
+        expect(negLine.envelope).toBeUndefined();
+        expect(negLine.envelopeSampled).toBeUndefined();
+
+        // NaN collapses to 0 — never samples.
+        const nanLog = new InferenceLog(root, false, Number.NaN, () => 0);
+        nanLog.append('nan', { moduleId: 'm', envelope: { x: 1 } });
+        const nanLine = readJsonl(findInferenceFile(root, 'nan'))[0] as Record<string, unknown>;
+        expect(nanLine.envelope).toBeUndefined();
+        expect(nanLine.envelopeSampled).toBeUndefined();
+
+        // >1 clamps to 1 — always samples.
+        const overLog = new InferenceLog(root, false, 5, () => 0.99);
+        overLog.append('over', { moduleId: 'm', envelope: { x: 1 } });
+        const overLine = readJsonl(findInferenceFile(root, 'over'))[0] as Record<string, unknown>;
+        expect(overLine.envelope).toEqual({ x: 1 });
+        expect(overLine.envelopeSampled).toBe(true);
+
+        // Infinity also collapses to 1 (clamps from above).
+        const infLog = new InferenceLog(root, false, Number.POSITIVE_INFINITY, () => 0.99);
+        infLog.append('inf', { moduleId: 'm', envelope: { x: 1 } });
+        const infLine = readJsonl(findInferenceFile(root, 'inf'))[0] as Record<string, unknown>;
+        // POSITIVE_INFINITY isn't finite, so we hit the !isFinite path → 0 → strip.
+        // This is the deliberate fail-safe behavior documented in the constructor.
+        expect(infLine.envelope).toBeUndefined();
+    });
+
+    it('does not sample when includeEnvelope=true (always-keep wins, sampler not consulted)', () => {
+        const root = tmpDir('inflog-');
+        const sampler = jest.fn(() => 0.99);
+        const log = new InferenceLog(root, true, 0.5, sampler);
+
+        log.append('res:agent', { moduleId: 'm', envelope: { content: 'kept' } });
+
+        const lines = readJsonl(findInferenceFile(root, 'res:agent')) as Array<Record<string, unknown>>;
+        expect(lines[0]).toMatchObject({ moduleId: 'm', envelope: { content: 'kept' } });
+        expect(lines[0].envelopeSampled).toBeUndefined();
+        expect(sampler).not.toHaveBeenCalled();
+    });
 });

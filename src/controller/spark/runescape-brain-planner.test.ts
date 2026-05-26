@@ -12,16 +12,19 @@ import {
     cleanTarget,
     combatGoal,
     explorationGoal,
+    factionLandmarkWorkGoal,
     firemakingGoal,
     followGoal,
     goalId,
     isCombatTrainingGoal,
     isDedicatedExplorationGoal,
     isExplorationGoal,
+    isFactionLandmarkWorkGoal,
     cleanSpeech,
     isFiremakingGoal,
     isFollowGoal,
     isPrayerTrainingGoal,
+    isStandaloneFiremakingGoal,
     isStarterFishingGoal,
     isWoodcuttingTrainingGoal,
     parseBrainCompletion,
@@ -282,6 +285,20 @@ describe('goal factories', () => {
         expect(g.id).toBe('follow-target');
         expect(g.description).toContain('target');
     });
+
+    it.each([
+        ['foundry', 'forge fuel'],
+        ['bureau-of-continuity', 'witness and record'],
+        ['ledger', 'publicly audit'],
+        ['veil', 'quietly scout'],
+    ])('factionLandmarkWorkGoal builds a %s landmark-work goal', (factionId, expectedPhrase) => {
+        const g = factionLandmarkWorkGoal(factionId, 13);
+        expect(g.id).toBe(`faction-landmark-work-${factionId}`);
+        expect(g.description.toLowerCase()).toContain(expectedPhrase);
+        expect(g.steps?.join(' ').toLowerCase()).toContain('landmark');
+        expect(g.ttlTicks).toBe(900);
+        expect(g.createdAtTick).toBe(13);
+    });
 });
 
 describe('benchmarkGoalForTask', () => {
@@ -303,6 +320,11 @@ describe('benchmarkGoalForTask', () => {
     it("returns explorationGoal for 'explore-report-5m'", () => {
         const g = benchmarkGoalForTask('explore-report-5m', 0);
         expect(g?.id).toBe('scout-nearby-area');
+    });
+
+    it('returns firemakingGoal for woodcutting/firemaking task ids used by QA souls', () => {
+        expect(benchmarkGoalForTask('woodcutting-firemaking-10m', 0)?.id).toBe('make-fire');
+        expect(benchmarkGoalForTask('make-fire-5m', 0)?.id).toBe('make-fire');
     });
 
     it('returns undefined for an unknown taskId', () => {
@@ -355,9 +377,21 @@ describe('goal-identity predicates', () => {
         expect(isFiremakingGoal(starterFishingGoal(0))).toBe(false);
     });
 
+    it('isStandaloneFiremakingGoal excludes cooking and fishing plans that merely mention fire', () => {
+        expect(isStandaloneFiremakingGoal(firemakingGoal(0))).toBe(true);
+        expect(isStandaloneFiremakingGoal(starterFishingCookingGoal(0))).toBe(false);
+        expect(isStandaloneFiremakingGoal(starterCookingGoal(0))).toBe(false);
+    });
+
     it('isFollowGoal matches follow-* ids and follow-mentioning descriptions', () => {
         expect(isFollowGoal(followGoal('Alice', 0))).toBe(true);
         expect(isFollowGoal(firemakingGoal(0))).toBe(false);
         expect(isFollowGoal(undefined)).toBe(false);
+    });
+
+    it('isFactionLandmarkWorkGoal only matches faction work goals', () => {
+        expect(isFactionLandmarkWorkGoal(factionLandmarkWorkGoal('foundry', 0))).toBe(true);
+        expect(isFactionLandmarkWorkGoal(explorationGoal(0))).toBe(false);
+        expect(isFactionLandmarkWorkGoal(undefined)).toBe(false);
     });
 });

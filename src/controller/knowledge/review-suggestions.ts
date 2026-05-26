@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { knowledgeSuggestionSchema, type KnowledgeSuggestion } from './suggestions';
+import { loadControllerConfig } from '../config';
 
 export interface SuggestionReviewGroup {
     dedupKey: string;
@@ -105,8 +106,55 @@ function unique(values: string[]): string[] {
     return [...new Set(values)];
 }
 
+export interface ReviewSuggestionsCliOptions {
+    configPath: string;
+    knowledgeDir?: string;
+}
+
+export function parseReviewSuggestionsArgs(argv: string[]): ReviewSuggestionsCliOptions {
+    const options: ReviewSuggestionsCliOptions = {
+        configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
+        knowledgeDir: process.env.CONTROLLER_KNOWLEDGE_DIR,
+    };
+
+    for (let i = 0; i < argv.length; i += 1) {
+        const arg = argv[i];
+        if (arg === '--config' || arg === '-c') {
+            const next = argv[i + 1];
+            if (!next) throw new Error(`${arg} requires a path`);
+            options.configPath = next;
+            i += 1;
+        } else if (arg.startsWith('--config=')) {
+            options.configPath = arg.slice('--config='.length);
+        } else if (arg === '--dir' || arg === '--knowledge-dir' || arg === '-d') {
+            const next = argv[i + 1];
+            if (!next) throw new Error(`${arg} requires a path`);
+            options.knowledgeDir = next;
+            i += 1;
+        } else if (arg.startsWith('--dir=')) {
+            options.knowledgeDir = arg.slice('--dir='.length);
+        } else if (arg.startsWith('--knowledge-dir=')) {
+            options.knowledgeDir = arg.slice('--knowledge-dir='.length);
+        } else if (!arg.startsWith('-')) {
+            options.knowledgeDir = arg;
+        } else {
+            throw new Error(`Unknown argument ${arg}`);
+        }
+    }
+    return options;
+}
+
 if (require.main === module) {
-    const root = process.argv[2] || process.env.CONTROLLER_KNOWLEDGE_DIR || path.resolve(process.cwd(), 'data/knowledge');
+    const options = parseReviewSuggestionsArgs(process.argv.slice(2));
+    let root = options.knowledgeDir;
+    if (!root) {
+        try {
+            const config = loadControllerConfig(options.configPath);
+            root = config.knowledge.dir;
+        } catch {
+            root = path.resolve(process.cwd(), 'data/knowledge');
+        }
+    }
     const groups = groupSuggestionEvents(loadSuggestionEvents(root));
     process.stdout.write(`${JSON.stringify({ root, groups }, null, 2)}\n`);
 }

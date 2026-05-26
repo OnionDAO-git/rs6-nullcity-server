@@ -46,5 +46,4 @@ export {
     type SparkModuleTelemetryLogEntry,
     type SparkModuleTelemetryOptions,
 } from './module-telemetry';
-export { createSparkRuntimeFacets, type SparkRuntimeFacetOptions, type SparkRuntimeFacets } from './runtime-facets';
-export { RUNESCAPE_STANDARD_SPARK_MODULE_ID, runescapeStandardSparkModule, standardSparkModules } from './standard-modules';
+export { RUNESCAPE_STANDARD_SPARK_MODULE_ID, RUNESCAPE_STANDARD_SPARK_MODULE_MANIFEST } from './standard-module-metadata';

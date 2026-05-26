@@ -7,5 +7,11 @@
     },
     "rs:burnt_meat": {
         "game_id": 2146
+    },
+    "rs:burnt_shrimp": {
+        "game_id": 7954
+    },
+    "rs:burnt_fish": {
+        "game_id": 323
     }
 }

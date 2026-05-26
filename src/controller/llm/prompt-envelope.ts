@@ -1,4 +1,6 @@
-import type { Soul, SoulArchetype, SoulFrontmatter } from '../soul/soul-schema';
+import { EMBASSY_REGION, deriveEmbassyContext } from '../embassy/embassy';
+import { currentEmbassySchedule } from '../embassy/embassy-schedule-host';
+import { dominantFaction, type FactionName, type Soul, type SoulArchetype, type SoulFrontmatter } from '../soul/soul-schema';
 import type { AgentAction } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
 
@@ -25,6 +27,8 @@ type EnvelopeSection =
     | 'goals'
     | 'alignment'
     | 'aesthetic'
+    | 'faction'
+    | 'embassy'
     | 'soul'
     | 'beliefs'
     | 'legacy'
@@ -47,6 +51,8 @@ const defaultCaps: Record<EnvelopeSection, number> = {
     goals: 320,
     alignment: 200,
     aesthetic: 160,
+    faction: 200,
+    embassy: 200,
     soul: 1200,
     beliefs: 400,
     legacy: 320,
@@ -75,6 +81,16 @@ export function buildPromptEnvelope(input: PromptEnvelopeInput): string {
         ['goals', renderGoalsDirective(input.soul.frontmatter.goals)],
         ['alignment', renderAlignmentDirective(input.soul.frontmatter.alignment)],
         ['aesthetic', renderAestheticDirective(input.soul.frontmatter.aesthetic)],
+        ['faction', renderFactionDirective(input.soul.frontmatter.factionAffinity)],
+        [
+            'embassy',
+            renderEmbassyDirective(
+                deriveEmbassyContext(input.perception, EMBASSY_REGION, {
+                    schedule: currentEmbassySchedule(),
+                    now: new Date(),
+                }),
+            ),
+        ],
         ['soul', input.soul.body],
         ['beliefs', input.soul.frontmatter.startingBeliefs || []],
         ['legacy', input.legacy || input.soul.frontmatter.legacy || null],
@@ -216,6 +232,29 @@ function renderAlignmentDirective(alignment: string | undefined): string {
     ].join('\n');
 }
 
+const FACTION_DIRECTIVES: Record<FactionName, string> = {
+    saradomin:
+        'You lean Saradominist. Speak of justice, protection of the weak, and the order light brings. Decline thefts and cruelty even when convenient.',
+    guthix: 'You lean Guthixian. Balance is the value above all others. Resist extremes — favor patience, listening, and small acts that keep the city stable.',
+    zamorak: 'You lean Zamorakian. Power is earned through risk; weakness embarrasses. Welcome contests and challenges. Refuse to coddle.',
+    unaligned:
+        'You are explicitly unaligned. Decline faction-flavored arguments; redirect to specifics. Friends are friends; faction is not a reason.',
+};
+
+function renderFactionDirective(
+    affinity: { saradomin?: number; guthix?: number; zamorak?: number; unaligned?: number } | undefined,
+): string {
+    const dominant = dominantFaction(affinity);
+    if (!dominant) {
+        return '';
+    }
+    return [
+        'Faction affinity: a quiet bias on how you frame help, conflict, and praise. Surface it through phrasing, not slogans.',
+        `- Dominant: ${dominant}`,
+        FACTION_DIRECTIVES[dominant],
+    ].join('\n');
+}
+
 function renderAestheticDirective(aesthetic: string | undefined): string {
     if (!aesthetic || aesthetic.trim() === '') {
         return '';
@@ -225,6 +264,25 @@ function renderAestheticDirective(aesthetic: string | undefined): string {
         'resident feels recognisable across ticks. Imagery, not stage directions.',
         `- ${aesthetic.trim()}`,
     ].join('\n');
+}
+
+function renderEmbassyDirective(ctx: { isInside: boolean; eventActive: boolean; regionId: string }): string {
+    if (!ctx.isInside) {
+        return '';
+    }
+    const lines: string[] = [
+        `Embassy: you are inside the ${ctx.regionId} embassy region. This is the OnionDAO civic ground where patrons and`,
+        'visiting humans may appear. Speak with civic courtesy; greet newcomers; reference the place by name when it fits.',
+        'Help with directions to the reception clerk or faction kiosks when asked. Do not lure humans away from the embassy',
+        'unless they explicitly ask.',
+    ];
+    if (ctx.eventActive) {
+        lines.push(
+            'Event active: real humans are visiting right now. Prioritise greeting them by name when names are surfaced,',
+            'leave space for them to speak, and remember small details about them in memos so a future you can recognise them.',
+        );
+    }
+    return lines.join('\n');
 }
 
 function outputContract(): unknown {

@@ -17,6 +17,8 @@ export interface NpcInteractionActionHook extends ActionHook<NpcInteractionActio
     options?: string | string[];
     // Whether or not the player needs to walk to this NPC before performing the action.
     walkTo: boolean;
+    // Some stationary NPCs (such as water fishing spots) are interacted with from a nearby bank tile.
+    interactionDistance?: number;
 }
 
 /**
@@ -82,8 +84,10 @@ const npcInteractionActionPipe = (
 
     const walkToPlugins = matchingHooks.filter(plugin => plugin.walkTo);
 
-    if (walkToPlugins.length > 0 && !player.position.withinInteractionDistance(npc.position, 1)) {
-        player.enqueueBaseTask(new WalkToActorPluginTask(walkToPlugins, player, 'npc', npc, { option }));
+    const interactionDistance = maxInteractionDistance(walkToPlugins);
+
+    if (walkToPlugins.length > 0 && !player.position.withinInteractionDistance(npc.position, interactionDistance)) {
+        player.enqueueBaseTask(new WalkToActorPluginTask(walkToPlugins, player, 'npc', npc, { option }, interactionDistance));
 
         return null;
     }
@@ -99,6 +103,10 @@ const npcInteractionActionPipe = (
         },
     };
 };
+
+function maxInteractionDistance(plugins: NpcInteractionActionHook[]): number {
+    return Math.max(1, ...plugins.map(plugin => Math.max(1, Math.floor(plugin.interactionDistance ?? 1))));
+}
 
 /**
  * Npc action pipe definition.

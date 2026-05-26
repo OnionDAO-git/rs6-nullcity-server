@@ -197,6 +197,73 @@ describe('LibraryUpdater', () => {
         ]);
     });
 
+    it('observeRevival bumps lives, restores currentState, and appends a revival timeline event (E8 fix)', () => {
+        // Regression for E8 (intelligence-verification-log.md § E8 / F8a):
+        // Codex's 4f62d181 added restart respawn for dev residents, but the
+        // revival ONLY mutated runtime state — no trajectory event, no
+        // library bump. The resident has no narrative beat saying "I came
+        // back" so the Brain's prompt envelope never reflects the
+        // continuity break. observeRevival closes the substrate side of
+        // that gap; the wire-in (one call from resident-runtime revival
+        // path) is tracked as Codex-zone follow-up.
+        const { updater, root } = testUpdater();
+
+        // Resident "dies" first so lives bumps from a deceased state.
+        updater.observeTrajectory(trajectory({ kind: 'legacy_event', tick: 5, event: { cause: 'attention_exhausted' } }));
+        const afterDeath = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'index.json'), 'utf8'));
+        expect(afterDeath.currentState).toBe('ended');
+        expect(afterDeath.lives).toBe(1);
+
+        updater.observeRevival({
+            ts: '2026-05-24T13:32:00.000Z',
+            tick: 100,
+            cause: 'restart_respawn_policy',
+        });
+
+        // Index bumps lives + flips back to living.
+        const afterRevival = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'index.json'), 'utf8'));
+        expect(afterRevival).toEqual(
+            expect.objectContaining({
+                lives: 2,
+                currentState: 'living',
+            }),
+        );
+
+        // Timeline carries a revival event with the resolved lifeIndex.
+        const timeline = readTimeline(root);
+        const revival = timeline.find(event => event.kind === 'revival');
+        expect(revival).toBeDefined();
+        expect(revival).toEqual(
+            expect.objectContaining({
+                kind: 'revival',
+                ts: '2026-05-24T13:32:00.000Z',
+                tick: 100,
+                cause: 'restart_respawn_policy',
+                lifeIndex: 2,
+            }),
+        );
+    });
+
+    it('observeRevival without a prior death still appends the event and increments lives (defensive)', () => {
+        // Real-world: maintainer may add respawnPolicy mid-life or call
+        // observeRevival on a never-died resident during testing. Don't
+        // silently drop the event — record it, bump lives, keep state
+        // "living". The Brain still benefits from the memory beat.
+        const { updater, root } = testUpdater();
+
+        updater.observeRevival({
+            ts: '2026-05-24T13:33:00.000Z',
+            tick: 50,
+            cause: 'manual',
+        });
+
+        const index = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'index.json'), 'utf8'));
+        expect(index.lives).toBe(2);
+        expect(index.currentState).toBe('living');
+        const timeline = readTimeline(root);
+        expect(timeline.find(event => event.kind === 'revival')).toBeDefined();
+    });
+
     it('regenerates portrait.md and portrait.json from the resident timeline', async () => {
         const { updater, root } = testUpdater();
 

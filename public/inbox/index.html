@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Null City Embassy — Inbox</title>
+    <style>
+        :root {
+            --ink: #2a1d0e;
+            --ink-soft: #5a4630;
+            --vellum: #f5ecd6;
+            --vellum-warm: #ebdfb8;
+            --vellum-shadow: #d6c188;
+            --vellum-edge: #d9c89e;
+            --accent: #8a3324;
+            --seal-standing: #6f8a3a;
+            --seal-epitaph: #8a3324;
+            --seal-civic: #2f5070;
+            --seal-default: #4f2e1a;
+            --night: #1a120a;
+            --night-soft: rgba(245, 236, 214, 0.85);
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            color: var(--ink);
+            font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Georgia', serif;
+            min-height: 100vh;
+            background:
+                radial-gradient(ellipse at 50% 0%, rgba(212, 155, 74, 0.07), transparent 55%),
+                linear-gradient(180deg, var(--night) 0%, #110a04 100%);
+        }
+        header {
+            text-align: center;
+            padding: 2.25rem 1rem 1rem;
+            color: var(--night-soft);
+            font-variant: small-caps;
+            letter-spacing: 0.12em;
+            position: relative;
+        }
+        header::after {
+            content: "";
+            display: block;
+            width: 5rem;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(212, 155, 74, 0.5), transparent);
+            margin: 0.85rem auto 0;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.7rem;
+            font-weight: normal;
+            text-shadow: 0 0 18px rgba(212, 155, 74, 0.15);
+        }
+        header .who {
+            display: block;
+            margin-top: 0.5rem;
+            font-style: italic;
+            color: rgba(245, 236, 214, 0.72);
+            font-variant: normal;
+            letter-spacing: 0;
+            font-size: 1rem;
+        }
+        main {
+            max-width: 44rem;
+            margin: 0 auto;
+            padding: 1rem 1.25rem 4rem;
+        }
+        .letter {
+            position: relative;
+            background:
+                /* deckle-edge inset highlights */
+                radial-gradient(ellipse at top, rgba(255, 245, 215, 0.6), transparent 60%),
+                /* soft inner aged warmth */
+                radial-gradient(ellipse at center, var(--vellum) 65%, var(--vellum-warm) 100%);
+            border: 1px solid var(--vellum-edge);
+            border-radius: 2px;
+            margin: 1.5rem 0;
+            padding: 2rem 2.25rem 2.25rem;
+            box-shadow:
+                0 8px 22px rgba(0, 0, 0, 0.5),
+                0 1px 0 rgba(255, 250, 230, 0.4) inset,
+                0 0 80px rgba(180, 140, 70, 0.06) inset;
+        }
+        /* subtle aged-paper grain via repeating tiny dots */
+        .letter::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 2px;
+            pointer-events: none;
+            background-image:
+                radial-gradient(rgba(120, 85, 40, 0.04) 1px, transparent 1px),
+                radial-gradient(rgba(120, 85, 40, 0.03) 1px, transparent 1px);
+            background-size: 13px 13px, 17px 17px;
+            background-position: 0 0, 6px 8px;
+            mix-blend-mode: multiply;
+        }
+        /* "tear" along the top edge — deckle effect */
+        .letter::after {
+            content: "";
+            position: absolute;
+            top: -1px;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background:
+                radial-gradient(circle at 20% 100%, var(--vellum) 4px, transparent 5px),
+                radial-gradient(circle at 60% 100%, var(--vellum) 5px, transparent 6px),
+                radial-gradient(circle at 85% 100%, var(--vellum) 3px, transparent 4px);
+            pointer-events: none;
+        }
+        .letter .meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.78rem;
+            color: var(--ink-soft);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            margin-bottom: 0.75rem;
+            opacity: 0.85;
+        }
+        .letter .meta .kind {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        /* the wax-seal dot — colored per kind */
+        .letter .meta .kind::before {
+            content: "";
+            display: inline-block;
+            width: 0.55rem;
+            height: 0.55rem;
+            border-radius: 50%;
+            background: var(--seal-default);
+            box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        }
+        .letter.standing .meta .kind::before { background: var(--seal-standing); }
+        .letter.epitaph  .meta .kind::before { background: var(--seal-epitaph);  }
+        .letter.civic    .meta .kind::before { background: var(--seal-civic);    }
+
+        .letter h2 {
+            margin: 0 0 1.1rem 0;
+            font-size: 1.35rem;
+            font-weight: normal;
+            border-bottom: 1px solid var(--vellum-shadow);
+            padding-bottom: 0.55rem;
+            color: var(--ink);
+            letter-spacing: 0.01em;
+        }
+        .letter pre {
+            white-space: pre-wrap;
+            font-family: inherit;
+            font-size: 1.05rem;
+            line-height: 1.65;
+            margin: 0;
+            color: var(--ink);
+        }
+        /* drop cap on the body text */
+        .letter pre::first-letter {
+            font-size: 3rem;
+            font-weight: bold;
+            float: left;
+            line-height: 0.95;
+            padding: 0.2rem 0.5rem 0 0;
+            color: var(--seal-default);
+            font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, 'Georgia', serif;
+        }
+        .letter.standing pre::first-letter { color: var(--seal-standing); }
+        .letter.epitaph  pre::first-letter { color: var(--seal-epitaph);  }
+        .letter.civic    pre::first-letter { color: var(--seal-civic);    }
+
+        .empty, .error {
+            text-align: center;
+            color: rgba(245, 236, 214, 0.7);
+            padding: 4rem 1rem;
+            font-style: italic;
+            font-size: 1.05rem;
+        }
+        .error {
+            color: #ffd6d0;
+            background: linear-gradient(180deg, rgba(110, 34, 24, 0.5), rgba(60, 18, 12, 0.4));
+            border: 1px solid var(--accent);
+            padding: 1.25rem 1.5rem;
+            border-radius: 3px;
+            margin: 1.5rem 0;
+        }
+
+        @media print {
+            html, body {
+                background: #fff;
+                color: #000;
+            }
+            header {
+                color: #000;
+                text-shadow: none;
+            }
+            header::after { background: #999; }
+            .letter {
+                page-break-inside: avoid;
+                box-shadow: none;
+                background: #fff;
+                border: 1px solid #bbb;
+                margin: 0.5rem 0;
+            }
+            .letter::before, .letter::after { display: none; }
+            .letter pre::first-letter { color: #333; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Null City Embassy — Inbox</h1>
+        <span class="who" id="who">…</span>
+    </header>
+    <main>
+        <div id="content" class="empty">Loading letters…</div>
+    </main>
+    <script>
+        (function () {
+            // Resolve handle from ?human=... or from the last path segment.
+            const params = new URLSearchParams(window.location.search);
+            const handle = params.get('human') || decodeURIComponent(
+                (window.location.pathname.split('/').filter(Boolean).pop() || '')
+            );
+
+            const whoElement = document.getElementById('who');
+            const contentElement = document.getElementById('content');
+
+            if (!handle) {
+                whoElement.textContent = '(no handle)';
+                contentElement.className = 'error';
+                contentElement.textContent = 'Add ?human=<your-handle> to the URL.';
+                return;
+            }
+            whoElement.textContent = handle;
+
+            // The inbox endpoint may be on a different port from this static
+            // page (the controller spins up an HTTP listener on a configured
+            // port). Allow override via ?api=http://host:port/v1/inbox.
+            const apiBase = params.get('api') || '/v1/inbox';
+            const url = apiBase + '?human=' + encodeURIComponent(handle);
+
+            fetch(url)
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('inbox endpoint returned ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(function (payload) {
+                    const letters = (payload && payload.letters) || [];
+                    if (letters.length === 0) {
+                        contentElement.className = 'empty';
+                        contentElement.textContent = 'No letters yet. Walk the embassy and find a resident to support.';
+                        return;
+                    }
+                    contentElement.className = '';
+                    // Use replaceChildren([]) to safely clear without touching innerHTML.
+                    contentElement.replaceChildren();
+                    letters.forEach(function (letter) {
+                        contentElement.appendChild(renderLetter(letter));
+                    });
+                })
+                .catch(function (error) {
+                    contentElement.className = 'error';
+                    contentElement.textContent = 'Could not load inbox: ' + (error.message || error);
+                });
+
+            function classifyKind(kind) {
+                switch (kind) {
+                    case 'standing_tier_crossed': return 'standing';
+                    case 'epitaph': return 'epitaph';
+                    case 'civic_milestone': return 'civic';
+                    default: return '';
+                }
+            }
+
+            // renderLetter builds each letter via DOM APIs only — textContent
+            // for all user-supplied strings. No innerHTML anywhere. Letter
+            // bodies are JSON from the server, but we treat every field as
+            // untrusted to keep this page XSS-safe even if the upstream
+            // letter-producer ever templates user-supplied text.
+            function renderLetter(letter) {
+                const article = document.createElement('article');
+                const klass = classifyKind(letter.kind);
+                article.className = klass ? ('letter ' + klass) : 'letter';
+
+                const meta = document.createElement('div');
+                meta.className = 'meta';
+                const left = document.createElement('span');
+                left.className = 'kind';
+                left.textContent = String(letter.kind || '').replace(/_/g, ' ');
+                const right = document.createElement('span');
+                right.textContent = formatDate(letter.dispatchedAt);
+                meta.appendChild(left);
+                meta.appendChild(right);
+                article.appendChild(meta);
+
+                const subject = document.createElement('h2');
+                subject.textContent = String(letter.subject || '(no subject)');
+                article.appendChild(subject);
+
+                const body = document.createElement('pre');
+                body.textContent = String(letter.body || '');
+                article.appendChild(body);
+
+                return article;
+            }
+
+            function formatDate(iso) {
+                if (!iso) return '';
+                try {
+                    const d = new Date(iso);
+                    return d.toLocaleString();
+                } catch (_) {
+                    return iso;
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

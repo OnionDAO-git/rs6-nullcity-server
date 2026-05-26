@@ -9,7 +9,7 @@ import type { Item } from '@engine/world/items/item';
 import { Position } from '@engine/world/position';
 import type { DisconnectPolicy, ResidentSummary } from './protocol/messages';
 
-export const RESIDENT_NAME_PATTERN = /^res:[a-z0-9_]{1,20}$/;
+export const RESIDENT_NAME_PATTERN = /^res:[a-z0-9_-]{1,20}$/;
 
 export const normalizeResidentName = (name: string): string => name.toLowerCase();
 

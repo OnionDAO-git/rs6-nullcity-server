@@ -4,6 +4,17 @@ import { makeFishingCooking10mBenchmarkTask, verifyFishingCooking10m } from './f
 
 const STANDARD_MODULE = { id: 'onion.runescape.standard', version: '0.1.0' };
 
+describe('makeFishingCooking10mBenchmarkTask', () => {
+    it('starts the disposable resident with tools for repeatable fire recovery', () => {
+        expect(makeFishingCooking10mBenchmarkTask().resident?.initialInventory).toEqual([
+            { itemId: 303 },
+            { itemId: 590 },
+            { itemId: 1511 },
+            { itemId: 1351 },
+        ]);
+    });
+});
+
 describe('verifyFishingCooking10m', () => {
     it('passes when the agent catches raw starter fish and cooks it on a heat source', () => {
         const outcome = verifyFishingCooking10m({

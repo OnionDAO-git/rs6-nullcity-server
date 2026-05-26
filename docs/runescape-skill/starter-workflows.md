@@ -21,7 +21,7 @@ Each workflow should be executable enough for Brain to choose a goal, Body to pi
 ## Catch Shrimp
 
 1. Check for `rs:small_fishing_net` (5 gp at fishing shops).
-2. Find a net-capable fishing spot (Lumbridge swamp around `3242,3151` is the canonical starter spot).
+2. Find a net-capable fishing spot (this server's Lumbridge river starters are around `3239,3244` and `3241,3242`).
 3. `move_to` the spot and `interact` with the matching fishing option (e.g., `net`).
 4. Wait for `rs:raw_shrimps` or Fishing XP.
 5. If the spot is missing, explore known water edges or report that no spot is visible.

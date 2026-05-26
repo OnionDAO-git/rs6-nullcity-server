@@ -4,7 +4,7 @@ import { type Letter, letterSchema } from './letters-producer';
 
 /** Result of an append. */
 export interface LettersStoreAppendResult {
-    /** True if this exact letter (recipient + kind + dispatchedAt) was already in the inbox. */
+    /** True if this exact letter (recipient + kind + dispatchedAt + subject) was already in the inbox. */
     deduped: boolean;
 }
 
@@ -15,9 +15,14 @@ export interface LettersStoreAppendResult {
  * JSON-serialised {@link Letter}. Written atomically (tmp + rename) so a
  * partial write never corrupts the inbox.
  *
- * Idempotent on append: a second append of (recipient, kind, dispatchedAt)
- * is silently dropped. This lets PatronGateway / restart loops re-emit
- * letters without producing duplicates in the human's inbox.
+ * Idempotent on append: a second append of (recipient, kind, dispatchedAt,
+ * subject) is silently dropped. This lets PatronGateway / restart loops
+ * re-emit letters without producing duplicates in the human's inbox. The
+ * `subject` axis is part of the dedup tuple so that a single grant which
+ * crosses multiple standing tiers can still produce one letter per tier
+ * (different subjects: "Acquaintance of embassy", "Ally of embassy",
+ * "Officer of embassy") even though all three share the same kind +
+ * dispatchedAt — see HD-040 / E36-F36b.
  *
  * Recipient handles are lowercased + non-alnum stripped to derive the
  * filesystem slug. `Alice@Onion` and `alice@onion` share an inbox.
@@ -32,6 +37,7 @@ export class LettersStore {
             other =>
                 other.kind === validated.kind &&
                 other.dispatchedAt === validated.dispatchedAt &&
+                other.subject === validated.subject &&
                 slug(other.recipient) === slug(validated.recipient),
         );
         if (isDuplicate) {

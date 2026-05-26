@@ -11,13 +11,23 @@ import {
     combatLootOrPrayerAction,
     combatTrainingAction,
     explorationAction,
+    explorationItemCooldownKey,
+    explorationObjectCooldownKey,
+    explorationPatrolCooldownKey,
+    factionLandmarkWorkAction,
     firemakingAction,
+    LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
+    STARTER_FISHING_SPOT_DISCOVERY_RANGE,
     levelOneWoodcuttingAction,
+    lowHealthRecoveryAction,
     opportunisticPickupAction,
     prayerTrainingAction,
     starterFishingAction,
     starterFishingCookingAction,
+    starterFishingRouteAction,
+    safeCombatTarget,
+    safeBoneSourceTarget,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
@@ -28,6 +38,14 @@ const FIRE_OBJECT_ID = objectIds.fire;
 
 function item(itemId: number, key?: string, amount = 1): BodyItem {
     return { itemId, key, amount };
+}
+
+function fullInventory(seed: Array<BodyItem | null>): Array<BodyItem | null> {
+    const inventory = [...seed];
+    while (inventory.length < 28) {
+        inventory.push(item(995, 'rs:coins'));
+    }
+    return inventory;
 }
 
 function perception(overrides: Partial<BodyHybridPerception> = {}): BodyHybridPerception {
@@ -212,11 +230,14 @@ describe('levelOneWoodcuttingAction', () => {
 
 describe('starterFishingAction', () => {
     const SMALL_NET = 303;
+    const BURNT_SHRIMP = 7954;
+    const COOKED_SHRIMP = 315;
 
-    function fishingSpot(x: number, y: number): BodyActor {
+    function fishingSpot(x: number, y: number, key = 'rs:fishing_spot_net_bait'): BodyActor {
         return {
             id: `npc:fishing-${x}-${y}`,
             kind: 'npc',
+            key,
             name: 'Fishing spot',
             position: { x, y, level: 0 },
             hpFraction: 1,
@@ -239,8 +260,57 @@ describe('starterFishingAction', () => {
         });
     });
 
-    it('moves into interaction range before netting a distant fishing spot', () => {
-        const spot = fishingSpot(102, 100);
+    it('drops burnt starter fish before netting when the inventory is full', () => {
+        const spot = fishingSpot(101, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(BURNT_SHRIMP, 'rs:burnt_shrimp'), item(COOKED_SHRIMP, 'rs:shrimps')]),
+                },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'drop', slot: 1, cause: 'starter_fishing_clear_burnt_fish' });
+    });
+
+    it('eats cooked starter fish to free a slot when no burnt fish is available', () => {
+        const spot = fishingSpot(101, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(COOKED_SHRIMP, 'rs:shrimps')]),
+                },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'eat', slot: 1, cause: 'starter_fishing_eat_cooked_fish_for_space' });
+    });
+
+    it('reports full inventory instead of retrying a fishing click that cannot produce a catch', () => {
+        const spot = fishingSpot(101, 100);
+        const action = starterFishingAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(590, 'rs:tinderbox')]),
+                },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'My inventory is full; I need to cook, eat, drop, or bank something before I can fish.',
+            cause: 'starter_fishing_inventory_full',
+        });
+    });
+
+    it('moves within shoreline range of a visible distant fishing spot before netting it', () => {
+        const spot = fishingSpot(110, 100);
         const action = starterFishingAction(
             perception({
                 resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
@@ -251,8 +321,8 @@ describe('starterFishingAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: spot.position,
-            range: 1,
-            cause: 'starter_fishing_approach',
+            range: 7,
+            cause: 'starter_fishing_approach_spot',
         });
     });
 
@@ -268,6 +338,35 @@ describe('starterFishingAction', () => {
         expect(action).toEqual({
             kind: 'interact',
             target: near,
+            option: 'net',
+            cause: 'starter_fishing_net',
+        });
+    });
+
+    it('ignores visible fishing spots that do not support netting', () => {
+        const lureOnly = fishingSpot(101, 100, 'rs:fishing_spot_lure_bait');
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [lureOnly] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('prefers the live-proven Lumbridge starter spot when both fixed river spots are visible', () => {
+        const primary = fishingSpot(3239, 3244);
+        const secondary = fishingSpot(3241, 3242);
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 3235, y: 3241, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [secondary, primary] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: primary,
             option: 'net',
             cause: 'starter_fishing_net',
         });
@@ -300,6 +399,110 @@ describe('starterFishingAction', () => {
                 nearby: { npcs: [fishingSpot(101, 100)] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('starterFishingRouteAction', () => {
+    const SMALL_NET = 303;
+    const BURNT_SHRIMP = 7954;
+
+    function fishingSpot(x: number, y: number, key = 'rs:fishing_spot_net_bait'): BodyActor {
+        return {
+            id: `npc:fishing-${x}-${y}`,
+            kind: 'npc',
+            key,
+            name: 'Fishing spot',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('prefers netting a visible fishing spot over a known-route waypoint', () => {
+        const spot = fishingSpot(3230, 3204);
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3228, y: 3204, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [spot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: spot,
+            option: 'net',
+            cause: 'starter_fishing_net',
+        });
+    });
+
+    it('clears full inventory pressure before route recovery when no spot is visible', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: {
+                    position: { x: 3234, y: 3237, level: 0 },
+                    inventory: fullInventory([item(SMALL_NET), item(BURNT_SHRIMP, 'rs:burnt_shrimp')]),
+                },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'drop', slot: 1, cause: 'starter_fishing_clear_burnt_fish' });
+    });
+
+    it('routes a Lumbridge starter angler toward fishing-spot discovery range when no spot is visible', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3228, y: 3204, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+            cause: 'starter_fishing_seek_spot',
+        });
+    });
+
+    it('does not keep pathing when already close enough to rediscover a known spot', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3234, y: 3237, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I am at the Lumbridge fishing water and looking for a net spot.',
+            cause: 'starter_fishing_seek_spot',
+        });
+    });
+
+    it('reports a blocker instead of oscillating toward an unreachable stand tile when nearby spawns are quiet', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3232, y: 3242, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I am at the Lumbridge fishing water and looking for a net spot.',
+            cause: 'starter_fishing_seek_spot',
+        });
+    });
+
+    it('does not hijack non-Lumbridge starter anglers without a visible spot', () => {
+        const action = starterFishingRouteAction(
+            perception({
+                resident: { position: { x: 3015, y: 3357, level: 0 }, inventory: [item(SMALL_NET)] },
+                nearby: { npcs: [] },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });
@@ -380,8 +583,12 @@ describe('starterFishingCookingAction', () => {
     const RAW_ANCHOVIES = 321;
     const TINDERBOX = 590;
     const LOGS = 1511;
+    const BRONZE_AXE = 1351;
     const COOKING_RANGE = 114;
     const FIRE_OBJECT = FIRE_OBJECT_ID;
+    const KITCHEN_DOOR = 1530;
+    const CASTLE_ENTRANCE_DOOR = 1516;
+    const OPEN_CASTLE_ENTRANCE_DOOR = 1517;
 
     it('returns use_item_on against a heat source when raw fish is in inventory', () => {
         const heatSource = { objectId: COOKING_RANGE, position: { x: 100, y: 100, level: 0 } };
@@ -411,6 +618,186 @@ describe('starterFishingCookingAction', () => {
         expect((action as { target: unknown }).target).toBe(near);
     });
 
+    it('walks around to the castle entrance before using an unreachable west kitchen door', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const door = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3217, y: 3218, level: 0 },
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('approaches a visible castle entrance door before opening it from a distance', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const castleDoor = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, kitchenDoor, castleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: castleDoor.position,
+            range: 1,
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('approaches the range when the castle entrance is already open but the range is distant', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, kitchenDoor, openCastleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: range.position,
+            range: 1,
+            cause: 'starter_fishing_find_range',
+        });
+    });
+
+    it('routes southern Lumbridge range approaches through the castle entrance', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3209, y: 3202, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('does not treat a mixed open and closed castle entrance as pathable', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const closedCastleDoor = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3204, y: 3213, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, closedCastleDoor, openCastleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: closedCastleDoor.position,
+            range: 1,
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('opens a visible kitchen door when adjacent before cooking on a distant range', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const door = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3207, y: 3211, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: door,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('approaches a visible cooking route door before opening it from a distance', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 108, y: 100, level: 0 } };
+        const door = { objectId: KITCHEN_DOOR, position: { x: 104, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: door.position,
+            range: 1,
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
+    it('routes river anglers to the castle entrance instead of opening unrelated doors near the river', () => {
+        const riverDoor = { objectId: KITCHEN_DOOR, position: { x: 3230, y: 3235, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3229, y: 3235, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [riverDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('keeps river anglers on the castle entrance route when an unrelated door is adjacent', () => {
+        const adjacentRiverDoor = { objectId: KITCHEN_DOOR, position: { x: 3226, y: 3223, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3226, y: 3223, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [adjacentRiverDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('opens the castle entrance door when the cooking route reaches it', () => {
+        const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
+        const door = { objectId: CASTLE_ENTRANCE_DOOR, position: { x: 3217, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3217, y: 3218, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [range, door] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: door,
+            option: 'open',
+            cause: 'starter_fishing_open_cooking_route',
+        });
+    });
+
     it('falls back to lighting a cooking fire when no heat source but tinderbox+logs are carried', () => {
         const action = starterFishingCookingAction(
             perception({
@@ -428,6 +815,47 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
+    it('picks up nearby logs before walking to a range when raw fish and a tinderbox are carried', () => {
+        const logs = { itemId: LOGS, key: 'rs:logs', amount: 1, position: { x: 104, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: {
+                    id: 'res:qa-angler',
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [item(RAW_SHRIMP), item(TINDERBOX)],
+                },
+                nearby: { worldItems: [logs] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: logs,
+            option: 'pick-up',
+            cause: 'starter_fishing_pickup_cooking_logs',
+        });
+    });
+
+    it('chops a visible tree for cooking logs before chasing a blocked range', () => {
+        const tree = { objectId: 1278, position: { x: 103, y: 100, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: {
+                    id: 'res:qa-angler',
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [item(RAW_SHRIMP), item(TINDERBOX), item(BRONZE_AXE)],
+                },
+                nearby: { objects: [tree] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: tree.position,
+            range: 1,
+            cause: 'starter_fishing_chop_cooking_logs',
+        });
+    });
+
     it('says when raw fish are carried but no heat source and no firemaking tools', () => {
         const action = starterFishingCookingAction(
             perception({
@@ -441,7 +869,7 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
-    it('walks toward Lumbridge Castle range when raw fish are carried without visible heat or logs', () => {
+    it('routes river anglers toward the castle entrance when raw fish are carried without visible heat or logs', () => {
         const action = starterFishingCookingAction(
             perception({
                 resident: { position: { x: 3240, y: 3244, level: 0 }, inventory: [item(RAW_SHRIMP)] },
@@ -449,9 +877,23 @@ describe('starterFishingCookingAction', () => {
         );
         expect(action).toEqual({
             kind: 'move_to',
-            target: LUMBRIDGE_CASTLE_RANGE,
-            range: 4,
-            cause: 'starter_fishing_find_range',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('routes southern fallback range approaches through the castle entrance when no heat is visible', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3209, y: 3202, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
         });
     });
 
@@ -469,6 +911,7 @@ describe('opportunisticPickupAction', () => {
     const COINS = 995;
     const BONES = 526;
     const LOGS = 1511;
+    const BURNT_SHRIMP = 7954;
 
     function ground(itemId: number, x: number, y: number, key?: string, ownerId?: string): BodyWorldItem {
         return { itemId, amount: 1, position: { x, y, level: 0 }, key, ownerId };
@@ -490,7 +933,7 @@ describe('opportunisticPickupAction', () => {
         });
     });
 
-    it('moves toward the item when out of interaction range', () => {
+    it('clicks the item when out of interaction range so the game can walk and pick it up', () => {
         const coin = ground(COINS, 105, 100);
         const action = opportunisticPickupAction(
             perception({
@@ -499,9 +942,9 @@ describe('opportunisticPickupAction', () => {
             }),
         );
         expect(action).toEqual({
-            kind: 'move_to',
-            target: coin.position,
-            range: 1,
+            kind: 'interact',
+            target: coin,
+            option: 'pick-up',
             cause: 'opportunistic_pickup',
         });
     });
@@ -517,9 +960,75 @@ describe('opportunisticPickupAction', () => {
                 nearby: { worldItems: [bones, log, food, coin] },
             }),
         );
-        // Coins win the priority tiebreaker even when further; routine moves toward them.
-        expect(action?.kind).toBe('move_to');
-        expect((action as unknown as { target: { x: number } }).target.x).toBe(102);
+        // Coins win the priority tiebreaker even when further; the game interaction task handles the walk.
+        expect(action?.kind).toBe('interact');
+        expect((action as unknown as { target: { position: { x: number } } }).target.position.x).toBe(102);
+    });
+
+    it('skips non-food loot when low on health', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                nearby: { worldItems: [coin] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('only picks edible food opportunistically when low on health', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const food = ground(315, 102, 100, 'rs:shrimps');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                nearby: { worldItems: [coin, food] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: food,
+            option: 'pick-up',
+            cause: 'opportunistic_pickup',
+        });
+    });
+
+    it('ignores burnt starter fish because it cannot help survival or skilling', () => {
+        const burnt = ground(BURNT_SHRIMP, 100, 100, 'rs:burnt_shrimp');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [burnt] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('does not treat burnt starter fish as emergency food when low on health', () => {
+        const burnt = ground(BURNT_SHRIMP, 100, 100, 'rs:burnt_shrimp');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                },
+                nearby: { worldItems: [burnt] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
     });
 
     it('skips logs when a nearby fire is present (suppress firemaking-log pickup)', () => {
@@ -576,6 +1085,23 @@ describe('opportunisticPickupAction', () => {
         expect(action).toBeUndefined();
     });
 
+    it('returns undefined when ground item is on an exploration cooldown', () => {
+        const coin = ground(COINS, 100, 100, 'rs:coins');
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            150,
+            { [explorationItemCooldownKey(coin)]: 100 },
+        );
+
+        expect(action).toBeUndefined();
+    });
+
     it('respects the maxDistance filter when given', () => {
         const coin = ground(COINS, 110, 100);
         const action = opportunisticPickupAction(
@@ -598,6 +1124,216 @@ describe('opportunisticPickupAction', () => {
                 nearby: { worldItems: [coin] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('lowHealthRecoveryAction', () => {
+    const COINS = 995;
+
+    function ground(itemId: number, x: number, y: number, key?: string, ownerId?: string): BodyWorldItem {
+        return { itemId, amount: 1, position: { x, y, level: 0 }, key, ownerId };
+    }
+
+    it('eats carried food before continuing non-combat routines at low HP', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(315, 'rs:shrimps')],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(action).toEqual({ kind: 'eat', slot: 0, cause: 'low_health_eat' });
+    });
+
+    it('cooks carried raw starter fish instead of trying to eat it when low on health', () => {
+        const fire = { objectId: FIRE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    inCombat: false,
+                },
+                nearby: { objects: [fire] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on',
+            itemSlot: 0,
+            target: fire,
+            cause: 'low_health_cook_food',
+        });
+    });
+
+    it('retreats instead of taking a distant cooking route when hurt and threatened', () => {
+        const range = { objectId: FIRE_OBJECT_ID, position: { x: 3212, y: 3215, level: 0 } };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    inCombat: false,
+                },
+                nearby: {
+                    objects: [range],
+                    npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }],
+                },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('nets visible starter fish when hurt, carrying a small net, and no food is available', () => {
+        const fishingSpot: BodyActor = {
+            id: 'npc:fishing-spot',
+            kind: 'npc',
+            key: 'rs:fishing_spot_net_bait',
+            name: 'Fishing spot',
+            position: { x: 101, y: 100, level: 0 },
+        };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+                nearby: { npcs: [fishingSpot] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: fishingSpot,
+            option: 'net',
+            cause: 'low_health_fish_food',
+        });
+    });
+
+    it('prioritizes visible ground food over coins when hurt and carrying no food', () => {
+        const coins = ground(COINS, 100, 100, 'rs:coins');
+        const food = ground(315, 103, 100, 'rs:shrimps');
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:agent',
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { worldItems: [coins, food] },
+            }),
+            'res:agent',
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: food,
+            option: 'pick-up',
+            cause: 'low_health_pickup_food',
+        });
+    });
+
+    it('does not treat raw ground fish as edible emergency food', () => {
+        const rawFish = ground(317, 101, 100, 'rs:raw_shrimp');
+        const cookedFish = ground(315, 104, 100, 'rs:shrimps');
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:agent',
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { worldItems: [rawFish, cookedFish] },
+            }),
+            'res:agent',
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: cookedFish,
+            option: 'pick-up',
+            cause: 'low_health_pickup_food',
+        });
+    });
+
+    it('walks away from goblin training when hurt, foodless, and no food source is visible', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }] },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('keeps walking to the recovery waypoint after leaving immediate goblin melee range', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3236, y: 3221, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                nearby: { npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3250, y: 3231, level: 0 } }] },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('does nothing when health is above the low-HP threshold', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    hp: { current: 7, max: 10 },
+                    inventory: [item(315, 'rs:shrimps')],
+                },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });
@@ -640,7 +1376,7 @@ describe('prayerTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' });
     });
 
-    it('moves toward a far-away safe bone source NPC', () => {
+    it('clicks a far-away safe bone source NPC so the combat task can follow it', () => {
         const chicken = safeNpc('Chicken', 3225, 3220);
         const action = prayerTrainingAction(
             perception({
@@ -648,12 +1384,7 @@ describe('prayerTrainingAction', () => {
                 nearby: { npcs: [chicken] },
             }),
         );
-        expect(action).toEqual({
-            kind: 'move_to',
-            target: chicken.position,
-            range: 1,
-            cause: 'prayer_approach_safe_bone_source',
-        });
+        expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' });
     });
 
     it('prefers low-risk bone source over a higher-risk one even when slightly farther', () => {
@@ -665,8 +1396,8 @@ describe('prayerTrainingAction', () => {
                 nearby: { npcs: [goblin, chicken] },
             }),
         );
-        expect(action?.kind).toBe('move_to');
-        expect((action as unknown as { target: { x: number } }).target.x).toBe(3222);
+        expect(action?.kind).toBe('attack');
+        expect((action as unknown as { target: { position: { x: number } } }).target.position.x).toBe(3222);
     });
 
     it('returns a move-to-waypoint when no safe source nearby and far from waypoint', () => {
@@ -821,7 +1552,7 @@ describe('combatTrainingAction', () => {
         expect(action).toBeUndefined();
     });
 
-    it('moves toward a non-adjacent safe combat target', () => {
+    it('clicks a non-adjacent safe combat target so the combat task can follow it', () => {
         const chicken = combatNpc('Chicken', 3225, 3220);
         const action = combatTrainingAction(
             perception({
@@ -829,18 +1560,13 @@ describe('combatTrainingAction', () => {
                 nearby: { npcs: [chicken] },
             }),
         );
-        expect(action).toEqual({
-            kind: 'move_to',
-            target: chicken.position,
-            range: 1,
-            cause: 'combat_approach_safe_target',
-        });
+        expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
     });
 });
 
 describe('explorationAction', () => {
-    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`): BodyActor {
-        return { id, kind: 'npc', name, position: { x, y, level: 0 }, hpFraction: 1 };
+    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`, level = 0, key?: string): BodyActor {
+        return { id, kind: 'npc', name, key, position: { x, y, level }, hpFraction: 1 };
     }
 
     it('returns an "interact talk-to" against an uncooldowned adjacent NPC', () => {
@@ -865,6 +1591,42 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: guide.position, range: 1, cause: 'explore_talk_to_npc' });
     });
 
+    it('does not chase an NPC on another floor during free exploration', () => {
+        const cookDownstairs = npc('Cook', 100, 100, 'npc:cook-downstairs', 0);
+        const sameFloorLandmark = { objectId: 879, position: { x: 103, y: 100, level: 2 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [] },
+                nearby: { npcs: [cookDownstairs], objects: [sameFloorLandmark] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: sameFloorLandmark.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('does not chase a landmark on another floor during free exploration', () => {
+        const downstairsFountain = { objectId: 879, position: { x: 100, y: 100, level: 0 } };
+        const sameFloorTree = { objectId: objectIds.tree.oak[0].default, position: { x: 108, y: 100, level: 2 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [] },
+                nearby: { objects: [downstairsFountain, sameFloorTree] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: sameFloorTree.position, range: 2, cause: 'explore_tree_stand' });
+    });
+
+    it('does not pick up useful ground items on another floor during free exploration', () => {
+        const downstairsCoins = { itemId: 995, key: 'rs:coins', amount: 5, position: { x: 100, y: 100, level: 0 } };
+        const sameFloorLandmark = { objectId: 879, position: { x: 103, y: 100, level: 2 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [] },
+                nearby: { worldItems: [downstairsCoins], objects: [sameFloorLandmark] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: sameFloorLandmark.position, range: 2, cause: 'explore_visible_object' });
+    });
+
     it('does not chase fishing spots as exploration conversation targets', () => {
         const fishingSpot = npc('Fishing spot', 105, 100);
         const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
@@ -877,6 +1639,24 @@ describe('explorationAction', () => {
         expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
     });
 
+    it('skips NPC families that are already on the exploration cooldown', () => {
+        const sheep = { ...npc('Sheep', 101, 100), key: 'rs:sheep' };
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [sheep], objects: [fountain] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            150,
+            { 'npc-key:rs:sheep': 100 },
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
     it('moves toward a visible landmark when no NPC is nearby', () => {
         const fountain = { objectId: 879, position: { x: 105, y: 100, level: 0 } };
         const action = explorationAction(
@@ -886,6 +1666,105 @@ describe('explorationAction', () => {
             }),
         );
         expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('uses a visible tree stand as a scouting destination instead of a tiny patrol hop', () => {
+        const nearbyTree = { objectId: objectIds.tree.normal[0].default, position: { x: 101, y: 100, level: 0 } };
+        const distantTree = { objectId: objectIds.tree.normal[0].default, position: { x: 112, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyTree, distantTree] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: distantTree.position, range: 2, cause: 'explore_tree_stand' });
+    });
+
+    it('uses higher-level trees as scouting landmarks without turning them into woodcutting targets', () => {
+        const oak = { objectId: objectIds.tree.oak[0].default, position: { x: 108, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [oak] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: oak.position, range: 2, cause: 'explore_tree_stand' });
+    });
+
+    it('prioritizes moving toward openable gates over nearby generic scenery while exploring', () => {
+        const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
+        const gate = { objectId: 11993, position: { x: 107, y: 102, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, gate] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: gate.position, range: 1, cause: 'explore_open_obstacle' });
+    });
+
+    it('can skip brittle openable gates during autonomous scouting', () => {
+        const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
+        const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, gate] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            200,
+            undefined,
+            { interactWithOpenables: false },
+        );
+        expect(action).toEqual({ kind: 'move_to', target: nearbyScenery.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('opens an adjacent gate while exploring instead of patrolling around it', () => {
+        const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [gate] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'interact', target: gate, option: 'open', cause: 'explore_open_obstacle' });
+    });
+
+    it('still opens an adjacent gate after its approach tile was visited', () => {
+        const gate = { objectId: 11993, position: { x: 101, y: 100, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [gate] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            200,
+            { [explorationPatrolCooldownKey(gate.position)]: 199 },
+        );
+
+        expect(action).toEqual({ kind: 'interact', target: gate, option: 'open', cause: 'explore_open_obstacle' });
+    });
+
+    it('skips a gate when the object is cooling down from a blocked scouting attempt', () => {
+        const nearbyScenery = { objectId: 4735, position: { x: 105, y: 100, level: 0 } };
+        const gate = { objectId: 11993, position: { x: 107, y: 102, level: 0 }, orientation: 1 };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, gate] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            200,
+            { [explorationObjectCooldownKey(gate)]: 49 },
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: nearbyScenery.position, range: 2, cause: 'explore_visible_object' });
     });
 
     it('falls back to patrol when nothing is in sight (moves to a non-here patrol position)', () => {
@@ -901,6 +1780,63 @@ describe('explorationAction', () => {
         );
         expect(action?.kind).toBe('move_to');
         expect(action?.cause).toBe('explore_patrol');
+    });
+
+    it('avoids recently visited patrol targets while scouting', () => {
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            5,
+            { 'patrol:103,100,0': 0 },
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: { x: 100, y: 103, level: 0 }, range: 1, cause: 'explore_patrol' });
+    });
+
+    it('does not patrol onto a visibly object-occupied tile', () => {
+        const nearbyScenery = { objectId: 879, position: { x: 101, y: 100, level: 0 } };
+        const blockedTile = { objectId: 4735, position: { x: 103, y: 100, level: 0 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [nearbyScenery, blockedTile], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            5,
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: { x: 100, y: 103, level: 0 }, range: 1, cause: 'explore_patrol' });
+    });
+
+    it('expands patrol radius when nearby patrol targets are all on cooldown', () => {
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [], objects: [], worldItems: [] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            50,
+            {
+                'patrol:103,100,0': 49,
+                'patrol:100,103,0': 49,
+                'patrol:97,100,0': 49,
+                'patrol:100,97,0': 49,
+            },
+        );
+
+        expect(action?.kind).toBe('move_to');
+        const target = (action as { target?: { x: number; y: number } } | undefined)?.target;
+        expect(target).toBeDefined();
+        expect(Math.max(Math.abs(Number(target?.x) - 100), Math.abs(Number(target?.y) - 100))).toBeGreaterThan(3);
     });
 
     it('skips an NPC that is on exploration cooldown', () => {
@@ -934,6 +1870,283 @@ describe('explorationAction', () => {
 
     it('returns undefined when resident has no position', () => {
         const action = explorationAction(perception({ resident: { position: undefined, inventory: [] } }));
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('factionLandmarkWorkAction', () => {
+    const anchor = { x: 3015, y: 3357, level: 0 };
+
+    it('moves a faction hero back toward its landmark before doing local work', () => {
+        const action = factionLandmarkWorkAction({
+            perception: perception({ resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] } }),
+            factionId: 'foundry',
+            landmark: anchor,
+        });
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: anchor,
+            range: 6,
+            cause: 'faction_landmark_return',
+        });
+    });
+
+    it('does not repeat a failed landmark return target while that coordinate is cooling down', () => {
+        const visiblePlaque = { objectId: 879, position: { x: 3202, y: 3200, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                tick: 42,
+                resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+                nearby: { objects: [visiblePlaque] },
+            }),
+            factionId: 'foundry',
+            landmark: anchor,
+            currentTick: 42,
+            targetFailureCooldowns: {
+                'target:3015,3357,0': 41,
+            },
+        });
+
+        expect(action).toMatchObject({
+            kind: 'move_to',
+            cause: 'faction_landmark_recovery',
+        });
+        expect((action as { target?: unknown }).target).not.toEqual(anchor);
+    });
+
+    it('uses Foundry work to gather forge fuel from visible trees', () => {
+        const tree = { objectId: 1278, position: { x: 3017, y: 3357, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { position: anchor, inventory: [item(1351, 'rs:bronze_axe')] },
+                nearby: { objects: [tree] },
+            }),
+            factionId: 'foundry',
+            landmark: anchor,
+        });
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: tree.position,
+            range: 1,
+            cause: 'faction_foundry_fuel_work',
+        });
+    });
+
+    it('does not use a failed fuel tile as the Foundry patrol fallback', () => {
+        const failedFuelTile = { x: 3010, y: 3355, level: 0 };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                tick: 95032,
+                resident: {
+                    position: { x: 3010, y: 3352, level: 0 },
+                    inventory: [item(1351, 'rs:bronze_axe')],
+                },
+            }),
+            factionId: 'foundry',
+            landmark: anchor,
+            currentTick: 95032,
+            targetFailureCooldowns: {
+                'target:3010,3355,0': 95031,
+            },
+        });
+
+        expect(action).toMatchObject({
+            kind: 'move_to',
+            cause: 'faction_foundry_fuel_work',
+        });
+        expect((action as { target?: unknown }).target).not.toEqual(failedFuelTile);
+    });
+
+    it('keeps Foundry work visible by patrolling for fuel when no materials are visible', () => {
+        const action = factionLandmarkWorkAction({
+            perception: perception({ tick: 21, resident: { position: anchor, inventory: [item(1351, 'rs:bronze_axe')] } }),
+            factionId: 'foundry',
+            landmark: anchor,
+        });
+
+        expect(action).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'faction_foundry_fuel_work' }));
+    });
+
+    it('uses Bureau work to bury carried bones for the record', () => {
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { position: { x: 3242, y: 3208, level: 0 }, inventory: [item(526, 'rs:bones')] },
+            }),
+            factionId: 'bureau-of-continuity',
+            landmark: { x: 3242, y: 3208, level: 0 },
+        });
+
+        expect(action).toEqual({
+            kind: 'item_action',
+            slot: 0,
+            option: 'bury',
+            cause: 'faction_bureau_witness_work',
+        });
+    });
+
+    it('uses Ledger work to audit nearby public evidence', () => {
+        const plaque = { objectId: 879, position: { x: 3213, y: 3424, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { position: { x: 3210, y: 3424, level: 0 }, inventory: [] },
+                nearby: { objects: [plaque] },
+            }),
+            factionId: 'ledger',
+            landmark: { x: 3210, y: 3424, level: 0 },
+        });
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: plaque.position,
+            range: 2,
+            cause: 'faction_ledger_audit_work',
+        });
+    });
+
+    it('uses Veil work to pick up overlooked useful items', () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 3, position: { x: 3094, y: 3493, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                resident: { id: 'resident:res:the-hush', position: { x: 3093, y: 3493, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coins] },
+            }),
+            factionId: 'veil',
+            landmark: { x: 3093, y: 3493, level: 0 },
+            residentId: 'res:the-hush',
+        });
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: coins,
+            option: 'pick-up',
+            cause: 'faction_veil_shadow_work',
+        });
+    });
+});
+
+describe('target failure cooldowns and cross-level hardening', () => {
+    const BONES = 526;
+
+    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`, level = 0, key?: string): BodyActor {
+        return { id, kind: 'npc', name, key, position: { x, y, level }, hpFraction: 1 };
+    }
+
+    it('explorationAction skips an NPC on target failure cooldown', () => {
+        const guide = npc('RuneScape Guide', 100, 100, 'npc:guide');
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+
+        // Cooldown active (failed at tick 10, current tick 15)
+        const targetFailureCooldowns = {
+            'actor:npc:guide:100,100,0': 10,
+        };
+
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [guide], objects: [fountain] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            15,
+            undefined,
+            undefined,
+            targetFailureCooldowns,
+        );
+
+        // Should skip guide and move to fountain
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('explorationAction skips an NPC family on target failure cooldown after a stale NPC moves', () => {
+        const cook = npc('Cook', 102, 100, 'npc:cook-live', 0, 'rs:lumbridge_castle_cook');
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+        const targetFailureCooldowns = {
+            'actor-key:rs:lumbridge_castle_cook': 10,
+        };
+
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [cook], objects: [fountain] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            15,
+            undefined,
+            undefined,
+            targetFailureCooldowns,
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('opportunisticPickupAction skips an item on target failure cooldown', () => {
+        const coin: BodyWorldItem = { itemId: 995, key: 'rs:coins', amount: 5, position: { x: 101, y: 100, level: 0 } };
+        const targetFailureCooldowns = {
+            'item:995:101,100,0': 10,
+        };
+
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            15,
+            undefined,
+            targetFailureCooldowns,
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('safeCombatTarget and safeBoneSourceTarget filter cross-level targets and target failure cooldowns', () => {
+        const chicken1 = npc('Chicken', 101, 100, 'npc:chicken1', 0);
+        const chicken2 = npc('Chicken', 101, 100, 'npc:chicken2', 2);
+
+        const targetFailureCooldowns = {
+            'actor:npc:chicken1:101,100,0': 10,
+        };
+
+        const p = perception({
+            resident: { position: { x: 100, y: 100, level: 0 } },
+            nearby: { npcs: [chicken1, chicken2] },
+        });
+
+        // safeCombatTarget on level 0 with chicken1 on cooldown: should find nothing since chicken2 is on level 2
+        const target = safeCombatTarget(p, targetFailureCooldowns, 15);
+        expect(target).toBeUndefined();
+    });
+
+    it('levelOneWoodcuttingAction filters cross-level trees and target failure cooldowns', () => {
+        const treeDownstairs = { objectId: objectIds.tree.normal[0].default, position: { x: 101, y: 100, level: 0 } };
+
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [item(1351, 'rs:bronze_axe')] },
+                nearby: { objects: [treeDownstairs] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('starterFishingAction filters cross-level fishing spots', () => {
+        const fishingSpotDownstairs = npc('Fishing spot', 101, 100, 'npc:fishing-spot', 0);
+
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [item(303, 'rs:small_fishing_net')] },
+                nearby: { npcs: [fishingSpotDownstairs] },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });

@@ -82,13 +82,20 @@ export class CurrencyLedger {
     static fromSnapshot(snapshot: CurrencyLedgerSnapshot, options: CurrencyLedgerOptions = {}): CurrencyLedger {
         const parsed = currencyLedgerSnapshotSchema.parse(snapshot);
         const ledger = new CurrencyLedger(options);
+        ledger.replaceWithSnapshot(parsed);
+        return ledger;
+    }
+
+    replaceWithSnapshot(snapshot: CurrencyLedgerSnapshot): void {
+        const parsed = currencyLedgerSnapshotSchema.parse(snapshot);
+        this.balances.clear();
+        this.historyByHuman.clear();
         for (const [humanId, balance] of Object.entries(parsed.balances)) {
-            ledger.balances.set(humanId, balance);
+            this.balances.set(humanId, balance);
         }
         for (const [humanId, entries] of Object.entries(parsed.history)) {
-            ledger.historyByHuman.set(humanId, [...entries]);
+            this.historyByHuman.set(humanId, [...entries]);
         }
-        return ledger;
     }
 
     balance(humanId: string): number {

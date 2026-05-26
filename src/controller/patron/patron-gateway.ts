@@ -2,10 +2,11 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { CurrencyLedger } from './currency-ledger';
-import { produceStandingTierLetter } from './letters-producer';
+import { produceCivicAchievementLetter, produceStandingTierLetter } from './letters-producer';
 import type { LettersStore } from './letters-store';
 import { StandingLedger, StandingTier } from './standing-ledger';
 import { ResidentRuntime } from '../resident-runtime';
+import { residentSlug } from '../memory/runtime-state';
 
 export interface OfferToResidentRequest {
     humanId: string;
@@ -30,8 +31,24 @@ export interface SponsorBirthRequest {
 export interface PatronEventOutcome {
     ok: boolean;
     eventId: string;
-    standingDelta?: { factionId: string; before: number; after: number; tierCrossed?: StandingTier };
-    error?: 'insufficient_currency' | 'cooldown_active' | 'resident_not_found' | 'invalid_amount';
+    /**
+     * Standing delta produced by this event, if any.
+     *
+     * `tierCrossed` holds the HIGHEST tier the patron crossed into (back-compat
+     * with pre-HD-040 callers that expected one tier per call). `tiersCrossed`
+     * enumerates EVERY user-facing tier crossed in ascending order — callers
+     * that surface "you got N letters" UX (CLI / dashboard) should prefer
+     * `tiersCrossed.length` to match the actual letter dispatch count
+     * (E38 / E46 HD-040 follow-on).
+     */
+    standingDelta?: {
+        factionId: string;
+        before: number;
+        after: number;
+        tierCrossed?: StandingTier;
+        tiersCrossed?: readonly StandingTier[];
+    };
+    error?: 'insufficient_currency' | 'cooldown_active' | 'resident_not_found' | 'invalid_amount' | 'invalid_input';
 }
 
 export interface PatronGatewayOptions {
@@ -47,6 +64,14 @@ export interface PatronGatewayOptions {
      * `stranger` sentinel are skipped (per `isUserFacingTier`).
      */
     lettersStore?: LettersStore;
+    /**
+     * Optional memory root (same `config.memory.dir` the LibraryUpdater uses).
+     * When present, {@link PatronGateway.askResident} appends `patron_ask`
+     * events directly to `library/<slug>/timeline.jsonl`. When absent the
+     * ask verb still returns ok but writes nothing — useful for in-process
+     * test scenarios that don't care about persistence.
+     */
+    memoryDir?: string;
     onResidentBorn?: (name: string) => void | Promise<void>;
     now?: () => Date;
 }
@@ -84,19 +109,24 @@ export class PatronGateway {
         const attentionPerShard = 2;
         runtime.incrementAttention(req.amount * attentionPerShard);
 
-        // 3. Record standing
+        // 3. Record standing — snapshot `before` first (HD-037 HIGH-2: same
+        // pattern applied to witnessAt; compute before recordSupport so the
+        // delta is correct even if future decay/cap makes the net change differ
+        // from `amount`).
         const faction = (runtime.getState() as any).faction || 'embassy';
+        const standingBefore = this.options.standingLedger.points(req.humanId, faction);
         const standingResult = this.options.standingLedger.recordSupport(req.humanId, faction, req.amount, {
             reason: 'mercy_infusion',
             ts: nowString,
         });
 
-        // 3a. Letter dispatch on tier crossing (J-δ-β-2).
+        // 3a. Letter dispatch on tier crossing (J-δ-β-2). HD-040: iterate
+        // EVERY tier crossed so multi-tier grants produce one letter per tier.
         this.dispatchTierLetter({
             humanId: req.humanId,
             faction,
             residentName: req.residentName,
-            tierCrossed: standingResult.tierCrossed,
+            tiersCrossed: standingResult.tiersCrossed,
             amount: req.amount,
             ts: nowString,
         });
@@ -116,6 +146,14 @@ export class PatronGateway {
                 tick: runtime.getState().tick,
                 patronHandle: req.humanId,
                 note: req.interactionContext || 'mercy_infusion',
+                // E7 (intelligence-verification-log.md § E7): forward
+                // amount + standingTier so the Brain's memory rendering
+                // can include them instead of the literal string
+                // "a gift". attentionDelta mirrors the attentionPerShard
+                // multiplier used above.
+                amount: req.amount,
+                standingTier: standingResult.tierCrossed || undefined,
+                attentionDelta: req.amount * attentionPerShard,
             });
         }
 
@@ -124,9 +162,10 @@ export class PatronGateway {
             eventId,
             standingDelta: {
                 factionId: faction,
-                before: this.options.standingLedger.points(req.humanId, faction) - req.amount,
+                before: standingBefore,
                 after: this.options.standingLedger.points(req.humanId, faction),
                 tierCrossed: standingResult.tierCrossed || undefined,
+                tiersCrossed: standingResult.tiersCrossed,
             },
         };
     }
@@ -154,13 +193,21 @@ export class PatronGateway {
         if (this.options.soulsDir) {
             const frontmatter = {
                 name: req.name,
-                archetype: 'default',
-                faction: req.factionId,
+                archetype: 'endurer',
+                factionId: req.factionId,
                 goals: req.soulFields?.goals ? [req.soulFields.goals] : [],
                 alignment: req.soulFields?.alignment || 'neutral',
-                quirks: req.soulFields?.quirks ? [req.soulFields.quirks] : [],
+                voice: req.soulFields?.quirks ? { quirks: [req.soulFields.quirks] } : undefined,
                 aesthetic: req.soulFields?.aesthetic || 'standard',
                 attentionProfile: { startingAttention: 100, decayCurve: 'standard' },
+                heroProfile: {
+                    tier: 'novice',
+                    publicName: req.name
+                        .replace(/^res:/, '')
+                        .replace(/-/g, ' ')
+                        .replace(/\b([a-z])/g, c => c.toUpperCase()),
+                    signatureAction: 'explores Null City',
+                },
             };
             const body = `# ${req.name}\n\nSponsored by ${req.humanId}.`;
             const slug = req.name.replace(/^res:/, '');
@@ -178,19 +225,22 @@ export class PatronGateway {
         this.options.currencyLedger.debit(req.humanId, partCost, { reason: 'birth_sponsorship', ts: nowString });
         this.options.currencyLedger.debit(req.humanId, req.cost - 2 * partCost, { reason: 'birth_sponsorship', ts: nowString });
 
-        // Record standing (+10 standing points, instantly making them an acquaintance)
+        // Record standing (+10 standing points, instantly making them an acquaintance).
+        // HD-037 HIGH-2: snapshot `before` BEFORE recordSupport (same fix as witnessAt).
+        const sponsorBefore = this.options.standingLedger.points(req.humanId, req.factionId);
         const standingResult = this.options.standingLedger.recordSupport(req.humanId, req.factionId, 10, {
             reason: 'birth_sponsorship',
             ts: nowString,
         });
 
         // Letter dispatch on tier crossing (J-δ-β-2). Birth always grants +10,
-        // which crosses stranger→acquaintance for first-time sponsors.
+        // which crosses stranger→acquaintance for first-time sponsors. HD-040:
+        // iterate ALL crossed tiers (only acquaintance here in practice).
         this.dispatchTierLetter({
             humanId: req.humanId,
             faction: req.factionId,
             residentName: req.name,
-            tierCrossed: standingResult.tierCrossed,
+            tiersCrossed: standingResult.tiersCrossed,
             amount: 10,
             ts: nowString,
         });
@@ -209,21 +259,37 @@ export class PatronGateway {
             eventId,
             standingDelta: {
                 factionId: req.factionId,
-                before: this.options.standingLedger.points(req.humanId, req.factionId) - 10,
+                before: sponsorBefore,
                 after: this.options.standingLedger.points(req.humanId, req.factionId),
                 tierCrossed: standingResult.tierCrossed || undefined,
+                tiersCrossed: standingResult.tiersCrossed,
             },
         };
     }
 
-    async witnessAt(humanId: string, landmarkId: string, residentName?: string): Promise<PatronEventOutcome> {
+    /**
+     * Bear witness to a resident accomplishment (artifact / landmark). Writes
+     * a `patron_witness` event to the resident's trajectory + library timeline
+     * AND — when a `residentName` is supplied — credits the patron a small
+     * standing bump (default +3) against the resident's faction. The standing
+     * bump may cross a tier threshold, in which case a standing-tier letter is
+     * dispatched via {@link dispatchTierLetter} (same path as `offerTo`).
+     *
+     * `amount` defaults to 3 Shards-equivalent standing points: smaller than
+     * an `offerTo` (since no Shards changed hands) but still enough that the
+     * 4th witness-without-a-prior-offer pushes a patron over `acquaintance`.
+     */
+    async witnessAt(humanId: string, landmarkId: string, residentName?: string, amount: number = 3): Promise<PatronEventOutcome> {
         const now = this.resolveTime();
         const nowString = now.toISOString();
         const eventId = `witness-${humanId}-${landmarkId}-${now.getTime()}`;
 
+        let standingDelta: PatronEventOutcome['standingDelta'];
+
         if (residentName) {
             const runtime = this.options.runtimes.get(residentName);
             if (runtime) {
+                const faction = (runtime.getState() as any).faction || 'embassy';
                 const evidence = runtime.getEvidence();
                 if (evidence) {
                     evidence.trajectory.recordPatron({
@@ -239,7 +305,125 @@ export class PatronGateway {
                         artifact: landmarkId,
                     });
                 }
+
+                // J4: civic milestone — one keepsake letter per witness event.
+                this.dispatchCivicLetter({ humanId, faction, residentName, landmarkId, ts: nowString });
+
+                if (amount > 0 && Number.isInteger(amount)) {
+                    // E31 / HD-037 HIGH-2: snapshot `before` BEFORE recordSupport
+                    // so the delta is correct even if a future decay/cap path
+                    // makes recordSupport's net change differ from `amount`.
+                    // The previous implementation computed `before` as
+                    // `points(...) - amount` after recordSupport, which only
+                    // happens to work when recordSupport adds exactly amount.
+                    const before = this.options.standingLedger.points(humanId, faction);
+                    const standingResult = this.options.standingLedger.recordSupport(humanId, faction, amount, {
+                        reason: 'patron_witness',
+                        ts: nowString,
+                    });
+                    // HD-040: iterate ALL tiers crossed so multi-tier witness
+                    // jumps (rare for amount=3 default but possible if a CLI
+                    // override passes a larger value) produce one letter each.
+                    this.dispatchTierLetter({
+                        humanId,
+                        faction,
+                        residentName,
+                        tiersCrossed: standingResult.tiersCrossed,
+                        amount,
+                        ts: nowString,
+                    });
+                    standingDelta = {
+                        factionId: faction,
+                        before,
+                        after: this.options.standingLedger.points(humanId, faction),
+                        tierCrossed: standingResult.tierCrossed || undefined,
+                        tiersCrossed: standingResult.tiersCrossed,
+                    };
+                }
             }
+        }
+
+        return { ok: true, eventId, standingDelta };
+    }
+
+    /**
+     * Patron asks a resident a question. Writes a `patron_ask` event to the
+     * resident's library timeline (with the question text), so the next time
+     * the resident's prompt envelope is rendered the Brain has a beat for it.
+     *
+     * NOTE: this verb does NOT (yet) synthesize a `chat` PerceptionEvent on
+     * the resident's runtime queue. That would require touching
+     * `resident-runtime.ts` (Codex zone). Filed as coordination gap — the
+     * patron-acknowledge nervous-system reflex therefore will NOT fire on
+     * this verb. The Brain will see the question only on next wake, via the
+     * library-timeline memory rendering.
+     *
+     * @returns event metadata including `eventId` and no `standingDelta`
+     *   (ask is a "free" signal — no Shards moved, no standing bump).
+     */
+    async askResident(humanId: string, residentName: string, question: string): Promise<PatronEventOutcome> {
+        if (!humanId || !residentName || !question || question.trim().length === 0) {
+            // E31 / HD-037 HIGH-1: ask has no amount; route empty args to
+            // 'invalid_input' instead of misappropriating 'invalid_amount'.
+            return { ok: false, eventId: '', error: 'invalid_input' };
+        }
+
+        const runtime = this.options.runtimes.get(residentName);
+        if (!runtime) {
+            return { ok: false, eventId: '', error: 'resident_not_found' };
+        }
+
+        // E31 / HD-038 LOW-1: cap question to 500 chars + strip control chars
+        // to keep timeline + future prompt envelope bounded. The question
+        // landing on disk forever and being re-included in every Brain prompt
+        // makes a 10MB --text payload a long-term prompt-budget burden.
+        const normalizedQuestion = String(question)
+            // biome-ignore lint/suspicious/noControlCharactersInRegex: patron questions may arrive from CLI/HTTP and need control chars flattened before persistence.
+            .replace(/[\x00-\x1F\x7F]/g, ' ')
+            .slice(0, 500);
+
+        const now = this.resolveTime();
+        const nowString = now.toISOString();
+        const eventId = `ask-${humanId}-${residentName}-${now.getTime()}`;
+
+        const tick = runtime.getState().tick;
+
+        // Write `patron_ask` directly to the library timeline. We bypass
+        // LibraryUpdater.observePatron because its PatronEvent.kind union is
+        // currently restricted to `patron_gift | patron_witness | patron_sponsor`;
+        // widening that type ripples through significance/portrait/memory
+        // renderers (out of scope for this slice). Direct append keeps the
+        // event on disk where the prompt envelope can read it.
+        const memoryDir = this.options.memoryDir;
+        if (memoryDir) {
+            const libraryDir = path.join(memoryDir, 'library', residentSlug(residentName));
+            fs.mkdirSync(libraryDir, { recursive: true });
+            const timelinePath = path.join(libraryDir, 'timeline.jsonl');
+            // lifeIndex is best-effort: read the library index if present, else 1.
+            let lifeIndex = 1;
+            const indexPath = path.join(libraryDir, 'index.json');
+            if (fs.existsSync(indexPath)) {
+                try {
+                    const parsed = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as { lives?: number };
+                    if (typeof parsed.lives === 'number' && Number.isFinite(parsed.lives)) {
+                        lifeIndex = parsed.lives;
+                    }
+                } catch {
+                    // fall through with lifeIndex=1
+                }
+            }
+            const entry = {
+                schemaVersion: 1,
+                ts: nowString,
+                tick,
+                sessionId: 'external',
+                kind: 'patron_ask',
+                patronHandle: humanId,
+                question: normalizedQuestion,
+                lifeIndex,
+                significanceReasons: ['patron:patron_ask'],
+            };
+            fs.appendFileSync(timelinePath, `${JSON.stringify(entry)}\n`);
         }
 
         return { ok: true, eventId };
@@ -247,7 +431,8 @@ export class PatronGateway {
 
     async sendGift(humanId: string, residentName: string, artifact: string): Promise<PatronEventOutcome> {
         if (!humanId || !residentName || !artifact) {
-            return { ok: false, eventId: '', error: 'resident_not_found' };
+            // E31 / HD-037 HIGH-1: distinguish missing-args from missing-resident.
+            return { ok: false, eventId: '', error: 'invalid_input' };
         }
 
         const runtime = this.options.runtimes.get(residentName);
@@ -292,23 +477,53 @@ export class PatronGateway {
         humanId: string;
         faction: string;
         residentName: string;
-        tierCrossed: StandingTier | null;
+        /**
+         * Every user-facing tier crossed by the supporting call. The
+         * dispatcher emits ONE letter per element so a stranger → officer
+         * jump produces Acquaintance + Ally + Officer letters, not just an
+         * Officer letter (HD-040 / E36-F36b).
+         */
+        tiersCrossed: readonly StandingTier[];
         amount: number;
         ts: string;
     }): void {
-        if (!this.options.lettersStore || !input.tierCrossed) {
+        if (!this.options.lettersStore || input.tiersCrossed.length === 0) {
             return;
         }
-        const letter = produceStandingTierLetter({
+        for (const tierCrossed of input.tiersCrossed) {
+            const letter = produceStandingTierLetter({
+                humanId: input.humanId,
+                faction: input.faction,
+                residentName: input.residentName,
+                tierCrossed,
+                amount: input.amount,
+                ts: input.ts,
+            });
+            if (letter) {
+                this.options.lettersStore.append(letter);
+            }
+        }
+    }
+
+    /** J4: dispatch a civic milestone `embassy_visit` letter to the patron's inbox. */
+    private dispatchCivicLetter(input: {
+        humanId: string;
+        faction: string;
+        residentName: string;
+        landmarkId: string;
+        ts: string;
+    }): void {
+        if (!this.options.lettersStore) {
+            return;
+        }
+        const letter = produceCivicAchievementLetter({
             humanId: input.humanId,
             faction: input.faction,
             residentName: input.residentName,
-            tierCrossed: input.tierCrossed,
-            amount: input.amount,
+            achievementKind: 'embassy_visit',
+            achievementDetail: `Witnessed at ${input.landmarkId}`,
             ts: input.ts,
         });
-        if (letter) {
-            this.options.lettersStore.append(letter);
-        }
+        this.options.lettersStore.append(letter);
     }
 }

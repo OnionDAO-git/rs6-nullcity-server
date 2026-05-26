@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { groupSuggestionEvents, loadSuggestionEvents } from './review-suggestions';
+import { groupSuggestionEvents, loadSuggestionEvents, parseReviewSuggestionsArgs } from './review-suggestions';
 import type { KnowledgeSuggestion } from './suggestions';
 
 describe('review suggestions', () => {
@@ -33,6 +33,40 @@ describe('review suggestions', () => {
                 }),
             }),
         ]);
+    });
+
+    it('parses suggestions CLI args and environment variables', () => {
+        const oldEnv = { ...process.env };
+        process.env.CONTROLLER_CONFIG = 'controller.env.yml';
+        process.env.CONTROLLER_KNOWLEDGE_DIR = '/env/knowledge';
+
+        try {
+            // Test defaults
+            expect(parseReviewSuggestionsArgs([])).toEqual({
+                configPath: 'controller.env.yml',
+                knowledgeDir: '/env/knowledge',
+            });
+
+            // Test CLI overrides
+            expect(parseReviewSuggestionsArgs(['--config', 'local.yml', '--dir', '/cli/knowledge'])).toEqual({
+                configPath: 'local.yml',
+                knowledgeDir: '/cli/knowledge',
+            });
+
+            // Test aliases
+            expect(parseReviewSuggestionsArgs(['-c', 'local.yml', '-d', '/cli/knowledge'])).toEqual({
+                configPath: 'local.yml',
+                knowledgeDir: '/cli/knowledge',
+            });
+
+            // Test positional fallback
+            expect(parseReviewSuggestionsArgs(['/fallback/knowledge'])).toEqual({
+                configPath: 'controller.env.yml',
+                knowledgeDir: '/fallback/knowledge',
+            });
+        } finally {
+            process.env = oldEnv;
+        }
     });
 });
 

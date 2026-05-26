@@ -1,10 +1,27 @@
+import fs from 'fs';
+import path from 'path';
 import type { LlmClient } from './llm/llm-client';
-import { ActionCoordinator } from './actions/action-coordinator';
+import { ActionCoordinator, type ActionCoordinatorSubmitInput } from './actions/action-coordinator';
 import { PatronConfig, PatronRegistry } from './patron/patron-registry';
+import { RoutineCapableRuntime, RoutineContext, RoutinePreemptionReason, RoutineTickOutcome } from './routines/routine-runner';
+import {
+    buryBonesAction,
+    combatTrainingAction,
+    firemakingAction,
+    firstFoodSlot,
+    hasNearbyFire,
+    isLowHealth,
+    levelOneWoodcuttingAction,
+} from './spark/runescape-body-routines';
+
+import { HERO_TIERS } from './residents/hero-tier';
+import { canTradeResource, itemMatches } from './actions/hero-actions';
 
 import { type ResidentBody, createGatewayBody } from './body';
 import type { BodyActionLogEntry } from './body';
 import type { ActionAttempt, ActionEvidence, EffectWaitResult } from './actions/action-attempt';
+import { evaluateReceptionGreeting } from './embassy/reception-reflex';
+import { canInteract } from './actions/interact-resident';
 import {
     EVIDENCE_SCHEMA_VERSION,
     ProgressTracker,
@@ -15,23 +32,48 @@ import {
     type TrajectoryBuilder,
 } from './evidence';
 import type { GameSkillContext, GameSkillContextInput } from './knowledge/game-skill-context';
+import type { RecordFactionAttemptInput } from './factions/stockpile-ledger';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
 import type { MemoryStore } from './memory/memory-store';
-import { type RuntimeState, RuntimeStateStore } from './memory/runtime-state';
+import { type RuntimeState, RuntimeStateStore, addAttention, markDeceased } from './memory/runtime-state';
 import { NervousSystem } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
-import type { Soul } from './soul/soul-schema';
+import { type Soul, dominantFaction } from './soul/soul-schema';
+import { LettersStore } from './patron/letters-store';
+import {
+    buildEpitaphDispatchRequests,
+    dispatchEpitaphs,
+    loadPreparedEpitaph,
+    type DeceasedResidentSummary,
+} from './patron/epitaph-dispatcher';
+import { produceBroadcastLetter, type Letter } from './patron/letters-producer';
+import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
-import { initialAttention } from './spark/attention';
+import { initialAttention, spendAttention } from './spark/attention';
+import { explorationGoal, isStandaloneFiremakingGoal } from './spark/runescape-brain-planner';
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
-import type { ThinkingModule } from './thinking';
+import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
-import type { AgentAction, Perception, PerceptionEvent } from './transport/message-codecs';
+import type { AgentAction, Perception, PerceptionEvent, ActionResult } from './transport/message-codecs';
+import { LoreBus } from './lore/lore-bus';
+import { FireLitReflex } from './lore/fire-lit-reflex';
+import { MomentLabeler } from './evidence/moment-labeler';
+import { whisperInboxFor, type WhisperInbox } from './lore/whisper';
 
 const MAX_PENDING_EVENTS = 50;
+const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
+const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
+const SAY_ACTION_WATCHDOG_MS = 10_000;
+const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
+const MOVE_EFFECT_TIMEOUT_MIN_MS = 5_000;
+const MOVE_EFFECT_TIMEOUT_PER_TILE_MS = 1_200;
+const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
+const MOVE_EFFECT_TIMEOUT_MAX_MS = 30_000;
+const STARTER_FISHING_EFFECT_TIMEOUT_MS = 45_000;
+const THINKING_VISIBILITY_DELAY_MS = 1_000;
 
 export interface ResidentRuntimeGameSkill {
     buildContext(input: GameSkillContextInput): GameSkillContext;
@@ -43,6 +85,10 @@ export interface ResidentRuntimeGameSkill {
         attempt: ActionAttempt;
     }): void;
     flush?(): Promise<void>;
+}
+
+export interface ResidentRuntimeFactionStockpile {
+    recordAttempt(input: RecordFactionAttemptInput): unknown;
 }
 
 export interface ResidentRuntimeOptions {
@@ -57,9 +103,18 @@ export interface ResidentRuntimeOptions {
     body?: ResidentBody;
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
+    factionStockpile?: ResidentRuntimeFactionStockpile;
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
     patrons?: PatronConfig[];
+    patronGateway?: {
+        witnessAt(patronHandle: string, landmarkId: 'embassy', residentName: string): Promise<unknown> | unknown;
+    };
+    watchdog?: {
+        thinkingMs?: number;
+        actionMs?: number;
+    };
+    loreBus?: LoreBus;
 }
 
 export interface ResidentRuntimeEvidence {
@@ -69,8 +124,18 @@ export interface ResidentRuntimeEvidence {
     library?: LibraryUpdater;
 }
 
-export class ResidentRuntime {
+interface PerceptionArrival {
+    perception: Perception;
+    preemption?: { preempted: RoutinePreemptionReason };
+}
+
+export class ResidentRuntime implements RoutineCapableRuntime {
     readonly name: string;
+    _lastHints?: string[];
+    activeRoutineId?: string;
+    private followSuccessTicks = 0;
+    private killsObserved = 0;
+    private nextPerceptionResolver?: (arrival: PerceptionArrival) => void;
     private readonly state: RuntimeState;
     private readonly thinking: ThinkingModule;
     private readonly thinkingSparkModule?: SparkModuleIdentity;
@@ -87,15 +152,26 @@ export class ResidentRuntime {
     private readonly evidence?: ResidentRuntimeEvidence;
     private readonly progressTracker = new ProgressTracker();
     private deciding = false;
+    private activeTradeResourceDeferred?: {
+        resolve: (attempt: ActionAttempt) => void;
+        reject: (err: Error) => void;
+        attempt: ActionAttempt;
+    };
+    private readonly loreBus?: LoreBus;
+    private readonly fireLitReflex?: FireLitReflex;
+    private readonly momentLabeler?: MomentLabeler;
+    private readonly whisperInbox?: WhisperInbox;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
         this.evidence = options.evidence;
+        const startingAttention = initialAttention(options.soul.frontmatter.attentionProfile);
         this.state = options.stateStore.load(
             this.name,
-            initialAttention(options.soul.frontmatter.attentionProfile),
+            startingAttention,
             options.soul.frontmatter.legacy?.kind || options.soul.frontmatter.archetype,
         );
+        this.applyRestartRespawnPolicy(startingAttention);
         this.patronRegistry = new PatronRegistry(options.patrons || []);
         if (options.thinking) {
             this.thinking = options.thinking;
@@ -130,7 +206,43 @@ export class ResidentRuntime {
                     submit: (action, metadata) => this.body.submit(action, metadata as Omit<BodyActionLogEntry, 'action' | 'result'>),
                 },
             });
+        if (options.loreBus) {
+            this.loreBus = options.loreBus;
+            this.fireLitReflex = new FireLitReflex({ bus: options.loreBus });
+            this.whisperInbox = whisperInboxFor(options.loreBus, this.name);
+            this.momentLabeler = options.evidence ? new MomentLabeler({ builder: options.evidence.trajectory }) : undefined;
+        }
         this.options.stateStore.save(this.state);
+    }
+
+    private applyRestartRespawnPolicy(startingAttention: number): void {
+        if (this.options.soul.frontmatter.respawnPolicy !== 'on_restart') {
+            return;
+        }
+        if (this.state.deceased?.cause !== 'attention_exhausted') {
+            return;
+        }
+
+        this.state.attention = Math.max(this.state.attention, startingAttention);
+        this.state.deceased = undefined;
+        this.state.stuckSince = undefined;
+        if (this.state.cognition?.activeMove) {
+            this.state.cognition.activeMove = undefined;
+        }
+
+        // HD-028 wire-in (E8/F8a + E12). The runtime-state mutations
+        // above bring the resident back, but without a library/timeline
+        // beat the Brain's next prompt envelope has no memory line about
+        // the continuity break. LibraryUpdater.observeRevival bumps
+        // `index.lives`, flips `currentState` back to 'living', and
+        // appends a `revival` event so the resident can acknowledge it
+        // (e.g. via a "I came back from somewhere quiet..." say). The
+        // substrate was shipped at f9968a16; this is the wire-in.
+        this.evidence?.library?.observeRevival({
+            ts: new Date().toISOString(),
+            tick: this.state.tick,
+            cause: 'restart_respawn_policy',
+        });
     }
 
     getState(): RuntimeState {
@@ -142,8 +254,24 @@ export class ResidentRuntime {
     }
 
     incrementAttention(amount: number): void {
-        this.state.attention = Math.max(0, this.state.attention + amount);
+        addAttention(this.state, amount);
         this.options.stateStore.save(this.state);
+    }
+
+    getPosition(): { x: number; y: number; level: number } | undefined {
+        const latest = this.body.getLatestPerception();
+        if (!latest) {
+            return undefined;
+        }
+        const pos = perceptionPosition(latest);
+        if (!pos) {
+            return undefined;
+        }
+        return {
+            x: pos.x,
+            y: pos.y,
+            level: pos.level ?? 0,
+        };
     }
 
     async onPerception(perception: Perception): Promise<void> {
@@ -151,118 +279,505 @@ export class ResidentRuntime {
     }
 
     private async handlePerception(perception: Perception): Promise<void> {
-        const nervousPerception = this.peekWithPendingEvents(perception);
-        const reaction = this.nervousSystem.react(nervousPerception);
-        if (reaction) {
-            if (this.deciding && reaction.interruptThinking) {
-                this.thinking.stop(`nervous:${reaction.rule.id}`);
+        if (this.state.activeTradeResource) {
+            await this.tickActiveTradeResource(perception);
+            return;
+        }
+        if (this.whisperInbox) {
+            const drainedWhispers = this.whisperInbox.drain();
+            for (const whisper of drainedWhispers) {
+                const fromName = whisper.from;
+                const isRes = fromName.startsWith('res:') || fromName.startsWith('resident:');
+                const fromKind = isRes ? 'resident' : 'player';
+                const fromId = isRes
+                    ? `resident:${fromName.replace(/^(res:|resident:)/, '')}`
+                    : `player:${fromName.replace(/[^a-z0-9:_-]+/gi, '-')}`;
+                this.pendingEvents.push({
+                    kind: 'whisper',
+                    text: whisper.text,
+                    from: {
+                        id: fromId,
+                        kind: fromKind,
+                        name: fromName,
+                        position: whisper.position,
+                    },
+                    to: this.name,
+                    ts: whisper.ts,
+                } as any);
             }
+        }
+
+        this.applyExternalOperatorRevive();
+
+        if (this.fireLitReflex && this.momentLabeler) {
+            const fireEvent = this.fireLitReflex.observe(perception as any, this.name);
+            if (fireEvent) {
+                const payload = fireEvent.payload as { position: { x: number; y: number; level: number } };
+                this.momentLabeler.noteFireLit({ position: payload.position });
+            }
+        }
+        // O1: only decay attention while the resident is alive; a deceased
+        // resident's attention must not drift further negative across ticks
+        // (avoids corrupted revival preconditions and confusing < 0 state).
+        if (!this.state.deceased) {
+            this.state.attention = spendAttention(
+                this.state.attention,
+                this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
+                1,
+                // E30 / HD-008: per-tick decay respects the optional soul floor
+                // so heroes never die from idle decay alone.
+                this.options.soul.frontmatter.attentionProfile?.floor,
+            );
+        }
+
+        const attentionExhaustedThisTick = this.state.attention <= 0 && !this.state.deceased;
+        if (attentionExhaustedThisTick) {
+            markDeceased(this.state, 'attention_exhausted');
+        }
+
+        try {
+            if (this.state.deceased) {
+                if (attentionExhaustedThisTick) {
+                    await this.submitAttentionLogout(perception);
+                }
+                if (this.nextPerceptionResolver) {
+                    const resolve = this.nextPerceptionResolver;
+                    this.nextPerceptionResolver = undefined;
+                    resolve({
+                        perception,
+                        preemption: { preempted: 'nervous_death' },
+                    });
+                }
+                return;
+            }
+
+            if (this.nextPerceptionResolver) {
+                const resolve = this.nextPerceptionResolver;
+                this.nextPerceptionResolver = undefined;
+
+                const nervousPerception = this.peekWithPendingEvents(perception);
+                const reaction = this.nervousSystem.react(nervousPerception);
+                if (reaction) {
+                    const decisionPerception = this.withPendingEvents(perception);
+                    this.history.push(decisionPerception);
+                    this.body.observePerception(decisionPerception);
+
+                    const attempt = await this.submitActionWithWatchdog({
+                        producer: 'nervous-system',
+                        action: reaction.action,
+                        metadata: {
+                            tick: this.state.tick,
+                            attention_after: this.state.attention,
+                            source: 'nervous-system',
+                            ruleId: reaction.rule.id,
+                            sparkModule: reaction.sparkModule,
+                        },
+                        waitForEffect: this.effectWaitFor(reaction.action),
+                        ...this.evidenceCallbacks(),
+                    });
+                    this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+
+                    resolve({
+                        perception,
+                        preemption: { preempted: mapNervousRuleId(reaction.rule.id) },
+                    });
+                    return;
+                }
+
+                resolve({ perception });
+                return;
+            }
+
+            if (this.options.patronGateway && (await this.trySubmitReceptionGreeting(perception))) {
+                return;
+            }
+
+            const nervousPerception = this.peekWithPendingEvents(perception);
+            const reaction = this.nervousSystem.react(nervousPerception);
+            if (reaction) {
+                if (this.deciding && reaction.interruptThinking) {
+                    this.thinking.stop(`nervous:${reaction.rule.id}`);
+                }
+                const decisionPerception = this.withPendingEvents(perception);
+                this.history.push(decisionPerception);
+                this.body.observePerception(decisionPerception);
+
+                const attempt = await this.submitActionWithWatchdog({
+                    producer: 'nervous-system',
+                    action: reaction.action,
+                    metadata: {
+                        tick: this.state.tick,
+                        attention_after: this.state.attention,
+                        source: 'nervous-system',
+                        ruleId: reaction.rule.id,
+                        sparkModule: reaction.sparkModule,
+                    },
+                    waitForEffect: this.effectWaitFor(reaction.action),
+                    ...this.evidenceCallbacks(),
+                });
+                this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+                if (reaction.suppressThinking) {
+                    return;
+                }
+            }
+
+            if (this.deciding) {
+                this.history.push(perception);
+                this.body.observePerception(perception);
+                const compressed = this.compressor.compress(nervousPerception);
+                if (this.thinking.considerInterrupt(nervousPerception)) {
+                    this.options.inferenceLog.append(this.name, {
+                        tick: this.state.tick,
+                        cause: 'urgent_interrupt',
+                        perception_tokens: compressed.text.length,
+                        sparkModule: this.thinkingSparkModule,
+                    });
+                }
+                return;
+            }
+
             const decisionPerception = this.withPendingEvents(perception);
             this.history.push(decisionPerception);
             this.body.observePerception(decisionPerception);
 
-            const attempt = await this.actionCoordinator.submit({
-                producer: 'nervous-system',
-                action: reaction.action,
-                metadata: {
-                    tick: this.state.tick,
-                    attention_after: this.state.attention,
-                    source: 'nervous-system',
-                    ruleId: reaction.rule.id,
-                    sparkModule: reaction.sparkModule,
-                },
-                waitForEffect: this.effectWaitFor(reaction.action),
-                ...this.evidenceCallbacks(),
+            const compressed = this.compressor.compress(decisionPerception);
+            const compressedPerception = { ...decisionPerception, compressed: compressed.text };
+            const gameSkillContext = this.options.gameSkill?.buildContext({
+                resident: this.name,
+                tick: this.state.tick,
+                activeGoal: this.state.cognition?.activeGoal,
+                perception: compressedPerception,
             });
-            this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
-            this.options.stateStore.save(this.state);
-            if (reaction.suppressThinking) {
-                return;
-            }
-        }
-
-        if (this.deciding) {
-            this.history.push(perception);
-            this.body.observePerception(perception);
-            const compressed = this.compressor.compress(nervousPerception);
-            if (this.thinking.considerInterrupt(nervousPerception)) {
+            this.deciding = true;
+            const thinkingVisibilityTimer = setTimeout(() => {
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
-                    cause: 'urgent_interrupt',
+                    status: 'deciding',
+                    cause: 'thinking_started',
                     perception_tokens: compressed.text.length,
                     sparkModule: this.thinkingSparkModule,
                 });
+            }, THINKING_VISIBILITY_DELAY_MS);
+            thinkingVisibilityTimer.unref?.();
+            try {
+                const result = await this.thinkWithWatchdog(compressedPerception, gameSkillContext);
+                this.recordEvidence(trajectory =>
+                    trajectory.recordDecision({
+                        cause: result.cause,
+                        moduleId: this.thinkingSparkModule?.id,
+                        moduleVersion: this.thinkingSparkModule?.version,
+                        promptTokens: result.envelopeTokens,
+                        actionKinds: result.actions.map(action => action.kind),
+                        memoUpdates: result.memoUpdates,
+                        planChange: result.planChange,
+                    }),
+                );
+                for (const event of result.syntheticEvents || []) {
+                    this.history.push(event);
+                }
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    envelope_tokens: result.envelopeTokens || 0,
+                    actions_emitted: result.actions.length,
+                    synthetic_events: result.syntheticEvents?.length || 0,
+                    parse_ok: true,
+                    cause: result.cause,
+                    nooped: result.nooped,
+                    sparkModule: this.thinkingSparkModule,
+                });
+
+                for (const action of result.actions) {
+                    const interactReasons = canInteract(this.state, action, compressedPerception, this.options.soul);
+                    if (interactReasons.length > 0) {
+                        const tick = typeof compressedPerception.tick === 'number' ? compressedPerception.tick : this.state.tick;
+                        const requestId = `gate:${tick}:${action.kind}`;
+                        this.recordEvidence(trajectory => {
+                            const line = trajectory.recordAction(action, requestId);
+                            this.evidence?.library?.observeTrajectory(line);
+                            trajectory.recordActionResult(requestId, {
+                                status: 'failure',
+                                reason: interactReasons.join('; '),
+                            });
+                        });
+                        this.options.inferenceLog.append(this.name, {
+                            tick: this.state.tick,
+                            cause: 'interact_resident_precondition_failed',
+                            actionKind: action.kind,
+                            reasons: interactReasons.join('; '),
+                            sparkModule: this.thinkingSparkModule,
+                        });
+                        continue;
+                    }
+
+                    const attempt = await this.submitActionWithWatchdog({
+                        producer: 'body',
+                        action,
+                        metadata: {
+                            tick: this.state.tick,
+                            attention_after: this.state.attention,
+                            source: 'thinking',
+                            sparkModule: this.thinkingSparkModule,
+                        },
+                        waitForEffect: this.effectWaitFor(action),
+                        ...this.evidenceCallbacks(),
+                    });
+                    this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
+                    this.rememberTargetFailure(attempt);
+                    this.rememberCompletedGoal(attempt);
+                }
+            } finally {
+                clearTimeout(thinkingVisibilityTimer);
+                this.deciding = false;
             }
+        } finally {
+            this.advanceRuntimeClock(perception);
+            this.checkDeceasedAndDispatchEpitaphs(perception);
+            this.options.stateStore.save(this.state);
+        }
+    }
+
+    private advanceRuntimeClock(perception: Perception): void {
+        const perceptionTick = typeof perception.tick === 'number' ? perception.tick : undefined;
+        if (perceptionTick === undefined) {
             return;
+        }
+        this.state.tick = Math.max(this.state.tick, perceptionTick);
+    }
+
+    private async trySubmitReceptionGreeting(perception: Perception): Promise<boolean> {
+        if (!this.options.patronGateway) {
+            return false;
+        }
+
+        const preview = this.peekWithPendingEvents(perception);
+        const greeting = evaluateReceptionGreeting({
+            perception: preview as Record<string, unknown>,
+            residentName: this.name,
+            registry: this.patronRegistry,
+        });
+        if (!greeting) {
+            return false;
+        }
+
+        const tick = typeof preview.tick === 'number' ? preview.tick : this.state.tick;
+        const cooldownKey = `embassy-greeting:${greeting.witness.patronHandle.toLowerCase()}`;
+        const coolingUntil = this.state.hookCooldowns?.[cooldownKey] || 0;
+        if (coolingUntil > tick) {
+            return false;
         }
 
         const decisionPerception = this.withPendingEvents(perception);
         this.history.push(decisionPerception);
         this.body.observePerception(decisionPerception);
+        const action: AgentAction = { ...greeting.action };
 
-        const compressed = this.compressor.compress(decisionPerception);
-        const compressedPerception = { ...decisionPerception, compressed: compressed.text };
-        const gameSkillContext = this.options.gameSkill?.buildContext({
-            resident: this.name,
-            tick: this.state.tick,
-            activeGoal: this.state.cognition?.activeGoal,
-            perception: compressedPerception,
+        const attempt = await this.submitActionWithWatchdog({
+            producer: 'nervous-system',
+            action,
+            metadata: {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'nervous-system',
+                ruleId: 'embassy_reception_greeting',
+                sparkModule: this.nervousSourceModule
+                    ? { id: this.nervousSourceModule.manifest.id, version: this.nervousSourceModule.manifest.version }
+                    : undefined,
+            },
+            waitForEffect: this.effectWaitFor(action),
+            ...this.evidenceCallbacks(),
         });
-        this.deciding = true;
+        this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+        if (attempt.finalStatus !== 'success') {
+            return true;
+        }
+
+        this.state.hookCooldowns = this.state.hookCooldowns || {};
+        this.state.hookCooldowns[cooldownKey] = tick + 10;
+
         try {
-            const result = await this.thinking.think(compressedPerception, gameSkillContext);
-            this.recordEvidence(trajectory =>
-                trajectory.recordDecision({
-                    cause: result.cause,
-                    moduleId: this.thinkingSparkModule?.id,
-                    moduleVersion: this.thinkingSparkModule?.version,
-                    promptTokens: result.envelopeTokens,
-                    actionKinds: result.actions.map(action => action.kind),
-                }),
+            await this.options.patronGateway.witnessAt(
+                greeting.witness.patronHandle,
+                greeting.witness.landmarkId,
+                greeting.witness.residentName,
             );
-            for (const event of result.syntheticEvents || []) {
-                this.history.push(event);
-            }
+        } catch (error) {
             this.options.inferenceLog.append(this.name, {
                 tick: this.state.tick,
-                envelope_tokens: result.envelopeTokens || 0,
-                actions_emitted: result.actions.length,
-                synthetic_events: result.syntheticEvents?.length || 0,
-                parse_ok: true,
-                cause: result.cause,
-                nooped: result.nooped,
-                sparkModule: this.thinkingSparkModule,
+                cause: 'embassy_reception_witness_failed',
+                error: error instanceof Error ? error.message : String(error),
             });
-
-            for (const action of result.actions) {
-                const attempt = await this.actionCoordinator.submit({
-                    producer: 'body',
-                    action,
-                    metadata: {
-                        tick: this.state.tick,
-                        attention_after: this.state.attention,
-                        source: 'thinking',
-                        sparkModule: this.thinkingSparkModule,
-                    },
-                    waitForEffect: this.effectWaitFor(action),
-                    ...this.evidenceCallbacks(),
-                });
-                this.observeGameSkillAttempt('body', compressedPerception, gameSkillContext, attempt);
-            }
-        } finally {
-            this.options.stateStore.save(this.state);
-            this.deciding = false;
         }
+
+        return true;
+    }
+
+    private applyExternalOperatorRevive(): void {
+        if (!this.state.deceased && !this.state.legacy.complete) {
+            return;
+        }
+
+        const startingAttention = initialAttention(this.options.soul.frontmatter.attentionProfile);
+        const external = this.options.stateStore.load(
+            this.name,
+            startingAttention,
+            this.options.soul.frontmatter.legacy?.kind || this.options.soul.frontmatter.archetype,
+        );
+        if (external.deceased || external.attention <= 0) {
+            return;
+        }
+
+        if (!this.state.deceased) {
+            if (this.state.legacy.complete && !external.legacy.complete) {
+                this.state.attention = Math.max(this.state.attention, external.attention);
+                this.state.legacy = {
+                    kind: external.legacy.kind,
+                    complete: external.legacy.complete,
+                    progress: { ...external.legacy.progress },
+                };
+            }
+            return;
+        }
+
+        this.state.attention = Math.max(this.state.attention, external.attention);
+        this.state.legacy = {
+            kind: external.legacy.kind,
+            complete: external.legacy.complete,
+            progress: { ...external.legacy.progress },
+        };
+        this.state.deceased = undefined;
+        this.state.stuckSince = undefined;
+        if (this.state.cognition?.activeMove) {
+            this.state.cognition.activeMove = undefined;
+        }
+    }
+
+    private async submitAttentionLogout(perception: Perception): Promise<void> {
+        if (this.deciding) {
+            this.thinking.stop('attention_exhausted');
+        }
+        const decisionPerception = this.withPendingEvents(perception);
+        this.history.push(decisionPerception);
+        this.body.observePerception(decisionPerception);
+
+        const attempt = await this.submitActionWithWatchdog({
+            producer: 'nervous-system',
+            action: { kind: 'logout', cause: 'attention_exhausted' },
+            metadata: {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'nervous-system',
+                ruleId: 'attention_exhausted',
+            },
+            waitForEffect: undefined,
+            ...this.evidenceCallbacks(),
+        });
+        this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+    }
+
+    private async thinkWithWatchdog(perception: Perception, gameSkillContext: GameSkillContext | undefined): Promise<ThoughtResult> {
+        const timeoutMs = this.options.watchdog?.thinkingMs ?? DEFAULT_THINKING_WATCHDOG_MS;
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<ThoughtResult>(resolve => {
+            timer = setTimeout(() => {
+                this.thinking.stop('thinking_watchdog_timeout');
+                const fallback = this.thinking.onWatchdogTimeout?.(perception, gameSkillContext);
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    cause: 'thinking_watchdog_timeout',
+                    timeoutMs,
+                    sparkModule: this.thinkingSparkModule,
+                });
+                resolve(
+                    fallback || {
+                        actions: [],
+                        syntheticEvents: [],
+                        cause: 'thinking_watchdog_timeout',
+                        envelopeTokens: 0,
+                        nooped: true,
+                    },
+                );
+            }, timeoutMs);
+        });
+        try {
+            return await Promise.race([this.thinking.think(perception, gameSkillContext), timeout]);
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
+    private async submitActionWithWatchdog(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        if (input.action.kind === 'trade_resource') {
+            return this.executeTradeResource(input);
+        }
+        const timeoutMs = this.actionWatchdogTimeoutMs(input.action);
+        let timer: NodeJS.Timeout | undefined;
+        const timeout = new Promise<ActionAttempt>(resolve => {
+            timer = setTimeout(() => {
+                const attempt =
+                    this.actionCoordinator.cancelCurrent('action_watchdog_timeout') ||
+                    fallbackTimedOutAttempt(this.name, input, 'action_watchdog_timeout');
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    cause: 'action_watchdog_timeout',
+                    actionKind: input.action.kind,
+                    timeoutMs,
+                    sparkModule: this.thinkingSparkModule,
+                });
+                resolve(attempt);
+            }, timeoutMs);
+        });
+        try {
+            return await Promise.race([this.actionCoordinator.submit(input), timeout]);
+        } finally {
+            if (timer) {
+                clearTimeout(timer);
+            }
+        }
+    }
+
+    private actionWatchdogTimeoutMs(action: AgentAction): number {
+        if (this.options.watchdog?.actionMs !== undefined) {
+            return Math.max(1, this.options.watchdog.actionMs);
+        }
+        if (action.kind === 'say') {
+            return SAY_ACTION_WATCHDOG_MS;
+        }
+        if (action.kind === 'move_to' && isPosition(action.target)) {
+            const latestPerception = this.body.getLatestPerception();
+            return (
+                movementEffectTimeoutMs(latestPerception ? perceptionPosition(latestPerception) : undefined, action.target) +
+                ACTION_EFFECT_WATCHDOG_GRACE_MS
+            );
+        }
+        if (waitsForPerceptionEffect(action.kind) && supportsPerceptionEffectWait(this.body)) {
+            return actionEffectTimeoutMs(action, this.body.getLatestPerception()) + ACTION_EFFECT_WATCHDOG_GRACE_MS;
+        }
+        return ACK_ONLY_ACTION_WATCHDOG_MS;
     }
 
     onEvent(event: PerceptionEvent): void {
         this.history.push(event);
         this.body.observeEvent(event);
+        if (this.state.activeTradeResource) {
+            const active = this.state.activeTradeResource;
+            if (event.kind === 'trade_completed') {
+                this.completeActiveTradeResource();
+            } else if (event.kind === 'trade_cancelled' || event.kind === 'trade_declined') {
+                this.declineActiveTradeResource(event.kind);
+            }
+        }
         this.pendingEvents.push(event);
         if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
             this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
         }
-        if (event.kind === 'chat' && typeof event.text === 'string' && event.from && typeof event.from === 'object') {
+        if (
+            (event.kind === 'chat' || event.kind === 'whisper') &&
+            typeof event.text === 'string' &&
+            event.from &&
+            typeof event.from === 'object'
+        ) {
             const fromName = 'name' in event.from && typeof event.from.name === 'string' ? event.from.name : undefined;
             if (fromName) {
                 const patronKind = this.patronRegistry.getKind(fromName);
@@ -302,6 +817,14 @@ export class ResidentRuntime {
     }
 
     private async withEvidenceTick(perception: Perception, run: () => Promise<void>): Promise<void> {
+        // HD-019: skip trajectory + progress evidence for already-processed deceased
+        // residents. handlePerception still runs so applyExternalOperatorRevive can
+        // re-animate them; it just stops polluting the trajectory file with empty
+        // begin_tick/end_tick pairs that accumulate indefinitely after death.
+        if (this.state.deceased?.processed) {
+            await run();
+            return;
+        }
         const tick = typeof perception.tick === 'number' ? perception.tick : this.state.tick;
         const began = this.recordEvidence(trajectory => trajectory.beginTick(tick, perception));
         this.observeRuntimeProgress(tick, perception);
@@ -412,6 +935,155 @@ export class ResidentRuntime {
                 error: error instanceof Error ? error.message : String(error),
             });
         }
+        this.observeFactionStockpileAttempt(attempt);
+    }
+
+    private observeFactionStockpileAttempt(attempt: ActionAttempt): void {
+        try {
+            this.options.factionStockpile?.recordAttempt({
+                resident: this.name,
+                factionId: this.options.soul.frontmatter.factionId,
+                attempt,
+            });
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause: 'faction_stockpile_observe_failed',
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    private rememberTargetFailure(attempt: ActionAttempt): void {
+        const keys = actionTargetFailureKeys(attempt.action);
+        if (keys.length === 0) {
+            return;
+        }
+
+        const cognition = (this.state.cognition ||= {});
+        if (attempt.finalStatus === 'timeout' || (attempt.finalStatus === 'failure' && attempt.finalReason === 'target_not_found')) {
+            const failedAt = Object.fromEntries(keys.map(key => [key, this.state.tick]));
+            cognition.targetFailureCooldowns = {
+                ...(cognition.targetFailureCooldowns || {}),
+                ...failedAt,
+            };
+            return;
+        }
+
+        if (attempt.finalStatus === 'success' && cognition.targetFailureCooldowns) {
+            for (const key of keys) {
+                delete cognition.targetFailureCooldowns[key];
+            }
+        }
+    }
+
+    private rememberCompletedGoal(attempt: ActionAttempt): void {
+        if (attempt.finalStatus !== 'success') {
+            return;
+        }
+        const cognition = this.state.cognition;
+        const goal = cognition?.activeGoal;
+        if (!goal || !isStandaloneFiremakingGoal(goal) || attempt.action.kind !== 'use_item_on_item') {
+            return;
+        }
+
+        cognition.activeGoal = explorationGoal(actionAttemptTick(attempt) ?? this.state.tick);
+        cognition.activeMove = undefined;
+        cognition.lastGoalShareTick = undefined;
+        cognition.routineLoopKey = undefined;
+        cognition.routineLoopCount = undefined;
+    }
+
+    private checkDeceasedAndDispatchEpitaphs(perception: Perception): void {
+        if (this.state.deceased && !this.state.deceased.processed) {
+            this.state.deceased.processed = true;
+            const library = this.evidence?.library;
+            const patronHandles = library ? library.getPatronHandles() : [];
+            const root = record(perception);
+            const residentObj = record(root.resident);
+            const bestSkill = findBestSkill(residentObj.skills);
+            const summary: DeceasedResidentSummary = {
+                residentName: this.name,
+                residentArchetype: this.options.soul.frontmatter.archetype,
+                residentFaction: dominantFaction(this.options.soul.frontmatter.factionAffinity) || 'unaligned',
+                livedTicks: this.state.tick,
+                bestSkill,
+                causeOfDeath: this.state.deceased.cause,
+                deceasedAt: this.state.deceased.date,
+                deceasedTick: this.state.deceased.tick,
+                preparedEpitaph: loadPreparedEpitaph(this.options.memory, this.name),
+            };
+            const lettersStoreDir = this.evidence?.store.root;
+            if (lettersStoreDir) {
+                const store = new LettersStore(lettersStoreDir);
+                const letters = buildEpitaphDispatchRequests(summary, patronHandles);
+                if (letters.length > 0) {
+                    dispatchEpitaphs(letters, store);
+                }
+
+                const uniquePatrons = new Set<string>();
+                const seenPatronsLower = new Set<string>();
+
+                const addPatron = (handle: string) => {
+                    const h = handle.trim();
+                    if (h.length > 0) {
+                        const lower = h.toLowerCase();
+                        if (!seenPatronsLower.has(lower)) {
+                            seenPatronsLower.add(lower);
+                            uniquePatrons.add(h);
+                        }
+                    }
+                };
+
+                const standingPath = path.join(lettersStoreDir, 'patron-standing.json');
+                if (fs.existsSync(standingPath)) {
+                    try {
+                        const raw = fs.readFileSync(standingPath, 'utf8');
+                        const snap = JSON.parse(raw);
+                        if (snap && snap.points) {
+                            for (const key of Object.keys(snap.points)) {
+                                const parts = key.split('|');
+                                if (parts.length > 0) {
+                                    addPatron(parts[0]);
+                                }
+                            }
+                        }
+                    } catch {
+                        // ignore
+                    }
+                }
+
+                try {
+                    const config = loadControllerConfig();
+                    if (config && Array.isArray(config.patrons)) {
+                        for (const p of config.patrons) {
+                            if (p && p.handle) {
+                                addPatron(p.handle);
+                            }
+                        }
+                    }
+                } catch {
+                    // ignore
+                }
+
+                const broadcastLetters: Letter[] = [];
+                for (const recipient of uniquePatrons) {
+                    const broadcastInput = {
+                        recipient,
+                        residentName: summary.residentName,
+                        faction: summary.residentFaction,
+                        livedTicks: summary.livedTicks,
+                        causeOfDeath: summary.causeOfDeath || 'unknown causes',
+                        ts: summary.deceasedAt,
+                    };
+                    broadcastLetters.push(produceBroadcastLetter(broadcastInput));
+                }
+
+                if (broadcastLetters.length > 0) {
+                    dispatchEpitaphs(broadcastLetters, store);
+                }
+            }
+        }
     }
 
     private effectWaitFor(action: AgentAction): ((signal: AbortSignal) => Promise<EffectWaitResult>) | undefined {
@@ -420,19 +1092,26 @@ export class ResidentRuntime {
             const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
             const afterSeq = this.body.getLatestPerceptionSeq();
             const latestPerception = this.body.getLatestPerception();
-            const timeoutMs = movementEffectTimeoutMs(latestPerception ? perceptionPosition(latestPerception) : undefined, target);
-            return async signal =>
-                perceptionWaitToEffect(
-                    await this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
+            const startPosition = latestPerception ? perceptionPosition(latestPerception) : undefined;
+            const timeoutMs = movementEffectTimeoutMs(startPosition, target);
+            return async signal => {
+                const wait = await this.body.waitForPerception(
+                    perception => positionMatches(perceptionPosition(perception), target, range),
+                    {
                         afterSeq,
                         timeoutMs,
                         signal,
-                    }),
-                    perception => ({
-                        source: 'perception',
-                        detail: { kind: 'position_reached', position: perceptionPosition(perception) },
-                    }),
+                    },
                 );
+                const latestAfterWait = this.body.getLatestPerception();
+                return movementWaitToEffect(wait, {
+                    target,
+                    range,
+                    startPosition,
+                    finalPosition: latestAfterWait ? perceptionPosition(latestAfterWait) : undefined,
+                    timeoutMs,
+                });
+            };
         }
 
         if (action.kind === 'say' && typeof action.text === 'string') {
@@ -479,6 +1158,9 @@ export class ResidentRuntime {
     }
 
     stop(cause = 'runtime_stopped'): void {
+        if (this.whisperInbox) {
+            this.whisperInbox.unsubscribe();
+        }
         this.thinking.stop(cause);
         this.recordEvidence(() => this.evidence?.store.endSession(this.evidence.sessionId, 'shutdown'));
         const sourceModules = new Set(
@@ -488,6 +1170,484 @@ export class ResidentRuntime {
             module.stop?.(cause);
         }
         this.options.stateStore.save(this.state);
+    }
+
+    async tick(ctx: RoutineContext): Promise<RoutineTickOutcome> {
+        this._lastHints = [];
+
+        let abortHandler: (() => void) | undefined;
+        const arrivalPromise = new Promise<PerceptionArrival>(resolve => {
+            this.nextPerceptionResolver = resolve;
+
+            abortHandler = () => {
+                if (this.nextPerceptionResolver === resolve) {
+                    this.nextPerceptionResolver = undefined;
+                    resolve({
+                        perception: {} as any,
+                        preemption: { preempted: 'aborted' },
+                    });
+                }
+            };
+            ctx.signal.addEventListener('abort', abortHandler);
+        });
+
+        const arrival = await arrivalPromise;
+        if (abortHandler) {
+            ctx.signal.removeEventListener('abort', abortHandler);
+        }
+
+        if (arrival.preemption) {
+            return arrival.preemption;
+        }
+
+        const perception = arrival.perception;
+
+        if (ctx.tickIndex === 0) {
+            this.killsObserved = 0;
+            this.followSuccessTicks = 0;
+        }
+
+        // Determine active routine action via routine dispatch table.
+        let action: AgentAction | undefined;
+        const activeRoutineId = ctx.routineId || this.activeRoutineId;
+        switch (activeRoutineId) {
+            case 'make_fire':
+                action = firemakingAction(perception);
+                if (!action && hasNearbyFire(perception)) {
+                    return 'completed';
+                }
+                break;
+            case 'chop_tree': {
+                const params = chopTreeParams(ctx.params);
+                if (params.targetCoord) {
+                    const here = perceptionPosition(perception);
+                    if (here) {
+                        const dist = chebyshevDistance(here, params.targetCoord);
+                        if (dist > 1) {
+                            action = {
+                                kind: 'move_to',
+                                target: { x: params.targetCoord.x, y: params.targetCoord.y, level: params.targetCoord.level ?? 0 },
+                                range: 1,
+                                cause: 'routine:chop_tree',
+                            };
+                        }
+                    }
+                }
+                if (!action) {
+                    action = levelOneWoodcuttingAction(perception);
+                }
+                break;
+            }
+            case 'bury_bones':
+                action = buryBonesAction(perception);
+                if (!action) {
+                    // No bones in inventory means there are none to bury — done.
+                    return 'completed';
+                }
+                break;
+            case 'safe_combat': {
+                const params = safeCombatParams(ctx.params);
+                const resident = record(perception.resident);
+
+                // Check HP limit (stay > 30%)
+                const hp = record(resident.hp);
+                const currentHp = typeof hp.current === 'number' ? hp.current : undefined;
+                const maxHp = typeof hp.max === 'number' ? hp.max : undefined;
+                if (currentHp !== undefined && maxHp !== undefined && maxHp > 0) {
+                    if (currentHp / maxHp <= 0.3) {
+                        this.killsObserved = 0;
+                        return { preempted: 'nervous_eat_when_hurt' };
+                    }
+                }
+
+                // Check kill count completion
+                const events = Array.isArray(perception.events) ? perception.events : [];
+                for (const event of events) {
+                    const text = typeof event.text === 'string' ? event.text.toLowerCase() : '';
+                    if (event.kind === 'death' || /defeat|dies/.test(text)) {
+                        this.killsObserved += 1;
+                    }
+                }
+
+                const killCount = params.killCount ?? 1;
+                if (this.killsObserved >= killCount) {
+                    this.killsObserved = 0;
+                    return 'completed';
+                }
+
+                // Eat food if low health
+                if (isLowHealth(perception)) {
+                    const inventory = Array.isArray(resident.inventory) ? resident.inventory : [];
+                    const foodSlot = firstFoodSlot(inventory);
+                    if (foodSlot !== undefined) {
+                        action = { kind: 'eat', slot: foodSlot, cause: 'combat_eat_before_training' };
+                    } else {
+                        return 'no_progress';
+                    }
+                }
+
+                if (!action) {
+                    const targetNpc = pickSafeCombatTarget(perception, params.target);
+                    if (targetNpc) {
+                        action = { kind: 'attack', target: targetNpc, cause: 'routine:safe_combat' };
+                    } else {
+                        action = combatTrainingAction(perception);
+                    }
+                }
+                break;
+            }
+            case 'follow_player': {
+                const params = followPlayerParams(ctx.params);
+                const target = pickFollowTarget(perception, params.player);
+                if (!target) {
+                    this.followSuccessTicks = 0;
+                    return 'no_progress';
+                }
+
+                const current = perceptionPosition(perception);
+                const followDistance = params.distance ?? 3;
+                if (current && chebyshevDistance(current, target) <= followDistance) {
+                    this.followSuccessTicks += 1;
+                    if (this.followSuccessTicks >= 5) {
+                        this.followSuccessTicks = 0;
+                        return 'completed';
+                    }
+                    return 'progress';
+                } else {
+                    this.followSuccessTicks = 0;
+                    action = {
+                        kind: 'move_to',
+                        target: { x: target.x, y: target.y, level: target.level ?? 0 },
+                        range: followDistance,
+                        cause: 'routine:follow_player',
+                    };
+                }
+                break;
+            }
+        }
+
+        if (!action) {
+            return 'no_progress';
+        }
+
+        // Populate hints
+        if (action.kind === 'use_item_on_item') {
+            this._lastHints.push('tinderbox_used');
+        } else if (action.kind === 'interact') {
+            this._lastHints.push('interact_target');
+        } else if (action.kind === 'attack_npc') {
+            this._lastHints.push('attack_target');
+        } else if (action.kind === 'item_action') {
+            this._lastHints.push(`item_action_${action.option}`);
+        }
+
+        // Submit action
+        const attempt = await this.actionCoordinator.submit({
+            producer: 'active-routine',
+            action,
+            metadata: {
+                tick: this.state.tick,
+                attention_after: this.state.attention,
+                source: 'routine',
+                routineId: activeRoutineId,
+            },
+            waitForEffect: this.effectWaitFor(action),
+            ...this.evidenceCallbacks(),
+        });
+
+        if (attempt.finalStatus === 'success') {
+            return routineSuccessOutcome(activeRoutineId, action);
+        }
+        if (attempt.finalStatus === 'accepted') {
+            return 'progress';
+        }
+        if (attempt.finalStatus === 'cancelled_before_submit' || attempt.finalStatus === 'interrupted_after_submit') {
+            return { preempted: 'aborted' };
+        }
+        return 'no_progress';
+    }
+
+    private async executeTradeResource(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        const action = input.action as {
+            kind: 'trade_resource';
+            target: { humanHandle: string };
+            artifact: string;
+            quantity: number;
+            note?: string;
+            cause?: string;
+        };
+        const tier = this.options.soul.frontmatter.heroProfile?.tier ?? 'background';
+        const tierConfig = HERO_TIERS[tier];
+        const perception = this.body.getLatestPerception();
+        const nearby = record(record(perception).nearby);
+        const players = Array.isArray(nearby.players) ? (nearby.players as any[]) : [];
+        const targetVisible = players.some(p => p.name?.toLowerCase() === action.target.humanHandle.toLowerCase());
+        const resident = record(record(perception).resident);
+        const inventory = Array.isArray(resident.inventory) ? (resident.inventory as any[]) : [];
+
+        const check = canTradeResource(this.state, tierConfig, inventory as any, action.artifact, action.quantity, targetVisible);
+        if (!check.ok) {
+            const failAttempt: ActionAttempt = {
+                attemptId: `attempt-trade_resource-fail-${Date.now()}`,
+                resident: this.name,
+                producer: input.producer,
+                action: input.action,
+                submittedAt: new Date().toISOString(),
+                cause: action.cause,
+                evidence: [],
+                finalStatus: 'failure',
+                finalReason: check.reason || 'precondition_failed',
+                metadata: input.metadata,
+            };
+            this.recordEvidence(trajectory => {
+                const line = trajectory.recordAction(action, failAttempt.attemptId);
+                this.evidence?.library?.observeTrajectory(line);
+                trajectory.recordActionResult(failAttempt.attemptId, {
+                    status: 'failure',
+                    reason: check.reason || 'precondition_failed',
+                });
+            });
+            return failAttempt;
+        }
+
+        const attemptId = `attempt-trade_resource-${Date.now()}`;
+        const attempt: ActionAttempt = {
+            attemptId,
+            resident: this.name,
+            producer: input.producer,
+            action: input.action,
+            submittedAt: new Date().toISOString(),
+            cause: action.cause,
+            evidence: [],
+            finalStatus: 'accepted',
+            metadata: input.metadata,
+        };
+
+        this.state.activeTradeResource = {
+            targetHandle: action.target.humanHandle,
+            artifact: action.artifact,
+            quantity: action.quantity,
+            note: action.note,
+            cause: action.cause,
+            startTick: this.state.tick,
+            status: 'initiating',
+            attemptId,
+            producer: input.producer,
+        };
+        this.options.stateStore.save(this.state);
+
+        this.recordEvidence(trajectory => {
+            const line = trajectory.recordAction(action, attemptId);
+            this.evidence?.library?.observeTrajectory(line);
+        });
+
+        const promise = new Promise<ActionAttempt>((resolve, reject) => {
+            this.activeTradeResourceDeferred = { resolve, reject, attempt };
+        });
+
+        try {
+            await this.body.submit(
+                {
+                    kind: 'trade_request',
+                    target: { playerHandle: action.target.humanHandle },
+                    cause: action.cause || 'trade_resource_initiate',
+                } as any,
+                {
+                    tick: this.state.tick,
+                    attention_after: this.state.attention,
+                    source: sourceFromProducer(input.producer),
+                },
+            );
+        } catch (error) {
+            this.declineActiveTradeResource('request_submit_failed');
+        }
+
+        return promise;
+    }
+
+    private async tickActiveTradeResource(perception: Perception): Promise<void> {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            return;
+        }
+
+        const elapsed = this.state.tick - active.startTick;
+        if (elapsed >= 100) {
+            await this.declineActiveTradeResource('timeout');
+            return;
+        }
+
+        const resident = record(record(perception).resident);
+        const trade = resident.activeTrade ? (resident.activeTrade as any) : undefined;
+
+        if (active.status !== 'initiating' && !trade) {
+            await this.declineActiveTradeResource('cancelled');
+            return;
+        }
+
+        if (trade) {
+            if (active.status === 'initiating') {
+                if (trade.partner) {
+                    const partnerName = trade.partner.name || trade.partner.id;
+                    if (partnerName.toLowerCase() !== active.targetHandle.toLowerCase()) {
+                        await this.declineActiveTradeResource('partner_mismatch');
+                        return;
+                    }
+                }
+
+                const inventory = Array.isArray(resident.inventory) ? (resident.inventory as any[]) : [];
+                const itemIndex = inventory.findIndex(item => item && itemMatches(item, active.artifact));
+                if (itemIndex === -1) {
+                    await this.declineActiveTradeResource('insufficient_inventory');
+                    return;
+                }
+                const item = inventory[itemIndex];
+                if (!item || item.amount < active.quantity) {
+                    await this.declineActiveTradeResource('insufficient_inventory');
+                    return;
+                }
+
+                active.status = 'offering';
+                this.options.stateStore.save(this.state);
+
+                try {
+                    await this.submitSubAction({
+                        kind: 'trade_offer_item',
+                        itemId: item.itemId,
+                        quantity: active.quantity,
+                        slot: itemIndex,
+                        cause: active.cause,
+                    });
+                } catch {
+                    // ignore
+                }
+            } else if (active.status === 'offering') {
+                const offered = trade.ours?.find((item: any) => itemMatches(item, active.artifact) && item.amount === active.quantity);
+                if (offered) {
+                    active.status = 'accepting_stage_1';
+                    this.options.stateStore.save(this.state);
+                    try {
+                        await this.submitSubAction({
+                            kind: 'trade_accept_stage_1',
+                            cause: active.cause,
+                        });
+                    } catch {
+                        // ignore
+                    }
+                }
+            } else if (active.status === 'accepting_stage_1') {
+                if (trade.ourStage === 'accepted_1') {
+                    if (trade.theirStage === 'accepted_1' || trade.theirStage === 'accepted_2') {
+                        active.status = 'accepting_stage_2';
+                        this.options.stateStore.save(this.state);
+                        try {
+                            await this.submitSubAction({
+                                kind: 'trade_accept_stage_2',
+                                cause: active.cause,
+                            });
+                        } catch {
+                            // ignore
+                        }
+                    }
+                } else if (!trade.ourStage || trade.ourStage === 'editing') {
+                    try {
+                        await this.submitSubAction({
+                            kind: 'trade_accept_stage_1',
+                            cause: active.cause,
+                        });
+                    } catch {
+                        // ignore
+                    }
+                }
+            }
+        }
+    }
+
+    private async submitSubAction(action: AgentAction): Promise<ActionResult> {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            throw new Error('No active trade resource transaction');
+        }
+        return this.body.submit(action, {
+            tick: this.state.tick,
+            attention_after: this.state.attention,
+            source: sourceFromProducer(active.producer),
+        });
+    }
+
+    private completeActiveTradeResource(): void {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            return;
+        }
+
+        const deferred = this.activeTradeResourceDeferred;
+        this.state.activeTradeResource = undefined;
+        this.activeTradeResourceDeferred = undefined;
+        this.options.stateStore.save(this.state);
+
+        if (this.evidence?.library) {
+            this.evidence.library.observePatron({
+                kind: 'patron_gift',
+                ts: new Date().toISOString(),
+                tick: this.state.tick,
+                patronHandle: active.targetHandle,
+                artifact: active.artifact,
+                amount: active.quantity,
+                direction: 'out',
+                note: active.note || 'hero_gift',
+            });
+        }
+
+        if (deferred) {
+            deferred.attempt.finalStatus = 'success';
+            this.recordEvidence(trajectory => {
+                trajectory.recordActionResult(active.attemptId, {
+                    status: 'success',
+                });
+            });
+            deferred.resolve(deferred.attempt);
+        }
+    }
+
+    private declineActiveTradeResource(reason: string): void {
+        const active = this.state.activeTradeResource;
+        if (!active) {
+            return;
+        }
+
+        const deferred = this.activeTradeResourceDeferred;
+        this.state.activeTradeResource = undefined;
+        this.activeTradeResourceDeferred = undefined;
+        this.options.stateStore.save(this.state);
+
+        this.body
+            .submit(
+                {
+                    kind: 'trade_decline',
+                    cause: 'trade_resource_decline',
+                    reason,
+                } as any,
+                {
+                    tick: this.state.tick,
+                    attention_after: this.state.attention,
+                    source: sourceFromProducer(active.producer),
+                },
+            )
+            .catch(() => {});
+
+        if (deferred) {
+            const finalStatus = reason === 'timeout' ? 'timeout' : 'failure';
+            deferred.attempt.finalStatus = finalStatus;
+            deferred.attempt.finalReason = reason;
+            this.recordEvidence(trajectory => {
+                trajectory.recordActionResult(active.attemptId, {
+                    status: finalStatus,
+                    reason,
+                });
+            });
+            deferred.resolve(deferred.attempt);
+        }
     }
 }
 
@@ -502,6 +1662,184 @@ interface Position {
     level?: number;
 }
 
+interface FollowPlayerParams {
+    player?: string;
+    distance?: number;
+}
+
+interface RoutineCoord {
+    x: number;
+    y: number;
+    level?: number;
+}
+
+interface ChopTreeParams {
+    targetCoord?: RoutineCoord;
+}
+
+interface SafeCombatParams {
+    target?: {
+        kind?: 'npc' | 'player';
+        name?: string;
+        coord?: RoutineCoord;
+    };
+    killCount?: number;
+}
+
+/**
+ * Pick the named visible player from the perception payload to follow, or
+ * the nearest visible player when the routine was called without a name.
+ * Loose typing — perception shapes vary across gateway versions; we read
+ * defensively and bail to undefined when nothing usable is found. Used by
+ * the `follow_player` routine (RB-MCP-δ).
+ */
+function pickFollowTarget(perception: unknown, playerName?: string): Position | undefined {
+    if (!perception || typeof perception !== 'object') {
+        return undefined;
+    }
+    const nearby = (perception as Record<string, unknown>).nearby;
+    if (!nearby || typeof nearby !== 'object') {
+        return undefined;
+    }
+    const players = (nearby as Record<string, unknown>).players;
+    if (!Array.isArray(players) || players.length === 0) {
+        return undefined;
+    }
+    const root = perception as Record<string, unknown>;
+    const residentPos = perceptionPosition(root as Perception);
+    const parsedPlayers: Array<{ name?: string; id?: string; position: Position }> = [];
+    for (const player of players) {
+        if (player && typeof player === 'object') {
+            const playerRecord = player as Record<string, unknown>;
+            const position = (player as Record<string, unknown>).position;
+            if (position && typeof position === 'object') {
+                const pos = position as Record<string, unknown>;
+                if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+                    parsedPlayers.push({
+                        id: typeof playerRecord.id === 'string' ? playerRecord.id : undefined,
+                        name: typeof playerRecord.name === 'string' ? playerRecord.name : undefined,
+                        position: { x: pos.x, y: pos.y, level: typeof pos.level === 'number' ? pos.level : 0 },
+                    });
+                }
+            }
+        }
+    }
+    const normalizedTarget = normalizeName(playerName);
+    if (normalizedTarget) {
+        const exact = parsedPlayers.find(
+            player => normalizeName(player.name) === normalizedTarget || normalizeName(player.id) === normalizedTarget,
+        );
+        if (exact) {
+            return exact.position;
+        }
+        const partial = parsedPlayers.find(
+            player => normalizeName(player.name)?.includes(normalizedTarget) || normalizeName(player.id)?.includes(normalizedTarget),
+        );
+        return partial?.position;
+    }
+
+    return parsedPlayers
+        .sort((a, b) => (residentPos ? chebyshevDistance(a.position, residentPos) - chebyshevDistance(b.position, residentPos) : 0))
+        .at(0)?.position;
+}
+
+function followPlayerParams(params: unknown): FollowPlayerParams {
+    const recordValue = record(params);
+    return {
+        player: typeof recordValue.player === 'string' ? recordValue.player : undefined,
+        distance: typeof recordValue.distance === 'number' ? recordValue.distance : undefined,
+    };
+}
+
+function chopTreeParams(params: unknown): ChopTreeParams {
+    const targetCoord = coordParam(record(params).targetCoord);
+    return targetCoord ? { targetCoord } : {};
+}
+
+function safeCombatParams(params: unknown): SafeCombatParams {
+    const value = record(params);
+    const target = record(value.target);
+    return {
+        target:
+            Object.keys(target).length > 0
+                ? {
+                      kind: target.kind === 'npc' || target.kind === 'player' ? target.kind : undefined,
+                      name: typeof target.name === 'string' ? target.name : undefined,
+                      coord: coordParam(target.coord),
+                  }
+                : undefined,
+        killCount: typeof value.killCount === 'number' ? value.killCount : undefined,
+    };
+}
+
+function pickSafeCombatTarget(perception: Perception, target: SafeCombatParams['target']): Record<string, unknown> | undefined {
+    if (!target || target.kind === 'player') {
+        return undefined;
+    }
+    const npcs = record(record(perception).nearby).npcs;
+    if (!Array.isArray(npcs)) {
+        return undefined;
+    }
+    const targetName = normalizeName(target.name);
+    return npcs.find(npc => {
+        const actor = record(npc);
+        const position = coordParam(actor.position);
+        if (targetName) {
+            const actorName = normalizeName(actor.name);
+            const actorKey = normalizeName(actor.key);
+            const actorId = normalizeName(actor.id);
+            if (actorName !== targetName && actorKey !== targetName && actorId !== targetName) {
+                return false;
+            }
+        }
+        if (target.coord) {
+            return position ? sameCoord(position, target.coord) : false;
+        }
+        return true;
+    });
+}
+
+function coordParam(value: unknown): RoutineCoord | undefined {
+    const recordValue = record(value);
+    if (typeof recordValue.x !== 'number' || typeof recordValue.y !== 'number') {
+        return undefined;
+    }
+    return {
+        x: recordValue.x,
+        y: recordValue.y,
+        level: typeof recordValue.level === 'number' ? recordValue.level : undefined,
+    };
+}
+
+function sameCoord(a: RoutineCoord, b: RoutineCoord): boolean {
+    return a.x === b.x && a.y === b.y && (a.level === b.level || a.level === undefined || b.level === undefined);
+}
+
+function routineSuccessOutcome(routineId: string | undefined, action: AgentAction): RoutineTickOutcome {
+    if (routineId === 'safe_combat') {
+        return 'progress';
+    }
+    if (routineId === 'follow_player') {
+        return 'progress';
+    }
+    if (routineId === 'chop_tree' && action.kind === 'move_to') {
+        return 'progress';
+    }
+    return 'completed';
+}
+
+function normalizeName(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
+function chebyshevDistance(a: Position, b: Position): number {
+    return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+}
+
 function perceptionWaitToEffect(
     wait: Awaited<ReturnType<ResidentBody['waitForPerception']>>,
     evidence: (perception: Perception) => ActionEvidence,
@@ -510,6 +1848,83 @@ function perceptionWaitToEffect(
         return { ok: false, reason: wait.reason };
     }
     return { ok: true, evidence: [evidence(wait.observation.value)] };
+}
+
+function movementWaitToEffect(
+    wait: Awaited<ReturnType<ResidentBody['waitForPerception']>>,
+    detail: {
+        target: Position;
+        range: number;
+        startPosition?: Position;
+        finalPosition?: Position;
+        timeoutMs: number;
+    },
+): EffectWaitResult {
+    if (wait.ok) {
+        return {
+            ok: true,
+            evidence: [
+                {
+                    source: 'perception',
+                    detail: { kind: 'position_reached', position: perceptionPosition(wait.observation.value) },
+                },
+            ],
+        };
+    }
+
+    const startDistance =
+        detail.startPosition && samePlane(detail.startPosition, detail.target)
+            ? chebyshevDistance(detail.startPosition, detail.target)
+            : undefined;
+    const finalDistance =
+        detail.finalPosition && samePlane(detail.finalPosition, detail.target)
+            ? chebyshevDistance(detail.finalPosition, detail.target)
+            : undefined;
+    const improved = typeof startDistance === 'number' && typeof finalDistance === 'number' && finalDistance < startDistance;
+
+    if (wait.reason === 'timeout' && improved) {
+        return {
+            ok: true,
+            evidence: [
+                {
+                    source: 'perception',
+                    detail: {
+                        kind: 'movement_progress',
+                        target: detail.target,
+                        range: detail.range,
+                        startPosition: detail.startPosition,
+                        finalPosition: detail.finalPosition,
+                        startDistance,
+                        finalDistance,
+                        improved,
+                        waitOutcome: wait.reason,
+                        timeoutMs: detail.timeoutMs,
+                    },
+                },
+            ],
+        };
+    }
+
+    return {
+        ok: false,
+        reason: wait.reason,
+        evidence: [
+            {
+                source: detail.finalPosition ? 'perception' : 'derived',
+                detail: {
+                    kind: wait.reason === 'timeout' ? 'movement_timeout' : 'movement_aborted',
+                    target: detail.target,
+                    range: detail.range,
+                    startPosition: detail.startPosition,
+                    finalPosition: detail.finalPosition,
+                    startDistance,
+                    finalDistance,
+                    improved: typeof startDistance === 'number' && typeof finalDistance === 'number' ? improved : undefined,
+                    timeoutMs: detail.timeoutMs,
+                },
+            },
+        ],
+    };
 }
 
 function eventWaitToEffect(
@@ -550,12 +1965,19 @@ function positionMatches(position: Position | undefined, target: Position, range
     );
 }
 
+function samePlane(a: Position, b: Position): boolean {
+    return b.level === undefined || a.level === b.level || a.level === undefined;
+}
+
 function movementEffectTimeoutMs(position: Position | undefined, target: Position): number {
     if (!position) {
-        return 5000;
+        return MOVE_EFFECT_TIMEOUT_MIN_MS;
     }
     const distance = Math.max(Math.abs(position.x - target.x), Math.abs(position.y - target.y));
-    return Math.max(5000, Math.min(120000, (distance + 4) * 2500));
+    return Math.max(
+        MOVE_EFFECT_TIMEOUT_MIN_MS,
+        Math.min(MOVE_EFFECT_TIMEOUT_MAX_MS, MOVE_EFFECT_TIMEOUT_BUFFER_MS + distance * MOVE_EFFECT_TIMEOUT_PER_TILE_MS),
+    );
 }
 
 function isPosition(value: unknown): value is Position {
@@ -637,8 +2059,22 @@ function actionEffectObserved(action: AgentAction, before: Perception | undefine
     return changedEffectSections(before, after, action).length > 0 || eventSummaries(after, action).length > 0;
 }
 
-function actionEffectTimeoutMs(action: AgentAction, before: Perception | undefined): number {
-    return isFiremakingUseItemOnItemAction(action, before) ? 15000 : 5000;
+export function actionEffectTimeoutMs(action: AgentAction, before: Perception | undefined): number {
+    if (isFiremakingUseItemOnItemAction(action, before)) {
+        return 15000;
+    }
+
+    if (isStarterFishingInteractAction(action)) {
+        return STARTER_FISHING_EFFECT_TIMEOUT_MS;
+    }
+
+    const startPosition = before ? perceptionPosition(before) : undefined;
+    const targetPosition = actionTargetPositionForEffect(action);
+    if (targetPosition) {
+        return Math.min(MOVE_EFFECT_TIMEOUT_MAX_MS, movementEffectTimeoutMs(startPosition, targetPosition) + 5_000);
+    }
+
+    return 5000;
 }
 
 function isFiremakingUseItemOnItemAction(action: AgentAction, perception: Perception | undefined): boolean {
@@ -652,6 +2088,21 @@ function isFiremakingUseItemOnItemAction(action: AgentAction, perception: Percep
     const source = inventoryItemAt(perception, actionRecord.itemSlot);
     const target = inventoryItemAt(perception, actionRecord.targetSlot);
     return (isTinderboxItem(source) && isLogItem(target)) || (isLogItem(source) && isTinderboxItem(target));
+}
+
+function isStarterFishingInteractAction(action: AgentAction | undefined): boolean {
+    if (!action || action.kind !== 'interact') {
+        return false;
+    }
+    const actionRecord = record(action);
+    const option = typeof actionRecord.option === 'string' ? actionRecord.option.toLowerCase() : '';
+    if (option !== 'net') {
+        return false;
+    }
+    const target = record(actionRecord.target);
+    const targetText =
+        `${typeof target.key === 'string' ? target.key : ''} ${typeof target.name === 'string' ? target.name : ''}`.toLowerCase();
+    return actionRecord.cause === 'starter_fishing_net' || /fishing_spot|fishing spot/.test(targetText);
 }
 
 function inventoryItemAt(perception: Perception | undefined, slot: number): Record<string, unknown> | undefined {
@@ -682,12 +2133,34 @@ function firemakingEffectObserved(perception: Perception): boolean {
     });
 }
 
+function actionTargetPositionForEffect(action: AgentAction): Position | undefined {
+    const actionRecord = record(action);
+    const target = actionRecord.target;
+    if (!target || typeof target !== 'object') {
+        return undefined;
+    }
+
+    const directPosition = isPosition(target) ? target : undefined;
+    const nestedPosition = record(record(target).position);
+    const position = directPosition || nestedPosition;
+    if (typeof position.x !== 'number' || typeof position.y !== 'number') {
+        return undefined;
+    }
+
+    return {
+        x: position.x,
+        y: position.y,
+        level: typeof position.level === 'number' ? position.level : undefined,
+    };
+}
+
 function effectState(perception: Perception | undefined, action?: AgentAction): Record<string, unknown> {
     const root = record(perception);
     const resident = record(root.resident);
     const nearby = record(root.nearby);
     const state: Record<string, unknown> = {
         hp: resident.hp,
+        busy: resident.busy,
         skills: resident.skills,
         inCombat: resident.inCombat,
         combatTarget: resident.combatTarget,
@@ -708,6 +2181,10 @@ function changedEffectSections(before: Perception | undefined, after: Perception
 }
 
 function effectStateSections(action?: AgentAction): string[] {
+    if (isStarterFishingInteractAction(action)) {
+        return ['busy', 'skills', 'inventory'];
+    }
+
     switch (action?.kind) {
         case 'eat':
             return ['hp', 'inventory'];
@@ -752,6 +2229,9 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
     if (eventRecord.kind === 'chat') {
         return false;
     }
+    if (isStarterFishingInteractAction(action)) {
+        return eventMatchesStarterFishingEffect(event);
+    }
     if (eventRecord.kind === 'fire_lit') {
         return true;
     }
@@ -771,6 +2251,162 @@ function eventMatchesActionEffect(event: unknown, action?: AgentAction): boolean
     }
 }
 
+function eventMatchesStarterFishingEffect(event: unknown): boolean {
+    const eventRecord = record(event);
+    if (eventRecord.kind === 'item_received') {
+        const item = record(eventRecord.item);
+        const itemText = `${typeof item.key === 'string' ? item.key : ''} ${typeof item.name === 'string' ? item.name : ''}`.toLowerCase();
+        return itemText.length === 0 || /fish|shrimp|anchov/.test(itemText);
+    }
+    const text = typeof eventRecord.text === 'string' ? eventRecord.text.toLowerCase() : '';
+    return /start(?:ed)? fishing|begin(?:s)? fishing|catch(?:es)? (?:some )?(?:raw )?(?:shrimp|anchov|fish)/.test(text);
+}
+
+function fallbackTimedOutAttempt(resident: string, input: ActionCoordinatorSubmitInput, reason: string): ActionAttempt {
+    return {
+        attemptId: `attempt-watchdog-${Date.now()}`,
+        resident,
+        producer: input.producer,
+        action: input.action,
+        submittedAt: new Date().toISOString(),
+        cause: input.cause,
+        goalId: input.goalId,
+        routineRunId: input.routineRunId,
+        traceId: input.traceId,
+        evidence: [],
+        finalStatus: 'timeout',
+        finalReason: reason,
+        metadata: input.metadata,
+    };
+}
+
+function actionTargetFailureKeys(action: AgentAction): string[] {
+    const actionRecord = record(action);
+    const target = actionRecord.target;
+    if (!target || typeof target !== 'object') {
+        return [];
+    }
+    const targetRecord = record(target);
+    const directPosition = isPosition(target) ? target : undefined;
+    const nestedPosition = record(targetRecord.position);
+    const position = directPosition || nestedPosition;
+    const level = typeof position.level === 'number' ? position.level : 0;
+    const coordinate =
+        typeof position.x === 'number' && typeof position.y === 'number' ? `${position.x},${position.y},${level}` : undefined;
+    if (!coordinate) {
+        return [];
+    }
+    const keys: string[] = [];
+    if (typeof targetRecord.objectId === 'number') {
+        keys.push(`object:${targetRecord.objectId}:${coordinate}`);
+    }
+    if (typeof targetRecord.itemId === 'number') {
+        keys.push(`item:${targetRecord.itemId}:${coordinate}`);
+    }
+    if (typeof targetRecord.id === 'string') {
+        keys.push(`actor:${targetRecord.id}:${coordinate}`);
+        if (shouldRememberNpcFamilyFailure(actionRecord, targetRecord)) {
+            keys.push(...npcFamilyFailureKeys(targetRecord));
+        }
+    }
+    if (keys.length === 0) {
+        keys.push(`target:${coordinate}`);
+    }
+    return keys;
+}
+
+function shouldRememberNpcFamilyFailure(actionRecord: Record<string, unknown>, targetRecord: Record<string, unknown>): boolean {
+    if (!isNpcTarget(targetRecord)) {
+        return false;
+    }
+    const option = typeof actionRecord.option === 'string' ? actionRecord.option.toLowerCase() : '';
+    const cause = typeof actionRecord.cause === 'string' ? actionRecord.cause.toLowerCase() : '';
+    return option === 'talk-to' || cause.includes('explore') || cause.includes('scout') || cause.includes('stuck');
+}
+
+function isNpcTarget(targetRecord: Record<string, unknown>): boolean {
+    const kind = typeof targetRecord.kind === 'string' ? targetRecord.kind.toLowerCase() : undefined;
+    return kind === 'npc' || (typeof targetRecord.id === 'string' && targetRecord.id.startsWith('npc:'));
+}
+
+function npcFamilyFailureKeys(targetRecord: Record<string, unknown>): string[] {
+    const keys: string[] = [];
+    const key = failureKeyFragment(targetRecord.key);
+    if (key) {
+        keys.push(`actor-key:${key}`);
+    }
+    const name = failureKeyFragment(targetRecord.name);
+    if (name) {
+        keys.push(`actor-name:${name}`);
+    }
+    return keys;
+}
+
+function failureKeyFragment(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
 function record(value: unknown): Record<string, unknown> {
     return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+}
+
+function actionAttemptTick(attempt: ActionAttempt): number | undefined {
+    const tick = record(attempt.metadata).tick;
+    return typeof tick === 'number' ? tick : undefined;
+}
+
+function mapNervousRuleId(ruleId: string): RoutinePreemptionReason {
+    if (ruleId.includes('eat') || ruleId.includes('low-health') || ruleId.includes('hurt')) {
+        return 'nervous_eat_when_hurt';
+    }
+    if (ruleId.includes('flee') || ruleId.includes('outmatched') || ruleId.includes('runaway')) {
+        return 'nervous_flee_when_outmatched';
+    }
+    if (ruleId.includes('death') || ruleId.includes('dead')) {
+        return 'nervous_death';
+    }
+    if (ruleId.includes('help')) {
+        return 'nervous_help_request';
+    }
+    return 'aborted';
+}
+
+function xpToLevel(xp: number): number {
+    const xpTable: number[] = [0, 0];
+    let points = 0;
+    for (let lvl = 1; lvl < 120; lvl++) {
+        points += Math.floor(lvl + 300 * 2 ** (lvl / 7));
+        xpTable.push(Math.floor(points / 4));
+    }
+    let level = 1;
+    for (let lvl = 1; lvl < xpTable.length; lvl++) {
+        if (xp >= xpTable[lvl]) {
+            level = lvl;
+        } else {
+            break;
+        }
+    }
+    return level;
+}
+
+function findBestSkill(skillsValue: unknown): { name: string; level: number } | undefined {
+    const xpMap = xpBySkill(skillsValue);
+    let bestSkill: { name: string; level: number } | undefined;
+    for (const [skillName, xp] of Object.entries(xpMap)) {
+        const level = xpToLevel(xp);
+        if (!bestSkill || level > bestSkill.level) {
+            bestSkill = { name: skillName, level };
+        }
+    }
+    return bestSkill;
+}
+
+function sourceFromProducer(producer: string): 'thinking' | 'nervous-system' | 'body' {
+    if (producer === 'nervous-system') return 'nervous-system';
+    if (producer === 'body' || producer === 'active-routine') return 'body';
+    return 'thinking';
 }

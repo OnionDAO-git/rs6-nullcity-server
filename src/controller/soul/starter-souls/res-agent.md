@@ -6,8 +6,9 @@ model:
   endpoint: default
   temperature: 0.6
 attentionProfile:
-  startingAttention: 5000
-  decayCurve: steep
+  startingAttention: 120000
+  decayCurve: gentle
+respawnPolicy: on_restart
 spawnPosition:
   x: 3225
   y: 3230

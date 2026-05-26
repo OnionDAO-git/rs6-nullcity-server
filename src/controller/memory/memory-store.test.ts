@@ -33,8 +33,15 @@ describe('MemoryStore', () => {
 
         const memories = store.retrieve('res:agent', 'Codex patron gift shrimp', 2);
 
+        // After E7, MemoryStore.retrieve emits the dedicated patron slice
+        // first (so out-of-band Shards offers survive stuck/say spam in
+        // the general window) followed by the general slice. The patron
+        // event therefore appears twice in this small fixture — once from
+        // each slice — which is fine: the dedicated slot ensures survival,
+        // the general slot reflects timeline freshness. Assert semantic
+        // presence rather than positional indexing.
         expect(memories[0]).toContain('Patron gift from alice@onion: rs:tinderbox');
-        expect(memories[1]).toContain('I promised to cook shrimp for Codex.');
+        expect(memories.some(memory => memory.includes('I promised to cook shrimp for Codex.'))).toBe(true);
         expect(memories.some(memory => memory.includes('# res:agent INDEX'))).toBe(true);
     });
 });

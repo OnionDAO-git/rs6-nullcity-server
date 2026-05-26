@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { residentSlug } from '../memory/runtime-state';
-import { renderPortrait, type PortraitIndex } from './portrait-template';
+import { renderPortrait, type PortraitIndex, type PortraitRenderOptions } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
 
@@ -12,10 +12,31 @@ export interface PatronEvent {
     patronHandle: string;
     artifact?: string;
     note?: string;
+    direction?: 'in' | 'out';
+    /**
+     * Shards transferred (patron_gift / patron_sponsor only). Surfaces in
+     * the Brain's memory rendering so the resident can acknowledge the
+     * specific amount. See E7 in `docs/intelligence-verification-log.md`.
+     */
+    amount?: number;
+    /**
+     * Standing tier the patron crossed into as a side-effect of this event
+     * (e.g. `'acquaintance'` after their first 10-Shard offer). Optional —
+     * only set when the verb crossed a threshold.
+     */
+    standingTier?: string;
+    /**
+     * Attention bump delivered to the resident from this gift, in units of
+     * resident attention (not Shards). Useful for the Brain to understand
+     * the magnitude of support beyond the raw Shards count.
+     */
+    attentionDelta?: number;
 }
 
 export interface LibraryUpdaterOptions {
     now?: () => Date;
+    /** SOUL factionId forwarded to portrait rendering so portraits include faction affiliation. */
+    factionId?: string;
 }
 
 interface LibraryIndex extends PortraitIndex {
@@ -25,6 +46,7 @@ interface LibraryIndex extends PortraitIndex {
 
 export class LibraryUpdater {
     private readonly now: () => Date;
+    private readonly portraitOptions: PortraitRenderOptions;
     private readonly seenXpSkills = new Set<string>();
     private readonly seenPeers = new Set<string>();
     private readonly peerInteractionCounts = new Map<string, number>();
@@ -37,6 +59,7 @@ export class LibraryUpdater {
         options: LibraryUpdaterOptions = {},
     ) {
         this.now = options.now ?? (() => new Date());
+        this.portraitOptions = { factionId: options.factionId };
         this.writeIndex(this.readIndex());
         this.hydratePeerContext();
     }
@@ -96,6 +119,40 @@ export class LibraryUpdater {
         this.schedulePortraitRegeneration();
     }
 
+    /**
+     * Record that the resident was revived (E8 follow-up to Codex's
+     * `4f62d181` restart respawn policy). Bumps `index.lives`, flips
+     * `currentState` back to `'living'`, and appends a `revival` event to
+     * the timeline so the Brain's prompt envelope has a memory beat about
+     * the continuity break. Without this, a respawned resident's evidence
+     * stream silently picks up from the prior life with no narrative
+     * marker — see `docs/intelligence-verification-log.md` § E8 / F8a.
+     *
+     * Wire-in is one call from `ResidentRuntime.applyRestartRespawnPolicy`
+     * (Codex zone — tracked separately).
+     */
+    observeRevival(event: { ts: string; tick: number; cause: string }): void {
+        const index = this.readIndex();
+        const nextLifeIndex = index.lives + 1;
+        this.writeIndex({
+            ...index,
+            lives: nextLifeIndex,
+            currentState: 'living',
+            updatedAt: this.now().toISOString(),
+        });
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'revival',
+            cause: event.cause,
+            lifeIndex: nextLifeIndex,
+            significanceReasons: ['life:revival'],
+        });
+        this.schedulePortraitRegeneration();
+    }
+
     observePatron(event: PatronEvent): void {
         const index = this.readIndex();
         this.appendTimeline({
@@ -107,6 +164,9 @@ export class LibraryUpdater {
             patronHandle: event.patronHandle,
             artifact: event.artifact,
             note: event.note,
+            amount: event.amount,
+            standingTier: event.standingTier,
+            attentionDelta: event.attentionDelta,
             lifeIndex: index.lives,
             significanceReasons: [`patron:${event.kind}`],
         });
@@ -115,7 +175,7 @@ export class LibraryUpdater {
     }
 
     async regeneratePortrait(): Promise<void> {
-        const rendered = renderPortrait(this.residentName, this.readIndex(), this.readTimeline());
+        const rendered = renderPortrait(this.residentName, this.readIndex(), this.readTimeline(), this.portraitOptions);
         this.writeAtomic(this.portraitJsonPath(), `${JSON.stringify(rendered.portrait, null, 2)}\n`);
         this.writeAtomic(this.portraitMarkdownPath(), rendered.markdown);
     }
@@ -290,6 +350,18 @@ export class LibraryUpdater {
         const tmpPath = `${filePath}.tmp`;
         fs.writeFileSync(tmpPath, text);
         fs.renameSync(tmpPath, filePath);
+    }
+
+    getPatronHandles(): string[] {
+        const timeline = this.readTimeline();
+        const handles = new Set<string>();
+        for (const event of timeline) {
+            const handle = event.patronHandle;
+            if (typeof handle === 'string' && handle.trim().length > 0) {
+                handles.add(handle);
+            }
+        }
+        return Array.from(handles);
     }
 
     private schedulePortraitRegeneration(): void {

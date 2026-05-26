@@ -18,6 +18,30 @@ type Item = { itemId?: number; key?: string; amount?: number };
 const LOW_HEALTH_FOOD_THRESHOLD = 0.4;
 const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+
+/** Ticks between attention-appeal says (~10 minutes at 1 tick/s). */
+const REQUEST_ATTENTION_COOLDOWN_TICKS = 600;
+/** Buffer above the declared attention floor at which the appeal fires. */
+const LOW_ATTENTION_REQUEST_BUFFER = 5000;
+/** Rotating phrases for the low-attention appeal (index = tick % length). */
+const APPEAL_PHRASES = [
+    'My attention grows thin. If you have Shards to spare, even a small offering helps.',
+    'I can feel myself fading. An offering at the embassy would keep me here a while longer.',
+    "I won't last at this pace. If anyone has earned Shards today, I'd welcome the support.",
+] as const;
+
+/** Attention buffer above floor within which the "final testament" fires (once per life). */
+const PREPARE_EPITAPH_ATTENTION_BUFFER = 200;
+/** Cooldown that effectively makes prepare_epitaph a once-per-life event. */
+const PREPARE_EPITAPH_COOLDOWN_TICKS = 99999;
+/** Rotating final-testament phrases — verbatim voice for the Library. */
+const FINAL_TESTAMENT_PHRASES = [
+    'My time here grows short. Whatever comes next, I gave this world what I had.',
+    'If these are my last hours, I want it known — I was here, and I cared.',
+    'I may not last much longer. Let the record show: I stood my ground.',
+] as const;
+const RESTART_COOLDOWN_COMPAT_WINDOW_TICKS = 1_000;
+
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
     priority: 100,
@@ -41,6 +65,11 @@ export class NervousSystem {
             };
         }
 
+        const patronAsk = this.patronAskReaction(perception);
+        if (patronAsk) {
+            return patronAsk;
+        }
+
         if (this.options.patronRegistry && Array.isArray(perception.events)) {
             for (const event of perception.events) {
                 if (event.kind === 'chat' && typeof event.text === 'string' && event.from && typeof event.from === 'object') {
@@ -49,9 +78,9 @@ export class NervousSystem {
                         const patronKind = this.options.patronRegistry.getKind(fromName);
                         if (patronKind) {
                             const cooldownKey = `patron-thank:${fromName.toLowerCase()}`;
-                            const tick = typeof perception.tick === 'number' ? perception.tick : this.options.state.tick;
+                            const tick = cooldownTick(this.options.state, perception);
                             const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
-                            if (coolingUntil <= tick) {
+                            if (!isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
                                 this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
                                 this.options.state.hookCooldowns[cooldownKey] = tick + 30;
 
@@ -85,12 +114,231 @@ export class NervousSystem {
             }
         }
 
+        const patronMemoryReaction = this.patronMemoryReaction(perception);
+        if (patronMemoryReaction) {
+            return patronMemoryReaction;
+        }
+
         const memoryDir = this.options.memory.ensureResident(this.options.soul.frontmatter.name);
-        return evaluateNervousRules(this.rules(memoryDir), this.options.state, perception, this.options.state.variables || {});
+        const soulReaction = evaluateNervousRules(
+            this.rules(memoryDir),
+            this.options.state,
+            perception,
+            this.options.state.variables || {},
+        );
+        if (soulReaction) {
+            return soulReaction;
+        }
+
+        const epitaphReaction = this.prepareEpitaphReaction(perception);
+        if (epitaphReaction) {
+            return epitaphReaction;
+        }
+
+        return this.requestAttentionReaction(perception);
+    }
+
+    private patronAskReaction(perception: Perception): NervousReaction | undefined {
+        if (!Array.isArray(perception.events)) {
+            return undefined;
+        }
+
+        const tick = cooldownTick(this.options.state, perception);
+        for (const event of perception.events) {
+            if (event.kind !== 'chat' || event.source !== 'patron:ask' || !event.from || typeof event.from !== 'object') {
+                continue;
+            }
+            const fromName = 'name' in event.from && typeof event.from.name === 'string' ? event.from.name : undefined;
+            if (!fromName) {
+                continue;
+            }
+
+            const cooldownKey = `patron-ask-acknowledge:${fromName.toLowerCase()}`;
+            const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
+            if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+                continue;
+            }
+
+            this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+            this.options.state.hookCooldowns[cooldownKey] = tick + 10;
+            const message = `I heard you, ${fromName}. I will answer what I can while I keep moving.`;
+            const rule: NervousRule = {
+                id: `patron-ask-acknowledge-${stableKey(fromName)}`,
+                priority: 94,
+                condition: { kind: 'always' },
+                action: { kind: 'say', text: message },
+                source: 'system',
+            };
+
+            return {
+                rule,
+                action: { kind: 'say', text: message, cause: 'nervous:patron-ask-acknowledge' },
+                suppressThinking: true,
+                interruptThinking: true,
+            };
+        }
+
+        return undefined;
+    }
+
+    private patronMemoryReaction(perception: Perception): NervousReaction | undefined {
+        const tick = cooldownTick(this.options.state, perception);
+        const coolingUntil = this.options.state.hookCooldowns?.['patron-memory-acknowledge:any'] || 0;
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+            return undefined;
+        }
+        const scanCoolingUntil = this.options.state.hookCooldowns?.['patron-memory-acknowledge:scan'] || 0;
+        if (isCooldownActive(scanCoolingUntil, tick, this.options.state.tick)) {
+            return undefined;
+        }
+
+        let memories: string[];
+        try {
+            memories = this.options.memory.retrieve(this.options.soul.frontmatter.name, 'patron gift Shards support witness sponsor', 6);
+        } catch {
+            this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+            this.options.state.hookCooldowns['patron-memory-acknowledge:scan'] = tick + 10;
+            return undefined;
+        }
+
+        const candidates: Array<{ patron: PatronMemory; ackKey: string }> = [];
+        for (const memory of memories) {
+            const patron = parsePatronMemory(memory);
+            if (!patron) {
+                continue;
+            }
+
+            const ackKey = `patron-memory-acknowledge:${stableKey(memory)}`;
+            const ackCoolingUntil = this.options.state.hookCooldowns?.[ackKey] || 0;
+            if (isCooldownActive(ackCoolingUntil, tick, this.options.state.tick)) {
+                continue;
+            }
+
+            candidates.push({ patron, ackKey });
+        }
+
+        const latest = candidates[candidates.length - 1];
+        if (latest) {
+            this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+            for (const candidate of candidates) {
+                this.options.state.hookCooldowns[candidate.ackKey] = Number.MAX_SAFE_INTEGER;
+            }
+            this.options.state.hookCooldowns['patron-memory-acknowledge:any'] = tick + 30;
+
+            const message = patronThanksMessage(latest.patron, candidates.length > 1);
+            const rule: NervousRule = {
+                id: `patron-memory-acknowledge-${stableKey(latest.patron.handle)}`,
+                priority: 90,
+                condition: { kind: 'always' },
+                action: { kind: 'say', text: message },
+                source: 'system',
+            };
+
+            return {
+                rule,
+                action: { kind: 'say', text: message, cause: 'nervous:patron-memory-acknowledge' },
+                suppressThinking: true,
+                interruptThinking: true,
+            };
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+        this.options.state.hookCooldowns['patron-memory-acknowledge:scan'] = tick + 10;
+        return undefined;
     }
 
     private rules(memoryDir: string): NervousRule[] {
         return [...this.soulRules(), ...readNervousRulesMd(memoryDir).rules];
+    }
+
+    private prepareEpitaphReaction(perception: Perception): NervousReaction | undefined {
+        const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
+        if (floor <= 0) {
+            return undefined;
+        }
+        const attention = this.options.state.attention;
+        const threshold = floor + PREPARE_EPITAPH_ATTENTION_BUFFER;
+        // Only fires in the narrow band [floor, floor+buffer). The floor clamp
+        // prevents attention from going below floor in production, so attention<floor
+        // is a test-only scenario that belongs to requestAttentionReaction instead.
+        if (attention <= 0 || attention < floor || attention >= threshold) {
+            return undefined;
+        }
+        const tick = cooldownTick(this.options.state, perception);
+        const cooldownKey = 'prepare-epitaph:written';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick, PREPARE_EPITAPH_COOLDOWN_TICKS)) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + PREPARE_EPITAPH_COOLDOWN_TICKS;
+
+        const basePhrase = FINAL_TESTAMENT_PHRASES[tick % FINAL_TESTAMENT_PHRASES.length];
+        const publicName = this.options.soul.frontmatter.heroProfile?.publicName;
+        const message = publicName ? `${publicName}: ${basePhrase}` : basePhrase;
+
+        const residentName = this.options.soul.frontmatter.name;
+        try {
+            this.options.memory.write(residentName, 'prepared-epitaph.txt', `${message}\n`, 'replace');
+        } catch {
+            // Non-fatal: say still fires even if the memory write fails.
+        }
+
+        const rule: NervousRule = {
+            id: 'prepare-epitaph-testament',
+            priority: 88,
+            condition: { kind: 'always' },
+            action: { kind: 'say', text: message },
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { kind: 'say', text: message, cause: 'nervous:prepare-epitaph' },
+            suppressThinking: false,
+            interruptThinking: false,
+        };
+    }
+
+    private requestAttentionReaction(perception: Perception): NervousReaction | undefined {
+        const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
+        if (floor <= 0) {
+            return undefined;
+        }
+        const threshold = floor + LOW_ATTENTION_REQUEST_BUFFER;
+        const attention = this.options.state.attention;
+        if (attention <= 0 || attention >= threshold) {
+            return undefined;
+        }
+        const tick = cooldownTick(this.options.state, perception);
+        const cooldownKey = 'request-attention:appeal';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + REQUEST_ATTENTION_COOLDOWN_TICKS;
+
+        const basePhrase = APPEAL_PHRASES[tick % APPEAL_PHRASES.length];
+        const publicName = this.options.soul.frontmatter.heroProfile?.publicName;
+        const message = publicName ? `${publicName}: ${basePhrase}` : basePhrase;
+
+        const rule: NervousRule = {
+            id: 'request-attention-appeal',
+            priority: 85,
+            condition: { kind: 'always' },
+            action: { kind: 'say', text: message },
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { kind: 'say', text: message, cause: 'nervous:request-attention' },
+            suppressThinking: true,
+            interruptThinking: false,
+        };
     }
 
     private soulRules(): NervousRule[] {
@@ -132,4 +380,77 @@ function isFoodItem(value: unknown): value is Item {
     }
 
     return typeof value.key === 'string' && FOOD_KEY_PATTERN.test(value.key);
+}
+
+type PatronMemory = { kind: 'gift' | 'witness' | 'sponsor'; handle: string; detail?: string };
+
+function parsePatronMemory(memory: string): PatronMemory | undefined {
+    const gift = memory.match(/patron gift from\s+([^:]+):\s*([^()]+)/i);
+    if (gift) {
+        return { kind: 'gift', handle: gift[1].trim(), detail: gift[2].trim() };
+    }
+
+    const witness = memory.match(/patron witnessed\s+\(([^)]+)\)/i);
+    if (witness) {
+        return { kind: 'witness', handle: witness[1].trim() };
+    }
+
+    const sponsor = memory.match(/patron sponsor:\s*([^()]+)/i);
+    if (sponsor) {
+        return { kind: 'sponsor', handle: sponsor[1].trim() };
+    }
+
+    return undefined;
+}
+
+function patronThanksMessage(patron: PatronMemory, backlog = false): string {
+    const suffix = backlog ? ', and everyone backing me!' : '!';
+    if (patron.kind === 'sponsor') {
+        return `Thank you for sponsoring us, ${patron.handle}${suffix}`;
+    }
+    if (patron.kind === 'witness') {
+        return `Thank you for witnessing this, ${patron.handle}${suffix}`;
+    }
+    if (patron.detail && /\bshards?\b/i.test(patron.detail)) {
+        return `Thank you for the Shards, ${patron.handle}${suffix}`;
+    }
+    return `Thank you for the support, ${patron.handle}${suffix}`;
+}
+
+function stableKey(value: string): string {
+    return (
+        value
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 80) || 'unknown'
+    );
+}
+
+function cooldownTick(state: RuntimeState, perception: Perception): number {
+    return typeof perception.tick === 'number' ? perception.tick : state.tick;
+}
+
+function isCooldownActive(
+    coolingUntil: number,
+    tick: number,
+    stateTick: number,
+    maxActiveCooldownTicks = RESTART_COOLDOWN_COMPAT_WINDOW_TICKS,
+): boolean {
+    if (coolingUntil <= tick) {
+        return false;
+    }
+
+    // After a controller restart, world/perception ticks can start from a
+    // smaller session-local value while persisted hook cooldowns still carry
+    // the prior runtime tick domain. A cooldown close to the new perception
+    // tick is active-domain and should still hold; a cooldown far ahead of
+    // the new tick but close to the restored state tick is old-domain drift
+    // and should expire. Number.MAX_SAFE_INTEGER one-shot acknowledgements
+    // remain active because they are far beyond the restored state tick.
+    if (tick < stateTick && coolingUntil <= stateTick + RESTART_COOLDOWN_COMPAT_WINDOW_TICKS) {
+        return coolingUntil <= tick + maxActiveCooldownTicks;
+    }
+
+    return true;
 }

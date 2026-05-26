@@ -64,6 +64,11 @@ export interface PathingOptions {
     ignoreDestination?: boolean;
 }
 
+interface WalkPath {
+    path: Point[];
+    endsAtDestination: boolean;
+}
+
 export class Pathfinding {
     public stopped = false;
     private currentPoint: Point;
@@ -79,18 +84,19 @@ export class Pathfinding {
         }
 
         try {
-            const path = this.pathTo(position.x, position.y, options.pathingSearchRadius);
+            const target = this.pathToWalkTarget(position, options.pathingSearchRadius, options.ignoreDestination === true);
 
-            if (!path) {
+            if (!target) {
                 return;
             }
 
+            const path = [...target.path];
             const walkingQueue = this.actor.walkingQueue;
 
             walkingQueue.clear();
             walkingQueue.valid = true;
 
-            if (options.ignoreDestination) {
+            if (options.ignoreDestination && target.endsAtDestination) {
                 path.splice(path.length - 1, 1);
             }
 
@@ -100,6 +106,47 @@ export class Pathfinding {
         } catch (error) {
             logger.error(error);
         }
+    }
+
+    private pathToWalkTarget(position: Position, searchRadius: number, allowAdjacentFallback: boolean): WalkPath | null {
+        const directPath = this.pathTo(position.x, position.y, searchRadius);
+        if (directPath) {
+            return { path: directPath, endsAtDestination: true };
+        }
+
+        if (!allowAdjacentFallback) {
+            return null;
+        }
+
+        for (const adjacent of this.adjacentWalkTargets(position)) {
+            try {
+                const path = this.pathTo(adjacent.x, adjacent.y, searchRadius);
+                if (path) {
+                    return { path, endsAtDestination: false };
+                }
+            } catch {
+                // Adjacent candidates can be outside the search box near the edge; keep scanning.
+            }
+        }
+
+        return null;
+    }
+
+    private adjacentWalkTargets(position: Position): Position[] {
+        const origin = this.actor.position;
+        const candidates: Position[] = [];
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                if (dx === 0 && dy === 0) {
+                    continue;
+                }
+                candidates.push(new Position(position.x + dx, position.y + dy, position.level));
+            }
+        }
+        return candidates.sort(
+            (a, b) =>
+                Math.max(Math.abs(origin.x - a.x), Math.abs(origin.y - a.y)) - Math.max(Math.abs(origin.x - b.x), Math.abs(origin.y - b.y)),
+        );
     }
 
     public createTileMap(searchRadius: number = 8): { [key: string]: Tile } {

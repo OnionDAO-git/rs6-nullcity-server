@@ -69,7 +69,14 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'polite_decline.missing_tool': ['I cannot do that without a {tool}!'],
         'polite_decline.low_hp': ['My HP is too low for this.'],
         'polite_decline.busy_higher_priority_goal': ['I am too busy right now.'],
-        'polite_decline.unknown_command': ['Unknown command.'],
+        'polite_decline.unknown_command': ['I don\'t know what you mean by "{command}". I can: {catalog}.'],
+        'polite_decline.command_unsafe.combat': ["Hold on — I'm in combat.", 'Busy fighting right now!'],
+        'polite_decline.command_unsafe.trade': ['Mid-trade, give me a sec.', 'Finishing a trade first!'],
+        'direct_chat_wait.wait': ['Waiting.', 'Holding here.', 'I will wait.'],
+        'direct_chat_wait.extend': ['Still here.', 'Timer extended.', 'Still waiting.'],
+        'direct_chat_wait.resume': ['Resuming.', 'Back to it.', 'Resuming my work.'],
+        'direct_chat_come_here.ack': ['On my way.', 'Moving now.', 'Heading over.'],
+        'direct_chat_stop.ack': ['Stopping.', 'Pausing here.'],
     },
     mentor: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -120,7 +127,14 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'polite_decline.missing_tool': ['A wise adventurer needs a {tool} first.'],
         'polite_decline.low_hp': ['We must heal before engaging in combat.'],
         'polite_decline.busy_higher_priority_goal': ['I am currently occupied with a crucial task.'],
-        'polite_decline.unknown_command': ['That is not a lesson I can teach.'],
+        'polite_decline.unknown_command': ['I do not understand "{command}". My training includes: {catalog}.'],
+        'polite_decline.command_unsafe.combat': ['Patience — I am currently in combat.', 'I must prioritize this fight.'],
+        'polite_decline.command_unsafe.trade': ['I am in the middle of a trade, one moment.', 'Let me finish the transaction first.'],
+        'direct_chat_wait.wait': ['I shall wait here.', 'Patience, I am holding position.'],
+        'direct_chat_wait.extend': ['I am still here.', 'Continuing my hold.'],
+        'direct_chat_wait.resume': ['Resuming my previous task.', 'Back to the curriculum.'],
+        'direct_chat_come_here.ack': ['I am coming to you.', 'On my way to your coordinate.'],
+        'direct_chat_stop.ack': ['Very well, stopping here.', 'Stopping my routine.'],
     },
     endurer: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -165,7 +179,14 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'polite_decline.missing_tool': ['Cannot do that without a {tool}.'],
         'polite_decline.low_hp': ['HP too low to fight.'],
         'polite_decline.busy_higher_priority_goal': ['Busy right now.'],
-        'polite_decline.unknown_command': ['Do not understand.'],
+        'polite_decline.unknown_command': ['Don\'t get what "{command}" means. I can only: {catalog}.'],
+        'polite_decline.command_unsafe.combat': ["Hold on — I'm in combat.", "Can't do that while fighting."],
+        'polite_decline.command_unsafe.trade': ['Mid-trade, give me a sec.', 'Trading right now, hold on.'],
+        'direct_chat_wait.wait': ['Waiting.', 'Holding.'],
+        'direct_chat_wait.extend': ['Still here.', 'Still waiting.'],
+        'direct_chat_wait.resume': ['Resuming.', 'Going back to it.'],
+        'direct_chat_come_here.ack': ['On my way.', 'Moving now.'],
+        'direct_chat_stop.ack': ['Stopping.', 'Pausing.'],
     },
     default: {
         'stuck_help_request.blocked_by_obstacle.fence': [
@@ -204,7 +225,14 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'polite_decline.missing_tool': ['I need a {tool} before I can catch shrimp.'],
         'polite_decline.low_hp': ['My health is too low to fight right now.'],
         'polite_decline.busy_higher_priority_goal': ['I am busy with a higher priority goal.'],
-        'polite_decline.unknown_command': ['I do not understand that command.'],
+        'polite_decline.unknown_command': ['I\'m not sure what you mean by "{command}". I can: {catalog}.'],
+        'polite_decline.command_unsafe.combat': ["Hold on — I'm in combat.", 'Busy fighting right now!'],
+        'polite_decline.command_unsafe.trade': ['Mid-trade, give me a sec.', 'Finishing a trade first!'],
+        'direct_chat_wait.wait': ['Waiting.', 'Holding here.', 'I will wait.'],
+        'direct_chat_wait.extend': ['Still here.', 'Timer extended.', 'Still waiting.'],
+        'direct_chat_wait.resume': ['Resuming.', 'Back to it.', 'Resuming my work.'],
+        'direct_chat_come_here.ack': ['On my way.', 'Moving now.', 'Heading over.'],
+        'direct_chat_stop.ack': ['Stopping.', 'Pausing here.'],
     },
 };
 

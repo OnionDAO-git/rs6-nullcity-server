@@ -84,6 +84,50 @@ describe('LettersStore', () => {
             store.append(letter({ kind: 'civic_milestone' }));
             expect(store.readInbox('alice@onion')).toHaveLength(2);
         });
+
+        // HD-040 regression: when a single grant crosses multiple standing
+        // tiers, the dispatcher emits one letter per tier — all with the same
+        // kind + dispatchedAt but different subjects. Dedup must NOT collapse
+        // them. See `intelligence-verification-log.md` § E36 F36b.
+        it('allows multiple standing_tier_crossed letters at the same ts when subjects differ (HD-040)', () => {
+            const store = new LettersStore(tmpRoot);
+            const ts = '2026-05-23T04:00:00.000Z';
+            store.append(
+                letter({
+                    kind: 'standing_tier_crossed',
+                    dispatchedAt: ts,
+                    subject: 'You are now Acquaintance of embassy',
+                    body: 'Acquaintance body',
+                }),
+            );
+            store.append(
+                letter({ kind: 'standing_tier_crossed', dispatchedAt: ts, subject: 'You are now Ally of embassy', body: 'Ally body' }),
+            );
+            store.append(
+                letter({
+                    kind: 'standing_tier_crossed',
+                    dispatchedAt: ts,
+                    subject: 'You are now Officer of embassy',
+                    body: 'Officer body',
+                }),
+            );
+            expect(store.readInbox('alice@onion')).toHaveLength(3);
+        });
+
+        it('still dedupes identical (kind, dispatchedAt, subject, recipient) on second append', () => {
+            const store = new LettersStore(tmpRoot);
+            const args = {
+                kind: 'standing_tier_crossed' as const,
+                dispatchedAt: '2026-05-23T04:00:00.000Z',
+                subject: 'You are now Ally of embassy',
+                body: 'Ally body',
+            };
+            const first = store.append(letter(args));
+            const second = store.append(letter(args));
+            expect(first.deduped).toBe(false);
+            expect(second.deduped).toBe(true);
+            expect(store.readInbox('alice@onion')).toHaveLength(1);
+        });
     });
 
     describe('persistence + recovery', () => {

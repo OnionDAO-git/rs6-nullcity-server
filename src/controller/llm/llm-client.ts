@@ -6,6 +6,7 @@ export interface LlmRequest {
     prompt: string;
     temperature?: number;
     thinking?: boolean;
+    timeoutMs?: number;
     signal?: AbortSignal;
     priority?: number;
 }
@@ -35,12 +36,19 @@ export class LlmClient {
     ) {}
 
     async complete(request: LlmRequest): Promise<LlmResponse> {
-        return this.enqueue(request, () => this.completeNow(request));
+        if (request.signal?.aborted) {
+            return cancelledResponse(request.signal);
+        }
+        const deadlineAt = request.timeoutMs !== undefined ? Date.now() + request.timeoutMs : undefined;
+        return this.enqueue(request, () => this.completeNow(this.withRemainingTimeout(request, deadlineAt)), deadlineAt);
     }
 
     private async completeNow(request: LlmRequest): Promise<LlmResponse> {
         if (request.signal?.aborted) {
             return { text: '', nooped: true, cancelledBy: String(request.signal.reason || 'aborted') };
+        }
+        if (request.timeoutMs !== undefined && request.timeoutMs <= 0) {
+            return timeoutResponse();
         }
 
         const endpointKey = this.endpoints[request.endpoint] ? request.endpoint : 'default';
@@ -74,36 +82,88 @@ export class LlmClient {
         };
 
         try {
-            return await this.postCompletionWithRetry(endpointKey, endpoint, body, request.signal);
+            return await this.postCompletionWithRetry(endpointKey, endpoint, body, request.signal, request.timeoutMs);
         } catch (error) {
             if (request.signal?.aborted) {
                 return { text: '', model, nooped: true, cancelledBy: String(request.signal.reason || 'aborted') };
+            }
+            if (error instanceof LlmTimeoutError) {
+                return { text: JSON.stringify({ actions: [] }), model, nooped: true, cancelledBy: 'request_timeout' };
             }
             if (isRetryableError(error)) {
                 throw error;
             }
 
             const fallbackBody = { ...body, response_format: { type: 'text' } };
-            return this.postCompletionWithRetry(endpointKey, endpoint, fallbackBody, request.signal);
+            return this.postCompletionWithRetry(endpointKey, endpoint, fallbackBody, request.signal, request.timeoutMs);
         }
     }
 
-    private enqueue<T>(request: LlmRequest, run: () => Promise<T>): Promise<T> {
+    private enqueue(request: LlmRequest, run: () => Promise<LlmResponse>, deadlineAt?: number): Promise<LlmResponse> {
         if (this.maxConcurrent <= 0 || this.active < this.maxConcurrent) {
             return this.runQueued(run);
         }
 
-        return new Promise<T>((resolve, reject) => {
-            const queued: QueuedRequest<T> = {
+        return new Promise<LlmResponse>((resolve, reject) => {
+            const cleanupFns: Array<() => void> = [];
+            const queued: QueuedRequest = {
                 priority: request.priority || 0,
                 sequence: ++this.sequence,
                 run,
                 resolve,
                 reject,
             };
+            const abortQueued = () => {
+                const index = this.queue.indexOf(queued);
+                if (index < 0) {
+                    return;
+                }
+                this.queue.splice(index, 1);
+                queued.cleanup?.();
+                resolve(cancelledResponse(request.signal));
+            };
+            if (request.signal) {
+                if (request.signal.aborted) {
+                    resolve(cancelledResponse(request.signal));
+                    return;
+                }
+                request.signal.addEventListener('abort', abortQueued, { once: true });
+                cleanupFns.push(() => request.signal?.removeEventListener('abort', abortQueued));
+            }
+            if (deadlineAt !== undefined) {
+                const remainingMs = deadlineAt - Date.now();
+                if (remainingMs <= 0) {
+                    resolve(timeoutResponse());
+                    return;
+                }
+                const timeout = setTimeout(() => {
+                    const index = this.queue.indexOf(queued);
+                    if (index < 0) {
+                        return;
+                    }
+                    this.queue.splice(index, 1);
+                    queued.cleanup?.();
+                    resolve(timeoutResponse());
+                }, remainingMs);
+                cleanupFns.push(() => clearTimeout(timeout));
+            }
+            if (cleanupFns.length > 0) {
+                queued.cleanup = () => {
+                    for (const cleanup of cleanupFns) {
+                        cleanup();
+                    }
+                };
+            }
             this.queue.push(queued);
             this.queue.sort((a, b) => b.priority - a.priority || a.sequence - b.sequence);
         });
+    }
+
+    private withRemainingTimeout(request: LlmRequest, deadlineAt?: number): LlmRequest {
+        if (deadlineAt === undefined) {
+            return request;
+        }
+        return { ...request, timeoutMs: deadlineAt - Date.now() };
     }
 
     private async runQueued<T>(run: () => Promise<T>): Promise<T> {
@@ -119,6 +179,7 @@ export class LlmClient {
     private drainQueue(): void {
         while (this.queue.length > 0 && this.active < this.maxConcurrent) {
             const next = this.queue.shift()!;
+            next.cleanup?.();
             this.runQueued(next.run).then(next.resolve, next.reject);
         }
     }
@@ -140,11 +201,12 @@ export class LlmClient {
         endpoint: LlmEndpointConfig,
         body: unknown,
         signal?: AbortSignal,
+        timeoutMs?: number,
     ): Promise<LlmResponse> {
         let attempt = 0;
         while (true) {
             try {
-                const response = await this.postCompletion(endpoint, body, signal);
+                const response = await this.postCompletion(endpoint, body, signal, timeoutMs);
                 this.clearRetryableFailures(endpointKey);
                 return response;
             } catch (error) {
@@ -177,18 +239,31 @@ export class LlmClient {
         });
     }
 
-    private async postCompletion(endpoint: LlmEndpointConfig, body: unknown, signal?: AbortSignal): Promise<LlmResponse> {
-        const response = await fetch(`${endpoint.baseUrl?.replace(/\/$/, '')}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'content-type': 'application/json',
-                ...(endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {}),
-            },
-            body: JSON.stringify(body),
-            signal: signal
-                ? AbortSignal.any([signal, AbortSignal.timeout(endpoint.timeoutMs || 30000)])
-                : AbortSignal.timeout(endpoint.timeoutMs || 30000),
-        });
+    private async postCompletion(
+        endpoint: LlmEndpointConfig,
+        body: unknown,
+        signal?: AbortSignal,
+        timeoutMs?: number,
+    ): Promise<LlmResponse> {
+        const timeoutSignal = AbortSignal.timeout(timeoutMs ?? endpoint.timeoutMs ?? 30000);
+        const completionSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+        let response: Response;
+        try {
+            response = await fetch(`${endpoint.baseUrl?.replace(/\/$/, '')}/v1/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                    ...(endpoint.apiKey ? { authorization: `Bearer ${endpoint.apiKey}` } : {}),
+                },
+                body: JSON.stringify(body),
+                signal: completionSignal,
+            });
+        } catch (error) {
+            if (timeoutSignal.aborted && !signal?.aborted) {
+                throw new LlmTimeoutError();
+            }
+            throw error;
+        }
         if (!response.ok) {
             throw new LlmHttpError(response.status, response.statusText);
         }
@@ -220,6 +295,12 @@ class LlmHttpError extends Error {
     }
 }
 
+class LlmTimeoutError extends Error {
+    constructor() {
+        super('LLM completion timed out');
+    }
+}
+
 function isRetryableError(error: unknown): error is LlmHttpError {
     return error instanceof LlmHttpError && (error.status === 429 || error.status >= 500);
 }
@@ -228,12 +309,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-interface QueuedRequest<T = unknown> {
+function cancelledResponse(signal?: AbortSignal): LlmResponse {
+    return { text: '', nooped: true, cancelledBy: String(signal?.reason || 'aborted') };
+}
+
+function timeoutResponse(): LlmResponse {
+    return { text: JSON.stringify({ actions: [] }), nooped: true, cancelledBy: 'request_timeout' };
+}
+
+interface QueuedRequest {
     priority: number;
     sequence: number;
-    run: () => Promise<T>;
-    resolve: (value: T) => void;
+    run: () => Promise<LlmResponse>;
+    resolve: (value: LlmResponse) => void;
     reject: (reason: unknown) => void;
+    cleanup?: () => void;
 }
 
 interface EndpointState {

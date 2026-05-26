@@ -32,7 +32,7 @@ export class EvidenceStore {
 
     constructor(
         private readonly residentName: string,
-        private readonly root: string,
+        public readonly root: string,
         options: EvidenceStoreOptions = {},
     ) {
         this.maxSessions = options.maxSessions ?? 8;
@@ -155,7 +155,12 @@ export class EvidenceStore {
         if (!fs.existsSync(indexPath)) {
             return { schemaVersion: EVIDENCE_SCHEMA_VERSION, resident: this.residentName, sessions: [] };
         }
-        return evidenceIndexSchema.parse(JSON.parse(fs.readFileSync(indexPath, 'utf8')));
+        try {
+            return evidenceIndexSchema.parse(JSON.parse(fs.readFileSync(indexPath, 'utf8')));
+        } catch {
+            this.quarantineCorruptIndex(indexPath);
+            return { schemaVersion: EVIDENCE_SCHEMA_VERSION, resident: this.residentName, sessions: [] };
+        }
     }
 
     private writeIndex(index: EvidenceIndex): void {
@@ -177,6 +182,27 @@ export class EvidenceStore {
 
     private indexPath(): string {
         return path.join(this.baseDir(), 'index.json');
+    }
+
+    private quarantineCorruptIndex(indexPath: string): void {
+        try {
+            fs.renameSync(indexPath, this.nextCorruptIndexPath(indexPath));
+        } catch {
+            fs.rmSync(indexPath, { force: true });
+        }
+    }
+
+    private nextCorruptIndexPath(indexPath: string): string {
+        const basePath = `${indexPath}.corrupt-${compactTimestamp(this.now().toISOString())}`;
+        if (!fs.existsSync(basePath)) {
+            return basePath;
+        }
+        for (let suffix = 1; ; suffix++) {
+            const candidate = `${basePath}-${suffix}`;
+            if (!fs.existsSync(candidate)) {
+                return candidate;
+            }
+        }
     }
 }
 

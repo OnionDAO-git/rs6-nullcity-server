@@ -9,6 +9,8 @@ import { canCatchFish } from './chance';
 import { getFishingRequirementIssue, resolveFishingItem, selectFishingCatch } from './fishing-data';
 import type { FishingMethod } from './fishing-types';
 
+export const FISHING_SPOT_INTERACTION_DISTANCE = 7;
+
 export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
     private elapsedTicks = 0;
 
@@ -17,7 +19,8 @@ export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
         npc: Npc,
         private readonly method: FishingMethod,
     ) {
-        super(player, npc);
+        super(player, npc, false, FISHING_SPOT_INTERACTION_DISTANCE);
+        this.actor.busy = true;
     }
 
     public execute(): void {
@@ -45,6 +48,7 @@ export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
 
         const taskIteration = this.elapsedTicks++;
         if (taskIteration === 0) {
+            this.actor.busy = true;
             this.actor.sendMessage('You start fishing.');
             this.actor.face(fishingSpot.position);
             this.actor.playAnimation(this.method.animation);
@@ -104,5 +108,6 @@ export class FishingTask extends ActorActorInteractionTask<Player, Npc> {
         super.onStop();
 
         this.actor.stopAnimation();
+        this.actor.busy = false;
     }
 }

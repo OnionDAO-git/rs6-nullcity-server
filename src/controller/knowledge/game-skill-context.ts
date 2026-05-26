@@ -81,9 +81,20 @@ export class GameSkillService {
         const perceptionContext = derivePerceptionContext(input.perception);
         const goalContext = deriveGoalContext(input.activeGoal);
 
+        // E22 / HD-034 fix #2: raise recall so more of the 108 knowledge
+        // entries reach the Brain. E21 measured only 2/52 (3.8%) of recent
+        // res:agent says reference any knowledge term despite the substrate
+        // wiring being intact. Lowering minScore from 4 → 2 admits weaker
+        // matches when the strong matches are scarce; raising limit from
+        // 5 → 8 allows up to 3 more entries through when the score floor
+        // is also met. tokenBudget + downstream maxChars still cap the
+        // prompt size, so the slice can shrink itself if 8 entries are
+        // genuinely too big. The perception/goal score boosts (1.5x/3x
+        // in knowledge-retriever.ts) continue to prioritize the most
+        // contextually relevant entries.
         const knowledgeResults = retrieveKnowledge(this.entries, [goalText, perceptionText, availabilityText].join('\n'), {
-            limit: 5,
-            minScore: 4,
+            limit: 8,
+            minScore: 2,
             perceptionContext,
             goalContext,
             tokenBudget: 1500,
@@ -109,9 +120,15 @@ export class GameSkillService {
         if (!this.suggestionStore) {
             return;
         }
+        if (shouldSuppressAttemptSuggestion(event.attempt)) {
+            return;
+        }
 
         const workflow = selectWorkflowForAttempt(event.attempt, event.context?.workflowAvailability || []);
-        if (event.attempt.finalStatus === 'success' && (!workflow || event.attempt.evidence.length === 0)) {
+        if (!workflow) {
+            return;
+        }
+        if (event.attempt.finalStatus === 'success' && event.attempt.evidence.length === 0) {
             return;
         }
         const suggestion = this.buildAttemptSuggestion(event, workflow);
@@ -214,7 +231,8 @@ function selectWorkflowForAttempt(attempt: ActionAttempt, workflowAvailability: 
             return preferred;
         }
     }
-    return visible[0];
+    const fallbackWorkflowId = fallbackWorkflowForAttempt(attempt);
+    return fallbackWorkflowId ? visible.find(availability => availability.workflowId === fallbackWorkflowId) : undefined;
 }
 
 function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined {
@@ -227,6 +245,9 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
     const combined = `${kind} ${option} ${text} ${cause} ${targetText(target)}`.toLowerCase();
     const words = combined.replace(/[_:-]+/g, ' ');
 
+    if (kind === 'say' && /\bdirect chat (help|status|wait|stop|follow)\b|\bfollow listen hold\b|\bpresence beacon\b/.test(words)) {
+        return 'follow-codex';
+    }
     if (kind === 'item_action' && /\bbury\b/.test(option)) {
         return 'train-prayer';
     }
@@ -258,6 +279,20 @@ function preferredWorkflowForAttempt(attempt: ActionAttempt): string | undefined
         return 'follow-codex';
     }
     return undefined;
+}
+
+function fallbackWorkflowForAttempt(attempt: ActionAttempt): string | undefined {
+    const action = record(attempt.action);
+    const kind = textField(action.kind);
+    if (kind === 'use_item_on_item') {
+        return 'make-fire';
+    }
+    return undefined;
+}
+
+function shouldSuppressAttemptSuggestion(attempt: ActionAttempt): boolean {
+    const kind = textField(record(attempt.action).kind);
+    return kind === 'say' || kind === 'logout' || kind === 'noop';
 }
 
 function targetText(target: Record<string, unknown>): string {

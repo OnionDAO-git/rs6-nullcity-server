@@ -669,7 +669,173 @@ describe('GameSkillService', () => {
         expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
     });
 
-    it('attributes follow status speech to follow-codex instead of visible skilling workflows', () => {
+    it('does not turn successful speech-only attempts into workflow hints', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('train-woodcutting', 'Chop a tree and report progress.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-status-say-noise',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'I am online and gathering logs.',
+                    cause: 'presence_beacon',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).not.toHaveBeenCalled();
+    });
+
+    it('does not fallback generic movement, noop, or logout attempts to the first visible workflow', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('scout-nearby-area', 'Scout nearby landmarks.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-generic-move-noise',
+                resident: 'res:agent',
+                producer: 'body',
+                action: { kind: 'move_to', target: { x: 3215, y: 3235, level: 0 }, cause: 'explore_patrol' },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'perception', detail: { kind: 'position_reached' } }],
+                finalStatus: 'success',
+            },
+        });
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-generic-move-timeout-noise',
+                resident: 'res:agent',
+                producer: 'body',
+                action: { kind: 'move_to', target: { x: 3215, y: 3225, level: 0 }, cause: 'explore_patrol' },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [],
+                finalStatus: 'timeout',
+                finalReason: 'timeout',
+            },
+        });
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-noop-noise',
+                resident: 'res:agent',
+                producer: 'body',
+                action: { kind: 'noop', cause: 'body_wait' },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [],
+                finalStatus: 'success',
+            },
+        });
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'nervous-system',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-logout-noise',
+                resident: 'res:agent',
+                producer: 'nervous-system',
+                action: { kind: 'logout', cause: 'attention_exhausted' },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [],
+                finalStatus: 'failure',
+                finalReason: 'session_closed',
+            },
+        });
+
+        expect(append).not.toHaveBeenCalled();
+    });
+
+    it('still attributes woodcutting chop attempts after removing generic workflow fallback', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = combatAndWoodcuttingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('train-woodcutting', 'Chop a tree for logs.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-woodcutting-chop',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'interact',
+                    target: { objectId: 1278, position: { x: 3213, y: 3238, level: 0 }, orientation: 1 },
+                    option: 'chop down',
+                    cause: 'woodcutting_level1_routine',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'perception', detail: { kind: 'action_effect_observed', changed: ['skills', 'inventory'] } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).toHaveBeenCalledWith(
+            expect.objectContaining({
+                workflowId: 'train-woodcutting',
+                proposedChange: expect.objectContaining({
+                    targetId: 'train-woodcutting',
+                }),
+            }),
+        );
+        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+    });
+
+    it('does not turn follow status speech into workflow hints', () => {
         const append = jest.fn();
         const service = new GameSkillService({
             controllerId: 'controller-1',
@@ -703,19 +869,86 @@ describe('GameSkillService', () => {
             },
         });
 
-        expect(append).toHaveBeenCalledWith(
-            expect.objectContaining({
-                workflowId: 'follow-codex',
-                proposedChange: expect.objectContaining({
-                    targetId: 'follow-codex',
-                }),
-            }),
-        );
-        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
-        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'trade-request' }));
+        expect(append).not.toHaveBeenCalled();
     });
 
-    it('attributes woodcutting status speech to woodcutting instead of firemaking', () => {
+    it('does not turn direct help speech into workflow hints', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Follow Codex and answer direct commands.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-help-say',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'Try: follow me, status, look around, inventory, make fire, fish, cook, fight safely, bury bones, trade me, offer logs, wait, stop.',
+                    cause: 'direct_chat_help',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).not.toHaveBeenCalled();
+    });
+
+    it('does not turn direct wait speech into workflow hints', () => {
+        const append = jest.fn();
+        const service = new GameSkillService({
+            controllerId: 'controller-1',
+            instanceId: 'instance-1',
+            suggestionStore: { append },
+        });
+        const mixedPerception = tradeAndFiremakingPerception();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('follow-codex', 'Follow Codex and wait for direct commands.'),
+            perception: mixedPerception,
+        });
+
+        service.observeAttempt({
+            resident: 'res:agent',
+            producer: 'body',
+            perception: mixedPerception,
+            context,
+            attempt: {
+                attemptId: 'attempt-wait-say',
+                resident: 'res:agent',
+                producer: 'body',
+                action: {
+                    kind: 'say',
+                    text: 'I will pause here and wait for a new goal.',
+                    cause: 'direct_chat_stop',
+                },
+                submittedAt: new Date(0).toISOString(),
+                evidence: [{ source: 'event', detail: { kind: 'chat_observed' } }],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(append).not.toHaveBeenCalled();
+    });
+
+    it('does not turn woodcutting status speech into workflow hints', () => {
         const append = jest.fn();
         const service = new GameSkillService({
             controllerId: 'controller-1',
@@ -749,15 +982,36 @@ describe('GameSkillService', () => {
             },
         });
 
-        expect(append).toHaveBeenCalledWith(
-            expect.objectContaining({
-                workflowId: 'train-woodcutting',
-                proposedChange: expect.objectContaining({
-                    targetId: 'train-woodcutting',
-                }),
-            }),
-        );
-        expect(append).not.toHaveBeenCalledWith(expect.objectContaining({ workflowId: 'make-fire' }));
+        expect(append).not.toHaveBeenCalled();
+    });
+
+    // E22 / HD-034 regression: knowledge retrieval recall was raised
+    // (limit 5→8, minScore 4→2) because E21 measured only 2/52 (3.8%)
+    // of res:agent's recent says reference any knowledge entry despite
+    // the substrate wiring being intact. The wider recall admits more
+    // entries when the brain prompt has token budget, prioritized by
+    // the existing perception (1.5x) and goal (3x) score boosts.
+    it('returns more than the legacy 5-entry cap when many low-score matches are eligible (HD-034)', () => {
+        const service = new GameSkillService();
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            // Goal text mentions many distinct knowledge topics so that
+            // multiple lower-score (but still ≥2) entries become eligible.
+            // Pre-fix behavior would clamp at 5 results; post-fix should
+            // be able to return up to 8.
+            activeGoal: goal(
+                'broad-survey',
+                'Survey woodcutting trees, firemaking tinderbox, cooking shrimp, fishing net, smithing copper, mining ore, magic runes, ranged bows, prayer bones, quests cook assistant and sheep shearer, places lumbridge varrock falador, NPCs hans bob, monsters chicken goblin cow.',
+            ),
+            perception: perception('Inventory: rs:tinderbox, rs:logs. Nearby Tree, Chicken.'),
+        });
+
+        // The context should include MORE than the legacy 5-entry cap.
+        // We deliberately don't pin an exact number because retrieval
+        // depends on scoring math; we just guard the regression direction.
+        expect(context.knowledgeResults.length).toBeGreaterThan(5);
+        expect(context.knowledgeResults.length).toBeLessThanOrEqual(8);
     });
 });
 

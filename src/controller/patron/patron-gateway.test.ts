@@ -5,6 +5,7 @@ import { CurrencyLedger } from './currency-ledger';
 import { StandingLedger } from './standing-ledger';
 import { PatronGateway } from './patron-gateway';
 import { ResidentRuntime } from '../resident-runtime';
+import { SoulLoader } from '../soul/soul-loader';
 
 describe('PatronGateway', () => {
     let currencyLedger: CurrencyLedger;
@@ -97,6 +98,13 @@ describe('PatronGateway', () => {
                 tick: 5,
                 patronHandle: 'james',
                 note: 'chathead',
+                // E7 enrichment: amount + attentionDelta + (optional) tier
+                // get forwarded so the Brain's memory rendering can include
+                // them. tier is undefined here because 5 Shards stays under
+                // the stranger → acquaintance threshold.
+                amount: 5,
+                standingTier: undefined,
+                attentionDelta: 10,
             });
 
             expect(res.standingDelta).toEqual({
@@ -104,6 +112,7 @@ describe('PatronGateway', () => {
                 before: 0,
                 after: 5,
                 tierCrossed: undefined,
+                tiersCrossed: [],
             });
         });
 
@@ -114,6 +123,21 @@ describe('PatronGateway', () => {
 
             expect(res.ok).toBe(true);
             expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+        });
+
+        // HD-037 HIGH-2 (same fix as witnessAt): standingDelta.before must
+        // snapshot BEFORE recordSupport so non-zero prior standing is reported
+        // correctly, not back-computed as (after - amount).
+        it('standingDelta.before reports the pre-offer value (HD-037)', async () => {
+            // Pre-seed james with 7 standing from an unrelated path.
+            standingLedger.recordSupport('james', 'embassy', 7, { reason: 'pre-existing' });
+            currencyLedger.credit('james', 10, { reason: 'workshop' });
+
+            const res = await gateway.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 5 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.before).toBe(7);
+            expect(res.standingDelta?.after).toBe(12);
         });
     });
 
@@ -164,10 +188,18 @@ describe('PatronGateway', () => {
             expect(fs.existsSync(soulFilePath)).toBe(true);
             const soulContent = fs.readFileSync(soulFilePath, 'utf8');
             expect(soulContent).toContain('name: res:newborn');
-            expect(soulContent).toContain('faction: foundry');
+            expect(soulContent).toContain('factionId: foundry');
             expect(soulContent).toContain('alignment: lawful-good');
             expect(soulContent).toContain('- Master Smithing');
             expect(soulContent).toContain('Sponsored by james.');
+
+            // Validate using SoulLoader to ensure it conforms to Zod strict schema
+            const loader = new SoulLoader(soulsDir);
+            const loadedSoul = loader.load('res:newborn');
+            expect(loadedSoul.frontmatter.heroProfile?.tier).toBe('novice');
+            expect(loadedSoul.frontmatter.heroProfile?.publicName).toBe('Newborn');
+            expect(loadedSoul.frontmatter.heroProfile?.signatureAction).toBe('explores Null City');
+            expect(loadedSoul.frontmatter.factionId).toBe('foundry');
 
             // Verify 24h cooldown is enforced
             const resCooldown = await birthGateway.sponsorBirth({
@@ -178,6 +210,26 @@ describe('PatronGateway', () => {
             });
             expect(resCooldown.ok).toBe(false);
             expect(resCooldown.error).toBe('cooldown_active');
+        });
+
+        // HD-037 HIGH-2: standingDelta.before must snapshot BEFORE recordSupport.
+        it('standingDelta.before reports pre-birth standing value (HD-037)', async () => {
+            // Pre-seed james with 5 standing from the foundry via an unrelated path.
+            standingLedger.recordSupport('james', 'foundry', 5, { reason: 'pre-existing' });
+            currencyLedger.credit('james', 24, { reason: 'workshop' });
+
+            const res = await gateway.sponsorBirth({
+                humanId: 'james',
+                factionId: 'foundry',
+                name: 'res:born-second',
+                cost: 24,
+            });
+
+            expect(res.ok).toBe(true);
+            // before = 5 (pre-existing), not 15 - 10 = 5 (happens to match here but
+            // semantically wrong if recordSupport had side-effects beyond +10).
+            expect(res.standingDelta?.before).toBe(5);
+            expect(res.standingDelta?.after).toBe(15);
         });
     });
 
@@ -199,6 +251,150 @@ describe('PatronGateway', () => {
                 artifact: 'lumbridge_fountain',
             });
         });
+
+        it('credits +3 standing by default and returns standingDelta', async () => {
+            const res = await gateway.witnessAt('james', 'first_fire', 'res:pip');
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(3);
+            expect(res.standingDelta).toEqual({
+                factionId: 'embassy',
+                before: 0,
+                after: 3,
+                tierCrossed: undefined,
+                tiersCrossed: [],
+            });
+        });
+
+        it('respects a custom amount and crosses tier when threshold met', async () => {
+            const res = await gateway.witnessAt('james', 'first_fire', 'res:pip', 12);
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(12);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+        });
+
+        it('skips standing bump when residentName is omitted (no faction to credit)', async () => {
+            const res = await gateway.witnessAt('james', 'lumbridge_fountain');
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(0);
+            expect(res.standingDelta).toBeUndefined();
+        });
+
+        it('skips standing bump when amount=0', async () => {
+            const res = await gateway.witnessAt('james', 'lumbridge_fountain', 'res:pip', 0);
+            expect(res.ok).toBe(true);
+            expect(standingLedger.points('james', 'embassy')).toBe(0);
+            expect(res.standingDelta).toBeUndefined();
+        });
+
+        // E31 / HD-037 HIGH-2: standingDelta.before must be a TRUE snapshot
+        // taken before recordSupport, not (after - amount). Without the
+        // snapshot, any future decay/cap that makes recordSupport's net
+        // change differ from `amount` will silently produce wrong `before`
+        // values. Pre-fix this test would still have passed because
+        // recordSupport ALWAYS adds exactly `amount` — but the test guards
+        // the invariant by seeding pre-existing standing and asserting
+        // before reports the pre-existing value, not 0.
+        it('standingDelta.before reports the pre-witness value, not (after - amount) (HD-037)', async () => {
+            // Pre-seed standing with an unrelated 7-point bump.
+            standingLedger.recordSupport('james', 'embassy', 7, { reason: 'pre-existing' });
+            expect(standingLedger.points('james', 'embassy')).toBe(7);
+
+            const res = await gateway.witnessAt('james', 'first_fire', 'res:pip', 5);
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.before).toBe(7);
+            expect(res.standingDelta?.after).toBe(12);
+        });
+    });
+
+    describe('askResident', () => {
+        let memoryDir: string;
+        let gatewayWithMemory: PatronGateway;
+
+        beforeEach(() => {
+            memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-patron-ask-memory-'));
+            gatewayWithMemory = new PatronGateway({
+                currencyLedger,
+                standingLedger,
+                runtimes,
+                soulsDir,
+                memoryDir,
+                now: () => new Date('2026-05-23T04:00:00Z'),
+            });
+        });
+
+        afterEach(() => {
+            fs.rmSync(memoryDir, { recursive: true, force: true });
+        });
+
+        it('rejects empty / whitespace-only questions', async () => {
+            const res = await gatewayWithMemory.askResident('james', 'res:pip', '   ');
+            expect(res.ok).toBe(false);
+            // E31 / HD-037 HIGH-1: ask has no amount; route empty args to
+            // 'invalid_input' (NOT the misappropriated 'invalid_amount').
+            expect(res.error).toBe('invalid_input');
+        });
+
+        it('rejects unknown residents', async () => {
+            const res = await gatewayWithMemory.askResident('james', 'res:unknown', 'What is your name?');
+            expect(res.ok).toBe(false);
+            expect(res.error).toBe('resident_not_found');
+        });
+
+        it('appends a patron_ask line to the resident library timeline', async () => {
+            const question = 'What did the fire teach you, pip?';
+            const res = await gatewayWithMemory.askResident('james', 'res:pip', question);
+            expect(res.ok).toBe(true);
+            expect(res.eventId).toMatch(/^ask-james-res:pip-/);
+
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            expect(fs.existsSync(timelinePath)).toBe(true);
+            const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            expect(lines).toHaveLength(1);
+            const entry = JSON.parse(lines[0]);
+            expect(entry).toMatchObject({
+                kind: 'patron_ask',
+                patronHandle: 'james',
+                question,
+                tick: 5,
+                ts: '2026-05-23T04:00:00.000Z',
+                lifeIndex: 1,
+                significanceReasons: ['patron:patron_ask'],
+            });
+        });
+
+        it('returns ok but writes nothing when memoryDir is not configured', async () => {
+            // Outer gateway has no memoryDir
+            const res = await gateway.askResident('james', 'res:pip', 'Hey!');
+            expect(res.ok).toBe(true);
+            // No timeline written under outer soulsDir
+            expect(fs.existsSync(path.join(soulsDir, 'library'))).toBe(false);
+        });
+
+        // E31 / HD-038 LOW-1: cap question to 500 chars + strip control chars
+        // so a 10MB --text payload doesn't pollute timeline + future prompt
+        // envelopes forever.
+        it('caps question to 500 chars and strips control characters (HD-038)', async () => {
+            // 600 chars of 'A' should truncate to 500.
+            const longQuestion = 'A'.repeat(600);
+            const res = await gatewayWithMemory.askResident('james', 'res:pip', longQuestion);
+            expect(res.ok).toBe(true);
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            const entry = JSON.parse(lines[lines.length - 1]);
+            expect((entry.question as string).length).toBe(500);
+
+            // Control chars (NUL, BEL, DEL) replaced by space, not deleted.
+            // Each control char becomes EXACTLY one space — we don't collapse
+            // adjacent whitespace because that would change the user's intent
+            // for legitimate questions like "What's 1+2?  Three or four?".
+            const withControls = `Hello\x00World\x07!\x7F end`;
+            const res2 = await gatewayWithMemory.askResident('james', 'res:pip', withControls);
+            expect(res2.ok).toBe(true);
+            const lines2 = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            const entry2 = JSON.parse(lines2[lines2.length - 1]);
+            // \x7F → space, then literal space → 2 spaces total between '!' and 'end'.
+            expect(entry2.question).toBe('Hello World !  end');
+        });
     });
 
     describe('sendGift', () => {
@@ -206,6 +402,23 @@ describe('PatronGateway', () => {
             const res = await gateway.sendGift('james', 'res:unknown', 'rs:net');
             expect(res.ok).toBe(false);
             expect(res.error).toBe('resident_not_found');
+        });
+
+        // E31 / HD-037 HIGH-1: distinguish empty args from missing resident.
+        // Pre-fix sendGift returned 'resident_not_found' for both, hiding
+        // operator typos.
+        it('rejects gifts with empty args using invalid_input (HD-037)', async () => {
+            const emptyHuman = await gateway.sendGift('', 'res:pip', 'rs:shrimps');
+            expect(emptyHuman.ok).toBe(false);
+            expect(emptyHuman.error).toBe('invalid_input');
+
+            const emptyResident = await gateway.sendGift('james', '', 'rs:shrimps');
+            expect(emptyResident.ok).toBe(false);
+            expect(emptyResident.error).toBe('invalid_input');
+
+            const emptyArtifact = await gateway.sendGift('james', 'res:pip', '');
+            expect(emptyArtifact.ok).toBe(false);
+            expect(emptyArtifact.error).toBe('invalid_input');
         });
 
         it('logs item gift events successfully', async () => {
@@ -324,7 +537,12 @@ describe('PatronGateway', () => {
             expect(inbox).toHaveLength(1);
         });
 
-        it('crosses ally on a single big offerTo and dispatches the Ally letter (not Acquaintance)', async () => {
+        it('crosses ally on a single big offerTo and dispatches one letter PER tier crossed (HD-040)', async () => {
+            // HD-040 (E36-F36b, 2026-05-24): a single grant that crosses
+            // multiple thresholds must produce one letter per tier so the
+            // patron sees their entire standing journey, not just the final
+            // tier. A 30-point offer from stranger → ally crosses both
+            // acquaintance (10) and ally (30) — both letters fire.
             currencyLedger.credit('james', 50, { reason: 'workshop_attendance' });
             const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 30 });
 
@@ -332,9 +550,91 @@ describe('PatronGateway', () => {
             expect(res.standingDelta?.tierCrossed).toBe('ally');
 
             const inbox = lettersStore.readInbox('james');
-            expect(inbox).toHaveLength(1);
-            expect(inbox[0].subject).toMatch(/ally/i);
-            expect(inbox[0].body).toMatch(/ally/i);
+            expect(inbox).toHaveLength(2);
+            // Letters land in ascending tier order (acquaintance first, ally
+            // second) per StandingLedger.recordSupport's `tiersCrossed`
+            // contract.
+            expect(inbox[0].subject).toMatch(/acquaintance/i);
+            expect(inbox[0].body).toMatch(/acquaintance/i);
+            expect(inbox[1].subject).toMatch(/ally/i);
+            expect(inbox[1].body).toMatch(/ally/i);
+        });
+
+        it('crosses all three tiers in one grant and dispatches three letters in ascending order (HD-040)', async () => {
+            currencyLedger.credit('james', 100, { reason: 'workshop_attendance' });
+            const res = await gatewayWithLetters.offerTo({ humanId: 'james', residentName: 'res:pip', amount: 75 });
+
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('officer');
+
+            const inbox = lettersStore.readInbox('james');
+            expect(inbox).toHaveLength(3);
+            expect(inbox[0].subject).toMatch(/acquaintance/i);
+            expect(inbox[1].subject).toMatch(/ally/i);
+            expect(inbox[2].subject).toMatch(/officer/i);
+        });
+    });
+
+    describe('J4: civic milestone letter on witnessAt', () => {
+        let lettersRoot: string;
+        let lettersStore: import('./letters-store').LettersStore;
+        let gatewayWithLetters: PatronGateway;
+
+        beforeEach(() => {
+            lettersRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-civic-letters-'));
+            const { LettersStore } = require('./letters-store');
+            lettersStore = new LettersStore(lettersRoot);
+            gatewayWithLetters = new PatronGateway({
+                currencyLedger,
+                standingLedger,
+                runtimes,
+                soulsDir,
+                lettersStore,
+                now: () => new Date('2026-05-23T04:00:00Z'),
+            });
+        });
+
+        afterEach(() => {
+            fs.rmSync(lettersRoot, { recursive: true, force: true });
+        });
+
+        it('dispatches a civic_milestone embassy_visit letter when a patron witnesses a resident', async () => {
+            const res = await gatewayWithLetters.witnessAt('alice@onion', 'lumbridge_churchyard', 'res:pip');
+            expect(res.ok).toBe(true);
+
+            const inbox = lettersStore.readInbox('alice@onion');
+            const civicLetters = inbox.filter(l => l.kind === 'civic_milestone');
+            expect(civicLetters).toHaveLength(1);
+            expect(civicLetters[0].recipient).toBe('alice@onion');
+            expect(civicLetters[0].senderResident).toBe('res:pip');
+            expect(civicLetters[0].subject).toMatch(/res:pip/i);
+            expect(civicLetters[0].body).toContain('lumbridge_churchyard');
+        });
+
+        it('dispatches BOTH a civic_milestone letter AND a standing_tier letter when the witness also crosses acquaintance', async () => {
+            const res = await gatewayWithLetters.witnessAt('alice@onion', 'lumbridge_churchyard', 'res:pip', 12);
+            expect(res.ok).toBe(true);
+            expect(res.standingDelta?.tierCrossed).toBe('acquaintance');
+
+            const inbox = lettersStore.readInbox('alice@onion');
+            expect(inbox).toHaveLength(2);
+            const kinds = inbox.map(l => l.kind).sort();
+            expect(kinds).toEqual(['civic_milestone', 'standing_tier_crossed']);
+        });
+
+        it('does NOT dispatch a civic_milestone letter when witnessAt has no residentName', async () => {
+            const res = await gatewayWithLetters.witnessAt('alice@onion', 'lumbridge_churchyard');
+            expect(res.ok).toBe(true);
+
+            const inbox = lettersStore.readInbox('alice@onion');
+            expect(inbox).toHaveLength(0);
+        });
+
+        it('does NOT dispatch a civic_milestone letter when no lettersStore is configured', async () => {
+            // gateway from outer describe block has no lettersStore
+            const res = await gateway.witnessAt('alice@onion', 'lumbridge_churchyard', 'res:pip');
+            expect(res.ok).toBe(true);
+            expect(fs.existsSync(path.join(lettersRoot, 'data', 'letters'))).toBe(false);
         });
     });
 });

@@ -6,6 +6,80 @@ import { agentActionSchema } from '../transport/message-codecs';
 
 export type SoulArchetype = 'mentor' | 'achiever' | 'endurer';
 export type DecayCurve = 'gentle' | 'standard' | 'steep';
+export type RespawnPolicy = 'on_restart' | 'manual' | 'never';
+export type HeroTier = 'hero' | 'novice' | 'background';
+
+/**
+ * Optional designation of a resident as a public-facing named character
+ * ("hero"), a learning resident ("novice"), or unnamed scenery
+ * ("background"). Hero residents are anchored to specific places, receive
+ * patron interactions preferentially, and route epitaph letters through
+ * sibling flagships in the same faction when they die (J-δ-3).
+ *
+ * See `docs/superpowers/specs/2026-05-22-hero-residents-design.md` and
+ * `docs/null-city-foundation-audit.md` § M-α.
+ */
+/**
+ * Optional faction-affinity scores per major RuneScape religious / political
+ * faction, each 0..100. The dominant affinity (highest non-zero value) is
+ * surfaced in Brain prompts as a flavor directive: a Saradomin-aligned
+ * resident speaks of justice and protection; Guthix of balance; Zamorak of
+ * power and risk. `unaligned` is the explicit "no faction" choice.
+ *
+ * Per the DRIFT-reconciled K spec, this is currently the only mechanical
+ * faction signal — combat-permission tables and territory shifts are
+ * deferred to post-event K work. See
+ * `docs/superpowers/specs/2026-05-22-rs6-factions-design.md`.
+ */
+export interface FactionAffinity {
+    saradomin?: number;
+    guthix?: number;
+    zamorak?: number;
+    unaligned?: number;
+}
+
+export type FactionName = keyof FactionAffinity;
+
+/**
+ * Pick the faction with the highest affinity score, with `unaligned` used
+ * as a tie-breaker only when no other faction is strictly higher. Returns
+ * `null` if every score is undefined or zero.
+ */
+export function dominantFaction(affinity: FactionAffinity | undefined): FactionName | null {
+    if (!affinity) {
+        return null;
+    }
+    let best: FactionName | null = null;
+    let bestScore = 0;
+    for (const faction of ['saradomin', 'guthix', 'zamorak', 'unaligned'] as const) {
+        const score = affinity[faction];
+        if (typeof score !== 'number' || score <= 0) {
+            continue;
+        }
+        if (score > bestScore) {
+            best = faction;
+            bestScore = score;
+        }
+    }
+    return best;
+}
+
+export interface HeroProfile {
+    tier: HeroTier;
+    /** Human-recognisable name shown in dashboard + portrait + letters. */
+    publicName: string;
+    /**
+     * A short canonical phrase the resident does/says memorably, used by
+     * the dashboard ticker and the in-portrait blurb. e.g. "advises on
+     * quests with a sigh", "always carries a tinderbox".
+     */
+    signatureAction: string;
+    /**
+     * Optional anchor coord the resident gravitates back to between
+     * autonomous goals. Format `[x, y, level]` matching engine convention.
+     */
+    anchor?: [number, number, number];
+}
 
 export interface SoulFrontmatter {
     name: string;
@@ -41,11 +115,22 @@ export interface SoulFrontmatter {
         endpoint?: string;
         model?: string;
         temperature?: number;
+        thinking?: boolean;
+        timeoutMs?: number;
     };
     attentionProfile?: {
         startingAttention?: number;
         decayCurve?: DecayCurve;
+        /**
+         * Optional lower bound for accrual spend (idle decay + per-action
+         * + per-LLM-call) so the resident's attention never drops below
+         * this value from normal play. See `src/controller/spark/attention.ts`
+         * for the policy. Filed in E30 / HD-008 — heroes need to stay on
+         * post through the IRL event without manual top-up.
+         */
+        floor?: number;
     };
+    respawnPolicy?: RespawnPolicy;
     legacy?: {
         kind: SoulArchetype;
         parameters?: Record<string, unknown>;
@@ -59,6 +144,10 @@ export interface SoulFrontmatter {
     spawnPosition?: unknown;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
+    heroProfile?: HeroProfile;
+    factionAffinity?: FactionAffinity;
+    /** Null City organizational faction (foundry / bureau-of-continuity / ledger / veil). */
+    factionId?: string;
 }
 
 export interface Soul {
@@ -138,10 +227,12 @@ export interface InferenceProfileDefinition {
     model?: string;
     temperature?: number;
     thinking?: boolean;
+    timeoutMs?: number;
 }
 
 const soulArchetypeSchema = z.enum(['mentor', 'achiever', 'endurer']);
 const decayCurveSchema = z.enum(['gentle', 'standard', 'steep']);
+const respawnPolicySchema = z.enum(['on_restart', 'manual', 'never']);
 const variableOperationSchema = z.object({
     op: z.enum(['set', 'increment', 'decrement', 'decay', 'clamp']),
     value: z.union([z.number(), z.string()]).optional(),
@@ -181,6 +272,7 @@ const inferenceProfileSchema = z.object({
     model: z.string().min(1).optional(),
     temperature: z.number().min(0).max(2).optional(),
     thinking: z.boolean().optional(),
+    timeoutMs: z.number().int().positive().optional(),
 });
 const initialContainerItemSchema = z.union([
     z.number().int(),
@@ -217,10 +309,11 @@ const soulSparkModuleSchema = z
         config: z.record(z.string(), z.unknown()).optional(),
     })
     .strict();
+const runtimeResidentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/, 'name must match live resident pattern res:[a-z0-9_-]{1,20}');
 
 export const soulFrontmatterSchema = z
     .object({
-        name: z.string().min(1),
+        name: runtimeResidentNameSchema,
         display: z.string().optional(),
         archetype: soulArchetypeSchema,
         voice: z
@@ -239,14 +332,19 @@ export const soulFrontmatterSchema = z
                 endpoint: z.string().optional(),
                 model: z.string().min(1).optional(),
                 temperature: z.number().min(0).max(2).optional(),
+                thinking: z.boolean().optional(),
+                timeoutMs: z.number().int().positive().optional(),
             })
             .optional(),
         attentionProfile: z
             .object({
                 startingAttention: z.number().positive().optional(),
                 decayCurve: decayCurveSchema.default('standard'),
+                // E30 / HD-008: optional accrual floor. See attention.ts.
+                floor: z.number().nonnegative().optional(),
             })
             .default({ decayCurve: 'standard' }),
+        respawnPolicy: respawnPolicySchema.optional(),
         legacy: z
             .object({
                 kind: soulArchetypeSchema,
@@ -262,6 +360,23 @@ export const soulFrontmatterSchema = z
         spawnPosition: z.unknown().optional(),
         initialInventory: z.array(initialContainerItemSchema).max(28).optional(),
         initialEquipment: z.array(initialContainerItemSchema).max(14).optional(),
+        heroProfile: z
+            .object({
+                tier: z.enum(['hero', 'novice', 'background']),
+                publicName: z.string().min(1),
+                signatureAction: z.string().min(1),
+                anchor: z.tuple([z.number().int(), z.number().int(), z.number().int().min(0)]).optional(),
+            })
+            .optional(),
+        factionAffinity: z
+            .object({
+                saradomin: z.number().min(0).max(100).optional(),
+                guthix: z.number().min(0).max(100).optional(),
+                zamorak: z.number().min(0).max(100).optional(),
+                unaligned: z.number().min(0).max(100).optional(),
+            })
+            .optional(),
+        factionId: z.string().min(1).optional(),
     })
     .strict();
 

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { loadControllerConfig, productionConfigIssues, sanitizedControllerConfigSummary } from './config';
+import { loadControllerConfig, parseControllerArgs, productionConfigIssues, sanitizedControllerConfigSummary } from './config';
 
 describe('controller config', () => {
     const originalEnv = { ...process.env };
@@ -173,5 +173,110 @@ describe('controller config', () => {
         expect(summary).toContain('residents=1');
         expect(summary).not.toContain('secret-token');
         expect(summary).not.toContain('sk-secret');
+    });
+
+    it('parses optional controller MCP HTTP flags and env defaults', () => {
+        process.env.CONTROLLER_MCP_HTTP_PORT = '43597';
+        process.env.CONTROLLER_MCP_HTTP_HOST = '127.0.0.2';
+        process.env.CONTROLLER_MCP_HTTP_PATH = '/mcp/env';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                mcpHttpPort: 43597,
+                mcpHttpHost: '127.0.0.2',
+                mcpHttpPath: '/mcp/env',
+            }),
+        );
+
+        expect(parseControllerArgs(['--mcp-http-port', '43600', '--mcp-http-host=127.0.0.1', '--mcp-http-path', '/mcp/test'])).toEqual(
+            expect.objectContaining({
+                mcpHttpPort: 43600,
+                mcpHttpHost: '127.0.0.1',
+                mcpHttpPath: '/mcp/test',
+            }),
+        );
+    });
+
+    it('rejects invalid controller MCP HTTP ports', () => {
+        expect(() => parseControllerArgs(['--mcp-http-port', 'nope'])).toThrow('--mcp-http-port must be an integer port');
+        expect(() => parseControllerArgs(['--mcp-http-port=70000'])).toThrow('--mcp-http-port must be an integer port');
+    });
+
+    it('parses optional letters HTTP flags and env defaults (EVENT-D2c)', () => {
+        process.env.CONTROLLER_LETTERS_HTTP_PORT = '43598';
+        process.env.CONTROLLER_LETTERS_HTTP_HOST = '127.0.0.3';
+        process.env.CONTROLLER_LETTERS_HTTP_PATH = '/letters/env';
+        process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT = 'true';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                lettersHttpPort: 43598,
+                lettersHttpHost: '127.0.0.3',
+                lettersHttpPath: '/letters/env',
+                lettersHttpWallRedact: true,
+            }),
+        );
+
+        expect(
+            parseControllerArgs([
+                '--letters-http-port',
+                '43601',
+                '--letters-http-host=127.0.0.1',
+                '--letters-http-path',
+                '/v1/inbox',
+                '--letters-http-wall-redact',
+            ]),
+        ).toEqual(
+            expect.objectContaining({
+                lettersHttpPort: 43601,
+                lettersHttpHost: '127.0.0.1',
+                lettersHttpPath: '/v1/inbox',
+                lettersHttpWallRedact: true,
+            }),
+        );
+    });
+
+    it('defaults letters HTTP host to 127.0.0.1 and path to /v1/inbox when env unset (EVENT-D2c)', () => {
+        delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
+        delete process.env.CONTROLLER_LETTERS_HTTP_HOST;
+        delete process.env.CONTROLLER_LETTERS_HTTP_PATH;
+        delete process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT;
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                lettersHttpPort: undefined,
+                lettersHttpHost: '127.0.0.1',
+                lettersHttpPath: '/v1/inbox',
+                lettersHttpWallRedact: false,
+            }),
+        );
+    });
+
+    it('accepts --wall-redact as the short event-wall alias for letters HTTP redaction (HD-029)', () => {
+        expect(parseControllerArgs(['--wall-redact'])).toEqual(
+            expect.objectContaining({
+                lettersHttpWallRedact: true,
+            }),
+        );
+    });
+
+    it('accepts CONTROLLER_ONCE, CONTROLLER_LOG_ENVELOPE, and CONTROLLER_WALL_REDACT env variables', () => {
+        process.env.CONTROLLER_ONCE = 'true';
+        process.env.CONTROLLER_LOG_ENVELOPE = '1';
+        process.env.CONTROLLER_WALL_REDACT = 'true';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                once: true,
+                logEnvelope: true,
+                lettersHttpWallRedact: true,
+            }),
+        );
+    });
+
+    it('rejects invalid letters HTTP ports (EVENT-D2c)', () => {
+        delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
+        expect(() => parseControllerArgs(['--letters-http-port', 'nope'])).toThrow('--letters-http-port must be an integer port');
+        expect(() => parseControllerArgs(['--letters-http-port=70000'])).toThrow('--letters-http-port must be an integer port');
     });
 });

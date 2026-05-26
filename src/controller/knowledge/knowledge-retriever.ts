@@ -808,7 +808,7 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
             'nearby fire OR cooking range (Lumbridge Castle kitchen 3208,3213,0)',
         ],
         actions: [
-            'move_to a net-capable fishing spot (Lumbridge swamp 3242,3151 or Draynor)',
+            'move_to a net-capable fishing spot (Lumbridge river 3241,3242 or Draynor)',
             'interact "net" or "lure" on fishing spot',
             'move_to nearby fire or Lumbridge kitchen range',
             'item_action use raw shrimp on fire/range (cook)',
@@ -1165,7 +1165,7 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         ],
         source: 'docs/runescape-skill/starter-workflows.md; docs/runescape-skill/items.md',
         summary:
-            "Recommended training order for a fresh resident: (1) verify starter kit — tinderbox, bronze hatchet, small fishing net (if not present, route to Lumbridge General Store 3203,3247,0 + Bob's Axes 3231,3203,0); (2) Woodcutting 1→5 chopping ordinary Trees near Lumbridge; (3) Firemaking 1→5 lighting the logs you just chopped (workflow-woodcutting-firemaking-chain); (4) Fishing 1→5 catching shrimp at Lumbridge swamp 3242,3151; (5) Cooking 1→5 cooking shrimp on your own fire (workflow-fishing-cooking-chain); (6) Combat 1→5 fighting chickens in Lumbridge farm 3232,3299 + burying bones for Prayer XP (workflow-combat-prayer-chain); (7) once safe at all five basics, explore one of: Mining (Lumbridge swamp tin/copper), Smithing (Lumbridge furnace), or visit Varrock for shops + Aubury teleport. Avoid wilderness until combat 30+.",
+            "Recommended training order for a fresh resident: (1) verify starter kit — tinderbox, bronze hatchet, small fishing net (if not present, route to Lumbridge General Store 3203,3247,0 + Bob's Axes 3231,3203,0); (2) Woodcutting 1→5 chopping ordinary Trees near Lumbridge; (3) Firemaking 1→5 lighting the logs you just chopped (workflow-woodcutting-firemaking-chain); (4) Fishing 1→5 catching shrimp at Lumbridge river 3241,3242; (5) Cooking 1→5 cooking shrimp on your own fire (workflow-fishing-cooking-chain); (6) Combat 1→5 fighting chickens in Lumbridge farm 3232,3299 + burying bones for Prayer XP (workflow-combat-prayer-chain); (7) once safe at all five basics, explore one of: Mining (Lumbridge swamp tin/copper), Smithing (Lumbridge furnace), or visit Varrock for shops + Aubury teleport. Avoid wilderness until combat 30+.",
     },
     {
         id: 'economy-coin-handling',

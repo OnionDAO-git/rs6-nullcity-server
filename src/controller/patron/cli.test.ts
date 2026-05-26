@@ -2,7 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import yaml from 'js-yaml';
-import { runPatronCli, parsePatronCliArgs } from './cli';
+import { EvidenceStore } from '../evidence';
+import { findRecentSay, parsePatronCliArgs, registerPatronInConfig, runPatronCli } from './cli';
 
 describe('Patron CLI', () => {
     let tempDir: string;
@@ -54,6 +55,12 @@ describe('Patron CLI', () => {
                 humanId: 'james',
                 amount: 10,
                 residentName: '',
+                text: '',
+                artifact: '',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
                 configPath: 'my-config.yml',
             });
         });
@@ -65,19 +72,106 @@ describe('Patron CLI', () => {
                 humanId: 'james',
                 amount: 5,
                 residentName: 'res:pip',
+                text: '',
+                artifact: '',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
                 configPath: 'controller.yml',
             });
         });
 
+        it('parses --ask options correctly', () => {
+            const parsed = parsePatronCliArgs(['--ask', '--human', 'james', '--resident', 'pip', '--text', 'What did the fire teach you?']);
+            expect(parsed).toEqual({
+                action: 'ask',
+                humanId: 'james',
+                amount: 0,
+                residentName: 'pip',
+                text: 'What did the fire teach you?',
+                artifact: '',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
+                configPath: 'controller.yml',
+            });
+        });
+
+        it('parses --witness options correctly (with default amount)', () => {
+            const parsed = parsePatronCliArgs(['--witness', '--human=james', '--resident=res:pip', '--artifact=first-fire']);
+            expect(parsed).toEqual({
+                action: 'witness',
+                humanId: 'james',
+                amount: 0,
+                residentName: 'res:pip',
+                text: '',
+                artifact: 'first-fire',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
+                configPath: 'controller.yml',
+            });
+        });
+
+        it('parses --gift options correctly with explicit artifact', () => {
+            const parsed = parsePatronCliArgs(['--gift', '--human=james', '--resident=res:pip', '--artifact=tinderbox']);
+            expect(parsed).toEqual({
+                action: 'gift',
+                humanId: 'james',
+                amount: 0,
+                residentName: 'res:pip',
+                text: '',
+                artifact: 'tinderbox',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
+                configPath: 'controller.yml',
+            });
+        });
+
+        it('auto-generates artifact for --gift when omitted', () => {
+            const parsed = parsePatronCliArgs(['--gift', '--human', 'james', '--resident', 'pip']);
+            expect(parsed.artifact).toMatch(/^gift-pip-\d+$/);
+        });
+
+        it('throws when --resident is missing for --gift', () => {
+            expect(() => parsePatronCliArgs(['--gift', '--human', 'james'])).toThrow('--resident <name> is required for --gift.');
+        });
+
         it('throws error when action is missing', () => {
-            expect(() => parsePatronCliArgs(['--human', 'james'])).toThrow('Either --grant or --offer must be specified.');
+            expect(() => parsePatronCliArgs(['--human', 'james'])).toThrow(
+                /--grant.*--offer.*--ask.*--witness.*--register.*--checkin.*--referral.*--balance.*--standing/,
+            );
+        });
+
+        it('parses --checkin options correctly', () => {
+            const parsed = parsePatronCliArgs(['--checkin', '--human', 'alice']);
+            expect(parsed.action).toBe('checkin');
+            expect(parsed.humanId).toBe('alice');
+        });
+
+        it('parses --referral options correctly', () => {
+            const parsed = parsePatronCliArgs(['--referral', '--human', 'bob', '--referred', 'alice']);
+            expect(parsed.action).toBe('referral');
+            expect(parsed.humanId).toBe('bob');
+            expect(parsed.referredId).toBe('alice');
+        });
+
+        it('throws error when --referred is missing for --referral', () => {
+            expect(() => parsePatronCliArgs(['--referral', '--human', 'bob'])).toThrow(
+                '--referred <new-human> is required for --referral.',
+            );
         });
 
         it('throws error when --human is missing', () => {
             expect(() => parsePatronCliArgs(['--grant', '--amount', '10'])).toThrow('--human <id> is required.');
         });
 
-        it('throws error when --amount is invalid', () => {
+        it('throws error when --amount is invalid for grant/offer', () => {
             expect(() => parsePatronCliArgs(['--grant', '--human', 'james', '--amount', 'abc'])).toThrow(
                 '--amount must be a positive integer.',
             );
@@ -90,6 +184,303 @@ describe('Patron CLI', () => {
             expect(() => parsePatronCliArgs(['--offer', '--human', 'james', '--amount', '5'])).toThrow(
                 '--resident <name> is required for --offer.',
             );
+        });
+
+        it('throws error when --resident is missing for --ask', () => {
+            expect(() => parsePatronCliArgs(['--ask', '--human', 'james', '--text', 'hello?'])).toThrow(
+                '--resident <name> is required for --ask.',
+            );
+        });
+
+        it('throws error when --text is missing for --ask', () => {
+            expect(() => parsePatronCliArgs(['--ask', '--human', 'james', '--resident', 'pip'])).toThrow(
+                '--text <question> is required for --ask.',
+            );
+        });
+
+        it('parses --whisper options correctly', () => {
+            const parsed = parsePatronCliArgs(['--whisper', '--human', 'james', '--resident', 'pip', '--text', 'hello']);
+            expect(parsed).toEqual({
+                action: 'whisper',
+                humanId: 'james',
+                amount: 0,
+                residentName: 'pip',
+                text: 'hello',
+                artifact: '',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
+                configPath: 'controller.yml',
+            });
+        });
+
+        it('throws error when --resident is missing for --whisper', () => {
+            expect(() => parsePatronCliArgs(['--whisper', '--human', 'james', '--text', 'hello'])).toThrow(
+                '--resident <name> is required for --whisper.',
+            );
+        });
+
+        it('throws error when --text is missing for --whisper', () => {
+            expect(() => parsePatronCliArgs(['--whisper', '--human', 'james', '--resident', 'pip'])).toThrow(
+                '--text <message> is required for --whisper.',
+            );
+        });
+
+        it('throws error when --resident is missing for --witness', () => {
+            expect(() => parsePatronCliArgs(['--witness', '--human', 'james', '--artifact', 'first-fire'])).toThrow(
+                '--resident <name> is required for --witness.',
+            );
+        });
+
+        it('E46 staffer UX: auto-generates --artifact when omitted for --witness', () => {
+            // Old behavior threw "--artifact <id> is required for --witness."
+            // New behavior synthesizes `witness-<resident-slug>-<timestamp>`
+            // so embassy staffers don't have to learn another required flag
+            // (per E46 SPRINT-QA4 walkthrough finding).
+            const options = parsePatronCliArgs(['--witness', '--human', 'james', '--resident', 'pip']);
+            expect(options.artifact).toMatch(/^witness-pip-\d+$/);
+        });
+
+        it('preserves explicit --artifact when provided', () => {
+            const options = parsePatronCliArgs([
+                '--witness',
+                '--human',
+                'james',
+                '--resident',
+                'pip',
+                '--artifact',
+                'patrol-2026-06-01-evening',
+            ]);
+            expect(options.artifact).toBe('patrol-2026-06-01-evening');
+        });
+
+        // HD-016 self-service UX: --balance + --standing read-only lookups.
+        describe('HD-016 --balance and --standing parser', () => {
+            it('parses --balance with default faction', () => {
+                const options = parsePatronCliArgs(['--balance', '--human', 'alice@onion']);
+                expect(options.action).toBe('balance');
+                expect(options.humanId).toBe('alice@onion');
+                expect(options.faction).toBe('embassy');
+            });
+
+            it('parses --standing with default faction', () => {
+                const options = parsePatronCliArgs(['--standing', '--human', 'alice@onion']);
+                expect(options.action).toBe('standing');
+                expect(options.humanId).toBe('alice@onion');
+                expect(options.faction).toBe('embassy');
+            });
+
+            it('parses --standing with explicit --faction', () => {
+                const options = parsePatronCliArgs(['--standing', '--human', 'alice@onion', '--faction', 'foundry']);
+                expect(options.faction).toBe('foundry');
+            });
+
+            it('parses --faction= inline syntax', () => {
+                const options = parsePatronCliArgs(['--standing', '--human', 'alice@onion', '--faction=ledger']);
+                expect(options.faction).toBe('ledger');
+            });
+        });
+
+        // HD-011 helper: --register adds a handle to controller.yml#patrons[]
+        // safely without hand-editing the YAML at event-day door pressure.
+        describe('HD-011 --register parser', () => {
+            it('parses --register with default kind = patron_gift', () => {
+                const options = parsePatronCliArgs(['--register', '--human', 'alice@onion']);
+                expect(options.action).toBe('register');
+                expect(options.humanId).toBe('alice@onion');
+                expect(options.kind).toBe('patron_gift');
+            });
+
+            it('accepts --kind override', () => {
+                const options = parsePatronCliArgs(['--register', '--human', 'bob@onion', '--kind', 'patron_witness']);
+                expect(options.kind).toBe('patron_witness');
+            });
+
+            it('rejects unknown --kind value', () => {
+                expect(() => parsePatronCliArgs(['--register', '--human', 'a', '--kind', 'patron_zombie'])).toThrow(
+                    /--kind must be one of/,
+                );
+            });
+
+            it('still requires --human for register', () => {
+                expect(() => parsePatronCliArgs(['--register'])).toThrow('--human <id> is required.');
+            });
+        });
+
+        describe('HD-011 --bulk-register parser', () => {
+            it('parses --bulk-register with --file path', () => {
+                const opts = parsePatronCliArgs(['--bulk-register', '--file', '/tmp/patrons.txt']);
+                expect(opts.action).toBe('bulk-register');
+                expect(opts.filePath).toBe('/tmp/patrons.txt');
+                expect(opts.kind).toBe('patron_gift');
+            });
+
+            it('parses --file= form', () => {
+                const opts = parsePatronCliArgs(['--bulk-register', '--file=/tmp/list.txt']);
+                expect(opts.filePath).toBe('/tmp/list.txt');
+            });
+
+            it('throws when --file is missing for --bulk-register', () => {
+                expect(() => parsePatronCliArgs(['--bulk-register'])).toThrow('--file <path> is required for --bulk-register.');
+            });
+
+            it('does not require --human for --bulk-register', () => {
+                expect(() => parsePatronCliArgs(['--bulk-register', '--file', '/tmp/x.txt'])).not.toThrow();
+            });
+        });
+
+        describe('parsePatronCliArgs from environment variables', () => {
+            const originalEnv = { ...process.env };
+
+            beforeEach(() => {
+                process.env = { ...originalEnv };
+            });
+
+            afterEach(() => {
+                process.env = { ...originalEnv };
+            });
+
+            it('parses options from env variables', () => {
+                process.env.CONTROLLER_PATRON_ACTION = 'offer';
+                process.env.CONTROLLER_PATRON_HUMAN = 'james';
+                process.env.CONTROLLER_PATRON_AMOUNT = '10';
+                process.env.CONTROLLER_PATRON_RESIDENT = 'res:pip';
+                process.env.CONTROLLER_PATRON_TEXT = 'hello';
+                process.env.CONTROLLER_PATRON_ARTIFACT = 'witness-1';
+                process.env.CONTROLLER_PATRON_KIND = 'patron_witness';
+                process.env.CONTROLLER_PATRON_REFERRED_ID = 'alice';
+                process.env.CONTROLLER_PATRON_FACTION = 'ledger';
+                process.env.CONTROLLER_PATRON_FILE_PATH = 'file.txt';
+                process.env.CONTROLLER_CONFIG = 'controller.env.yml';
+
+                expect(parsePatronCliArgs([])).toEqual({
+                    action: 'offer',
+                    humanId: 'james',
+                    amount: 10,
+                    residentName: 'res:pip',
+                    text: 'hello',
+                    artifact: 'witness-1',
+                    kind: 'patron_witness',
+                    referredId: 'alice',
+                    faction: 'ledger',
+                    filePath: 'file.txt',
+                    configPath: 'controller.env.yml',
+                });
+            });
+        });
+    });
+
+    describe('HD-011 registerPatronInConfig', () => {
+        let tmpDir: string;
+        let configPath: string;
+        beforeEach(() => {
+            tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'patron-register-'));
+            configPath = path.join(tmpDir, 'controller.yml');
+            fs.writeFileSync(
+                configPath,
+                yaml.dump({
+                    residents: ['res:agent', 'res:hans'],
+                    gateway: { url: 'ws://127.0.0.1:43595', controllerId: 'nullcity-controller' },
+                    memory: { dir: './data/memory' },
+                }),
+                'utf8',
+            );
+        });
+        afterEach(() => {
+            fs.rmSync(tmpDir, { recursive: true, force: true });
+        });
+
+        it('appends a new handle to controller.yml#patrons[] (idempotent on re-run)', () => {
+            const first = registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            expect(first).toEqual({ added: true, total: 1, handle: 'alice@onion', kind: 'patron_gift' });
+            const second = registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            expect(second).toEqual({ added: false, total: 1, handle: 'alice@onion', kind: 'patron_gift' });
+
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string; kind: string }> };
+            expect(parsed.patrons).toEqual([{ handle: 'alice@onion', kind: 'patron_gift' }]);
+        });
+
+        it('preserves existing non-patron sections (residents, gateway, memory) after write', () => {
+            registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+            expect(parsed.residents).toEqual(['res:agent', 'res:hans']);
+            expect(parsed.gateway).toEqual({ url: 'ws://127.0.0.1:43595', controllerId: 'nullcity-controller' });
+            expect(parsed.memory).toEqual({ dir: './data/memory' });
+        });
+
+        it('appends a second handle without clobbering the first', () => {
+            registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            const result = registerPatronInConfig(configPath, 'bob@onion', 'patron_witness');
+            expect(result).toEqual({ added: true, total: 2, handle: 'bob@onion', kind: 'patron_witness' });
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string; kind: string }> };
+            expect(parsed.patrons).toEqual([
+                { handle: 'alice@onion', kind: 'patron_gift' },
+                { handle: 'bob@onion', kind: 'patron_witness' },
+            ]);
+        });
+
+        it('re-registration with a different kind is a no-op (original kind wins)', () => {
+            registerPatronInConfig(configPath, 'alice@onion', 'patron_gift');
+            const result = registerPatronInConfig(configPath, 'alice@onion', 'patron_sponsor');
+            expect(result).toEqual({ added: false, total: 1, handle: 'alice@onion', kind: 'patron_gift' });
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string; kind: string }> };
+            expect(parsed.patrons).toEqual([{ handle: 'alice@onion', kind: 'patron_gift' }]);
+        });
+
+        it('throws when configPath does not parse to a YAML mapping', () => {
+            fs.writeFileSync(configPath, 'not_a_map\n- list_at_root\n', 'utf8');
+            expect(() => registerPatronInConfig(configPath, 'a', 'patron_gift')).toThrow(/YAML mapping/);
+        });
+    });
+
+    describe('HD-011 runPatronCli --bulk-register', () => {
+        let listFile: string;
+        beforeEach(() => {
+            listFile = path.join(tempDir, 'patrons.txt');
+        });
+
+        it('registers all handles from a file and reports total', async () => {
+            fs.writeFileSync(listFile, 'alice@onion\nbob@onion\ncharlie@onion\n', 'utf8');
+            const logs: string[] = [];
+            jest.spyOn(console, 'log').mockImplementation(msg => logs.push(String(msg)));
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string }> };
+            expect(parsed.patrons.map(p => p.handle)).toEqual(['alice@onion', 'bob@onion', 'charlie@onion']);
+            expect(logs.join('\n')).toMatch(/3 added/);
+        });
+
+        it('skips blank lines and comment lines', async () => {
+            fs.writeFileSync(listFile, '# event attendees\nalice@onion\n\n  \n# second block\nbob@onion\n', 'utf8');
+            jest.spyOn(console, 'log').mockImplementation(() => {});
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string }> };
+            expect(parsed.patrons.map(p => p.handle)).toEqual(['alice@onion', 'bob@onion']);
+        });
+
+        it('reports already-registered as skipped without double-adding', async () => {
+            fs.writeFileSync(listFile, 'alice@onion\nalice@onion\nbob@onion\n', 'utf8');
+            const logs: string[] = [];
+            jest.spyOn(console, 'log').mockImplementation(msg => logs.push(String(msg)));
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
+            const summary = logs.join('\n');
+            expect(summary).toMatch(/1 already registered/);
+            const parsed = yaml.load(fs.readFileSync(configPath, 'utf8')) as { patrons: Array<{ handle: string }> };
+            expect(parsed.patrons).toHaveLength(2);
+        });
+
+        it('exits cleanly for an empty file', async () => {
+            fs.writeFileSync(listFile, '', 'utf8');
+            jest.spyOn(console, 'log').mockImplementation(() => {});
+            const code = await runPatronCli(['--bulk-register', '--file', listFile, '-c', configPath]);
+            jest.restoreAllMocks();
+            expect(code).toBe(0);
         });
     });
 
@@ -139,6 +530,90 @@ describe('Patron CLI', () => {
             const stateData = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
             expect(stateData.attention).toBe(120); // 100 base + 10 * 2 attention per shard = 120
 
+            // Regression for E6 (intelligence-verification-log.md): the CLI's
+            // PatronGateway must construct with a LettersStore so tier-crossing
+            // letters reach disk — same wiring ControllerHost gets via EVENT-D1a.
+            // Pre-fix: the offer fired tier-crossing but no inbox file existed.
+            const inboxFile = path.join(memoryDir, 'data', 'letters', 'james', 'inbox.jsonl');
+            expect(fs.existsSync(inboxFile)).toBe(true);
+            const inboxLines = fs.readFileSync(inboxFile, 'utf8').trim().split('\n').filter(Boolean);
+            expect(inboxLines.length).toBeGreaterThanOrEqual(1);
+            const firstLetter = JSON.parse(inboxLines[0]);
+            expect(firstLetter.kind).toBe('standing_tier_crossed');
+            expect(firstLetter.recipient).toBe('james');
+            expect(firstLetter.body).toMatch(/james/);
+
+            logSpy.mockRestore();
+        });
+
+        it('does not steal the resident active evidence pointer from a running controller session', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const liveStore = new EvidenceStore('res:pip', memoryDir);
+            const liveSession = liveStore.beginSession('local-live-res-pip', 'soul-v1');
+
+            await runPatronCli(['--grant', '--human', 'james', '--amount', '50', '-c', configPath]);
+            const code = await runPatronCli(['--offer', '--human', 'james', '--resident', 'pip', '--amount', '10', '-c', configPath]);
+
+            expect(code).toBe(0);
+            expect(readCurrentTarget(path.join(memoryDir, 'res-pip', 'evidence', 'trajectory'))).toBe(
+                path.basename(liveSession.trajectoryPath),
+            );
+            expect(readCurrentTarget(path.join(memoryDir, 'res-pip', 'evidence', 'progress'))).toBe(
+                path.basename(liveSession.progressPath),
+            );
+            const index = JSON.parse(fs.readFileSync(path.join(memoryDir, 'res-pip', 'evidence', 'index.json'), 'utf8'));
+            expect(index.currentSessionId).toBe('local-live-res-pip');
+            expect(index.sessions.some((session: { sessionId?: string }) => session.sessionId?.startsWith('cli-patron-offer-'))).toBe(
+                false,
+            );
+
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            const patronEvents = fs
+                .readFileSync(timelinePath, 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map(line => JSON.parse(line))
+                .filter((entry: { kind?: string }) => entry.kind === 'patron_gift');
+            expect(patronEvents).toHaveLength(1);
+
+            logSpy.mockRestore();
+        });
+
+        it('offer uses the running controller MCP route when configured', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const offerRunningController = jest.fn(async () => ({
+                ok: true,
+                eventId: 'offer-live-1',
+                standingDelta: {
+                    factionId: 'embassy',
+                    before: 0,
+                    after: 10,
+                    tierCrossed: 'acquaintance' as const,
+                    tiersCrossed: ['acquaintance' as const],
+                },
+            }));
+
+            await runPatronCli(['--grant', '--human', 'james', '--amount', '50', '-c', configPath]);
+            const code = await runPatronCli(['--offer', '--human', 'james', '--resident', 'pip', '--amount', '10', '-c', configPath], {
+                env: {
+                    CONTROLLER_MCP_HTTP_PORT: '43594',
+                    CONTROLLER_MCP_TOKENS: 'operator-token',
+                },
+                offerRunningController,
+            });
+
+            expect(code).toBe(0);
+            expect(offerRunningController).toHaveBeenCalledWith({
+                url: 'http://127.0.0.1:43594/controller/mcp',
+                token: 'operator-token',
+                humanId: 'james',
+                residentName: 'res:pip',
+                amount: 10,
+            });
+            expect(fs.existsSync(path.join(memoryDir, 'res-pip', 'runtime-state.json'))).toBe(false);
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:offer] Live controller accepted the offer.'));
+
             logSpy.mockRestore();
         });
 
@@ -160,5 +635,487 @@ describe('Patron CLI', () => {
 
             errSpy.mockRestore();
         });
+
+        it('ask writes a patron_ask event to the library timeline', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+            const question = 'What did the fire teach you, pip?';
+            const code = await runPatronCli(['--ask', '--human', 'james', '--resident', 'pip', '--text', question, '-c', configPath]);
+            expect(code).toBe(0);
+
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            expect(fs.existsSync(timelinePath)).toBe(true);
+            const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+            // The LibraryUpdater touches index.json on construct but does NOT
+            // write a timeline line on its own; the only line on disk should
+            // be our patron_ask append.
+            const askLines = lines.map(line => JSON.parse(line)).filter((entry: any) => entry.kind === 'patron_ask');
+            expect(askLines).toHaveLength(1);
+            expect(askLines[0]).toMatchObject({
+                kind: 'patron_ask',
+                patronHandle: 'james',
+                question,
+                significanceReasons: ['patron:patron_ask'],
+            });
+
+            logSpy.mockRestore();
+        }, 10000);
+
+        it('ask uses the running controller MCP route when configured', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const askRunningController = jest.fn(async () => ({
+                ok: true,
+                eventId: 'ask-live-1',
+                enqueued: true,
+            }));
+
+            const code = await runPatronCli(
+                ['--ask', '--human', 'james', '--resident', 'pip', '--text', 'Can you answer from the live controller?', '-c', configPath],
+                {
+                    env: {
+                        CONTROLLER_MCP_HTTP_PORT: '43594',
+                        CONTROLLER_MCP_TOKENS: 'operator-token',
+                    },
+                    askRunningController,
+                },
+            );
+
+            expect(code).toBe(0);
+            expect(askRunningController).toHaveBeenCalledWith({
+                url: 'http://127.0.0.1:43594/controller/mcp',
+                token: 'operator-token',
+                humanId: 'james',
+                residentName: 'res:pip',
+                text: 'Can you answer from the live controller?',
+            });
+            expect(fs.existsSync(path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl'))).toBe(false);
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:ask] Live controller enqueued the question.'));
+
+            logSpy.mockRestore();
+        }, 10000);
+
+        it('whisper publishes successfully offline', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+            const code = await runPatronCli(['--whisper', '--human', 'james', '--resident', 'pip', '--text', 'hello', '-c', configPath]);
+            expect(code).toBe(0);
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Whisper published to offline LoreBus.'));
+
+            logSpy.mockRestore();
+        });
+
+        it('whisper uses the running controller MCP route when configured', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+            const whisperRunningController = jest.fn(async () => ({
+                ok: true,
+            }));
+
+            const code = await runPatronCli(
+                ['--whisper', '--human', 'james', '--resident', 'pip', '--text', 'hello live controller', '-c', configPath],
+                {
+                    env: {
+                        CONTROLLER_MCP_HTTP_PORT: '43594',
+                        CONTROLLER_MCP_TOKENS: 'operator-token',
+                    },
+                    whisperRunningController,
+                },
+            );
+
+            expect(code).toBe(0);
+            expect(whisperRunningController).toHaveBeenCalledWith({
+                url: 'http://127.0.0.1:43594/controller/mcp',
+                token: 'operator-token',
+                humanId: 'james',
+                residentName: 'res:pip',
+                text: 'hello live controller',
+            });
+            expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:whisper] Live controller delivered the whisper.'));
+
+            logSpy.mockRestore();
+        });
+
+        it('ask fails when --text is empty / whitespace-only', async () => {
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+            const code = await runPatronCli(['--ask', '--human', 'james', '--resident', 'pip', '--text', '   ', '-c', configPath]);
+            // Parser rejects whitespace-only --text upfront.
+            expect(code).toBe(1);
+
+            errSpy.mockRestore();
+        });
+
+        it('witness records witness + bumps standing by default +3 and persists ledger', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+            const code = await runPatronCli([
+                '--witness',
+                '--human',
+                'james',
+                '--resident',
+                'pip',
+                '--artifact',
+                'first-fire',
+                '-c',
+                configPath,
+            ]);
+            expect(code).toBe(0);
+
+            const standingFile = path.join(memoryDir, 'patron-standing.json');
+            expect(fs.existsSync(standingFile)).toBe(true);
+            const standingData = JSON.parse(fs.readFileSync(standingFile, 'utf8'));
+            expect(standingData.points['james|embassy']).toBe(3);
+
+            // Library timeline should have a patron_witness event (written
+            // via LibraryUpdater.observePatron from inside the gateway).
+            const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+            expect(fs.existsSync(timelinePath)).toBe(true);
+            const witnessLines = fs
+                .readFileSync(timelinePath, 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map(line => JSON.parse(line))
+                .filter((entry: any) => entry.kind === 'patron_witness');
+            expect(witnessLines).toHaveLength(1);
+            expect(witnessLines[0]).toMatchObject({
+                kind: 'patron_witness',
+                patronHandle: 'james',
+                artifact: 'first-fire',
+            });
+
+            logSpy.mockRestore();
+        });
+
+        it('witness with custom --amount crosses standing tier and sends a letter', async () => {
+            const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+            const code = await runPatronCli([
+                '--witness',
+                '--human',
+                'james',
+                '--resident',
+                'pip',
+                '--artifact',
+                'first-fire',
+                '--amount',
+                '12',
+                '-c',
+                configPath,
+            ]);
+            expect(code).toBe(0);
+
+            const standingFile = path.join(memoryDir, 'patron-standing.json');
+            const standingData = JSON.parse(fs.readFileSync(standingFile, 'utf8'));
+            expect(standingData.points['james|embassy']).toBe(12);
+
+            // Tier-crossing letter should be in the inbox.
+            const inboxFile = path.join(memoryDir, 'data', 'letters', 'james', 'inbox.jsonl');
+            expect(fs.existsSync(inboxFile)).toBe(true);
+            const inboxLines = fs.readFileSync(inboxFile, 'utf8').trim().split('\n').filter(Boolean);
+            const letters = inboxLines.map((l: string) => JSON.parse(l));
+            // witness dispatches both a civic_milestone and (on tier crossing) a standing_tier_crossed letter
+            const tierLetter = letters.find((l: { kind: string }) => l.kind === 'standing_tier_crossed');
+            expect(tierLetter).toBeDefined();
+            expect(tierLetter.subject).toMatch(/acquaintance/i);
+            expect(tierLetter.recipient).toBe('james');
+            expect(tierLetter.senderResident).toBe('res:pip');
+
+            logSpy.mockRestore();
+        });
+
+        it('witness fails for unknown resident soul', async () => {
+            const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+            const code = await runPatronCli([
+                '--witness',
+                '--human',
+                'james',
+                '--resident',
+                'missing-soul',
+                '--artifact',
+                'first-fire',
+                '-c',
+                configPath,
+            ]);
+            expect(code).toBe(1);
+
+            errSpy.mockRestore();
+        });
+
+        describe('HD-016 B patron:gift', () => {
+            it('records a patron_gift event in the resident Library timeline', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli([
+                    '--gift',
+                    '--human',
+                    'james',
+                    '--resident',
+                    'pip',
+                    '--artifact',
+                    'tinderbox',
+                    '-c',
+                    configPath,
+                ]);
+                expect(code).toBe(0);
+
+                const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+                expect(fs.existsSync(timelinePath)).toBe(true);
+                const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+                const giftLines = lines.map(line => JSON.parse(line)).filter((entry: any) => entry.kind === 'patron_gift');
+                expect(giftLines).toHaveLength(1);
+                expect(giftLines[0]).toMatchObject({
+                    kind: 'patron_gift',
+                    patronHandle: 'james',
+                    artifact: 'tinderbox',
+                });
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:gift] Human "james" gave "tinderbox"'));
+                logSpy.mockRestore();
+            });
+
+            it('gift does not modify currency or standing ledgers', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli([
+                    '--gift',
+                    '--human',
+                    'alice',
+                    '--resident',
+                    'pip',
+                    '--artifact',
+                    'sword',
+                    '-c',
+                    configPath,
+                ]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const standingFile = path.join(memoryDir, 'patron-standing.json');
+                // Gift leaves no currency or standing files (no Shards transfer)
+                expect(fs.existsSync(currencyFile)).toBe(false);
+                expect(fs.existsSync(standingFile)).toBe(false);
+
+                logSpy.mockRestore();
+            });
+
+            it('gift fails for unknown resident soul', async () => {
+                const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+                const code = await runPatronCli([
+                    '--gift',
+                    '--human',
+                    'james',
+                    '--resident',
+                    'missing-soul',
+                    '--artifact',
+                    'sword',
+                    '-c',
+                    configPath,
+                ]);
+                expect(code).toBe(1);
+
+                errSpy.mockRestore();
+            });
+        });
+
+        // J7: daily check-in + referral drips
+        describe('J7 check-in (daily +1 Shard)', () => {
+            it('credits +1 Shard on first check-in and writes patron-check-in.json', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.alice).toBe(1);
+
+                const checkInFile = path.join(memoryDir, 'patron-check-in.json');
+                expect(fs.existsSync(checkInFile)).toBe(true);
+                const checkIn = JSON.parse(fs.readFileSync(checkInFile, 'utf8'));
+                expect(Object.keys(checkIn.checkInDates)).toContain('alice');
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:checkin] Credited +1'));
+                logSpy.mockRestore();
+            });
+
+            it('is idempotent — second call same UTC day is a no-op', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
+                const code = await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.alice).toBe(1);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('already checked in today'));
+                logSpy.mockRestore();
+            });
+        });
+
+        describe('J7 referral (+2 Shards to referrer)', () => {
+            it('credits +2 Shards to referrer for a first-time referred human', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.bob).toBe(2);
+                expect(currency.balances.alice ?? 0).toBe(0);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:referral] Credited +2 Shards'));
+                logSpy.mockRestore();
+            });
+
+            it('second referral call for same referred human is a no-op', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
+                const code = await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const currency = JSON.parse(fs.readFileSync(currencyFile, 'utf8'));
+                expect(currency.balances.bob).toBe(2);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('No bonus credited'));
+                logSpy.mockRestore();
+            });
+
+            it('self-referral is rejected (no bonus credited)', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli(['--referral', '--human', 'alice', '--referred', 'alice', '-c', configPath]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const balance = fs.existsSync(currencyFile) ? (JSON.parse(fs.readFileSync(currencyFile, 'utf8')).balances?.alice ?? 0) : 0;
+                expect(balance).toBe(0);
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('No bonus credited'));
+                logSpy.mockRestore();
+            });
+        });
+
+        describe('HD-016 patron:balance + patron:standing', () => {
+            it('balance shows 0 Shards for unknown patron', async () => {
+                const logs: string[] = [];
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--balance', '--human', 'nobody@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                expect(logs.join('\n')).toMatch(/nobody@onion.*0 Shards/);
+            });
+
+            it('balance shows correct balance after grant', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+                await runPatronCli(['--grant', '--human', 'alice@onion', '--amount', '42', '-c', configPath]);
+                const logs: string[] = [];
+                jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--balance', '--human', 'alice@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                expect(logs.join('\n')).toMatch(/alice@onion.*42 Shards/);
+            });
+
+            it('standing shows stranger tier and 0 pts for unknown patron', async () => {
+                const logs: string[] = [];
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--standing', '--human', 'nobody@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                const out = logs.join('\n');
+                expect(out).toMatch(/nobody@onion/);
+                expect(out).toMatch(/0 pts/);
+                expect(out).toMatch(/stranger/);
+            });
+
+            it('standing shows ally tier and next-tier hint after 30+ pts', async () => {
+                const logs: string[] = [];
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+                // Grant + offer to reach standing > 30 pts (ally tier)
+                await runPatronCli(['--grant', '--human', 'alice@onion', '--amount', '50', '-c', configPath]);
+                await runPatronCli(['--offer', '--human', 'alice@onion', '--resident', 'pip', '--amount', '35', '-c', configPath]);
+                jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
+                const code = await runPatronCli(['--standing', '--human', 'alice@onion', '-c', configPath]);
+                logSpy.mockRestore();
+                expect(code).toBe(0);
+                const out = logs.join('\n');
+                expect(out).toMatch(/ally/);
+                expect(out).toMatch(/officer/);
+                expect(out).toMatch(/35 pts/);
+            });
+        });
+    });
+
+    describe('findRecentSay', () => {
+        it('finds fresh say lines in the active evidence trajectory path', () => {
+            const trajectoryDir = path.join(memoryDir, 'res-pip', 'evidence', 'trajectory');
+            fs.mkdirSync(trajectoryDir, { recursive: true });
+            const trajectoryPath = path.join(trajectoryDir, '20260524T200000Z-session.jsonl');
+            fs.writeFileSync(
+                trajectoryPath,
+                [
+                    JSON.stringify({ kind: 'say', ts: '2026-05-24T19:59:59.000Z', text: 'old line' }),
+                    JSON.stringify({ kind: 'say', ts: '2026-05-24T20:00:02.000Z', text: 'fresh live reply' }),
+                ].join('\n') + '\n',
+                'utf8',
+            );
+            fs.symlinkSync(path.basename(trajectoryPath), path.join(trajectoryDir, 'current'));
+
+            expect(findRecentSay(memoryDir, 'res:pip', '2026-05-24T20:00:00.000Z')).toBe('fresh live reply');
+        });
+
+        it('can filter live ask replies so unrelated speech is not mistaken for an answer', () => {
+            const trajectoryDir = path.join(memoryDir, 'res-pip', 'evidence', 'trajectory');
+            fs.mkdirSync(trajectoryDir, { recursive: true });
+            const trajectoryPath = path.join(trajectoryDir, '20260524T201000Z-session.jsonl');
+            fs.writeFileSync(
+                trajectoryPath,
+                [
+                    JSON.stringify({
+                        kind: 'say',
+                        ts: '2026-05-24T20:10:01.000Z',
+                        text: 'I am scouting nearby trees.',
+                        cause: 'spark:goal-share',
+                    }),
+                    JSON.stringify({
+                        kind: 'say',
+                        ts: '2026-05-24T20:10:02.000Z',
+                        text: 'I heard you, hd035-smoke. I will answer what I can while I keep moving.',
+                        action: { cause: 'nervous:patron-ask-acknowledge' },
+                    }),
+                    JSON.stringify({
+                        kind: 'say',
+                        ts: '2026-05-24T20:10:03.000Z',
+                        text: 'Another unrelated later line.',
+                        cause: 'spark:goal-share',
+                    }),
+                ].join('\n') + '\n',
+                'utf8',
+            );
+            fs.symlinkSync(path.basename(trajectoryPath), path.join(trajectoryDir, 'current'));
+
+            expect(
+                findRecentSay(memoryDir, 'res:pip', '2026-05-24T20:10:00.000Z', {
+                    cause: 'nervous:patron-ask-acknowledge',
+                    textIncludes: 'hd035-smoke',
+                }),
+            ).toBe('I heard you, hd035-smoke. I will answer what I can while I keep moving.');
+        });
     });
 });
+
+function readCurrentTarget(dir: string): string {
+    const currentPath = path.join(dir, 'current');
+    try {
+        return fs.readlinkSync(currentPath);
+    } catch {
+        return fs.readFileSync(currentPath, 'utf8').trim();
+    }
+}

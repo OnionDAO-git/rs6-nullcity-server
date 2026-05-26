@@ -49,6 +49,7 @@ const resident = (): Resident =>
     ({
         inventory: { items: [{ itemId: 42, amount: 1 }] },
         actionPipeline: { call: mockActionPipelineCall },
+        walkingQueue: { clear: jest.fn(), valid: true },
     }) as unknown as Resident;
 
 describe('ActionAdapter', () => {
@@ -420,6 +421,52 @@ describe('ActionAdapter', () => {
             'chop down',
             true,
         );
+    });
+
+    it('recovers stale NPC world-index refs by matching key and position', () => {
+        const staleNpc = { type: 'npc', key: 'rs:runescape_guide', position: { x: 3229, y: 3238, level: 0 } };
+        const fishingSpot = { type: 'npc', key: 'rs:fishing_spot_net_bait', position: { x: 3241, y: 3242, level: 0 } };
+        (activeWorld.npcList as unknown[])[70] = staleNpc;
+        (activeWorld.npcList as unknown[])[69] = fishingSpot;
+
+        const actingResident = resident();
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'interact',
+            target: {
+                id: 'npc:70',
+                kind: 'npc',
+                key: 'rs:fishing_spot_net_bait',
+                name: 'Fishing spot',
+                position: { x: 3241, y: 3242, level: 0 },
+            },
+            option: 'net',
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('npc_interaction', actingResident, fishingSpot, fishingSpot.position, 'net');
+    });
+
+    it('clears stale movement before dispatching an actor interaction', () => {
+        const fishingSpot = { type: 'npc', key: 'rs:fishing_spot_net_bait', position: { x: 3241, y: 3242, level: 0 } };
+        (activeWorld.npcList as unknown[])[70] = fishingSpot;
+
+        const actingResident = resident();
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'interact',
+            target: {
+                id: 'npc:70',
+                kind: 'npc',
+                key: 'rs:fishing_spot_net_bait',
+                name: 'Fishing spot',
+                position: { x: 3241, y: 3242, level: 0 },
+            },
+            option: 'net',
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(actingResident.walkingQueue.clear).toHaveBeenCalledTimes(1);
+        expect(actingResident.walkingQueue.valid).toBe(false);
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('npc_interaction', actingResident, fishingSpot, fishingSpot.position, 'net');
     });
 
     it('dispatches generic inventory item actions through the engine item pipe', () => {

@@ -1,3 +1,11 @@
+import { lookupFaction } from '../factions/factions';
+import { inferStoryArc, type StoryArcSummary } from './story-arc';
+
+export interface PortraitRenderOptions {
+    /** SOUL factionId; looked up in the faction catalog to populate portrait.faction. */
+    factionId?: string;
+}
+
 export interface PortraitIndex {
     resident: string;
     createdAt: string;
@@ -21,6 +29,7 @@ export interface Portrait {
     patrons: PortraitPatron[];
     wants: PortraitWants;
     artifacts: string[];
+    storyArc: StoryArcSummary;
     cost?: { totalUsd: number; perLife: number[] };
 }
 
@@ -65,7 +74,12 @@ export interface RenderedPortrait {
     markdown: string;
 }
 
-export function renderPortrait(residentName: string, index: PortraitIndex, timeline: Array<Record<string, unknown>>): RenderedPortrait {
+export function renderPortrait(
+    residentName: string,
+    index: PortraitIndex,
+    timeline: Array<Record<string, unknown>>,
+    options: PortraitRenderOptions = {},
+): RenderedPortrait {
     const events = [...timeline].sort((a, b) => numberField(a, 'tick') - numberField(b, 'tick'));
     const bornEvent = events[0];
     const lastEvent = events.at(-1);
@@ -75,11 +89,14 @@ export function renderPortrait(residentName: string, index: PortraitIndex, timel
     const patrons = buildPatrons(events);
     const wants = buildWants(events, index.currentState === 'ended');
     const artifacts = buildArtifacts(events);
+    const storyArc = inferStoryArc(events);
     const epithet = lives.at(-1)?.epithet || 'the Remembered Resident';
+    const factionDef = options.factionId ? lookupFaction(options.factionId) : undefined;
     const portrait: Portrait = {
         schemaVersion: 1,
         residentName,
         epithet,
+        faction: factionDef?.displayName,
         born: {
             ts: stringField(bornEvent, 'ts') || index.createdAt,
             tick: numberField(bornEvent, 'tick'),
@@ -96,6 +113,7 @@ export function renderPortrait(residentName: string, index: PortraitIndex, timel
         patrons,
         wants,
         artifacts,
+        storyArc,
     };
     return {
         portrait,
@@ -201,23 +219,26 @@ function buildRelationships(events: Array<Record<string, unknown>>): PortraitRel
     return [...relationships.values()].sort((a, b) => a.firstMet.tick - b.firstMet.tick);
 }
 
+const WANTS_CAP = 5;
+
 function buildWants(events: Array<Record<string, unknown>>, deceased: boolean): PortraitWants {
-    const wants = events
-        .filter(event => event.kind === 'say')
-        .map(event => stringField(event, 'text') || '')
-        .filter(isWantText);
+    const wantEvents = events.filter(event => event.kind === 'say' && isWantText(stringField(event, 'text') || ''));
+    // Keep the most-recent occurrence of each distinct want text (residents often repeat the same need
+    // every tick while blocked; the portrait should read like a biography, not a log dedupe).
+    const seen = new Set<string>();
+    const distinct: Array<{ text: string; lifeIndex: number }> = [];
+    for (const event of [...wantEvents].reverse()) {
+        const text = stringField(event, 'text') || '';
+        if (!text || seen.has(text)) {
+            continue;
+        }
+        seen.add(text);
+        distinct.unshift({ text, lifeIndex: numberField(event, 'lifeIndex', 1) });
+    }
+    const capped = distinct.slice(-WANTS_CAP);
     return {
-        current: deceased ? [] : wants,
-        unfulfilledAtDeath: deceased
-            ? wants.map(want => ({
-                  lifeIndex: numberField(
-                      events.find(event => stringField(event, 'text') === want),
-                      'lifeIndex',
-                      1,
-                  ),
-                  want,
-              }))
-            : [],
+        current: deceased ? [] : capped.map(entry => entry.text),
+        unfulfilledAtDeath: deceased ? capped.map(entry => ({ lifeIndex: entry.lifeIndex, want: entry.text })) : [],
     };
 }
 
@@ -236,9 +257,14 @@ function buildArtifacts(events: Array<Record<string, unknown>>): string[] {
 }
 
 function renderMarkdown(portrait: Portrait): string {
+    const factionLine = portrait.faction ? `*${portrait.faction}*` : undefined;
     const lines = [
         `# ${portrait.residentName}, ${portrait.epithet || 'the Remembered Resident'}`,
+        ...(factionLine ? [factionLine] : []),
         `Born tick ${portrait.born.tick}, ${portrait.born.ts}. ${portrait.livesCount} ${portrait.livesCount === 1 ? 'life' : 'lives'}. ${portrait.currentState}.`,
+        '',
+        '## Current arc',
+        storyArcLine(portrait.storyArc),
         '',
         '## What they wanted',
         portrait.wants.current.length > 0
@@ -276,6 +302,14 @@ function renderLife(life: PortraitLife): string[] {
         life.lastWords ? `\n> ${life.lastWords}` : '',
         '',
     ];
+}
+
+function storyArcLine(storyArc: StoryArcSummary): string {
+    const latest =
+        storyArc.latestEventKind && storyArc.latestEventTick !== undefined
+            ? ` Latest: ${storyArc.latestEventKind} at tick ${storyArc.latestEventTick}.`
+            : '';
+    return `Phase: ${storyArc.phase}. ${storyArc.summary}${latest}`;
 }
 
 function lifeEpithet(events: Array<Record<string, unknown>>, deathCause?: string): string {
@@ -317,14 +351,22 @@ function eventSummary(event: Record<string, unknown>): string {
     if (event.kind === 'wants_unfulfilled') {
         return `Still wanted "${stringField(event, 'want') || ''}"`;
     }
+    if (event.kind === 'revival') {
+        const cause = stringField(event, 'cause');
+        return cause
+            ? `Returned to life (${cause}) at tick ${numberField(event, 'tick')}`
+            : `Returned to life at tick ${numberField(event, 'tick')}`;
+    }
     if (event.kind === 'say') {
         return `Said "${stringField(event, 'text') || ''}"`;
     }
     return `${stringField(event, 'kind') || 'event'} at tick ${numberField(event, 'tick')}`;
 }
 
+const NON_NOTABLE_KINDS = new Set(['legacy_event', 'say', 'patron_gift', 'patron_witness', 'patron_sponsor', 'patron_ask']);
+
 function isNotable(event: Record<string, unknown>): boolean {
-    return event.kind !== 'legacy_event';
+    return !NON_NOTABLE_KINDS.has(event.kind as string);
 }
 
 function lastQuoteBefore(events: Array<Record<string, unknown>>, tick: number): string | undefined {
@@ -351,13 +393,19 @@ function quoteTag(text: string, index: number, lastWords: boolean): PortraitQuot
 }
 
 function patronSentence(handle: string, events: PortraitPatron['events']): string {
-    const first = events[0];
-    if (!first) {
-        return `${handle} was recorded as a patron.`;
-    }
-    return first.artifact
-        ? `${handle} recorded ${first.kind.replace('patron_', '')} with ${first.artifact}.`
-        : `${handle} recorded ${first.kind.replace('patron_', '')}.`;
+    if (events.length === 0) return `${handle} was recorded as a patron.`;
+    const parts = events.map(event => {
+        if (event.kind === 'patron_gift') return event.artifact ? `gifted ${event.artifact}` : 'made a gift';
+        if (event.kind === 'patron_witness') return 'witnessed this journey';
+        return 'sponsored this soul';
+    });
+    const summary =
+        parts.length === 1
+            ? parts[0]!
+            : parts.length === 2
+              ? `${parts[0]} and ${parts[1]}`
+              : `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}`;
+    return `${handle} ${summary}.`;
 }
 
 function relationshipLine(relationship: PortraitRelationship): string {

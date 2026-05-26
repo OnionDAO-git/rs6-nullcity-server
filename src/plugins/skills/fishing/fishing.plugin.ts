@@ -1,7 +1,7 @@
 import type { NpcInteractionActionHook, npcInteractionActionHandler } from '@engine/action/pipe/npc-interaction.action';
 import { soundIds } from '@engine/world/config/sound-ids';
 import { getFishingMethod, getFishingOptions, getFishingRequirementIssue, getFishingSpotKeys } from './fishing-data';
-import { FishingTask } from './fishing-task';
+import { FISHING_SPOT_INTERACTION_DISTANCE, FishingTask } from './fishing-task';
 
 const action: npcInteractionActionHandler = details => {
     const method = getFishingMethod(details.npc.key, details.option);
@@ -29,6 +29,7 @@ export default {
             npcs: getFishingSpotKeys(),
             options: getFishingOptions(),
             walkTo: true,
+            interactionDistance: FISHING_SPOT_INTERACTION_DISTANCE,
             handler: action,
         } as NpcInteractionActionHook,
     ],

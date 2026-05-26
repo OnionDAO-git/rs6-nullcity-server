@@ -1,6 +1,11 @@
 import { EventEmitter } from 'events';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import type { ControllerConfig } from './config';
 import { ControllerHost, type ControllerHostOptions } from './controller-host';
+import { LettersStore } from './patron/letters-store';
+import { PatronStore } from './patron/patron-store';
 import type { LlmClient } from './llm/llm-client';
 import type { ActionLog } from './logging/action-log';
 import type { InferenceLog } from './logging/inference-log';
@@ -110,6 +115,45 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('enqueues external perception events onto a running runtime', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) });
+
+        await host.start();
+        const event = { kind: 'chat', text: 'Can you hear me?', from: { name: 'hd035-smoke' } };
+
+        expect(host.enqueuePerceptionEvent('res:pip', event)).toBe(true);
+        expect(runtime.onEvent).toHaveBeenCalledWith(event);
+
+        await host.stop();
+    });
+
+    it('normalizes resident-prefixed ids when enqueuing external perception events', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const host = new ControllerHost(config(), { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) });
+
+        await host.start();
+        const event = { kind: 'chat', text: 'Still there?', from: { name: 'hd035-smoke' } };
+
+        expect(host.enqueuePerceptionEvent('resident:res:pip', event)).toBe(true);
+        expect(runtime.onEvent).toHaveBeenCalledWith(event);
+
+        await host.stop();
+    });
+
+    it('returns false when enqueuing an external event for a missing runtime', async () => {
+        const gateway = new FakeGateway();
+        const host = new ControllerHost(config(), dependencies(gateway));
+
+        await host.start();
+
+        expect(host.enqueuePerceptionEvent('res:missing', { kind: 'chat', text: 'hello' })).toBe(false);
+
+        await host.stop();
+    });
+
     it('passes starter items from the soul when creating a resident', async () => {
         const gateway = new FakeGateway();
         const deps = dependencies(gateway);
@@ -173,6 +217,52 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.start();
 
         expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ sparkModules }));
+
+        await host.stop();
+    });
+
+    it('derives the thinking watchdog from configured LLM endpoint timeouts', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: { watchdog?: { thinkingMs?: number } }) => {
+            void options;
+            return runtime;
+        });
+        const cfg = {
+            ...config(),
+            llm: {
+                endpoints: {
+                    default: { timeoutMs: 60_000 },
+                    fast: { timeoutMs: 12_000 },
+                },
+            },
+        };
+        const host = new ControllerHost(cfg, { ...dependencies(gateway), runtimeFactory });
+
+        await host.start();
+
+        expect(runtimeFactory).toHaveBeenCalledWith(expect.objectContaining({ watchdog: { thinkingMs: 65_000 } }));
+
+        await host.stop();
+    });
+
+    it('passes the patron gateway into created runtimes for event reflex wiring', async () => {
+        const gateway = new FakeGateway();
+        const runtime = fakeRuntime();
+        const patronGateway = { witnessAt: jest.fn() };
+        const runtimeFactory = jest.fn((options: ConstructorParameters<typeof ResidentRuntime>[0]) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(config(), {
+            ...dependencies(gateway),
+            patronGateway: patronGateway as unknown as ControllerHostOptions['patronGateway'],
+            runtimeFactory,
+        });
+
+        await host.start();
+
+        expect(runtimeFactory.mock.calls[0]?.[0]).toEqual(expect.objectContaining({ patronGateway }));
 
         await host.stop();
     });
@@ -271,6 +361,42 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(gameSkill.flush).toHaveBeenCalledTimes(1);
     });
 
+    it('passes a persistent faction stockpile ledger into resident runtimes', async () => {
+        const gateway = new FakeGateway();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-stockpile-'));
+        const runtime = fakeRuntime();
+        const runtimeFactory = jest.fn((options: ConstructorParameters<typeof ResidentRuntime>[0]) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(
+            { ...config(), memory: { dir: memoryDir, qmdBin: '' } },
+            { ...dependencies(gateway), runtimeFactory },
+        );
+
+        await host.start();
+
+        const runtimeOptions = runtimeFactory.mock.calls[0]?.[0];
+        expect(runtimeOptions?.factionStockpile).toBeDefined();
+        runtimeOptions?.factionStockpile?.recordAttempt({
+            resident: 'res:pip',
+            factionId: 'ledger',
+            attempt: {
+                attemptId: 'attempt-test',
+                resident: 'res:pip',
+                producer: 'body',
+                submittedAt: '2026-05-25T19:20:00.000Z',
+                action: { kind: 'move_to', target: { x: 3210, y: 3424, level: 0 }, cause: 'faction_ledger_audit_work' },
+                evidence: [],
+                finalStatus: 'success',
+            },
+        });
+
+        expect(fs.existsSync(path.join(memoryDir, 'faction-stockpile.json'))).toBe(true);
+
+        await host.stop();
+    });
+
     it('pauses a resident runtime and keeps reconcile from restarting it', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
@@ -328,6 +454,123 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(gameSkill.flush).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('ControllerHost patron wiring (EVENT-D1a)', () => {
+    let tmpMemory: string;
+
+    beforeEach(() => {
+        tmpMemory = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-patron-'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(tmpMemory, { recursive: true, force: true });
+    });
+
+    it('constructs PatronGateway with a LettersStore rooted at memory.dir', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+
+        expect(host.patronGateway).toBeDefined();
+
+        // The wired lettersStore is what makes tier-crossing letters
+        // actually reach disk. Without it, dispatchTierLetter early-returns
+        // and every letter the gateway produces lands in /dev/null.
+        const wiredStore = lettersStoreOf(host.patronGateway);
+        expect(wiredStore).toBeInstanceOf(LettersStore);
+    });
+
+    it('constructs PatronGateway with memory.dir so host-side patron asks write Library timeline events', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+
+        expect(memoryDirOf(host.patronGateway)).toBe(tmpMemory);
+    });
+
+    it('round-trips a Letter through the wired LettersStore at the same memory.dir', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+
+        // Write a synthetic letter via the wired store and read it back via
+        // a fresh LettersStore at the same root. This proves the gateway and
+        // any external consumer (HTTP inbox endpoint, dashboard) read from
+        // the same on-disk location.
+        const wiredStore = lettersStoreOf(host.patronGateway);
+        expect(wiredStore).toBeDefined();
+        wiredStore!.append({
+            kind: 'standing_tier_crossed',
+            recipient: 'alice@onion',
+            senderResident: 'res:fern',
+            subject: 'You are now Acquaintance of embassy',
+            body: 'alice@onion, welcome. — Embassy Clerk',
+            dispatchedAt: '2026-05-23T13:00:00.000Z',
+            deliveryChannels: ['web-inbox'],
+        });
+
+        const reader = new LettersStore(tmpMemory);
+        const inbox = reader.readInbox('alice@onion');
+        expect(inbox).toHaveLength(1);
+        expect(inbox[0].kind).toBe('standing_tier_crossed');
+        expect(inbox[0].recipient).toBe('alice@onion');
+    });
+
+    it('refreshes patron ledgers from disk before live MCP offers use them', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const host = new ControllerHost(cfg, dependencies(gateway));
+        const store = new PatronStore(tmpMemory);
+
+        const diskCurrency = store.loadCurrency();
+        diskCurrency.credit('alice@onion', 20, { reason: 'staff_grant', ts: '2026-05-25T16:00:00.000Z' });
+        store.saveCurrency(diskCurrency);
+
+        const diskStanding = store.loadStanding();
+        diskStanding.recordSupport('alice@onion', 'embassy', 7, { reason: 'preexisting', ts: '2026-05-25T16:01:00.000Z' });
+        store.saveStanding(diskStanding);
+
+        expect(currencyLedgerOf(host.patronGateway)?.balance('alice@onion')).toBe(0);
+        expect(standingLedgerOf(host.patronGateway)?.points('alice@onion', 'embassy')).toBe(0);
+
+        host.refreshPatronLedgersFromDisk();
+
+        expect(currencyLedgerOf(host.patronGateway)?.balance('alice@onion')).toBe(20);
+        expect(standingLedgerOf(host.patronGateway)?.points('alice@onion', 'embassy')).toBe(7);
+    });
+
+    it('preserves dependency-injected PatronGateway when caller provides one', () => {
+        const gateway = new FakeGateway();
+        const cfg = config();
+        cfg.memory = { ...cfg.memory, dir: tmpMemory };
+        const custom = { offerTo: jest.fn() } as unknown as ControllerHostOptions['patronGateway'];
+        const host = new ControllerHost(cfg, { ...dependencies(gateway), patronGateway: custom });
+        expect(host.patronGateway).toBe(custom);
+    });
+});
+
+// Type-cast helper mirroring the runtimeCount() pattern below — reaches
+// into the gateway's private options to verify the wiring we care about.
+function lettersStoreOf(gateway: ControllerHost['patronGateway']): LettersStore | undefined {
+    return (gateway as unknown as { options: { lettersStore?: LettersStore } }).options.lettersStore;
+}
+
+function memoryDirOf(gateway: ControllerHost['patronGateway']): string | undefined {
+    return (gateway as unknown as { options: { memoryDir?: string } }).options.memoryDir;
+}
+
+function currencyLedgerOf(gateway: ControllerHost['patronGateway']) {
+    return (gateway as unknown as { options: { currencyLedger?: { balance: (humanId: string) => number } } }).options.currencyLedger;
+}
+
+function standingLedgerOf(gateway: ControllerHost['patronGateway']) {
+    return (gateway as unknown as { options: { standingLedger?: { points: (humanId: string, faction: string) => number } } }).options
+        .standingLedger;
+}
 
 function dependencies(gateway: FakeGateway): ControllerHostOptions {
     const state = new Map<string, RuntimeState>();

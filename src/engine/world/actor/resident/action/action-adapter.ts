@@ -240,6 +240,8 @@ export class ActionAdapter {
             if (!actor) {
                 return { ok: false, reason: 'target_not_found' };
             }
+            resident.walkingQueue.clear();
+            resident.walkingQueue.valid = false;
             if (actor.type === 'npc') {
                 resident.actionPipeline.call('npc_interaction', resident, actor, actor.position, option.toLowerCase());
             } else {
@@ -486,12 +488,21 @@ export class ActionAdapter {
 
     private findActor(ref: ActorRef): Player | Npc | null {
         if (ref.kind === 'npc') {
-            const index = Number(ref.id.replace(/^npc:/, ''));
-            return activeWorld.npcList[index] || null;
+            return this.findNpc(ref);
         }
 
         const username = ref.id.replace(/^player:/, '').replace(/^resident:/, '');
         return activeWorld.findActivePlayerByUsername(username);
+    }
+
+    private findNpc(ref: ActorRef): Npc | null {
+        const index = Number(ref.id.replace(/^npc:/, ''));
+        const indexed = activeWorld.npcList[index] || null;
+        if (indexed && npcMatchesRef(indexed, ref)) {
+            return indexed;
+        }
+
+        return (activeWorld.npcList as Array<Npc | null | undefined>).find(npc => Boolean(npc) && npcMatchesRef(npc as Npc, ref)) || null;
     }
 
     private findWorldItem(resident: Resident, ref: WorldItemRef): WorldItem | null {
@@ -532,6 +543,19 @@ function sameActor(a: unknown, b: unknown): boolean {
 
 function sameTile(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }): boolean {
     return a.x === b.x && a.y === b.y && (a.level ?? 0) === (b.level ?? 0);
+}
+
+function npcMatchesRef(npc: Npc, ref: ActorRef): boolean {
+    if (ref.key && typeof npc.key === 'string' && npc.key !== ref.key) {
+        return false;
+    }
+    if (ref.position && npc.position && !sameTile(npc.position, ref.position)) {
+        return false;
+    }
+    if (!ref.key && ref.name && typeof npc.name === 'string' && npc.name !== ref.name) {
+        return false;
+    }
+    return true;
 }
 
 function tileDistance(a: { x: number; y: number; level?: number }, b: { x: number; y: number; level?: number }): number {

@@ -50,13 +50,15 @@ const CORE_TASK_IDS = [
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
+    const envDryRun = process.env.CONTROLLER_BENCHMARK_DRY_RUN;
+    const envMode = process.env.CONTROLLER_BENCHMARK_MODE;
     const options: BenchmarkCliOptions = {
-        taskId: '',
-        moduleId: DEFAULT_MODULE_ID,
+        taskId: process.env.CONTROLLER_BENCHMARK_TASK || '',
+        moduleId: process.env.CONTROLLER_BENCHMARK_MODULE || DEFAULT_MODULE_ID,
         configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
-        outputDir: DEFAULT_OUTPUT_DIR,
-        mode: 'scripted',
-        dryRun: false,
+        outputDir: process.env.CONTROLLER_BENCHMARK_OUTPUT_DIR || DEFAULT_OUTPUT_DIR,
+        mode: envMode === 'autonomous' || envMode === 'scripted' ? envMode : 'scripted',
+        dryRun: envDryRun === 'true' || envDryRun === '1',
     };
 
     for (let i = 0; i < argv.length; i += 1) {
