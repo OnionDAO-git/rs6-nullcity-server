@@ -6768,9 +6768,8 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions[0].kind).toBe('say');
         const text = String((result.actions[0] as { text?: string }).text);
-        expect(text).toBe(
-            'I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.',
-        );
+        // phase 2 (Math.floor(2522/20)%4=2): Goal shown, Next suppressed for variety
+        expect(text).toBe('I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC at 3218,3201. Goal: Practice scouting.');
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -7193,6 +7192,73 @@ describe('HybridAgentThinkingModule', () => {
         expect(text).toContain('Next: pick up coins at 3219,3201.');
         expect(text.length).toBeLessThanOrEqual(220);
         expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('F9a: phase-1 beacon shows Goal but omits Next step (variety suffix)', async () => {
+        // tick=1060 → phase Math.floor(1060/20)%4 = 53%4 = 1; interval from soul.shareGoalsEveryTicks=20
+        const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: { id: 'scout-lumbridge', description: 'Practice scouting.', createdAtTick: 1 },
+            lastBrainTick: 1059,
+            lastBodyTick: 1059,
+            lastPresenceBeaconTick: 1040,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(perception({ tick: 1060, resident: residentAt(3218, 3201), worldItems: [coins] }));
+
+        expect(result.cause).toBe('presence_beacon');
+        const text = String((result.actions[0] as { text?: string }).text);
+        expect(text).toContain('Goal: Practice scouting.');
+        expect(text).not.toContain('Next:');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('F9a: phase-2 beacon shows Goal but omits Next step (scouting variety)', async () => {
+        // tick=1080 → phase Math.floor(1080/20)%4 = 54%4 = 2
+        const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: { id: 'scout-lumbridge', description: 'Practice scouting.', createdAtTick: 1 },
+            lastBrainTick: 1079,
+            lastBodyTick: 1079,
+            lastPresenceBeaconTick: 1060,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(perception({ tick: 1080, resident: residentAt(3218, 3201), worldItems: [coins] }));
+
+        expect(result.cause).toBe('presence_beacon');
+        const text = String((result.actions[0] as { text?: string }).text);
+        expect(text).toContain('Goal: Practice scouting.');
+        expect(text).not.toContain('Next:');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('F9a: phase-3 beacon shows only prefix and position (no Goal, no Next)', async () => {
+        // tick=1100 → phase Math.floor(1100/20)%4 = 55%4 = 3
+        const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: { id: 'scout-lumbridge', description: 'Practice scouting.', createdAtTick: 1 },
+            lastBrainTick: 1099,
+            lastBodyTick: 1099,
+            lastPresenceBeaconTick: 1080,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(perception({ tick: 1100, resident: residentAt(3218, 3201), worldItems: [coins] }));
+
+        expect(result.cause).toBe('presence_beacon');
+        const text = String((result.actions[0] as { text?: string }).text);
+        expect(text).not.toContain('Goal:');
+        expect(text).not.toContain('Next:');
+        expect(text).toContain('at 3218,3201');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

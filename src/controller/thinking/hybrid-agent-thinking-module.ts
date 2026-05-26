@@ -2717,6 +2717,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         );
     }
 
+    private presenceBeaconPhase(): 0 | 1 | 2 | 3 {
+        if (this.options.state.tick < PRESENCE_BEACON_VARIETY_AFTER_TICKS) {
+            return 0;
+        }
+        const interval = Math.max(1, this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS);
+        return (Math.floor(this.options.state.tick / interval) % 4) as 0 | 1 | 2 | 3;
+    }
+
     private presenceBeaconAction(perception: HybridPerception): AgentAction | undefined {
         const cognition = this.cognition();
         if (
@@ -2731,9 +2739,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return undefined;
         }
 
+        const phase = this.presenceBeaconPhase();
+        // phase 0 (early + every 4th): full context (Goal + Next step)
+        // phase 1/2: Goal only, no Next step
+        // phase 3: prefix + position only, no Goal, no Next
+        const includeNextStep = phase === 0;
+        const includeGoal = phase !== 3;
         cognition.lastPresenceBeaconTick = this.options.state.tick;
         cognition.lastGoalShareTick = this.options.state.tick;
-        return { kind: 'say', text: this.statusSpeech(perception, this.presenceBeaconPrefix(perception), true) };
+        return { kind: 'say', text: this.statusSpeech(perception, this.presenceBeaconPrefix(perception), includeNextStep, includeGoal) };
     }
 
     private presenceBeaconPrefix(perception: HybridPerception): string {
@@ -2741,8 +2755,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             return 'I am online';
         }
 
-        const interval = Math.max(1, this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS);
-        const phase = Math.floor(this.options.state.tick / interval) % 4;
+        const phase = this.presenceBeaconPhase();
         const nearby = this.presenceNearbySummary(perception);
         if (phase === 1 && nearby) {
             return `I see ${nearby} nearby`;
@@ -2770,7 +2783,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return joinSpeechList(parts.slice(0, 3));
     }
 
-    private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false): string {
+    private statusSpeech(perception: HybridPerception, prefix: string, includeNextStep = false, includeGoal = true): string {
         const here = perception.resident?.position;
         const cognition = this.cognition();
         const next = includeNextStep
@@ -2784,14 +2797,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                   interactWithOpenables: false,
               }))
             : undefined;
-        const goal = summarizeGoalForSpeech(
-            this.activeGoal()?.description || 'staying findable and looking for useful actions',
-            Boolean(next),
-        );
+        const goal = includeGoal
+            ? summarizeGoalForSpeech(this.activeGoal()?.description || 'staying findable and looking for useful actions', Boolean(next))
+            : undefined;
         const need = this.survivalNeedSpeech(perception);
-        return (
-            cleanSpeech(`${prefix}${here ? ` at ${here.x},${here.y}` : ''}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}`) || prefix
-        );
+        const loc = `${prefix}${here ? ` at ${here.x},${here.y}` : ''}`;
+        return cleanSpeech(goal ? `${loc}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${loc}.${need}`) || prefix;
     }
 
     private visibilityReturnNextStep(perception: HybridPerception): string | undefined {
