@@ -343,6 +343,25 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(wall.contentType).toMatch(/text\/html/);
             expect(inbox.contentType).toMatch(/text\/html/);
         });
+
+        it('serves the patron profile page from /patron/ (HD-016 self-service HTML)', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const patronPageUrl = server.url.replace('/v1/inbox', '/patron/');
+
+            const response = await get(patronPageUrl);
+
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            expect(response.body).toContain('Patron Status');
+            expect(response.body).toContain('/v1/patron/balance');
+        });
+
+        it('also serves the patron profile page at /patron/index.html', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/patron/index.html'));
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+        });
     });
 
     describe('GET /v1/health (O4)', () => {

@@ -289,6 +289,8 @@ function resolveStaticPagePath(requestPath: string, staticRoot?: string): string
             return path.join(publicRoot, 'wall', 'index.html');
         case '/inbox':
             return path.join(publicRoot, 'inbox', 'index.html');
+        case '/patron':
+            return path.join(publicRoot, 'patron', 'index.html');
         default:
             return undefined;
     }
