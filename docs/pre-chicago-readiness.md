@@ -97,7 +97,7 @@ Verified end-to-end this sprint (E14-E19):
 
 - **F19c**: heroes' Brain (rich conversation) succeeds <10% of calls under load; reflex layer carries the experience.
 - **F19d / Codex F6**: `res:thrand` is the quietest hero — separate Codex workstream `7669f384` shipped idle_initiative no-hook pulse.
-- **F9a**: scout-template "Goal: ... Next: ..." tail still identical across consecutive says. Polish, not a blocker.
+- **F9a**: ~~scout-template "Goal: ... Next: ..." tail still identical across consecutive says~~ **CLOSED** by `5fba2c06`: phase-gated suffix — phase 0 shows Goal+Next, phases 1+2 show Goal only, phase 3 shows prefix+position only. Heroes now cycle through 4 distinct speech shapes per interval.
 - **HD-015**: dashboard surfaces recent patron letters only. Staff still reads Shards, standing, patron balances, and readiness data via files/CLI.
 - **HD-033 F20a**: Qwen3 thinking-mode returns empty 87.5% of calls (upstream LLM behavior; reflex layer carries experience). F20b uniform ~44s endpoint queueing also upstream. F20c CLOSED by `8eae437f`; F20d (promptTokens missing on empty) is observability polish only.
 - **HD-043**: LoreBus + whisper wire-ins remain post-Chicago integration work. Cross-resident chat won't happen organically at the event.
