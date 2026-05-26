@@ -1,5 +1,9 @@
 # Post-Demo Team Brief
 
+> **SUPERSEDED 2026-05-26 by the OnionDAO progress meeting.** Many of the brainstorm topics in this doc were answered or reframed in the James / Dev / Adam meeting. See [`docs/2026-05-26-meeting-decisions.md`](2026-05-26-meeting-decisions.md) for current ground truth. This doc remains as historical context for the post-demo audit; do not use it to plan new work.
+
+---
+
 Written 2026-05-26 for the OnionDAO team meeting following the internal demo of Null City. Goal: share what's queued for this week, what features need building next, and — most importantly — surface the open product questions where the team's creative input matters more than more engineering hours.
 
 ## Where we are
