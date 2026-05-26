@@ -1,4 +1,5 @@
 import type { AgentAction } from '../transport/message-codecs';
+import type { RuntimeState } from '../memory/runtime-state';
 
 // --- Shared Types ---
 
@@ -310,4 +311,14 @@ export function failureKeyFragment(value: unknown): string | undefined {
 
 export function positionKey(position: Pos): string {
     return `${position.x},${position.y},${position.level}`;
+}
+
+export function resetClockSensitiveCognition(state: RuntimeState, perceptionTick: number): void {
+    const cognition = state.cognition || {};
+    const followTarget = cognition.followTarget ? { ...cognition.followTarget, setAtTick: perceptionTick } : undefined;
+    state.cognition = { followTarget };
+    state.lastMeaningfulProgressAt = undefined;
+    state.stuckSince = undefined;
+    state.budgets.lastTick = undefined;
+    state.budgets.requestsThisTick = undefined;
 }
