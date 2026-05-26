@@ -15,10 +15,16 @@ Pre-Chicago demo snapshot for the OnionDAO team. This release turns the resident
 ### Added
 
 - Five public web surfaces with a shared vellum aesthetic: wall ticker (`/wall/`), patron inbox (`/inbox/?human=<handle>`), patron profile (`/patron/?human=<handle>`), Library of Souls (`/library/`), and graveyard (`/graveyard/`). A landing page at `/` links to all of them.
-- Patron lifecycle CLIs: `npm run patron:register / patron:offer / patron:witness / patron:grant / patron:ask`. Standing-tier crossings produce dispatched letters automatically (`standing_tier_crossed`, `epitaph`, `civic_milestone`).
+- Patron lifecycle CLIs (the human-event verbs): `npm run patron:register / patron:offer / patron:gift / patron:witness / patron:grant / patron:ask / patron:whisper`. Standing-tier crossings produce dispatched letters automatically (`standing_tier_crossed`, `epitaph`, `civic_milestone`, Mortician's Ribbon).
+- Self-service + ops CLIs: `npm run patron:checkin` (daily +1 Shard), `patron:referral` (+2 Shards), `patron:balance`, `patron:standing`, `patron:bulk-register --file <path>` for event-day handle loading, `patron:smoke` (loop verifier).
 - Self-service patron daily check-in at `GET /v1/patron/checkin?human=<handle>` plus a one-tap button on the patron profile page (Chicago-day "earn a Shard from your phone").
 - Six named heroes (Hans, Father Aereck, Wise Old Man, Duke Horacio, Pip, Thrand) and four faction flagships (Mother Anvil, Severn Vesta, Wren Calix, The Hush) with ambient personality lines that fire without an LLM call.
+- Faction flagships do visible faction-specific landmark work — foundry fuel, bureau witness, ledger audit, veil shadow — backed by a persistent stockpile ledger that survives restart.
+- Resident-to-resident interact verbs: `whisper`, `gift`, `assist_skill`, `challenge_duel` (L1).
+- Heroes prepare final words near attention floor; the words appear verbatim in their epitaph letter.
+- Mortician's Ribbon: patrons present at a resident's death receive a `civic_milestone` letter naming them in the city's record.
 - Library of Souls auto-generates a portrait per resident — epithet, story arc, top quote, wants, patron count, lives lived.
+- Wall snapshot exposes a resident roster with story-arc phase, current goal, and faction affiliation alongside the recent-letters stream.
 - Cross-resident whisper verb (`L-β`) and embassy reception greeting reflex (`D3`) wired into the runtime.
 - Inference health probe at `GET /v1/health` and old/new model canary endpoints for safe model rollover.
 - Multi-controller safety lock: a second controller pointing at the same memory dir fails fast with a clear pid/path error.
@@ -35,11 +41,14 @@ Pre-Chicago demo snapshot for the OnionDAO team. This release turns the resident
 - Patron progress bar no longer renders 0% when a real value is present.
 - `/v1/library` and `/v1/graveyard` endpoints serve correctly after controller restart.
 - Inference health probe is no longer blocked by the LlmClient pause state.
+- Patron currency / standing / check-in ledgers quarantine corrupt files instead of silently returning empty — no more silent Shard loss on restart.
+- Standing-tier letter dispatcher now emits one letter per tier crossed when a single offer spans multiple tiers (was: only the highest tier).
 
 ### Developer-facing
 
 - New SOUL frontmatter rule kinds: `always` (ambient reflex) and `attack` (reactive event), with cooldown and priority fields.
 - `buildWallSnapshot` and `readLibraryEntries` accept `excludeSynthetic` and `dedupeBySubject` options. Defaults preserve full-fidelity output for non-public callers.
+- `npm run controller:smoke -- --observe-seconds <N>` tails the live runtime and prints per-resident action/say activity — the canonical "is it really alive?" tool.
 - `CHANGELOG.md` (this file) renamed from lowercase, format upgraded to [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). See `docs/changelog-workflow.md` for the authoring guide.
 - Test count: ~1,500 → 2,151. `npm run fin` (typecheck + lint + format + jest) is the merge gate.
 
