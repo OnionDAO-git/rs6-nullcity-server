@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { inferStoryArc } from '../evidence/story-arc';
 import { FACTIONS, type FactionId } from '../factions/factions';
 import { readFactionStockpileSnapshot } from '../factions/stockpile-ledger';
 import type { Letter } from '../patron/letters-producer';
@@ -73,6 +74,13 @@ export interface ResidentSummary {
     factionDisplayName?: string;
     /** Primary hex color for the faction, for wall UI rendering. */
     factionColor?: string;
+    /**
+     * Current story arc phase inferred from the resident's library timeline.
+     * Only present when the timeline contains at least one classified event
+     * (patron support, visible progress, resolution, or letter aftermath).
+     * Values: 'pitch' | 'fund' | 'progress' | 'resolve' | 'letter'.
+     */
+    arcPhase?: string;
 }
 
 export interface WallSnapshot {
@@ -346,6 +354,10 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
             summary.factionDisplayName = faction.displayName;
             summary.factionColor = faction.wallColor;
         }
+        const arcPhase = readResidentArcPhase(path.join(lettersRoot, 'library', slug, 'timeline.jsonl'));
+        if (arcPhase !== undefined) {
+            summary.arcPhase = arcPhase;
+        }
         summaries.push(summary);
     }
 
@@ -358,6 +370,40 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
     });
 
     return summaries;
+}
+
+function readResidentArcPhase(timelinePath: string): string | undefined {
+    if (!fs.existsSync(timelinePath)) {
+        return undefined;
+    }
+    try {
+        const raw = fs.readFileSync(timelinePath, 'utf8');
+        const events = raw
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .map(line => {
+                try {
+                    return JSON.parse(line) as Record<string, unknown>;
+                } catch {
+                    return null;
+                }
+            })
+            .filter((e): e is Record<string, unknown> => e !== null);
+        if (events.length === 0) {
+            return undefined;
+        }
+        const arc = inferStoryArc(events);
+        const totalClassified =
+            arc.evidence.pitches +
+            arc.evidence.fundingEvents +
+            arc.evidence.progressEvents +
+            arc.evidence.resolutionEvents +
+            arc.evidence.letterEvents;
+        return totalClassified > 0 ? arc.phase : undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 function toResidentSlug(value: string): string {

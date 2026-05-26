@@ -462,6 +462,48 @@ describe('buildWallSnapshot (EVENT-D6)', () => {
         });
     });
 
+    describe('story arc phase (M1-ARC-WALL)', () => {
+        it('populates arcPhase when library timeline has classified events (patron_gift → fund)', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            const timelineDir = path.join(root, 'library', 'res-hans');
+            fs.mkdirSync(timelineDir, { recursive: true });
+            fs.writeFileSync(
+                path.join(timelineDir, 'timeline.jsonl'),
+                JSON.stringify({ kind: 'patron_gift', tick: 100, ts: '2026-05-26T01:00:00.000Z', from: 'patron-alice' }) + '\n',
+            );
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T02:00:00.000Z') });
+
+            expect(snap.residents).toHaveLength(1);
+            expect(snap.residents[0].arcPhase).toBe('fund');
+        });
+
+        it('leaves arcPhase absent when no library timeline file exists', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 8000 });
+            // No library dir written.
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T02:00:00.000Z') });
+
+            expect(snap.residents[0].arcPhase).toBeUndefined();
+        });
+
+        it('populates arcPhase=resolve when timeline has a legacy_event (resolution kind)', () => {
+            writeRuntimeState(root, 'res-fern', { attention: 1000 });
+            const timelineDir = path.join(root, 'library', 'res-fern');
+            fs.mkdirSync(timelineDir, { recursive: true });
+            const lines =
+                [
+                    JSON.stringify({ kind: 'patron_gift', tick: 50, ts: '2026-05-26T00:30:00.000Z', from: 'patron-bob' }),
+                    JSON.stringify({ kind: 'near_death_survival', tick: 200, ts: '2026-05-26T01:00:00.000Z' }),
+                    JSON.stringify({ kind: 'legacy_event', tick: 500, ts: '2026-05-26T01:30:00.000Z', cause: 'attention_exhausted' }),
+                ].join('\n') + '\n';
+            fs.writeFileSync(path.join(timelineDir, 'timeline.jsonl'), lines);
+
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T02:00:00.000Z') });
+
+            expect(snap.residents[0].arcPhase).toBe('resolve');
+        });
+    });
+
     describe('faction stockpiles', () => {
         it('summarizes persisted faction stockpile totals for the wall', () => {
             const ledger = new FactionStockpileLedger(root, { now: () => new Date('2026-05-25T19:30:00.000Z') });

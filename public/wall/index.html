@@ -180,6 +180,16 @@
             white-space: nowrap;
         }
         .resident-row.dead .resident-faction { opacity: 0.4; }
+        .resident-arc {
+            display: block;
+            font-size: 0.62rem;
+            font-variant: small-caps;
+            letter-spacing: 0.12em;
+            color: var(--accent);
+            opacity: 0.65;
+            margin-top: 0.15rem;
+        }
+        .resident-row.dead .resident-arc { opacity: 0.3; }
         .stockpile-row {
             padding: 0.55rem 0;
             border-bottom: 1px solid rgba(79, 58, 28, 0.22);
@@ -472,6 +482,13 @@
                         goal.className = 'resident-goal';
                         goal.textContent = String(r.activeGoal);
                         info.appendChild(goal);
+                    }
+
+                    if (r.arcPhase) {
+                        const arc = document.createElement('span');
+                        arc.className = 'resident-arc';
+                        arc.textContent = 'arc: ' + String(r.arcPhase);
+                        info.appendChild(arc);
                     }
 
                     row.appendChild(info);
