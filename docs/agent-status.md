@@ -800,3 +800,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 23:01 codex branch=agents/wip workstream=Q5 STARTING - direct-chat QA. Files: runtime-state.ts, phrasebook.ts, hybrid-agent-thinking-module.ts/test.ts, roadmap/status. goal=make G5 WIP pass without touching patron-gift lock.
 2026-05-25 23:07 codex branch=agents/wip workstream=Q5 HANDOFF - direct-chat G5 green; stop-following parser fixed; fin 2051/2051; live follow-chat score=1. SHA=efe84f9 collision=patron-gift untouched.
 2026-05-25 23:31 codex branch=agents/wip workstream=D2 STARTING - close dashboard activity proof. Files: docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md, docs/agent-status.md. collision=patron-gift untouched.
+2026-05-25 23:39 codex branch=agents/wip workstream=D2 HANDOFF - dashboard activity proof closed; browser DOM + API ok; dashboard checks green; 90s city smoke 23/23. SHA=5db5571 tests=20+typecheck+check+build+smoke90 collision=none.
