@@ -33,6 +33,7 @@ export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 export const DEFAULT_HEALTH_PATH = '/v1/health';
 export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
 export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
+export const DEFAULT_PATRON_CHECKIN_PATH = '/v1/patron/checkin';
 export const DEFAULT_GRAVEYARD_PATH = '/v1/graveyard';
 export const DEFAULT_LIBRARY_PATH = '/v1/library';
 
@@ -102,6 +103,7 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
     const healthRoutePath = normalizePath(options.healthPath || DEFAULT_HEALTH_PATH);
     const patronBalancePath = normalizePath(DEFAULT_PATRON_BALANCE_PATH);
     const patronStandingPath = normalizePath(DEFAULT_PATRON_STANDING_PATH);
+    const patronCheckInPath = normalizePath(DEFAULT_PATRON_CHECKIN_PATH);
     const bindHost = options.host || '127.0.0.1';
 
     const graveyardRoutePath = normalizePath(DEFAULT_GRAVEYARD_PATH);
@@ -118,6 +120,7 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
             healthRoutePath,
             patronBalancePath,
             patronStandingPath,
+            patronCheckInPath,
             graveyardRoutePath,
             libraryRoutePath,
         ).catch(error => {
@@ -159,6 +162,7 @@ async function handle(
     healthRoutePath: string,
     patronBalancePath: string,
     patronStandingPath: string,
+    patronCheckInPath: string,
     graveyardRoutePath: string,
     libraryRoutePath: string,
 ): Promise<void> {
@@ -168,6 +172,7 @@ async function handle(
     const isHealthRoute = url.pathname === healthRoutePath && options.health !== undefined;
     const isPatronBalanceRoute = url.pathname === patronBalancePath && options.patronMemoryRoot !== undefined;
     const isPatronStandingRoute = url.pathname === patronStandingPath && options.patronMemoryRoot !== undefined;
+    const isPatronCheckInRoute = url.pathname === patronCheckInPath && options.patronMemoryRoot !== undefined;
     const isGraveyardRoute = url.pathname === graveyardRoutePath && options.lettersRoot !== undefined;
     const isLibraryRoute = url.pathname === libraryRoutePath && options.lettersRoot !== undefined;
     const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
@@ -178,6 +183,7 @@ async function handle(
         !isHealthRoute &&
         !isPatronBalanceRoute &&
         !isPatronStandingRoute &&
+        !isPatronCheckInRoute &&
         !isGraveyardRoute &&
         !isLibraryRoute &&
         !staticPagePath
@@ -295,6 +301,30 @@ async function handle(
                 pointsToNext: nextTierObj ? nextTierObj.minPoints - points : null,
             });
         }
+        return;
+    }
+
+    if (isPatronCheckInRoute) {
+        const human = url.searchParams.get('human');
+        if (!human || human.trim().length === 0) {
+            writeJson(response, 400, { error: 'Query parameter `human` is required' });
+            return;
+        }
+        // patronMemoryRoot guaranteed non-undefined by the route guard above.
+        const store = new PatronStore(options.patronMemoryRoot as string);
+        const ledger = store.loadCurrency();
+        const tracker = store.loadCheckIn(ledger);
+        const checkInResult = tracker.checkIn(human);
+        if (checkInResult.credited) {
+            store.saveCurrency(ledger);
+            store.saveCheckIn(tracker);
+        }
+        writeJson(response, 200, {
+            result: checkInResult.credited ? 'checked_in' : 'already_checked_in',
+            shards_earned: checkInResult.shards,
+            new_balance: ledger.balance(human),
+            currency: CURRENCY_NAME,
+        });
         return;
     }
 

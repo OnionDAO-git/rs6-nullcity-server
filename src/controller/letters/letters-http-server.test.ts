@@ -698,6 +698,59 @@ describe('letters HTTP server (EVENT-D2a)', () => {
         });
     });
 
+    describe('GET /v1/patron/checkin (J7 self-service)', () => {
+        it('returns 404 when patronMemoryRoot is not configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/checkin') + '?human=alice@onion');
+            expect(response.status).toBe(404);
+        });
+
+        it('returns 400 when human param is missing', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/checkin'));
+            expect(response.status).toBe(400);
+            expect(JSON.parse(response.body)).toMatchObject({ error: expect.stringContaining('human') });
+        });
+
+        it('credits 1 Shard and returns checked_in on first call of the day', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/checkin') + '?human=alice@onion');
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                result: string;
+                shards_earned: number;
+                new_balance: number;
+                currency: string;
+            };
+            expect(payload.result).toBe('checked_in');
+            expect(payload.shards_earned).toBe(1);
+            expect(payload.new_balance).toBe(1);
+            expect(payload.currency).toBe('Shards');
+            // Verify the credit is persisted to disk.
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadCurrency();
+            expect(ledger.balance('alice@onion')).toBe(1);
+        });
+
+        it('returns already_checked_in and 0 shards_earned on a second same-day call', async () => {
+            // Seed an existing check-in for today.
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadCurrency();
+            const tracker = patronStore.loadCheckIn(ledger);
+            tracker.checkIn('alice@onion');
+            patronStore.saveCurrency(ledger);
+            patronStore.saveCheckIn(tracker);
+
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/checkin') + '?human=alice@onion');
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { result: string; shards_earned: number; new_balance: number };
+            expect(payload.result).toBe('already_checked_in');
+            expect(payload.shards_earned).toBe(0);
+            expect(payload.new_balance).toBe(1);
+        });
+    });
+
     describe('GET /v1/graveyard (N4)', () => {
         it('returns 404 when lettersRoot is not configured', async () => {
             server = await startLettersHttpServer({ store, port: 0 });

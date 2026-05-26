@@ -191,6 +191,35 @@
             border-color: var(--accent);
         }
 
+        .checkin-row {
+            text-align: center;
+            margin-top: 1.25rem;
+        }
+        .checkin-btn {
+            background: linear-gradient(135deg, var(--seal-standing), #7aaa3a);
+            color: #fff;
+            border: none;
+            border-radius: 3px;
+            padding: 0.6rem 1.5rem;
+            font-family: inherit;
+            font-size: 0.92rem;
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            transition: opacity 0.2s;
+        }
+        .checkin-btn:hover { opacity: 0.88; }
+        .checkin-btn:disabled { opacity: 0.5; cursor: default; }
+        .checkin-toast {
+            margin-top: 0.55rem;
+            font-size: 0.85rem;
+            font-style: italic;
+            color: var(--seal-standing);
+            min-height: 1.2em;
+        }
+        .checkin-toast.already { color: var(--ink-soft); }
+
         .letter-row {
             display: flex;
             justify-content: space-between;
@@ -367,6 +396,9 @@
                     }
                 }
 
+                // Daily check-in button
+                card.appendChild(buildCheckInSection(patronHandle, apiHost, balance));
+
                 // Inbox link
                 const linkRow = document.createElement('div');
                 linkRow.className = 'link-row';
@@ -383,6 +415,49 @@
                 if (inbox && Array.isArray(inbox.letters) && inbox.letters.length > 0) {
                     mainElement.appendChild(buildLettersCard(inbox.letters, patronHandle));
                 }
+            }
+
+            function buildCheckInSection(patronHandle, apiHostValue, currentBalance) {
+                const wrap = document.createElement('div');
+                wrap.className = 'checkin-row';
+
+                const btn = document.createElement('button');
+                btn.className = 'checkin-btn';
+                btn.textContent = 'Daily Check-In (+1 Shard)';
+
+                const toast = document.createElement('div');
+                toast.className = 'checkin-toast';
+
+                btn.addEventListener('click', function () {
+                    btn.disabled = true;
+                    toast.textContent = 'Checking in…';
+                    toast.className = 'checkin-toast';
+                    const checkInUrl = (apiHostValue || '') + '/v1/patron/checkin?human=' + encodeURIComponent(patronHandle);
+                    fetch(checkInUrl)
+                        .then(function (r) { return r.json(); })
+                        .then(function (data) {
+                            if (data.result === 'checked_in') {
+                                toast.textContent = '+' + data.shards_earned + ' Shard earned! Balance: ' + data.new_balance;
+                                toast.className = 'checkin-toast';
+                                // Refresh balance display in the card without full reload
+                                const balEls = document.querySelectorAll('.stat-value.large');
+                                if (balEls.length > 0) { balEls[0].textContent = String(data.new_balance); }
+                            } else {
+                                toast.textContent = 'Already checked in today — come back tomorrow.';
+                                toast.className = 'checkin-toast already';
+                            }
+                            btn.disabled = false;
+                        })
+                        .catch(function () {
+                            toast.textContent = 'Check-in unavailable right now.';
+                            toast.className = 'checkin-toast already';
+                            btn.disabled = false;
+                        });
+                });
+
+                wrap.appendChild(btn);
+                wrap.appendChild(toast);
+                return wrap;
             }
 
             function buildLettersCard(letters, patronHandle) {
