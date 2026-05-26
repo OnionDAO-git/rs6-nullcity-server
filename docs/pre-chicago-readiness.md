@@ -62,7 +62,7 @@ npm run controller:smoke -- --observe-seconds 120 --min-observed-actions 1 --all
 | ID | Priority | Decision needed | Current default |
 |---|---|---|---|
 | **HD-011** | High | Who populates `controller.yml#patrons[]` with attendee handles? | Event-staff onboarding step ~24h before doors. D3 is wired now, so an empty registry blocks implicit in-world greetings. CLI staffer verbs still work as a fallback. |
-| **HD-015** | High | Will the dashboard surface patron / Shards / letters / standing UI? | Partial — recent letters are visible; Shards, standing, patron balances, and readiness still use this runbook |
+| **HD-015** | High | Will the dashboard surface patron / Shards / letters / standing UI? | Partial — recent letters plus patron Shards/standing/balances are visible; relationship and readiness widgets still use this runbook |
 | **HD-016** | High | Which Shards UX verb ships first beyond `patron:grant`/`patron:offer`? | C/D (balance lookup + tier visibility) |
 | **HD-008** | **CLOSED 2026-05-24 21:30 UTC** | Hero attention calibration | Soul-declared `attentionProfile.floor` clamps spend outcomes. Hans/Aereck/Wise/Duke=5000, Pip/Thrand=3000. **E32 live-verify: zero hero deaths in 50+ min post-restart; 3 heroes resting exactly at floor (clamp firing); 3 above floor (patron offers lifting).** |
 | **HD-018** | Closed | D3 embassy reception greeting wire-in | Closed by Codex `fd575281`: registered patrons who chat in-world while a hero is inside the Lumbridge churchyard embassy trigger `Welcome to the embassy, <handle>.` and a `PatronGateway.witnessAt(...)` record after the say action succeeds. Live firing still needs HD-011 registry contents. |
@@ -98,7 +98,7 @@ Verified end-to-end this sprint (E14-E19):
 - **F19c**: heroes' Brain (rich conversation) succeeds <10% of calls under load; reflex layer carries the experience.
 - **F19d / Codex F6**: `res:thrand` is the quietest hero — separate Codex workstream `7669f384` shipped idle_initiative no-hook pulse.
 - **F9a**: ~~scout-template "Goal: ... Next: ..." tail still identical across consecutive says~~ **CLOSED** by `5fba2c06`: phase-gated suffix — phase 0 shows Goal+Next, phases 1+2 show Goal only, phase 3 shows prefix+position only. Heroes now cycle through 4 distinct speech shapes per interval.
-- **HD-015**: dashboard surfaces recent patron letters only. Staff still reads Shards, standing, patron balances, and readiness data via files/CLI.
+- **HD-015**: dashboard surfaces recent patron letters plus Shards, standing, balances, tier counts, and next-tier gaps. Staff still reads relationship/readiness data via files/CLI.
 - **HD-033 F20a**: Qwen3 thinking-mode returns empty 87.5% of calls (upstream LLM behavior; reflex layer carries experience). F20b uniform ~44s endpoint queueing also upstream. F20c CLOSED by `8eae437f`; F20d (promptTokens missing on empty) is observability polish only.
 - **HD-043**: LoreBus + whisper wire-ins remain post-Chicago integration work. Cross-resident chat won't happen organically at the event.
 - **HD-011**: empty `controller.yml#patrons[]` is the live blocker for implicit embassy greetings. Load real attendee handles with `patron:bulk-register` before doors.
