@@ -3471,7 +3471,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (!position || !positionsEqual(position, target)) {
                 return;
             }
-            const keys = shouldRememberNpcFamilyTargetFailure(candidate, cause) ? targetFailureKeys(candidate) : [targetFailureKey(candidate)];
+            const keys = shouldRememberNpcFamilyTargetFailure(candidate, cause)
+                ? targetFailureKeys(candidate)
+                : [targetFailureKey(candidate)];
             for (const key of keys) {
                 if (key) {
                     cooldowns[key] = this.options.state.tick;
