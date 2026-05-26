@@ -18,6 +18,9 @@ server-config.yaml
 /controller.yml
 
 # local env files
+.env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 

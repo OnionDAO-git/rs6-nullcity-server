@@ -181,6 +181,23 @@ These are pure data/doc additions a non-engineer (or claude/codex/antigravity) c
 - **Add a sample patron** to `controller.yml`'s `patrons:` block so a fresh-clone smoke test exercises the patron-registry path. E.g. `- handle: demo@onion`, `kind: patron_witness`.
 - **Squash-merge `agents/wip` → `nullcity`** per Rule 3 cadence floor. `agents/wip` is now ~155 commits ahead. Subject suggestion: `"Squash: Pillar-3 IRL infrastructure (EVENT-D1..D6 + OPS + handoff)"`. Body: the file table from `docs/weekend-brief-2026-05-25.md`.
 
+## Post-Demo Slice — model intelligence benchmarking
+
+**Goal:** compare resident intelligence across owned inference hardware, OpenRouter, and Anthropic-native models without putting keys in source.
+
+**Substrate already present:** per-resident SOUL `model.endpoint`, `npm run inference:canary`, and `config/controller.model-benchmark.yml`.
+
+**Read first:** `docs/model-benchmarking.md`.
+
+**Safe first step:** source local secrets, then run:
+
+```bash
+set -a; source .env.local; set +a
+npm run inference:canary -- --config config/controller.model-benchmark.yml --all
+```
+
+**Implementation follow-up:** add a compatibility-safe `llm.models` layer so endpoints and model names are separate. Keep old `model.endpoint` working; add new `model.profile`. Anthropic-native requires a provider adapter before direct use of `ANTHROPIC_API_KEY`.
+
 ---
 
 ## How to use this doc
