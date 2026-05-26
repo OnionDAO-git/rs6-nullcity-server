@@ -94,11 +94,11 @@ Write the changelog entry for this release. See `docs/changelog-workflow.md` for
 git log --oneline baf96459..agents/wip | head -60
 ```
 
-Edit `CHANGELOG.md` on the release branch — new section at the top:
+Edit `changelog.md` on the release branch — new section at the top:
 
 ```bash
-$EDITOR CHANGELOG.md
-git add CHANGELOG.md
+$EDITOR changelog.md
+git add changelog.md
 ```
 
 The changelog edit lands in the same squash commit as the code. If you forget and have already pushed, follow up with a small `docs(changelog): backfill entry for <tag>` commit; don't amend.
@@ -119,7 +119,7 @@ Includes:
 Excluded:
 - docs/agent-status.md coordination log
 
-Includes a CHANGELOG.md entry per docs/changelog-workflow.md.
+Includes a changelog.md entry per docs/changelog-workflow.md.
 
 Verification before commit:
 - npm run fin

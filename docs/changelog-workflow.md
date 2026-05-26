@@ -1,6 +1,6 @@
 # Changelog Workflow
 
-`CHANGELOG.md` lives on `nullcity` (the default branch). Every push to `nullcity` adds one section. Sections are short — 3 to 5 bullets, written for a human dev who hasn't been watching this repo. The audience is OnionDAO devs landing here for the first time and asking *"what's new?"*
+`changelog.md` lives on `nullcity` (the default branch). Every push to `nullcity` adds one section. Sections are short — 3 to 5 bullets, written for a human dev who hasn't been watching this repo. The audience is OnionDAO devs landing here for the first time and asking *"what's new?"*
 
 ## Format
 
@@ -32,7 +32,7 @@ Changelog entries are written as part of the curated squash that lands work on `
 
 1. After you've curated the squash range and staged the payload.
 2. Before you run `git commit` for the squash.
-3. Edit `CHANGELOG.md` on the release branch — add a new section at the top with today's date and the tag you plan to push.
+3. Edit `changelog.md` on the release branch — add a new section at the top with today's date and the tag you plan to push.
 4. Draft the bullets by skimming `git log --oneline <previous-release-base>..HEAD` on `agents/wip` and grouping by what a dev would care about. Aim for 3 to 5; cut hard.
 5. Stage the changelog edit alongside the rest of the squash (it should land in the same commit).
 6. Commit + push + tag.
