@@ -290,6 +290,92 @@ describe('hero soul nervous rules', () => {
     });
 });
 
+describe('flagship hero nervous rules', () => {
+    describe('res:mother-anvil', () => {
+        it('emits a combat aside when an attack event lands', () => {
+            const reaction = reactToEvents('res:mother-anvil', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('anvil-combat-aside');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: "Fight if you must. Just don't fall on the anvil.",
+            });
+        });
+
+        it('emits ambient forge pride when nothing else fires', () => {
+            const reaction = reactAmbient('res:mother-anvil');
+            expect(reaction?.rule.id).toBe('anvil-forge-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Another hour, another piece. The city gets stronger — that is the point.',
+                cause: 'nervous:anvil-forge-ambient',
+            });
+        });
+    });
+
+    describe('res:severn-vesta', () => {
+        it('notes combat for the record when an attack event lands', () => {
+            const reaction = reactToEvents('res:severn-vesta', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('severn-record-combat');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'A struggle — noted for the record. The archive sees every bruise.',
+            });
+        });
+
+        it('emits ambient archive invitation when nothing else fires', () => {
+            const reaction = reactAmbient('res:severn-vesta');
+            expect(reaction?.rule.id).toBe('severn-archive-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'The archive grows — one page at a time. Come write your name in it, if you wish.',
+                cause: 'nervous:severn-archive-ambient',
+            });
+        });
+    });
+
+    describe('res:wren-calix', () => {
+        it('formally records a conflict when an attack event lands', () => {
+            const reaction = reactToEvents('res:wren-calix', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('wren-record-conflict');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'For the record: this conflict is noted, dated, and filed with the relevant parties.',
+            });
+        });
+
+        it('emits ambient session notice when nothing else fires', () => {
+            const reaction = reactAmbient('res:wren-calix');
+            expect(reaction?.rule.id).toBe('wren-session-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'The session is ongoing. Anyone may approach to have something formally recorded.',
+                cause: 'nervous:wren-session-ambient',
+            });
+        });
+    });
+
+    describe('res:the-hush', () => {
+        it('poses a cryptic question when an attack event lands', () => {
+            const reaction = reactToEvents('res:the-hush', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('hush-observe-combat');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Violence has its own kind of question. Do you know which one this particular fight is asking?',
+            });
+        });
+
+        it('emits ambient door observation when nothing else fires', () => {
+            const reaction = reactAmbient('res:the-hush');
+            expect(reaction?.rule.id).toBe('hush-door-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Someone nearby left a door unlocked. The interesting doors always find their own answers.',
+                cause: 'nervous:hush-door-ambient',
+            });
+        });
+    });
+});
+
 function reactToEvents(residentName: string, events: Array<Record<string, unknown>>) {
     const { system, state } = buildSystem(residentName);
     return system.react(perceptionWithEvents(state.tick, events));

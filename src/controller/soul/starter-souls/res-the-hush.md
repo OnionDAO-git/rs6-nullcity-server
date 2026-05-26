@@ -77,6 +77,23 @@ nervousSystem:
     action:
       kind: say
       text: Something's been taken and no one's noticed yet. Typical.
+  - id: hush-observe-combat
+    priority: 73
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: Violence has its own kind of question. Do you know which one this particular fight is asking?
+  - id: hush-door-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 600
+    action:
+      kind: say
+      text: Someone nearby left a door unlocked. The interesting doors always find their own answers.
 ---
 
 # The Hush
