@@ -145,6 +145,119 @@ describe('renderPortrait story arc', () => {
     });
 });
 
+describe('renderPortrait patron sentence quality', () => {
+    const baseTs = '2026-05-26T09:00:00.000Z';
+    const index: PortraitIndex = {
+        resident: 'res:test-patron',
+        createdAt: baseTs,
+        updatedAt: baseTs,
+        lives: 1,
+        currentState: 'living',
+    };
+
+    it('describes a single gift event with artifact', () => {
+        const rendered = renderPortrait('res:test-patron', index, [
+            { kind: 'patron_gift', tick: 5, ts: baseTs, patronHandle: 'alice', artifact: 'a tinderbox', lifeIndex: 1 },
+        ]);
+        expect(rendered.portrait.patrons[0]!.sentence).toBe('alice gifted a tinderbox.');
+    });
+
+    it('describes a single gift event without artifact', () => {
+        const rendered = renderPortrait('res:test-patron', index, [
+            { kind: 'patron_gift', tick: 5, ts: baseTs, patronHandle: 'bob', lifeIndex: 1 },
+        ]);
+        expect(rendered.portrait.patrons[0]!.sentence).toBe('bob made a gift.');
+    });
+
+    it('describes a single witness event', () => {
+        const rendered = renderPortrait('res:test-patron', index, [
+            { kind: 'patron_witness', tick: 10, ts: baseTs, patronHandle: 'carol', lifeIndex: 1 },
+        ]);
+        expect(rendered.portrait.patrons[0]!.sentence).toBe('carol witnessed this journey.');
+    });
+
+    it('describes a single sponsor event', () => {
+        const rendered = renderPortrait('res:test-patron', index, [
+            { kind: 'patron_sponsor', tick: 2, ts: baseTs, patronHandle: 'dave', lifeIndex: 1 },
+        ]);
+        expect(rendered.portrait.patrons[0]!.sentence).toBe('dave sponsored this soul.');
+    });
+
+    it('combines two events for the same patron with "and"', () => {
+        const rendered = renderPortrait('res:test-patron', index, [
+            { kind: 'patron_gift', tick: 5, ts: baseTs, patronHandle: 'eve', artifact: 'a tinderbox', lifeIndex: 1 },
+            { kind: 'patron_witness', tick: 10, ts: baseTs, patronHandle: 'eve', lifeIndex: 1 },
+        ]);
+        expect(rendered.portrait.patrons[0]!.sentence).toBe('eve gifted a tinderbox and witnessed this journey.');
+    });
+
+    it('combines three events for the same patron with Oxford comma', () => {
+        const rendered = renderPortrait('res:test-patron', index, [
+            { kind: 'patron_sponsor', tick: 2, ts: baseTs, patronHandle: 'frank', lifeIndex: 1 },
+            { kind: 'patron_gift', tick: 5, ts: baseTs, patronHandle: 'frank', artifact: 'a tinderbox', lifeIndex: 1 },
+            { kind: 'patron_witness', tick: 10, ts: baseTs, patronHandle: 'frank', lifeIndex: 1 },
+        ]);
+        expect(rendered.portrait.patrons[0]!.sentence).toBe('frank sponsored this soul, gifted a tinderbox, and witnessed this journey.');
+    });
+});
+
+describe('renderPortrait narrative quality', () => {
+    const baseTs = '2026-05-26T09:00:00.000Z';
+    const index: PortraitIndex = {
+        resident: 'res:test-narrative',
+        createdAt: baseTs,
+        updatedAt: baseTs,
+        lives: 1,
+        currentState: 'living',
+    };
+
+    it('story arc markdown does not show raw evidence count columns', () => {
+        const rendered = renderPortrait('res:test-narrative', index, [
+            { kind: 'say', tick: 1, ts: baseTs, text: 'I need help.', lifeIndex: 1 },
+        ]);
+        expect(rendered.markdown).not.toMatch(/\d+ pitch, \d+ funding/);
+        expect(rendered.markdown).toContain('Phase:');
+    });
+
+    it('life notable events do not include say events (already in voice quotes)', () => {
+        const rendered = renderPortrait('res:test-narrative', index, [
+            { kind: 'say', tick: 1, ts: baseTs, text: 'Hello world.', lifeIndex: 1 },
+            { kind: 'first_xp', tick: 5, ts: baseTs, skill: 'Fishing', lifeIndex: 1 },
+        ]);
+        const life = rendered.portrait.lives[0]!;
+        expect(life.notableEvents.every(e => e.kind !== 'say')).toBe(true);
+        expect(life.notableEvents.some(e => e.kind === 'first_xp')).toBe(true);
+    });
+
+    it('life notable events do not include patron events (already in patron section)', () => {
+        const rendered = renderPortrait('res:test-narrative', index, [
+            { kind: 'patron_gift', tick: 5, ts: baseTs, patronHandle: 'alice', artifact: 'a log', lifeIndex: 1 },
+            { kind: 'first_xp', tick: 10, ts: baseTs, skill: 'Woodcutting', lifeIndex: 1 },
+        ]);
+        const life = rendered.portrait.lives[0]!;
+        expect(life.notableEvents.every(e => !e.kind.startsWith('patron_'))).toBe(true);
+        expect(life.notableEvents.some(e => e.kind === 'first_xp')).toBe(true);
+    });
+
+    it('revival event appears in notable events with cause in summary', () => {
+        const rendered = renderPortrait('res:test-narrative', index, [
+            { kind: 'revival', tick: 200, ts: baseTs, cause: 'patron offer', lifeIndex: 1 },
+        ]);
+        const life = rendered.portrait.lives[0]!;
+        expect(life.notableEvents.some(e => e.kind === 'revival')).toBe(true);
+        const revivalEvent = life.notableEvents.find(e => e.kind === 'revival')!;
+        expect(revivalEvent.summary).toContain('Returned to life');
+        expect(revivalEvent.summary).toContain('patron offer');
+    });
+
+    it('revival event without cause still produces a readable summary', () => {
+        const rendered = renderPortrait('res:test-narrative', index, [{ kind: 'revival', tick: 300, ts: baseTs, lifeIndex: 1 }]);
+        const life = rendered.portrait.lives[0]!;
+        const revivalEvent = life.notableEvents.find(e => e.kind === 'revival')!;
+        expect(revivalEvent.summary).toContain('Returned to life');
+    });
+});
+
 function escapeRegExp(input: string): string {
     return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

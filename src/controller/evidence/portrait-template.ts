@@ -305,18 +305,11 @@ function renderLife(life: PortraitLife): string[] {
 }
 
 function storyArcLine(storyArc: StoryArcSummary): string {
-    const counts = [
-        `${storyArc.evidence.pitches} pitch`,
-        `${storyArc.evidence.fundingEvents} funding`,
-        `${storyArc.evidence.progressEvents} progress`,
-        `${storyArc.evidence.resolutionEvents} resolution`,
-        `${storyArc.evidence.letterEvents} letter`,
-    ].join(', ');
     const latest =
         storyArc.latestEventKind && storyArc.latestEventTick !== undefined
-            ? ` Latest evidence: ${storyArc.latestEventKind} at tick ${storyArc.latestEventTick}.`
+            ? ` Latest: ${storyArc.latestEventKind} at tick ${storyArc.latestEventTick}.`
             : '';
-    return `Phase: ${storyArc.phase}. ${storyArc.summary}${latest} Evidence: ${counts}.`;
+    return `Phase: ${storyArc.phase}. ${storyArc.summary}${latest}`;
 }
 
 function lifeEpithet(events: Array<Record<string, unknown>>, deathCause?: string): string {
@@ -358,14 +351,22 @@ function eventSummary(event: Record<string, unknown>): string {
     if (event.kind === 'wants_unfulfilled') {
         return `Still wanted "${stringField(event, 'want') || ''}"`;
     }
+    if (event.kind === 'revival') {
+        const cause = stringField(event, 'cause');
+        return cause
+            ? `Returned to life (${cause}) at tick ${numberField(event, 'tick')}`
+            : `Returned to life at tick ${numberField(event, 'tick')}`;
+    }
     if (event.kind === 'say') {
         return `Said "${stringField(event, 'text') || ''}"`;
     }
     return `${stringField(event, 'kind') || 'event'} at tick ${numberField(event, 'tick')}`;
 }
 
+const NON_NOTABLE_KINDS = new Set(['legacy_event', 'say', 'patron_gift', 'patron_witness', 'patron_sponsor', 'patron_ask']);
+
 function isNotable(event: Record<string, unknown>): boolean {
-    return event.kind !== 'legacy_event';
+    return !NON_NOTABLE_KINDS.has(event.kind as string);
 }
 
 function lastQuoteBefore(events: Array<Record<string, unknown>>, tick: number): string | undefined {
@@ -392,13 +393,19 @@ function quoteTag(text: string, index: number, lastWords: boolean): PortraitQuot
 }
 
 function patronSentence(handle: string, events: PortraitPatron['events']): string {
-    const first = events[0];
-    if (!first) {
-        return `${handle} was recorded as a patron.`;
-    }
-    return first.artifact
-        ? `${handle} recorded ${first.kind.replace('patron_', '')} with ${first.artifact}.`
-        : `${handle} recorded ${first.kind.replace('patron_', '')}.`;
+    if (events.length === 0) return `${handle} was recorded as a patron.`;
+    const parts = events.map(event => {
+        if (event.kind === 'patron_gift') return event.artifact ? `gifted ${event.artifact}` : 'made a gift';
+        if (event.kind === 'patron_witness') return 'witnessed this journey';
+        return 'sponsored this soul';
+    });
+    const summary =
+        parts.length === 1
+            ? parts[0]!
+            : parts.length === 2
+              ? `${parts[0]} and ${parts[1]}`
+              : `${parts.slice(0, -1).join(', ')}, and ${parts.at(-1)}`;
+    return `${handle} ${summary}.`;
 }
 
 function relationshipLine(relationship: PortraitRelationship): string {
