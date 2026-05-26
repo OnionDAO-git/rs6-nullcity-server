@@ -3003,30 +3003,50 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private lowHealthHoldPositionAction(
         perception: HybridPerception,
     ): { actions: AgentAction[]; cause: string; nooped: boolean } | undefined {
-        const goal = this.activeGoal();
         if (!isLowHealth(perception) || firstFoodSlot(perception.resident?.inventory || []) !== undefined) {
             return undefined;
         }
 
         const cognition = this.cognition();
-        cognition.lastBodyTick = this.options.state.tick;
+        const tick = this.options.state.tick;
+        cognition.lastBodyTick = tick;
+
+        // Distinguish stranded (at waypoint, no food path) from generic hold.
+        const here = perception.resident?.position;
+        const recoveryWaypoint = here ? nearestLowHealthRecoveryWaypoint(here) : undefined;
+        const atWaypoint =
+            here !== undefined && recoveryWaypoint !== undefined && distance(here, recoveryWaypoint) <= LOW_HEALTH_RECOVERY_WAYPOINT_RANGE;
+        const cause = atWaypoint ? 'low_health_stranded' : 'low_health_hold_position';
+
+        const interval = this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;
         if (
             !shouldEmitPresenceBeacon({
-                tick: this.options.state.tick,
+                tick,
                 hasActiveGoal: this.activeGoal() !== undefined,
                 lastBeaconTick: cognition.lastPresenceBeaconTick,
                 lastGoalShareTick: cognition.lastGoalShareTick,
-                interval: this.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS,
+                interval,
             })
         ) {
-            return { actions: [], cause: 'low_health_hold_position', nooped: true };
+            return { actions: [], cause, nooped: true };
         }
 
-        cognition.lastPresenceBeaconTick = this.options.state.tick;
-        cognition.lastGoalShareTick = this.options.state.tick;
+        // Consume the presence beacon slot to prevent unrelated goal-sharing while stranded.
+        cognition.lastPresenceBeaconTick = tick;
+        cognition.lastGoalShareTick = tick;
+
+        // Extra dedup: "I am hurt at X,Y" speech fires at most once per 10 intervals (~10 min
+        // at default cadence). Without this, the same text repeats on every beacon fire (~2 min).
+        const speechDedup = interval * 10;
+        const lastSpeech = cognition.lastLowHealthSpeechTick;
+        if (lastSpeech !== undefined && tick - lastSpeech < speechDedup) {
+            return { actions: [], cause, nooped: true };
+        }
+
+        cognition.lastLowHealthSpeechTick = tick;
         return {
             actions: [{ kind: 'say', text: this.lowHealthHoldSpeech(perception) }],
-            cause: 'low_health_hold_position',
+            cause,
             nooped: false,
         };
     }

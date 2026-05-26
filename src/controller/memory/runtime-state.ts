@@ -53,6 +53,7 @@ export interface CognitiveState {
     lastDirectChatKey?: string;
     manualPauseSinceTick?: number;
     lastPresenceBeaconTick?: number;
+    lastLowHealthSpeechTick?: number;
     routineLoopKey?: string;
     routineLoopCount?: number;
     lastRoutineLoopBreakTick?: number;

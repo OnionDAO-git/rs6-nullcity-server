@@ -4419,7 +4419,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([]);
-        expect(result.cause).toBe('low_health_hold_position');
+        expect(result.cause).toBe('low_health_stranded');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -6667,6 +6667,130 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'say', text: 'I am hurt at 3200,3200. Holding near safety until I find food or heal.' }]);
         expect(result.cause).toBe('low_health_hold_position');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('uses low_health_stranded cause and speaks once when at the recovery waypoint with no food', async () => {
+        // Anchor at 3254,3230 is Chebyshev-32 from waypoint 3222,3218 — exceeds the 28-tile combat-area
+        // threshold, so lowHealthRecoveryAction yields to lowHealthHoldPositionAction.
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agentSoul = soul();
+        const behavior = agentSoul.frontmatter.behavior;
+        if (!behavior || behavior.kind !== 'hybrid-agent') {
+            throw new Error('Expected hybrid-agent test soul');
+        }
+        agentSoul.frontmatter.behavior = { ...behavior, visibilityAnchor: { x: 3254, y: 3230, level: 0 } };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3222, 3218),
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.cause).toBe('low_health_stranded');
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am hurt at 3222,3218. Holding near safety until I find food or heal.' }]);
+        expect(result.nooped).toBe(false);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates low_health_stranded speech across beacon intervals', async () => {
+        // Beacon fires (lastPresenceBeaconTick gap >= interval) but lastLowHealthSpeechTick is recent.
+        // Same custom anchor as the "speaks once" test to ensure anchorLooksLikeCombatArea is true.
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+            lastLowHealthSpeechTick: 110,
+        };
+        const agentSoul = soul();
+        const behavior = agentSoul.frontmatter.behavior;
+        if (!behavior || behavior.kind !== 'hybrid-agent') {
+            throw new Error('Expected hybrid-agent test soul');
+        }
+        agentSoul.frontmatter.behavior = { ...behavior, visibilityAnchor: { x: 3254, y: 3230, level: 0 } };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3222, 3218),
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        // Beacon consumed but no speech (dedup window = interval * 10 = 200 ticks, gap = 11 < 200).
+        expect(result.cause).toBe('low_health_stranded');
+        expect(result.actions).toEqual([]);
+        expect(result.nooped).toBe(true);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('re-emits low_health_hold_position speech after the dedup window expires', async () => {
+        // lastLowHealthSpeechTick = 0, speechDedup = 200; tick 201 clears the dedup.
+        const tree = { objectId: 1278, position: { x: 3201, y: 3200, level: 0 }, orientation: 1 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'woodcutting-practice',
+                description: 'Practice woodcutting on ordinary trees and gather logs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 180,
+            lastBodyTick: 180,
+            lastPresenceBeaconTick: 0,
+            lastLowHealthSpeechTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 201,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                    inCombat: false,
+                },
+                objects: [tree],
+            }),
+        );
+
+        // Dedup window expired (201 - 0 = 201 >= 200); speech fires again.
+        expect(result.cause).toBe('low_health_hold_position');
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am hurt at 3200,3200. Holding near safety until I find food or heal.' }]);
+        expect(result.nooped).toBe(false);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
