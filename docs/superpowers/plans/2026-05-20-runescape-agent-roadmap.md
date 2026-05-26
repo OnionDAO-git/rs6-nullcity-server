@@ -104,7 +104,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: existing hybrid tests still pass; new workflow tests verify prerequisites and next actions.
   - *Completed: Extracted, unit tested, and integrated under Workstream R1.*
 
-- `[>]` **B3: Extract deterministic Body routines.**
+- `[~]` **B3: Extract deterministic Body routines.**
   - Files: `src/controller/spark/runescape-body-routines.ts`, `src/controller/spark/runescape-body-routines.test.ts`
   - Deliverable: "make fire", "walk to interaction range", "use tool on target", "eat food", and "recover from stuck" routines are separate from inference prompts.
   - Verification: tests simulate perception and assert typed `AgentAction` sequences.
@@ -119,6 +119,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Repair 2026-05-25 on `agents/wip`: dropped burnt starter fish is no longer considered useful ground loot or emergency food, preventing beacons like "Next: pick up burnt shrimp" immediately after the resident intentionally discarded it.
   - Repair 2026-05-25 on `agents/wip`: starter-fishing beacons now say to cook carried raw fish before advertising another fishing click, so observers can tell when the resident is in the cooking half of the loop.
   - Repair 2026-05-25 on `agents/wip`: river-side starter anglers with raw fish now route through the known Lumbridge Castle south entrance before chasing the kitchen range, avoiding unrelated river doors that previously trapped the cooking half of the loop.
+  - Hardened 2026-05-26 on `agents/wip`: free exploration now ignores NPCs, landmarks, tree stands, openables, and ground items on other floors, so level-blind distance math cannot send Lumbridge Castle residents after downstairs targets. Verified with red/green Body tests, hybrid exploration subset, `npm run fin` (2054/2054), post-restart smoke, 180s targeted QA smoke, and 60s whole-city smoke.
 
 - `[x]` **B4: Extract Brain goal planner.**
   - Files: `src/controller/spark/runescape-brain-planner.ts`, `src/controller/spark/runescape-brain-planner.test.ts`
