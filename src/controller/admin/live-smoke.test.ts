@@ -490,6 +490,37 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toContain('observed_only_timeouts');
     });
 
+    it('warns when timed observation sees actions but no successful result', async () => {
+        writeResidentState('res:agent', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [
+            { tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+            { tick: 901, kind: 'say', text: 'Older proof should not hide a bad live window.', sessionId: 'same-session' },
+        ]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:agent'],
+            windowTicks: 300,
+            observeMs: 50,
+            allowRecentVisible: true,
+            sleep: async () => {
+                writeResidentState('res:agent', { tick: 1020, lastMeaningfulProgressAt: 999 });
+                writeTrajectory('res:agent', [
+                    { tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                    { tick: 901, kind: 'say', text: 'Older proof should not hide a bad live window.', sessionId: 'same-session' },
+                    { tick: 1001, kind: 'action', actionKind: 'move_to', sessionId: 'same-session' },
+                    { tick: 1002, kind: 'action_result', status: 'timeout', reason: 'timeout', sessionId: 'same-session' },
+                    { tick: 1010, kind: 'action', actionKind: 'move_to', sessionId: 'same-session' },
+                    { tick: 1011, kind: 'action_result', status: 'timeout', reason: 'timeout', sessionId: 'same-session' },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.observed).toMatchObject({ actions: 2, results: 2, successes: 0, timeouts: 2, says: 0, tickDelta: 20 });
+        expect(summary.issues).toContain('observed_actions_not_succeeding');
+    });
+
     it.each(['hook_noop', 'budget_exhausted:pause'])(
         'warns when timed observation is dominated by inert %s decisions despite sparse visible events',
         async cause => {

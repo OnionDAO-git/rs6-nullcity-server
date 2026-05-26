@@ -279,6 +279,9 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
         if (observed.timeouts > 0 && observed.successes === 0 && observed.actions + observed.says === 0) {
             summary.issues.push('observed_only_timeouts');
         }
+        if (observed.actions > 0 && observed.results > 0 && observed.successes === 0 && observed.timeouts + observed.failures > 0) {
+            summary.issues.push('observed_actions_not_succeeding');
+        }
         if (
             observed.dominantInertDecision &&
             observed.inertDecisions >= MIN_OBSERVED_INERT_DECISIONS &&
