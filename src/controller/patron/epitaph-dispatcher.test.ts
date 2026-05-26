@@ -38,7 +38,7 @@ describe('buildEpitaphDispatchRequests (EVENT-D4)', () => {
             expect(letters[0].body).toMatch(/res:fern/);
             expect(letters[0].body).toMatch(/goblin/);
             expect(letters[0].body).toMatch(/firemaking/);
-            expect(letters[0].body).toMatch(/1240/);
+            expect(letters[0].body).toMatch(/12 minutes/); // 1240 ticks ≈ 12 minutes
         });
 
         it('threads dispatchedAt from the deceasedAt timestamp (not "now")', () => {

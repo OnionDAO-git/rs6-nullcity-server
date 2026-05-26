@@ -77,6 +77,23 @@ nervousSystem:
     action:
       kind: say
       text: The candles are burning low — and the record grows thin without a witness.
+  - id: severn-record-combat
+    priority: 73
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: A struggle — noted for the record. The archive sees every bruise.
+  - id: severn-archive-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 600
+    action:
+      kind: say
+      text: The archive grows — one page at a time. Come write your name in it, if you wish.
 ---
 
 # Archivist Severn

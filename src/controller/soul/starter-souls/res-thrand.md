@@ -81,6 +81,23 @@ nervousSystem:
     action:
       kind: say
       text: Small steps. The river will still be there.
+  - id: thrand-attack-assess
+    priority: 70
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 200
+    action:
+      kind: say
+      text: Combat nearby. Assess the margins — survive the exchange before thinking about the loot.
+  - id: thrand-progress-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 720
+    action:
+      kind: say
+      text: Still here as Thrand. The tick marks say today was productive.
 ---
 
 # Thrand

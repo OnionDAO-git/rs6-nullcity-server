@@ -77,6 +77,23 @@ nervousSystem:
     action:
       kind: say
       text: The quorum is thin today. Without witnesses, nothing can be ratified.
+  - id: wren-record-conflict
+    priority: 73
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: "For the record: this conflict is noted, dated, and filed with the relevant parties."
+  - id: wren-session-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 600
+    action:
+      kind: say
+      text: The session is ongoing. Anyone may approach to have something formally recorded.
 ---
 
 # First Witness Wren

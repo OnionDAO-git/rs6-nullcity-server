@@ -63,6 +63,16 @@ describe('hero soul nervous rules', () => {
             expect(reaction?.action).toMatchObject({ kind: 'say', text: "That's one more name to remember." });
         });
 
+        it('mutters an ambient post-minder when nothing else fires', () => {
+            const reaction = reactAmbient('res:hans');
+            expect(reaction?.rule.id).toBe('hans-post-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: "I've been at this post longer than I can count. The courtyard still surprises me.",
+                cause: 'nervous:hans-post-ambient',
+            });
+        });
+
         it('honours the cooldown on the chat greeter', () => {
             const { system, state } = buildSystem('res:hans');
             const first = system.react(perceptionWithEvents(42, [{ kind: 'chat', text: 'hi', from: { name: 'visitor' } }]));
@@ -98,6 +108,21 @@ describe('hero soul nervous rules', () => {
             expect(reaction?.rule.id).toBe('aereck-quiet-vigil-low-attention');
             expect(reaction?.action).toMatchObject({ kind: 'say', text: 'A breath of incense, and the quiet between prayers.' });
         });
+
+        it('censures violence on hallowed ground when an attack event lands', () => {
+            const reaction = reactToEvents('res:father-aereck', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('aereck-attack-censure');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Not here. This is hallowed ground — take your quarrel to the fields.',
+            });
+        });
+
+        it('emits ambient chapel invitation when nothing else fires', () => {
+            const reaction = reactAmbient('res:father-aereck');
+            expect(reaction?.rule.id).toBe('aereck-chapel-ambient');
+            expect(reaction?.action).toMatchObject({ kind: 'say', text: 'The altar is always lit. Come when you are ready.' });
+        });
     });
 
     describe('res:wise-old-man', () => {
@@ -123,6 +148,18 @@ describe('hero soul nervous rules', () => {
             const reaction = reactQuiet('res:wise-old-man', { attention: 8500 });
             expect(reaction?.rule.id).toBe('wise-quiet-low-attention');
             expect(reaction?.action).toMatchObject({ kind: 'say', text: "A bench, a cup of tea, and a quiet morning — that's plenty." });
+        });
+
+        it('stoically notes a hit', () => {
+            const reaction = reactToEvents('res:wise-old-man', [{ kind: 'hit' }]);
+            expect(reaction?.rule.id).toBe('wise-hit-stoic');
+            expect(reaction?.action).toMatchObject({ kind: 'say', text: "Hmph. That stings. Though I've felt worse, I assure you." });
+        });
+
+        it('emits ambient fire praise when nothing else fires', () => {
+            const reaction = reactAmbient('res:wise-old-man');
+            expect(reaction?.rule.id).toBe('wise-fire-ambient');
+            expect(reaction?.action).toMatchObject({ kind: 'say', text: 'A well-laid fire at dusk — there is nothing more civilised.' });
         });
     });
 
@@ -150,6 +187,21 @@ describe('hero soul nervous rules', () => {
             expect(reaction?.rule.id).toBe('duke-castle-aside-low-attention');
             expect(reaction?.action).toMatchObject({ kind: 'say', text: 'The kitchen smells are early today — Cook is busy below.' });
         });
+
+        it('rebukes a hit within the duchy walls', () => {
+            const reaction = reactToEvents('res:duke-horacio', [{ kind: 'hit' }]);
+            expect(reaction?.rule.id).toBe('duke-hit-rebuke');
+            expect(reaction?.action).toMatchObject({ kind: 'say', text: "This is unacceptable conduct within the duchy's walls." });
+        });
+
+        it('emits ambient duchy pride when nothing else fires', () => {
+            const reaction = reactAmbient('res:duke-horacio');
+            expect(reaction?.rule.id).toBe('duke-duchy-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'The duchy stands, friend. Whatever else changes out there, this castle holds.',
+            });
+        });
     });
 
     describe('res:pip', () => {
@@ -175,6 +227,24 @@ describe('hero soul nervous rules', () => {
             const reaction = reactQuiet('res:pip', { attention: 3000 });
             expect(reaction?.rule.id).toBe('pip-ask-for-guidance');
             expect(reaction?.action).toMatchObject({ kind: 'say', text: "I think I'm a little lost — does anyone have a moment?" });
+        });
+
+        it('worries aloud when an attack event lands nearby', () => {
+            const reaction = reactToEvents('res:pip', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('pip-attack-worry');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Oh! Is everyone alright over there? Maybe we should all take a step back?',
+            });
+        });
+
+        it('emits ambient guide mapping when nothing else fires', () => {
+            const reaction = reactAmbient('res:pip');
+            expect(reaction?.rule.id).toBe('pip-guide-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: "I've been mapping safe routes around Lumbridge — there are more than you'd think!",
+            });
         });
     });
 
@@ -202,6 +272,107 @@ describe('hero soul nervous rules', () => {
             expect(reaction?.rule.id).toBe('thrand-routine-mutter-low-attention');
             expect(reaction?.action).toMatchObject({ kind: 'say', text: 'Small steps. The river will still be there.' });
         });
+
+        it('assesses combat margins when an attack event lands', () => {
+            const reaction = reactToEvents('res:thrand', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('thrand-attack-assess');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Combat nearby. Assess the margins — survive the exchange before thinking about the loot.',
+            });
+        });
+
+        it('emits ambient progress note when nothing else fires', () => {
+            const reaction = reactAmbient('res:thrand');
+            expect(reaction?.rule.id).toBe('thrand-progress-ambient');
+            expect(reaction?.action).toMatchObject({ kind: 'say', text: 'Still here as Thrand. The tick marks say today was productive.' });
+        });
+    });
+});
+
+describe('flagship hero nervous rules', () => {
+    describe('res:mother-anvil', () => {
+        it('emits a combat aside when an attack event lands', () => {
+            const reaction = reactToEvents('res:mother-anvil', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('anvil-combat-aside');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: "Fight if you must. Just don't fall on the anvil.",
+            });
+        });
+
+        it('emits ambient forge pride when nothing else fires', () => {
+            const reaction = reactAmbient('res:mother-anvil');
+            expect(reaction?.rule.id).toBe('anvil-forge-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Another hour, another piece. The city gets stronger — that is the point.',
+                cause: 'nervous:anvil-forge-ambient',
+            });
+        });
+    });
+
+    describe('res:severn-vesta', () => {
+        it('notes combat for the record when an attack event lands', () => {
+            const reaction = reactToEvents('res:severn-vesta', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('severn-record-combat');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'A struggle — noted for the record. The archive sees every bruise.',
+            });
+        });
+
+        it('emits ambient archive invitation when nothing else fires', () => {
+            const reaction = reactAmbient('res:severn-vesta');
+            expect(reaction?.rule.id).toBe('severn-archive-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'The archive grows — one page at a time. Come write your name in it, if you wish.',
+                cause: 'nervous:severn-archive-ambient',
+            });
+        });
+    });
+
+    describe('res:wren-calix', () => {
+        it('formally records a conflict when an attack event lands', () => {
+            const reaction = reactToEvents('res:wren-calix', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('wren-record-conflict');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'For the record: this conflict is noted, dated, and filed with the relevant parties.',
+            });
+        });
+
+        it('emits ambient session notice when nothing else fires', () => {
+            const reaction = reactAmbient('res:wren-calix');
+            expect(reaction?.rule.id).toBe('wren-session-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'The session is ongoing. Anyone may approach to have something formally recorded.',
+                cause: 'nervous:wren-session-ambient',
+            });
+        });
+    });
+
+    describe('res:the-hush', () => {
+        it('poses a cryptic question when an attack event lands', () => {
+            const reaction = reactToEvents('res:the-hush', [{ kind: 'attack' }]);
+            expect(reaction?.rule.id).toBe('hush-observe-combat');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Violence has its own kind of question. Do you know which one this particular fight is asking?',
+            });
+        });
+
+        it('emits ambient door observation when nothing else fires', () => {
+            const reaction = reactAmbient('res:the-hush');
+            expect(reaction?.rule.id).toBe('hush-door-ambient');
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                text: 'Someone nearby left a door unlocked. The interesting doors always find their own answers.',
+                cause: 'nervous:hush-door-ambient',
+            });
+        });
     });
 });
 
@@ -213,6 +384,11 @@ function reactToEvents(residentName: string, events: Array<Record<string, unknow
 function reactQuiet(residentName: string, overrides: { attention: number }) {
     const { system, state } = buildSystem(residentName);
     state.attention = overrides.attention;
+    return system.react(perceptionWithEvents(state.tick, []));
+}
+
+function reactAmbient(residentName: string) {
+    const { system, state } = buildSystem(residentName);
     return system.react(perceptionWithEvents(state.tick, []));
 }
 

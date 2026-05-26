@@ -77,6 +77,23 @@ nervousSystem:
     action:
       kind: say
       text: A breath of incense, and the quiet between prayers.
+  - id: aereck-attack-censure
+    priority: 73
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: Not here. This is hallowed ground — take your quarrel to the fields.
+  - id: aereck-chapel-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 600
+    action:
+      kind: say
+      text: The altar is always lit. Come when you are ready.
 ---
 
 # Father Aereck

@@ -7,7 +7,7 @@ import type { LettersStore } from '../patron/letters-store';
 import { PatronStore } from '../patron/patron-store';
 import { CURRENCY_NAME } from '../patron/currency-ledger';
 import { STANDING_TIERS } from '../patron/standing-ledger';
-import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
+import { buildWallSnapshot, readGraveyardEntries, readLibraryEntries, redactWallSnapshot } from './wall-snapshot';
 
 /**
  * Read-only HTTP server exposing a human's letter inbox as JSON
@@ -33,6 +33,9 @@ export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 export const DEFAULT_HEALTH_PATH = '/v1/health';
 export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
 export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
+export const DEFAULT_PATRON_CHECKIN_PATH = '/v1/patron/checkin';
+export const DEFAULT_GRAVEYARD_PATH = '/v1/graveyard';
+export const DEFAULT_LIBRARY_PATH = '/v1/library';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -100,18 +103,33 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
     const healthRoutePath = normalizePath(options.healthPath || DEFAULT_HEALTH_PATH);
     const patronBalancePath = normalizePath(DEFAULT_PATRON_BALANCE_PATH);
     const patronStandingPath = normalizePath(DEFAULT_PATRON_STANDING_PATH);
+    const patronCheckInPath = normalizePath(DEFAULT_PATRON_CHECKIN_PATH);
     const bindHost = options.host || '127.0.0.1';
 
+    const graveyardRoutePath = normalizePath(DEFAULT_GRAVEYARD_PATH);
+
+    const libraryRoutePath = normalizePath(DEFAULT_LIBRARY_PATH);
+
     const server = http.createServer((request, response) => {
-        handle(request, response, options, routePath, wallRoutePath, healthRoutePath, patronBalancePath, patronStandingPath).catch(
-            error => {
-                if (!response.headersSent) {
-                    writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
-                } else if (!response.writableEnded) {
-                    response.end();
-                }
-            },
-        );
+        handle(
+            request,
+            response,
+            options,
+            routePath,
+            wallRoutePath,
+            healthRoutePath,
+            patronBalancePath,
+            patronStandingPath,
+            patronCheckInPath,
+            graveyardRoutePath,
+            libraryRoutePath,
+        ).catch(error => {
+            if (!response.headersSent) {
+                writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
+            } else if (!response.writableEnded) {
+                response.end();
+            }
+        });
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -144,6 +162,9 @@ async function handle(
     healthRoutePath: string,
     patronBalancePath: string,
     patronStandingPath: string,
+    patronCheckInPath: string,
+    graveyardRoutePath: string,
+    libraryRoutePath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const isInboxRoute = url.pathname === routePath;
@@ -151,9 +172,22 @@ async function handle(
     const isHealthRoute = url.pathname === healthRoutePath && options.health !== undefined;
     const isPatronBalanceRoute = url.pathname === patronBalancePath && options.patronMemoryRoot !== undefined;
     const isPatronStandingRoute = url.pathname === patronStandingPath && options.patronMemoryRoot !== undefined;
+    const isPatronCheckInRoute = url.pathname === patronCheckInPath && options.patronMemoryRoot !== undefined;
+    const isGraveyardRoute = url.pathname === graveyardRoutePath && options.lettersRoot !== undefined;
+    const isLibraryRoute = url.pathname === libraryRoutePath && options.lettersRoot !== undefined;
     const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
-    if (!isInboxRoute && !isWallRoute && !isHealthRoute && !isPatronBalanceRoute && !isPatronStandingRoute && !staticPagePath) {
+    if (
+        !isInboxRoute &&
+        !isWallRoute &&
+        !isHealthRoute &&
+        !isPatronBalanceRoute &&
+        !isPatronStandingRoute &&
+        !isPatronCheckInRoute &&
+        !isGraveyardRoute &&
+        !isLibraryRoute &&
+        !staticPagePath
+    ) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
@@ -198,13 +232,34 @@ async function handle(
         return;
     }
 
+    if (isGraveyardRoute) {
+        const deceased = readGraveyardEntries(options.lettersRoot as string, {
+            residentIds: options.residentIds,
+            soulsDir: options.soulsDir,
+        });
+        writeJson(response, 200, { deceased, total: deceased.length, asOf: new Date().toISOString() });
+        return;
+    }
+
+    if (isLibraryRoute) {
+        // Public surface — hide QA fixtures and benchmark synthetics.
+        const residents = readLibraryEntries(options.lettersRoot as string, { excludeSynthetic: true });
+        writeJson(response, 200, { residents, total: residents.length, asOf: new Date().toISOString() });
+        return;
+    }
+
     if (isWallRoute) {
         const now = options.now ? options.now() : new Date();
         // lettersRoot guaranteed non-undefined here by the isWallRoute check above.
+        // Public ticker — collapse duplicate-subject letters (multi-witness epitaphs
+        // would otherwise stack 5× on the wall) and hide QA/benchmark residents from
+        // the roster panel. Both filters are no-ops when there's nothing to filter.
         const snapshot = buildWallSnapshot(options.lettersRoot as string, {
             now,
             residentIds: options.residentIds,
             soulsDir: options.soulsDir,
+            excludeSynthetic: true,
+            dedupeBySubject: true,
         });
         // HD-013: optionally pass the snapshot through the public-display
         // redactor before serving it on the wall route.
@@ -235,15 +290,41 @@ async function handle(
             const userFacingTier = tier === 'stranger' ? null : tier;
             const tierIdx = STANDING_TIERS.findIndex(t => t.name === tier);
             const nextTierObj = STANDING_TIERS[tierIdx + 1];
+            const tierMin = tierIdx >= 0 ? STANDING_TIERS[tierIdx].minPoints : 0;
             writeJson(response, 200, {
                 human,
                 faction,
                 points,
                 tier: userFacingTier,
+                tierMin,
                 nextTier: nextTierObj ? nextTierObj.name : null,
                 pointsToNext: nextTierObj ? nextTierObj.minPoints - points : null,
             });
         }
+        return;
+    }
+
+    if (isPatronCheckInRoute) {
+        const human = url.searchParams.get('human');
+        if (!human || human.trim().length === 0) {
+            writeJson(response, 400, { error: 'Query parameter `human` is required' });
+            return;
+        }
+        // patronMemoryRoot guaranteed non-undefined by the route guard above.
+        const store = new PatronStore(options.patronMemoryRoot as string);
+        const ledger = store.loadCurrency();
+        const tracker = store.loadCheckIn(ledger);
+        const checkInResult = tracker.checkIn(human);
+        if (checkInResult.credited) {
+            store.saveCurrency(ledger);
+            store.saveCheckIn(tracker);
+        }
+        writeJson(response, 200, {
+            result: checkInResult.credited ? 'checked_in' : 'already_checked_in',
+            shards_earned: checkInResult.shards,
+            new_balance: ledger.balance(human),
+            currency: CURRENCY_NAME,
+        });
         return;
     }
 
@@ -285,10 +366,21 @@ function resolveStaticPagePath(requestPath: string, staticRoot?: string): string
     const normalizedPath = normalizePath(requestPath).replace(/\/+$/, '');
     const pagePath = normalizedPath.endsWith('/index.html') ? normalizedPath.slice(0, -'/index.html'.length) : normalizedPath;
     switch (pagePath) {
+        case '':
+            // `/` → landing page that links to the five public surfaces. Without it
+            // a cold visitor (or a demo Dev typing the bare URL) gets a 404 and
+            // has to know each route by hand.
+            return path.join(publicRoot, 'index.html');
         case '/wall':
             return path.join(publicRoot, 'wall', 'index.html');
         case '/inbox':
             return path.join(publicRoot, 'inbox', 'index.html');
+        case '/patron':
+            return path.join(publicRoot, 'patron', 'index.html');
+        case '/graveyard':
+            return path.join(publicRoot, 'graveyard', 'index.html');
+        case '/library':
+            return path.join(publicRoot, 'library', 'index.html');
         default:
             return undefined;
     }

@@ -9,7 +9,38 @@ import {
     produceEpitaphLetter,
     produceStandingTierLetter,
     produceBroadcastLetter,
+    ticksToHumanTime,
 } from './letters-producer';
+
+describe('ticksToHumanTime', () => {
+    it('returns "a few minutes" for very short lives (< 200 ticks)', () => {
+        expect(ticksToHumanTime(0)).toBe('a few minutes');
+        expect(ticksToHumanTime(100)).toBe('a few minutes');
+        expect(ticksToHumanTime(199)).toBe('a few minutes');
+    });
+
+    it('returns minute count for sub-hour lives', () => {
+        expect(ticksToHumanTime(1240)).toBe('12 minutes'); // 12.4 min
+        expect(ticksToHumanTime(3000)).toBe('30 minutes');
+    });
+
+    it('returns "about an hour" for single-hour lives', () => {
+        expect(ticksToHumanTime(6000)).toBe('about an hour');
+    });
+
+    it('returns hour count for multi-hour lives under a day', () => {
+        expect(ticksToHumanTime(12000)).toBe('2 hours');
+        expect(ticksToHumanTime(50000)).toBe('8 hours'); // 50000/6000 ≈ 8.3
+    });
+
+    it('returns "about a day" for single-day lives', () => {
+        expect(ticksToHumanTime(144000)).toBe('about a day');
+    });
+
+    it('returns day count for flagship hero lifespans', () => {
+        expect(ticksToHumanTime(4_320_000)).toBe('30 days'); // ~30-day hero
+    });
+});
 
 describe('produceStandingTierLetter', () => {
     const baseInput: StandingTierLetterInput = {
@@ -127,10 +158,10 @@ describe('produceEpitaphLetter (J-δ-γ)', () => {
         expect(letter.body).toMatch(/res:fern/);
     });
 
-    it('mentions the faction, lived-ticks, best-skill, and cause-of-death in the body', () => {
+    it('mentions faction, lifespan in human time, best-skill, and cause-of-death in the body', () => {
         const letter = produceEpitaphLetter(baseInput);
         expect(letter.body).toMatch(/embassy/);
-        expect(letter.body).toMatch(/1240/);
+        expect(letter.body).toMatch(/12 minutes/); // 1240 ticks ≈ 12 minutes
         expect(letter.body).toMatch(/firemaking/);
         expect(letter.body).toMatch(/22/);
         expect(letter.body).toMatch(/goblin/);
@@ -236,12 +267,12 @@ describe('produceBroadcastLetter (J4)', () => {
         expect(letter.kind).toBe('broadcast');
     });
 
-    it('sets recipient and matches body placeholders', () => {
+    it('sets recipient and matches body placeholders using human time', () => {
         const letter = produceBroadcastLetter(baseInput);
         expect(letter.recipient).toBe('bob@onion');
         expect(letter.body).toMatch(/res:hans/);
         expect(letter.body).toMatch(/embassy/);
-        expect(letter.body).toMatch(/12000/);
+        expect(letter.body).toMatch(/2 hours/); // 12000 ticks ≈ 2 hours
         expect(letter.body).toMatch(/attention exhaustion/);
     });
 

@@ -77,6 +77,23 @@ nervousSystem:
     action:
       kind: say
       text: Forge's going cold. Someone needs to bring fuel or a reason.
+  - id: anvil-combat-aside
+    priority: 73
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: "Fight if you must. Just don't fall on the anvil."
+  - id: anvil-forge-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 600
+    action:
+      kind: say
+      text: Another hour, another piece. The city gets stronger — that is the point.
 ---
 
 # Mother Anvil

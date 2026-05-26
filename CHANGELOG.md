@@ -8,7 +8,9 @@ See [`docs/changelog-workflow.md`](docs/changelog-workflow.md) for the authoring
 
 ## [Unreleased]
 
-The next release will be the pre-Chicago demo snapshot. Bullets below are a draft — the squasher should review and adjust before promoting to a dated section. See `docs/changelog-workflow.md` for the format.
+## [2026-05-26] — pre-chicago-demo-2026-05-26
+
+Pre-Chicago demo snapshot for the OnionDAO team. This release turns the resident prototype into a demoable Null City surface: live residents, patron Shards, public story pages, Library portraits, graveyard cards, dashboard status, and inference canaries.
 
 ### Added
 
@@ -44,7 +46,7 @@ The next release will be the pre-Chicago demo snapshot. Bullets below are a draf
 ### Tests
 
 - End-to-end patron loop verified live: `register → offer → witness` produces a letter in `/v1/inbox`.
-- `npm run controller:smoke` boots all 19+ residents and observes recent activity per resident.
+- `npm run controller:smoke` boots all 23 residents and observes recent activity per resident.
 - `scripts/post-restart-smoke.sh` reports READY after a fresh controller restart with all residents alive.
 
 ## [2026-05-23]
@@ -183,5 +185,6 @@ The pre-launch resident capability update. Pulled 183 commits, range `7e3012d7..
 
 For the full per-commit ledger of the 183 squashed commits, run `git log --oneline 7e3012d7..d298e480`.
 
-[Unreleased]: https://github.com/OnionDAO-git/rs6-nullcity-server/compare/2026-05-23...HEAD
+[Unreleased]: https://github.com/OnionDAO-git/rs6-nullcity-server/compare/pre-chicago-demo-2026-05-26...HEAD
+[2026-05-26]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/pre-chicago-demo-2026-05-26
 [2026-05-23]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/2026-05-23

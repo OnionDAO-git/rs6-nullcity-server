@@ -23,6 +23,7 @@
         "controller:bench": "npm run build && node dist/controller/benchmarks/cli.js",
         "controller:revive": "ts-node -r tsconfig-paths/register src/controller/admin/revive-cli.ts",
         "controller:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/live-smoke.ts",
+        "inference:canary": "ts-node -r tsconfig-paths/register src/controller/admin/inference-canary-smoke.ts",
         "patron:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/patron-loop-smoke.ts",
         "patron:grant": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --grant",
         "patron:offer": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --offer",

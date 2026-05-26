@@ -8,6 +8,304 @@ import { SoulLoader } from '../soul/soul-loader';
 import { factionUiMetadata, factionWallColor } from '../ui-metadata';
 
 /**
+ * One deceased resident's data for the IRL graveyard wall (N4).
+ * Derived from runtime-state.json + optional prepared-epitaph.txt.
+ */
+export interface GraveyardEntry {
+    /** Directory slug, e.g. "res-hans". */
+    slug: string;
+    /** Human-friendly display name, e.g. "Hans". */
+    displayName: string;
+    /** Faction id from SOUL file, if declared. */
+    factionId?: string;
+    /** Faction display name, e.g. "The Foundry". */
+    factionDisplayName?: string;
+    /** Primary hex color for the faction. */
+    factionColor?: string;
+    /** Cause of death, e.g. "attention_exhausted" or "combat". */
+    cause: string;
+    /** ISO timestamp when the resident died. */
+    diedAt: string;
+    /** Tick count at time of death (how long they lived). */
+    livedTicks: number;
+    /** Resident-authored epitaph text, if written via M4 prepare_epitaph. */
+    epitaph?: string;
+}
+
+/**
+ * Read all deceased residents from `lettersRoot` and return them sorted
+ * most-recently-deceased first. Resilient: missing dirs, unreadable files,
+ * and malformed JSON are skipped silently.
+ */
+export function readGraveyardEntries(
+    lettersRoot: string,
+    options: { residentIds?: readonly string[]; soulsDir?: string },
+): GraveyardEntry[] {
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+
+    const soulLoader = options.soulsDir !== undefined ? new SoulLoader(options.soulsDir) : undefined;
+    const allowedSlugs = options.residentIds !== undefined ? new Set(options.residentIds.map(toResidentSlug)) : undefined;
+    if (allowedSlugs !== undefined && soulLoader !== undefined) {
+        for (const name of soulLoader.listResidentNames()) {
+            allowedSlugs.add(toResidentSlug(name));
+        }
+    }
+
+    const results: GraveyardEntry[] = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
+            continue;
+        }
+        const slug = entry.name;
+        if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
+        const statePath = path.join(lettersRoot, slug, 'runtime-state.json');
+        if (!fs.existsSync(statePath)) {
+            continue;
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(statePath, 'utf8');
+        } catch {
+            continue;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        if (!isDeceasedRuntimeState(parsed)) {
+            continue;
+        }
+
+        const residentName = slugToResidentName(slug);
+        const soulSummary = soulLoader !== undefined ? readSoulRosterSummary(soulLoader, residentName) : undefined;
+        const displayName = soulSummary?.displayName || humanizeName(slug);
+
+        const factionId = soulSummary?.factionId;
+        const faction = factionId !== undefined ? factionUiMetadata(factionId) : undefined;
+
+        const epitaph = readPreparedEpitaph(path.join(lettersRoot, 'library', slug, 'prepared-epitaph.txt'));
+
+        const graveyardEntry: GraveyardEntry = {
+            slug,
+            displayName,
+            cause: parsed.deceased.cause,
+            diedAt: parsed.deceased.date,
+            livedTicks: parsed.tick,
+        };
+        if (factionId !== undefined) {
+            graveyardEntry.factionId = factionId;
+        }
+        if (faction !== undefined) {
+            graveyardEntry.factionDisplayName = faction.displayName;
+            graveyardEntry.factionColor = faction.wallColor;
+        }
+        if (epitaph !== undefined) {
+            graveyardEntry.epitaph = epitaph;
+        }
+        results.push(graveyardEntry);
+    }
+
+    // Most recently deceased first.
+    results.sort((a, b) => (a.diedAt < b.diedAt ? 1 : a.diedAt > b.diedAt ? -1 : 0));
+    return results;
+}
+
+function readPreparedEpitaph(filePath: string): string | undefined {
+    try {
+        const text = fs.readFileSync(filePath, 'utf8').trim();
+        return text.length > 0 ? text : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+/**
+ * Summary of a resident's Library of Souls portrait for the browse page (Pillar 3).
+ */
+export interface LibraryEntry {
+    /** Directory slug, e.g. "res-hans". */
+    slug: string;
+    /** Human-friendly display name. */
+    displayName: string;
+    factionId?: string;
+    factionDisplayName?: string;
+    factionColor?: string;
+    /** living, deceased, or reborn (2nd+ life). */
+    currentState: 'living' | 'deceased' | 'reborn';
+    livesCount: number;
+    epithet?: string;
+    arcPhase?: string;
+    /** Best quote from the resident's voice log. */
+    topQuote?: string;
+    patronHandles: string[];
+    /** Active wants (empty for deceased). */
+    currentWants: string[];
+    lastUpdated: string;
+}
+
+/**
+ * Read Library of Souls portraits from `<lettersRoot>/library/` and return
+ * a summary per resident. Living first, then reborn, then deceased;
+ * alphabetically within each group. Missing/malformed files are skipped.
+ *
+ * @param options.excludeSynthetic When true, residents whose slug matches
+ *   {@link SYNTHETIC_SLUG_PATTERN} (QA fixtures, benchmark synthetics) are
+ *   omitted from the result. Used by the public `/v1/library` route.
+ */
+export function readLibraryEntries(lettersRoot: string, options?: { excludeSynthetic?: boolean }): LibraryEntry[] {
+    const libraryDir = path.join(lettersRoot, 'library');
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(libraryDir, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+
+    const results: LibraryEntry[] = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
+            continue;
+        }
+        const slug = entry.name;
+        if (options?.excludeSynthetic && isSyntheticSlug(slug)) {
+            continue;
+        }
+        const portraitPath = path.join(libraryDir, slug, 'portrait.json');
+        let raw: string;
+        try {
+            raw = fs.readFileSync(portraitPath, 'utf8');
+        } catch {
+            continue;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        if (!isPortraitSummaryShape(parsed)) {
+            continue;
+        }
+        const p = parsed;
+        const displayName = typeof p.residentName === 'string' ? p.residentName : humanizeName(slug);
+
+        const quotes: unknown[] = Array.isArray(p.voice?.quotes) ? (p.voice.quotes as unknown[]) : [];
+        const firstTagged = quotes.find(q => isQuoteShape(q) && q.tag === 'first');
+        const quoteObj = firstTagged ?? (quotes.length > 0 && isQuoteShape(quotes[0]) ? quotes[0] : undefined);
+        const topQuote = quoteObj && isQuoteShape(quoteObj) && quoteObj.text.length > 0 ? quoteObj.text : undefined;
+
+        const patronHandles: string[] = Array.isArray(p.patrons)
+            ? (p.patrons as unknown[])
+                  .filter(
+                      (pt): pt is { handle: string } =>
+                          typeof pt === 'object' &&
+                          pt !== null &&
+                          typeof (pt as Record<string, unknown>).handle === 'string' &&
+                          (pt as Record<string, unknown>).handle !== 'anonymous',
+                  )
+                  .map(pt => pt.handle)
+            : [];
+        const currentWants: string[] = Array.isArray(p.wants?.current)
+            ? (p.wants.current as unknown[]).filter((w): w is string => typeof w === 'string').slice(0, 3)
+            : [];
+
+        const libEntry: LibraryEntry = {
+            slug,
+            displayName,
+            currentState: p.currentState,
+            livesCount: typeof p.livesCount === 'number' ? p.livesCount : 1,
+            lastUpdated: typeof p.lastUpdated?.ts === 'string' ? p.lastUpdated.ts : '',
+            patronHandles,
+            currentWants,
+        };
+        if (typeof p.epithet === 'string' && p.epithet.length > 0) {
+            libEntry.epithet = p.epithet;
+        }
+        if (topQuote !== undefined) {
+            libEntry.topQuote = topQuote;
+        }
+        if (typeof p.storyArc?.phase === 'string') {
+            libEntry.arcPhase = p.storyArc.phase;
+        }
+        if (typeof p.faction === 'string' && p.faction.length > 0) {
+            libEntry.factionDisplayName = p.faction;
+            const factionDef = FACTIONS.find(f => f.displayName === p.faction);
+            if (factionDef) {
+                libEntry.factionId = factionDef.id;
+                const uiMeta = factionUiMetadata(factionDef.id);
+                if (uiMeta) {
+                    libEntry.factionColor = uiMeta.wallColor;
+                }
+            }
+        }
+        results.push(libEntry);
+    }
+
+    const STATE_ORDER: Record<string, number> = { living: 0, reborn: 1, deceased: 2 };
+    results.sort((a, b) => {
+        const ao = STATE_ORDER[a.currentState] ?? 3;
+        const bo = STATE_ORDER[b.currentState] ?? 3;
+        if (ao !== bo) return ao - bo;
+        return a.displayName.localeCompare(b.displayName);
+    });
+    return results;
+}
+
+interface PortraitSummaryShape {
+    residentName?: string;
+    epithet?: string;
+    faction?: string;
+    currentState: 'living' | 'deceased' | 'reborn';
+    livesCount?: number;
+    voice?: { quotes?: unknown[] };
+    patrons?: unknown[];
+    wants?: { current?: unknown[] };
+    storyArc?: { phase?: string };
+    lastUpdated?: { ts?: string };
+}
+
+interface QuoteShape {
+    text: string;
+    tag?: string;
+}
+
+function isPortraitSummaryShape(value: unknown): value is PortraitSummaryShape {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const v = value as Record<string, unknown>;
+    return v.currentState === 'living' || v.currentState === 'deceased' || v.currentState === 'reborn';
+}
+
+function isQuoteShape(value: unknown): value is QuoteShape {
+    return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).text === 'string';
+}
+
+function isDeceasedRuntimeState(value: unknown): value is {
+    tick: number;
+    deceased: { date: string; tick: number; cause: string; processed?: boolean };
+} {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const v = value as Record<string, unknown>;
+    if (typeof v.tick !== 'number' || !v.deceased || typeof v.deceased !== 'object') {
+        return false;
+    }
+    const d = v.deceased as Record<string, unknown>;
+    return typeof d.cause === 'string' && typeof d.date === 'string' && typeof d.tick === 'number';
+}
+
+/**
  * Wall ticker snapshot (workstream EVENT-D6).
  *
  * Pure function that scans every per-patron inbox in
@@ -54,6 +352,36 @@ export interface BuildWallSnapshotOptions {
      * fallback ambitions when runtime cognition has not chosen an active goal.
      */
     soulsDir?: string;
+    /**
+     * When true, residents whose slug matches the synthetic prefix set
+     * ({@link SYNTHETIC_SLUG_PATTERN}) are dropped from the public roster.
+     * Used by the public `/v1/wall/snapshot` route so QA/benchmark fixtures
+     * (e.g. `res-qa-cook`, `res-bmk_fire_5m_xxx`) don't appear on the wall
+     * ticker mixed in with named heroes. Default `false` preserves the
+     * full roster for operator/debug callers.
+     */
+    excludeSynthetic?: boolean;
+    /**
+     * When true, `recentLetters` is deduplicated by `subject` so multi-witness
+     * events (e.g. five identical "On the passing of res:hans" cards from five
+     * patrons present at the death) collapse to one entry — the newest — per
+     * subject. Used by the public wall ticker to avoid spam. Limit is applied
+     * AFTER dedup, so the wall shows N distinct subjects. Default `false`
+     * preserves the per-recipient detail for operator views.
+     */
+    dedupeBySubject?: boolean;
+}
+
+/**
+ * Slug pattern for residents that should be hidden from public-facing surfaces.
+ * Covers QA fixture residents (`res-qa-*`) and benchmark synthetics (`res-bmk_*`).
+ * Canonical demo residents like `res-agent` are intentionally NOT matched —
+ * they're real demo souls, not fixtures.
+ */
+export const SYNTHETIC_SLUG_PATTERN = /^res-(qa-|bmk_)/;
+
+export function isSyntheticSlug(slug: string): boolean {
+    return SYNTHETIC_SLUG_PATTERN.test(slug);
 }
 
 /** One resident's live status for the wall roster panel. */
@@ -110,7 +438,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         return {
             recentLetters: [],
             deathsToday: 0,
-            residents: readResidents(lettersRoot, options.residentIds, options.soulsDir),
+            residents: readResidents(lettersRoot, options.residentIds, options.soulsDir, options.excludeSynthetic),
             factionStockpiles: readFactionStockpiles(lettersRoot),
             asOf,
         };
@@ -145,7 +473,10 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
 
     // Newest first.
     allLetters.sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : a.dispatchedAt > b.dispatchedAt ? -1 : 0));
-    const recentLetters = allLetters.slice(0, limit);
+    // Optional public-display dedup: collapse repeats by subject, keep newest
+    // per subject. We dedup BEFORE limit so the wall shows N distinct subjects.
+    const dedupedLetters = options.dedupeBySubject ? dedupeLettersBySubject(allLetters) : allLetters;
+    const recentLetters = dedupedLetters.slice(0, limit);
 
     // Unique deceased residents whose epitaphs landed in the local-day
     // window containing `now`. We use the LOCAL day window because the
@@ -175,7 +506,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         deceasedResidents.add(letter.senderResident);
     }
 
-    const residents = readResidents(lettersRoot, options.residentIds, options.soulsDir);
+    const residents = readResidents(lettersRoot, options.residentIds, options.soulsDir, options.excludeSynthetic);
     const factionStockpiles = readFactionStockpiles(lettersRoot);
 
     return {
@@ -279,7 +610,27 @@ function redactHandle(handle: string): string {
  * of all residents (alive and deceased), sorted alive-first then by slug.
  * Resilient: missing dir, unreadable files, and malformed JSON are skipped.
  */
-function readResidents(lettersRoot: string, residentIds?: readonly string[], soulsDir?: string): ResidentSummary[] {
+function dedupeLettersBySubject(letters: Letter[]): Letter[] {
+    // `letters` is already sorted newest-first; the first occurrence of each
+    // subject is therefore the newest and is the one we keep.
+    const seen = new Set<string>();
+    const out: Letter[] = [];
+    for (const letter of letters) {
+        if (seen.has(letter.subject)) {
+            continue;
+        }
+        seen.add(letter.subject);
+        out.push(letter);
+    }
+    return out;
+}
+
+function readResidents(
+    lettersRoot: string,
+    residentIds?: readonly string[],
+    soulsDir?: string,
+    excludeSynthetic?: boolean,
+): ResidentSummary[] {
     let entries: fs.Dirent[];
     try {
         entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
@@ -301,6 +652,9 @@ function readResidents(lettersRoot: string, residentIds?: readonly string[], sou
         }
         const slug = entry.name;
         if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
+        if (excludeSynthetic && isSyntheticSlug(slug)) {
             continue;
         }
         const statePath = path.join(lettersRoot, slug, 'runtime-state.json');

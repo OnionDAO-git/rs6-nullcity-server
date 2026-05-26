@@ -79,6 +79,23 @@ nervousSystem:
     action:
       kind: say
       text: The kitchen smells are early today — Cook is busy below.
+  - id: duke-hit-rebuke
+    priority: 74
+    condition:
+      kind: event_kind
+      value: hit
+    cooldownTicks: 200
+    action:
+      kind: say
+      text: This is unacceptable conduct within the duchy's walls.
+  - id: duke-duchy-ambient
+    priority: 58
+    condition:
+      kind: always
+    cooldownTicks: 600
+    action:
+      kind: say
+      text: The duchy stands, friend. Whatever else changes out there, this castle holds.
 ---
 
 # Duke Horacio of Lumbridge
