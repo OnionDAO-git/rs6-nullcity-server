@@ -508,6 +508,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
                 faction: string;
                 points: number;
                 tier: string | null;
+                tierMin: number;
                 nextTier: string | null;
                 pointsToNext: number | null;
             };
@@ -516,12 +517,13 @@ describe('letters HTTP server (EVENT-D2a)', () => {
                 faction: 'embassy',
                 points: 0,
                 tier: null,
+                tierMin: 0,
                 nextTier: 'acquaintance',
                 pointsToNext: 10,
             });
         });
 
-        it('returns correct tier and nextTier for an acquaintance (10 pts)', async () => {
+        it('returns correct tier, tierMin, and nextTier for an acquaintance (10 pts)', async () => {
             const patronStore = new PatronStore(tmp);
             const ledger = patronStore.loadStanding();
             ledger.recordSupport('alice@onion', 'embassy', 10, { reason: 'test-support' });
@@ -532,10 +534,25 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             const payload = JSON.parse(response.body) as {
                 points: number;
                 tier: string | null;
+                tierMin: number;
                 nextTier: string | null;
                 pointsToNext: number | null;
             };
-            expect(payload).toMatchObject({ points: 10, tier: 'acquaintance', nextTier: 'ally', pointsToNext: 20 });
+            expect(payload).toMatchObject({ points: 10, tier: 'acquaintance', tierMin: 10, nextTier: 'ally', pointsToNext: 20 });
+        });
+
+        it('returns tierMin for acquaintance when patron is mid-tier (15 pts)', async () => {
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadStanding();
+            ledger.recordSupport('alice@onion', 'embassy', 15, { reason: 'test-support' });
+            patronStore.saveStanding(ledger);
+
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=alice@onion');
+            const payload = JSON.parse(response.body) as { points: number; tierMin: number; pointsToNext: number | null };
+            // tierMin = 10 (acquaintance threshold); pointsToNext = 30 - 15 = 15
+            // correct progress = (15 - 10) / (30 - 10) = 25%  (NOT 0% as the old code produced)
+            expect(payload).toMatchObject({ points: 15, tierMin: 10, pointsToNext: 15 });
         });
 
         it('returns nextTier null and pointsToNext null for an officer (max tier)', async () => {
@@ -546,8 +563,13 @@ describe('letters HTTP server (EVENT-D2a)', () => {
 
             server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
             const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=alice@onion');
-            const payload = JSON.parse(response.body) as { tier: string | null; nextTier: string | null; pointsToNext: number | null };
-            expect(payload).toMatchObject({ tier: 'officer', nextTier: null, pointsToNext: null });
+            const payload = JSON.parse(response.body) as {
+                tier: string | null;
+                tierMin: number;
+                nextTier: string | null;
+                pointsToNext: number | null;
+            };
+            expect(payload).toMatchObject({ tier: 'officer', tierMin: 75, nextTier: null, pointsToNext: null });
         });
 
         it('defaults to embassy faction when no faction param supplied', async () => {

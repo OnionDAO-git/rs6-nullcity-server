@@ -191,6 +191,41 @@
             border-color: var(--accent);
         }
 
+        .letter-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(214, 193, 136, 0.4);
+            padding: 0.55rem 0;
+        }
+        .letter-row:last-child { border-bottom: none; padding-bottom: 0; }
+        .letter-subject {
+            font-size: 0.9rem;
+            color: var(--ink);
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .letter-meta {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-shrink: 0;
+        }
+        .letter-kind {
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--ink-soft);
+            opacity: 0.75;
+        }
+        .letter-date {
+            font-size: 0.78rem;
+            color: var(--ink-soft);
+        }
+
         .empty, .error {
             text-align: center;
             color: rgba(245, 236, 214, 0.7);
@@ -290,9 +325,10 @@
                 // Progress to next tier
                 if (standing.nextTier && standing.pointsToNext !== null && standing.pointsToNext !== undefined) {
                     const points = standing.points || 0;
-                    const nextMinPoints = points + standing.pointsToNext;
-                    const prevMin = nextMinPoints - standing.pointsToNext; // current tier minimum
-                    const progress = Math.max(0, Math.min(1, (points - prevMin) / (nextMinPoints - prevMin)));
+                    const tierMin = standing.tierMin ?? 0;
+                    const nextThreshold = points + standing.pointsToNext;
+                    const range = nextThreshold - tierMin;
+                    const progress = range > 0 ? Math.max(0, Math.min(1, (points - tierMin) / range)) : 0;
 
                     const progressRow = document.createElement('div');
                     progressRow.className = 'stat-row';
@@ -326,7 +362,9 @@
                 // Letter count
                 if (inbox && Array.isArray(inbox.letters)) {
                     const letterCount = inbox.letters.length;
-                    addStatRow(card, 'Letters received', letterCount.toString());
+                    if (letterCount > 0) {
+                        addStatRow(card, 'Letters received', letterCount.toString());
+                    }
                 }
 
                 // Inbox link
@@ -335,11 +373,88 @@
                 const link = document.createElement('a');
                 const inboxHref = '/inbox/?human=' + encodeURIComponent(patronHandle);
                 link.href = inboxHref;
-                link.textContent = 'Read your letters →';
+                link.textContent = 'Open your inbox →';
                 linkRow.appendChild(link);
                 card.appendChild(linkRow);
 
                 mainElement.appendChild(card);
+
+                // Recent letters card — shown only when there are letters
+                if (inbox && Array.isArray(inbox.letters) && inbox.letters.length > 0) {
+                    mainElement.appendChild(buildLettersCard(inbox.letters, patronHandle));
+                }
+            }
+
+            function buildLettersCard(letters, patronHandle) {
+                const card = document.createElement('div');
+                card.className = 'card';
+
+                const heading = document.createElement('h2');
+                heading.textContent = 'Recent Correspondence';
+                card.appendChild(heading);
+
+                const sorted = letters.slice().sort(function (a, b) {
+                    const da = a.dispatchedAt ? new Date(a.dispatchedAt).getTime() : 0;
+                    const db = b.dispatchedAt ? new Date(b.dispatchedAt).getTime() : 0;
+                    return db - da;
+                }).slice(0, 3);
+
+                sorted.forEach(function (letter) {
+                    const row = document.createElement('div');
+                    row.className = 'letter-row';
+
+                    const subject = document.createElement('span');
+                    subject.className = 'letter-subject';
+                    subject.textContent = letter.subject || '(untitled)';
+
+                    const meta = document.createElement('span');
+                    meta.className = 'letter-meta';
+
+                    const kindEl = document.createElement('span');
+                    kindEl.className = 'letter-kind';
+                    kindEl.textContent = letterKindLabel(letter.kind);
+
+                    const dateEl = document.createElement('span');
+                    dateEl.className = 'letter-date';
+                    dateEl.textContent = formatLetterDate(letter.dispatchedAt);
+
+                    meta.appendChild(kindEl);
+                    meta.appendChild(dateEl);
+                    row.appendChild(subject);
+                    row.appendChild(meta);
+                    card.appendChild(row);
+                });
+
+                const linkRow = document.createElement('div');
+                linkRow.className = 'link-row';
+                const link = document.createElement('a');
+                link.href = '/inbox/?human=' + encodeURIComponent(patronHandle);
+                link.textContent = letters.length > 3
+                    ? 'Read all ' + letters.length + ' letters →'
+                    : 'Read your letters →';
+                linkRow.appendChild(link);
+                card.appendChild(linkRow);
+
+                return card;
+            }
+
+            function letterKindLabel(kind) {
+                switch (kind) {
+                    case 'standing_tier_crossed': return 'standing';
+                    case 'epitaph': return 'epitaph';
+                    case 'civic': return 'civic';
+                    case 'broadcast': return 'city news';
+                    default: return kind || '';
+                }
+            }
+
+            function formatLetterDate(iso) {
+                if (!iso) return '';
+                try {
+                    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                } catch (_) {
+                    return '';
+                }
             }
 
             function addStatRow(parent, label, value, large) {

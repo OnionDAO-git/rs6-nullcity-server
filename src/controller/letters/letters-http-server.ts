@@ -265,11 +265,13 @@ async function handle(
             const userFacingTier = tier === 'stranger' ? null : tier;
             const tierIdx = STANDING_TIERS.findIndex(t => t.name === tier);
             const nextTierObj = STANDING_TIERS[tierIdx + 1];
+            const tierMin = tierIdx >= 0 ? STANDING_TIERS[tierIdx].minPoints : 0;
             writeJson(response, 200, {
                 human,
                 faction,
                 points,
                 tier: userFacingTier,
+                tierMin,
                 nextTier: nextTierObj ? nextTierObj.name : null,
                 pointsToNext: nextTierObj ? nextTierObj.minPoints - points : null,
             });
