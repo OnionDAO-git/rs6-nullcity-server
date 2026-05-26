@@ -38,9 +38,9 @@ The prior `nullcity` update was a squash commit, while `agents/wip` kept granula
 - `agents/wip` contains hundreds of granular commits not in `nullcity`.
 - `nullcity` contains prior squash commits not in `agents/wip`.
 - `docs/agent-status.md` is a coordination artifact and must not land on `nullcity`.
-- Release review found a direct merge/squash risks duplicate-change conflicts and an accidental `changelog.md` deletion.
+- Release review found a direct merge/squash risks duplicate-change conflicts and an accidental `CHANGELOG.md` deletion.
 
-Recommendation: apply only the post-Workstream-R milestone range on top of `origin/nullcity`, exclude `docs/agent-status.md`, preserve `changelog.md`, then squash into one human-readable milestone commit.
+Recommendation: apply only the post-Workstream-R milestone range on top of `origin/nullcity`, exclude `docs/agent-status.md`, preserve `CHANGELOG.md`, then squash into one human-readable milestone commit.
 
 ## Merge Sequence
 
@@ -64,7 +64,7 @@ Protect files that should not change accidentally:
 
 ```bash
 # Keep nullcity's changelog unless the maintainer explicitly approves deleting or replacing it.
-git restore --source=origin/nullcity --staged --worktree changelog.md 2>/dev/null || true
+git restore --source=origin/nullcity --staged --worktree CHANGELOG.md 2>/dev/null || true
 
 # Confirm the coordination log is not staged.
 git diff --cached --name-only | grep -q '^docs/agent-status.md$' && {
@@ -88,17 +88,17 @@ npm run fin
 npm run build
 ```
 
-Write the changelog entry for this release. See `docs/changelog-workflow.md` for the format — `## YYYY-MM-DD — <tag>` header, 3 to 5 dev-facing bullets, no jargon or SHAs. Draft by scanning the commit range you're about to squash:
+Write the changelog entry for this release. See `docs/changelog-workflow.md` for the format — Keep a Changelog with `## [YYYY-MM-DD] — <tag>` headers and `### Added / Changed / Fixed` sub-sections, 3 to 5 dev-facing bullets per sub-section, no jargon or SHAs. Promote any pending `[Unreleased]` bullets, then draft any missing ones by scanning the commit range you're about to squash:
 
 ```bash
 git log --oneline baf96459..agents/wip | head -60
 ```
 
-Edit `changelog.md` on the release branch — new section at the top:
+Edit `CHANGELOG.md` on the release branch — new section at the top:
 
 ```bash
-$EDITOR changelog.md
-git add changelog.md
+$EDITOR CHANGELOG.md
+git add CHANGELOG.md
 ```
 
 The changelog edit lands in the same squash commit as the code. If you forget and have already pushed, follow up with a small `docs(changelog): backfill entry for <tag>` commit; don't amend.
@@ -119,7 +119,7 @@ Includes:
 Excluded:
 - docs/agent-status.md coordination log
 
-Includes a changelog.md entry per docs/changelog-workflow.md.
+Includes a CHANGELOG.md entry per docs/changelog-workflow.md.
 
 Verification before commit:
 - npm run fin
