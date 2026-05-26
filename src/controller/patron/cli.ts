@@ -19,6 +19,7 @@ export type PatronCliAction =
     | 'offer'
     | 'ask'
     | 'witness'
+    | 'gift'
     | 'register'
     | 'bulk-register'
     | 'checkin'
@@ -115,6 +116,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
                 'offer',
                 'ask',
                 'witness',
+                'gift',
                 'register',
                 'bulk-register',
                 'checkin',
@@ -165,6 +167,8 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.action = 'balance';
         } else if (arg === '--standing') {
             options.action = 'standing';
+        } else if (arg === '--gift') {
+            options.action = 'gift';
         } else if (arg === '--whisper') {
             options.action = 'whisper';
         } else if (arg === '--bulk-register') {
@@ -244,7 +248,7 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
 
     if (!options.action) {
         throw new Error(
-            'One of --grant, --offer, --ask, --witness, --register, --bulk-register, --checkin, --referral, --balance, --standing, or --whisper must be specified.',
+            'One of --grant, --offer, --ask, --witness, --gift, --register, --bulk-register, --checkin, --referral, --balance, --standing, or --whisper must be specified.',
         );
     }
     if (!options.humanId && options.action !== 'bulk-register') {
@@ -286,6 +290,15 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             options.artifact = `witness-${residentSlug(options.residentName)}-${Date.now()}`;
         }
     }
+    if (options.action === 'gift') {
+        if (!options.residentName) {
+            throw new Error('--resident <name> is required for --gift.');
+        }
+        if (!options.artifact) {
+            options.artifact = `gift-${residentSlug(options.residentName)}-${Date.now()}`;
+        }
+    }
+
     if (options.action === 'referral') {
         if (!options.referredId) {
             throw new Error('--referred <new-human> is required for --referral.');
@@ -990,6 +1003,20 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             }
             console.log(`[patron:whisper] Whisper published to offline LoreBus.`);
             return 0;
+        }
+
+        if (options.action === 'gift') {
+            const bundle = buildResidentBundle(options, config, store, 'gift');
+
+            const outcome = await bundle.gateway.sendGift(options.humanId, bundle.residentName, options.artifact);
+
+            if (outcome.ok) {
+                console.log(`[patron:gift] Human "${options.humanId}" gave "${options.artifact}" to resident "${bundle.residentName}".`);
+                console.log(`[patron:gift] Event ID: ${outcome.eventId}`);
+                console.log(`[patron:gift] Gift recorded in resident's Library timeline.`);
+                return 0;
+            }
+            throw new Error(`Gift failed: ${outcome.error}`);
         }
 
         if (options.action === 'witness') {

@@ -116,6 +116,32 @@ describe('Patron CLI', () => {
             });
         });
 
+        it('parses --gift options correctly with explicit artifact', () => {
+            const parsed = parsePatronCliArgs(['--gift', '--human=james', '--resident=res:pip', '--artifact=tinderbox']);
+            expect(parsed).toEqual({
+                action: 'gift',
+                humanId: 'james',
+                amount: 0,
+                residentName: 'res:pip',
+                text: '',
+                artifact: 'tinderbox',
+                kind: 'patron_gift',
+                referredId: '',
+                faction: 'embassy',
+                filePath: '',
+                configPath: 'controller.yml',
+            });
+        });
+
+        it('auto-generates artifact for --gift when omitted', () => {
+            const parsed = parsePatronCliArgs(['--gift', '--human', 'james', '--resident', 'pip']);
+            expect(parsed.artifact).toMatch(/^gift-pip-\d+$/);
+        });
+
+        it('throws when --resident is missing for --gift', () => {
+            expect(() => parsePatronCliArgs(['--gift', '--human', 'james'])).toThrow('--resident <name> is required for --gift.');
+        });
+
         it('throws error when action is missing', () => {
             expect(() => parsePatronCliArgs(['--human', 'james'])).toThrow(
                 /--grant.*--offer.*--ask.*--witness.*--register.*--checkin.*--referral.*--balance.*--standing/,
@@ -814,6 +840,83 @@ describe('Patron CLI', () => {
             expect(code).toBe(1);
 
             errSpy.mockRestore();
+        });
+
+        describe('HD-016 B patron:gift', () => {
+            it('records a patron_gift event in the resident Library timeline', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli([
+                    '--gift',
+                    '--human',
+                    'james',
+                    '--resident',
+                    'pip',
+                    '--artifact',
+                    'tinderbox',
+                    '-c',
+                    configPath,
+                ]);
+                expect(code).toBe(0);
+
+                const timelinePath = path.join(memoryDir, 'library', 'res-pip', 'timeline.jsonl');
+                expect(fs.existsSync(timelinePath)).toBe(true);
+                const lines = fs.readFileSync(timelinePath, 'utf8').trim().split('\n').filter(Boolean);
+                const giftLines = lines.map(line => JSON.parse(line)).filter((entry: any) => entry.kind === 'patron_gift');
+                expect(giftLines).toHaveLength(1);
+                expect(giftLines[0]).toMatchObject({
+                    kind: 'patron_gift',
+                    patronHandle: 'james',
+                    artifact: 'tinderbox',
+                });
+
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:gift] Human "james" gave "tinderbox"'));
+                logSpy.mockRestore();
+            });
+
+            it('gift does not modify currency or standing ledgers', async () => {
+                const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+                const code = await runPatronCli([
+                    '--gift',
+                    '--human',
+                    'alice',
+                    '--resident',
+                    'pip',
+                    '--artifact',
+                    'sword',
+                    '-c',
+                    configPath,
+                ]);
+                expect(code).toBe(0);
+
+                const currencyFile = path.join(memoryDir, 'patron-currency.json');
+                const standingFile = path.join(memoryDir, 'patron-standing.json');
+                // Gift leaves no currency or standing files (no Shards transfer)
+                expect(fs.existsSync(currencyFile)).toBe(false);
+                expect(fs.existsSync(standingFile)).toBe(false);
+
+                logSpy.mockRestore();
+            });
+
+            it('gift fails for unknown resident soul', async () => {
+                const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+                const code = await runPatronCli([
+                    '--gift',
+                    '--human',
+                    'james',
+                    '--resident',
+                    'missing-soul',
+                    '--artifact',
+                    'sword',
+                    '-c',
+                    configPath,
+                ]);
+                expect(code).toBe(1);
+
+                errSpy.mockRestore();
+            });
         });
 
         // J7: daily check-in + referral drips

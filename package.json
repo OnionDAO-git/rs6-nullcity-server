@@ -28,6 +28,7 @@
         "patron:offer": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --offer",
         "patron:ask": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --ask",
         "patron:witness": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --witness",
+        "patron:gift": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --gift",
         "patron:register": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --register",
         "patron:checkin": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --checkin",
         "patron:referral": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --referral",
