@@ -987,7 +987,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([expect.objectContaining({ kind: 'move_to', range: 1, cause: 'stuck_pre_inference_explore' })]);
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3211, y: 3247, level: 0 }, range: 0, cause: 'stuck_pre_inference_explore' },
+        ]);
         expect(result.actions).not.toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
         expect(complete).not.toHaveBeenCalled();
     });
@@ -1379,7 +1381,7 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.cause).toBe('stuck_pre_inference_explore');
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: { x: 3110, y: 3165, level: 0 }, range: 1, cause: 'stuck_pre_inference_explore' },
+            { kind: 'move_to', target: { x: 3110, y: 3163, level: 0 }, range: 0, cause: 'stuck_pre_inference_explore' },
         ]);
         expect(complete).not.toHaveBeenCalled();
     });
@@ -2470,7 +2472,37 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'move_to', target: { x: 3233, y: 3238, level: 0 }, range: 1, cause: 'stuck_pre_inference_explore' },
+            { kind: 'move_to', target: { x: 3230, y: 3239, level: 0 }, range: 0, cause: 'stuck_pre_inference_explore' },
+        ]);
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+    });
+
+    it('uses a one-tile probe before wider stuck patrol moves', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 100;
+        state.stuckSince = 80;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 90,
+            lastBodyTick: 90,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: residentAt(3230, 3238),
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3230, y: 3239, level: 0 }, range: 0, cause: 'stuck_pre_inference_explore' },
         ]);
         expect(result.cause).toBe('stuck_pre_inference_explore');
     });

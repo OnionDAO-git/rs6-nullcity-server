@@ -774,9 +774,14 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             );
             const targetFailureCooldowns = this.cognition().targetFailureCooldowns;
             let recovery: AgentAction | undefined;
+            const exploratoryTarget = exploratory?.kind === 'move_to' ? positionLike(exploratory.target) : undefined;
+            const widePatrolProbe = Boolean(
+                exploratory?.cause === 'explore_patrol' && exploratoryTarget && here && distance(here, exploratoryTarget) > 1,
+            );
             if (
                 exploratory &&
                 isStuckRecoveryAction(exploratory) &&
+                !widePatrolProbe &&
                 !moveTargetFailureCooldownActive(exploratory, targetFailureCooldowns, this.options.state.tick)
             ) {
                 recovery = exploratory;
@@ -4030,11 +4035,7 @@ function stuckPreInferencePatrolTarget(
     targetFailureCooldowns?: Record<string, number>,
 ): Pos | undefined {
     const blockedTiles = objectOccupiedTiles(perception);
-    const target = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedTiles);
-    if (!stuckPatrolCandidateUnavailable(target, here, blockedTiles, targetFailureCooldowns, currentTick)) {
-        return target;
-    }
-
+    let fallback: Pos | undefined;
     const nearbyCandidates = [
         { x: here.x + 1, y: here.y, level: here.level },
         { x: here.x, y: here.y + 1, level: here.level },
@@ -4044,12 +4045,21 @@ function stuckPreInferencePatrolTarget(
     const startIndex = Math.abs(here.x * 31 + here.y * 17 + currentTick) % nearbyCandidates.length;
     for (let offset = 0; offset < nearbyCandidates.length; offset += 1) {
         const candidate = nearbyCandidates[(startIndex + offset) % nearbyCandidates.length];
-        if (!stuckPatrolCandidateUnavailable(candidate, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+        if (stuckPatrolCandidateUnavailable(candidate, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+            continue;
+        }
+        fallback ??= candidate;
+        if (!isExplorationOnCooldown(explorationPatrolCooldownKey(candidate), explorationCooldowns, currentTick)) {
             return candidate;
         }
     }
 
-    return undefined;
+    const target = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedTiles);
+    if (!stuckPatrolCandidateUnavailable(target, here, blockedTiles, targetFailureCooldowns, currentTick)) {
+        return target;
+    }
+
+    return fallback;
 }
 
 function objectOccupiedTiles(perception: HybridPerception): ReadonlySet<string> | undefined {
