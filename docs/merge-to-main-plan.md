@@ -88,6 +88,21 @@ npm run fin
 npm run build
 ```
 
+Write the changelog entry for this release. See `docs/changelog-workflow.md` for the format — `## YYYY-MM-DD — <tag>` header, 3 to 5 dev-facing bullets, no jargon or SHAs. Draft by scanning the commit range you're about to squash:
+
+```bash
+git log --oneline baf96459..agents/wip | head -60
+```
+
+Edit `CHANGELOG.md` on the release branch — new section at the top:
+
+```bash
+$EDITOR CHANGELOG.md
+git add CHANGELOG.md
+```
+
+The changelog edit lands in the same squash commit as the code. If you forget and have already pushed, follow up with a small `docs(changelog): backfill entry for <tag>` commit; don't amend.
+
 Commit:
 
 ```bash
@@ -103,6 +118,8 @@ Includes:
 
 Excluded:
 - docs/agent-status.md coordination log
+
+Includes a CHANGELOG.md entry per docs/changelog-workflow.md.
 
 Verification before commit:
 - npm run fin
