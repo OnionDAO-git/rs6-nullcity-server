@@ -793,4 +793,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 21:30 codex branch=agents/wip+dashboard-main workstream=M1 STARTING - dashboard storyArc roster; edit dashboard shared/server/web + roadmap/status. collision=none.
 2026-05-25 21:45 codex branch=agents/wip+dashboard-main workstream=M1 HANDOFF - dashboard Story column reads Library storyArc/timeline. SHA=fff9cb2 tests=37+typecheck+check+build+api+browser collision=none.
 2026-05-25 22:00 codex branch=agents/wip workstream=O10 STARTING - inert decision smoke. Files: docs/agent-status.md, docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md, src/controller/admin/live-smoke.ts, src/controller/admin/live-smoke.test.ts. collision=none.
-2026-05-25 22:16 codex branch=agents/wip workstream=O10 HANDOFF - live smoke flags inert hero loops after restart. SHA=pending tests=25+typecheck+lint+postrestart+90s-smoke collision=dirty-thinking-WIP-untouched.
+2026-05-25 22:16 codex branch=agents/wip workstream=O10 HANDOFF - live smoke flags inert hero loops after restart. SHA=91e0f5f tests=25+typecheck+lint+postrestart+90s-smoke collision=dirty-thinking-WIP-untouched.
