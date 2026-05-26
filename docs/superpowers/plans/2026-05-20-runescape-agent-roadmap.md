@@ -230,6 +230,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: fixture data ranks modules deterministically.
   - Verified 2026-05-22 in `rs6-nullcity-residents-dashboard`: added `/api/benchmarks/leaderboard`, deterministic module ranking by pass rate/progress/run count/recency, and a dashboard leaderboard panel that compares pass rate, average score, autonomous runs, average duration, safety incidents, cleanup failures, and inference count. Validation passed with dashboard runtime tests, `bun test`, `bun run typecheck`, `bun run check`, `bun run build`, `git diff --check`, and live `http://127.0.0.1:8893/api/benchmarks/leaderboard` smoke.
 
+- `[x]` **D5: Surface last action result status in SPARK Activity.**
+  - Files: `rs6-nullcity-residents-dashboard/packages/web/src/lib/activity.ts`, `rs6-nullcity-residents-dashboard/packages/web/src/lib/activity.test.ts`, `rs6-nullcity-residents-dashboard/packages/web/src/App.svelte`
+  - Deliverable: resident detail Body panel shows whether the latest action succeeded, failed, or timed out, with concise reason text for QA.
+  - Verification: activity regression tests, dashboard checks/build, and live dashboard/API smoke.
+  - Verified 2026-05-26 in `rs6-nullcity-residents-dashboard`: SPARK Activity Body panel now separates `Last Action` from `Last Result`, shows `pending` for newer unreconciled actions, classifies success/timeout/failed, and redacts raw error text. Validation passed with dashboard tests, typecheck, check, build, browser proof, and live API proof. Follow-up: live 60s `res:agent` smoke exposed observed move timeouts, so server-side stuck recovery needs another pass.
+
 ## Workstream E: RuneScape Knowledge And Agent Skill
 
 **Purpose:** Give resident modules a maintained "how to play RuneScape" knowledge base and a safe way to suggest improvements.
