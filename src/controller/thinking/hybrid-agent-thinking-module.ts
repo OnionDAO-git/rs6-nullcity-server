@@ -1217,6 +1217,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 pickupCooldowns: this.pickupCooldowns(),
                 currentTick: this.options.state.tick,
                 explorationCooldowns: this.explorationCooldowns(),
+                targetFailureCooldowns: this.cognition().targetFailureCooldowns,
             });
             if (factionWork) {
                 return { action: factionWork, cause: factionWork.cause || 'faction_landmark_work' };

@@ -187,6 +187,63 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('honors target-failure cooldowns while executing active faction landmark work goals', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'faction-landmark-work-foundry',
+                description: 'Work the Foundry post by gathering fuel and staying visible.',
+                createdAtTick: 1,
+                ttlTicks: 450,
+            },
+            lastBodyTick: 19,
+            targetFailureCooldowns: {
+                'target:3010,3355,0': 19,
+            },
+        };
+        const hero = {
+            ...soul(),
+            frontmatter: {
+                ...soul().frontmatter,
+                name: 'res:mother-anvil',
+                display: 'Mother Anvil',
+                archetype: 'achiever' as const,
+                factionId: 'foundry',
+                heroProfile: {
+                    tier: 'hero' as const,
+                    publicName: 'Mother Anvil',
+                    signatureAction: 'works the forge',
+                    anchor: [3015, 3357, 0] as [number, number, number],
+                },
+            },
+        };
+        const failedTree = { objectId: 1278, position: { x: 3010, y: 3355, level: 0 }, orientation: 0 };
+        const agent = hybridAgent(llm, state, hero);
+
+        const result = await agent.think(
+            perception({
+                tick: 20,
+                resident: {
+                    id: 'resident:res:mother-anvil',
+                    position: { x: 3010, y: 3352, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [{ itemId: 1351, key: 'rs:bronze_axe', amount: 1 }],
+                },
+                objects: [failedTree],
+            }),
+        );
+
+        expect(result.cause).toBe('faction_foundry_fuel_work');
+        expect(result.actions[0]).toEqual(
+            expect.objectContaining({
+                kind: 'move_to',
+            }),
+        );
+        expect((result.actions[0] as { target?: unknown }).target).not.toEqual(failedTree.position);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('replaces an expired ordinary goal with faction landmark work for flagship heroes', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();

@@ -1480,6 +1480,7 @@ export function explorationPatrolTarget(
     currentTick = 0,
     explorationCooldowns?: Record<string, number>,
     blockedTiles?: ReadonlySet<string>,
+    targetFailureCooldowns?: Record<string, number>,
 ): BodyPos {
     let fallback: BodyPos | undefined;
     for (let step = EXPLORATION_PATROL_STEP_DISTANCE; step <= EXPLORATION_PATROL_MAX_DISTANCE; step += EXPLORATION_PATROL_STEP_DISTANCE) {
@@ -1489,6 +1490,9 @@ export function explorationPatrolTarget(
         for (let offset = 0; offset < candidates.length; offset += 1) {
             const candidate = candidates[(startIndex + offset) % candidates.length];
             if (blockedTiles?.has(bodyPositionKey(candidate))) {
+                continue;
+            }
+            if (isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick)) {
                 continue;
             }
             fallback ??= candidate;
@@ -1596,7 +1600,7 @@ export function explorationAction(
             return { kind: 'move_to', target: object.position, range: 2, cause: 'explore_visible_object' };
         }
 
-        const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedPatrolTiles);
+        const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedPatrolTiles, targetFailureCooldowns);
         if (distance(here, patrol) > 1) {
             return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
         }
@@ -1637,7 +1641,7 @@ export function explorationAction(
         return { kind: 'say', text: `I see ${itemLabel(item)} on the ground.`, cause: 'explore_visible_item' };
     }
 
-    const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedPatrolTiles);
+    const patrol = explorationPatrolTarget(here, anchor, currentTick, explorationCooldowns, blockedPatrolTiles, targetFailureCooldowns);
     if (distance(here, patrol) > 1) {
         return { kind: 'move_to', target: patrol, range: 1, cause: 'explore_patrol' };
     }

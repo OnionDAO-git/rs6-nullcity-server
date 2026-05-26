@@ -1934,6 +1934,31 @@ describe('factionLandmarkWorkAction', () => {
         });
     });
 
+    it('does not use a failed fuel tile as the Foundry patrol fallback', () => {
+        const failedFuelTile = { x: 3010, y: 3355, level: 0 };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                tick: 95032,
+                resident: {
+                    position: { x: 3010, y: 3352, level: 0 },
+                    inventory: [item(1351, 'rs:bronze_axe')],
+                },
+            }),
+            factionId: 'foundry',
+            landmark: anchor,
+            currentTick: 95032,
+            targetFailureCooldowns: {
+                'target:3010,3355,0': 95031,
+            },
+        });
+
+        expect(action).toMatchObject({
+            kind: 'move_to',
+            cause: 'faction_foundry_fuel_work',
+        });
+        expect((action as { target?: unknown }).target).not.toEqual(failedFuelTile);
+    });
+
     it('keeps Foundry work visible by patrolling for fuel when no materials are visible', () => {
         const action = factionLandmarkWorkAction({
             perception: perception({ tick: 21, resident: { position: anchor, inventory: [item(1351, 'rs:bronze_axe')] } }),
