@@ -85,6 +85,14 @@ nervousSystem:
     action:
       kind: say
       text: That's one more name to remember.
+  - id: hans-post-ambient
+    priority: 58
+    condition:
+      kind: always
+    cooldownTicks: 720
+    action:
+      kind: say
+      text: I've been at this post longer than I can count. The courtyard still surprises me.
 ---
 
 # Hans

@@ -81,6 +81,23 @@ nervousSystem:
     action:
       kind: say
       text: I think I'm a little lost — does anyone have a moment?
+  - id: pip-attack-worry
+    priority: 70
+    condition:
+      kind: event_kind
+      value: attack
+    cooldownTicks: 150
+    action:
+      kind: say
+      text: Oh! Is everyone alright over there? Maybe we should all take a step back?
+  - id: pip-guide-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 480
+    action:
+      kind: say
+      text: I've been mapping safe routes around Lumbridge — there are more than you'd think!
 ---
 
 # Pip

@@ -74,6 +74,23 @@ nervousSystem:
     action:
       kind: say
       text: A bench, a cup of tea, and a quiet morning — that's plenty.
+  - id: wise-hit-stoic
+    priority: 74
+    condition:
+      kind: event_kind
+      value: hit
+    cooldownTicks: 180
+    action:
+      kind: say
+      text: Hmph. That stings. Though I've felt worse, I assure you.
+  - id: wise-fire-ambient
+    priority: 56
+    condition:
+      kind: always
+    cooldownTicks: 720
+    action:
+      kind: say
+      text: A well-laid fire at dusk — there is nothing more civilised.
 ---
 
 # The Wise Old Man
