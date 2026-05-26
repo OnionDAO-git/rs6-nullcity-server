@@ -62,6 +62,7 @@ async function main(): Promise<void> {
                 soulsDir: config.souls.dir,
                 wallRedact: args.lettersHttpWallRedact,
                 health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints }),
+                patronMemoryRoot: config.memory.dir,
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
         }

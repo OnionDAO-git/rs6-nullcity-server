@@ -4,6 +4,9 @@ import type { AddressInfo } from 'net';
 import path from 'path';
 import type { InferenceHealthResult } from '../llm/inference-health';
 import type { LettersStore } from '../patron/letters-store';
+import { PatronStore } from '../patron/patron-store';
+import { CURRENCY_NAME } from '../patron/currency-ledger';
+import { STANDING_TIERS } from '../patron/standing-ledger';
 import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
 
 /**
@@ -28,6 +31,8 @@ import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
 export const DEFAULT_LETTERS_PATH = '/v1/inbox';
 export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 export const DEFAULT_HEALTH_PATH = '/v1/health';
+export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
+export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -72,6 +77,14 @@ export interface LettersHttpServerOptions {
      * behavior. See `docs/intelligence-verification-log.md` § E13.
      */
     wallRedact?: boolean;
+    /**
+     * When set, enables the self-service patron balance and standing routes
+     * ({@link DEFAULT_PATRON_BALANCE_PATH} and {@link DEFAULT_PATRON_STANDING_PATH}).
+     * Should be the same memory root the controller uses for PatronStore
+     * (`config.memory.dir`). HD-016 C/D: self-service balance lookup + tier
+     * visibility so attendees can check their own Shards/standing via QR URL.
+     */
+    patronMemoryRoot?: string;
     /** Test injection for `now` used by the wall snapshot. */
     now?: () => Date;
 }
@@ -85,16 +98,20 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
     const routePath = normalizePath(options.path || DEFAULT_LETTERS_PATH);
     const wallRoutePath = normalizePath(options.wallPath || DEFAULT_WALL_PATH);
     const healthRoutePath = normalizePath(options.healthPath || DEFAULT_HEALTH_PATH);
+    const patronBalancePath = normalizePath(DEFAULT_PATRON_BALANCE_PATH);
+    const patronStandingPath = normalizePath(DEFAULT_PATRON_STANDING_PATH);
     const bindHost = options.host || '127.0.0.1';
 
     const server = http.createServer((request, response) => {
-        handle(request, response, options, routePath, wallRoutePath, healthRoutePath).catch(error => {
-            if (!response.headersSent) {
-                writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
-            } else if (!response.writableEnded) {
-                response.end();
-            }
-        });
+        handle(request, response, options, routePath, wallRoutePath, healthRoutePath, patronBalancePath, patronStandingPath).catch(
+            error => {
+                if (!response.headersSent) {
+                    writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
+                } else if (!response.writableEnded) {
+                    response.end();
+                }
+            },
+        );
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -125,14 +142,18 @@ async function handle(
     routePath: string,
     wallRoutePath: string,
     healthRoutePath: string,
+    patronBalancePath: string,
+    patronStandingPath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const isInboxRoute = url.pathname === routePath;
     const isWallRoute = url.pathname === wallRoutePath && options.lettersRoot !== undefined;
     const isHealthRoute = url.pathname === healthRoutePath && options.health !== undefined;
+    const isPatronBalanceRoute = url.pathname === patronBalancePath && options.patronMemoryRoot !== undefined;
+    const isPatronStandingRoute = url.pathname === patronStandingPath && options.patronMemoryRoot !== undefined;
     const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
-    if (!isInboxRoute && !isWallRoute && !isHealthRoute && !staticPagePath) {
+    if (!isInboxRoute && !isWallRoute && !isHealthRoute && !isPatronBalanceRoute && !isPatronStandingRoute && !staticPagePath) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
@@ -188,6 +209,41 @@ async function handle(
         // HD-013: optionally pass the snapshot through the public-display
         // redactor before serving it on the wall route.
         writeJson(response, 200, options.wallRedact ? redactWallSnapshot(snapshot) : snapshot);
+        return;
+    }
+
+    if (isPatronBalanceRoute || isPatronStandingRoute) {
+        const human = url.searchParams.get('human');
+        if (!human || human.trim().length === 0) {
+            writeJson(response, 400, { error: 'Query parameter `human` is required' });
+            return;
+        }
+        // patronMemoryRoot guaranteed non-undefined by the route guard above.
+        const store = new PatronStore(options.patronMemoryRoot as string);
+        if (isPatronBalanceRoute) {
+            const ledger = store.loadCurrency();
+            writeJson(response, 200, {
+                human,
+                balance: ledger.balance(human),
+                currency: CURRENCY_NAME,
+            });
+        } else {
+            const faction = url.searchParams.get('faction') || 'embassy';
+            const standingLedger = store.loadStanding();
+            const points = standingLedger.points(human, faction);
+            const tier = standingLedger.currentTier(human, faction);
+            const userFacingTier = tier === 'stranger' ? null : tier;
+            const tierIdx = STANDING_TIERS.findIndex(t => t.name === tier);
+            const nextTierObj = STANDING_TIERS[tierIdx + 1];
+            writeJson(response, 200, {
+                human,
+                faction,
+                points,
+                tier: userFacingTier,
+                nextTier: nextTierObj ? nextTierObj.name : null,
+                pointsToNext: nextTierObj ? nextTierObj.minPoints - points : null,
+            });
+        }
         return;
     }
 

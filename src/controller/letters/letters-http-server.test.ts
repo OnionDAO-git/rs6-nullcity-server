@@ -3,6 +3,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { LettersStore } from '../patron/letters-store';
+import { PatronStore } from '../patron/patron-store';
 import { closeLettersHttpServer, type LettersHttpAuthOptions, startLettersHttpServer } from './letters-http-server';
 
 function get(url: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string; contentType?: string }> {
@@ -427,6 +428,127 @@ describe('letters HTTP server (EVENT-D2a)', () => {
 
             expect(unauthed.status).toBe(401);
             expect(authed.status).toBe(200);
+        });
+    });
+
+    describe('GET /v1/patron/balance (HD-016 C)', () => {
+        it('returns 404 when patronMemoryRoot is not configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/balance') + '?human=alice@onion');
+            expect(response.status).toBe(404);
+        });
+
+        it('returns 400 when human param is missing', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/balance'));
+            expect(response.status).toBe(400);
+            expect(JSON.parse(response.body)).toMatchObject({ error: expect.stringContaining('human') });
+        });
+
+        it('returns zero balance for a human with no ledger entry', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/balance') + '?human=stranger@onion');
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { human: string; balance: number; currency: string };
+            expect(payload).toMatchObject({ human: 'stranger@onion', balance: 0, currency: 'Shards' });
+        });
+
+        it('returns the correct balance after granting Shards', async () => {
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadCurrency();
+            ledger.credit('alice@onion', 42, { reason: 'test-grant' });
+            patronStore.saveCurrency(ledger);
+
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/balance') + '?human=alice@onion');
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { human: string; balance: number; currency: string };
+            expect(payload).toMatchObject({ human: 'alice@onion', balance: 42, currency: 'Shards' });
+        });
+    });
+
+    describe('GET /v1/patron/standing (HD-016 D)', () => {
+        it('returns 404 when patronMemoryRoot is not configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=alice@onion');
+            expect(response.status).toBe(404);
+        });
+
+        it('returns 400 when human param is missing', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing'));
+            expect(response.status).toBe(400);
+        });
+
+        it('returns tier null and acquaintance as nextTier for a human with no standing', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=stranger@onion');
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                human: string;
+                faction: string;
+                points: number;
+                tier: string | null;
+                nextTier: string | null;
+                pointsToNext: number | null;
+            };
+            expect(payload).toMatchObject({
+                human: 'stranger@onion',
+                faction: 'embassy',
+                points: 0,
+                tier: null,
+                nextTier: 'acquaintance',
+                pointsToNext: 10,
+            });
+        });
+
+        it('returns correct tier and nextTier for an acquaintance (10 pts)', async () => {
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadStanding();
+            ledger.recordSupport('alice@onion', 'embassy', 10, { reason: 'test-support' });
+            patronStore.saveStanding(ledger);
+
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=alice@onion');
+            const payload = JSON.parse(response.body) as {
+                points: number;
+                tier: string | null;
+                nextTier: string | null;
+                pointsToNext: number | null;
+            };
+            expect(payload).toMatchObject({ points: 10, tier: 'acquaintance', nextTier: 'ally', pointsToNext: 20 });
+        });
+
+        it('returns nextTier null and pointsToNext null for an officer (max tier)', async () => {
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadStanding();
+            ledger.recordSupport('alice@onion', 'embassy', 75, { reason: 'test-support' });
+            patronStore.saveStanding(ledger);
+
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=alice@onion');
+            const payload = JSON.parse(response.body) as { tier: string | null; nextTier: string | null; pointsToNext: number | null };
+            expect(payload).toMatchObject({ tier: 'officer', nextTier: null, pointsToNext: null });
+        });
+
+        it('defaults to embassy faction when no faction param supplied', async () => {
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=alice@onion');
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { faction: string };
+            expect(payload.faction).toBe('embassy');
+        });
+
+        it('respects an explicit faction query param', async () => {
+            const patronStore = new PatronStore(tmp);
+            const ledger = patronStore.loadStanding();
+            ledger.recordSupport('bob@onion', 'foundry', 30, { reason: 'test-support' });
+            patronStore.saveStanding(ledger);
+
+            server = await startLettersHttpServer({ store, port: 0, patronMemoryRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/standing') + '?human=bob@onion&faction=foundry');
+            const payload = JSON.parse(response.body) as { faction: string; tier: string | null; points: number };
+            expect(payload).toMatchObject({ faction: 'foundry', tier: 'ally', points: 30 });
         });
     });
 });
