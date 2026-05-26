@@ -8,7 +8,44 @@ See [`docs/changelog-workflow.md`](docs/changelog-workflow.md) for the authoring
 
 ## [Unreleased]
 
-Pending changes accumulate here between releases. Promoted to a dated section at the next curated squash.
+The next release will be the pre-Chicago demo snapshot. Bullets below are a draft — the squasher should review and adjust before promoting to a dated section. See `docs/changelog-workflow.md` for the format.
+
+### Added
+
+- Five public web surfaces with a shared vellum aesthetic: wall ticker (`/wall/`), patron inbox (`/inbox/?human=<handle>`), patron profile (`/patron/?human=<handle>`), Library of Souls (`/library/`), and graveyard (`/graveyard/`). A landing page at `/` links to all of them.
+- Patron lifecycle CLIs: `npm run patron:register / patron:offer / patron:witness / patron:grant / patron:ask`. Standing-tier crossings produce dispatched letters automatically (`standing_tier_crossed`, `epitaph`, `civic_milestone`).
+- Self-service patron daily check-in at `GET /v1/patron/checkin?human=<handle>` plus a one-tap button on the patron profile page (Chicago-day "earn a Shard from your phone").
+- Six named heroes (Hans, Father Aereck, Wise Old Man, Duke Horacio, Pip, Thrand) and four faction flagships (Mother Anvil, Severn Vesta, Wren Calix, The Hush) with ambient personality lines that fire without an LLM call.
+- Library of Souls auto-generates a portrait per resident — epithet, story arc, top quote, wants, patron count, lives lived.
+- Cross-resident whisper verb (`L-β`) and embassy reception greeting reflex (`D3`) wired into the runtime.
+- Inference health probe at `GET /v1/health` and old/new model canary endpoints for safe model rollover.
+- Multi-controller safety lock: a second controller pointing at the same memory dir fails fast with a clear pid/path error.
+
+### Changed
+
+- Wall ticker dedupes repeated subjects so a multi-witness death doesn't spam five identical cards.
+- Wall ticker and Library of Souls hide synthetic residents (`res-qa-*`, `res-bmk_*`) from public surfaces. Operator/debug views still see them.
+- Resident portraits dedupe repeated "wants" and cap at five distinct entries, so long-lived residents read like biographies instead of log dumps.
+- Coordination workflow: feature work happens on `agents/wip`, milestone squashes land on `nullcity`. `docs/agent-status.md` stays on `agents/wip` and is excluded from squashes.
+
+### Fixed
+
+- Patron progress bar no longer renders 0% when a real value is present.
+- `/v1/library` and `/v1/graveyard` endpoints serve correctly after controller restart.
+- Inference health probe is no longer blocked by the LlmClient pause state.
+
+### Developer-facing
+
+- New SOUL frontmatter rule kinds: `always` (ambient reflex) and `attack` (reactive event), with cooldown and priority fields.
+- `buildWallSnapshot` and `readLibraryEntries` accept `excludeSynthetic` and `dedupeBySubject` options. Defaults preserve full-fidelity output for non-public callers.
+- `CHANGELOG.md` (this file) renamed from lowercase, format upgraded to [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). See `docs/changelog-workflow.md` for the authoring guide.
+- Test count: ~1,500 → 2,151. `npm run fin` (typecheck + lint + format + jest) is the merge gate.
+
+### Tests
+
+- End-to-end patron loop verified live: `register → offer → witness` produces a letter in `/v1/inbox`.
+- `npm run controller:smoke` boots all 19+ residents and observes recent activity per resident.
+- `scripts/post-restart-smoke.sh` reports READY after a fresh controller restart with all residents alive.
 
 ## [2026-05-23]
 
