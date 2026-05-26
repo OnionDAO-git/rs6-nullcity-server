@@ -26,6 +26,8 @@ import {
     starterFishingAction,
     starterFishingCookingAction,
     starterFishingRouteAction,
+    safeCombatTarget,
+    safeBoneSourceTarget,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
@@ -1563,8 +1565,8 @@ describe('combatTrainingAction', () => {
 });
 
 describe('explorationAction', () => {
-    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`, level = 0): BodyActor {
-        return { id, kind: 'npc', name, position: { x, y, level }, hpFraction: 1 };
+    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`, level = 0, key?: string): BodyActor {
+        return { id, kind: 'npc', name, key, position: { x, y, level }, hpFraction: 1 };
     }
 
     it('returns an "interact talk-to" against an uncooldowned adjacent NPC', () => {
@@ -1973,5 +1975,130 @@ describe('factionLandmarkWorkAction', () => {
             option: 'pick-up',
             cause: 'faction_veil_shadow_work',
         });
+    });
+});
+
+describe('target failure cooldowns and cross-level hardening', () => {
+    const BONES = 526;
+
+    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`, level = 0, key?: string): BodyActor {
+        return { id, kind: 'npc', name, key, position: { x, y, level }, hpFraction: 1 };
+    }
+
+    it('explorationAction skips an NPC on target failure cooldown', () => {
+        const guide = npc('RuneScape Guide', 100, 100, 'npc:guide');
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+
+        // Cooldown active (failed at tick 10, current tick 15)
+        const targetFailureCooldowns = {
+            'actor:npc:guide:100,100,0': 10,
+        };
+
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [guide], objects: [fountain] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            15,
+            undefined,
+            undefined,
+            targetFailureCooldowns,
+        );
+
+        // Should skip guide and move to fountain
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('explorationAction skips an NPC family on target failure cooldown after a stale NPC moves', () => {
+        const cook = npc('Cook', 102, 100, 'npc:cook-live', 0, 'rs:lumbridge_castle_cook');
+        const fountain = { objectId: 879, position: { x: 103, y: 100, level: 0 } };
+        const targetFailureCooldowns = {
+            'actor-key:rs:lumbridge_castle_cook': 10,
+        };
+
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [cook], objects: [fountain] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            15,
+            undefined,
+            undefined,
+            targetFailureCooldowns,
+        );
+
+        expect(action).toEqual({ kind: 'move_to', target: fountain.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('opportunisticPickupAction skips an item on target failure cooldown', () => {
+        const coin: BodyWorldItem = { itemId: 995, key: 'rs:coins', amount: 5, position: { x: 101, y: 100, level: 0 } };
+        const targetFailureCooldowns = {
+            'item:995:101,100,0': 10,
+        };
+
+        const action = opportunisticPickupAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [null] },
+                nearby: { worldItems: [coin] },
+            }),
+            undefined,
+            undefined,
+            undefined,
+            15,
+            undefined,
+            targetFailureCooldowns,
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('safeCombatTarget and safeBoneSourceTarget filter cross-level targets and target failure cooldowns', () => {
+        const chicken1 = npc('Chicken', 101, 100, 'npc:chicken1', 0);
+        const chicken2 = npc('Chicken', 101, 100, 'npc:chicken2', 2);
+
+        const targetFailureCooldowns = {
+            'actor:npc:chicken1:101,100,0': 10,
+        };
+
+        const p = perception({
+            resident: { position: { x: 100, y: 100, level: 0 } },
+            nearby: { npcs: [chicken1, chicken2] },
+        });
+
+        // safeCombatTarget on level 0 with chicken1 on cooldown: should find nothing since chicken2 is on level 2
+        const target = safeCombatTarget(p, targetFailureCooldowns, 15);
+        expect(target).toBeUndefined();
+    });
+
+    it('levelOneWoodcuttingAction filters cross-level trees and target failure cooldowns', () => {
+        const treeDownstairs = { objectId: objectIds.tree.normal[0].default, position: { x: 101, y: 100, level: 0 } };
+
+        const action = levelOneWoodcuttingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [item(1351, 'rs:bronze_axe')] },
+                nearby: { objects: [treeDownstairs] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+
+    it('starterFishingAction filters cross-level fishing spots', () => {
+        const fishingSpotDownstairs = npc('Fishing spot', 101, 100, 'npc:fishing-spot', 0);
+
+        const action = starterFishingAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [item(303, 'rs:small_fishing_net')] },
+                nearby: { npcs: [fishingSpotDownstairs] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
     });
 });

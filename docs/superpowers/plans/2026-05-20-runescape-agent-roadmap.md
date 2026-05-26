@@ -120,6 +120,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Repair 2026-05-25 on `agents/wip`: starter-fishing beacons now say to cook carried raw fish before advertising another fishing click, so observers can tell when the resident is in the cooking half of the loop.
   - Repair 2026-05-25 on `agents/wip`: river-side starter anglers with raw fish now route through the known Lumbridge Castle south entrance before chasing the kitchen range, avoiding unrelated river doors that previously trapped the cooking half of the loop.
   - Hardened 2026-05-26 on `agents/wip`: free exploration now ignores NPCs, landmarks, tree stands, openables, and ground items on other floors, so level-blind distance math cannot send Lumbridge Castle residents after downstairs targets. Verified with red/green Body tests, hybrid exploration subset, `npm run fin` (2054/2054), post-restart smoke, 180s targeted QA smoke, and 60s whole-city smoke.
+  - Hardened 2026-05-26 on `agents/wip`: same-floor level checks and target failure cooldowns are fully integrated and verified across all deterministic body routines (woodcutting, fishing, combat, prayer, and exploration). Added focused Jest tests; verified all 2059 tests pass green (`npm run fin`) and successfully ran 5-minute live city-wide smoke test (`npm run controller:smoke -- --observe-seconds 300`).
 
 - `[x]` **B4: Extract Brain goal planner.**
   - Files: `src/controller/spark/runescape-brain-planner.ts`, `src/controller/spark/runescape-brain-planner.test.ts`

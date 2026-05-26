@@ -225,6 +225,53 @@ describe('ResidentRuntime modules', () => {
         });
     });
 
+    it('remembers NPC family target_not_found failures so relocated stale NPCs cool down together', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-npc-target-failure-'));
+        const state = stateFor('res:pip');
+        state.tick = 23;
+        const staleCook = {
+            id: 'npc:85',
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x: 3206, y: 3215, level: 0 },
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'interact', target: staleCook, option: 'talk-to', cause: 'explore_talk_to_npc' }],
+                cause: 'explore_talk_to_npc',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: false, reason: 'target_not_found', requestId: 'request-stale-cook' })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+
+        await runtime.onPerception({ tick: 23, events: [] });
+
+        expect(state.cognition?.targetFailureCooldowns).toEqual({
+            'actor:npc:85:3206,3215,0': 23,
+            'actor-key:rs:lumbridge_castle_cook': 23,
+            'actor-name:cook': 23,
+        });
+    });
+
     it('records movement timeout distance evidence for coordinate target failures', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-failure-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-evidence-'));

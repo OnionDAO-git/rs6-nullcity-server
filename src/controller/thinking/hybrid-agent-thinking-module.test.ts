@@ -2500,6 +2500,63 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('records NPC family cooldowns when a stuck exploration move blocks on a relocated NPC', async () => {
+        const cook = {
+            id: 'npc:85',
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x: 3206, y: 3215, level: 0 },
+            hpFraction: 1,
+        };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.tick = 201;
+        state.stuckSince = 150;
+        state.cognition = {
+            activeGoal: {
+                id: 'scout-lumbridge',
+                description: 'Scout nearby landmarks while staying easy to find.',
+                steps: ['recover locally after blocked routes', 'stay visible'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 190,
+            lastBodyTick: 190,
+            activeMove: {
+                target: cook.position,
+                range: 1,
+                cause: 'explore_talk_to_npc',
+                startedAtTick: 190,
+                lastTick: 200,
+                lastPositionKey: '3204,3215,0',
+                stationaryCount: 2,
+                lastDistance: 2,
+                bestDistance: 2,
+                lastImprovedTick: 190,
+                nonImprovingCount: 2,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(
+            perception({
+                tick: 201,
+                resident: residentAt(3204, 3215),
+                npcs: [cook],
+                objects: [{ objectId: 879, position: { x: 3204, y: 3218, level: 0 }, orientation: 0 }],
+            }),
+        );
+
+        expect(state.cognition?.targetFailureCooldowns).toEqual(
+            expect.objectContaining({
+                'actor:npc:85:3206,3215,0': 202,
+                'actor-key:rs:lumbridge_castle_cook': 202,
+                'actor-name:cook': 202,
+            }),
+        );
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('routes a stuck starter angler back toward Lumbridge fishing before generic stuck patrol', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();

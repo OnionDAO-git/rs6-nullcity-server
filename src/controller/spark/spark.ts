@@ -629,6 +629,7 @@ function factionLandmarkAction(soul: Soul, state: RuntimeState, perception: Perc
     state.cognition ||= {};
     state.cognition.pickupCooldowns ||= {};
     state.cognition.explorationCooldowns ||= {};
+    state.cognition.targetFailureCooldowns ||= {};
     return factionLandmarkWorkAction({
         perception,
         factionId,
@@ -637,6 +638,7 @@ function factionLandmarkAction(soul: Soul, state: RuntimeState, perception: Perc
         currentTick: state.tick,
         pickupCooldowns: state.cognition.pickupCooldowns,
         explorationCooldowns: state.cognition.explorationCooldowns,
+        targetFailureCooldowns: state.cognition.targetFailureCooldowns,
     });
 }
 

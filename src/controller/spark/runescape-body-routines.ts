@@ -220,6 +220,69 @@ function sameLevel(a: BodyPos, b: BodyPos): boolean {
     return a.level === b.level;
 }
 
+const TARGET_FAILURE_COOLDOWN_TICKS = 600;
+
+export function isTargetFailureCooldownActive(
+    target: unknown,
+    cooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): boolean {
+    if (!cooldowns || Object.keys(cooldowns).length === 0) {
+        return false;
+    }
+    if (!target || typeof target !== 'object') {
+        return false;
+    }
+    const targetRecord = target as Record<string, unknown>;
+    const position = (targetRecord.position && typeof targetRecord.position === 'object' ? targetRecord.position : target) as Record<
+        string,
+        unknown
+    >;
+    const { x, y, level } = position;
+    if (typeof x !== 'number' || typeof y !== 'number') {
+        return false;
+    }
+    const targetLevel = typeof level === 'number' ? level : 0;
+    const coordinate = `${x},${y},${targetLevel}`;
+    const keys = new Set<string>();
+    if (typeof targetRecord.objectId === 'number') {
+        keys.add(`object:${targetRecord.objectId}:${coordinate}`);
+    }
+    if (typeof targetRecord.itemId === 'number') {
+        keys.add(`item:${targetRecord.itemId}:${coordinate}`);
+    }
+    if (typeof targetRecord.id === 'string') {
+        keys.add(`actor:${targetRecord.id}:${coordinate}`);
+    }
+    const actorKind = typeof targetRecord.kind === 'string' ? targetRecord.kind.toLowerCase() : undefined;
+    if (actorKind === 'npc' || (typeof targetRecord.id === 'string' && targetRecord.id.startsWith('npc:'))) {
+        const actorKey = failureKeyFragment(targetRecord.key);
+        if (actorKey) {
+            keys.add(`actor-key:${actorKey}`);
+        }
+        const actorName = failureKeyFragment(targetRecord.name);
+        if (actorName) {
+            keys.add(`actor-name:${actorName}`);
+        }
+    }
+    keys.add(`target:${coordinate}`);
+
+    return Object.entries(cooldowns).some(([key, failedAt]) => {
+        if (currentTick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS) {
+            return false;
+        }
+        return keys.has(key) || key === `target:${coordinate}` || key.endsWith(`:${coordinate}`);
+    });
+}
+
+function failureKeyFragment(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
+}
+
 /**
  * Linear inventory scan returning the first slot index whose contents
  * match the predicate. Mirrors the monolith's `findSlot` helper.
@@ -430,7 +493,9 @@ export function hasNearbyFire(perception: BodyHybridPerception): boolean {
     if (!here) {
         return false;
     }
-    return (perception.nearby?.objects || []).some(object => FIRE_OBJECT_IDS.has(object.objectId) && distance(here, object.position) <= 1);
+    return (perception.nearby?.objects || []).some(
+        object => sameLevel(here, object.position) && FIRE_OBJECT_IDS.has(object.objectId) && distance(here, object.position) <= 1,
+    );
 }
 
 // --- Body-routine action helpers (moved verbatim from the monolith). ---
@@ -458,7 +523,11 @@ export function firemakingAction(perception: BodyHybridPerception): AgentAction 
  * Approach and chop the nearest level-1 tree when the resident is carrying
  * a woodcutting axe. Moved verbatim from the monolith (R-β slice 2).
  */
-export function levelOneWoodcuttingAction(perception: BodyHybridPerception): AgentAction | undefined {
+export function levelOneWoodcuttingAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
@@ -468,7 +537,12 @@ export function levelOneWoodcuttingAction(perception: BodyHybridPerception): Age
     }
 
     const target = (perception.nearby?.objects || [])
-        .filter(object => LEVEL_ONE_TREE_IDS.has(object.objectId))
+        .filter(
+            object =>
+                sameLevel(here, object.position) &&
+                LEVEL_ONE_TREE_IDS.has(object.objectId) &&
+                !isTargetFailureCooldownActive(object, targetFailureCooldowns, currentTick),
+        )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (!target) {
         return undefined;
@@ -486,7 +560,11 @@ export function levelOneWoodcuttingAction(perception: BodyHybridPerception): Age
  * carrying a small fishing net. Moved verbatim from the monolith (R-β
  * slice 3).
  */
-export function starterFishingAction(perception: BodyHybridPerception): AgentAction | undefined {
+export function starterFishingAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here || !hasSmallFishingNet(perception)) {
         return undefined;
@@ -498,7 +576,12 @@ export function starterFishingAction(perception: BodyHybridPerception): AgentAct
     }
 
     const target = (perception.nearby?.npcs || [])
-        .filter(isNetCapableFishingSpot)
+        .filter(
+            actor =>
+                sameLevel(here, actor.position) &&
+                isNetCapableFishingSpot(actor) &&
+                !isTargetFailureCooldownActive(actor, targetFailureCooldowns, currentTick),
+        )
         .sort((a, b) => starterFishingSpotScore(here, a.position) - starterFishingSpotScore(here, b.position))[0];
     if (!target) {
         return undefined;
@@ -665,7 +748,11 @@ export function buryBonesAction(perception: BodyHybridPerception): AgentAction |
  * fall back to lighting a cooking fire via firemakingAction; otherwise
  * say what's missing. Moved verbatim from the monolith (R-β slice 5).
  */
-export function starterFishingCookingAction(perception: BodyHybridPerception): AgentAction | undefined {
+export function starterFishingCookingAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
     const inventory = perception.resident?.inventory || [];
     const rawFishSlot = findSlot(inventory, isStarterRawFish);
     if (rawFishSlot === undefined) {
@@ -674,7 +761,13 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
 
     const here = perception.resident?.position;
     const heatSource = (perception.nearby?.objects || [])
-        .filter(object => COOKING_HEAT_OBJECT_IDS.has(object.objectId))
+        .filter(
+            object =>
+                here &&
+                sameLevel(here, object.position) &&
+                COOKING_HEAT_OBJECT_IDS.has(object.objectId) &&
+                !isTargetFailureCooldownActive(object, targetFailureCooldowns, currentTick),
+        )
         .sort((a, b) => distance(here || a.position, a.position) - distance(here || b.position, b.position))[0];
     if (heatSource) {
         if (here && distance(here, heatSource.position) > COOKING_RANGE_APPROACH_RADIUS) {
@@ -710,9 +803,11 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
         const logs = (perception.nearby?.worldItems || [])
             .filter(
                 candidate =>
+                    sameLevel(here, candidate.position) &&
                     isFiremakingLog(candidate) &&
                     !isOwnedByAnotherActor(candidate, undefined, perception.resident?.id) &&
-                    distance(here, candidate.position) <= COOKING_LOG_PICKUP_MAX_DISTANCE,
+                    distance(here, candidate.position) <= COOKING_LOG_PICKUP_MAX_DISTANCE &&
+                    !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
             )
             .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
         if (logs) {
@@ -721,7 +816,7 @@ export function starterFishingCookingAction(perception: BodyHybridPerception): A
     }
 
     if (tinderboxSlot !== undefined && hasWoodcuttingAxe(perception)) {
-        const woodcuttingAction = levelOneWoodcuttingAction(perception);
+        const woodcuttingAction = levelOneWoodcuttingAction(perception, targetFailureCooldowns, currentTick);
         if (woodcuttingAction) {
             return actionWithCause(woodcuttingAction, 'starter_fishing_chop_cooking_logs');
         }
@@ -849,6 +944,7 @@ export function opportunisticPickupAction(
     pickupCooldowns?: Record<string, number>,
     currentTick = perception.tick ?? 0,
     explorationCooldowns?: Record<string, number>,
+    targetFailureCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
@@ -867,7 +963,8 @@ export function opportunisticPickupAction(
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
                 isPickupOnCooldown(candidate, pickupCooldowns, currentTick) ||
-                isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick)
+                isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick) ||
+                isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick)
             ) {
                 return false;
             }
@@ -899,6 +996,7 @@ export function lowHealthRecoveryAction(
     residentId?: string,
     pickupCooldowns?: Record<string, number>,
     currentTick = perception.tick ?? 0,
+    targetFailureCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     if (!isLowHealth(perception)) {
         return undefined;
@@ -916,12 +1014,12 @@ export function lowHealthRecoveryAction(
     }
     const nearbyThreat = hasNearbyRecoveryThreat(perception, here);
 
-    const cookingAction = starterFishingCookingAction(perception);
+    const cookingAction = starterFishingCookingAction(perception, targetFailureCooldowns, currentTick);
     if (cookingAction && !nearbyThreat) {
         return actionWithCause(cookingAction, 'low_health_cook_food');
     }
 
-    const fishingAction = nearbyThreat ? undefined : starterFishingAction(perception);
+    const fishingAction = nearbyThreat ? undefined : starterFishingAction(perception, targetFailureCooldowns, currentTick);
     if (fishingAction) {
         return actionWithCause(fishingAction, 'low_health_fish_food');
     }
@@ -941,9 +1039,11 @@ export function lowHealthRecoveryAction(
     const food = (perception.nearby?.worldItems || [])
         .filter(
             candidate =>
+                sameLevel(here, candidate.position) &&
                 isEdibleFood(candidate) &&
                 !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
-                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick),
+                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
         )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
 
@@ -983,15 +1083,26 @@ export function boneSourcePriority(actor: BodyActor): number {
 }
 
 /** Closest safe bone-source NPC, picked by priority then distance. */
-export function safeBoneSourceTarget(perception: BodyHybridPerception): BodyActor | undefined {
+export function safeBoneSourceTarget(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): BodyActor | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
     }
-    return (perception.nearby?.npcs || []).filter(isSafeBoneSource).sort((a, b) => {
-        const priority = boneSourcePriority(a) - boneSourcePriority(b);
-        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-    })[0];
+    return (perception.nearby?.npcs || [])
+        .filter(
+            a =>
+                sameLevel(here, a.position) &&
+                isSafeBoneSource(a) &&
+                !isTargetFailureCooldownActive(a, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => {
+            const priority = boneSourcePriority(a) - boneSourcePriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
 }
 
 /**
@@ -1000,7 +1111,11 @@ export function safeBoneSourceTarget(perception: BodyHybridPerception): BodyActo
  * nothing is in sight. Aborts when low on health. Moved verbatim from
  * the monolith (R-β slice 7).
  */
-export function prayerTrainingAction(perception: BodyHybridPerception): AgentAction | undefined {
+export function prayerTrainingAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
     const bonesAction = buryBonesAction(perception);
     if (bonesAction) {
         return bonesAction;
@@ -1014,7 +1129,7 @@ export function prayerTrainingAction(perception: BodyHybridPerception): AgentAct
         return undefined;
     }
 
-    const target = safeBoneSourceTarget(perception);
+    const target = safeBoneSourceTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
         const waypoint = nearestPrayerTrainingWaypoint(here);
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
@@ -1033,14 +1148,23 @@ export function prayerTrainingAction(perception: BodyHybridPerception): AgentAct
 export function combatLootOrPrayerAction(
     perception: BodyHybridPerception,
     pickupCooldowns?: Record<string, number>,
-    currentTick?: number,
+    currentTick = perception.tick ?? 0,
+    targetFailureCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     const bonesSlot = findSlot(perception.resident?.inventory || [], isBones);
     if (bonesSlot !== undefined) {
         return { kind: 'item_action', slot: bonesSlot, option: 'bury', cause: 'combat_bury_looted_bones' };
     }
 
-    const pickup = opportunisticPickupAction(perception, undefined, COMBAT_LOOT_MAX_DISTANCE, pickupCooldowns, currentTick);
+    const pickup = opportunisticPickupAction(
+        perception,
+        undefined,
+        COMBAT_LOOT_MAX_DISTANCE,
+        pickupCooldowns,
+        currentTick,
+        undefined,
+        targetFailureCooldowns,
+    );
     return pickup ? actionWithCause(pickup, 'combat_loot_pickup') : undefined;
 }
 
@@ -1057,15 +1181,26 @@ export function combatTargetPriority(actor: BodyActor): number {
 }
 
 /** Closest safe combat-target NPC, picked by priority then distance. */
-export function safeCombatTarget(perception: BodyHybridPerception): BodyActor | undefined {
+export function safeCombatTarget(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): BodyActor | undefined {
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
     }
-    return (perception.nearby?.npcs || []).filter(isSafeCombatTarget).sort((a, b) => {
-        const priority = combatTargetPriority(a) - combatTargetPriority(b);
-        return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
-    })[0];
+    return (perception.nearby?.npcs || [])
+        .filter(
+            a =>
+                sameLevel(here, a.position) &&
+                isSafeCombatTarget(a) &&
+                !isTargetFailureCooldownActive(a, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => {
+            const priority = combatTargetPriority(a) - combatTargetPriority(b);
+            return priority !== 0 ? priority : distance(here, a.position) - distance(here, b.position);
+        })[0];
 }
 
 /**
@@ -1077,7 +1212,8 @@ export function safeCombatTarget(perception: BodyHybridPerception): BodyActor | 
 export function combatTrainingAction(
     perception: BodyHybridPerception,
     pickupCooldowns?: Record<string, number>,
-    currentTick?: number,
+    currentTick = perception.tick ?? 0,
+    targetFailureCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
@@ -1092,13 +1228,13 @@ export function combatTrainingAction(
     }
 
     if (!perception.resident?.inCombat) {
-        const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick);
+        const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick, targetFailureCooldowns);
         if (loot) {
             return loot;
         }
     }
 
-    const target = safeCombatTarget(perception);
+    const target = safeCombatTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
         const waypoint = nearestPrayerTrainingWaypoint(here);
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
@@ -1117,11 +1253,12 @@ export interface FactionLandmarkWorkInput {
     pickupCooldowns?: Record<string, number>;
     currentTick?: number;
     explorationCooldowns?: Record<string, number>;
+    targetFailureCooldowns?: Record<string, number>;
 }
 
 /** Deterministic visible work loop for flagship heroes near their faction landmarks. */
 export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): AgentAction | undefined {
-    const { perception, factionId, landmark, residentId, pickupCooldowns, explorationCooldowns } = input;
+    const { perception, factionId, landmark, residentId, pickupCooldowns, explorationCooldowns, targetFailureCooldowns } = input;
     const here = perception.resident?.position;
     if (!here || !factionId || !landmark) {
         return undefined;
@@ -1137,14 +1274,23 @@ export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): Agen
         if (fire) {
             return actionWithCause(fire, 'faction_foundry_fuel_work');
         }
-        const woodcutting = levelOneWoodcuttingAction(perception);
+        const woodcutting = levelOneWoodcuttingAction(perception, targetFailureCooldowns, currentTick);
         if (woodcutting) {
             return actionWithCause(woodcutting, 'faction_foundry_fuel_work');
         }
-        const search = explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns, {
-            interactWithNpcs: false,
-            interactWithOpenables: false,
-        });
+        const search = explorationAction(
+            perception,
+            landmark,
+            residentId,
+            pickupCooldowns,
+            currentTick,
+            explorationCooldowns,
+            {
+                interactWithNpcs: false,
+                interactWithOpenables: false,
+            },
+            targetFailureCooldowns,
+        );
         if (search && search.kind !== 'say') {
             return actionWithCause(search, 'faction_foundry_fuel_work');
         }
@@ -1156,7 +1302,7 @@ export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): Agen
     }
 
     if (factionId === 'bureau-of-continuity') {
-        const bones = buryBonesAction(perception) || prayerTrainingAction(perception);
+        const bones = buryBonesAction(perception) || prayerTrainingAction(perception, targetFailureCooldowns, currentTick);
         if (bones) {
             return actionWithCause(bones, 'faction_bureau_witness_work');
         }
@@ -1168,10 +1314,19 @@ export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): Agen
     }
 
     if (factionId === 'ledger') {
-        const audit = explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns, {
-            interactWithNpcs: false,
-            interactWithOpenables: false,
-        });
+        const audit = explorationAction(
+            perception,
+            landmark,
+            residentId,
+            pickupCooldowns,
+            currentTick,
+            explorationCooldowns,
+            {
+                interactWithNpcs: false,
+                interactWithOpenables: false,
+            },
+            targetFailureCooldowns,
+        );
         if (audit) {
             return actionWithCause(audit, 'faction_ledger_audit_work');
         }
@@ -1183,14 +1338,31 @@ export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): Agen
     }
 
     if (factionId === 'veil') {
-        const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick, explorationCooldowns);
+        const pickup = opportunisticPickupAction(
+            perception,
+            residentId,
+            undefined,
+            pickupCooldowns,
+            currentTick,
+            explorationCooldowns,
+            targetFailureCooldowns,
+        );
         if (pickup) {
             return actionWithCause(pickup, 'faction_veil_shadow_work');
         }
-        const scout = explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns, {
-            interactWithNpcs: false,
-            interactWithOpenables: true,
-        });
+        const scout = explorationAction(
+            perception,
+            landmark,
+            residentId,
+            pickupCooldowns,
+            currentTick,
+            explorationCooldowns,
+            {
+                interactWithNpcs: false,
+                interactWithOpenables: true,
+            },
+            targetFailureCooldowns,
+        );
         if (scout) {
             return actionWithCause(scout, 'faction_veil_shadow_work');
         }
@@ -1201,7 +1373,16 @@ export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): Agen
         };
     }
 
-    return explorationAction(perception, landmark, residentId, pickupCooldowns, currentTick, explorationCooldowns);
+    return explorationAction(
+        perception,
+        landmark,
+        residentId,
+        pickupCooldowns,
+        currentTick,
+        explorationCooldowns,
+        undefined,
+        targetFailureCooldowns,
+    );
 }
 
 // --- Exploration helpers (moved verbatim from the monolith). ---
@@ -1325,6 +1506,7 @@ export function explorationAction(
     currentTick = perception.tick ?? 0,
     explorationCooldowns?: Record<string, number>,
     options?: { interactWithNpcs?: boolean; interactWithOpenables?: boolean },
+    targetFailureCooldowns?: Record<string, number>,
 ): AgentAction | undefined {
     const here = perception.resident?.position;
     if (!here) {
@@ -1332,7 +1514,15 @@ export function explorationAction(
     }
     const blockedPatrolTiles = objectOccupiedTiles(perception);
 
-    const pickup = opportunisticPickupAction(perception, residentId, undefined, pickupCooldowns, currentTick, explorationCooldowns);
+    const pickup = opportunisticPickupAction(
+        perception,
+        residentId,
+        undefined,
+        pickupCooldowns,
+        currentTick,
+        explorationCooldowns,
+        targetFailureCooldowns,
+    );
     if (pickup) {
         return pickup;
     }
@@ -1344,7 +1534,8 @@ export function explorationAction(
                     sameLevel(here, candidate.position) &&
                     !isFishingSpot(candidate) &&
                     !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
-                    !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick),
+                    !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                    !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
             )
             .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
         if (npc) {
@@ -1358,7 +1549,8 @@ export function explorationAction(
                 candidate =>
                     sameLevel(here, candidate.position) &&
                     EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
-                    !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+                    !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                    !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
             )
             .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
         if (openableObject) {
@@ -1376,7 +1568,8 @@ export function explorationAction(
                 !FIRE_OBJECT_IDS.has(candidate.objectId) &&
                 !SCOUTING_TREE_IDS.has(candidate.objectId) &&
                 !EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
-                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
         )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (object) {
@@ -1402,7 +1595,8 @@ export function explorationAction(
                 sameLevel(here, candidate.position) &&
                 SCOUTING_TREE_IDS.has(candidate.objectId) &&
                 distance(here, candidate.position) > 2 &&
-                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
+                !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
         )
         .sort((a, b) => distance(here, b.position) - distance(here, a.position))[0];
     if (treeStand) {
@@ -1413,7 +1607,8 @@ export function explorationAction(
         .filter(
             candidate =>
                 sameLevel(here, candidate.position) &&
-                !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick),
+                !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
         )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (item) {
@@ -1432,11 +1627,15 @@ export function explorationAction(
 }
 
 function objectOccupiedTiles(perception: BodyHybridPerception): ReadonlySet<string> | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
     const objects = perception.nearby?.objects || [];
     if (objects.length === 0) {
         return undefined;
     }
-    return new Set(objects.map(object => bodyPositionKey(object.position)));
+    return new Set(objects.filter(object => sameLevel(here, object.position)).map(object => bodyPositionKey(object.position)));
 }
 
 function bodyPositionKey(position: BodyPos): string {

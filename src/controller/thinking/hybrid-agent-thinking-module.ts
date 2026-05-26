@@ -1600,7 +1600,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         this.rememberBlockedExplorationTarget(perception, active.target);
-        this.rememberBlockedActionTarget(perception, active.target);
+        this.rememberBlockedActionTarget(perception, active.target, active.cause);
 
         const localSkill = this.anchorReturnSkillInterruption(perception, active);
         if (localSkill) {
@@ -3461,7 +3461,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
     }
 
-    private rememberBlockedActionTarget(perception: HybridPerception, target: Pos): void {
+    private rememberBlockedActionTarget(perception: HybridPerception, target: Pos, cause?: string): void {
         const cooldowns = (this.cognition().targetFailureCooldowns ||= {});
         const remember = (candidate: unknown): void => {
             if (!isRecord(candidate)) {
@@ -3471,9 +3471,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             if (!position || !positionsEqual(position, target)) {
                 return;
             }
-            const key = targetFailureKey(candidate);
-            if (key) {
-                cooldowns[key] = this.options.state.tick;
+            const keys = shouldRememberNpcFamilyTargetFailure(candidate, cause) ? targetFailureKeys(candidate) : [targetFailureKey(candidate)];
+            for (const key of keys) {
+                if (key) {
+                    cooldowns[key] = this.options.state.tick;
+                }
             }
         };
 
@@ -4202,9 +4204,46 @@ function targetFailureKeys(target: unknown): string[] {
     }
     if (typeof targetRecord.id === 'string') {
         keys.push(`actor:${targetRecord.id}:${coordinate}`);
+        if (isNpcTarget(targetRecord)) {
+            keys.push(...npcFamilyFailureKeys(targetRecord));
+        }
     }
     keys.push(`target:${coordinate}`);
     return keys;
+}
+
+function shouldRememberNpcFamilyTargetFailure(target: unknown, cause?: string): boolean {
+    if (!isRecord(target) || !isNpcTarget(target)) {
+        return false;
+    }
+    const normalizedCause = (cause || '').toLowerCase();
+    return normalizedCause.includes('explore') || normalizedCause.includes('scout') || normalizedCause.includes('stuck');
+}
+
+function isNpcTarget(targetRecord: Record<string, unknown>): boolean {
+    const kind = typeof targetRecord.kind === 'string' ? targetRecord.kind.toLowerCase() : undefined;
+    return kind === 'npc' || (typeof targetRecord.id === 'string' && targetRecord.id.startsWith('npc:'));
+}
+
+function npcFamilyFailureKeys(targetRecord: Record<string, unknown>): string[] {
+    const keys: string[] = [];
+    const key = failureKeyFragment(targetRecord.key);
+    if (key) {
+        keys.push(`actor-key:${key}`);
+    }
+    const name = failureKeyFragment(targetRecord.name);
+    if (name) {
+        keys.push(`actor-name:${name}`);
+    }
+    return keys;
+}
+
+function failureKeyFragment(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
 }
 
 function positionKey(position: Pos): string {

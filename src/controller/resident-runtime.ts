@@ -955,22 +955,25 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private rememberTargetFailure(attempt: ActionAttempt): void {
-        const key = actionTargetFailureKey(attempt.action);
-        if (!key) {
+        const keys = actionTargetFailureKeys(attempt.action);
+        if (keys.length === 0) {
             return;
         }
 
         const cognition = (this.state.cognition ||= {});
         if (attempt.finalStatus === 'timeout' || (attempt.finalStatus === 'failure' && attempt.finalReason === 'target_not_found')) {
+            const failedAt = Object.fromEntries(keys.map(key => [key, this.state.tick]));
             cognition.targetFailureCooldowns = {
                 ...(cognition.targetFailureCooldowns || {}),
-                [key]: this.state.tick,
+                ...failedAt,
             };
             return;
         }
 
-        if (attempt.finalStatus === 'success' && cognition.targetFailureCooldowns?.[key] !== undefined) {
-            delete cognition.targetFailureCooldowns[key];
+        if (attempt.finalStatus === 'success' && cognition.targetFailureCooldowns) {
+            for (const key of keys) {
+                delete cognition.targetFailureCooldowns[key];
+            }
         }
     }
 
@@ -2277,11 +2280,11 @@ function fallbackTimedOutAttempt(resident: string, input: ActionCoordinatorSubmi
     };
 }
 
-function actionTargetFailureKey(action: AgentAction): string | undefined {
+function actionTargetFailureKeys(action: AgentAction): string[] {
     const actionRecord = record(action);
     const target = actionRecord.target;
     if (!target || typeof target !== 'object') {
-        return undefined;
+        return [];
     }
     const targetRecord = record(target);
     const directPosition = isPosition(target) ? target : undefined;
@@ -2291,18 +2294,60 @@ function actionTargetFailureKey(action: AgentAction): string | undefined {
     const coordinate =
         typeof position.x === 'number' && typeof position.y === 'number' ? `${position.x},${position.y},${level}` : undefined;
     if (!coordinate) {
-        return undefined;
+        return [];
     }
+    const keys: string[] = [];
     if (typeof targetRecord.objectId === 'number') {
-        return `object:${targetRecord.objectId}:${coordinate}`;
+        keys.push(`object:${targetRecord.objectId}:${coordinate}`);
     }
     if (typeof targetRecord.itemId === 'number') {
-        return `item:${targetRecord.itemId}:${coordinate}`;
+        keys.push(`item:${targetRecord.itemId}:${coordinate}`);
     }
     if (typeof targetRecord.id === 'string') {
-        return `actor:${targetRecord.id}:${coordinate}`;
+        keys.push(`actor:${targetRecord.id}:${coordinate}`);
+        if (shouldRememberNpcFamilyFailure(actionRecord, targetRecord)) {
+            keys.push(...npcFamilyFailureKeys(targetRecord));
+        }
     }
-    return `target:${coordinate}`;
+    if (keys.length === 0) {
+        keys.push(`target:${coordinate}`);
+    }
+    return keys;
+}
+
+function shouldRememberNpcFamilyFailure(actionRecord: Record<string, unknown>, targetRecord: Record<string, unknown>): boolean {
+    if (!isNpcTarget(targetRecord)) {
+        return false;
+    }
+    const option = typeof actionRecord.option === 'string' ? actionRecord.option.toLowerCase() : '';
+    const cause = typeof actionRecord.cause === 'string' ? actionRecord.cause.toLowerCase() : '';
+    return option === 'talk-to' || cause.includes('explore') || cause.includes('scout') || cause.includes('stuck');
+}
+
+function isNpcTarget(targetRecord: Record<string, unknown>): boolean {
+    const kind = typeof targetRecord.kind === 'string' ? targetRecord.kind.toLowerCase() : undefined;
+    return kind === 'npc' || (typeof targetRecord.id === 'string' && targetRecord.id.startsWith('npc:'));
+}
+
+function npcFamilyFailureKeys(targetRecord: Record<string, unknown>): string[] {
+    const keys: string[] = [];
+    const key = failureKeyFragment(targetRecord.key);
+    if (key) {
+        keys.push(`actor-key:${key}`);
+    }
+    const name = failureKeyFragment(targetRecord.name);
+    if (name) {
+        keys.push(`actor-name:${name}`);
+    }
+    return keys;
+}
+
+function failureKeyFragment(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    return normalized.length > 0 ? normalized : undefined;
 }
 
 function record(value: unknown): Record<string, unknown> {
