@@ -645,6 +645,75 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(response.body).toContain('/v1/graveyard');
         });
     });
+
+    describe('GET /v1/library (Pillar 3 — Library of Souls browse)', () => {
+        it('returns 404 when lettersRoot is not configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/library'));
+            expect(response.status).toBe(404);
+        });
+
+        it('returns empty list when no library portraits exist', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/library'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { residents: unknown[]; total: number };
+            expect(payload.residents).toEqual([]);
+            expect(payload.total).toBe(0);
+        });
+
+        it('returns portrait summary with slug, displayName, currentState, and topQuote', async () => {
+            writePortraitJson(tmp, 'res-fern', {
+                schemaVersion: 1,
+                residentName: 'Fern',
+                currentState: 'living',
+                livesCount: 1,
+                epithet: 'the Wanderer',
+                voice: { quotes: [{ tick: 10, text: 'The road goes on.', lifeIndex: 1, tag: 'first' }] },
+                patrons: [{ handle: 'alice@onion', events: [], sentence: 'alice supported.' }],
+                wants: { current: ['find a safe path'], unfulfilledAtDeath: [] },
+                storyArc: {
+                    phase: 'progress',
+                    summary: 'active',
+                    evidence: { pitches: 0, fundingEvents: 1, progressEvents: 2, resolutionEvents: 0, letterEvents: 0 },
+                },
+                born: { ts: '2026-05-26T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z', tick: 100 },
+                relationships: [],
+                artifacts: [],
+            });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/library'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                residents: Array<{
+                    slug: string;
+                    displayName: string;
+                    currentState: string;
+                    topQuote?: string;
+                    arcPhase?: string;
+                    patronHandles: string[];
+                }>;
+            };
+            expect(payload.residents).toHaveLength(1);
+            const entry = payload.residents[0];
+            expect(entry.slug).toBe('res-fern');
+            expect(entry.displayName).toBe('Fern');
+            expect(entry.currentState).toBe('living');
+            expect(entry.topQuote).toBe('The road goes on.');
+            expect(entry.arcPhase).toBe('progress');
+            expect(entry.patronHandles).toContain('alice@onion');
+        });
+
+        it('serves the Library of Souls browse page from /library/', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/library/'));
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            expect(response.body).toContain('Library of Souls');
+            expect(response.body).toContain('/v1/library');
+        });
+    });
 });
 
 function writeRuntimeState(root: string, slug: string, partial: { attention: number; [key: string]: unknown }): void {
@@ -669,6 +738,12 @@ function writeRuntimeState(root: string, slug: string, partial: { attention: num
             2,
         ),
     );
+}
+
+function writePortraitJson(root: string, slug: string, portrait: Record<string, unknown>): void {
+    const dir = path.join(root, 'library', slug);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'portrait.json'), JSON.stringify(portrait, null, 2));
 }
 
 function writeSoul(

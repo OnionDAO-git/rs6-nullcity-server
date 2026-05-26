@@ -128,6 +128,161 @@ function readPreparedEpitaph(filePath: string): string | undefined {
     }
 }
 
+/**
+ * Summary of a resident's Library of Souls portrait for the browse page (Pillar 3).
+ */
+export interface LibraryEntry {
+    /** Directory slug, e.g. "res-hans". */
+    slug: string;
+    /** Human-friendly display name. */
+    displayName: string;
+    factionId?: string;
+    factionDisplayName?: string;
+    factionColor?: string;
+    /** living, deceased, or reborn (2nd+ life). */
+    currentState: 'living' | 'deceased' | 'reborn';
+    livesCount: number;
+    epithet?: string;
+    arcPhase?: string;
+    /** Best quote from the resident's voice log. */
+    topQuote?: string;
+    patronHandles: string[];
+    /** Active wants (empty for deceased). */
+    currentWants: string[];
+    lastUpdated: string;
+}
+
+/**
+ * Read Library of Souls portraits from `<lettersRoot>/library/` and return
+ * a summary per resident. Living first, then reborn, then deceased;
+ * alphabetically within each group. Missing/malformed files are skipped.
+ */
+export function readLibraryEntries(lettersRoot: string): LibraryEntry[] {
+    const libraryDir = path.join(lettersRoot, 'library');
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(libraryDir, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+
+    const results: LibraryEntry[] = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
+            continue;
+        }
+        const slug = entry.name;
+        const portraitPath = path.join(libraryDir, slug, 'portrait.json');
+        let raw: string;
+        try {
+            raw = fs.readFileSync(portraitPath, 'utf8');
+        } catch {
+            continue;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        if (!isPortraitSummaryShape(parsed)) {
+            continue;
+        }
+        const p = parsed;
+        const displayName = typeof p.residentName === 'string' ? p.residentName : humanizeName(slug);
+
+        const quotes: unknown[] = Array.isArray(p.voice?.quotes) ? (p.voice.quotes as unknown[]) : [];
+        const firstTagged = quotes.find(q => isQuoteShape(q) && q.tag === 'first');
+        const quoteObj = firstTagged ?? (quotes.length > 0 && isQuoteShape(quotes[0]) ? quotes[0] : undefined);
+        const topQuote = quoteObj && isQuoteShape(quoteObj) && quoteObj.text.length > 0 ? quoteObj.text : undefined;
+
+        const patronHandles: string[] = Array.isArray(p.patrons)
+            ? (p.patrons as unknown[])
+                  .filter(
+                      (pt): pt is { handle: string } =>
+                          typeof pt === 'object' &&
+                          pt !== null &&
+                          typeof (pt as Record<string, unknown>).handle === 'string' &&
+                          (pt as Record<string, unknown>).handle !== 'anonymous',
+                  )
+                  .map(pt => pt.handle)
+            : [];
+        const currentWants: string[] = Array.isArray(p.wants?.current)
+            ? (p.wants.current as unknown[]).filter((w): w is string => typeof w === 'string').slice(0, 3)
+            : [];
+
+        const libEntry: LibraryEntry = {
+            slug,
+            displayName,
+            currentState: p.currentState,
+            livesCount: typeof p.livesCount === 'number' ? p.livesCount : 1,
+            lastUpdated: typeof p.lastUpdated?.ts === 'string' ? p.lastUpdated.ts : '',
+            patronHandles,
+            currentWants,
+        };
+        if (typeof p.epithet === 'string' && p.epithet.length > 0) {
+            libEntry.epithet = p.epithet;
+        }
+        if (topQuote !== undefined) {
+            libEntry.topQuote = topQuote;
+        }
+        if (typeof p.storyArc?.phase === 'string') {
+            libEntry.arcPhase = p.storyArc.phase;
+        }
+        if (typeof p.faction === 'string' && p.faction.length > 0) {
+            libEntry.factionDisplayName = p.faction;
+            const factionDef = FACTIONS.find(f => f.displayName === p.faction);
+            if (factionDef) {
+                libEntry.factionId = factionDef.id;
+                const uiMeta = factionUiMetadata(factionDef.id);
+                if (uiMeta) {
+                    libEntry.factionColor = uiMeta.wallColor;
+                }
+            }
+        }
+        results.push(libEntry);
+    }
+
+    const STATE_ORDER: Record<string, number> = { living: 0, reborn: 1, deceased: 2 };
+    results.sort((a, b) => {
+        const ao = STATE_ORDER[a.currentState] ?? 3;
+        const bo = STATE_ORDER[b.currentState] ?? 3;
+        if (ao !== bo) return ao - bo;
+        return a.displayName.localeCompare(b.displayName);
+    });
+    return results;
+}
+
+interface PortraitSummaryShape {
+    residentName?: string;
+    epithet?: string;
+    faction?: string;
+    currentState: 'living' | 'deceased' | 'reborn';
+    livesCount?: number;
+    voice?: { quotes?: unknown[] };
+    patrons?: unknown[];
+    wants?: { current?: unknown[] };
+    storyArc?: { phase?: string };
+    lastUpdated?: { ts?: string };
+}
+
+interface QuoteShape {
+    text: string;
+    tag?: string;
+}
+
+function isPortraitSummaryShape(value: unknown): value is PortraitSummaryShape {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const v = value as Record<string, unknown>;
+    return v.currentState === 'living' || v.currentState === 'deceased' || v.currentState === 'reborn';
+}
+
+function isQuoteShape(value: unknown): value is QuoteShape {
+    return typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).text === 'string';
+}
+
 function isDeceasedRuntimeState(value: unknown): value is {
     tick: number;
     deceased: { date: string; tick: number; cause: string; processed?: boolean };

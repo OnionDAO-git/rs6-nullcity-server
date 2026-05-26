@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Null City — Library of Souls</title>
+    <style>
+        :root {
+            --ink: #2a1d0e;
+            --ink-soft: #5a4630;
+            --vellum: #f5ecd6;
+            --vellum-warm: #ebdfb8;
+            --vellum-shadow: #d6c188;
+            --vellum-edge: #d9c89e;
+            --accent: #8a3324;
+            --night: #1a120a;
+            --night-soft: rgba(245, 236, 214, 0.85);
+            --stone: #7a7060;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            color: var(--ink);
+            font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+            min-height: 100vh;
+            background:
+                radial-gradient(ellipse at 50% 0%, rgba(212, 155, 74, 0.07), transparent 55%),
+                linear-gradient(180deg, var(--night) 0%, #110a04 100%);
+        }
+        header {
+            text-align: center;
+            padding: 2.25rem 1rem 1rem;
+            color: var(--night-soft);
+            font-variant: small-caps;
+            letter-spacing: 0.12em;
+        }
+        header::after {
+            content: "";
+            display: block;
+            width: 5rem;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(212, 155, 74, 0.5), transparent);
+            margin: 0.85rem auto 0;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.7rem;
+            font-weight: normal;
+            text-shadow: 0 0 18px rgba(212, 155, 74, 0.15);
+        }
+        header .sub {
+            display: block;
+            margin-top: 0.45rem;
+            font-style: italic;
+            color: rgba(245, 236, 214, 0.6);
+            font-variant: normal;
+            font-size: 0.92rem;
+            letter-spacing: 0;
+        }
+        main {
+            max-width: 68rem;
+            margin: 0 auto;
+            padding: 1.5rem 1.25rem 5rem;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+            gap: 1.5rem;
+        }
+        .card {
+            position: relative;
+            background:
+                radial-gradient(ellipse at top, rgba(255, 245, 215, 0.55), transparent 60%),
+                radial-gradient(ellipse at center, var(--vellum) 65%, var(--vellum-warm) 100%);
+            border: 1px solid var(--vellum-edge);
+            border-radius: 2px;
+            padding: 1.5rem 1.5rem 1.6rem;
+            box-shadow:
+                0 6px 18px rgba(0, 0, 0, 0.48),
+                0 1px 0 rgba(255, 250, 230, 0.4) inset;
+        }
+        .card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 2px;
+            pointer-events: none;
+            background-image:
+                radial-gradient(rgba(120, 85, 40, 0.04) 1px, transparent 1px),
+                radial-gradient(rgba(120, 85, 40, 0.03) 1px, transparent 1px);
+            background-size: 13px 13px, 17px 17px;
+            background-position: 0 0, 6px 8px;
+            mix-blend-mode: multiply;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.3rem;
+        }
+        .card-name {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: normal;
+            color: var(--ink);
+            letter-spacing: 0.01em;
+            line-height: 1.25;
+        }
+        .state-badge {
+            font-size: 0.65rem;
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+            padding: 0.15rem 0.45rem;
+            border-radius: 2px;
+            margin-left: 0.5rem;
+            flex-shrink: 0;
+            margin-top: 0.15rem;
+        }
+        .state-living  { background: rgba(60, 130, 60, 0.15); color: #2a5c2a; border: 1px solid rgba(60, 130, 60, 0.3); }
+        .state-reborn  { background: rgba(80, 100, 160, 0.15); color: #2a3a6a; border: 1px solid rgba(80, 100, 160, 0.3); }
+        .state-deceased { background: rgba(90, 50, 30, 0.15); color: var(--accent); border: 1px solid rgba(138, 51, 36, 0.3); }
+        .card-faction {
+            display: inline-block;
+            font-size: 0.72rem;
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+            color: var(--ink-soft);
+            border-bottom: 1px solid var(--vellum-shadow);
+            padding-bottom: 0.65rem;
+            margin-bottom: 0.75rem;
+            width: 100%;
+        }
+        .card-epithet {
+            font-style: italic;
+            font-size: 0.82rem;
+            color: var(--stone);
+            margin: 0 0 0.65rem;
+        }
+        .card-quote {
+            font-style: italic;
+            font-size: 0.9rem;
+            line-height: 1.55;
+            color: var(--ink);
+            margin: 0 0 0.85rem;
+            border-left: 2px solid var(--vellum-shadow);
+            padding-left: 0.65rem;
+        }
+        .card-wants {
+            font-size: 0.8rem;
+            color: var(--ink-soft);
+            margin: 0 0 0.7rem;
+            line-height: 1.5;
+        }
+        .card-wants span {
+            font-variant: small-caps;
+            letter-spacing: 0.05em;
+            font-size: 0.7rem;
+            margin-right: 0.3rem;
+        }
+        .card-footer {
+            font-size: 0.72rem;
+            color: var(--stone);
+            letter-spacing: 0.04em;
+            border-top: 1px solid rgba(214, 193, 136, 0.4);
+            padding-top: 0.55rem;
+            line-height: 1.6;
+        }
+        .arc-pill {
+            display: inline-block;
+            font-size: 0.65rem;
+            font-variant: small-caps;
+            letter-spacing: 0.08em;
+            padding: 0.1rem 0.4rem;
+            border-radius: 2px;
+            background: rgba(212, 155, 74, 0.15);
+            border: 1px solid rgba(212, 155, 74, 0.4);
+            color: #6a4a10;
+            margin-right: 0.35rem;
+        }
+        .section-divider {
+            font-variant: small-caps;
+            letter-spacing: 0.12em;
+            font-size: 0.78rem;
+            color: rgba(245, 236, 214, 0.5);
+            text-align: center;
+            margin: 2.2rem 0 1.1rem;
+        }
+        .section-divider::before, .section-divider::after {
+            content: "";
+            display: inline-block;
+            width: 3rem;
+            height: 1px;
+            background: rgba(212, 155, 74, 0.3);
+            vertical-align: middle;
+            margin: 0 0.6rem;
+        }
+        .empty, .error {
+            text-align: center;
+            color: rgba(245, 236, 214, 0.65);
+            padding: 5rem 1rem;
+            font-style: italic;
+            font-size: 1.05rem;
+        }
+        .error {
+            color: #ffd6d0;
+            background: linear-gradient(180deg, rgba(110, 34, 24, 0.45), rgba(60, 18, 12, 0.35));
+            border: 1px solid var(--accent);
+            padding: 1.25rem 1.5rem;
+            border-radius: 3px;
+            margin: 2rem 0;
+        }
+        .as-of {
+            text-align: center;
+            color: rgba(245, 236, 214, 0.35);
+            font-size: 0.78rem;
+            font-style: italic;
+            margin-top: 2.5rem;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Library of Souls</h1>
+        <span class="sub">Those who live here — and those who lived</span>
+    </header>
+    <main id="main">
+        <div class="empty">Loading portraits…</div>
+    </main>
+    <script>
+        (function () {
+            var params = new URLSearchParams(window.location.search);
+            var apiHost = params.get('api') || '';
+            var mainEl = document.getElementById('main');
+
+            fetch(apiHost + '/v1/library')
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    var residents = Array.isArray(data.residents) ? data.residents : [];
+                    if (residents.length === 0) {
+                        mainEl.innerHTML = '<div class="empty">No portraits recorded yet.</div>';
+                        return;
+                    }
+
+                    var living = residents.filter(function (r) { return r.currentState === 'living' || r.currentState === 'reborn'; });
+                    var deceased = residents.filter(function (r) { return r.currentState === 'deceased'; });
+
+                    var fragment = document.createDocumentFragment();
+
+                    if (living.length > 0) {
+                        if (deceased.length > 0) {
+                            var divL = document.createElement('div');
+                            divL.className = 'section-divider';
+                            divL.textContent = 'Living';
+                            fragment.appendChild(divL);
+                        }
+                        var gridL = document.createElement('div');
+                        gridL.className = 'grid';
+                        living.forEach(function (r) { gridL.appendChild(buildCard(r)); });
+                        fragment.appendChild(gridL);
+                    }
+
+                    if (deceased.length > 0) {
+                        var divD = document.createElement('div');
+                        divD.className = 'section-divider';
+                        divD.textContent = 'Passed On';
+                        fragment.appendChild(divD);
+                        var gridD = document.createElement('div');
+                        gridD.className = 'grid';
+                        deceased.forEach(function (r) { gridD.appendChild(buildCard(r)); });
+                        fragment.appendChild(gridD);
+                    }
+
+                    mainEl.replaceChildren(fragment);
+
+                    if (data.asOf) {
+                        var asOf = document.createElement('div');
+                        asOf.className = 'as-of';
+                        asOf.textContent = 'As of ' + new Date(data.asOf).toLocaleString();
+                        mainEl.appendChild(asOf);
+                    }
+                })
+                .catch(function (err) {
+                    mainEl.innerHTML = '<div class="error">Could not load library: ' + (err.message || String(err)) + '</div>';
+                });
+
+            function buildCard(r) {
+                var card = document.createElement('div');
+                card.className = 'card';
+
+                var header = document.createElement('div');
+                header.className = 'card-header';
+
+                var name = document.createElement('h2');
+                name.className = 'card-name';
+                name.textContent = r.displayName || r.slug;
+                header.appendChild(name);
+
+                var badge = document.createElement('span');
+                badge.className = 'state-badge state-' + (r.currentState || 'living');
+                badge.textContent = r.currentState === 'reborn' ? 'reborn' : r.currentState === 'deceased' ? 'gone' : 'living';
+                header.appendChild(badge);
+                card.appendChild(header);
+
+                var faction = document.createElement('span');
+                faction.className = 'card-faction';
+                faction.textContent = r.factionDisplayName || 'Unaligned';
+                if (r.factionColor) {
+                    faction.style.color = r.factionColor;
+                }
+                card.appendChild(faction);
+
+                if (r.epithet) {
+                    var ep = document.createElement('div');
+                    ep.className = 'card-epithet';
+                    ep.textContent = r.epithet;
+                    card.appendChild(ep);
+                }
+
+                if (r.topQuote) {
+                    var q = document.createElement('p');
+                    q.className = 'card-quote';
+                    q.textContent = '“' + r.topQuote + '”';
+                    card.appendChild(q);
+                }
+
+                if (r.currentWants && r.currentWants.length > 0) {
+                    var wants = document.createElement('div');
+                    wants.className = 'card-wants';
+                    var label = document.createElement('span');
+                    label.textContent = 'Wants:';
+                    wants.appendChild(label);
+                    wants.appendChild(document.createTextNode(r.currentWants.slice(0, 2).join('; ')));
+                    card.appendChild(wants);
+                }
+
+                var footer = document.createElement('div');
+                footer.className = 'card-footer';
+                var parts = [];
+                if (r.arcPhase) {
+                    var pill = document.createElement('span');
+                    pill.className = 'arc-pill';
+                    pill.textContent = 'arc: ' + r.arcPhase;
+                    footer.appendChild(pill);
+                }
+                if (r.livesCount > 1) {
+                    parts.push(r.livesCount + ' lives');
+                }
+                if (r.patronHandles && r.patronHandles.length > 0) {
+                    parts.push('backed by ' + r.patronHandles.length);
+                }
+                if (parts.length > 0) {
+                    footer.appendChild(document.createTextNode(parts.join(' · ')));
+                }
+                card.appendChild(footer);
+
+                return card;
+            }
+        })();
+    </script>
+</body>
+</html>

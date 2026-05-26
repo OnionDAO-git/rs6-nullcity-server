@@ -7,7 +7,7 @@ import type { LettersStore } from '../patron/letters-store';
 import { PatronStore } from '../patron/patron-store';
 import { CURRENCY_NAME } from '../patron/currency-ledger';
 import { STANDING_TIERS } from '../patron/standing-ledger';
-import { buildWallSnapshot, readGraveyardEntries, redactWallSnapshot } from './wall-snapshot';
+import { buildWallSnapshot, readGraveyardEntries, readLibraryEntries, redactWallSnapshot } from './wall-snapshot';
 
 /**
  * Read-only HTTP server exposing a human's letter inbox as JSON
@@ -34,6 +34,7 @@ export const DEFAULT_HEALTH_PATH = '/v1/health';
 export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
 export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
 export const DEFAULT_GRAVEYARD_PATH = '/v1/graveyard';
+export const DEFAULT_LIBRARY_PATH = '/v1/library';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -105,6 +106,8 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
 
     const graveyardRoutePath = normalizePath(DEFAULT_GRAVEYARD_PATH);
 
+    const libraryRoutePath = normalizePath(DEFAULT_LIBRARY_PATH);
+
     const server = http.createServer((request, response) => {
         handle(
             request,
@@ -116,6 +119,7 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
             patronBalancePath,
             patronStandingPath,
             graveyardRoutePath,
+            libraryRoutePath,
         ).catch(error => {
             if (!response.headersSent) {
                 writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
@@ -156,6 +160,7 @@ async function handle(
     patronBalancePath: string,
     patronStandingPath: string,
     graveyardRoutePath: string,
+    libraryRoutePath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const isInboxRoute = url.pathname === routePath;
@@ -164,6 +169,7 @@ async function handle(
     const isPatronBalanceRoute = url.pathname === patronBalancePath && options.patronMemoryRoot !== undefined;
     const isPatronStandingRoute = url.pathname === patronStandingPath && options.patronMemoryRoot !== undefined;
     const isGraveyardRoute = url.pathname === graveyardRoutePath && options.lettersRoot !== undefined;
+    const isLibraryRoute = url.pathname === libraryRoutePath && options.lettersRoot !== undefined;
     const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
     if (
@@ -173,6 +179,7 @@ async function handle(
         !isPatronBalanceRoute &&
         !isPatronStandingRoute &&
         !isGraveyardRoute &&
+        !isLibraryRoute &&
         !staticPagePath
     ) {
         writeJson(response, 404, { error: 'Not Found' });
@@ -225,6 +232,12 @@ async function handle(
             soulsDir: options.soulsDir,
         });
         writeJson(response, 200, { deceased, total: deceased.length, asOf: new Date().toISOString() });
+        return;
+    }
+
+    if (isLibraryRoute) {
+        const residents = readLibraryEntries(options.lettersRoot as string);
+        writeJson(response, 200, { residents, total: residents.length, asOf: new Date().toISOString() });
         return;
     }
 
@@ -325,6 +338,8 @@ function resolveStaticPagePath(requestPath: string, staticRoot?: string): string
             return path.join(publicRoot, 'patron', 'index.html');
         case '/graveyard':
             return path.join(publicRoot, 'graveyard', 'index.html');
+        case '/library':
+            return path.join(publicRoot, 'library', 'index.html');
         default:
             return undefined;
     }
