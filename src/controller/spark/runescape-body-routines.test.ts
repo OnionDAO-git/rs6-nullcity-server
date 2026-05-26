@@ -1563,8 +1563,8 @@ describe('combatTrainingAction', () => {
 });
 
 describe('explorationAction', () => {
-    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`): BodyActor {
-        return { id, kind: 'npc', name, position: { x, y, level: 0 }, hpFraction: 1 };
+    function npc(name: string, x: number, y: number, id = `npc:${name}-${x}-${y}`, level = 0): BodyActor {
+        return { id, kind: 'npc', name, position: { x, y, level }, hpFraction: 1 };
     }
 
     it('returns an "interact talk-to" against an uncooldowned adjacent NPC', () => {
@@ -1587,6 +1587,42 @@ describe('explorationAction', () => {
             }),
         );
         expect(action).toEqual({ kind: 'move_to', target: guide.position, range: 1, cause: 'explore_talk_to_npc' });
+    });
+
+    it('does not chase an NPC on another floor during free exploration', () => {
+        const cookDownstairs = npc('Cook', 100, 100, 'npc:cook-downstairs', 0);
+        const sameFloorLandmark = { objectId: 879, position: { x: 103, y: 100, level: 2 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [] },
+                nearby: { npcs: [cookDownstairs], objects: [sameFloorLandmark] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: sameFloorLandmark.position, range: 2, cause: 'explore_visible_object' });
+    });
+
+    it('does not chase a landmark on another floor during free exploration', () => {
+        const downstairsFountain = { objectId: 879, position: { x: 100, y: 100, level: 0 } };
+        const sameFloorTree = { objectId: objectIds.tree.oak[0].default, position: { x: 108, y: 100, level: 2 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [] },
+                nearby: { objects: [downstairsFountain, sameFloorTree] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: sameFloorTree.position, range: 2, cause: 'explore_tree_stand' });
+    });
+
+    it('does not pick up useful ground items on another floor during free exploration', () => {
+        const downstairsCoins = { itemId: 995, key: 'rs:coins', amount: 5, position: { x: 100, y: 100, level: 0 } };
+        const sameFloorLandmark = { objectId: 879, position: { x: 103, y: 100, level: 2 } };
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 2 }, inventory: [] },
+                nearby: { worldItems: [downstairsCoins], objects: [sameFloorLandmark] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: sameFloorLandmark.position, range: 2, cause: 'explore_visible_object' });
     });
 
     it('does not chase fishing spots as exploration conversation targets', () => {

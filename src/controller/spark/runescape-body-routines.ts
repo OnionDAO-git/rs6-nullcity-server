@@ -216,6 +216,10 @@ export function distance(a: BodyPos, b: BodyPos): number {
     return Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 }
 
+function sameLevel(a: BodyPos, b: BodyPos): boolean {
+    return a.level === b.level;
+}
+
 /**
  * Linear inventory scan returning the first slot index whose contents
  * match the predicate. Mirrors the monolith's `findSlot` helper.
@@ -859,6 +863,7 @@ export function opportunisticPickupAction(
                 (suppressFiremakingLogPickup && isFiremakingLog(candidate)) ||
                 (suppressNonFoodPickup && !isEdibleFood(candidate)) ||
                 isStaleSelfOwnedLog(candidate, residentId, perception.resident?.id) ||
+                !sameLevel(here, candidate.position) ||
                 !isUsefulGroundItem(candidate) ||
                 isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) ||
                 isPickupOnCooldown(candidate, pickupCooldowns, currentTick) ||
@@ -1336,6 +1341,7 @@ export function explorationAction(
         const npc = (perception.nearby?.npcs || [])
             .filter(
                 candidate =>
+                    sameLevel(here, candidate.position) &&
                     !isFishingSpot(candidate) &&
                     !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
                     !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick),
@@ -1350,6 +1356,7 @@ export function explorationAction(
         const openableObject = (perception.nearby?.objects || [])
             .filter(
                 candidate =>
+                    sameLevel(here, candidate.position) &&
                     EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
                     !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
             )
@@ -1365,6 +1372,7 @@ export function explorationAction(
     const object = (perception.nearby?.objects || [])
         .filter(
             candidate =>
+                sameLevel(here, candidate.position) &&
                 !FIRE_OBJECT_IDS.has(candidate.objectId) &&
                 !SCOUTING_TREE_IDS.has(candidate.objectId) &&
                 !EXPLORATION_OPENABLE_OBJECT_IDS.has(candidate.objectId) &&
@@ -1391,6 +1399,7 @@ export function explorationAction(
     const treeStand = (perception.nearby?.objects || [])
         .filter(
             candidate =>
+                sameLevel(here, candidate.position) &&
                 SCOUTING_TREE_IDS.has(candidate.objectId) &&
                 distance(here, candidate.position) > 2 &&
                 !isExplorationOnCooldown(explorationObjectCooldownKey(candidate), explorationCooldowns, currentTick),
@@ -1401,7 +1410,11 @@ export function explorationAction(
     }
 
     const item = (perception.nearby?.worldItems || [])
-        .filter(candidate => !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick))
+        .filter(
+            candidate =>
+                sameLevel(here, candidate.position) &&
+                !isExplorationOnCooldown(explorationItemCooldownKey(candidate), explorationCooldowns, currentTick),
+        )
         .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
     if (item) {
         if (distance(here, item.position) > 1) {

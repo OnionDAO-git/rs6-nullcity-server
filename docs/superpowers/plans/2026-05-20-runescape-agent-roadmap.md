@@ -104,7 +104,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: existing hybrid tests still pass; new workflow tests verify prerequisites and next actions.
   - *Completed: Extracted, unit tested, and integrated under Workstream R1.*
 
-- `[~]` **B3: Extract deterministic Body routines.**
+- `[>]` **B3: Extract deterministic Body routines.**
   - Files: `src/controller/spark/runescape-body-routines.ts`, `src/controller/spark/runescape-body-routines.test.ts`
   - Deliverable: "make fire", "walk to interaction range", "use tool on target", "eat food", and "recover from stuck" routines are separate from inference prompts.
   - Verification: tests simulate perception and assert typed `AgentAction` sequences.
