@@ -1264,11 +1264,30 @@ export function factionLandmarkWorkAction(input: FactionLandmarkWorkInput): Agen
         return undefined;
     }
 
+    const currentTick = input.currentTick ?? perception.tick ?? 0;
     if (here.level !== landmark.level || distance(here, landmark) > 6) {
+        if (isTargetFailureCooldownActive(landmark, targetFailureCooldowns, currentTick)) {
+            const recovery = explorationAction(
+                perception,
+                undefined,
+                residentId,
+                pickupCooldowns,
+                currentTick,
+                explorationCooldowns,
+                { interactWithNpcs: false, interactWithOpenables: false },
+                targetFailureCooldowns,
+            );
+            return recovery
+                ? actionWithCause(recovery, 'faction_landmark_recovery')
+                : {
+                      kind: 'say',
+                      text: 'I cannot reach my faction post from here yet, so I am scouting this side for useful work.',
+                      cause: 'faction_landmark_recovery',
+                  };
+        }
         return { kind: 'move_to', target: landmark, range: 6, cause: 'faction_landmark_return' };
     }
 
-    const currentTick = input.currentTick ?? perception.tick ?? 0;
     if (factionId === 'foundry') {
         const fire = firemakingAction(perception);
         if (fire) {

@@ -1892,6 +1892,29 @@ describe('factionLandmarkWorkAction', () => {
         });
     });
 
+    it('does not repeat a failed landmark return target while that coordinate is cooling down', () => {
+        const visiblePlaque = { objectId: 879, position: { x: 3202, y: 3200, level: 0 } };
+        const action = factionLandmarkWorkAction({
+            perception: perception({
+                tick: 42,
+                resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [] },
+                nearby: { objects: [visiblePlaque] },
+            }),
+            factionId: 'foundry',
+            landmark: anchor,
+            currentTick: 42,
+            targetFailureCooldowns: {
+                'target:3015,3357,0': 41,
+            },
+        });
+
+        expect(action).toMatchObject({
+            kind: 'move_to',
+            cause: 'faction_landmark_recovery',
+        });
+        expect((action as { target?: unknown }).target).not.toEqual(anchor);
+    });
+
     it('uses Foundry work to gather forge fuel from visible trees', () => {
         const tree = { objectId: 1278, position: { x: 3017, y: 3357, level: 0 } };
         const action = factionLandmarkWorkAction({
