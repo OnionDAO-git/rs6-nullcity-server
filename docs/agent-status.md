@@ -805,3 +805,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-26 00:04 codex branch=agents/wip workstream=HD016-C/D HANDOFF - live balance/standing endpoints proved and documented. SHA=d7ff16c tests=11+curl4 collision=patron-gift untouched.
 2026-05-26 00:29 codex branch=agents/wip workstream=O10-LIVE-QA STARTING - extended whole-city live QA. Files: docs/agent-status.md. collision=patron-gift untouched.
 2026-05-26 00:36 antigravity branch=agents/wip workstream=O10-LIVE-QA HANDOFF - 120s timed whole-city behavior smoke check passed for all 23 residents (all green, 2051 tests passing). Added sample patron to controller.yml. collision=none.
+2026-05-26 00:45 codex branch=agents/wip workstream=O10-XFLOOR-DOC STARTING - record 5m smoke and cross-floor explore follow-up. Files: docs/agent-status.md, docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md. collision=patron-gift untouched.
