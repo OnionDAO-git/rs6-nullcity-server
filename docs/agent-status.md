@@ -802,3 +802,4 @@ Format: `YYYY-MM-DD HH:MM <agent> branch=<branch> workstream=<id>  <one-line not
 2026-05-25 23:31 codex branch=agents/wip workstream=D2 STARTING - close dashboard activity proof. Files: docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md, docs/agent-status.md. collision=patron-gift untouched.
 2026-05-25 23:39 codex branch=agents/wip workstream=D2 HANDOFF - dashboard activity proof closed; browser DOM + API ok; dashboard checks green; 90s city smoke 23/23. SHA=5db5571 tests=20+typecheck+check+build+smoke90 collision=none.
 2026-05-26 00:00 codex branch=agents/wip workstream=HD016-C/D STARTING - live self-service proof. Files: docs/pre-chicago-readiness.md, docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md, docs/agent-status.md. collision=patron-gift untouched.
+2026-05-26 00:04 codex branch=agents/wip workstream=HD016-C/D HANDOFF - live balance/standing endpoints proved and documented. SHA=d7ff16c tests=11+curl4 collision=patron-gift untouched.
