@@ -3348,7 +3348,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'Do not understand.',
+                text: 'Don\'t get what "can you enchant my sword?" means. I can only: follow, stop, wait, come, train, fight, eat, drop, trade, explore, make fire, or cook.',
                 voiceSource: 'phrasebook',
             },
         ]);
@@ -3664,7 +3664,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I will pause here and wait for a new goal.', cause: 'direct_chat_stop' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'Stopping.', voiceSource: 'phrasebook' }]);
         expect(result.cause).toBe('direct_chat_stop');
         expect(state.cognition?.activeGoal).toBeUndefined();
         expect(llm.complete).not.toHaveBeenCalled();
@@ -8088,6 +8088,228 @@ describe('HybridAgentThinkingModule', () => {
             );
 
             expect(resultCooldown.actions).toEqual([]);
+        });
+    });
+
+    describe('G5: Broader command vocabulary and safety gating', () => {
+        it('G5-T1: Peer says "agent come here". Assert move_to speaker tile + say ack.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3205, 3205); // 5 tiles away
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: residentAt(3200, 3200),
+                    players: [peer],
+                    events: [chatFromCodex('agent come here', 3205, 3205)],
+                }),
+            );
+
+            expect(result.actions).toEqual([
+                { kind: 'move_to', target: { x: 3205, y: 3205, level: 0 }, range: 1, cause: 'direct_chat_come_here' },
+                { kind: 'say', text: 'On my way.', voiceSource: 'phrasebook' },
+            ]);
+            expect(result.cause).toBe('direct_chat_come_here');
+            expect(state.cognition?.waitResumeTick).toBeUndefined();
+        });
+
+        it('G5-T2: Peer says "agent wait". Assert active goal paused + say ack.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            state.cognition = {
+                activeGoal: { id: 'chop-wood', description: 'Chop wood', createdAtTick: 1 },
+                followTarget: { name: 'codex', setAtTick: 1 },
+            };
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: residentAt(3200, 3200),
+                    players: [peer],
+                    events: [chatFromCodex('agent wait', 3202, 3202)],
+                }),
+            );
+
+            expect(result.actions).toEqual([{ kind: 'say', text: 'Waiting.', voiceSource: 'phrasebook' }]);
+            expect(result.cause).toBe('direct_chat_wait');
+            expect(state.cognition?.waitResumeTick).toBe(62);
+            expect(state.cognition?.activeGoal).toBeUndefined();
+            expect(state.cognition?.pausedGoal?.id).toBe('chop-wood');
+            expect(state.cognition?.pausedFollowTarget?.name).toBe('codex');
+        });
+
+        it('G5-T3: Peer says "agent wait" while already waiting. Assert timer extended.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            state.cognition = {
+                waitResumeTick: 50,
+                pausedGoal: { id: 'chop-wood', description: 'Chop wood', createdAtTick: 1 },
+            };
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 30, // Tick 30, waitResumeTick is 50
+                    resident: residentAt(3200, 3200),
+                    players: [peer],
+                    events: [chatFromCodex('agent wait', 3202, 3202)],
+                }),
+            );
+
+            expect(result.actions).toEqual([{ kind: 'say', text: 'Still waiting.', voiceSource: 'phrasebook' }]);
+            expect(result.cause).toBe('direct_chat_wait_extend');
+            expect(state.cognition?.waitResumeTick).toBe(90); // 30 + 60
+            expect(state.cognition?.pausedGoal?.id).toBe('chop-wood');
+        });
+
+        it('G5-T4: Wait timer expires. Assert goal resumed + say resuming.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            state.cognition = {
+                waitResumeTick: 60,
+                pausedGoal: { id: 'chop-wood', description: 'Chop wood', createdAtTick: 1 },
+                pausedFollowTarget: { name: 'codex', setAtTick: 1 },
+            };
+            const agent = hybridAgent(llm, state);
+
+            const result = await agent.think(
+                perception({
+                    tick: 60, // timer expires at tick 60
+                    resident: residentAt(3200, 3200),
+                }),
+            );
+
+            expect(result.actions).toEqual([{ kind: 'say', text: 'Resuming.', voiceSource: 'phrasebook' }]);
+            expect(result.cause).toBe('direct_chat_wait_resume');
+            expect(state.cognition?.waitResumeTick).toBeUndefined();
+            expect(state.cognition?.activeGoal?.id).toBe('chop-wood');
+            expect(state.cognition?.followTarget?.name).toBe('codex');
+        });
+
+        it('G5-T9: Peer says "agent stop" while in combat. Assert goal cleared + combat reaction wins.', async () => {
+            const goblin = npc('Goblin', 3201, 3201);
+            goblin.combatLevel = 2;
+            goblin.hpFraction = 1.0;
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            state.cognition = {
+                activeGoal: { id: 'chop-wood', description: 'Chop wood', createdAtTick: 1 },
+            };
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        inCombat: true,
+                        hp: { current: 10, max: 10 },
+                        combatLevel: 10,
+                    },
+                    npcs: [goblin],
+                    players: [peer],
+                    events: [{ kind: 'hit_taken', from: goblin }, chatFromCodex('agent stop', 3202, 3202)],
+                }),
+            );
+
+            // Expect both: combat attack and stop say
+            expect(result.actions).toEqual([
+                { kind: 'attack', target: goblin, cause: 'combat_retaliate' },
+                { kind: 'say', text: 'You think you can break me, Goblin? Think again.' },
+                { kind: 'say', text: 'Stopping.', voiceSource: 'phrasebook' },
+            ]);
+            expect(state.cognition?.activeGoal).toBeUndefined();
+        });
+
+        it('G5-T10: HP 20% in combat, peer says "agent come here". Assert polite decline with command_unsafe.', async () => {
+            const goblin = npc('Goblin', 3201, 3201);
+            goblin.combatLevel = 2;
+            goblin.hpFraction = 1.0;
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        inCombat: true,
+                        hp: { current: 2, max: 10 }, // 20% HP
+                        combatLevel: 10,
+                    },
+                    npcs: [goblin],
+                    players: [peer],
+                    events: [{ kind: 'hit_taken', from: goblin }, chatFromCodex('agent come here', 3202, 3202)],
+                }),
+            );
+
+            // Expect the survival reflex plus decline; no patron command move should override combat.
+            expect(result.actions).toContainEqual({ kind: 'move_to', target: { x: 3196, y: 3196, level: 0 }, cause: 'combat_retreat' });
+            expect(result.actions).toContainEqual({ kind: 'say', text: "Hold on — I'm in combat.", voiceSource: 'phrasebook' });
+            expect(result.actions).not.toContainEqual({ kind: 'move_to', target: peer.position, range: 1, cause: 'direct_chat_come_here' });
+            expect(result.refusalReason).toBe('command_unsafe');
+        });
+
+        it('G5-T10b: Mid-trade with accepted offer, peer says "agent come here". Assert polite decline with command_unsafe.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: {
+                        ...residentAt(3200, 3200),
+                        activeTrade: {
+                            partner: peer,
+                            ours: [{ itemId: 1511, amount: 1 }],
+                            theirs: [{ itemId: 995, amount: 1 }],
+                            ourStage: 'accepted_1',
+                            theirStage: 'unaccepted',
+                        },
+                    },
+                    players: [peer],
+                    events: [chatFromCodex('agent come here', 3202, 3202)],
+                }),
+            );
+
+            // Command is declined without moving away from the active trade.
+            expect(result.actions).toEqual([{ kind: 'say', text: 'Mid-trade, give me a sec.', voiceSource: 'phrasebook' }]);
+            expect(result.refusalReason).toBe('command_unsafe');
+        });
+
+        it('G5-T8: Peer says unknown command "agent dance". Assert polite decline listing capabilities.', async () => {
+            const llm = scriptedLlm([]);
+            const state = runtimeState();
+            const agent = hybridAgent(llm, state);
+            const peer = player('codex', 3202, 3202);
+
+            const result = await agent.think(
+                perception({
+                    tick: 2,
+                    resident: residentAt(3200, 3200),
+                    players: [peer],
+                    events: [chatFromCodex('agent dance', 3202, 3202)],
+                }),
+            );
+
+            expect(result.actions).toEqual([
+                {
+                    kind: 'say',
+                    text: 'Don\'t get what "dance" means. I can only: follow, stop, wait, come, train, fight, eat, drop, trade, explore, make fire, or cook.',
+                    voiceSource: 'phrasebook',
+                },
+            ]);
+            expect(result.refusalReason).toBe('unknown_command');
         });
     });
 });

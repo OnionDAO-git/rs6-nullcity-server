@@ -67,6 +67,9 @@ export interface CognitiveState {
     combatEndCelebrated?: boolean;
     tickTelemetry?: Record<string, any>;
     chatReplyTicks?: number[];
+    waitResumeTick?: number;
+    pausedGoal?: ActiveGoalState;
+    pausedFollowTarget?: FollowTargetState;
 }
 
 export interface FollowTargetState {

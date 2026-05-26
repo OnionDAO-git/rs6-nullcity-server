@@ -651,6 +651,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Partial 2026-05-22: direct `follow me`, `follow X`, and `stop following` now update a persisted follow target; active follow movement runs without Body inference.
   - Started 2026-05-23 on `agents/wip`: extend `follow-and-chat-5m` so autonomous proof must cover follow, status, wait/stop pause, and resuming follow after a new direct command.
   - Verified 2026-05-23 on `agents/wip`: `follow-and-chat-5m` v0.2 now requires follow, status, wait-pause acknowledgement, peer movement, and resumed follow action. Live autonomous smoke passed with score 1 (`followActions=4`, `waitAcknowledgements=4`, `refollowActions=2`). Remaining gap: browser/manual human-client confirmation and unsafe-command edge fixtures.
+  - Hardened 2026-05-25 on `agents/wip`: G5 unsafe-command fixtures and phrasebook voice regressions now pass in the full hybrid-thinking suite. `stop following` no longer gets swallowed by the generic `stop` parser, `come here`/`wait` replies preserve phrasebook voice, and combat/trade safety declines do not pull a resident away from survival or trade state. Full `npm run fin` passed (`2051/2051`), and live autonomous `follow-and-chat-5m` passed (`score=1`, `followActions=4`, `waitAcknowledgements=2`, `refollowActions=2`, `stuckProgressTicks=0`, artifact `/tmp/nullcity-g5-bench/bench_20260526040433_follow_and_chat_5m.json`).
 
 ## Workstream R: SPARK Module Extraction (finish B2-B5)
 

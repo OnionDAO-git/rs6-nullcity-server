@@ -179,6 +179,11 @@ type HybridPerception = {
     };
     events?: Array<Record<string, unknown>>;
 };
+type DirectChatDecision = {
+    action: AgentAction;
+    cause: string;
+    prefaceActions?: AgentAction[];
+};
 
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
@@ -254,6 +259,36 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             this.ensureBenchmarkGoal();
             this.ensureFactionLandmarkGoal();
             this.observeCompletedLocalGoal(perception as HybridPerception);
+            const cognition = this.cognition();
+            let resumeSay: AgentAction | undefined;
+            if (cognition.waitResumeTick !== undefined && this.options.state.tick >= cognition.waitResumeTick) {
+                cognition.waitResumeTick = undefined;
+                if (cognition.pausedGoal) {
+                    cognition.activeGoal = cognition.pausedGoal;
+                    cognition.pausedGoal = undefined;
+                }
+                if (cognition.pausedFollowTarget) {
+                    cognition.followTarget = cognition.pausedFollowTarget;
+                    cognition.pausedFollowTarget = undefined;
+                }
+                resumeSay = {
+                    kind: 'say',
+                    text: pickPhrase({
+                        soul: this.options.soul,
+                        situation: 'direct_chat_wait.resume',
+                        seed: `${this.options.state.tick}`,
+                    }),
+                    voiceSource: 'phrasebook',
+                };
+            }
+
+            if (resumeSay) {
+                const combat = this.combatReaction(perception as HybridPerception);
+                if (combat) {
+                    return this.result([...combat.actions, resumeSay], combat.cause, 0, false);
+                }
+                return this.result([resumeSay], 'direct_chat_wait_resume', 0, false);
+            }
 
             const directChat = await this.directChatAction(perception as HybridPerception, thinkId, { includeSmallTalk: false });
             const directChatCancellation = this.cancelledResult(thinkId, perception as HybridPerception);
@@ -261,12 +296,21 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return directChatCancellation;
             }
             if (directChat) {
-                return this.result([directChat.action], directChat.cause, 0, false);
+                const actions = directChat.prefaceActions ? [...directChat.prefaceActions, directChat.action] : [directChat.action];
+                return this.result(actions, directChat.cause, 0, false);
             }
 
             const combat = this.combatReaction(perception as HybridPerception);
             if (combat) {
                 return this.result(combat.actions, combat.cause, 0, false);
+            }
+
+            if (cognition.waitResumeTick !== undefined) {
+                const beacon = this.presenceBeaconAction(perception as HybridPerception);
+                if (beacon) {
+                    return this.result([beacon], 'presence_beacon', 0, false);
+                }
+                return { actions: [], cause: 'wait_hold', nooped: true };
             }
 
             const dialogue = this.dialogueReaction(perception as HybridPerception);
@@ -342,7 +386,8 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     return smallTalkCancellation;
                 }
                 if (smallTalk) {
-                    return this.result([smallTalk.action], smallTalk.cause, 0, false);
+                    const actions = smallTalk.prefaceActions ? [...smallTalk.prefaceActions, smallTalk.action] : [smallTalk.action];
+                    return this.result(actions, smallTalk.cause, 0, false);
                 }
             }
 
@@ -2045,6 +2090,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         perception: HybridPerception,
         refusalReason: string,
         missingTool?: string,
+        extraParams?: Record<string, string>,
     ): { action: AgentAction; cause: string } | undefined {
         if (this.isChatRateLimited()) {
             this.cognition().tickTelemetry = {
@@ -2067,7 +2113,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 soul: this.options.soul,
                 situation: `polite_decline.${refusalReason}`,
                 seed: `${this.options.state.tick}`,
-                params: { prefix: this.commandPrefix() },
+                params: { prefix: this.commandPrefix(), ...extraParams },
             });
         }
 
@@ -2096,7 +2142,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         perception: HybridPerception,
         thinkId: number,
         options: { includeSmallTalk?: boolean } = {},
-    ): Promise<{ action: AgentAction; cause: string } | undefined> {
+    ): Promise<DirectChatDecision | undefined> {
         const chat = latestAddressedChat(perception, this.commandPrefix(), this.cognition().lastDirectChatKey);
         if (!chat) {
             return options.includeSmallTalk ? await this.nonCommandChatReaction(perception, thinkId) : undefined;
@@ -2105,17 +2151,163 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         this.cognition().lastDirectChatKey = chat.key;
         const command = addressedCommand(chat.normalizedText, this.commandPrefix());
         const here = perception.resident?.position;
+        const cognition = this.cognition();
 
-        if (perception.resident?.inCombat) {
-            this.cognition().tickTelemetry = {
-                chat_reply_emitted: false,
-                chat_reply_kind: 'polite_decline',
-                refusalReason: 'busy_higher_priority_goal',
+        // 1. stop (highest precedence)
+        if (isStopIntent(command, chat.normalizedText)) {
+            this.clearGoalMomentum();
+            cognition.activeGoal = undefined;
+            cognition.followTarget = undefined;
+            cognition.waitResumeTick = undefined;
+            cognition.pausedGoal = undefined;
+            cognition.pausedFollowTarget = undefined;
+            this.pauseDirectChatActivity();
+
+            const stopSayAction: AgentAction = {
+                kind: 'say',
+                text: pickPhrase({
+                    soul: this.options.soul,
+                    situation: 'direct_chat_stop.ack',
+                    seed: `${this.options.state.tick}`,
+                }),
+                voiceSource: 'phrasebook',
             };
-            return undefined;
+
+            if (perception.resident?.inCombat) {
+                const combat = this.combatReaction(perception);
+                return {
+                    action: stopSayAction,
+                    cause: 'direct_chat_stop',
+                    prefaceActions: combat?.actions,
+                };
+            }
+
+            return {
+                action: stopSayAction,
+                cause: 'direct_chat_stop',
+            };
+        }
+
+        // Combat Gating (Patrons-don't-override safety)
+        if (perception.resident?.inCombat) {
+            const hp = perception.resident?.hp?.current || 0;
+            const maxHp = perception.resident?.hp?.max || 100;
+            const hpPercent = (hp / maxHp) * 100;
+            if (hpPercent < 30) {
+                cognition.tickTelemetry = {
+                    chat_reply_emitted: true,
+                    chat_reply_kind: 'polite_decline',
+                    refusalReason: 'command_unsafe',
+                    voiceSource: 'phrasebook',
+                };
+                const declineSayAction: AgentAction = {
+                    kind: 'say',
+                    text: pickPhrase({
+                        soul: this.options.soul,
+                        situation: 'polite_decline.command_unsafe.combat',
+                        seed: `${this.options.state.tick}`,
+                    }),
+                    voiceSource: 'phrasebook',
+                };
+                const combat = this.combatReaction(perception);
+                return {
+                    action: declineSayAction,
+                    cause: 'direct_chat_decline_command_unsafe',
+                    prefaceActions: combat?.actions,
+                };
+            } else {
+                cognition.tickTelemetry = {
+                    chat_reply_emitted: false,
+                    chat_reply_kind: 'polite_decline',
+                    refusalReason: 'busy_higher_priority_goal',
+                };
+                return undefined;
+            }
+        }
+
+        // Trade Gating (Patrons-don't-override safety)
+        const midTrade = isMidTradeWithAcceptedOffer(perception);
+        if (midTrade) {
+            cognition.tickTelemetry = {
+                chat_reply_emitted: true,
+                chat_reply_kind: 'polite_decline',
+                refusalReason: 'command_unsafe',
+                voiceSource: 'phrasebook',
+            };
+            const declineSayAction: AgentAction = {
+                kind: 'say',
+                text: pickPhrase({
+                    soul: this.options.soul,
+                    situation: 'polite_decline.command_unsafe.trade',
+                    seed: `${this.options.state.tick}`,
+                }),
+                voiceSource: 'phrasebook',
+            };
+            const trade = this.tradeReaction(perception);
+            return {
+                action: declineSayAction,
+                cause: 'direct_chat_decline_command_unsafe',
+                prefaceActions: trade?.action ? [trade.action] : undefined,
+            };
         }
 
         const commandLower = command.toLowerCase().trim();
+
+        // 2. wait
+        if (isWaitIntent(command, chat.normalizedText)) {
+            const tick = this.options.state.tick;
+            const WAIT_DURATION_TICKS = 60;
+
+            if (cognition.waitResumeTick !== undefined && tick < cognition.waitResumeTick) {
+                cognition.waitResumeTick = tick + WAIT_DURATION_TICKS;
+
+                this.recordChatReplyEmit();
+                cognition.tickTelemetry = {
+                    chat_reply_emitted: true,
+                    chat_reply_kind: 'polite_decline',
+                    voiceSource: 'phrasebook',
+                };
+                return {
+                    action: {
+                        kind: 'say',
+                        text: pickPhrase({
+                            soul: this.options.soul,
+                            situation: 'direct_chat_wait.extend',
+                            seed: `${tick}`,
+                        }),
+                        voiceSource: 'phrasebook',
+                    },
+                    cause: 'direct_chat_wait_extend',
+                };
+            } else {
+                cognition.waitResumeTick = tick + WAIT_DURATION_TICKS;
+                cognition.pausedGoal = cognition.activeGoal;
+                cognition.activeGoal = undefined;
+                cognition.pausedFollowTarget = cognition.followTarget;
+                cognition.followTarget = undefined;
+
+                this.clearGoalMomentum();
+                this.pauseDirectChatActivity();
+                this.recordChatReplyEmit();
+                cognition.tickTelemetry = {
+                    chat_reply_emitted: true,
+                    chat_reply_kind: 'polite_decline',
+                    voiceSource: 'phrasebook',
+                };
+                return {
+                    action: {
+                        kind: 'say',
+                        text: pickPhrase({
+                            soul: this.options.soul,
+                            situation: 'direct_chat_wait.wait',
+                            seed: `${tick}`,
+                        }),
+                        voiceSource: 'phrasebook',
+                    },
+                    cause: 'direct_chat_wait',
+                };
+            }
+        }
 
         if (commandLower === 'go' || commandLower === 'make' || commandLower === 'give') {
             return this.clarifyingQuestionReaction(perception, commandLower);
@@ -2149,15 +2341,16 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         if (refusalReason) {
-            return this.politeDeclineReaction(perception, refusalReason, missingTool);
+            const extraParams = refusalReason === 'unknown_command' ? { command, catalog: this.commandCatalogForVoice() } : undefined;
+            return this.politeDeclineReaction(perception, refusalReason!, missingTool, extraParams);
         }
 
         if (isStopFollowingIntent(command, chat.normalizedText)) {
             const target = this.currentFollowTarget();
             this.clearGoalMomentum();
-            this.cognition().followTarget = { paused: true, setAtTick: this.options.state.tick };
-            if (isFollowGoal(this.cognition().activeGoal)) {
-                this.cognition().activeGoal = undefined;
+            cognition.followTarget = { paused: true, setAtTick: this.options.state.tick };
+            if (isFollowGoal(cognition.activeGoal)) {
+                cognition.activeGoal = undefined;
             }
 
             return {
@@ -2173,25 +2366,32 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (follow) {
             const target = follow.target ? findActorByName(perception.nearby?.players || [], follow.target) : chat.from;
             if (!target) {
+                cognition.tickTelemetry = {
+                    chat_reply_emitted: true,
+                    chat_reply_kind: 'polite_decline',
+                    refusalReason: 'target_not_visible',
+                    voiceSource: 'phrasebook',
+                };
                 return {
                     action: {
                         kind: 'say',
                         text: follow.target ? `I do not see ${cleanTarget(follow.target)} nearby.` : 'I need to see who to follow.',
+                        voiceSource: 'phrasebook',
                     },
-                    cause: 'direct_chat_follow',
+                    cause: 'direct_chat_follow_failed',
                 };
             }
 
             this.clearGoalMomentum();
             this.resumeManualPause();
-            this.cognition().followTarget = {
+            cognition.followTarget = {
                 name: actorName(target),
                 id: target.id,
                 kind: target.kind,
                 paused: false,
                 setAtTick: this.options.state.tick,
             };
-            this.cognition().activeGoal = followGoal(actorName(target), this.options.state.tick);
+            cognition.activeGoal = followGoal(actorName(target), this.options.state.tick);
 
             if (here && distance(here, target.position) <= (this.behavior().followRadius ?? DEFAULT_FOLLOW_RADIUS)) {
                 return {
@@ -2208,6 +2408,61 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     cause: 'direct_chat_follow',
                 },
                 cause: 'direct_chat_follow',
+            };
+        }
+
+        // 4. come here
+        if (isComeHereIntent(command, chat.normalizedText)) {
+            const target = chat.from && chat.from.name ? findActorByName(perception.nearby?.players || [], chat.from.name) : undefined;
+            if (!target) {
+                return {
+                    action: {
+                        kind: 'say',
+                        text: 'I need to see who to come to.',
+                        voiceSource: 'phrasebook',
+                    },
+                    cause: 'direct_chat_come_here_no_target',
+                };
+            }
+
+            this.clearGoalMomentum();
+            this.resumeManualPause();
+            cognition.waitResumeTick = undefined;
+            cognition.pausedGoal = undefined;
+            cognition.pausedFollowTarget = undefined;
+
+            this.recordChatReplyEmit();
+            cognition.tickTelemetry = {
+                chat_reply_emitted: true,
+                chat_reply_kind: 'polite_decline',
+                voiceSource: 'phrasebook',
+            };
+
+            const dist = here ? distance(here, target.position) : 999;
+            const moveActions =
+                dist > 1
+                    ? [
+                          {
+                              kind: 'move_to' as const,
+                              target: target.position,
+                              range: 1,
+                              cause: 'direct_chat_come_here',
+                          },
+                      ]
+                    : [];
+
+            return {
+                action: {
+                    kind: 'say',
+                    text: pickPhrase({
+                        soul: this.options.soul,
+                        situation: 'direct_chat_come_here.ack',
+                        seed: `${this.options.state.tick}`,
+                    }),
+                    voiceSource: 'phrasebook',
+                },
+                prefaceActions: moveActions,
+                cause: 'direct_chat_come_here',
             };
         }
 
@@ -3118,6 +3373,10 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return normalizeText(this.behavior().commandPrefix || displayName(this.options.soul.frontmatter.name));
     }
 
+    private commandCatalogForVoice(): string {
+        return 'follow, stop, wait, come, train, fight, eat, drop, trade, explore, make fire, or cook';
+    }
+
     private currentFollowTarget(): { name?: string; id?: string; kind?: string } | undefined {
         const target = this.cognition().followTarget;
         if (target?.paused) {
@@ -4004,11 +4263,7 @@ function addressedCommand(text: string, commandPrefix: string): string {
 }
 
 function followIntent(command: string, fullText: string): { target?: string } | undefined {
-    if (
-        /^(follow me|come here|come to me|keep up|guard me)\b/.test(command) ||
-        /^(follow|guard)$/.test(command) ||
-        /\b(follow me|come here|come to me)\b/.test(fullText)
-    ) {
+    if (/^(follow me|keep up|guard me)\b/.test(command) || /^(follow|guard)$/.test(command) || /\b(follow me)\b/.test(fullText)) {
         return {};
     }
 
@@ -4019,6 +4274,14 @@ function followIntent(command: string, fullText: string): { target?: string } | 
 
     const target = cleanTarget(named[2]);
     return /^me\b/.test(target) ? {} : { target };
+}
+
+function isComeHereIntent(command: string, fullText: string): boolean {
+    return /^(come here|come to me|come)\b/.test(command) || /\b(come here|come to me)\b/.test(fullText);
+}
+
+function isWaitIntent(command: string, fullText: string): boolean {
+    return /^(wait|pause)\b/.test(command) || /\b(wait|pause)\b/.test(fullText);
 }
 
 function isStopFollowingIntent(command: string, fullText: string): boolean {
@@ -4036,10 +4299,10 @@ function isReturnHomeIntent(command: string, fullText: string): boolean {
 }
 
 function isStopIntent(command: string, fullText: string): boolean {
-    return (
-        /^(stop|pause|wait|hold position|cancel goal|clear goal)\b/.test(command) ||
-        /\b(cancel goal|clear goal|hold position)\b/.test(fullText)
-    );
+    if (isStopFollowingIntent(command, fullText)) {
+        return false;
+    }
+    return /^(stop|hold position|cancel goal|clear goal)\b/.test(command) || /\b(cancel goal|clear goal|hold position)\b/.test(fullText);
 }
 
 function isStatusIntent(command: string, fullText: string): boolean {
@@ -4626,10 +4889,20 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isStarterFishingIntent(command, fullText) ||
         isWoodcuttingIntent(command, fullText) ||
         isFiremakingIntent(command, fullText) ||
+        isComeHereIntent(command, fullText) ||
+        isWaitIntent(command, fullText) ||
         isSmallTalkIntent(command, fullText)
     );
 }
 
 function helpSpeech(): string {
     return 'Try: follow me, status, look around, inventory, make fire, fish, cook, fight safely, bury bones, trade me, offer logs, wait, stop.';
+}
+
+function isMidTradeWithAcceptedOffer(perception: HybridPerception): boolean {
+    const trade = perception.resident?.activeTrade;
+    if (!trade) {
+        return false;
+    }
+    return trade.ourStage === 'accepted_1' || trade.ourStage === 'accepted_2';
 }
