@@ -490,6 +490,39 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toContain('observed_only_timeouts');
     });
 
+    it.each(['hook_noop', 'budget_exhausted:pause'])(
+        'warns when timed observation is dominated by inert %s decisions despite sparse visible events',
+        async cause => {
+            writeResidentState('res:agent', { tick: 1000, lastMeaningfulProgressAt: 999 });
+            writeTrajectory('res:agent', [{ tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' }]);
+
+            const [summary] = await observeLiveResidents({
+                memoryDir,
+                residents: ['res:agent'],
+                observeMs: 50,
+                sleep: async () => {
+                    writeResidentState('res:agent', { tick: 1045, lastMeaningfulProgressAt: 999 });
+                    writeTrajectory('res:agent', [
+                        { tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                        ...Array.from({ length: 36 }, (_, index) => ({
+                            tick: 1001 + index,
+                            kind: 'decision',
+                            cause,
+                            sessionId: 'same-session',
+                        })),
+                        { tick: 1040, kind: 'say', text: 'Still here.', sessionId: 'same-session' },
+                        { tick: 1041, kind: 'action', action: { kind: 'move_to' }, sessionId: 'same-session' },
+                        { tick: 1042, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                    ]);
+                },
+            });
+
+            expect(summary.status).toBe('warn');
+            expect(summary.observed).toMatchObject({ inertDecisions: 36, visibleEvents: 3, tickDelta: 45 });
+            expect(summary.issues).toContain(`observed_inert_decision_loop:${cause}`);
+        },
+    );
+
     it('flags missing observed progress when the resident only keeps old evidence', async () => {
         writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
         writeTrajectory('res:agent', [
@@ -545,6 +578,7 @@ describe('live smoke CLI helpers', () => {
                     timeouts: 1,
                     says: 1,
                     decisions: 3,
+                    inertDecisions: 0,
                     visibleEvents: 5,
                 },
                 issues: [],

@@ -33,6 +33,9 @@ export interface LiveSmokeObservedDelta {
     timeouts: number;
     says: number;
     decisions: number;
+    inertDecisions: number;
+    dominantInertDecision?: string;
+    dominantInertDecisionCount?: number;
     visibleEvents: number;
 }
 
@@ -105,6 +108,8 @@ const DEFAULT_MAX_STUCK_TICKS = 90;
 const DEFAULT_OBSERVE_SECONDS = 0;
 const DEFAULT_POLL_MS = 1000;
 const MAX_TRAJECTORY_FILES = 4;
+const INERT_DECISION_CAUSES = new Set(['body_wait', 'hook_noop']);
+const MIN_OBSERVED_INERT_DECISIONS = 20;
 
 export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
     const envResidents = process.env.CONTROLLER_SMOKE_RESIDENTS || process.env.CONTROLLER_SMOKE_RESIDENT;
@@ -274,6 +279,13 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
         if (observed.timeouts > 0 && observed.successes === 0 && observed.actions + observed.says === 0) {
             summary.issues.push('observed_only_timeouts');
         }
+        if (
+            observed.dominantInertDecision &&
+            observed.inertDecisions >= MIN_OBSERVED_INERT_DECISIONS &&
+            observed.visibleEvents <= Math.max(3, Math.floor(observed.inertDecisions / 8))
+        ) {
+            summary.issues.push(`observed_inert_decision_loop:${observed.dominantInertDecision}`);
+        }
         if (observed.actions + observed.says > 0) {
             summary.issues = summary.issues.filter(issue => issue !== 'no_recent_visible_activity');
         }
@@ -356,7 +368,7 @@ export function formatLiveSmokeSummary(memoryDir: string, summaries: LiveSmokeSu
     for (const summary of summaries) {
         const issueText = summary.issues.length ? ` issues=${summary.issues.join(',')}` : '';
         const observed = summary.observed
-            ? ` observed=${summary.observed.durationMs}ms/+${summary.observed.tickDelta ?? 0}t actions=${summary.observed.actions} results=${summary.observed.results} success=${summary.observed.successes} timeout=${summary.observed.timeouts} fail=${summary.observed.failures} says=${summary.observed.says}`
+            ? ` observed=${summary.observed.durationMs}ms/+${summary.observed.tickDelta ?? 0}t actions=${summary.observed.actions} results=${summary.observed.results} success=${summary.observed.successes} timeout=${summary.observed.timeouts} fail=${summary.observed.failures} says=${summary.observed.says}${summary.observed.inertDecisions ? ` inert=${summary.observed.inertDecisions}:${summary.observed.dominantInertDecision || 'unknown'}` : ''}`
             : '';
         const lastAction = summary.lastAction ? ` lastAction=${summary.lastAction}` : '';
         const lastResult = summary.lastResult ? ` lastResult=${summary.lastResult}` : '';
@@ -479,6 +491,9 @@ interface ObservationCounts {
     timeouts: number;
     says: number;
     decisions: number;
+    inertDecisions: number;
+    dominantInertDecision?: string;
+    dominantInertDecisionCount?: number;
 }
 
 function readResidentObservationSnapshot(memoryDir: string, resident: string): ObservationSnapshot {
@@ -557,11 +572,19 @@ function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {
         timeouts: 0,
         says: 0,
         decisions: 0,
+        inertDecisions: 0,
     };
+    const inertCauses = new Map<string, number>();
     for (const entry of entries) {
         if (entry.kind === 'action') counts.actions += 1;
         if (entry.kind === 'say') counts.says += 1;
-        if (entry.kind === 'decision') counts.decisions += 1;
+        if (entry.kind === 'decision') {
+            counts.decisions += 1;
+            if (isInertDecisionCause(entry.cause)) {
+                counts.inertDecisions += 1;
+                inertCauses.set(entry.cause as string, (inertCauses.get(entry.cause as string) || 0) + 1);
+            }
+        }
         if (entry.kind === 'action_result') {
             counts.results += 1;
             if (entry.status === 'success') counts.successes += 1;
@@ -569,7 +592,16 @@ function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {
             if (entry.status === 'timeout') counts.timeouts += 1;
         }
     }
+    const dominantInert = dominantDecisionCause(inertCauses, counts.inertDecisions);
+    if (dominantInert) {
+        counts.dominantInertDecision = dominantInert.cause;
+        counts.dominantInertDecisionCount = dominantInert.count;
+    }
     return counts;
+}
+
+function isInertDecisionCause(cause: string | undefined): boolean {
+    return Boolean(cause && (INERT_DECISION_CAUSES.has(cause) || cause.startsWith('budget_exhausted')));
 }
 
 function discoverResidents(memoryDir: string): string[] {
