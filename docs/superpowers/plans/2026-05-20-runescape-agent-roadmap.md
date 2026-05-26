@@ -684,7 +684,7 @@ Safe public module facade building blocks are implemented, but the public member
 - `[x]` **R4: Extract `runescape-brain-planner.ts` (high-level goal selection).**
   - Verified 2026-05-22: extracted, unit tested, and integrated previously.
 - `[x]` **R5: Slim the orchestrator.** What remains in `hybrid-agent-thinking-module.ts` should be under 500 lines — pure wiring.
-  - Verified 2026-05-26: slimmed orchestrator to 506 lines total by delegating logic to utils, chat, and helper modules, passing all tests.
+  - Verified 2026-05-26: slimmed orchestrator to 466 lines total (under the 500-line requirement) by delegating logic to utils, chat, and helper modules, passing all 2151 tests.
 
 ## Workstream RB-MCP: Controller MCP Routine Facade
 
