@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Null City — Graveyard</title>
+    <style>
+        :root {
+            --ink: #2a1d0e;
+            --ink-soft: #5a4630;
+            --vellum: #f5ecd6;
+            --vellum-warm: #ebdfb8;
+            --vellum-shadow: #d6c188;
+            --vellum-edge: #d9c89e;
+            --accent: #8a3324;
+            --night: #1a120a;
+            --night-soft: rgba(245, 236, 214, 0.85);
+            --stone: #7a7060;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            color: var(--ink);
+            font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+            min-height: 100vh;
+            background:
+                radial-gradient(ellipse at 50% 0%, rgba(212, 155, 74, 0.07), transparent 55%),
+                linear-gradient(180deg, var(--night) 0%, #110a04 100%);
+        }
+        header {
+            text-align: center;
+            padding: 2.25rem 1rem 1rem;
+            color: var(--night-soft);
+            font-variant: small-caps;
+            letter-spacing: 0.12em;
+        }
+        header::after {
+            content: "";
+            display: block;
+            width: 5rem;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(212, 155, 74, 0.5), transparent);
+            margin: 0.85rem auto 0;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.7rem;
+            font-weight: normal;
+            text-shadow: 0 0 18px rgba(212, 155, 74, 0.15);
+        }
+        header .sub {
+            display: block;
+            margin-top: 0.45rem;
+            font-style: italic;
+            color: rgba(245, 236, 214, 0.6);
+            font-variant: normal;
+            font-size: 0.92rem;
+            letter-spacing: 0;
+        }
+        main {
+            max-width: 56rem;
+            margin: 0 auto;
+            padding: 1.5rem 1.25rem 5rem;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+            gap: 1.5rem;
+        }
+        .stone {
+            position: relative;
+            background:
+                radial-gradient(ellipse at top, rgba(255, 245, 215, 0.55), transparent 60%),
+                radial-gradient(ellipse at center, var(--vellum) 65%, var(--vellum-warm) 100%);
+            border: 1px solid var(--vellum-edge);
+            border-radius: 2px;
+            padding: 1.6rem 1.5rem 1.75rem;
+            box-shadow:
+                0 6px 18px rgba(0, 0, 0, 0.48),
+                0 1px 0 rgba(255, 250, 230, 0.4) inset;
+        }
+        .stone::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: 2px;
+            pointer-events: none;
+            background-image:
+                radial-gradient(rgba(120, 85, 40, 0.04) 1px, transparent 1px),
+                radial-gradient(rgba(120, 85, 40, 0.03) 1px, transparent 1px);
+            background-size: 13px 13px, 17px 17px;
+            background-position: 0 0, 6px 8px;
+            mix-blend-mode: multiply;
+        }
+        .stone-name {
+            margin: 0 0 0.35rem 0;
+            font-size: 1.25rem;
+            font-weight: normal;
+            color: var(--ink);
+            letter-spacing: 0.01em;
+            line-height: 1.25;
+        }
+        .stone-faction {
+            display: inline-block;
+            font-size: 0.72rem;
+            font-variant: small-caps;
+            letter-spacing: 0.1em;
+            color: var(--ink-soft);
+            border-bottom: 1px solid var(--vellum-shadow);
+            padding-bottom: 0.7rem;
+            margin-bottom: 0.8rem;
+            width: 100%;
+        }
+        .stone-epitaph {
+            font-style: italic;
+            font-size: 0.92rem;
+            line-height: 1.55;
+            color: var(--ink);
+            margin: 0 0 1rem 0;
+            min-height: 2.5rem;
+        }
+        .stone-footer {
+            font-size: 0.73rem;
+            color: var(--stone);
+            letter-spacing: 0.04em;
+            border-top: 1px solid rgba(214, 193, 136, 0.4);
+            padding-top: 0.6rem;
+            line-height: 1.6;
+        }
+        .stone-footer .cause {
+            text-transform: capitalize;
+        }
+        .empty, .error {
+            text-align: center;
+            color: rgba(245, 236, 214, 0.65);
+            padding: 5rem 1rem;
+            font-style: italic;
+            font-size: 1.05rem;
+        }
+        .error {
+            color: #ffd6d0;
+            background: linear-gradient(180deg, rgba(110, 34, 24, 0.45), rgba(60, 18, 12, 0.35));
+            border: 1px solid var(--accent);
+            padding: 1.25rem 1.5rem;
+            border-radius: 3px;
+            margin: 2rem 0;
+        }
+        .as-of {
+            text-align: center;
+            color: rgba(245, 236, 214, 0.35);
+            font-size: 0.78rem;
+            font-style: italic;
+            margin-top: 2.5rem;
+        }
+
+        /* Print layout: white background, black ink, 2-up cards */
+        @media print {
+            html, body { background: #fff; color: #000; }
+            header { color: #000; }
+            header::after { background: #999; }
+            .stone {
+                background: #fff;
+                border: 1px solid #ccc;
+                box-shadow: none;
+                break-inside: avoid;
+            }
+            .stone::before { display: none; }
+            .stone-faction { color: #555; }
+            .stone-footer { color: #666; }
+            .as-of { color: #aaa; }
+            .empty, .error { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Null City — Graveyard</h1>
+        <span class="sub">Those who walked here, and are gone</span>
+    </header>
+    <main id="main">
+        <div class="empty">Loading records…</div>
+    </main>
+    <script>
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const apiHost = params.get('api') || '';
+            const mainEl = document.getElementById('main');
+
+            fetch(apiHost + '/v1/graveyard')
+                .then(function (r) {
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    return r.json();
+                })
+                .then(function (data) {
+                    const deceased = Array.isArray(data.deceased) ? data.deceased : [];
+                    if (deceased.length === 0) {
+                        mainEl.innerHTML = '<div class="empty">No residents have died yet.</div>';
+                        return;
+                    }
+                    const grid = document.createElement('div');
+                    grid.className = 'grid';
+                    for (const entry of deceased) {
+                        grid.appendChild(buildStone(entry));
+                    }
+                    mainEl.replaceChildren(grid);
+                    if (data.asOf) {
+                        const asOf = document.createElement('div');
+                        asOf.className = 'as-of';
+                        asOf.textContent = 'As of ' + new Date(data.asOf).toLocaleString();
+                        mainEl.appendChild(asOf);
+                    }
+                })
+                .catch(function (err) {
+                    mainEl.innerHTML = '<div class="error">Could not load graveyard records: ' + (err.message || String(err)) + '</div>';
+                });
+
+            function buildStone(entry) {
+                const stone = document.createElement('div');
+                stone.className = 'stone';
+
+                const name = document.createElement('h2');
+                name.className = 'stone-name';
+                name.textContent = entry.displayName || entry.slug;
+                stone.appendChild(name);
+
+                const faction = document.createElement('span');
+                faction.className = 'stone-faction';
+                faction.textContent = entry.factionDisplayName || entry.factionId || 'Unaligned';
+                if (entry.factionColor) {
+                    faction.style.color = entry.factionColor;
+                }
+                stone.appendChild(faction);
+
+                if (entry.epitaph) {
+                    const ep = document.createElement('p');
+                    ep.className = 'stone-epitaph';
+                    ep.textContent = '“' + entry.epitaph + '”';
+                    stone.appendChild(ep);
+                }
+
+                const footer = document.createElement('div');
+                footer.className = 'stone-footer';
+                const cause = formatCause(entry.cause);
+                const ticks = typeof entry.livedTicks === 'number' ? entry.livedTicks.toLocaleString() + ' ticks' : '';
+                const date = entry.diedAt ? new Date(entry.diedAt).toLocaleDateString() : '';
+                const parts = [cause, ticks, date].filter(Boolean);
+                footer.innerHTML = parts.join(' &middot; ');
+                stone.appendChild(footer);
+
+                return stone;
+            }
+
+            function formatCause(cause) {
+                if (!cause) return 'unknown causes';
+                return cause.replace(/_/g, ' ');
+            }
+        })();
+    </script>
+</body>
+</html>

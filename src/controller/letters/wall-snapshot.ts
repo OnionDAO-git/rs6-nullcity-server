@@ -8,6 +8,142 @@ import { SoulLoader } from '../soul/soul-loader';
 import { factionUiMetadata, factionWallColor } from '../ui-metadata';
 
 /**
+ * One deceased resident's data for the IRL graveyard wall (N4).
+ * Derived from runtime-state.json + optional prepared-epitaph.txt.
+ */
+export interface GraveyardEntry {
+    /** Directory slug, e.g. "res-hans". */
+    slug: string;
+    /** Human-friendly display name, e.g. "Hans". */
+    displayName: string;
+    /** Faction id from SOUL file, if declared. */
+    factionId?: string;
+    /** Faction display name, e.g. "The Foundry". */
+    factionDisplayName?: string;
+    /** Primary hex color for the faction. */
+    factionColor?: string;
+    /** Cause of death, e.g. "attention_exhausted" or "combat". */
+    cause: string;
+    /** ISO timestamp when the resident died. */
+    diedAt: string;
+    /** Tick count at time of death (how long they lived). */
+    livedTicks: number;
+    /** Resident-authored epitaph text, if written via M4 prepare_epitaph. */
+    epitaph?: string;
+}
+
+/**
+ * Read all deceased residents from `lettersRoot` and return them sorted
+ * most-recently-deceased first. Resilient: missing dirs, unreadable files,
+ * and malformed JSON are skipped silently.
+ */
+export function readGraveyardEntries(
+    lettersRoot: string,
+    options: { residentIds?: readonly string[]; soulsDir?: string },
+): GraveyardEntry[] {
+    let entries: fs.Dirent[];
+    try {
+        entries = fs.readdirSync(lettersRoot, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+
+    const soulLoader = options.soulsDir !== undefined ? new SoulLoader(options.soulsDir) : undefined;
+    const allowedSlugs = options.residentIds !== undefined ? new Set(options.residentIds.map(toResidentSlug)) : undefined;
+    if (allowedSlugs !== undefined && soulLoader !== undefined) {
+        for (const name of soulLoader.listResidentNames()) {
+            allowedSlugs.add(toResidentSlug(name));
+        }
+    }
+
+    const results: GraveyardEntry[] = [];
+    for (const entry of entries) {
+        if (!entry.isDirectory() || !entry.name.startsWith('res-')) {
+            continue;
+        }
+        const slug = entry.name;
+        if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
+        const statePath = path.join(lettersRoot, slug, 'runtime-state.json');
+        if (!fs.existsSync(statePath)) {
+            continue;
+        }
+        let raw: string;
+        try {
+            raw = fs.readFileSync(statePath, 'utf8');
+        } catch {
+            continue;
+        }
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+        if (!isDeceasedRuntimeState(parsed)) {
+            continue;
+        }
+
+        const residentName = slugToResidentName(slug);
+        const soulSummary = soulLoader !== undefined ? readSoulRosterSummary(soulLoader, residentName) : undefined;
+        const displayName = soulSummary?.displayName || humanizeName(slug);
+
+        const factionId = soulSummary?.factionId;
+        const faction = factionId !== undefined ? factionUiMetadata(factionId) : undefined;
+
+        const epitaph = readPreparedEpitaph(path.join(lettersRoot, 'library', slug, 'prepared-epitaph.txt'));
+
+        const graveyardEntry: GraveyardEntry = {
+            slug,
+            displayName,
+            cause: parsed.deceased.cause,
+            diedAt: parsed.deceased.date,
+            livedTicks: parsed.tick,
+        };
+        if (factionId !== undefined) {
+            graveyardEntry.factionId = factionId;
+        }
+        if (faction !== undefined) {
+            graveyardEntry.factionDisplayName = faction.displayName;
+            graveyardEntry.factionColor = faction.wallColor;
+        }
+        if (epitaph !== undefined) {
+            graveyardEntry.epitaph = epitaph;
+        }
+        results.push(graveyardEntry);
+    }
+
+    // Most recently deceased first.
+    results.sort((a, b) => (a.diedAt < b.diedAt ? 1 : a.diedAt > b.diedAt ? -1 : 0));
+    return results;
+}
+
+function readPreparedEpitaph(filePath: string): string | undefined {
+    try {
+        const text = fs.readFileSync(filePath, 'utf8').trim();
+        return text.length > 0 ? text : undefined;
+    } catch {
+        return undefined;
+    }
+}
+
+function isDeceasedRuntimeState(value: unknown): value is {
+    tick: number;
+    deceased: { date: string; tick: number; cause: string; processed?: boolean };
+} {
+    if (!value || typeof value !== 'object') {
+        return false;
+    }
+    const v = value as Record<string, unknown>;
+    if (typeof v.tick !== 'number' || !v.deceased || typeof v.deceased !== 'object') {
+        return false;
+    }
+    const d = v.deceased as Record<string, unknown>;
+    return typeof d.cause === 'string' && typeof d.date === 'string' && typeof d.tick === 'number';
+}
+
+/**
  * Wall ticker snapshot (workstream EVENT-D6).
  *
  * Pure function that scans every per-patron inbox in

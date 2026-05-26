@@ -7,7 +7,7 @@ import type { LettersStore } from '../patron/letters-store';
 import { PatronStore } from '../patron/patron-store';
 import { CURRENCY_NAME } from '../patron/currency-ledger';
 import { STANDING_TIERS } from '../patron/standing-ledger';
-import { buildWallSnapshot, redactWallSnapshot } from './wall-snapshot';
+import { buildWallSnapshot, readGraveyardEntries, redactWallSnapshot } from './wall-snapshot';
 
 /**
  * Read-only HTTP server exposing a human's letter inbox as JSON
@@ -33,6 +33,7 @@ export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 export const DEFAULT_HEALTH_PATH = '/v1/health';
 export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
 export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
+export const DEFAULT_GRAVEYARD_PATH = '/v1/graveyard';
 
 export interface LettersHttpAuthOptions {
     /** When set, requests must send `Authorization: Bearer <token>`. */
@@ -102,16 +103,26 @@ export async function startLettersHttpServer(options: LettersHttpServerOptions):
     const patronStandingPath = normalizePath(DEFAULT_PATRON_STANDING_PATH);
     const bindHost = options.host || '127.0.0.1';
 
+    const graveyardRoutePath = normalizePath(DEFAULT_GRAVEYARD_PATH);
+
     const server = http.createServer((request, response) => {
-        handle(request, response, options, routePath, wallRoutePath, healthRoutePath, patronBalancePath, patronStandingPath).catch(
-            error => {
-                if (!response.headersSent) {
-                    writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
-                } else if (!response.writableEnded) {
-                    response.end();
-                }
-            },
-        );
+        handle(
+            request,
+            response,
+            options,
+            routePath,
+            wallRoutePath,
+            healthRoutePath,
+            patronBalancePath,
+            patronStandingPath,
+            graveyardRoutePath,
+        ).catch(error => {
+            if (!response.headersSent) {
+                writeJson(response, 500, { error: error instanceof Error ? error.message : 'inbox request failed' });
+            } else if (!response.writableEnded) {
+                response.end();
+            }
+        });
     });
 
     await new Promise<void>((resolve, reject) => {
@@ -144,6 +155,7 @@ async function handle(
     healthRoutePath: string,
     patronBalancePath: string,
     patronStandingPath: string,
+    graveyardRoutePath: string,
 ): Promise<void> {
     const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
     const isInboxRoute = url.pathname === routePath;
@@ -151,9 +163,18 @@ async function handle(
     const isHealthRoute = url.pathname === healthRoutePath && options.health !== undefined;
     const isPatronBalanceRoute = url.pathname === patronBalancePath && options.patronMemoryRoot !== undefined;
     const isPatronStandingRoute = url.pathname === patronStandingPath && options.patronMemoryRoot !== undefined;
+    const isGraveyardRoute = url.pathname === graveyardRoutePath && options.lettersRoot !== undefined;
     const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
-    if (!isInboxRoute && !isWallRoute && !isHealthRoute && !isPatronBalanceRoute && !isPatronStandingRoute && !staticPagePath) {
+    if (
+        !isInboxRoute &&
+        !isWallRoute &&
+        !isHealthRoute &&
+        !isPatronBalanceRoute &&
+        !isPatronStandingRoute &&
+        !isGraveyardRoute &&
+        !staticPagePath
+    ) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
@@ -195,6 +216,15 @@ async function handle(
                 },
             });
         }
+        return;
+    }
+
+    if (isGraveyardRoute) {
+        const deceased = readGraveyardEntries(options.lettersRoot as string, {
+            residentIds: options.residentIds,
+            soulsDir: options.soulsDir,
+        });
+        writeJson(response, 200, { deceased, total: deceased.length, asOf: new Date().toISOString() });
         return;
     }
 
@@ -291,6 +321,8 @@ function resolveStaticPagePath(requestPath: string, staticRoot?: string): string
             return path.join(publicRoot, 'inbox', 'index.html');
         case '/patron':
             return path.join(publicRoot, 'patron', 'index.html');
+        case '/graveyard':
+            return path.join(publicRoot, 'graveyard', 'index.html');
         default:
             return undefined;
     }

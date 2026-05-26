@@ -570,6 +570,59 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(payload).toMatchObject({ faction: 'foundry', tier: 'ally', points: 30 });
         });
     });
+
+    describe('GET /v1/graveyard (N4)', () => {
+        it('returns 404 when lettersRoot is not configured', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/graveyard'));
+            expect(response.status).toBe(404);
+        });
+
+        it('returns empty list when no deceased residents exist', async () => {
+            writeRuntimeState(tmp, 'res-agent', { attention: 9000 });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/graveyard'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { deceased: unknown[]; total: number };
+            expect(payload.deceased).toEqual([]);
+            expect(payload.total).toBe(0);
+        });
+
+        it('returns deceased entry with slug, displayName, cause, diedAt, and livedTicks', async () => {
+            writeRuntimeState(tmp, 'res-fallen', {
+                attention: 0,
+                tick: 1234,
+                deceased: {
+                    cause: 'attention_exhausted',
+                    date: '2026-05-26T10:00:00.000Z',
+                    tick: 1234,
+                    processed: true,
+                },
+            });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/graveyard'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                deceased: Array<{ slug: string; displayName: string; cause: string; diedAt: string; livedTicks: number }>;
+            };
+            expect(payload.deceased).toHaveLength(1);
+            const entry = payload.deceased[0];
+            expect(entry.slug).toBe('res-fallen');
+            expect(entry.displayName).toBe('Fallen');
+            expect(entry.cause).toBe('attention_exhausted');
+            expect(entry.diedAt).toBe('2026-05-26T10:00:00.000Z');
+            expect(entry.livedTicks).toBe(1234);
+        });
+
+        it('serves the graveyard printable page from /graveyard/', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/graveyard/'));
+            expect(response.status).toBe(200);
+            expect(response.contentType).toMatch(/text\/html/);
+            expect(response.body).toContain('Graveyard');
+            expect(response.body).toContain('/v1/graveyard');
+        });
+    });
 });
 
 function writeRuntimeState(root: string, slug: string, partial: { attention: number; [key: string]: unknown }): void {
