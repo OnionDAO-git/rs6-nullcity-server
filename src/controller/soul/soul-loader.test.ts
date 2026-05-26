@@ -158,5 +158,12 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-priest').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-forager').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
         });
+
+        it('uses only synthetic QA residents for the qwopus canary split', () => {
+            expect(loader.load('res:agent').frontmatter.model?.endpoint).toBe('default');
+            expect(loader.load('res:hans').frontmatter.model?.endpoint ?? 'default').toBe('default');
+            expect(loader.load('res:qa-scout').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
+            expect(loader.load('res:qa-forager').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
+        });
     });
 });

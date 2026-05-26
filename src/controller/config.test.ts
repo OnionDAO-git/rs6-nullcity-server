@@ -114,6 +114,31 @@ describe('controller config', () => {
         expect(productionConfigIssues(config, { RAILGUN: 'true', CONTROLLER_KNOWLEDGE_DIR: '/data/controller/knowledge' })).toEqual([]);
     });
 
+    it('ships a tracked inference canary config for old/new URL and model comparisons', () => {
+        const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.inference-canary.yml'));
+
+        expect(config.llm.endpoints.default).toMatchObject({
+            baseUrl: 'http://inf.nullcity.ai:1234',
+            model: 'qwen/qwen3.6-27b',
+            timeoutMs: 60000,
+        });
+        expect(config.llm.endpoints.spacetower_qwopus_q4).toMatchObject({
+            baseUrl: 'http://spacetower.nullcity.ai:8100',
+            model: 'qwopus3.5-27b-v3@q4_k_s',
+            timeoutMs: 30000,
+        });
+        expect(config.llm.endpoints.spacetower_qwen).toMatchObject({
+            baseUrl: 'http://spacetower.nullcity.ai:8100',
+            model: 'qwen/qwen3.6-27b',
+            timeoutMs: 60000,
+        });
+        expect(config.llm.endpoints.inf_qwopus_q4).toMatchObject({
+            baseUrl: 'http://inf.nullcity.ai:1234',
+            model: 'qwopus3.5-27b-v3@q4_k_s',
+            timeoutMs: 30000,
+        });
+    });
+
     it('requires gateway auth for remote production gateway control', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
         const configPath = path.join(root, 'controller.yml');

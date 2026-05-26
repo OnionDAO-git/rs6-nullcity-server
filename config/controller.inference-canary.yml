@@ -1,0 +1,65 @@
+residents:
+  - res:agent
+  - res:hans
+  - res:father-aereck
+  - res:wise-old-man
+  - res:duke-horacio
+  - res:pip
+  - res:thrand
+  - res:qa-woodcutter
+  - res:qa-angler
+  - res:qa-guardian
+  - res:qa-social
+  - res:qa-cook
+  - res:qa-scout
+  - res:qa-trader
+  - res:qa-survivor
+  - res:qa-banker
+  - res:qa-guide
+  - res:qa-priest
+  - res:qa-forager
+
+gateway:
+  url: ws://127.0.0.1:43595
+  controllerId: nullcity-controller
+
+souls:
+  dir: ../src/controller/soul/starter-souls
+
+memory:
+  dir: ../data/controller/memory
+  qmdBin: qmd
+
+logging:
+  dir: ../data/controller/logs
+  fullPerceptions: false
+
+inference:
+  maxConcurrent: 2
+
+llm:
+  endpoints:
+    # Proven demo baseline. Keep as default for merge/showoff stability.
+    default:
+      baseUrl: http://inf.nullcity.ai:1234
+      model: qwen/qwen3.6-27b
+      timeoutMs: 60000
+    # Dev's new canary URL + quantized model. Fast enough for live resident experiments.
+    spacetower_qwopus_q4:
+      baseUrl: http://spacetower.nullcity.ai:8100
+      model: qwopus3.5-27b-v3@q4_k_s
+      timeoutMs: 30000
+    # Same model as default on the new URL, useful to separate server vs model effects.
+    spacetower_qwen:
+      baseUrl: http://spacetower.nullcity.ai:8100
+      model: qwen/qwen3.6-27b
+      timeoutMs: 60000
+    # Same quantized model on the old URL, useful to separate server vs model effects.
+    inf_qwopus_q4:
+      baseUrl: http://inf.nullcity.ai:1234
+      model: qwopus3.5-27b-v3@q4_k_s
+      timeoutMs: 30000
+
+patrons:
+  - handle: demo@onion
+    kind: patron_witness

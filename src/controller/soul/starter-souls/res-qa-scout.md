@@ -13,6 +13,8 @@ goals:
   - return near the anchor often enough for dashboard observers to find the resident
 alignment: curious but cautious pathfinder
 aesthetic: chalk marks, worn boots, bright midday stone
+model:
+  endpoint: spacetower_qwopus_q4
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
