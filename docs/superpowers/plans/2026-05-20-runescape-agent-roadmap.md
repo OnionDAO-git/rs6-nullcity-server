@@ -235,6 +235,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: resident detail Body panel shows whether the latest action succeeded, failed, or timed out, with concise reason text for QA.
   - Verification: activity regression tests, dashboard checks/build, and live dashboard/API smoke.
   - Verified 2026-05-26 in `rs6-nullcity-residents-dashboard`: SPARK Activity Body panel now separates `Last Action` from `Last Result`, shows `pending` for newer unreconciled actions, classifies success/timeout/failed, and redacts raw error text. Validation passed with dashboard tests, typecheck, check, build, browser proof, and live API proof. Follow-up: live 60s `res:agent` smoke exposed observed move timeouts, so server-side stuck recovery needs another pass.
+  - Hardened 2026-05-26 in `rs6-nullcity-residents-dashboard`: runtime BFF now merges current trajectory `action_result` evidence and Activity matches final rows by request id, so controller `ok+requestId` ACKs render as pending until final success/timeout/failure arrives. Raw trajectory evidence is omitted. Verified with red/green runtime/activity tests, all dashboard tests (44), typecheck, check, build, browser proof, reviewer pass, and 120s live `res:agent` smoke.
 
 ## Workstream E: RuneScape Knowledge And Agent Skill
 
