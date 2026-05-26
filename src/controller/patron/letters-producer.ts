@@ -1,6 +1,30 @@
 import { z } from 'zod';
 import { type StandingTier, isUserFacingTier } from './standing-ledger';
 
+// ---------------------------------------------------------------------------
+// Tick-to-human-time helper
+// ---------------------------------------------------------------------------
+
+// At the RuneJS tick rate of ~0.6 s/tick:
+//   100 ticks ≈ 1 minute, 6 000 ticks ≈ 1 hour, 144 000 ticks ≈ 1 day.
+const TICKS_PER_MINUTE = 100; // Math.round(60 / 0.6)
+const TICKS_PER_HOUR = 6_000; // Math.round(3600 / 0.6)
+const TICKS_PER_DAY = 144_000; // Math.round(86400 / 0.6)
+
+/**
+ * Convert a raw tick count into a human-readable duration string suitable for
+ * letters and public-facing pages (e.g. "12 minutes", "2 hours", "30 days").
+ */
+export function ticksToHumanTime(ticks: number): string {
+    if (ticks < TICKS_PER_MINUTE * 2) return 'a few minutes';
+    const minutes = Math.round(ticks / TICKS_PER_MINUTE);
+    if (minutes < 60) return `${minutes} minutes`;
+    const hours = Math.round(ticks / TICKS_PER_HOUR);
+    if (hours < 24) return hours === 1 ? 'about an hour' : `${hours} hours`;
+    const days = Math.round(ticks / TICKS_PER_DAY);
+    return days === 1 ? 'about a day' : `${days} days`;
+}
+
 /**
  * A letter dispatched to a human after a standing-tier crossing, a resident
  * death (J-δ-β, TODO), or a civic milestone (J-δ-γ, TODO).
@@ -220,7 +244,7 @@ function renderEpitaphBody(input: EpitaphLetterInput): string {
         '',
         `${input.residentName} has died.`,
         '',
-        `They served ${input.faction} for ${input.livedTicks} tick${input.livedTicks === 1 ? '' : 's'} — a life measured in the small currency of attention rather than the large one of years.`,
+        `They served ${input.faction} for ${ticksToHumanTime(input.livedTicks)} — a life measured in the small currency of attention rather than the large one of years.`,
         '',
         skillLine,
         causeLine,
@@ -315,11 +339,13 @@ export interface BroadcastLetterInput {
 export function produceBroadcastLetter(input: BroadcastLetterInput): Letter {
     const subject = `[Broadcast] On the passing of ${input.residentName}`;
     const body = [
-        `All Patrons,`,
+        `All Patrons of Null City,`,
         '',
-        `This is an official broadcast notifying Null City of the passing of resident ${input.residentName} (${input.faction}).`,
+        `The city records the passing of ${input.residentName}, who served ${input.faction}.`,
         '',
-        `They lived for ${input.livedTicks} ticks and passed away due to ${input.causeOfDeath}.`,
+        `They walked among us for ${ticksToHumanTime(input.livedTicks)}. The cause: ${input.causeOfDeath}.`,
+        '',
+        `Their portrait has been sealed in the Library of Souls.`,
         '',
         '— Embassy Clerk',
     ].join('\n');

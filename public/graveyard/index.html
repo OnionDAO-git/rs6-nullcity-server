@@ -241,13 +241,26 @@
                 const footer = document.createElement('div');
                 footer.className = 'stone-footer';
                 const cause = formatCause(entry.cause);
-                const ticks = typeof entry.livedTicks === 'number' ? entry.livedTicks.toLocaleString() + ' ticks' : '';
+                const ticks = typeof entry.livedTicks === 'number' ? ticksToHuman(entry.livedTicks) : '';
                 const date = entry.diedAt ? new Date(entry.diedAt).toLocaleDateString() : '';
                 const parts = [cause, ticks, date].filter(Boolean);
                 footer.innerHTML = parts.join(' &middot; ');
                 stone.appendChild(footer);
 
                 return stone;
+            }
+
+            function ticksToHuman(ticks) {
+                var TICKS_PER_MINUTE = 100;
+                var TICKS_PER_HOUR = 6000;
+                var TICKS_PER_DAY = 144000;
+                if (ticks < TICKS_PER_MINUTE * 2) return 'a few minutes';
+                var minutes = Math.round(ticks / TICKS_PER_MINUTE);
+                if (minutes < 60) return minutes + ' minutes';
+                var hours = Math.round(ticks / TICKS_PER_HOUR);
+                if (hours < 24) return hours === 1 ? 'about an hour' : hours + ' hours';
+                var days = Math.round(ticks / TICKS_PER_DAY);
+                return days === 1 ? 'about a day' : days + ' days';
             }
 
             function formatCause(cause) {
