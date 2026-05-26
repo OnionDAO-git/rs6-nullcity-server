@@ -404,6 +404,30 @@ describe('Spark evidence integration', () => {
             jest.useRealTimers();
         }
     });
+
+    it('keeps hero visible cadence below the inert-loop smoke threshold', async () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-05-25T05:15:13.000Z'));
+        try {
+            const llm = {
+                complete: jest.fn(async () => ({
+                    text: JSON.stringify({}),
+                    nooped: true,
+                })),
+            } as unknown as LlmClient;
+            const state = runtimeState();
+            state.tick = 130;
+            state.lastIdleInitiativeTick = 120;
+            state.lastIdleInitiativeAt = new Date(Date.now() - 13_000).toISOString();
+            const spark = new Spark(heroSoul(), state, memory(), llm);
+
+            const result = await spark.tick({ tick: 131, events: [] });
+
+            expect(result.cause).toBe('empty_completion_idle_initiative');
+            expect(result.actions.map(action => action.kind)).toEqual(['say', 'move_to']);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
 });
 
 function runtimeState(): RuntimeState {
