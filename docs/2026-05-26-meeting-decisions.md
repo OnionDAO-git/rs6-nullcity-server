@@ -4,7 +4,7 @@ Meeting between James (Null City lead), Dev (OnionDAO founder, project initiator
 
 This doc is the single source of truth for what was settled. Anything more nuanced lives elsewhere:
 
-- Existing capability reference: `RUNBOOK.md` (repo root)
+- Existing capability reference: `HUMANS.md` (repo root)
 - Demo evidence: `docs/dev-demo-readiness.md` and `CHANGELOG.md` § `[2026-05-26]`
 - Model benchmark setup: `docs/model-benchmarking.md` (now on both branches)
 - Stale strategy doc (now superseded): `docs/post-demo-team-brief.md`
@@ -36,7 +36,7 @@ This doc is the single source of truth for what was settled. Anything more nuanc
 - Benchmark Haiku / Sonnet / MiniMax / Qwen / corpus on 1-2 RuneScape workflows → results table.
 - Write a capabilities doc — every tested task + reliability level (evidence-based, not aspirational).
 - Implement and test the memory system (mem0, qmd, or Adam's MCP-snippet-fetch).
-- Add `HUMANS.md` mirror of `AGENTS.md`. **Note: `RUNBOOK.md` at repo root already covers this content; decide whether to rename, point, or extend before duplicating.**
+- ~~Add `HUMANS.md` mirror of `AGENTS.md`~~ **DONE** (2026-05-26): renamed from existing `RUNBOOK.md` content; same 356-line Null City human guide.
 - Surface model / endpoint / spark module on the dashboard.
 - No new UI code until Dev's framework lands.
 

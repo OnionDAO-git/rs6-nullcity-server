@@ -2,7 +2,7 @@
 
 [![RuneJS](https://i.imgur.com/QSXNzwC.png)](https://github.com/runejs/)
 
-> Null City operators and demo hosts: start with [RUNBOOK.md](RUNBOOK.md). This README preserves the upstream RuneJS server notes.
+> Null City humans (operators, demo hosts, new contributors): start with [HUMANS.md](HUMANS.md). AI agents: start with [AGENTS.md](AGENTS.md). This README preserves the upstream RuneJS server notes.
 
 # RuneJS Game Server
 

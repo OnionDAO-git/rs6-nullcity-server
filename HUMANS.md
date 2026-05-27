@@ -1,6 +1,6 @@
-# Null City Human Runbook
+# HUMANS.md — Null City Human Guide
 
-This is the human-facing guide for running, verifying, explaining, and demoing Null City. It is different from `docs/demo-day-checklist.md`: the checklist is a minute-by-minute demo prep script, while this file is the durable "how do I use this project?" reference.
+The human-facing companion to [AGENTS.md](AGENTS.md). Use this to run, verify, explain, and demo Null City. Different from `docs/demo-day-checklist.md`: the checklist is a minute-by-minute demo-prep script, while this file is the durable "how do I use this project?" reference.
 
 ## Quick Answers
 
