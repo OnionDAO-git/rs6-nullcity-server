@@ -8,7 +8,8 @@ node_modules
 /data/controller/logs
 /data/controller/memory
 /data/controller/data
-/data/benchmarks/*.json
+/data/benchmarks/**
+!/data/benchmarks/README.md
 /data/knowledge/suggestions.*.jsonl
 /data/memory/*
 !/data/memory/README.md
@@ -18,6 +19,9 @@ server-config.yaml
 /controller.yml
 
 # local env files
+.env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 

@@ -2,6 +2,8 @@
 
 Null City can already assign different inference profiles to different residents. This note captures the post-demo model benchmarking plan without storing secrets in source.
 
+Latest first-pass results: `docs/model-benchmark-results-2026-05-27.md`.
+
 ## What Works Today
 
 - Owned hardware profiles are configured in `controller.yml`: `default`, `spacetower_qwopus_q4`, `spacetower_qwen`, and `inf_qwopus_q4`.
