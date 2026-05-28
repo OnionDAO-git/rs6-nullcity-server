@@ -56,10 +56,10 @@ export class ActionAdapter {
                 resident.playerEvents.emit('chat', action.text);
                 return { ok: true };
             case 'dialogue_continue':
-                resident.dialogueInteractionEvent.next(-1);
+                resident.interfaceState.closeWidget('chatbox', undefined, -1);
                 return { ok: true };
             case 'dialogue_choice':
-                resident.dialogueInteractionEvent.next(action.optionIndex);
+                resident.interfaceState.closeWidget('chatbox', undefined, action.optionIndex + 1);
                 return { ok: true };
             case 'use_item_on':
                 return this.useItemOn(resident, action.itemSlot, action.target);

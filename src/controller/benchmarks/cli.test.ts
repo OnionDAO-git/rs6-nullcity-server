@@ -179,6 +179,20 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"starter-mining-5m","version":"0.1.0"');
     });
 
+    it('can dry-run the Cooks Assistant quest-start benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'cooks-assistant-start-3m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"cooks-assistant-start-3m","version":"0.1.0"');
+    });
+
     it('can dry-run the fishing-cooking benchmark task', async () => {
         const writes: string[] = [];
 
@@ -396,14 +410,15 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(13);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(14);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-start-3m"');
         expect(output).toContain('"benchmark":{"taskId":"bury-bones-prayer-3m"');
         expect(output).toContain('"benchmark":{"taskId":"level-up-firemaking-3m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":13');
-        expect(output).toContain('"passed":13');
-        expect(output).toContain('"averageScore":0.9615384615384616');
+        expect(output).toContain('"total":14');
+        expect(output).toContain('"passed":14');
+        expect(output).toContain('"averageScore":0.9642857142857143');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);

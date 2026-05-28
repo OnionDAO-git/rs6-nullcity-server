@@ -126,6 +126,15 @@ export class PerceptionBuilder {
                 inventory: player.inventory.items.map(itemRef),
                 equipment: player.equipment.items.map(itemRef),
                 activeTrade,
+                quests: Object.fromEntries(
+                    (player.quests || []).map(quest => [
+                        quest.questId,
+                        {
+                            progress: quest.progress,
+                            complete: quest.complete,
+                        },
+                    ]),
+                ),
             },
             nearby: {
                 players,
