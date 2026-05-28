@@ -48,6 +48,7 @@ export const TINDERBOX_ITEM_IDS: ReadonlySet<number> = new Set([590]);
 export const FIREMAKING_LOG_ITEM_IDS: ReadonlySet<number> = new Set([1511, 2862, 1521, 1519, 6333, 1517, 6332, 1515, 1513]);
 export const FIREMAKING_LOG_KEY_PATTERN = /^rs:(logs|.*_logs)$/i;
 export const WOODCUTTING_AXE_ITEM_IDS: ReadonlySet<number> = new Set([1351, 1349, 1353, 1361, 1355, 1357, 1359]);
+export const PICKAXE_ITEM_IDS: ReadonlySet<number> = new Set([1265, 1267, 1269, 1273, 1271, 1275]);
 export const SMALL_FISHING_NET_ITEM_IDS: ReadonlySet<number> = new Set([303]);
 export const STARTER_RAW_FISH_ITEM_IDS: ReadonlySet<number> = new Set([317, 321]);
 export const STARTER_RAW_FISH_KEY_PATTERN = /^rs:raw_(shrimp|anchovies)$/i;
@@ -76,6 +77,10 @@ export function isWoodcuttingAxe(item: WorkflowItem): boolean {
     return WOODCUTTING_AXE_ITEM_IDS.has(item.itemId) || /\b(axe|hatchet)\b/i.test(item.key || '');
 }
 
+export function isPickaxe(item: WorkflowItem): boolean {
+    return PICKAXE_ITEM_IDS.has(item.itemId) || /(^|[:_\s-])pickaxe([:_\s-]|$)/i.test(item.key || '');
+}
+
 export function isSmallFishingNet(item: WorkflowItem): boolean {
     return SMALL_FISHING_NET_ITEM_IDS.has(item.itemId) || /\bsmall(_|\s)?fishing(_|\s)?net\b|\bsmall(_|\s)?net\b/i.test(item.key || '');
 }
@@ -92,6 +97,10 @@ export function isBones(item: WorkflowItem): boolean {
 
 export function hasWoodcuttingAxe(perception: WorkflowInventoryCarrier): boolean {
     return carriedAndEquippedItems(perception).some(item => isWoodcuttingAxe(item));
+}
+
+export function hasPickaxe(perception: WorkflowInventoryCarrier): boolean {
+    return carriedAndEquippedItems(perception).some(item => isPickaxe(item));
 }
 
 export function hasSmallFishingNet(perception: WorkflowInventoryCarrier): boolean {

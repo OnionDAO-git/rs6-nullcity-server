@@ -20,6 +20,7 @@ import { LEVEL_UP_FIREMAKING_3M_TASK_ID, makeLevelUpFiremaking3mBenchmarkTask } 
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
+import { STARTER_MINING_5M_TASK_ID, makeStarterMining5mBenchmarkTask } from './tasks/starter-mining-5m';
 import { TRADING_GIVING_5M_TASK_ID, makeTradingGiving5mBenchmarkTask } from './tasks/trading-giving-5m';
 import { WOODCUTTING_FIREMAKING_10M_TASK_ID, makeWoodcuttingFiremaking10mBenchmarkTask } from './tasks/woodcutting-firemaking-10m';
 
@@ -46,6 +47,7 @@ const CORE_TASK_IDS = [
     FOLLOW_AND_CHAT_5M_TASK_ID,
     WOODCUTTING_FIREMAKING_10M_TASK_ID,
     STARTER_FISHING_5M_TASK_ID,
+    STARTER_MINING_5M_TASK_ID,
     FISHING_COOKING_10M_TASK_ID,
     EQUIPMENT_PREP_3M_TASK_ID,
     LEVEL_UP_FIREMAKING_3M_TASK_ID,
@@ -233,6 +235,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === STARTER_FISHING_5M_TASK_ID) {
         return makeStarterFishing5mBenchmarkTask();
+    }
+    if (taskId === STARTER_MINING_5M_TASK_ID) {
+        return makeStarterMining5mBenchmarkTask();
     }
     if (taskId === FISHING_COOKING_10M_TASK_ID) {
         return makeFishingCooking10mBenchmarkTask();

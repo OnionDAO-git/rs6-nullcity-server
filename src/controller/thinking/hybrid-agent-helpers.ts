@@ -56,6 +56,7 @@ import {
     safeCombatTarget,
     findSlot,
     levelOneWoodcuttingAction,
+    starterMiningAction,
     starterFishingCookingAction as bodyStarterFishingCookingAction,
     starterFishingRouteAction,
     factionLandmarkWorkAction,
@@ -104,7 +105,9 @@ import {
     isFiremakingGoal,
     isWoodcuttingTrainingGoal,
     isStarterFishingGoal,
+    isMiningGoal,
     starterFishingGoal,
+    miningGoal,
     isCombatTrainingGoal,
     isPrayerTrainingGoal,
     isFactionLandmarkWorkGoal,
@@ -1455,6 +1458,11 @@ export function fallbackAction(
         return { action: combatAction, cause: combatAction.cause || 'combat_training' };
     }
 
+    const miningAction = starterMiningGoalAction(ctx, view);
+    if (miningAction) {
+        return miningAction;
+    }
+
     const starterFishing = starterFishingGoalAction(ctx, view);
     if (starterFishing) {
         return starterFishing;
@@ -1490,6 +1498,19 @@ export function fallbackAction(
     }
 
     return undefined;
+}
+
+export function starterMiningGoalAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+): { action: AgentAction; cause: string } | undefined {
+    const goal = ctx.activeGoal();
+    if (!goal || !isMiningGoal(goal)) {
+        return undefined;
+    }
+
+    const action = starterMiningAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick);
+    return action ? { action, cause: action.cause || 'starter_mining' } : undefined;
 }
 
 export function starterFishingGoalAction(
@@ -2397,6 +2418,13 @@ export function goalRoutineOverride(
         }
     }
 
+    if (isMiningGoal(goal)) {
+        const miningAction = starterMiningGoalAction(ctx, perception);
+        if (miningAction) {
+            return miningAction;
+        }
+    }
+
     const fireGoalLike = !isStarterFishingGoal(goal) && /fire|burn|logs|tinderbox|light/i.test(goalText);
     if (fireGoalLike) {
         const fireAction = firemakingAction(perception);
@@ -2687,6 +2715,9 @@ export function brainTimeoutFallbackGoal(perception: HybridPerception | undefine
     }
     if (perception && starterFishingAction(perception)) {
         return starterFishingGoal(tick);
+    }
+    if (perception && starterMiningAction(perception)) {
+        return miningGoal(tick);
     }
     if (perception && buryBonesAction(perception)) {
         return prayerGoal(tick);

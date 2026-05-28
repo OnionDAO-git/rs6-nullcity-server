@@ -23,6 +23,7 @@ import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
     MEDIUM_RISK_BONE_SOURCE_PATTERN,
+    hasPickaxe,
     hasSmallFishingNet,
     hasWoodcuttingAxe,
     isBones,
@@ -91,6 +92,13 @@ export const FIRE_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire]);
 export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
+]);
+
+/** Level-1 ore rocks the starter mining routine may mine. Empty/depleted rock ids are intentionally excluded. */
+export const STARTER_ORE_IDS: ReadonlySet<number> = new Set([
+    ...objectIds.default.clay.map(rock => rock.default),
+    ...objectIds.default.copper.map(rock => rock.default),
+    ...objectIds.default.tin.map(rock => rock.default),
 ]);
 
 /** Tree object IDs that are useful as scouting landmarks, even when the resident cannot chop them yet. */
@@ -590,6 +598,36 @@ export function levelOneWoodcuttingAction(
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
+}
+
+/** Approach and mine the nearest level-1 clay/copper/tin rock when carrying a pickaxe. */
+export function starterMiningAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !hasPickaxe(perception)) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.objects || [])
+        .filter(
+            object =>
+                sameLevel(here, object.position) &&
+                STARTER_ORE_IDS.has(object.objectId) &&
+                !isTargetFailureCooldownActive(object, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!target) {
+        return undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'starter_mining_routine' };
+    }
+
+    return { kind: 'interact', target, option: 'mine', cause: 'starter_mining_routine' };
 }
 
 /**

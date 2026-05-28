@@ -23,10 +23,12 @@ import {
     cleanSpeech,
     isFiremakingGoal,
     isFollowGoal,
+    isMiningGoal,
     isPrayerTrainingGoal,
     isStandaloneFiremakingGoal,
     isStarterFishingGoal,
     isWoodcuttingTrainingGoal,
+    miningGoal,
     parseBrainCompletion,
     summarizeGoalForSpeech,
     prayerGoal,
@@ -242,6 +244,15 @@ describe('goal factories', () => {
         expect(g.ttlTicks).toBe(600);
     });
 
+    it('miningGoal builds a mine-starter-ore goal', () => {
+        const g = miningGoal(17);
+        expect(g.id).toBe('mine-starter-ore');
+        expect(g.description).toContain('starter ore');
+        expect(g.steps?.join(' ')).toContain('pickaxe');
+        expect(g.ttlTicks).toBe(600);
+        expect(g.createdAtTick).toBe(17);
+    });
+
     it('starterFishingCookingGoal builds a catch-and-cook goal', () => {
         const g = starterFishingCookingGoal(0);
         expect(g.id).toBe('catch-and-cook-starter-fish');
@@ -305,6 +316,11 @@ describe('benchmarkGoalForTask', () => {
     it("returns starterFishingGoal for 'starter-fishing-5m'", () => {
         const g = benchmarkGoalForTask('starter-fishing-5m', 0);
         expect(g?.id).toBe('catch-starter-fish');
+    });
+
+    it("returns miningGoal for 'starter-mining-5m'", () => {
+        const g = benchmarkGoalForTask('starter-mining-5m', 0);
+        expect(g?.id).toBe('mine-starter-ore');
     });
 
     it("returns starterFishingCookingGoal for 'fishing-cooking-10m'", () => {
@@ -375,6 +391,23 @@ describe('goal-identity predicates', () => {
         expect(isStarterFishingGoal(starterFishingGoal(0))).toBe(true);
         expect(isStarterFishingGoal(starterFishingCookingGoal(0))).toBe(true);
         expect(isStarterFishingGoal(combatGoal(0))).toBe(false);
+    });
+
+    it('isMiningGoal matches starter ore / pickaxe goals but rejects unrelated skill goals', () => {
+        expect(isMiningGoal(miningGoal(0))).toBe(true);
+        expect(
+            isMiningGoal({
+                id: 'gather-copper-and-tin',
+                description: 'Mine copper and tin ore with a bronze pickaxe.',
+                steps: ['Find a copper rock', 'Use the mine option'],
+                success: 'Ore is in inventory.',
+                ttlTicks: 600,
+                createdAtTick: 0,
+            }),
+        ).toBe(true);
+        expect(isMiningGoal(starterFishingGoal(0))).toBe(false);
+        expect(isMiningGoal(woodcuttingGoal(0))).toBe(false);
+        expect(isMiningGoal(firemakingGoal(0))).toBe(false);
     });
 
     it('isFiremakingGoal matches fire/tinderbox/light goals', () => {

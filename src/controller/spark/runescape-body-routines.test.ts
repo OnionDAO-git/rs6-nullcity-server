@@ -29,6 +29,7 @@ import {
     starterFishingRouteAction,
     safeCombatTarget,
     safeBoneSourceTarget,
+    starterMiningAction,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
@@ -226,6 +227,66 @@ describe('levelOneWoodcuttingAction', () => {
             }),
         );
         expect(action).toBeUndefined();
+    });
+});
+
+describe('starterMiningAction', () => {
+    const COPPER_ROCK = objectIds.default.copper[0].default;
+    const TIN_ROCK = objectIds.default.tin[0].default;
+    const EMPTY_COPPER_ROCK = objectIds.default.copper[0].empty;
+    const BRONZE_PICKAXE = 1265;
+
+    it('returns interact "mine" when adjacent to a starter ore rock with a pickaxe', () => {
+        const rock = { objectId: COPPER_ROCK, position: { x: 100, y: 100, level: 0 } };
+        const action = starterMiningAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BRONZE_PICKAXE, 'rs:bronze_pickaxe')] },
+                nearby: { objects: [rock] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: rock,
+            option: 'mine',
+            cause: 'starter_mining_routine',
+        });
+    });
+
+    it('moves toward the nearest visible starter ore rock when out of range', () => {
+        const farRock = { objectId: TIN_ROCK, position: { x: 110, y: 100, level: 0 } };
+        const nearRock = { objectId: COPPER_ROCK, position: { x: 104, y: 100, level: 0 } };
+        const action = starterMiningAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BRONZE_PICKAXE, 'rs:bronze_pickaxe')] },
+                nearby: { objects: [farRock, nearRock] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: nearRock.position,
+            range: 1,
+            cause: 'starter_mining_routine',
+        });
+    });
+
+    it('ignores empty rocks and returns undefined without a pickaxe', () => {
+        const emptyRock = { objectId: EMPTY_COPPER_ROCK, position: { x: 100, y: 100, level: 0 } };
+        expect(
+            starterMiningAction(
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BRONZE_PICKAXE, 'rs:bronze_pickaxe')] },
+                    nearby: { objects: [emptyRock] },
+                }),
+            ),
+        ).toBeUndefined();
+        expect(
+            starterMiningAction(
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                    nearby: { objects: [{ objectId: COPPER_ROCK, position: { x: 100, y: 100, level: 0 } }] },
+                }),
+            ),
+        ).toBeUndefined();
     });
 });
 

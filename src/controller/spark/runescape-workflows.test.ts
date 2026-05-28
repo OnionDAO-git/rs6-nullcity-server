@@ -3,11 +3,13 @@ import {
     type WorkflowActor,
     type WorkflowCard,
     type WorkflowItem,
+    hasPickaxe,
     hasSmallFishingNet,
     hasWoodcuttingAxe,
     isBones,
     isFiremakingLog,
     isFishingSpot,
+    isPickaxe,
     isSafeBoneSource,
     isSafeCombatTarget,
     isSmallFishingNet,
@@ -79,6 +81,24 @@ describe('runescape-workflows item-type predicates', () => {
 
         it('rejects non-axe items', () => {
             expect(isWoodcuttingAxe(item(995, 'rs:coins'))).toBe(false);
+        });
+    });
+
+    describe('isPickaxe', () => {
+        it('matches canonical pickaxe itemIds', () => {
+            for (const id of [1265, 1267, 1269, 1273, 1271, 1275]) {
+                expect(isPickaxe(item(id))).toBe(true);
+            }
+        });
+
+        it('matches pickaxe keys', () => {
+            expect(isPickaxe(item(99999, 'rs:bronze_pickaxe'))).toBe(true);
+            expect(isPickaxe(item(99999, 'iron pickaxe'))).toBe(true);
+        });
+
+        it('rejects non-pickaxe items', () => {
+            expect(isPickaxe(item(1351, 'rs:bronze_axe'))).toBe(false);
+            expect(isPickaxe(item(995, 'rs:coins'))).toBe(false);
         });
     });
 
@@ -162,6 +182,16 @@ describe('runescape-workflows inventory predicates', () => {
     it('hasSmallFishingNet returns false when absent', () => {
         expect(hasSmallFishingNet({ resident: { inventory: [item(995)] } })).toBe(false);
         expect(hasSmallFishingNet({})).toBe(false);
+    });
+
+    it('hasPickaxe finds a carried or equipped pickaxe', () => {
+        expect(hasPickaxe({ resident: { inventory: [item(1265, 'rs:bronze_pickaxe')] } })).toBe(true);
+        expect(hasPickaxe({ resident: { inventory: [], equipment: [item(1267, 'rs:iron_pickaxe')] } })).toBe(true);
+    });
+
+    it('hasPickaxe returns false when absent', () => {
+        expect(hasPickaxe({ resident: { inventory: [item(1351, 'rs:bronze_axe')] } })).toBe(false);
+        expect(hasPickaxe({})).toBe(false);
     });
 
     it('hasWoodcuttingAxe ignores null inventory slots', () => {

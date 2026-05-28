@@ -193,6 +193,18 @@ export function starterFishingGoal(tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical `mine-starter-ore` Active Goal. */
+export function miningGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'mine-starter-ore',
+        description: 'Mine starter ore from a visible clay, copper, or tin rock with a pickaxe.',
+        steps: ['Carry a pickaxe', 'Find a visible clay, copper, or tin rock', 'Move beside it', 'Use the mine option'],
+        success: 'A mining attempt is underway or starter ore is collected.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
 /** Build the canonical `catch-and-cook-starter-fish` Active Goal. */
 export function starterFishingCookingGoal(tick: number): ActiveGoalState {
     return {
@@ -309,6 +321,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'starter-fishing-5m') {
         return starterFishingGoal(tick);
     }
+    if (taskId === 'starter-mining-5m') {
+        return miningGoal(tick);
+    }
     if (taskId === 'fishing-cooking-10m') {
         return starterFishingCookingGoal(tick);
     }
@@ -371,6 +386,13 @@ export function isWoodcuttingTrainingGoal(goal: ActiveGoalState): boolean {
 /** True when the goal looks like a starter-fishing goal. */
 export function isStarterFishingGoal(goal: ActiveGoalState): boolean {
     return /fish|fishing|shrimp|anchov|small net|small_fishing_net|fishing spot/i.test(
+        `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`,
+    );
+}
+
+/** True when the goal looks like a starter-mining goal. */
+export function isMiningGoal(goal: ActiveGoalState): boolean {
+    return /\b(mining|mine|starter ore|ore|clay|copper|tin|pickaxe|rock)\b/i.test(
         `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`,
     );
 }
