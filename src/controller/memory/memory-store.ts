@@ -1,4 +1,5 @@
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { readRecentLibraryMemories, readRecentPatronMemories } from '../evidence/library-memories';
@@ -17,14 +18,41 @@ const libraryMemoryLimit = 4;
 const libraryPatronMemoryLimit = 6;
 const factSearchMaxLines = 8;
 const factSearchMaxLineChars = 320;
+const memoryUsagePreviewChars = 180;
+
+type MemorySource = 'patron' | 'facts' | 'library' | 'index' | 'targeted' | 'qmd';
+
+export interface MemoryTelemetryOptions {
+    logPath?: string;
+    now?: () => string;
+}
+
+export interface MemoryStoreOptions {
+    telemetry?: false | MemoryTelemetryOptions;
+}
+
+interface LabeledMemory {
+    source: MemorySource;
+    text: string;
+}
 
 export class MemoryStore {
     private warnedAboutQmd = false;
+    private readonly telemetry?: MemoryUsageLogger;
 
     constructor(
         private readonly memoryRoot: string,
         private readonly qmdBin: string,
-    ) {}
+        options: MemoryStoreOptions = {},
+    ) {
+        const shouldEnableTelemetry = options.telemetry !== undefined || path.basename(memoryRoot) === 'memory';
+        if (options.telemetry !== false && shouldEnableTelemetry) {
+            this.telemetry = new MemoryUsageLogger(
+                options.telemetry?.logPath || defaultMemoryUsageLogPath(memoryRoot),
+                options.telemetry?.now,
+            );
+        }
+    }
 
     ensureResident(resident: string): string {
         const root = path.join(this.memoryRoot, residentSlug(resident));
@@ -44,28 +72,41 @@ export class MemoryStore {
     }
 
     retrieve(resident: string, query: string, limit = 6): string[] {
+        const startedAt = Date.now();
         const root = this.ensureResident(resident);
-        const excerpts: string[] = [];
+        const excerpts: LabeledMemory[] = [];
+        const pushMemories = (source: MemorySource, memories: string[]) => {
+            for (const text of memories) {
+                excerpts.push({ source, text });
+            }
+        };
         // E7: patron memories first so they stay in the prompt even if the
         // tail slice gets clipped. Concrete recipient/amount/tier text gives
         // Brain enough to react meaningfully on the very next decision.
-        excerpts.push(...readRecentPatronMemories(this.memoryRoot, resident, libraryPatronMemoryLimit));
-        excerpts.push(...this.searchFacts(root, query, limit));
-        excerpts.push(...readRecentLibraryMemories(this.memoryRoot, resident, libraryMemoryLimit));
+        pushMemories('patron', readRecentPatronMemories(this.memoryRoot, resident, libraryPatronMemoryLimit));
+        pushMemories('facts', this.searchFacts(root, query, limit));
+        pushMemories('library', readRecentLibraryMemories(this.memoryRoot, resident, libraryMemoryLimit));
 
         const index = this.readIfExists(path.join(root, 'INDEX.md'));
         if (index) {
-            excerpts.push(index);
+            excerpts.push({ source: 'index', text: index });
         }
 
         const targeted = this.targetedExcerpt(root, query);
         if (targeted) {
-            excerpts.push(targeted);
+            excerpts.push({ source: 'targeted', text: targeted });
         }
 
-        const qmd = this.queryQmd(resident, query, limit);
-        excerpts.push(...qmd);
-        return excerpts.filter(Boolean).slice(0, limit + 2 + libraryMemoryLimit + libraryPatronMemoryLimit);
+        pushMemories('qmd', this.queryQmd(resident, query, limit));
+        const result = excerpts.filter(memory => Boolean(memory.text)).slice(0, limit + 2 + libraryMemoryLimit + libraryPatronMemoryLimit);
+        this.telemetry?.logRetrieve({
+            resident,
+            query,
+            limit,
+            durationMs: Date.now() - startedAt,
+            results: result,
+        });
+        return result.map(memory => memory.text);
     }
 
     read(resident: string, relativePath: string): string | undefined {
@@ -83,6 +124,7 @@ export class MemoryStore {
         } else {
             fs.appendFileSync(target, content.endsWith('\n') ? content : `${content}\n`);
         }
+        this.telemetry?.logWrite({ resident, relativePath, content, mode });
         return target;
     }
 
@@ -237,6 +279,82 @@ export class MemoryStore {
 }
 
 export { templateNames };
+
+class MemoryUsageLogger {
+    constructor(
+        private readonly logPath: string,
+        private readonly now: () => string = () => new Date().toISOString(),
+    ) {}
+
+    logRetrieve(input: { resident: string; query: string; limit: number; durationMs: number; results: LabeledMemory[] }): void {
+        const sourceCounts = countSources(input.results);
+        this.append({
+            type: 'retrieve',
+            ts: this.now(),
+            resident: input.resident,
+            queryHash: hashText(input.query),
+            queryPreview: preview(input.query),
+            limit: input.limit,
+            durationMs: input.durationMs,
+            resultCount: input.results.length,
+            sourceCounts,
+            topSources: Array.from(new Set(input.results.slice(0, 5).map(result => result.source))),
+        });
+    }
+
+    logWrite(input: { resident: string; relativePath: string; content: string; mode: 'append' | 'replace' }): void {
+        this.append({
+            type: 'write',
+            ts: this.now(),
+            resident: input.resident,
+            path: input.relativePath,
+            mode: input.mode,
+            charCount: input.content.length,
+            lineCount: input.content.split(/\r?\n/).filter(line => line.trim().length > 0).length,
+            contentHash: hashText(input.content),
+            contentPreview: preview(input.content),
+        });
+    }
+
+    private append(entry: Record<string, unknown>): void {
+        try {
+            fs.mkdirSync(path.dirname(this.logPath), { recursive: true });
+            fs.appendFileSync(this.logPath, `${JSON.stringify(entry)}\n`);
+        } catch {
+            // Memory telemetry must never make residents fail to remember or act.
+        }
+    }
+}
+
+function defaultMemoryUsageLogPath(memoryRoot: string): string {
+    if (path.basename(memoryRoot) === 'memory') {
+        return path.join(path.dirname(memoryRoot), 'logs', 'memory-usage.jsonl');
+    }
+    return path.join(memoryRoot, 'logs', 'memory-usage.jsonl');
+}
+
+function countSources(results: LabeledMemory[]): Record<MemorySource, number> {
+    const counts: Record<MemorySource, number> = {
+        patron: 0,
+        facts: 0,
+        library: 0,
+        index: 0,
+        targeted: 0,
+        qmd: 0,
+    };
+    for (const result of results) {
+        counts[result.source] += 1;
+    }
+    return counts;
+}
+
+function hashText(text: string): string {
+    return createHash('sha256').update(text).digest('hex').slice(0, 16);
+}
+
+function preview(text: string): string {
+    return text.replace(/\s+/g, ' ').trim().slice(0, memoryUsagePreviewChars);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
