@@ -893,3 +893,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-27 19:14 codex branch=agents/wip workstream=N/dashboard HANDOFF — moved public event UI/static pages and UI metadata out of nullcity-server into residents-dashboard; server controller keeps JSON/data endpoints. Tests/check/build pass. Collision: none.
 2026-05-27 21:55 codex branch=agents/wip workstream=MODEL-INTEL STARTING - benchmark local vs paid model intelligence with twin residents and hard tasks; no secrets committed. Files: docs/results/status, temp configs/artifacts. collision=none.
 2026-05-27 21:56 codex branch=agents/wip workstream=MODEL-INTEL HANDOFF - SHA=7c9cfc55: cap active residents at 20 (25 stretch); Qwen 0/6 combat, Qwopus 3/6, Haiku 3/6; Sonnet best situational only. format+diffcheck green.
+
+2026-05-28 11:38 codex branch=agents/wip workstream=MODEL-BENCH-PLUMBING STARTING - add benchmark profile metadata/cost fields and provider response parsing for fair paid/local model tests. Files: src/controller/{config,llm,benchmarks} tests/docs. collision=none.

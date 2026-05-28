@@ -9,7 +9,11 @@ Latest first-pass results:
 
 ## What Works Today
 
-- Owned hardware profiles are configured in `controller.yml`: `default`, `spacetower_qwopus_q4`, `spacetower_qwen`, and `inf_qwopus_q4`.
+- Owned hardware profiles are configured in `controller.yml`: `default`/`inf_qwen` on `inf.nullcity.ai:1234` and `spacetower_qwopus_q4` on `spacetower.nullcity.ai:8100`.
+- Benchmark config now separates hardware/provider endpoints from model profiles:
+  - `llm.endpoints.<id>` = URL/provider/API key/response format.
+  - `llm.profiles.<id>` = endpoint + model + timeout + optional price hints.
+  - Profiles are also exposed through `llm.endpoints` for backward compatibility with existing SOUL `model.endpoint` references.
 - `res:qa-scout` and `res:qa-forager` already opt into `spacetower_qwopus_q4` in their SOUL files.
 - A resident chooses an inference endpoint with SOUL frontmatter:
 
@@ -20,6 +24,8 @@ model:
 
 - The controller can call OpenAI-compatible APIs with `baseUrl`, `model`, and `apiKey`.
 - `config/controller.model-benchmark.yml` adds a tracked benchmark config for owned hardware plus OpenRouter profiles.
+- Benchmark artifacts include an `inference` object with profile id, endpoint id, provider, base URL, model, and optional pricing fields so later reports do not have to infer which machine/model was tested from run order.
+- OpenAI-compatible health checks and resident calls can use either JSON-schema or text response formatting; OpenRouter-style `message.reasoning` responses and provider cost fields are now parsed when present.
 
 ## Secrets
 
@@ -46,7 +52,7 @@ Run only owned hardware:
 
 ```bash
 npm run inference:canary -- --config config/controller.model-benchmark.yml \
-  --endpoints inf_qwen,inf_qwopus_q4,spacetower_qwen,spacetower_qwopus_q4
+  --endpoints inf_qwen,spacetower_qwopus_q4
 ```
 
 Run OpenRouter profiles after setting `OPENROUTER_API_KEY`:
@@ -72,9 +78,9 @@ For each URL/model combination, measure:
 
 Use QA residents first. Keep hero/demo residents on the stable default until a model proves it improves live behavior.
 
-## Recommended Next Implementation
+## Model Profile Config
 
-Add a compatibility-safe `llm.models` layer so endpoints and models are separate concepts:
+Use `llm.profiles` for new benchmark configs:
 
 ```yaml
 llm:
@@ -86,23 +92,38 @@ llm:
       provider: openai-compatible
       baseUrl: https://openrouter.ai/api
       apiKey: ${OPENROUTER_API_KEY}
-  models:
-    spacetower-qwopus:
+      responseFormat: text
+  profiles:
+    spacetower_qwopus_q4:
       endpoint: spacetower
       model: qwopus3.5-27b-v3@q4_k_s
-    storyteller:
+    openrouter_storyteller:
       endpoint: openrouter
       model: ${OPENROUTER_STORYTELLER_MODEL}
+      timeoutMs: 90000
 ```
 
-Then allow residents to use:
+Existing residents still use:
 
 ```yaml
 model:
-  profile: spacetower-qwopus
+  endpoint: spacetower_qwopus_q4
 ```
 
-Keep the old `model.endpoint` path working while the benchmark layer migrates.
+The profile id resolves to an endpoint-shaped entry at runtime, so old `model.endpoint` continues to work while benchmark reports get clean endpoint/model metadata.
+
+## Still Needed To Finish Benchmarking
+
+1. Add harder live benchmark tasks that are less SPARK-assisted:
+   - high-level cooked-shrimp goal
+   - low-health danger survival
+   - stuck-door recovery
+   - patron instruction conflict
+   - memory route recall
+2. Run 5-10 repetitions per profile per task.
+3. Add Anthropic-native Messages API support for direct Anthropic keys.
+4. Add a MiniMax adapter that limits or extracts reasoning-heavy outputs cleanly.
+5. Build a small report generator that aggregates raw benchmark artifacts into pass-rate/cost/latency tables.
 
 ## Storyteller
 

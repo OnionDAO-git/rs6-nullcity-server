@@ -18,6 +18,7 @@ export interface InferenceHealthResult {
     latencyMs?: number;
     promptTokens?: number;
     completionTokens?: number;
+    costUsd?: number;
     error?: string;
     textPreview?: string;
 }
@@ -94,6 +95,7 @@ export async function runInferenceHealthProbe(options: InferenceHealthProbeOptio
                 latencyMs,
                 promptTokens: response.promptTokens,
                 completionTokens: response.completionTokens,
+                costUsd: response.costUsd,
                 textPreview: preview(usableText),
             };
         }
@@ -106,6 +108,7 @@ export async function runInferenceHealthProbe(options: InferenceHealthProbeOptio
                 latencyMs,
                 promptTokens: response.promptTokens,
                 completionTokens: response.completionTokens,
+                costUsd: response.costUsd,
             };
         }
 
@@ -118,6 +121,7 @@ export async function runInferenceHealthProbe(options: InferenceHealthProbeOptio
                 latencyMs,
                 promptTokens: response.promptTokens,
                 completionTokens: response.completionTokens,
+                costUsd: response.costUsd,
                 textPreview: preview(usableText),
             };
         }
@@ -130,6 +134,7 @@ export async function runInferenceHealthProbe(options: InferenceHealthProbeOptio
             latencyMs,
             promptTokens: response.promptTokens,
             completionTokens: response.completionTokens,
+            costUsd: response.costUsd,
         };
     } catch (error) {
         return {
@@ -190,14 +195,7 @@ async function postHealthCompletion(request: InferenceHealthCompletionRequest): 
             temperature: request.temperature,
             reasoning: { enabled: request.thinking },
             chat_template_kwargs: { enable_thinking: request.thinking },
-            response_format: {
-                type: 'json_schema',
-                json_schema: {
-                    name: 'controller_health_probe',
-                    strict: false,
-                    schema: { type: 'object' },
-                },
-            },
+            response_format: responseFormatBody(request.config.responseFormat),
         }),
         signal: request.signal,
     });
@@ -211,7 +209,7 @@ async function postHealthCompletion(request: InferenceHealthCompletionRequest): 
     const first = isRecord(choices[0]) ? choices[0] : {};
     const message = isRecord(first.message) ? first.message : {};
     const usage = isRecord(payload.usage) ? payload.usage : {};
-    const content = typeof message.content === 'string' && message.content.trim().length > 0 ? message.content : message.reasoning_content;
+    const content = firstNonEmptyString(message.content, message.reasoning_content, message.reasoning);
 
     return {
         text: typeof content === 'string' ? content : '',
@@ -219,9 +217,43 @@ async function postHealthCompletion(request: InferenceHealthCompletionRequest): 
         nooped: false,
         promptTokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
         completionTokens: typeof usage.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+        costUsd: readCostUsd(usage),
     };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+function responseFormatBody(format: LlmEndpointConfig['responseFormat'] = 'json_schema'): unknown {
+    if (format === 'text') {
+        return { type: 'text' };
+    }
+    return {
+        type: 'json_schema',
+        json_schema: {
+            name: 'controller_health_probe',
+            strict: false,
+            schema: { type: 'object' },
+        },
+    };
+}
+
+function readCostUsd(usage: Record<string, unknown>): number | undefined {
+    if (typeof usage.cost === 'number' && Number.isFinite(usage.cost)) {
+        return usage.cost;
+    }
+    const costDetails = isRecord(usage.cost_details) ? usage.cost_details : {};
+    return typeof costDetails.upstream_inference_cost === 'number' && Number.isFinite(costDetails.upstream_inference_cost)
+        ? costDetails.upstream_inference_cost
+        : undefined;
 }

@@ -94,6 +94,58 @@ describe('LlmClient retry and endpoint pause', () => {
         });
     });
 
+    it('uses OpenRouter reasoning when providers return null content and no reasoning_content field', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    model: 'minimax/minimax-m2.7',
+                    choices: [
+                        {
+                            message: {
+                                content: null,
+                                reasoning: '{"actions":[{"kind":"eat_item"}]}',
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 30, completion_tokens: 12, cost: 0.000042 },
+                }),
+                { status: 200 },
+            ),
+        );
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        const response = await client.complete({ endpoint: 'default', prompt: 'decide' });
+
+        expect(response).toMatchObject({
+            text: '{"actions":[{"kind":"eat_item"}]}',
+            model: 'minimax/minimax-m2.7',
+            nooped: false,
+            promptTokens: 30,
+            completionTokens: 12,
+            costUsd: 0.000042,
+        });
+    });
+
+    it('honors endpoint responseFormat text for providers that produce bad schema completions', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('text mode ok'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: {
+                baseUrl: 'https://llm.test',
+                model: 'test-model',
+                timeoutMs: 1000,
+                responseFormat: 'text',
+            },
+        });
+        const response = await client.complete({ endpoint: 'default', prompt: 'decide' });
+
+        expect(response.text).toBe('text mode ok');
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.response_format).toEqual({ type: 'text' });
+    });
+
     it('passes explicit thinking controls through to OpenAI-compatible providers', async () => {
         const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('thoughtful'));
         global.fetch = fetchMock;

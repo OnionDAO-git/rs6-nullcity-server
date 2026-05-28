@@ -261,6 +261,58 @@ describe('benchmark CLI', () => {
         expect(gateway.close).toHaveBeenCalledTimes(1);
     });
 
+    it('passes resolved inference profile metadata to benchmark runs', async () => {
+        const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-cli-profile-'));
+        const gateway = {
+            connect: jest.fn().mockResolvedValue(undefined),
+            hello: jest.fn().mockResolvedValue(undefined),
+            close: jest.fn(),
+        };
+
+        (loadControllerConfig as jest.Mock).mockReturnValue({
+            gateway: {
+                url: 'ws://localhost:3000',
+                authToken: 'test-token',
+                controllerId: 'test-controller',
+            },
+            llm: {
+                endpoints: {
+                    default: {
+                        profileId: 'haiku',
+                        endpointId: 'openrouter',
+                        provider: 'openrouter',
+                        baseUrl: 'https://openrouter.ai/api',
+                        model: 'anthropic/claude-3.5-haiku',
+                        timeoutMs: 45000,
+                    },
+                },
+                profiles: {},
+            },
+        });
+        (GatewayClient as unknown as jest.Mock).mockImplementation(() => gateway);
+        (BenchmarkRunner as jest.Mock).mockImplementation(() => ({
+            run: jest.fn().mockResolvedValue(benchmarkArtifact()),
+        }));
+
+        const exitCode = await runBenchmarkCli(['--task', 'make-fire-5m', '--module', 'onion.runescape.standard', '--output', outputDir], {
+            stdout: () => undefined,
+        });
+
+        expect(exitCode).toBe(0);
+        expect(BenchmarkRunner).toHaveBeenCalledWith(
+            expect.objectContaining({
+                modelProfile: 'haiku',
+                inference: {
+                    profileId: 'haiku',
+                    endpointId: 'openrouter',
+                    provider: 'openrouter',
+                    baseUrl: 'https://openrouter.ai/api',
+                    model: 'anthropic/claude-3.5-haiku',
+                },
+            }),
+        );
+    });
+
     it('runs every core benchmark for --task all and prints a suite summary', async () => {
         const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-cli-suite-'));
         const writes: string[] = [];

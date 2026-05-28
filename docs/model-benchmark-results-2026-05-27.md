@@ -1,5 +1,7 @@
 # Model benchmark first pass - 2026-05-27
 
+> Correction added 2026-05-28: Dev clarified that the owned machines did not have every cross-loaded model combination. Treat rows for `inf_qwopus_q4` and `spacetower_qwen` as invalid endpoint-specific evidence. The confirmed owned profiles are `inf_qwen` on `inf.nullcity.ai:1234` and `spacetower_qwopus_q4` on `spacetower.nullcity.ai:8100`. Later benchmark plumbing adds explicit endpoint/model metadata to prevent this ambiguity.
+
 This pass separates two questions:
 
 1. **Endpoint capacity:** how many simultaneous inference requests each URL/model can absorb before latency becomes demo-hostile.
@@ -13,8 +15,8 @@ This pass separates two questions:
 - Local services: `npm run start:infra` and `npm run start:game`
 - Owned profiles tested:
   - `inf_qwen`: `http://inf.nullcity.ai:1234`, `qwen/qwen3.6-27b`
-  - `inf_qwopus_q4`: `http://inf.nullcity.ai:1234`, `qwopus3.5-27b-v3@q4_k_s`
-  - `spacetower_qwen`: `http://spacetower.nullcity.ai:8100`, `qwen/qwen3.6-27b`
+  - `inf_qwopus_q4`: invalid cross-load label; see correction above.
+  - `spacetower_qwen`: invalid cross-load label; see correction above.
   - `spacetower_qwopus_q4`: `http://spacetower.nullcity.ai:8100`, `qwopus3.5-27b-v3@q4_k_s`
 
 OpenRouter and Anthropic were not run in this pass because no `.env.local` was present. Keep keys outside source; source `.env.local` before paid-provider runs.
@@ -25,7 +27,7 @@ Command family:
 
 ```bash
 npm run inference:canary -- --config config/controller.model-benchmark.yml \
-  --endpoints inf_qwen,inf_qwopus_q4,spacetower_qwen,spacetower_qwopus_q4 \
+  --endpoints inf_qwen,spacetower_qwopus_q4 \
   --timeout-ms 90000
 ```
 
@@ -113,7 +115,7 @@ Each temp config used the same world, task, SPARK module, resident scaffolding, 
 
 Run the next pass as a small factorial experiment:
 
-- Profiles: `inf_qwen`, `inf_qwopus_q4`, `spacetower_qwen`, `spacetower_qwopus_q4`, then OpenRouter/Anthropic profiles once keys are present.
+- Profiles: `inf_qwen`, `spacetower_qwopus_q4`, then OpenRouter/Anthropic profiles once keys are present.
 - Tasks: 2 deterministic controls plus 2 genuinely cognitive workflows.
 - Repetitions: at least 5 runs per profile per task.
 - Metrics: pass rate, time to first valid action, completion time, selected-module inference count, meaningful progress ticks, stuck ticks, useful speech, empty/JSON-like replies, and estimated cost.

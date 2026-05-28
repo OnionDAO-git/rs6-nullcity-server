@@ -17,6 +17,35 @@ describe('benchmarkArtifactSchema', () => {
         expect(parsed.mode).toBe('autonomous');
     });
 
+    it('records benchmark inference metadata separately from legacy modelProfile', () => {
+        const parsed = benchmarkArtifactSchema.parse(
+            artifact({
+                inference: {
+                    profileId: 'haiku',
+                    endpointId: 'openrouter',
+                    provider: 'openrouter',
+                    baseUrl: 'https://openrouter.ai/api',
+                    model: 'anthropic/claude-3.5-haiku',
+                    promptTokens: 120,
+                    completionTokens: 40,
+                    estimatedCostUsd: 0.000256,
+                },
+            }),
+        );
+
+        expect(parsed.inference).toEqual({
+            profileId: 'haiku',
+            endpointId: 'openrouter',
+            provider: 'openrouter',
+            baseUrl: 'https://openrouter.ai/api',
+            model: 'anthropic/claude-3.5-haiku',
+            promptTokens: 120,
+            completionTokens: 40,
+            estimatedCostUsd: 0.000256,
+        });
+        expect(parsed.modelProfile).toBe('local-qwen-body');
+    });
+
     it('rejects artifacts without module identity', () => {
         const candidate = artifact({ module: undefined });
 

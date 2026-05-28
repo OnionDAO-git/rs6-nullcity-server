@@ -137,23 +137,29 @@ The direct rubric is not a replacement for game play, but it exposes two useful 
 
 ## Recommended next experiment
 
-1. Add an artifact-level `profileId`, `endpointId`, `provider`, and token/cost fields to every controller benchmark artifact.
-2. Add a provider adapter layer for:
-   - OpenRouter models that return reasoning separately from content.
-   - Anthropic native Messages API.
-   - MiniMax-style reasoning-heavy responses.
-3. Add 3-5 harder model-sensitive live workflows:
+Follow-up plumbing landed after this report:
+
+- Benchmark config now has `llm.endpoints` for machines/providers and `llm.profiles` for endpoint+model choices.
+- Benchmark artifacts now include `inference.profileId`, `endpointId`, `provider`, `baseUrl`, `model`, and optional pricing fields.
+- OpenRouter-style `message.reasoning` and provider `usage.cost` fields are parsed by the OpenAI-compatible client and health probe.
+- Endpoints can opt into `responseFormat: text` when JSON-schema mode causes bad completions.
+
+Remaining experiment work:
+
+1. Add 3-5 harder model-sensitive live workflows:
    - `goal-orientation-cooked-shrimp`: high-level goal, no direct recipe.
    - `stuck-door-recovery`: unreachable target behind door.
    - `patron-conflict-resolution`: patron guidance vs distracting chat/NPC event.
    - `memory-route-recall`: learn new bank/location fact, use it later.
    - `danger-survival`: low HP, food, hostile NPC, recover before continuing.
-4. Run 5-10 repetitions per profile:
+2. Run 5-10 repetitions per profile:
    - Qwen local baseline.
    - Qwopus local.
    - Haiku.
    - Sonnet.
    - MiniMax after adapter.
+3. Add Anthropic-native Messages API support for direct Anthropic keys.
+4. Add a MiniMax adapter that limits or extracts reasoning-heavy outputs cleanly.
 5. Score with pass rate, time to first valid action, meaningful progress, stuck ticks, useful speech, cost, and human-readability.
 
 ## Product recommendation

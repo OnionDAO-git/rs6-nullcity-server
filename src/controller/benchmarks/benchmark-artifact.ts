@@ -5,6 +5,22 @@ const identitySchema = z.object({
     id: z.string().min(1),
     version: z.string().min(1),
 });
+const benchmarkInferenceSchema = z.object({
+    profileId: z.string().min(1).optional(),
+    endpointId: z.string().min(1).optional(),
+    provider: z.string().min(1).optional(),
+    baseUrl: z.string().min(1).optional(),
+    model: z.string().min(1).optional(),
+    promptTokens: z.number().int().nonnegative().optional(),
+    completionTokens: z.number().int().nonnegative().optional(),
+    estimatedCostUsd: z.number().nonnegative().optional(),
+    pricing: z
+        .object({
+            promptTokenUsd: z.number().nonnegative().optional(),
+            completionTokenUsd: z.number().nonnegative().optional(),
+        })
+        .optional(),
+});
 
 export const benchmarkRunStatusSchema = z.enum(['passed', 'failed', 'timeout', 'error', 'cancelled']);
 export const benchmarkRunModeSchema = z.enum(['scripted', 'autonomous']);
@@ -35,6 +51,7 @@ export const benchmarkArtifactSchema = z
         mode: benchmarkRunModeSchema.default('scripted'),
         resident: z.string().min(1),
         modelProfile: z.string().min(1),
+        inference: benchmarkInferenceSchema.optional(),
         commits: z
             .array(
                 z.object({

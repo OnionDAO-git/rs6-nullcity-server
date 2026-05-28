@@ -709,7 +709,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.diedAt).toBe('2026-05-26T10:00:00.000Z');
             expect(entry.livedTicks).toBe(1234);
         });
-
     });
 
     describe('GET /v1/library (Pillar 3 — Library of Souls browse)', () => {
@@ -770,7 +769,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.arcPhase).toBe('progress');
             expect(entry.patronHandles).toContain('alice@onion');
         });
-
     });
 
     describe('GET /v1/patron/residents (Pillar 2 — residents you have known)', () => {

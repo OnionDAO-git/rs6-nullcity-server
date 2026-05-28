@@ -36,6 +36,7 @@ export interface ControllerConfig {
     };
     llm: {
         endpoints: Record<string, LlmEndpointConfig>;
+        profiles: Record<string, LlmEndpointConfig>;
     };
     patrons?: PatronConfig[];
 }
@@ -46,7 +47,19 @@ export interface LlmEndpointConfig {
     baseUrl?: string;
     apiKey?: string;
     model?: string;
+    provider?: string;
+    endpointId?: string;
+    profileId?: string;
+    responseFormat?: LlmResponseFormat;
     timeoutMs: number;
+    cost?: LlmCostConfig;
+}
+
+export type LlmResponseFormat = 'json_schema' | 'text';
+
+export interface LlmCostConfig {
+    promptTokenUsd?: number;
+    completionTokenUsd?: number;
 }
 
 export interface ControllerCliOptions {
@@ -221,6 +234,9 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
     const source = isRecord(parsed) ? parsed : {};
     const baseDir = path.dirname(resolvedPath);
 
+    const llmEndpoints = readLlmEndpoints(readPath(source, ['llm', 'endpoints']));
+    const llmProfiles = readLlmProfiles(readPath(source, ['llm', 'profiles']), llmEndpoints);
+
     const config: ControllerConfig = {
         controller: {
             instanceId: readString(
@@ -256,7 +272,8 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
             storageMode: readKnowledgeStorageMode(readPath(source, ['knowledge', 'storageMode']), 'persistent-volume'),
         },
         llm: {
-            endpoints: readLlmEndpoints(readPath(source, ['llm', 'endpoints'])),
+            endpoints: { ...llmEndpoints, ...llmProfiles },
+            profiles: llmProfiles,
         },
         patrons: readPatronArray(source.patrons),
     };
@@ -395,7 +412,7 @@ function readStringArray(value: unknown): string[] {
 
 function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
     const endpoints: Record<string, LlmEndpointConfig> = {
-        default: { timeoutMs: 30000 },
+        default: { endpointId: 'default', timeoutMs: 30000 },
     };
 
     if (!isRecord(value)) {
@@ -411,11 +428,68 @@ function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
             baseUrl: readOptionalString(endpoint.baseUrl),
             apiKey: readOptionalString(endpoint.apiKey),
             model: readOptionalString(endpoint.model),
+            provider: readOptionalString(endpoint.provider),
+            endpointId: name,
+            responseFormat: readLlmResponseFormat(endpoint.responseFormat),
             timeoutMs: readNumber(endpoint.timeoutMs, 30000),
+            cost: readLlmCost(endpoint.cost),
         };
     }
 
     return endpoints;
+}
+
+function readLlmProfiles(value: unknown, endpoints: Record<string, LlmEndpointConfig>): Record<string, LlmEndpointConfig> {
+    const profiles: Record<string, LlmEndpointConfig> = {};
+    if (!isRecord(value)) {
+        return profiles;
+    }
+
+    for (const [name, profile] of Object.entries(value)) {
+        if (!isRecord(profile)) {
+            continue;
+        }
+
+        const endpointId = readString(profile.endpoint, 'default');
+        const endpoint = endpoints[endpointId] || endpoints.default || { timeoutMs: 30000 };
+        profiles[name] = {
+            baseUrl: readOptionalString(profile.baseUrl) ?? endpoint.baseUrl,
+            apiKey: readOptionalString(profile.apiKey) ?? endpoint.apiKey,
+            model: readOptionalString(profile.model) ?? endpoint.model,
+            provider: readOptionalString(profile.provider) ?? endpoint.provider,
+            endpointId,
+            profileId: name,
+            responseFormat: readLlmResponseFormat(profile.responseFormat) ?? endpoint.responseFormat,
+            timeoutMs: readNumber(profile.timeoutMs, endpoint.timeoutMs ?? 30000),
+            cost: readLlmCost(profile.cost) ?? endpoint.cost,
+        };
+    }
+
+    return profiles;
+}
+
+function readLlmResponseFormat(value: unknown): LlmResponseFormat | undefined {
+    return value === 'json_schema' || value === 'text' ? value : undefined;
+}
+
+function readLlmCost(value: unknown): LlmCostConfig | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const cost: LlmCostConfig = {};
+    const promptTokenUsd = readOptionalNumber(value.promptTokenUsd);
+    const completionTokenUsd = readOptionalNumber(value.completionTokenUsd);
+    if (promptTokenUsd !== undefined) {
+        cost.promptTokenUsd = promptTokenUsd;
+    }
+    if (completionTokenUsd !== undefined) {
+        cost.completionTokenUsd = completionTokenUsd;
+    }
+    return Object.keys(cost).length > 0 ? cost : undefined;
+}
+
+function readOptionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

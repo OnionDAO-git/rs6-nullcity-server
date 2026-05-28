@@ -18,6 +18,7 @@ export interface LlmResponse {
     cancelledBy?: string;
     promptTokens?: number;
     completionTokens?: number;
+    costUsd?: number;
 }
 
 const ENDPOINT_PAUSE_MS = 30_000;
@@ -71,14 +72,7 @@ export class LlmClient {
                       reasoning: { enabled: request.thinking },
                       chat_template_kwargs: { enable_thinking: request.thinking },
                   }),
-            response_format: {
-                type: 'json_schema',
-                json_schema: {
-                    name: 'controller_completion',
-                    strict: false,
-                    schema: { type: 'object' },
-                },
-            },
+            response_format: responseFormatBody(endpoint.responseFormat),
         };
 
         try {
@@ -274,14 +268,14 @@ export class LlmClient {
         const first = isRecord(choices[0]) ? choices[0] : {};
         const message = isRecord(first.message) ? first.message : {};
         const usage = isRecord(payload.usage) ? payload.usage : {};
-        const content =
-            typeof message.content === 'string' && message.content.trim().length > 0 ? message.content : message.reasoning_content;
+        const content = firstNonEmptyString(message.content, message.reasoning_content, message.reasoning);
         return {
             text: typeof content === 'string' ? content : '',
             model: typeof payload.model === 'string' ? payload.model : undefined,
             nooped: false,
             promptTokens: typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : undefined,
             completionTokens: typeof usage.completion_tokens === 'number' ? usage.completion_tokens : undefined,
+            costUsd: readCostUsd(usage),
         };
     }
 }
@@ -307,6 +301,39 @@ function isRetryableError(error: unknown): error is LlmHttpError {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+    for (const value of values) {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+function responseFormatBody(format: LlmEndpointConfig['responseFormat'] = 'json_schema'): unknown {
+    if (format === 'text') {
+        return { type: 'text' };
+    }
+    return {
+        type: 'json_schema',
+        json_schema: {
+            name: 'controller_completion',
+            strict: false,
+            schema: { type: 'object' },
+        },
+    };
+}
+
+function readCostUsd(usage: Record<string, unknown>): number | undefined {
+    if (typeof usage.cost === 'number' && Number.isFinite(usage.cost)) {
+        return usage.cost;
+    }
+    const costDetails = isRecord(usage.cost_details) ? usage.cost_details : {};
+    return typeof costDetails.upstream_inference_cost === 'number' && Number.isFinite(costDetails.upstream_inference_cost)
+        ? costDetails.upstream_inference_cost
+        : undefined;
 }
 
 function cancelledResponse(signal?: AbortSignal): LlmResponse {

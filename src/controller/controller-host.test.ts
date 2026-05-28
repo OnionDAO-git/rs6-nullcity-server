@@ -235,6 +235,7 @@ describe('ControllerHost reconcile lifecycle', () => {
                     default: { timeoutMs: 60_000 },
                     fast: { timeoutMs: 12_000 },
                 },
+                profiles: {},
             },
         };
         const host = new ControllerHost(cfg, { ...dependencies(gateway), runtimeFactory });
@@ -643,7 +644,7 @@ function config(): ControllerConfig {
         memory: { dir: '/tmp/memory', qmdBin: '' },
         logging: { dir: '/tmp/logs', fullPerceptions: false },
         knowledge: { dir: '/tmp/knowledge', enableSuggestions: true, emitStdout: false, storageMode: 'ephemeral' },
-        llm: { endpoints: {} },
+        llm: { endpoints: {}, profiles: {} },
     };
 }
 

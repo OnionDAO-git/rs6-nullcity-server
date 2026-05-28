@@ -165,6 +165,6 @@ function config(): ControllerConfig {
         memory: { dir: '/tmp/memory', qmdBin: '' },
         logging: { dir: '/tmp/logs', fullPerceptions: false },
         knowledge: { dir: '/tmp/knowledge', enableSuggestions: false, emitStdout: false, storageMode: 'ephemeral' },
-        llm: { endpoints: {} },
+        llm: { endpoints: {}, profiles: {} },
     };
 }

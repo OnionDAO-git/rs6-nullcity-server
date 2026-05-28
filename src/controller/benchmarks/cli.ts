@@ -134,6 +134,7 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
         try {
             await gateway.hello();
             const sparkModules = standardSparkModules();
+            const inference = benchmarkInferenceMetadata(config);
             const results: Array<{ taskId: string; status: string; score: number; runId: string; artifactPath: string }> = [];
             for (const task of tasks) {
                 const artifact = await new BenchmarkRunner({
@@ -150,7 +151,8 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
                                   sparkModules,
                               })
                             : undefined,
-                    modelProfile: config.llm.endpoints.default?.model || 'default',
+                    modelProfile: inference?.profileId || inference?.model || 'default',
+                    inference,
                     commits: [gitCommit('rs6-nullcity-server')],
                 }).run();
                 const artifactPath = writeArtifact(options.outputDir, artifact);
@@ -273,6 +275,21 @@ function gitOutput(args: string[]): string | undefined {
     } catch {
         return undefined;
     }
+}
+
+function benchmarkInferenceMetadata(config: ReturnType<typeof loadControllerConfig>): BenchmarkArtifact['inference'] {
+    const endpoint = config.llm.profiles?.default || config.llm.endpoints.default;
+    if (!endpoint) {
+        return undefined;
+    }
+    return {
+        profileId: endpoint.profileId || 'default',
+        endpointId: endpoint.endpointId,
+        provider: endpoint.provider,
+        baseUrl: endpoint.baseUrl,
+        model: endpoint.model,
+        pricing: endpoint.cost,
+    };
 }
 
 function readRequiredValue(argv: string[], index: number, arg: string): string {

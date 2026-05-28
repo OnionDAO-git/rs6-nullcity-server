@@ -109,6 +109,7 @@ export interface BenchmarkRunnerOptions {
     mode?: BenchmarkRunMode;
     autonomousRuntime?: BenchmarkAutonomousRuntime;
     modelProfile: string;
+    inference?: BenchmarkArtifact['inference'];
     commits: BenchmarkArtifact['commits'];
     runId?: string;
     residentName?: string;
@@ -295,6 +296,7 @@ export class BenchmarkRunner {
                 mode,
                 resident: this.resident,
                 modelProfile: this.options.modelProfile,
+                inference: this.options.inference,
                 commits: this.options.commits,
                 startedAt,
                 endedAt,

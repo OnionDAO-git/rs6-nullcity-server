@@ -378,6 +378,34 @@ describe('BenchmarkRunner', () => {
         expect(artifact.evidence.summaries).toContain('Autonomous verifier saw module evidence.');
     });
 
+    it('copies inference metadata into benchmark artifacts', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            run: jest.fn(async () => ({ status: 'passed' as const, score: 1 })),
+        };
+
+        const artifact = await runner(gateway, task, {
+            inference: {
+                profileId: 'qwopus',
+                endpointId: 'spacetower',
+                provider: 'openai-compatible',
+                baseUrl: 'http://spacetower.nullcity.ai:8100',
+                model: 'qwopus3.5-27b-v3@q4_k_s',
+            },
+        }).run();
+
+        expect(artifact.inference).toEqual({
+            profileId: 'qwopus',
+            endpointId: 'spacetower',
+            provider: 'openai-compatible',
+            baseUrl: 'http://spacetower.nullcity.ai:8100',
+            model: 'qwopus3.5-27b-v3@q4_k_s',
+        });
+    });
+
     it('summarizes runtime trajectory and progress artifact metrics for autonomous benchmarks', async () => {
         const gateway = new MockBenchmarkGateway();
         const module = { id: 'onion.runescape.standard', version: '0.1.0' };

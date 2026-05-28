@@ -114,7 +114,7 @@ describe('controller config', () => {
         expect(productionConfigIssues(config, { RAILGUN: 'true', CONTROLLER_KNOWLEDGE_DIR: '/data/controller/knowledge' })).toEqual([]);
     });
 
-    it('ships a tracked inference canary config for old/new URL and model comparisons', () => {
+    it('ships a tracked inference canary config for the loaded owned-hardware models', () => {
         const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.inference-canary.yml'));
 
         expect(config.llm.endpoints.default).toMatchObject({
@@ -127,16 +127,67 @@ describe('controller config', () => {
             model: 'qwopus3.5-27b-v3@q4_k_s',
             timeoutMs: 30000,
         });
-        expect(config.llm.endpoints.spacetower_qwen).toMatchObject({
+        expect(config.llm.endpoints.spacetower_qwen).toBeUndefined();
+        expect(config.llm.endpoints.inf_qwopus_q4).toBeUndefined();
+    });
+
+    it('resolves model profiles separately from endpoint hardware definitions', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
+        const configPath = path.join(root, 'controller.yml');
+        process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+        fs.writeFileSync(
+            configPath,
+            [
+                'llm:',
+                '  endpoints:',
+                '    spacetower:',
+                '      provider: openai-compatible',
+                '      baseUrl: http://spacetower.nullcity.ai:8100',
+                '      timeoutMs: 30000',
+                '    openrouter:',
+                '      provider: openrouter',
+                '      baseUrl: https://openrouter.ai/api',
+                '      apiKey: ${OPENROUTER_API_KEY}',
+                '      responseFormat: text',
+                '  profiles:',
+                '    default:',
+                '      endpoint: spacetower',
+                '      model: qwopus3.5-27b-v3@q4_k_s',
+                '    haiku:',
+                '      endpoint: openrouter',
+                '      model: anthropic/claude-3.5-haiku',
+                '      timeoutMs: 45000',
+                '      cost:',
+                '        promptTokenUsd: 0.0000008',
+                '        completionTokenUsd: 0.000004',
+            ].join('\n'),
+        );
+
+        const config = loadControllerConfig(configPath);
+
+        expect(config.llm.profiles.default).toMatchObject({
+            profileId: 'default',
+            endpointId: 'spacetower',
+            provider: 'openai-compatible',
             baseUrl: 'http://spacetower.nullcity.ai:8100',
-            model: 'qwen/qwen3.6-27b',
-            timeoutMs: 60000,
-        });
-        expect(config.llm.endpoints.inf_qwopus_q4).toMatchObject({
-            baseUrl: 'http://inf.nullcity.ai:1234',
             model: 'qwopus3.5-27b-v3@q4_k_s',
             timeoutMs: 30000,
         });
+        expect(config.llm.profiles.haiku).toMatchObject({
+            profileId: 'haiku',
+            endpointId: 'openrouter',
+            provider: 'openrouter',
+            baseUrl: 'https://openrouter.ai/api',
+            apiKey: 'test-openrouter-key',
+            model: 'anthropic/claude-3.5-haiku',
+            responseFormat: 'text',
+            timeoutMs: 45000,
+            cost: {
+                promptTokenUsd: 0.0000008,
+                completionTokenUsd: 0.000004,
+            },
+        });
+        expect(config.llm.endpoints.haiku).toEqual(config.llm.profiles.haiku);
     });
 
     it('requires gateway auth for remote production gateway control', () => {
