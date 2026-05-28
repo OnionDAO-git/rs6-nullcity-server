@@ -38,6 +38,7 @@ export interface WorkflowActor {
 export interface WorkflowInventoryCarrier {
     resident?: {
         inventory?: Array<WorkflowItem | null>;
+        equipment?: Array<WorkflowItem | null>;
     };
 }
 
@@ -90,11 +91,17 @@ export function isBones(item: WorkflowItem): boolean {
 // --- Inventory-scan helpers (moved verbatim from the monolith) ---
 
 export function hasWoodcuttingAxe(perception: WorkflowInventoryCarrier): boolean {
-    return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isWoodcuttingAxe(item)));
+    return carriedAndEquippedItems(perception).some(item => isWoodcuttingAxe(item));
 }
 
 export function hasSmallFishingNet(perception: WorkflowInventoryCarrier): boolean {
-    return [...(perception.resident?.inventory || [])].some(item => Boolean(item && isSmallFishingNet(item)));
+    return carriedAndEquippedItems(perception).some(item => isSmallFishingNet(item));
+}
+
+function carriedAndEquippedItems(perception: WorkflowInventoryCarrier): WorkflowItem[] {
+    return [...(perception.resident?.inventory || []), ...(perception.resident?.equipment || [])].filter((item): item is WorkflowItem =>
+        Boolean(item),
+    );
 }
 
 // --- Actor predicates (moved verbatim from the monolith) ---

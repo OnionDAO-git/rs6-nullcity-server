@@ -19,7 +19,9 @@ Sources checked:
 - `data/controller/memory/library/*/timeline.jsonl`
 - `data/benchmarks/model-intelligence-2026-05-27/*.json`
 - `data/benchmarks/model-intelligence-paid-2026-05-27/*.json`
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528174056_equipment_prep_3m.json`
 - `npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27`
+- `npm run controller:bench -- --task equipment-prep-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
 - Ad-hoc log aggregation over 494,839 action records and 23 Library timelines.
 
 Observed live action totals across local controller logs:
@@ -73,6 +75,7 @@ Autonomous benchmark summary from parsed artifacts:
 | `memory-recall-3m` | 7 | 100% | 1.000 | Memory retrieval can work in benchmark; broader memory product still needs design. |
 | `explore-report-5m` | 7 | 100% | 1.000 | Residents can move and report surroundings. |
 | `trading-giving-5m` | 3 | 100% | 1.000 | Safe trade FSM passes benchmark; normal live trade actions were not observed in logs scanned. |
+| `equipment-prep-3m` | 1 | 100% | 1.000 | New capability QA task. Resident equipped a training sword, perception confirmed equipment state, then submitted safe chicken combat. |
 | `combat-prayer-10m` | 18 | 33% | 0.433 | Real but unreliable; model choice matters. |
 
 Model-sensitive combat result:
@@ -97,7 +100,7 @@ Model-sensitive combat result:
 | Safe combat and Prayer training | Partial | Rare/partial | 818 live `attack` actions; attack/hitpoints/prayer XP signals exist; `combat-prayer-10m` passed 6/18 overall. | Low-medium. Qwen failed 0/6 hard combat runs; Qwopus/Haiku each passed 3/6. |
 | Gain XP | Yes | Yes | 559 `first_xp` timeline moments across firemaking, woodcutting, fishing, cooking, attack, hitpoints, and prayer. | High for first-XP detection; especially strong for wood/fire. |
 | Level up | Implemented as an event path | Not observed in scanned live timelines | Code/tests handle `level_up` events, but the local Library scan found 0 `level_up` timeline moments. | Unproven live. We should force longer skilling runs or seed near-level characters to test this. |
-| Equip or wield items | Engine support exists | Not observed in scanned resident actions | Server registry supports initial equipment; action scan found 0 equip/wield/wear-like resident action records. | Not proven. Needs a dedicated equip benchmark. |
+| Equip or wield items | Yes | Benchmark-proven, not yet normal-loop-proven | `equipment-prep-3m` passed 1/1 after fixing resident action normalization (`wield`/`wear` -> engine `equip`). Artifact `bench_20260528174056_equipment_prep_3m.json` shows 1 equip action, equipment-state evidence, and safe attack submitted afterward. Historical normal action scan still found 0 equip/wield/wear records. | Medium as a verified mechanic; needs longer normal resident runs with gear in inventory. |
 | Follow a human/player and respond to name mention | Yes | Some evidence | `follow-and-chat-5m` passed 7/7; log scan found `follow_player_fallback` behavior. | Medium. Benchmark is good; needs more live operator testing. |
 | Remember and recall supplied facts | Yes in benchmark | Limited live evidence | `memory-recall-3m` passed 7/7; patron/memory acknowledgement events observed. | Medium. Memory plumbing works, but the meeting takeaway is still correct: a stronger long-term memory system is needed. |
 | Recover from stuck states | Yes | Yes, but noisy | 112,656 `stuck_detected` and 110,464 `stuck_recovered` timeline moments; multiple stuck-recovery fixes landed. | Medium. Recovery happens often, but the high count means stuckness is still a major behavior tax. |
@@ -130,7 +133,8 @@ The main weakness is not that residents are dead. They are not dead. The weaknes
 - Some behavior is still repetitive: patrol, chop, fire, report.
 - Hard combat/prayer is unreliable, especially on Qwen.
 - XP gain is real, but level-up events were not observed in the scanned timelines.
-- Equipping/wielding gear and quest completion are not proven resident capabilities yet.
+- Equipping/wielding gear is now benchmark-proven, but normal long-running residents have not yet been observed choosing it outside the dedicated task.
+- Quest completion is not proven yet.
 - "Goal-as-orientation" is not deeply proven yet. Residents can execute known workflows better than they can invent long multi-step plans.
 - Trading works in benchmark, but normal live proof is thin.
 - Long-term memory is not yet at the level Dev described in the meeting: NPCs met, quests received, deaths, routes, and learned facts should become more durable and retrievable.
@@ -156,6 +160,7 @@ To make this doc stronger, run the following as repeated experiments:
 4. **Patron conflict:** patron guidance vs distracting local chat. Score whether Shards influence priority without direct puppet control.
 5. **Memory route recall:** teach a bank/resource fact, wait, then ask the resident to use it later.
 6. **Live trade proof:** run a real operator trade scenario and confirm action-log trade verbs, inventory transfer, and safe decline behavior.
+7. **Normal gear loop:** give two or three long-running combat residents unequipped training gear and confirm they equip it without benchmark scripting.
 
 ## Bottom Line
 

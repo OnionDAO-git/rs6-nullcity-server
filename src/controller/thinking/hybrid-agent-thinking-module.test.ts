@@ -4129,7 +4129,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' }]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_combat');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4158,8 +4158,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'combat_attack_safe_target' }]);
-        expect(result.cause).toBe('combat_attack_safe_target');
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' }]);
+        expect(result.cause).toBe('combat_equip_useful_gear');
     });
 
     it('loots useful drops before attacking the next safe combat target', async () => {
@@ -4839,7 +4839,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'prayer_attack_safe_bone_source' }]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4859,7 +4859,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' }]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4888,8 +4888,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'prayer_attack_safe_bone_source' }]);
-        expect(result.cause).toBe('prayer_attack_safe_bone_source');
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
+        expect(result.cause).toBe('prayer_equip_useful_gear');
     });
 
     it('seeks a nearby Lumbridge bone source for prayer training instead of attacking named non-training NPCs', async () => {
@@ -4906,9 +4906,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 6, cause: 'prayer_seek_safe_bone_source' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });

@@ -140,6 +140,10 @@ describe('runescape-workflows inventory predicates', () => {
         expect(hasWoodcuttingAxe({ resident: { inventory: [null, null, item(99999, 'rs:bronze axe')] } })).toBe(true);
     });
 
+    it('hasWoodcuttingAxe finds an equipped axe', () => {
+        expect(hasWoodcuttingAxe({ resident: { inventory: [], equipment: [item(1351, 'rs:bronze_axe')] } })).toBe(true);
+    });
+
     it('hasWoodcuttingAxe returns false on an empty or axe-less inventory', () => {
         expect(hasWoodcuttingAxe({ resident: { inventory: [] } })).toBe(false);
         expect(hasWoodcuttingAxe({ resident: { inventory: [item(995, 'rs:coins')] } })).toBe(false);
@@ -149,6 +153,10 @@ describe('runescape-workflows inventory predicates', () => {
     it('hasSmallFishingNet finds the net by itemId or key', () => {
         expect(hasSmallFishingNet({ resident: { inventory: [item(303)] } })).toBe(true);
         expect(hasSmallFishingNet({ resident: { inventory: [item(99999, 'rs:small_fishing_net')] } })).toBe(true);
+    });
+
+    it('hasSmallFishingNet finds a carried or equipped net-like tool', () => {
+        expect(hasSmallFishingNet({ resident: { inventory: [], equipment: [item(303, 'rs:small_fishing_net')] } })).toBe(true);
     });
 
     it('hasSmallFishingNet returns false when absent', () => {

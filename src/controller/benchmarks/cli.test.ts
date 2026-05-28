@@ -115,6 +115,7 @@ describe('benchmark CLI', () => {
         expect(exitCode).toBe(0);
         expect(output).toContain('"suite":{"id":"all"');
         expect(output).toContain('"id":"make-fire-5m"');
+        expect(output).toContain('"id":"equipment-prep-3m"');
         expect(output).toContain('"id":"combat-prayer-10m"');
         expect(output).toContain('"mode":"autonomous"');
         expect(GatewayClient).not.toHaveBeenCalled();
@@ -187,6 +188,17 @@ describe('benchmark CLI', () => {
 
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"task":{"id":"combat-prayer-10m","version":"0.1.0"');
+    });
+
+    it('can dry-run the equipment-prep benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'equipment-prep-3m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"equipment-prep-3m","version":"0.1.0"');
     });
 
     it('can dry-run the memory-recall benchmark task', async () => {
@@ -351,12 +363,12 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(9);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(10);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":9');
-        expect(output).toContain('"passed":9');
-        expect(output).toContain('"averageScore":0.9444444444444444');
+        expect(output).toContain('"total":10');
+        expect(output).toContain('"passed":10');
+        expect(output).toContain('"averageScore":0.95');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);

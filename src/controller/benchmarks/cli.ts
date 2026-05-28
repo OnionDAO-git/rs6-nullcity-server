@@ -11,6 +11,7 @@ import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
+import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './tasks/equipment-prep-3m';
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
@@ -44,6 +45,7 @@ const CORE_TASK_IDS = [
     WOODCUTTING_FIREMAKING_10M_TASK_ID,
     STARTER_FISHING_5M_TASK_ID,
     FISHING_COOKING_10M_TASK_ID,
+    EQUIPMENT_PREP_3M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
@@ -230,6 +232,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === FISHING_COOKING_10M_TASK_ID) {
         return makeFishingCooking10mBenchmarkTask();
+    }
+    if (taskId === EQUIPMENT_PREP_3M_TASK_ID) {
+        return makeEquipmentPrep3mBenchmarkTask();
     }
     if (taskId === COMBAT_PRAYER_10M_TASK_ID) {
         return makeCombatPrayer10mBenchmarkTask();

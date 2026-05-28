@@ -10,6 +10,7 @@ import {
     buryBonesAction,
     combatLootOrPrayerAction,
     combatTrainingAction,
+    equipmentPrepAction,
     explorationAction,
     explorationItemCooldownKey,
     explorationObjectCooldownKey,
@@ -1502,6 +1503,22 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
     });
 
+    it('equips useful carried gear before starting combat', () => {
+        const chicken = combatNpc('Chicken', 3220, 3220);
+        const action = combatTrainingAction(
+            perception({
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [item(9703, 'rs:training_sword')],
+                    equipment: [],
+                },
+                nearby: { npcs: [chicken] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' });
+    });
+
     it('eats food when low on HP and food is carried', () => {
         const action = combatTrainingAction(
             perception({
@@ -1561,6 +1578,43 @@ describe('combatTrainingAction', () => {
             }),
         );
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
+    });
+});
+
+describe('equipmentPrepAction', () => {
+    it('returns an equip action for a useful weapon in inventory', () => {
+        const action = equipmentPrepAction(
+            perception({
+                resident: {
+                    inventory: [item(9703, 'rs:training_sword')],
+                    equipment: [],
+                },
+            }),
+        );
+        expect(action).toEqual({ kind: 'equip', slot: 0, cause: 'equip_useful_gear' });
+    });
+
+    it('does not try to equip utility resources or already-equipped items', () => {
+        expect(
+            equipmentPrepAction(
+                perception({
+                    resident: {
+                        inventory: [item(590, 'rs:tinderbox'), item(1511, 'rs:logs'), item(995, 'rs:coins')],
+                        equipment: [],
+                    },
+                }),
+            ),
+        ).toBeUndefined();
+        expect(
+            equipmentPrepAction(
+                perception({
+                    resident: {
+                        inventory: [item(9703, 'rs:training_sword')],
+                        equipment: [item(9703, 'rs:training_sword')],
+                    },
+                }),
+            ),
+        ).toBeUndefined();
     });
 });
 

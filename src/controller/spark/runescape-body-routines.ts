@@ -68,6 +68,7 @@ export type BodyHybridPerception = {
         combatTarget?: BodyActor | null;
         busy?: boolean;
         inventory?: Array<BodyItem | null>;
+        equipment?: Array<BodyItem | null>;
     };
     nearby?: {
         players?: BodyActor[];
@@ -206,6 +207,18 @@ export const LOW_HEALTH_RECOVERY_WAYPOINT_RANGE = 6;
 /** Visible hostile radius that triggers retreat to a recovery waypoint. */
 const LOW_HEALTH_RECOVERY_THREAT_RADIUS = 24;
 
+/** Common starter gear ids worth equipping before combat or dangerous work. */
+const USEFUL_GEAR_ITEM_IDS: ReadonlySet<number> = new Set([
+    841, 882, 1059, 1061, 1063, 1075, 1087, 1095, 1103, 1117, 1129, 1139, 1155, 1167, 1171, 1173, 1189, 1205, 1277, 1279, 1281, 1349, 1351,
+    1353, 1361, 9703, 9704,
+]);
+
+const USEFUL_GEAR_KEY_PATTERN =
+    /(^|[:_\s-])(sword|dagger|scimitar|mace|battleaxe|axe|hatchet|bow|arrow|staff|shield|helm|helmet|body|platebody|chainbody|legs|platelegs|plateskirt|skirt|boots|gloves|vambraces|cowl|coif|cape|amulet|ring|robe)([:_\s-]|$)/i;
+
+const NON_GEAR_KEY_PATTERN =
+    /(^|[:_\s-])(coins?|logs?|tinderbox|bones?|raw|shrimp|anchovies|fish|food|meat|bread|cake|net|pickaxe|ore|bar)([:_\s-]|$)/i;
+
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
 /**
@@ -306,6 +319,30 @@ export function isEdibleFood(item: BodyItem): boolean {
 /** Returns the first inventory slot containing ready-to-eat food, or undefined. */
 export function firstFoodSlot(inventory: Array<BodyItem | null>): number | undefined {
     return findSlot(inventory, isEdibleFood);
+}
+
+/** True when an inventory item is likely wearable/wieldable and useful. */
+export function isUsefulGear(item: BodyItem): boolean {
+    const key = item.key || '';
+    if (USEFUL_GEAR_ITEM_IDS.has(item.itemId)) {
+        return true;
+    }
+    return USEFUL_GEAR_KEY_PATTERN.test(key) && !NON_GEAR_KEY_PATTERN.test(key);
+}
+
+/** Equip one useful carried item before combat-oriented routines spend ticks attacking. */
+export function equipmentPrepAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const inventory = perception.resident?.inventory || [];
+    const equipment = perception.resident?.equipment || [];
+    const slot = findSlot(inventory, item => isUsefulGear(item) && !equipment.some(equipped => sameItem(equipped, item)));
+    return slot === undefined ? undefined : { kind: 'equip', slot, cause: 'equip_useful_gear' };
+}
+
+function sameItem(a: BodyItem | null | undefined, b: BodyItem): boolean {
+    if (!a) {
+        return false;
+    }
+    return a.itemId === b.itemId || (Boolean(a.key) && a.key === b.key);
 }
 
 /** Returns the nearest low-health recovery waypoint to the given position. */
@@ -1124,6 +1161,11 @@ export function prayerTrainingAction(
         return undefined;
     }
 
+    const gear = equipmentPrepAction(perception);
+    if (gear) {
+        return actionWithCause(gear, 'prayer_equip_useful_gear');
+    }
+
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
@@ -1231,6 +1273,10 @@ export function combatTrainingAction(
         const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick, targetFailureCooldowns);
         if (loot) {
             return loot;
+        }
+        const gear = equipmentPrepAction(perception);
+        if (gear) {
+            return actionWithCause(gear, 'combat_equip_useful_gear');
         }
     }
 

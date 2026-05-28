@@ -482,6 +482,31 @@ describe('ActionAdapter', () => {
         expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'bury');
     });
 
+    it('normalizes resident equip actions to the engine equip option', () => {
+        const actingResident = resident();
+
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'equip',
+            slot: 0,
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'equip');
+    });
+
+    it('normalizes resident wear/wield item actions to the engine equip option', () => {
+        const actingResident = resident();
+
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'item_action',
+            slot: 0,
+            option: 'wear',
+        } as never);
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'equip');
+    });
+
     it('dispatches use_item_on against NPCs through the engine item-on-npc pipe', () => {
         const npc = { type: 'npc', position: { x: 3200, y: 3200, level: 0 } };
         (activeWorld.npcList as unknown[])[3] = npc;

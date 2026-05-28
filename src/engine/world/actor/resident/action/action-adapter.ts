@@ -38,7 +38,7 @@ export class ActionAdapter {
             case 'attack':
                 return this.interact(resident, action.target, 'attack');
             case 'equip':
-                return this.itemAction(resident, action.slot, 'wield');
+                return this.itemAction(resident, action.slot, 'equip');
             case 'drop':
                 return this.itemAction(resident, action.slot, 'drop');
             case 'eat':
@@ -303,7 +303,7 @@ export class ActionAdapter {
             slot,
             widgets.inventory.widgetId,
             widgets.inventory.containerId,
-            option,
+            normalizeInventoryOption(option),
         );
         return { ok: true };
     }
@@ -583,4 +583,9 @@ function resolveObjectOption(option: string, config: ObjectConfig): string {
     const optionIndex = Number(actionMatch[1]) - 1;
     const configuredOption = config.options?.[optionIndex];
     return configuredOption ? configuredOption.toLowerCase() : normalized;
+}
+
+function normalizeInventoryOption(option: string): string {
+    const normalized = option.toLowerCase().replace(/ /g, '-');
+    return normalized === 'wear' || normalized === 'wield' ? 'equip' : normalized;
 }

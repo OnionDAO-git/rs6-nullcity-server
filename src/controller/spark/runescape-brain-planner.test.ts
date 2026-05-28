@@ -317,6 +317,11 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('train-combat-safely');
     });
 
+    it("returns combatGoal for 'equipment-prep-3m'", () => {
+        const g = benchmarkGoalForTask('equipment-prep-3m', 0);
+        expect(g?.id).toBe('train-combat-safely');
+    });
+
     it("returns explorationGoal for 'explore-report-5m'", () => {
         const g = benchmarkGoalForTask('explore-report-5m', 0);
         expect(g?.id).toBe('scout-nearby-area');
