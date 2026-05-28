@@ -2,7 +2,10 @@
 
 Null City can already assign different inference profiles to different residents. This note captures the post-demo model benchmarking plan without storing secrets in source.
 
-Latest first-pass results: `docs/model-benchmark-results-2026-05-27.md`.
+Latest first-pass results:
+
+- `docs/model-benchmark-results-2026-05-27.md` - endpoint canary capacity plus first owned-hardware resident runs.
+- `docs/model-intelligence-benchmark-results-2026-05-27.md` - paid/local intelligence comparison, active resident cap recommendation, and next experiment design.
 
 ## What Works Today
 
