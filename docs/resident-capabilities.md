@@ -95,11 +95,15 @@ Model-sensitive combat result:
 | Cook caught food | Yes | Yes | 3,532 `use_item_on` actions, mostly `starter_fishing_cook_catch`; 56 cooking XP signals; `fishing-cooking-10m` passed 3/3. | Medium-high in the starter workflow. |
 | Eat food / survival reflex | Yes | Yes | 3,598 `eat` actions; nervous-system example `nervous:eat-when-low-health`; low-health stranded fixes landed. | Medium. Reflex exists and fires, but full survival planning is not deeply benchmarked. |
 | Safe combat and Prayer training | Partial | Rare/partial | 818 live `attack` actions; attack/hitpoints/prayer XP signals exist; `combat-prayer-10m` passed 6/18 overall. | Low-medium. Qwen failed 0/6 hard combat runs; Qwopus/Haiku each passed 3/6. |
+| Gain XP | Yes | Yes | 559 `first_xp` timeline moments across firemaking, woodcutting, fishing, cooking, attack, hitpoints, and prayer. | High for first-XP detection; especially strong for wood/fire. |
+| Level up | Implemented as an event path | Not observed in scanned live timelines | Code/tests handle `level_up` events, but the local Library scan found 0 `level_up` timeline moments. | Unproven live. We should force longer skilling runs or seed near-level characters to test this. |
+| Equip or wield items | Engine support exists | Not observed in scanned resident actions | Server registry supports initial equipment; action scan found 0 equip/wield/wear-like resident action records. | Not proven. Needs a dedicated equip benchmark. |
 | Follow a human/player and respond to name mention | Yes | Some evidence | `follow-and-chat-5m` passed 7/7; log scan found `follow_player_fallback` behavior. | Medium. Benchmark is good; needs more live operator testing. |
 | Remember and recall supplied facts | Yes in benchmark | Limited live evidence | `memory-recall-3m` passed 7/7; patron/memory acknowledgement events observed. | Medium. Memory plumbing works, but the meeting takeaway is still correct: a stronger long-term memory system is needed. |
 | Recover from stuck states | Yes | Yes, but noisy | 112,656 `stuck_detected` and 110,464 `stuck_recovered` timeline moments; multiple stuck-recovery fixes landed. | Medium. Recovery happens often, but the high count means stuckness is still a major behavior tax. |
 | Patron gifts, asks, witnesses, and Shard-facing story hooks | Yes | Yes | 39 `patron_gift`, 4 `patron_witness`, 3 `patron_ask` timeline events; patron profile/check-in/letters are implemented. | Medium-high for persistence/story surfaces; gameplay influence is still early. |
 | Safe trading FSM | Yes in benchmark | Not observed in normal logs scanned | `trading-giving-5m` passed 3/3. No normal live action-log entries with trade action kinds were found in this scan. | Medium as a tested mechanic; low as a proven live behavior. |
+| Questing | Knowledge exists | Not observed as completed gameplay | Quest knowledge entries exist for starter quests, but no scanned benchmark or live timeline proves quest start/progress/completion. | Not proven. This needs its own benchmark. |
 | Cross-resident awareness | Implemented | Needs live proof | L3 LoreBus inbox shipped and tests passed; nearby world events can enter perception envelopes. | Low-medium until a live run shows residents acting on those events. |
 | Dashboard/story visibility | Yes | Yes | Public/server JSON surfaces, Library portraits, patron profiles, wall/graveyard routes, and dashboard metadata exist. | Medium-high for human viewing; dashboard should show model/endpoint/SPARK per resident next. |
 
@@ -125,6 +129,8 @@ The main weakness is not that residents are dead. They are not dead. The weaknes
 
 - Some behavior is still repetitive: patrol, chop, fire, report.
 - Hard combat/prayer is unreliable, especially on Qwen.
+- XP gain is real, but level-up events were not observed in the scanned timelines.
+- Equipping/wielding gear and quest completion are not proven resident capabilities yet.
 - "Goal-as-orientation" is not deeply proven yet. Residents can execute known workflows better than they can invent long multi-step plans.
 - Trading works in benchmark, but normal live proof is thin.
 - Long-term memory is not yet at the level Dev described in the meeting: NPCs met, quests received, deaths, routes, and learned facts should become more durable and retrievable.
