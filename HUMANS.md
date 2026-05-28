@@ -128,6 +128,7 @@ If a process remains on a Null City port after this, kill it manually — but co
 
 - [`AGENTS.md`](AGENTS.md) — same project, AI-agent perspective and conventions
 - [`docs/demo-day-checklist.md`](docs/demo-day-checklist.md) — minute-by-minute demo prep
+- [`docs/resident-capabilities.md`](docs/resident-capabilities.md) — evidence-backed matrix of what residents can do vs. what they actually do live
 - [`docs/2026-05-26-meeting-decisions.md`](docs/2026-05-26-meeting-decisions.md) — current decisions + don't-build-yet list
 - [`docs/model-benchmarking.md`](docs/model-benchmarking.md) — per-agent model swap + benchmark setup
 - [`CHANGELOG.md`](CHANGELOG.md) — what shipped most recently

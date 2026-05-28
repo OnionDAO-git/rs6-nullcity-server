@@ -898,3 +898,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-28 12:00 codex branch=agents/wip workstream=MODEL-BENCH-PLUMBING HANDOFF - SHA=4472bc71 profiles split endpoints/models; corrected invalid cross-load docs; canary inf_qwen 3.6s vs spacetower_qwopus 0.5s. fin=2182/2182 build=711.
 2026-05-28 12:05 codex branch=agents/wip workstream=MODEL-BENCH-REPORT STARTING - add benchmark artifact report generator for profile/task pass-rate latency token/cost summaries. Files: src/controller/benchmarks/report*, package/docs. collision=none.
 2026-05-28 12:15 codex branch=agents/wip workstream=MODEL-BENCH-REPORT HANDOFF - SHA=2d5d9787 added npm run benchmark:report; parsed 42 prior artifacts; surfaced Qwen combat 0/6 vs Qwopus/Haiku 3/6. fin=2185/2185 build=713.
+
+2026-05-28 12:20 codex branch=agents/wip workstream=CAPABILITIES-DOC STARTING - build human-facing, evidence-backed resident capabilities matrix with can-do vs does-do columns. Files: docs/resident-capabilities.md, docs/agent-status.md. collision=none.
