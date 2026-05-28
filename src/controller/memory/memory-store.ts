@@ -15,6 +15,8 @@ const libraryMemoryLimit = 4;
 // without crowding the prompt envelope; revisit if Brain context budget
 // gets tight or patrons rarely send more than 1-2 offers per session.
 const libraryPatronMemoryLimit = 6;
+const factSearchMaxLines = 8;
+const factSearchMaxLineChars = 320;
 
 export class MemoryStore {
     private warnedAboutQmd = false;
@@ -26,7 +28,7 @@ export class MemoryStore {
 
     ensureResident(resident: string): string {
         const root = path.join(this.memoryRoot, residentSlug(resident));
-        for (const dir of ['geography', 'social', 'items', 'monsters', 'events']) {
+        for (const dir of ['geography', 'social', 'items', 'monsters', 'events', 'facts']) {
             fs.mkdirSync(path.join(root, dir), { recursive: true });
         }
 
@@ -48,6 +50,7 @@ export class MemoryStore {
         // tail slice gets clipped. Concrete recipient/amount/tier text gives
         // Brain enough to react meaningfully on the very next decision.
         excerpts.push(...readRecentPatronMemories(this.memoryRoot, resident, libraryPatronMemoryLimit));
+        excerpts.push(...this.searchFacts(root, query, limit));
         excerpts.push(...readRecentLibraryMemories(this.memoryRoot, resident, libraryMemoryLimit));
 
         const index = this.readIfExists(path.join(root, 'INDEX.md'));
@@ -176,6 +179,42 @@ export class MemoryStore {
         return undefined;
     }
 
+    private searchFacts(root: string, query: string, limit: number): string[] {
+        const factsRoot = path.join(root, 'facts');
+        if (!fs.existsSync(factsRoot) || !query.trim()) {
+            return [];
+        }
+        const queryTerms = terms(query);
+        if (queryTerms.length === 0) {
+            return [];
+        }
+
+        return this.factLines(factsRoot)
+            .map(line => ({ line, score: scoreLine(line.text, queryTerms) }))
+            .filter(match => match.score > 0)
+            .sort((a, b) => b.score - a.score || a.line.path.localeCompare(b.line.path))
+            .slice(0, Math.max(1, Math.min(limit, factSearchMaxLines)))
+            .map(match => `Fact memory (${path.basename(match.line.path)}): ${match.line.text}`);
+    }
+
+    private factLines(root: string): Array<{ path: string; text: string }> {
+        const files = walkMarkdown(root);
+        const lines: Array<{ path: string; text: string }> = [];
+        for (const file of files) {
+            const content = this.readIfExists(file);
+            if (!content) {
+                continue;
+            }
+            for (const rawLine of content.split('\n')) {
+                const text = rawLine.replace(/\s+/g, ' ').trim();
+                if (text.length > 2) {
+                    lines.push({ path: file, text: text.slice(0, factSearchMaxLineChars) });
+                }
+            }
+        }
+        return lines;
+    }
+
     private resolveInside(root: string, relativePath: string): string {
         const target = path.resolve(root, relativePath);
         const resolvedRoot = path.resolve(root);
@@ -201,4 +240,65 @@ export { templateNames };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function walkMarkdown(root: string): string[] {
+    if (!fs.existsSync(root)) {
+        return [];
+    }
+    const files: string[] = [];
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+        const fullPath = path.join(root, entry.name);
+        if (entry.isDirectory()) {
+            files.push(...walkMarkdown(fullPath));
+        } else if (entry.isFile() && entry.name.endsWith('.md')) {
+            files.push(fullPath);
+        }
+    }
+    return files;
+}
+
+function terms(text: string): string[] {
+    const stop = new Set([
+        'the',
+        'and',
+        'you',
+        'that',
+        'what',
+        'where',
+        'when',
+        'with',
+        'about',
+        'after',
+        'near',
+        'safe',
+        'did',
+        'does',
+        'was',
+        'were',
+        'for',
+        'from',
+        'this',
+        'that',
+    ]);
+    return Array.from(
+        new Set(
+            text
+                .toLowerCase()
+                .split(/[^a-z0-9@._-]+/g)
+                .map(term => term.trim())
+                .filter(term => term.length >= 3 && !stop.has(term)),
+        ),
+    );
+}
+
+function scoreLine(line: string, queryTerms: string[]): number {
+    const lower = line.toLowerCase();
+    let score = 0;
+    for (const term of queryTerms) {
+        if (lower.includes(term)) {
+            score += term.includes('@') || /\d/.test(term) ? 3 : 1;
+        }
+    }
+    return score;
 }
