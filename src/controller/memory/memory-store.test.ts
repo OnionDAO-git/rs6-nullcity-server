@@ -73,4 +73,77 @@ describe('MemoryStore', () => {
         expect(route.some(memory => memory.includes('Draynor bank is near 3092,3243'))).toBe(true);
         expect(shrimp.join('\n')).not.toContain('Still here watching the area');
     });
+
+    it('logs retrieval source counts for memory engine comparisons', () => {
+        const logPath = path.join(root, 'logs', 'memory-usage.jsonl');
+        const timelineDir = path.join(root, 'library', 'res-agent');
+        fs.mkdirSync(timelineDir, { recursive: true });
+        fs.writeFileSync(
+            path.join(timelineDir, 'timeline.jsonl'),
+            JSON.stringify({
+                kind: 'patron_gift',
+                patronHandle: 'alice@onion',
+                artifact: 'rs:tinderbox',
+                ts: '2026-05-22T10:00:00.000Z',
+            }) + '\n',
+        );
+        const residentDir = path.join(root, 'res-agent');
+        fs.mkdirSync(path.join(residentDir, 'facts'), { recursive: true });
+        fs.writeFileSync(
+            path.join(residentDir, 'facts', 'social.md'),
+            '- 2026-05-28T19:00:00.000Z Alice said: "Remember the tinderbox promise."\n',
+        );
+        const store = new MemoryStore(root, '', {
+            telemetry: { logPath, now: () => '2026-05-28T20:00:00.000Z' },
+        });
+
+        store.retrieve('res:agent', 'alice tinderbox promise', 3);
+
+        const entries = fs
+            .readFileSync(logPath, 'utf8')
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line));
+        expect(entries).toEqual([
+            expect.objectContaining({
+                type: 'retrieve',
+                ts: '2026-05-28T20:00:00.000Z',
+                resident: 'res:agent',
+                queryPreview: 'alice tinderbox promise',
+                sourceCounts: expect.objectContaining({
+                    patron: 1,
+                    facts: 1,
+                    library: 1,
+                    index: 1,
+                    targeted: 0,
+                    qmd: 0,
+                }),
+                topSources: expect.arrayContaining(['patron', 'facts']),
+            }),
+        ]);
+    });
+
+    it('logs memory writes with path and mode but bounded content previews', () => {
+        const logPath = path.join(root, 'logs', 'memory-usage.jsonl');
+        const store = new MemoryStore(root, '', {
+            telemetry: { logPath, now: () => '2026-05-28T20:01:00.000Z' },
+        });
+        const content = `- ${'remember '.repeat(80)}\n`;
+
+        store.write('res:hans', 'facts/social.md', content);
+
+        const entry = JSON.parse(fs.readFileSync(logPath, 'utf8').trim());
+        expect(entry).toEqual(
+            expect.objectContaining({
+                type: 'write',
+                ts: '2026-05-28T20:01:00.000Z',
+                resident: 'res:hans',
+                path: 'facts/social.md',
+                mode: 'append',
+                charCount: content.length,
+                lineCount: 1,
+            }),
+        );
+        expect(entry.contentPreview.length).toBeLessThanOrEqual(180);
+    });
 });
