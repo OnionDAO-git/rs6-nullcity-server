@@ -815,6 +815,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         if (routed) {
             this.options.memory.write(this.name, routed.path, routed.content);
         }
+        for (const fact of this.memoryRouter.routeDurableFacts(this.name, event)) {
+            this.options.memory.write(this.name, fact.path, fact.content);
+        }
     }
 
     private withPendingEvents(perception: Perception): Perception {
