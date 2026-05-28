@@ -6,6 +6,16 @@ Short answer: **model quality matters on harder resident tasks, but the evidence
 
 No API keys are stored in this repo. Paid-provider keys were supplied through process environment for the benchmark process only.
 
+## TL;DR
+
+- **Plan around 20 active residents total** for Thursday/Chicago. That is the safe public capacity number from the current soak tests.
+- **25 active residents is an ops-only stretch cap**, useful for controlled tests but not something to promise attendees yet.
+- **30 active residents is not demo-safe** on either local profile tested; both machines stayed alive but produced too many timeouts.
+- If Week 1 starts with **8 fixed residents**, allow roughly **10-12 human-spawned active residents** and put everyone else into the queue/voting flow.
+- **Best current local resident profile:** `spacetower_qwopus_q4`. It matched Haiku on the hardest repeated live task and was much faster than Qwen.
+- **Paid models help sometimes, but not enough to use for everyone.** Reserve paid/smarter models for Storyteller, important heroes, hard cognition tests, or high-touch patron moments until we have stronger evidence.
+- **Qwen is usable for easy SPARK-assisted routines, but weak on harder live behavior.** It went `0/6` on repeated `combat-prayer-10m`; Qwopus and Haiku each went `3/6`.
+
 ## Profiles tested
 
 | Label | Endpoint | Model | Notes |
