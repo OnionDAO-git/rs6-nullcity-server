@@ -68,6 +68,7 @@ describe('ResidentRegistry', () => {
     it('applies initial inventory and equipment before saving new residents', () => {
         let savedInventory: unknown[] | undefined;
         let savedEquipment: unknown[] | undefined;
+        let savedSkills: unknown[] | undefined;
         let savedAppearance: unknown;
         const appearance = {
             gender: 0,
@@ -87,6 +88,7 @@ describe('ResidentRegistry', () => {
         jest.spyOn(Resident.prototype, 'save').mockImplementation(function save(this: Resident) {
             savedInventory = this.inventory.items.map(item => (item ? { ...item } : null));
             savedEquipment = this.equipment.items.map(item => (item ? { ...item } : null));
+            savedSkills = this.skills.values.map(skill => ({ ...skill }));
             savedAppearance = { ...this.appearance };
             return true;
         });
@@ -97,6 +99,7 @@ describe('ResidentRegistry', () => {
                 appearance,
                 initialInventory: [{ itemId: 590, amount: 1 }, 1511, null, { itemId: 1511, amount: 3 }],
                 initialEquipment: [{ itemId: 1, amount: 1 }],
+                initialSkills: { firemaking: { exp: 82, level: 1 }, cooking: 81 },
             }),
         ).toEqual({ name: 'res:firepal', online: false, controllerId: undefined, controlHeld: false });
 
@@ -108,7 +111,28 @@ describe('ResidentRegistry', () => {
             null,
         ]);
         expect(savedEquipment?.slice(0, 2)).toEqual([{ itemId: 1, amount: 1 }, null]);
+        expect(savedSkills?.[11]).toEqual({ exp: 82, level: 1 });
+        expect(savedSkills?.[7]).toEqual({ exp: 81, level: 1 });
         expect(savedAppearance).toEqual(appearance);
+    });
+
+    it('rejects unknown or invalid initial skill seeds', () => {
+        jest.spyOn(Resident.prototype, 'save').mockReturnValue(true);
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(() => registry.create('res:badskill', undefined, { initialSkills: { sailing: 1 } })).toThrow(
+            'EUNKNOWN_INITIAL_SKILL:sailing',
+        );
+        expect(() => registry.create('res:badxp', undefined, { initialSkills: { firemaking: -1 } })).toThrow(
+            'EBAD_INITIAL_SKILL:firemaking.exp',
+        );
+        expect(() => registry.create('res:toomuchxp', undefined, { initialSkills: { firemaking: 200_000_001 } })).toThrow(
+            'EBAD_INITIAL_SKILL:firemaking.exp',
+        );
+        expect(() => registry.create('res:badlevel', undefined, { initialSkills: { firemaking: { level: 100 } } })).toThrow(
+            'EBAD_INITIAL_SKILL:firemaking.level',
+        );
+        expect(Resident.prototype.save).not.toHaveBeenCalled();
     });
 
     it('rejects oversized initial containers', () => {

@@ -20,8 +20,12 @@ Sources checked:
 - `data/benchmarks/model-intelligence-2026-05-27/*.json`
 - `data/benchmarks/model-intelligence-paid-2026-05-27/*.json`
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528174056_equipment_prep_3m.json`
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528175312_level_up_firemaking_3m.json`
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528175729_bury_bones_prayer_3m.json`
 - `npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27`
 - `npm run controller:bench -- --task equipment-prep-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
+- `npm run controller:bench -- --task level-up-firemaking-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
+- `npm run controller:bench -- --task bury-bones-prayer-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
 - Ad-hoc log aggregation over 494,839 action records and 23 Library timelines.
 
 Observed live action totals across local controller logs:
@@ -76,6 +80,8 @@ Autonomous benchmark summary from parsed artifacts:
 | `explore-report-5m` | 7 | 100% | 1.000 | Residents can move and report surroundings. |
 | `trading-giving-5m` | 3 | 100% | 1.000 | Safe trade FSM passes benchmark; normal live trade actions were not observed in logs scanned. |
 | `equipment-prep-3m` | 1 | 100% | 1.000 | New capability QA task. Resident equipped a training sword, perception confirmed equipment state, then submitted safe chicken combat. |
+| `level-up-firemaking-3m` | 1 | 100% | 1.000 | New capability QA task. Resident started one XP below Firemaking 2, lit logs with a real item-on-item action, and emitted `level_up`. |
+| `bury-bones-prayer-3m` | 1 | 100% | 1.000 | New capability QA task. Resident buried carried bones, consumed the item, and gained Prayer XP. |
 | `combat-prayer-10m` | 18 | 33% | 0.433 | Real but unreliable; model choice matters. |
 
 Model-sensitive combat result:
@@ -97,9 +103,10 @@ Model-sensitive combat result:
 | Fish | Yes | Yes | 4,261 `starter_fishing_net` actions; 58 fishing XP signals; `starter-fishing-5m` passed 3/3. | Medium-high for starter fishing spots. |
 | Cook caught food | Yes | Yes | 3,532 `use_item_on` actions, mostly `starter_fishing_cook_catch`; 56 cooking XP signals; `fishing-cooking-10m` passed 3/3. | Medium-high in the starter workflow. |
 | Eat food / survival reflex | Yes | Yes | 3,598 `eat` actions; nervous-system example `nervous:eat-when-low-health`; low-health stranded fixes landed. | Medium. Reflex exists and fires, but full survival planning is not deeply benchmarked. |
+| Bury bones for Prayer XP | Yes | Rare/partial | `bury-bones-prayer-3m` passed 1/1. Artifact `bench_20260528175729_bury_bones_prayer_3m.json` shows 1 bury action, bones consumed, and Prayer XP increased. | High as an isolated mechanic; the harder combat-to-bones-to-prayer chain remains unreliable. |
 | Safe combat and Prayer training | Partial | Rare/partial | 818 live `attack` actions; attack/hitpoints/prayer XP signals exist; `combat-prayer-10m` passed 6/18 overall. | Low-medium. Qwen failed 0/6 hard combat runs; Qwopus/Haiku each passed 3/6. |
 | Gain XP | Yes | Yes | 559 `first_xp` timeline moments across firemaking, woodcutting, fishing, cooking, attack, hitpoints, and prayer. | High for first-XP detection; especially strong for wood/fire. |
-| Level up | Implemented as an event path | Not observed in scanned live timelines | Code/tests handle `level_up` events, but the local Library scan found 0 `level_up` timeline moments. | Unproven live. We should force longer skilling runs or seed near-level characters to test this. |
+| Level up | Yes | Benchmark-proven, not yet normal-loop-proven | `level-up-firemaking-3m` passed 1/1. Artifact `bench_20260528175312_level_up_firemaking_3m.json` shows 1 firemaking action, 2 `fire_lit` observations, and 2 firemaking `level_up` observations after seeding one XP below Firemaking 2. The local Library scan still found 0 normal-loop `level_up` moments. | Medium as a verified mechanic; needs longer normal skilling runs to prove unscripted leveling cadence. |
 | Equip or wield items | Yes | Benchmark-proven, not yet normal-loop-proven | `equipment-prep-3m` passed 1/1 after fixing resident action normalization (`wield`/`wear` -> engine `equip`). Artifact `bench_20260528174056_equipment_prep_3m.json` shows 1 equip action, equipment-state evidence, and safe attack submitted afterward. Historical normal action scan still found 0 equip/wield/wear records. | Medium as a verified mechanic; needs longer normal resident runs with gear in inventory. |
 | Follow a human/player and respond to name mention | Yes | Some evidence | `follow-and-chat-5m` passed 7/7; log scan found `follow_player_fallback` behavior. | Medium. Benchmark is good; needs more live operator testing. |
 | Remember and recall supplied facts | Yes in benchmark | Limited live evidence | `memory-recall-3m` passed 7/7; patron/memory acknowledgement events observed. | Medium. Memory plumbing works, but the meeting takeaway is still correct: a stronger long-term memory system is needed. |
@@ -131,8 +138,8 @@ This is enough to honestly say: **Null City has autonomous residents that visibl
 The main weakness is not that residents are dead. They are not dead. The weakness is that intelligence is uneven:
 
 - Some behavior is still repetitive: patrol, chop, fire, report.
-- Hard combat/prayer is unreliable, especially on Qwen.
-- XP gain is real, but level-up events were not observed in the scanned timelines.
+- Hard combat/prayer chains are unreliable, especially on Qwen. Isolated bone burial for Prayer XP is now proven.
+- XP gain and level-up mechanics are real, but level-up events were not observed in the scanned normal timelines.
 - Equipping/wielding gear is now benchmark-proven, but normal long-running residents have not yet been observed choosing it outside the dedicated task.
 - Quest completion is not proven yet.
 - "Goal-as-orientation" is not deeply proven yet. Residents can execute known workflows better than they can invent long multi-step plans.
@@ -161,6 +168,58 @@ To make this doc stronger, run the following as repeated experiments:
 5. **Memory route recall:** teach a bank/resource fact, wait, then ask the resident to use it later.
 6. **Live trade proof:** run a real operator trade scenario and confirm action-log trade verbs, inventory transfer, and safe decline behavior.
 7. **Normal gear loop:** give two or three long-running combat residents unequipped training gear and confirm they equip it without benchmark scripting.
+
+## Expanded Capability Backlog
+
+This document is **not complete**. It is now a good evidence-backed starting point, but a serious resident-readiness pass should keep adding rows until every major action family has either benchmark proof, normal-loop proof, or an explicit reason it is blocked.
+
+| Area | Capability to verify | Current state | Why it matters / next proof |
+|---|---|---|---|
+| Movement | Walk to a coordinate | Proven | Already heavily observed; add long-distance route benchmark next. |
+| Movement | Follow a human/player | Proven in benchmark | Needs live operator proof during a manual session. |
+| Movement | Escape a local patrol loop | Partial | Add target-clearing benchmark after repeated same-tile movement. |
+| Movement | Open/route through doors | Unproven | Needed for quests and indoor targets. |
+| Movement | Use travel shortcuts / `travel` admin command | Unproven for residents | Useful for demo setup, but should not replace normal movement. |
+| Perception | See nearby objects/items/NPCs | Proven indirectly | Add a perception snapshot benchmark with expected nearby entities. |
+| Perception | Notice another resident's world event | Implemented, live proof thin | L3 LoreBus needs a live "Hans notices Duke's fire" benchmark. |
+| Chat | Ambient Soul line | Proven | Needs variety scoring so heroes stop sounding template-heavy. |
+| Chat | Respond when name-mentioned | Proven in benchmark | Add multi-human anti-loop checks. |
+| Chat | Refuse to repeat itself | Implemented, not fully scored | Important for event chat quality. |
+| Inventory | Receive starter items | Proven | Creation seeds inventory/equipment; used by benchmarks. |
+| Inventory | Pick up ground items | Unproven in this doc | Needed for scavenging and trade portal loops. |
+| Inventory | Drop items | Implemented action, unproven live | Needed for cleanup and trading workflows. |
+| Inventory | Use item on item | Proven | Firemaking and cooking/fishing workflows exercise this. |
+| Inventory | Use item on world object | Partial | Cooking workflow uses item-on-object style evidence; needs direct targeted benchmark. |
+| Equipment | Wear/wield useful gear | Proven in benchmark | Needs unscripted long-run proof. |
+| Equipment | Unequip/swap gear | Unproven | Needed for armor/role experiments. |
+| Survival | Eat at low HP | Observed | Needs danger survival benchmark with hostile nearby NPC. |
+| Survival | Flee/retreat from bad fight | Partial | Meeting notes claim combat flee; this doc needs a direct artifact. |
+| Survival | Die, revive, and preserve story | Observed for revival; death path exists | Need death/revival drill with Library/letter verification. |
+| Skills | Woodcutting | Proven | Strong. |
+| Skills | Firemaking | Proven | Strong. |
+| Skills | Fishing | Proven | Good starter-loop proof. |
+| Skills | Cooking | Proven | Good starter-loop proof. |
+| Skills | Mining | Unproven | Add Lumbridge/Varrock starter mining benchmark. |
+| Skills | Smithing | Unproven | Requires ore/bar/furnace/anvil workflow proof. |
+| Skills | Prayer | Isolated mechanic proven; full chain partial | Bone burial passes; combat-to-loot-to-bury remains unreliable. |
+| Skills | Attack/Hitpoints combat XP | Partial | Combat XP signals exist, but pass rate is low. |
+| Skills | Ranged/Magic | Unproven | Need equipment/ammo/rune setup and safe targets. |
+| Skills | Level-up event | Proven in benchmark | Needs normal-loop proof. |
+| NPCs | Talk to NPC | Code path exists, live proof thin | Needed for quests and human-like behavior. |
+| NPCs | Continue dialogue / choose option | Implemented action, unproven | Required before quest claims are honest. |
+| Quests | Start a starter quest | Unproven | First dedicated quest benchmark should target a tiny dialogue milestone. |
+| Quests | Complete a quest stage | Unproven | Do not claim questing until this passes. |
+| Trade | Resident-to-player trade request | Proven in benchmark/FSM | Needs live operator proof with inventory delta. |
+| Trade | Offer/accept/decline safely | Proven in benchmark/FSM | Needs no-loop soak test. |
+| Patron | Daily check-in and Shard balance | Implemented | Human-facing surface is available; needs event-day SOP. |
+| Patron | Patron gift affects resident attention/story | Partial | Timeline proof exists; gameplay priority override needs stronger proof. |
+| Memory | Store timeline moments | Proven | Library timelines are rich. |
+| Memory | Recall a taught fact | Proven in benchmark | Needs longer-delay and cross-session proof. |
+| Memory | Remember deaths/routes/NPCs/quests | Not mature | This is a Thursday action item: mem0/qmd/MCP retrieval decision. |
+| Model intelligence | Local Qwen vs Qwopus/Haiku on hard tasks | Early evidence | Combat data says better models help; needs more tasks and confidence intervals. |
+| Dashboard | Show model/endpoint/SPARK per resident | Requested, not yet in this doc | Meeting action item; important for model benchmarking. |
+| Story | Portraits from timelines | Implemented | Needs quality scoring and quote dedup checks. |
+| Story | Storyteller 20-minute world narration | Not built | Named feature from meeting; likely high UX payoff. |
 
 ## Bottom Line
 

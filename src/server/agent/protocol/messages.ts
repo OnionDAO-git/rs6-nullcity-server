@@ -10,6 +10,7 @@ export type DisconnectPolicy = 'logout' | 'idle';
 export type SpectatorMode = 'follow' | 'free-camera' | 'picture-in-picture';
 export type SpectatorSubject = { kind: 'resident'; name: string } | { kind: 'player'; username: string };
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+export type InitialSkillSeed = number | { exp?: number; level?: number };
 export type SpectatorPacketType = 'FIXED' | 'DYNAMIC_SMALL' | 'DYNAMIC_LARGE';
 
 export interface SpectatorRsPacketFrame {
@@ -58,6 +59,7 @@ export type ClientMessage =
               appearance?: Appearance;
               initialInventory?: InitialContainerItem[];
               initialEquipment?: InitialContainerItem[];
+              initialSkills?: Record<string, InitialSkillSeed>;
           }
       >
     | AgentFrame<'connect_resident', { name: string; observe?: boolean; control?: boolean; onDisconnect?: DisconnectPolicy }>
@@ -120,6 +122,13 @@ const initialContainerItemSchema = z.union([
     z.object({ itemId: z.number().int().positive(), amount: z.number().int().positive().optional() }),
     z.null(),
 ]);
+const initialSkillSeedSchema = z.union([
+    z.number().nonnegative(),
+    z.object({
+        exp: z.number().nonnegative().optional(),
+        level: z.number().int().min(1).max(99).optional(),
+    }),
+]);
 const spectatorSubjectSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('resident'), name: z.string().min(1) }),
     z.object({ kind: z.literal('player'), username: z.string().min(1) }),
@@ -143,6 +152,7 @@ const clientPayloadSchemas = {
         appearance: appearanceSchema.optional(),
         initialInventory: z.array(initialContainerItemSchema).optional(),
         initialEquipment: z.array(initialContainerItemSchema).optional(),
+        initialSkills: z.record(initialSkillSeedSchema).optional(),
     }),
     connect_resident: z.object({
         name: z.string().min(1),

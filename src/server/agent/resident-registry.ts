@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { join } from 'path';
 import { findItem } from '@engine/config/config-handler';
 import { activeWorld } from '@engine/world';
+import type { SkillName } from '@engine/world/actor/skills';
 import { type Appearance, loadPlayerSaveResult, playerExists } from '@engine/world/actor/player/player-data';
 import { IdleBrain } from '@engine/world/actor/resident/brain/idle-brain';
 import { RESIDENT_SAVE_DIR, Resident } from '@engine/world/actor/resident/resident';
@@ -11,17 +12,44 @@ import type { DisconnectPolicy, ResidentSummary } from './protocol/messages';
 
 export const RESIDENT_NAME_PATTERN = /^res:[a-z0-9_-]{1,20}$/;
 export const RESIDENT_GOLD_ITEM_ID = 995;
+const MAX_INITIAL_SKILL_EXP = 200_000_000;
+const KNOWN_SKILL_NAMES: ReadonlySet<SkillName> = new Set([
+    'attack',
+    'defence',
+    'strength',
+    'hitpoints',
+    'ranged',
+    'prayer',
+    'magic',
+    'cooking',
+    'woodcutting',
+    'fletching',
+    'fishing',
+    'firemaking',
+    'crafting',
+    'smithing',
+    'mining',
+    'herblore',
+    'agility',
+    'thieving',
+    'slayer',
+    'farming',
+    'runecrafting',
+    'construction',
+]);
 
 export const normalizeResidentName = (name: string): string => name.toLowerCase();
 
 export const isValidResidentName = (name: string): boolean => RESIDENT_NAME_PATTERN.test(name);
 
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null | undefined;
+export type InitialSkillSeed = number | { exp?: number; level?: number };
 
 export interface ResidentCreateOptions {
     appearance?: Appearance;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
+    initialSkills?: Record<string, InitialSkillSeed>;
 }
 
 export interface ResidentGoldSummary {
@@ -78,6 +106,7 @@ export class ResidentRegistry {
         }
         this.applyInitialItems(resident.inventory, 28, options.initialInventory, 'inventory');
         this.applyInitialItems(resident.equipment, 14, options.initialEquipment, 'equipment');
+        this.applyInitialSkills(resident, options.initialSkills);
         resident.save();
         return this.summary(name);
     }
@@ -318,6 +347,46 @@ export class ResidentRegistry {
             throw new Error(`EBAD_INITIAL_ITEM:${label}`);
         }
         return value;
+    }
+
+    private applyInitialSkills(resident: Resident, skills: Record<string, InitialSkillSeed> | undefined): void {
+        if (!skills) {
+            return;
+        }
+        for (const [skillName, seed] of Object.entries(skills)) {
+            const skill = this.normalizeInitialSkillName(skillName);
+            const exp = this.initialSkillExp(seed, skill, resident);
+            const level = this.initialSkillLevel(seed, skill, resident.skills.getLevelForExp(exp));
+            resident.skills.setExp(skill, exp);
+            resident.skills.setLevel(skill, level);
+        }
+    }
+
+    private normalizeInitialSkillName(skillName: string): SkillName {
+        const normalized = skillName.trim().toLowerCase();
+        if (!KNOWN_SKILL_NAMES.has(normalized as SkillName)) {
+            throw new Error(`EUNKNOWN_INITIAL_SKILL:${skillName}`);
+        }
+        return normalized as SkillName;
+    }
+
+    private initialSkillExp(seed: InitialSkillSeed, skill: SkillName, resident: Resident): number {
+        const exp =
+            typeof seed === 'number'
+                ? seed
+                : (seed.exp ?? (typeof seed.level === 'number' ? resident.skills.getExpForLevel(seed.level) : 0));
+        if (typeof exp !== 'number' || !Number.isFinite(exp) || exp < 0 || exp > MAX_INITIAL_SKILL_EXP) {
+            throw new Error(`EBAD_INITIAL_SKILL:${skill}.exp`);
+        }
+        return exp;
+    }
+
+    private initialSkillLevel(seed: InitialSkillSeed, skill: SkillName, levelForExp: number): number {
+        const level = typeof seed === 'number' ? levelForExp : (seed.level ?? levelForExp);
+        if (typeof level !== 'number' || !Number.isInteger(level) || level < 1 || level > 99) {
+            throw new Error(`EBAD_INITIAL_SKILL:${skill}.level`);
+        }
+        return level;
     }
 
     private loadOfflineResidentSave(name: string): { inventory: Array<Item | null>; [key: string]: unknown } {

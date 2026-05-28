@@ -78,6 +78,7 @@ export interface PerceptionEvent {
 }
 
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+export type InitialSkillSeed = number | { exp?: number; level?: number };
 
 export interface CreateResidentPayload {
     name: string;
@@ -85,6 +86,7 @@ export interface CreateResidentPayload {
     appearance?: unknown;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
+    initialSkills?: Record<string, InitialSkillSeed>;
 }
 
 export interface ConnectResidentPayload {

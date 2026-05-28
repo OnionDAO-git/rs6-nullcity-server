@@ -92,7 +92,7 @@ describe('agent protocol messages', () => {
         ).toThrow();
     });
 
-    it('parses resident creation with starter inventory', () => {
+    it('parses resident creation with starter inventory and skill seeds', () => {
         const appearance = {
             gender: 0,
             head: 2,
@@ -118,6 +118,7 @@ describe('agent protocol messages', () => {
                     spawnPosition: { x: 3222, y: 3202, level: 0 },
                     appearance,
                     initialInventory: [{ itemId: 590, amount: 1 }, 1511, null],
+                    initialSkills: { firemaking: { exp: 82, level: 1 }, cooking: 81 },
                 },
             }),
         );
@@ -128,6 +129,7 @@ describe('agent protocol messages', () => {
         }
         expect(message.payload.appearance).toEqual(appearance);
         expect(message.payload.initialInventory).toEqual([{ itemId: 590, amount: 1 }, 1511, null]);
+        expect(message.payload.initialSkills).toEqual({ firemaking: { exp: 82, level: 1 }, cooking: 81 });
     });
 
     it('parses observable subject list requests', () => {

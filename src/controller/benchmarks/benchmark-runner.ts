@@ -505,6 +505,9 @@ function peerCreatePayload(peer: BenchmarkTaskPeer): Omit<CreateResidentPayload,
     if (peer.initialEquipment !== undefined) {
         payload.initialEquipment = peer.initialEquipment;
     }
+    if (peer.initialSkills !== undefined) {
+        payload.initialSkills = peer.initialSkills;
+    }
     return payload;
 }
 

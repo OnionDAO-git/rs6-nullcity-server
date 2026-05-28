@@ -8,7 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod/v4';
-import type { DisconnectPolicy, ResidentFilter, ResidentSummary } from '../protocol/messages';
+import type { DisconnectPolicy, InitialSkillSeed, ResidentFilter, ResidentSummary } from '../protocol/messages';
 import type { InitialContainerItem } from '../resident-registry';
 import type { ResidentRegistry } from '../resident-registry';
 import type { ResidentSession } from '../resident-session';
@@ -75,8 +75,9 @@ export class ResidentMcpFacade {
         spawnPosition?: { x: number; y: number; level?: number },
         initialInventory?: InitialContainerItem[],
         initialEquipment?: InitialContainerItem[],
+        initialSkills?: Record<string, InitialSkillSeed>,
     ): ResidentSummary {
-        return this.deps.registry.create(name, spawnPosition, { initialInventory, initialEquipment });
+        return this.deps.registry.create(name, spawnPosition, { initialInventory, initialEquipment, initialSkills });
     }
 
     public async connectResident(name: string, onDisconnect: DisconnectPolicy = 'idle'): Promise<ConnectResidentResult> {
@@ -154,10 +155,11 @@ export class ResidentMcpFacade {
                     spawnPosition: positionSchema.optional(),
                     initialInventory: z.array(initialContainerItemSchema).optional(),
                     initialEquipment: z.array(initialContainerItemSchema).optional(),
+                    initialSkills: z.record(z.string(), initialSkillSeedSchema).optional(),
                 },
             },
-            async ({ name, spawnPosition, initialInventory, initialEquipment }) =>
-                toToolResult({ resident: this.createResident(name, spawnPosition, initialInventory, initialEquipment) }),
+            async ({ name, spawnPosition, initialInventory, initialEquipment, initialSkills }) =>
+                toToolResult({ resident: this.createResident(name, spawnPosition, initialInventory, initialEquipment, initialSkills) }),
         );
 
         server.registerTool(
@@ -271,6 +273,13 @@ const initialContainerItemSchema = z.union([
     z.string().min(1),
     z.object({ itemId: z.number().int().positive(), amount: z.number().int().positive().optional() }),
     z.null(),
+]);
+const initialSkillSeedSchema = z.union([
+    z.number().nonnegative(),
+    z.object({
+        exp: z.number().nonnegative().optional(),
+        level: z.number().int().min(1).max(99).optional(),
+    }),
 ]);
 
 function toToolResult(value: unknown): CallToolResult {

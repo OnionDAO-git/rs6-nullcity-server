@@ -230,6 +230,7 @@ export class AgentGateway {
                     appearance: message.payload.appearance,
                     initialInventory: message.payload.initialInventory,
                     initialEquipment: message.payload.initialEquipment,
+                    initialSkills: message.payload.initialSkills,
                 });
                 send(frame('resident_created', { resident }, message.id));
                 return;
