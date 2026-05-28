@@ -5,7 +5,6 @@ import { FACTIONS, type FactionId } from '../factions/factions';
 import { readFactionStockpileSnapshot } from '../factions/stockpile-ledger';
 import type { Letter } from '../patron/letters-producer';
 import { SoulLoader } from '../soul/soul-loader';
-import { factionUiMetadata, factionWallColor } from '../ui-metadata';
 
 /**
  * One deceased resident's data for the IRL graveyard wall (N4).
@@ -90,7 +89,7 @@ export function readGraveyardEntries(
         const displayName = soulSummary?.displayName || humanizeName(slug);
 
         const factionId = soulSummary?.factionId;
-        const faction = factionId !== undefined ? factionUiMetadata(factionId) : undefined;
+        const faction = factionId !== undefined ? factionDisplayMetadata(factionId) : undefined;
 
         const epitaph = readPreparedEpitaph(path.join(lettersRoot, 'library', slug, 'prepared-epitaph.txt'));
 
@@ -241,7 +240,7 @@ export function readLibraryEntries(lettersRoot: string, options?: { excludeSynth
             const factionDef = FACTIONS.find(f => f.displayName === p.faction);
             if (factionDef) {
                 libEntry.factionId = factionDef.id;
-                const uiMeta = factionUiMetadata(factionDef.id);
+                const uiMeta = factionDisplayMetadata(factionDef.id);
                 if (uiMeta) {
                     libEntry.factionColor = uiMeta.wallColor;
                 }
@@ -331,8 +330,8 @@ function isDeceasedRuntimeState(value: unknown): value is {
  *   - Malformed JSONL lines ⇒ skipped (not thrown).
  *   - Missing or malformed runtime-state.json ⇒ resident skipped.
  *
- * Pairs with the planned HTTP route `GET /v1/wall/snapshot` and a
- * static page at `public/wall/` (post-event).
+ * Pairs with the HTTP route `GET /v1/wall/snapshot`; dashboard-owned
+ * static pages render this read model for the venue wall.
  */
 export const DEFAULT_WALL_LIMIT = 10;
 
@@ -695,7 +694,7 @@ function readResidents(
         const activeGoal = runtimeActiveGoal || soulSummary?.fallbackGoal;
 
         const factionId = soulSummary?.factionId;
-        const faction = factionId !== undefined ? factionUiMetadata(factionId) : undefined;
+        const faction = factionId !== undefined ? factionDisplayMetadata(factionId) : undefined;
 
         const summary: ResidentSummary = { slug, displayName, alive, attention: parsed.attention };
         if (activeGoal !== undefined) {
@@ -782,6 +781,25 @@ function readSoulRosterSummary(
     } catch {
         return undefined;
     }
+}
+
+function factionDisplayMetadata(id: string): { displayName: string; wallColor: string } | undefined {
+    const faction = FACTIONS.find(candidate => candidate.id === id);
+    if (!faction) {
+        return undefined;
+    }
+    return {
+        displayName: faction.displayName,
+        wallColor: factionWallColor(faction.id) || faction.color,
+    };
+}
+
+function factionWallColor(id: FactionId): string | undefined {
+    const faction = FACTIONS.find(candidate => candidate.id === id);
+    if (!faction) {
+        return undefined;
+    }
+    return faction.color === '#0A0A0A' && faction.accentColor ? faction.accentColor : faction.color;
 }
 
 function humanizeName(slug: string): string {

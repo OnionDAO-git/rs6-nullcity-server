@@ -1,7 +1,5 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
-import { readFile } from 'fs/promises';
 import type { AddressInfo } from 'net';
-import path from 'path';
 import type { InferenceHealthResult } from '../llm/inference-health';
 import type { LettersStore } from '../patron/letters-store';
 import { PatronStore } from '../patron/patron-store';
@@ -69,8 +67,6 @@ export interface LettersHttpServerOptions {
     health?: () => Promise<InferenceHealthResult>;
     /** Health route path. Defaults to {@link DEFAULT_HEALTH_PATH}. */
     healthPath?: string;
-    /** Static public page root. Defaults to `<cwd>/public`. */
-    staticRoot?: string;
     /**
      * When true, the wall snapshot is passed through
      * {@link redactWallSnapshot} before being returned: recipients are
@@ -181,7 +177,6 @@ async function handle(
     const isGraveyardRoute = url.pathname === graveyardRoutePath && options.lettersRoot !== undefined;
     const isLibraryRoute = url.pathname === libraryRoutePath && options.lettersRoot !== undefined;
     const isPatronResidentsRoute = url.pathname === patronResidentsPath && options.lettersRoot !== undefined;
-    const staticPagePath = resolveStaticPagePath(url.pathname, options.staticRoot);
 
     if (
         !isInboxRoute &&
@@ -192,19 +187,13 @@ async function handle(
         !isPatronCheckInRoute &&
         !isGraveyardRoute &&
         !isLibraryRoute &&
-        !isPatronResidentsRoute &&
-        !staticPagePath
+        !isPatronResidentsRoute
     ) {
         writeJson(response, 404, { error: 'Not Found' });
         return;
     }
     if (request.method !== 'GET') {
         writeJson(response, 405, { error: `Method ${request.method} not allowed` });
-        return;
-    }
-
-    if (staticPagePath) {
-        await writeStaticHtml(response, staticPagePath);
         return;
     }
 
@@ -365,49 +354,6 @@ function writeJson(response: ServerResponse, status: number, payload: unknown): 
     response.end(JSON.stringify(payload));
 }
 
-async function writeStaticHtml(response: ServerResponse, filePath: string): Promise<void> {
-    try {
-        const body = await readFile(filePath, 'utf8');
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        response.end(body);
-    } catch (error) {
-        if (isMissingFile(error)) {
-            writeJson(response, 404, { error: 'Not Found' });
-            return;
-        }
-        throw error;
-    }
-}
-
 function normalizePath(value: string): string {
     return value.startsWith('/') ? value : `/${value}`;
-}
-
-function resolveStaticPagePath(requestPath: string, staticRoot?: string): string | undefined {
-    const publicRoot = staticRoot || path.resolve(process.cwd(), 'public');
-    const normalizedPath = normalizePath(requestPath).replace(/\/+$/, '');
-    const pagePath = normalizedPath.endsWith('/index.html') ? normalizedPath.slice(0, -'/index.html'.length) : normalizedPath;
-    switch (pagePath) {
-        case '':
-            // `/` → landing page that links to the five public surfaces. Without it
-            // a cold visitor (or a demo Dev typing the bare URL) gets a 404 and
-            // has to know each route by hand.
-            return path.join(publicRoot, 'index.html');
-        case '/wall':
-            return path.join(publicRoot, 'wall', 'index.html');
-        case '/inbox':
-            return path.join(publicRoot, 'inbox', 'index.html');
-        case '/patron':
-            return path.join(publicRoot, 'patron', 'index.html');
-        case '/graveyard':
-            return path.join(publicRoot, 'graveyard', 'index.html');
-        case '/library':
-            return path.join(publicRoot, 'library', 'index.html');
-        default:
-            return undefined;
-    }
-}
-
-function isMissingFile(error: unknown): boolean {
-    return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === 'ENOENT';
 }

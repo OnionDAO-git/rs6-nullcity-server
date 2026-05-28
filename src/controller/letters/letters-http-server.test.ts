@@ -307,90 +307,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
         });
     });
 
-    describe('static embassy pages', () => {
-        it('serves the wall ticker page from the documented /wall/ route', async () => {
-            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
-            const wallPageUrl = server.url.replace('/v1/inbox', '/wall/');
-
-            const response = await get(wallPageUrl);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Null City Embassy');
-            expect(response.body).toContain('/v1/wall/snapshot');
-        });
-
-        it('serves the patron inbox page from the documented /inbox/ route', async () => {
-            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
-            const inboxPageUrl = server.url.replace('/v1/inbox', '/inbox/');
-
-            const response = await get(inboxPageUrl);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Null City Embassy');
-            expect(response.body).toContain('/v1/inbox');
-        });
-
-        it('also accepts explicit index.html URLs for operator copy/paste', async () => {
-            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
-
-            const wall = await get(server.url.replace('/v1/inbox', '/wall/index.html'));
-            const inbox = await get(server.url.replace('/v1/inbox', '/inbox/index.html'));
-
-            expect(wall.status).toBe(200);
-            expect(inbox.status).toBe(200);
-            expect(wall.contentType).toMatch(/text\/html/);
-            expect(inbox.contentType).toMatch(/text\/html/);
-        });
-
-        it('serves the patron profile page from /patron/ (HD-016 self-service HTML)', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const patronPageUrl = server.url.replace('/v1/inbox', '/patron/');
-
-            const response = await get(patronPageUrl);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Patron Status');
-            expect(response.body).toContain('/v1/patron/balance');
-        });
-
-        it('also serves the patron profile page at /patron/index.html', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/patron/index.html'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-        });
-
-        it('serves the landing page at the root URL with nav cards', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            // Strip the inbox path entirely so we hit `/`.
-            const root = server.url.replace('/v1/inbox', '/');
-
-            const response = await get(root);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            // Has a recognisable header.
-            expect(response.body).toContain('Null City Embassy');
-            // Links to each of the 5 public surfaces.
-            expect(response.body).toContain('href="/wall/"');
-            expect(response.body).toContain('href="/inbox/"');
-            expect(response.body).toContain('href="/patron/"');
-            expect(response.body).toContain('href="/library/"');
-            expect(response.body).toContain('href="/graveyard/"');
-        });
-
-        it('also serves the landing page at /index.html', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/index.html'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Null City Embassy');
-        });
-    });
-
     describe('public-surface filters (PRE-MERGE-POLISH)', () => {
         it('GET /v1/wall/snapshot drops res-qa-* residents from the public roster', async () => {
             server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
@@ -794,14 +710,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.livedTicks).toBe(1234);
         });
 
-        it('serves the graveyard printable page from /graveyard/', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/graveyard/'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Graveyard');
-            expect(response.body).toContain('/v1/graveyard');
-        });
     });
 
     describe('GET /v1/library (Pillar 3 — Library of Souls browse)', () => {
@@ -863,14 +771,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.patronHandles).toContain('alice@onion');
         });
 
-        it('serves the Library of Souls browse page from /library/', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/library/'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Library of Souls');
-            expect(response.body).toContain('/v1/library');
-        });
     });
 
     describe('GET /v1/patron/residents (Pillar 2 — residents you have known)', () => {
