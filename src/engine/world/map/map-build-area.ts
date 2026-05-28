@@ -1,3 +1,4 @@
+export const MIN_LOADED_ZONE_SCALE = 1;
 export const DEFAULT_LOADED_ZONE_SCALE = 1;
 export const MAX_LOADED_ZONE_SCALE = 4;
 export const BASE_LOADED_ZONE_RADIUS = 6;
@@ -37,7 +38,7 @@ export function normalizeLoadedZoneScale(scale: number | undefined | null): numb
         return DEFAULT_LOADED_ZONE_SCALE;
     }
 
-    return Math.min(MAX_LOADED_ZONE_SCALE, Math.max(DEFAULT_LOADED_ZONE_SCALE, Math.trunc(scale)));
+    return Math.min(MAX_LOADED_ZONE_SCALE, Math.max(MIN_LOADED_ZONE_SCALE, Math.trunc(scale)));
 }
 
 export function getLoadedMapBuildArea(position: MapBuildPosition, scale?: number | null): LoadedMapBuildArea {
