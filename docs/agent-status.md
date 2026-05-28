@@ -896,3 +896,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 
 2026-05-28 11:38 codex branch=agents/wip workstream=MODEL-BENCH-PLUMBING STARTING - add benchmark profile metadata/cost fields and provider response parsing for fair paid/local model tests. Files: src/controller/{config,llm,benchmarks} tests/docs. collision=none.
 2026-05-28 12:00 codex branch=agents/wip workstream=MODEL-BENCH-PLUMBING HANDOFF - SHA=4472bc71 profiles split endpoints/models; corrected invalid cross-load docs; canary inf_qwen 3.6s vs spacetower_qwopus 0.5s. fin=2182/2182 build=711.
+2026-05-28 12:05 codex branch=agents/wip workstream=MODEL-BENCH-REPORT STARTING - add benchmark artifact report generator for profile/task pass-rate latency token/cost summaries. Files: src/controller/benchmarks/report*, package/docs. collision=none.

@@ -63,6 +63,22 @@ npm run inference:canary -- --config config/controller.model-benchmark.yml \
   --endpoints openrouter_haiku,openrouter_storyteller
 ```
 
+## Report Raw Benchmark Artifacts
+
+Generate a human-readable pass-rate/latency/token/cost table from any benchmark artifact directory:
+
+```bash
+npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27
+```
+
+Use JSON output for spreadsheets or follow-up analysis:
+
+```bash
+npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27 --json
+```
+
+Older artifacts may only have `modelProfile`, so token and cost columns can be zero. New artifacts include `inference` metadata for profile, endpoint, provider, model, and optional pricing.
+
 ## Benchmark Questions
 
 For each URL/model combination, measure:
@@ -123,7 +139,7 @@ The profile id resolves to an endpoint-shaped entry at runtime, so old `model.en
 2. Run 5-10 repetitions per profile per task.
 3. Add Anthropic-native Messages API support for direct Anthropic keys.
 4. Add a MiniMax adapter that limits or extracts reasoning-heavy outputs cleanly.
-5. Build a small report generator that aggregates raw benchmark artifacts into pass-rate/cost/latency tables.
+5. Run the report generator on every completed batch and attach the table to the benchmark results note.
 
 ## Storyteller
 
