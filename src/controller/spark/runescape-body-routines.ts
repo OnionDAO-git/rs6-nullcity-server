@@ -70,6 +70,7 @@ export type BodyHybridPerception = {
         busy?: boolean;
         inventory?: Array<BodyItem | null>;
         equipment?: Array<BodyItem | null>;
+        quests?: Record<string, { progress?: number | string; complete?: boolean }>;
     };
     nearby?: {
         players?: BodyActor[];
@@ -128,6 +129,12 @@ export const LUMBRIDGE_STARTER_FISHING_SPOTS: ReadonlyArray<BodyPos> = [LUMBRIDG
 
 /** Reachable castle entry used when west-side kitchen doors are visible but not pathable. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY: BodyPos = { x: 3217, y: 3218, level: 0 };
+
+/** Lumbridge Cook location used by the Cook's Assistant starter quest. */
+export const LUMBRIDGE_COOK_POSITION: BodyPos = { x: 3208, y: 3215, level: 0 };
+
+const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
+const LUMBRIDGE_COOK_KEY = 'rs:lumbridge_castle_cook';
 
 /** Closed double-door IDs for the south Lumbridge Castle entrance. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_CLOSED_DOOR_IDS: ReadonlySet<number> = new Set([1516, 1519]);
@@ -1497,6 +1504,73 @@ export function npcTalkAction(perception: BodyHybridPerception, target: BodyActo
         return { kind: 'move_to', target: target.position, range: 1, cause };
     }
     return { kind: 'interact', target, option: 'talk-to', cause };
+}
+
+/** Start Cook's Assistant by finding the Lumbridge Cook and opening the quest dialogue. */
+export function cooksAssistantStartAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || cooksAssistantStarted(perception)) {
+        return undefined;
+    }
+
+    const cook = (perception.nearby?.npcs || [])
+        .filter(isLumbridgeCook)
+        .filter(npc => sameLevel(here, npc.position))
+        .filter(npc => !isTargetFailureCooldownActive(npc, targetFailureCooldowns, currentTick))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    if (!cook) {
+        if (!sameLevel(here, LUMBRIDGE_COOK_POSITION)) {
+            return undefined;
+        }
+        if (distance(here, LUMBRIDGE_COOK_POSITION) > INTERACTION_APPROACH_RADIUS) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_COOK_POSITION,
+                range: 3,
+                cause: 'cooks_assistant_find_cook',
+            };
+        }
+        return undefined;
+    }
+
+    if (distance(here, cook.position) > INTERACTION_APPROACH_RADIUS) {
+        return {
+            kind: 'move_to',
+            target: cook.position,
+            range: 1,
+            cause: 'cooks_assistant_approach_cook',
+        };
+    }
+
+    return {
+        kind: 'interact',
+        target: cook,
+        option: 'talk-to',
+        cause: 'cooks_assistant_talk_to_cook',
+    };
+}
+
+function cooksAssistantStarted(perception: BodyHybridPerception): boolean {
+    const quest = perception.resident?.quests?.[COOKS_ASSISTANT_QUEST_ID];
+    if (!quest) {
+        return false;
+    }
+    return quest.complete === true || quest.progress === 'complete' || (typeof quest.progress === 'number' && quest.progress >= 50);
+}
+
+function isLumbridgeCook(actor: BodyActor): boolean {
+    return (
+        actor.kind === 'npc' &&
+        (actor.key === LUMBRIDGE_COOK_KEY ||
+            /^cook$/i.test(actor.name || '') ||
+            /^npc:cook/i.test(actor.id || '') ||
+            /lumbridge.*cook/i.test(`${actor.key || ''} ${actor.name || ''}`))
+    );
 }
 
 /** Human-readable label for inventory/world items. Strips the `rs:` prefix and underscores. */

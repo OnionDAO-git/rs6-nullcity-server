@@ -93,6 +93,30 @@ export function makeCooksAssistantStart3mBenchmarkTask(
                 events: [...context.events()],
             });
         },
+        runAutonomous: async context => {
+            const startedAt = now();
+            context.recordSummary('Observing autonomous module actions for cooks-assistant-start-3m.');
+
+            while (!context.signal.aborted && now() - startedAt < COOKS_ASSISTANT_START_3M_BUDGET_MS) {
+                const outcome = verifyCooksAssistantStart3m({
+                    elapsedMs: now() - startedAt,
+                    actions: selectedModuleActionAttempts(context),
+                    perceptions: [...context.perceptions()],
+                    events: [...context.events()],
+                });
+                if (outcome.status === 'passed') {
+                    return outcome;
+                }
+                await sleep(1000, context.signal);
+            }
+
+            return verifyCooksAssistantStart3m({
+                elapsedMs: now() - startedAt,
+                actions: selectedModuleActionAttempts(context),
+                perceptions: [...context.perceptions()],
+                events: [...context.events()],
+            });
+        },
     };
 }
 
@@ -146,6 +170,15 @@ function cooksAssistantStartMetrics(input: CooksAssistantStart3mVerificationInpu
         ).length,
         questStarted: input.perceptions.some(hasCooksAssistantStarted) ? 1 : 0,
     };
+}
+
+function selectedModuleActionAttempts(
+    context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0],
+): CooksAssistantStart3mActionAttempt[] {
+    return context.actionAttempts().filter(attempt => {
+        const module = attempt.sparkModule;
+        return module?.id === context.module.id && module.version === context.module.version;
+    });
 }
 
 async function submitAndRecord(

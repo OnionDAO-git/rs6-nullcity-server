@@ -24,6 +24,7 @@ import {
     lowHealthRecoveryAction,
     opportunisticPickupAction,
     prayerTrainingAction,
+    cooksAssistantStartAction,
     starterFishingAction,
     starterFishingCookingAction,
     starterFishingRouteAction,
@@ -287,6 +288,67 @@ describe('starterMiningAction', () => {
                 }),
             ),
         ).toBeUndefined();
+    });
+});
+
+describe('cooksAssistantStartAction', () => {
+    function cook(x: number, y: number): BodyActor {
+        return {
+            id: `npc:cook-${x}-${y}`,
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('talks to the Lumbridge Cook when adjacent and Cook Assistant is not started', () => {
+        const target = cook(101, 100);
+        const action = cooksAssistantStartAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_talk_to_cook',
+        });
+    });
+
+    it('moves toward the Lumbridge Cook when visible but not adjacent', () => {
+        const target = cook(104, 100);
+        const action = cooksAssistantStartAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: target.position,
+            range: 1,
+            cause: 'cooks_assistant_approach_cook',
+        });
+    });
+
+    it('does nothing once Cook Assistant progress is at the started milestone', () => {
+        const action = cooksAssistantStartAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                },
+                nearby: { npcs: [cook(101, 100)] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
     });
 });
 

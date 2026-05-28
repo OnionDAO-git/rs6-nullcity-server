@@ -42,6 +42,7 @@ export interface CognitiveState {
     activeMove?: ActiveMoveState;
     followTarget?: FollowTargetState;
     pendingDirectTrade?: PendingDirectTradeState;
+    pendingQuestDialogue?: PendingQuestDialogueState;
     pendingCombatNarration?: PendingCombatNarrationState;
     lastBrainTick?: number;
     brainBackoffUntilTick?: number;
@@ -92,6 +93,13 @@ export interface PendingDirectTradeState {
         combatLevel?: number;
     };
     setAtTick: number;
+}
+
+export interface PendingQuestDialogueState {
+    questId: string;
+    step: number;
+    startedAtTick: number;
+    updatedAtTick: number;
 }
 
 export interface ActiveTradeResourceState {

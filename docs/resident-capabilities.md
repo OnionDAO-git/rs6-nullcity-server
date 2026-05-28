@@ -27,6 +27,8 @@ Sources checked:
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528192703_starter_mining_5m.json`
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528192722_starter_mining_5m.json`
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528194011_cooks_assistant_start_3m.json`
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528195818_cooks_assistant_start_3m.json` (failed pre-fix autonomous run: talked to Cook once, then stalled because autonomous dialogue did not advance without perception dialogue events)
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528200549_cooks_assistant_start_3m.json`
 - `data/agent-logs/res:bmk_cooks_a_00ih6jm8/2026-05-28.jsonl`
 - `npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27`
 - `npm run controller:bench -- --task equipment-prep-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
@@ -36,6 +38,7 @@ Sources checked:
 - `npm run controller:bench -- --task starter-mining-5m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
 - `npm run controller:bench -- --task starter-mining-5m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-28`
 - `npm run controller:bench -- --task cooks-assistant-start-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
+- `npm run controller:bench -- --task cooks-assistant-start-3m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-28`
 - Ad-hoc log aggregation over 494,839 action records and 23 Library timelines.
 
 Observed live action totals across local controller logs:
@@ -93,7 +96,7 @@ Autonomous benchmark summary from parsed artifacts:
 | `level-up-firemaking-3m` | 1 | 100% | 1.000 | New capability QA task. Resident started one XP below Firemaking 2, lit logs with a real item-on-item action, and emitted `level_up`. |
 | `bury-bones-prayer-3m` | 1 | 100% | 1.000 | New capability QA task. Resident buried carried bones, consumed the item, and gained Prayer XP. |
 | `starter-mining-5m` | 2 successful proof runs | 100% after fix | 1.000 | New capability QA task. Scripted artifact `bench_20260528192703_starter_mining_5m.json` shows pickaxe present, starter ore observed, ore gained, 2 ore events, and Mining XP increased. Autonomous artifact `bench_20260528192722_starter_mining_5m.json` shows the selected `onion.runescape.standard` module made 2 mining actions with `starter_mining_routine`, ore gained, Mining XP increased, and 0 stuck ticks. A pre-fix timeout artifact proved the benchmark had been selecting a far rock before nearest-rock selection was fixed. |
-| `cooks-assistant-start-3m` | 1 | 100% | 1.000 | New capability QA task. Artifact `bench_20260528194011_cooks_assistant_start_3m.json` shows Cook observed, 1 successful `talk-to` action, 6 dialogue actions, 2 first-option choices, and Cook's Assistant quest progress reaching stage 50. Agent log `data/agent-logs/res:bmk_cooks_a_00ih6jm8/2026-05-28.jsonl` shows the exact live action sequence against `rs:lumbridge_castle_cook`. |
+| `cooks-assistant-start-3m` | 2 successful proof runs | 100% after fix | 1.000 | Scripted artifact `bench_20260528194011_cooks_assistant_start_3m.json` proved the engine dialogue path. A first autonomous run `bench_20260528195818_cooks_assistant_start_3m.json` timed out after one `talk-to` because no dialogue event reached SPARK and the Cook target was cooldowned. Post-fix autonomous artifact `bench_20260528200549_cooks_assistant_start_3m.json` passed in 46s with 18 selected-module actions: 2 `talk-to` attempts, 12 dialogue actions, 4 first-option choices, Cook observed, and quest progress stage 50. |
 | `combat-prayer-10m` | 18 | 33% | 0.433 | Real but unreliable; model choice matters. |
 
 Model-sensitive combat result:
@@ -126,7 +129,7 @@ Model-sensitive combat result:
 | Recover from stuck states | Yes | Yes, but noisy | 112,656 `stuck_detected` and 110,464 `stuck_recovered` timeline moments; multiple stuck-recovery fixes landed. | Medium. Recovery happens often, but the high count means stuckness is still a major behavior tax. |
 | Patron gifts, asks, witnesses, and Shard-facing story hooks | Yes | Yes | 39 `patron_gift`, 4 `patron_witness`, 3 `patron_ask` timeline events; patron profile/check-in/letters are implemented. | Medium-high for persistence/story surfaces; gameplay influence is still early. |
 | Safe trading FSM | Yes in benchmark | Not observed in normal logs scanned | `trading-giving-5m` passed 3/3. No normal live action-log entries with trade action kinds were found in this scan. | Medium as a tested mechanic; low as a proven live behavior. |
-| Questing | Partial | Quest-start benchmark-proven; completion unproven | `cooks-assistant-start-3m` passed 1/1 after fixing resident dialogue continuation/choice to close the chatbox widget used by normal NPC dialogue. The benchmark started Cook's Assistant by talking to `rs:lumbridge_castle_cook`, continuing dialogue, choosing first options twice, and observing quest progress stage 50. | Medium for scripted quest-start dialogue; low for autonomous quest completion. |
+| Questing | Partial | Autonomous quest-start benchmark-proven; completion unproven | `cooks-assistant-start-3m` now passes in scripted and autonomous modes. The scripted pass fixed resident dialogue continuation/choice against the normal chatbox widget. The autonomous pass added a Cook-specific goal/body routine and a pending quest-dialogue sequence so a resident can talk to `rs:lumbridge_castle_cook`, continue dialogue, choose first options, and reach Cook's Assistant progress stage 50 without benchmark-submitted actions. | Medium-high for starter quest initiation; low for item gathering and full quest completion. |
 | Cross-resident awareness | Implemented | Needs live proof | L3 LoreBus inbox shipped and tests passed; nearby world events can enter perception envelopes. | Low-medium until a live run shows residents acting on those events. |
 | Dashboard/story visibility | Yes | Yes | Public/server JSON surfaces, Library portraits, patron profiles, wall/graveyard routes, and dashboard metadata exist. | Medium-high for human viewing; dashboard should show model/endpoint/SPARK per resident next. |
 
@@ -154,7 +157,7 @@ The main weakness is not that residents are dead. They are not dead. The weaknes
 - Hard combat/prayer chains are unreliable, especially on Qwen. Isolated bone burial for Prayer XP is now proven.
 - XP gain and level-up mechanics are real, but level-up events were not observed in the scanned normal timelines.
 - Equipping/wielding gear is now autonomous-benchmark-proven, but normal long-running named residents have not yet been observed choosing it outside a dedicated task.
-- Quest start is now proven for Cook's Assistant; quest completion and autonomous quest planning are not proven yet.
+- Quest start is now proven for Cook's Assistant in both scripted and autonomous benchmark modes; quest item gathering, returning to the NPC, and full completion are not proven yet.
 - "Goal-as-orientation" is not deeply proven yet. Residents can execute known workflows better than they can invent long multi-step plans.
 - Trading works in benchmark, but normal live proof is thin.
 - Long-term memory is not yet at the level Dev described in the meeting: NPCs met, quests received, deaths, routes, and learned facts should become more durable and retrievable.
@@ -218,9 +221,9 @@ This document is **not complete**. It is now a good evidence-backed starting poi
 | Skills | Attack/Hitpoints combat XP | Partial | Combat XP signals exist, but pass rate is low. |
 | Skills | Ranged/Magic | Unproven | Need equipment/ammo/rune setup and safe targets. |
 | Skills | Level-up event | Proven in benchmark | Needs normal-loop proof. |
-| NPCs | Talk to NPC | Proven in scripted benchmark | `cooks-assistant-start-3m` submitted `talk-to` against `rs:lumbridge_castle_cook` and reached quest stage 50. Needs normal-loop proof. |
-| NPCs | Continue dialogue / choose option | Proven in scripted benchmark | Resident `dialogue_continue` and zero-based `dialogue_choice` now drive the normal chatbox widget path; benchmark submitted 6 dialogue actions and 2 first-option choices. |
-| Quests | Start a starter quest | Proven in scripted benchmark | Cook's Assistant reached progress stage 50 in a live benchmark. Next proof should make this an autonomous resident goal, not scripted harness action. |
+| NPCs | Talk to NPC | Proven in scripted and autonomous benchmarks | `cooks-assistant-start-3m` submitted `talk-to` against `rs:lumbridge_castle_cook` in scripted mode and selected it autonomously in `bench_20260528200549_cooks_assistant_start_3m.json`. Needs normal named-resident proof. |
+| NPCs | Continue dialogue / choose option | Proven in scripted and autonomous benchmarks | Resident `dialogue_continue` and zero-based `dialogue_choice` drive the normal chatbox widget path. The autonomous pass emitted 12 dialogue actions and 4 first-option choices from the selected SPARK module. |
+| Quests | Start a starter quest | Proven in scripted and autonomous benchmarks | Cook's Assistant reached progress stage 50 in scripted and autonomous live benchmarks. Next proof should gather the quest items and complete the quest. |
 | Quests | Complete a quest stage | Partial | Cook's Assistant start milestone proven; item gathering and quest completion are still unproven. |
 | Trade | Resident-to-player trade request | Proven in benchmark/FSM | Needs live operator proof with inventory delta. |
 | Trade | Offer/accept/decline safely | Proven in benchmark/FSM | Needs no-loop soak test. |

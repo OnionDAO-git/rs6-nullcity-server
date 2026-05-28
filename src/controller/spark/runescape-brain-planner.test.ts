@@ -323,6 +323,12 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('mine-starter-ore');
     });
 
+    it("returns a Cook's Assistant start goal for 'cooks-assistant-start-3m'", () => {
+        const g = benchmarkGoalForTask('cooks-assistant-start-3m', 0);
+        expect(g?.id).toBe('start-cooks-assistant');
+        expect(g?.description).toContain("Cook's Assistant");
+    });
+
     it("returns starterFishingCookingGoal for 'fishing-cooking-10m'", () => {
         const g = benchmarkGoalForTask('fishing-cooking-10m', 0);
         expect(g?.id).toBe('catch-and-cook-starter-fish');

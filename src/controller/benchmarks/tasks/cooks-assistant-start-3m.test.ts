@@ -2,6 +2,8 @@ import type { AgentAction, Perception, PerceptionEvent } from '../../transport/m
 import type { BenchmarkTaskContext } from '../benchmark-runner';
 import { makeCooksAssistantStart3mBenchmarkTask, verifyCooksAssistantStart3m } from './cooks-assistant-start-3m';
 
+const STANDARD_MODULE = { id: 'onion.runescape.standard', version: '0.1.0' };
+
 describe('verifyCooksAssistantStart3m', () => {
     it('passes when the resident talks to Cook and reaches Cook Assistant progress 50', () => {
         const outcome = verifyCooksAssistantStart3m({
@@ -77,6 +79,26 @@ describe('verifyCooksAssistantStart3m', () => {
         expect(submitAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interact', option: 'talk-to' }));
         expect(submitAction).toHaveBeenCalledWith(expect.objectContaining({ kind: 'dialogue_choice', optionIndex: 0 }));
     });
+
+    it('autonomous mode observes selected module actions without submitting scripted actions', async () => {
+        const submitAction = jest.fn();
+        const task = makeCooksAssistantStart3mBenchmarkTask(() => 1_000);
+        const context = taskContext({
+            submitAction,
+            actionAttempts: [
+                attempt({ kind: 'interact', target: cook(), option: 'talk-to', cause: 'cooks_assistant_talk_to_cook' }, STANDARD_MODULE),
+                attempt({ kind: 'dialogue_continue', cause: 'dialogue_continue' }, STANDARD_MODULE),
+                attempt({ kind: 'dialogue_choice', optionIndex: 0, cause: 'dialogue_choice_first' }, STANDARD_MODULE),
+            ],
+            perceptions: [perception(), perception({ quests: { 'rs:cooks_assistant': { progress: 50, complete: false } } })],
+            events: [],
+        });
+
+        const outcome = await task.runAutonomous?.(context);
+
+        expect(submitAction).not.toHaveBeenCalled();
+        expect(outcome?.status).toBe('passed');
+    });
 });
 
 function cook(): Record<string, unknown> {
@@ -112,10 +134,11 @@ function taskContext(overrides: {
     submitAction: jest.Mock;
     perceptions: Perception[];
     events?: PerceptionEvent[];
+    actionAttempts?: Array<{ action: AgentAction; sparkModule?: { id: string; version: string } }>;
 }): BenchmarkTaskContext {
     return {
         resident: 'res:bmk_cooks_assistant',
-        module: { id: 'onion.runescape.standard', version: '0.1.0' },
+        module: STANDARD_MODULE,
         signal: new AbortController().signal,
         submitAction: overrides.submitAction,
         peerResident: jest.fn(),
@@ -123,9 +146,13 @@ function taskContext(overrides: {
         recordActionAttempt: jest.fn(),
         recordInferenceRequest: jest.fn(),
         recordSummary: jest.fn(),
-        actionAttempts: () => [],
+        actionAttempts: () => overrides.actionAttempts || [],
         latestPerception: () => overrides.perceptions[0],
         perceptions: () => overrides.perceptions,
         events: () => overrides.events || [],
     };
+}
+
+function attempt(action: AgentAction, sparkModule?: { id: string; version: string }) {
+    return { action, sparkModule };
 }

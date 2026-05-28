@@ -205,6 +205,18 @@ export function miningGoal(tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical `start-cooks-assistant` Active Goal. */
+export function cooksAssistantStartGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'start-cooks-assistant',
+        description: "Start Cook's Assistant by asking the Lumbridge Cook what is wrong.",
+        steps: ['Find the Lumbridge Cook', 'Talk to the Cook', 'Continue the dialogue', 'Choose the helpful first option'],
+        success: "Cook's Assistant reaches quest progress stage 50.",
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
 /** Build the canonical `catch-and-cook-starter-fish` Active Goal. */
 export function starterFishingCookingGoal(tick: number): ActiveGoalState {
     return {
@@ -324,6 +336,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'starter-mining-5m') {
         return miningGoal(tick);
     }
+    if (taskId === 'cooks-assistant-start-3m') {
+        return cooksAssistantStartGoal(tick);
+    }
     if (taskId === 'fishing-cooking-10m') {
         return starterFishingCookingGoal(tick);
     }
@@ -394,6 +409,16 @@ export function isStarterFishingGoal(goal: ActiveGoalState): boolean {
 export function isMiningGoal(goal: ActiveGoalState): boolean {
     return /\b(mining|mine|starter ore|ore|clay|copper|tin|pickaxe|rock)\b/i.test(
         `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')}`,
+    );
+}
+
+/** True when the goal looks like starting Cook's Assistant with the Lumbridge Cook. */
+export function isCooksAssistantStartGoal(goal?: ActiveGoalState): boolean {
+    if (!goal) {
+        return false;
+    }
+    return /cook'?s assistant|lumbridge cook|start-cooks-assistant|quest progress stage 50/i.test(
+        `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')} ${goal.success || ''}`,
     );
 }
 

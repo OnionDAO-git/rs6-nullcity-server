@@ -33,6 +33,7 @@ export type HybridPerception = {
         combatTarget?: Actor | null;
         busy?: boolean;
         inventory?: Array<Item | null>;
+        quests?: Record<string, { progress?: number | string; complete?: boolean }>;
         activeTrade?: ActiveTrade;
     };
     nearby?: {
