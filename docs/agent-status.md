@@ -904,3 +904,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-28 12:45 codex branch=agents/wip workstream=CAPABILITY-EQUIP-QA STARTING - add verified equip/tool-use behavior and update resident capability evidence. Files: spark routines/tests, capabilities doc. collision=none.
 2026-05-28 12:46 codex branch=agents/wip workstream=CAPABILITY-EQUIP-QA HANDOFF - SHA=04f07dca fixed resident equip normalization + gear prep benchmark. live equipment-prep=pass score1. fin=2200/2200 build=715.
 2026-05-28 13:02 codex branch=agents/wip workstream=CAPABILITY-LEVELUP-QA STARTING - prove resident level-up via live benchmark, expand capability matrix/backlog. Files: benchmark task, resident create skills if needed, capabilities doc. collision=none.
+2026-05-28 13:03 codex branch=agents/wip workstream=CAPABILITY-LEVELUP-QA HANDOFF - SHA=1cd3ba62 added level-up+bone-bury benchmarks. live both pass score1. fin=2210/2210 build=719.
