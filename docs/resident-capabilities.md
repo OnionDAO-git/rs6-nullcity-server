@@ -29,6 +29,8 @@ Sources checked:
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528194011_cooks_assistant_start_3m.json`
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528195818_cooks_assistant_start_3m.json` (failed pre-fix autonomous run: talked to Cook once, then stalled because autonomous dialogue did not advance without perception dialogue events)
 - `data/benchmarks/capability-qa-2026-05-28/bench_20260528200549_cooks_assistant_start_3m.json`
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528201331_trading_giving_5m.json`
+- `data/benchmarks/capability-qa-2026-05-28/bench_20260528201447_trading_giving_5m.json`
 - `data/agent-logs/res:bmk_cooks_a_00ih6jm8/2026-05-28.jsonl`
 - `npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27`
 - `npm run controller:bench -- --task equipment-prep-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
@@ -39,6 +41,8 @@ Sources checked:
 - `npm run controller:bench -- --task starter-mining-5m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-28`
 - `npm run controller:bench -- --task cooks-assistant-start-3m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
 - `npm run controller:bench -- --task cooks-assistant-start-3m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-28`
+- `npm run controller:bench -- --task trading-giving-5m --module onion.runescape.standard --output data/benchmarks/capability-qa-2026-05-28`
+- `npm run controller:bench -- --task trading-giving-5m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-28`
 - Ad-hoc log aggregation over 494,839 action records and 23 Library timelines.
 
 Observed live action totals across local controller logs:
@@ -91,7 +95,7 @@ Autonomous benchmark summary from parsed artifacts:
 | `follow-and-chat-5m` | 7 | 100% | 1.000 | Command/chat benchmark passes; live logs show follow fallback behavior. |
 | `memory-recall-3m` | 7 | 100% | 1.000 | Memory retrieval can work in benchmark; broader memory product still needs design. |
 | `explore-report-5m` | 7 | 100% | 1.000 | Residents can move and report surroundings. |
-| `trading-giving-5m` | 3 | 100% | 1.000 | Safe trade FSM passes benchmark; normal live trade actions were not observed in logs scanned. |
+| `trading-giving-5m` | 2 fresh proof runs on 2026-05-28 | 100% | 1.000 | Scripted artifact `bench_20260528201331_trading_giving_5m.json` proved the engine/FSM path: 2 trade requests, 1 trade-open event, 1 trade-completed event, safe offer, both accept stages, and unsafe decline. Autonomous artifact `bench_20260528201447_trading_giving_5m.json` proved the selected `onion.runescape.standard` module can respond to peer trade guidance with 20 selected-module actions: 6 trade requests, 2 trade-open events, 1 completed trade, 1 cancelled trade, 2 safe offers, 2 stage-1 accepts, 2 stage-2 accepts, and 2 unsafe declines in 17.9s. Ordinary named-resident trade logs are still thin. |
 | `equipment-prep-3m` | 2 successful proof runs | 100% after fix | 1.000 | Scripted run proved the engine action mapping; autonomous run `bench_20260528181711_equipment_prep_3m.json` proved the selected `onion.runescape.standard` module equipped gear before safe combat without benchmark-submitted actions. A pre-fix timeout artifact remains in the folder and is intentionally not counted as post-fix capability proof. |
 | `level-up-firemaking-3m` | 1 | 100% | 1.000 | New capability QA task. Resident started one XP below Firemaking 2, lit logs with a real item-on-item action, and emitted `level_up`. |
 | `bury-bones-prayer-3m` | 1 | 100% | 1.000 | New capability QA task. Resident buried carried bones, consumed the item, and gained Prayer XP. |
@@ -128,7 +132,7 @@ Model-sensitive combat result:
 | Remember and recall supplied facts | Yes in benchmark | Limited live evidence | `memory-recall-3m` passed 7/7; patron/memory acknowledgement events observed. | Medium. Memory plumbing works, but the meeting takeaway is still correct: a stronger long-term memory system is needed. |
 | Recover from stuck states | Yes | Yes, but noisy | 112,656 `stuck_detected` and 110,464 `stuck_recovered` timeline moments; multiple stuck-recovery fixes landed. | Medium. Recovery happens often, but the high count means stuckness is still a major behavior tax. |
 | Patron gifts, asks, witnesses, and Shard-facing story hooks | Yes | Yes | 39 `patron_gift`, 4 `patron_witness`, 3 `patron_ask` timeline events; patron profile/check-in/letters are implemented. | Medium-high for persistence/story surfaces; gameplay influence is still early. |
-| Safe trading FSM | Yes in benchmark | Not observed in normal logs scanned | `trading-giving-5m` passed 3/3. No normal live action-log entries with trade action kinds were found in this scan. | Medium as a tested mechanic; low as a proven live behavior. |
+| Safe trading FSM | Yes in scripted and autonomous benchmarks | Autonomous benchmark-proven; ordinary named-resident proof still thin | `trading-giving-5m` passed fresh scripted and autonomous runs on 2026-05-28. The autonomous artifact `bench_20260528201447_trading_giving_5m.json` shows the selected module emitted `trade_request`, `trade_offer_item`, `trade_accept_stage_1`, `trade_accept_stage_2`, and `trade_decline_untrusted_partner`, producing 1 completed trusted trade and 1 cancelled unsafe trade. Historical ordinary-controller action scan still found no named-resident trade sessions outside the harness. | Medium-high as a verified module capability; needs real operator/named-resident proof with inventory delta and no-loop soak. |
 | Questing | Partial | Autonomous quest-start benchmark-proven; completion unproven | `cooks-assistant-start-3m` now passes in scripted and autonomous modes. The scripted pass fixed resident dialogue continuation/choice against the normal chatbox widget. The autonomous pass added a Cook-specific goal/body routine and a pending quest-dialogue sequence so a resident can talk to `rs:lumbridge_castle_cook`, continue dialogue, choose first options, and reach Cook's Assistant progress stage 50 without benchmark-submitted actions. | Medium-high for starter quest initiation; low for item gathering and full quest completion. |
 | Cross-resident awareness | Implemented | Needs live proof | L3 LoreBus inbox shipped and tests passed; nearby world events can enter perception envelopes. | Low-medium until a live run shows residents acting on those events. |
 | Dashboard/story visibility | Yes | Yes | Public/server JSON surfaces, Library portraits, patron profiles, wall/graveyard routes, and dashboard metadata exist. | Medium-high for human viewing; dashboard should show model/endpoint/SPARK per resident next. |
@@ -159,7 +163,7 @@ The main weakness is not that residents are dead. They are not dead. The weaknes
 - Equipping/wielding gear is now autonomous-benchmark-proven, but normal long-running named residents have not yet been observed choosing it outside a dedicated task.
 - Quest start is now proven for Cook's Assistant in both scripted and autonomous benchmark modes; quest item gathering, returning to the NPC, and full completion are not proven yet.
 - "Goal-as-orientation" is not deeply proven yet. Residents can execute known workflows better than they can invent long multi-step plans.
-- Trading works in benchmark, but normal live proof is thin.
+- Trading is now proven in scripted and autonomous benchmarks, including safe offer, two-stage accept, completed trusted trade, and unsafe decline. It still needs a real operator/named-resident proof outside the harness.
 - Long-term memory is not yet at the level Dev described in the meeting: NPCs met, quests received, deaths, routes, and learned facts should become more durable and retrievable.
 - Stuck recovery works, but the volume of stuck/recovered events shows pathing and local loops still need attention.
 
@@ -182,7 +186,7 @@ To make this doc stronger, run the following as repeated experiments:
 3. **Stuck-door recovery:** target behind a door or failed coordinate loop. Score door opening, target clearing, and route change.
 4. **Patron conflict:** patron guidance vs distracting local chat. Score whether Shards influence priority without direct puppet control.
 5. **Memory route recall:** teach a bank/resource fact, wait, then ask the resident to use it later.
-6. **Live trade proof:** run a real operator trade scenario and confirm action-log trade verbs, inventory transfer, and safe decline behavior.
+6. **Live operator trade proof:** the benchmark now proves scripted and autonomous trade behavior; next run a manual operator trade with a named resident and confirm action-log trade verbs, inventory transfer, and safe decline behavior outside the harness.
 7. **Normal gear soak:** give two or three long-running named combat residents unequipped training gear and confirm their ordinary controller logs show equip/wield before combat, outside benchmark harnesses.
 
 ## Expanded Capability Backlog
@@ -225,8 +229,8 @@ This document is **not complete**. It is now a good evidence-backed starting poi
 | NPCs | Continue dialogue / choose option | Proven in scripted and autonomous benchmarks | Resident `dialogue_continue` and zero-based `dialogue_choice` drive the normal chatbox widget path. The autonomous pass emitted 12 dialogue actions and 4 first-option choices from the selected SPARK module. |
 | Quests | Start a starter quest | Proven in scripted and autonomous benchmarks | Cook's Assistant reached progress stage 50 in scripted and autonomous live benchmarks. Next proof should gather the quest items and complete the quest. |
 | Quests | Complete a quest stage | Partial | Cook's Assistant start milestone proven; item gathering and quest completion are still unproven. |
-| Trade | Resident-to-player trade request | Proven in benchmark/FSM | Needs live operator proof with inventory delta. |
-| Trade | Offer/accept/decline safely | Proven in benchmark/FSM | Needs no-loop soak test. |
+| Trade | Resident-to-player trade request | Proven in scripted and autonomous benchmarks | `bench_20260528201447_trading_giving_5m.json` shows 6 selected-module `trade_request` attempts after peer trade guidance. Next proof should use a manual operator + named resident and record inventory delta. |
+| Trade | Offer/accept/decline safely | Proven in scripted and autonomous benchmarks | Autonomous proof includes safe item offers, both accept stages, 1 completed trusted trade, 1 cancelled unsafe trade, and 2 unsafe declines. Next proof is a no-loop soak with repeated trade prompts. |
 | Patron | Daily check-in and Shard balance | Implemented | Human-facing surface is available; needs event-day SOP. |
 | Patron | Patron gift affects resident attention/story | Partial | Timeline proof exists; gameplay priority override needs stronger proof. |
 | Memory | Store timeline moments | Proven | Library timelines are rich. |
