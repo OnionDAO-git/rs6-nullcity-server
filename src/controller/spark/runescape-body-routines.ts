@@ -138,6 +138,11 @@ const LUMBRIDGE_COOK_KEY = 'rs:lumbridge_castle_cook';
 const COOKS_ASSISTANT_BUCKET_OF_MILK = 1927;
 const COOKS_ASSISTANT_POT_OF_FLOUR = 1933;
 const COOKS_ASSISTANT_EGG = 1944;
+const COOKS_ASSISTANT_INGREDIENTS: ReadonlyArray<{ itemId: number; label: string }> = [
+    { itemId: COOKS_ASSISTANT_BUCKET_OF_MILK, label: 'a bucket of milk' },
+    { itemId: COOKS_ASSISTANT_POT_OF_FLOUR, label: 'a pot of flour' },
+    { itemId: COOKS_ASSISTANT_EGG, label: 'an egg' },
+];
 
 /** Closed double-door IDs for the south Lumbridge Castle entrance. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_CLOSED_DOOR_IDS: ReadonlySet<number> = new Set([1516, 1519]);
@@ -1575,9 +1580,13 @@ export function cooksAssistantQuestAction(
 
     const missing = missingCooksAssistantIngredients(perception.resident?.inventory || []);
     if (missing.length > 0) {
+        const pickup = cooksAssistantIngredientPickupAction(perception, missing, targetFailureCooldowns, currentTick);
+        if (pickup) {
+            return pickup;
+        }
         return {
             kind: 'say',
-            text: `Cook still needs ${formatIngredientList(missing)}.`,
+            text: `Cook still needs ${formatIngredientList(missing.map(ingredient => ingredient.label))}.`,
             cause: 'cooks_assistant_missing_ingredients',
         };
     }
@@ -1642,18 +1651,34 @@ function isLumbridgeCook(actor: BodyActor): boolean {
     );
 }
 
-function missingCooksAssistantIngredients(inventory: Array<BodyItem | null>): string[] {
-    const missing: string[] = [];
-    if (!inventory.some(item => item?.itemId === COOKS_ASSISTANT_BUCKET_OF_MILK)) {
-        missing.push('a bucket of milk');
+function missingCooksAssistantIngredients(inventory: Array<BodyItem | null>): Array<{ itemId: number; label: string }> {
+    return COOKS_ASSISTANT_INGREDIENTS.filter(ingredient => !inventory.some(item => item?.itemId === ingredient.itemId));
+}
+
+function cooksAssistantIngredientPickupAction(
+    perception: BodyHybridPerception,
+    missing: ReadonlyArray<{ itemId: number; label: string }>,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
+        return undefined;
     }
-    if (!inventory.some(item => item?.itemId === COOKS_ASSISTANT_POT_OF_FLOUR)) {
-        missing.push('a pot of flour');
+    const missingIds = new Set(missing.map(ingredient => ingredient.itemId));
+    const item = (perception.nearby?.worldItems || [])
+        .filter(
+            candidate =>
+                missingIds.has(candidate.itemId) &&
+                sameLevel(here, candidate.position) &&
+                !isOwnedByAnotherActor(candidate, undefined, perception.resident?.id) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!item) {
+        return undefined;
     }
-    if (!inventory.some(item => item?.itemId === COOKS_ASSISTANT_EGG)) {
-        missing.push('an egg');
-    }
-    return missing;
+    return { kind: 'interact', target: item, option: 'pick-up', cause: 'cooks_assistant_pickup_ingredient' };
 }
 
 function formatIngredientList(items: string[]): string {

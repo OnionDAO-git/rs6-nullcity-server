@@ -14,6 +14,10 @@ import { BURY_BONES_PRAYER_3M_TASK_ID, makeBuryBonesPrayer3mBenchmarkTask } from
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
 import { COOKS_ASSISTANT_COMPLETE_5M_TASK_ID, makeCooksAssistantComplete5mBenchmarkTask } from './tasks/cooks-assistant-complete-5m';
 import { COOKS_ASSISTANT_START_3M_TASK_ID, makeCooksAssistantStart3mBenchmarkTask } from './tasks/cooks-assistant-start-3m';
+import {
+    COOKS_ASSISTANT_VISIBLE_INGREDIENTS_5M_TASK_ID,
+    makeCooksAssistantVisibleIngredients5mBenchmarkTask,
+} from './tasks/cooks-assistant-visible-ingredients-5m';
 import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './tasks/equipment-prep-3m';
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
@@ -248,6 +252,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === COOKS_ASSISTANT_COMPLETE_5M_TASK_ID) {
         return makeCooksAssistantComplete5mBenchmarkTask();
+    }
+    if (taskId === COOKS_ASSISTANT_VISIBLE_INGREDIENTS_5M_TASK_ID) {
+        return makeCooksAssistantVisibleIngredients5mBenchmarkTask();
     }
     if (taskId === FISHING_COOKING_10M_TASK_ID) {
         return makeFishingCooking10mBenchmarkTask();

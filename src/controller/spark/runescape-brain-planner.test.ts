@@ -341,6 +341,13 @@ describe('benchmarkGoalForTask', () => {
         expect(isCooksAssistantQuestGoal(g!)).toBe(true);
     });
 
+    it("returns a Cook's Assistant completion goal for visible ingredient pickup benchmarks", () => {
+        const g = benchmarkGoalForTask('cooks-assistant-visible-ingredients-5m', 0);
+
+        expect(g?.id).toBe('complete-cooks-assistant');
+        expect(isCooksAssistantQuestGoal(g!)).toBe(true);
+    });
+
     it("returns starterFishingCookingGoal for 'fishing-cooking-10m'", () => {
         const g = benchmarkGoalForTask('fishing-cooking-10m', 0);
         expect(g?.id).toBe('catch-and-cook-starter-fish');

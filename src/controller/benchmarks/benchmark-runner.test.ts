@@ -378,6 +378,51 @@ describe('BenchmarkRunner', () => {
         expect(artifact.evidence.summaries).toContain('Autonomous verifier saw module evidence.');
     });
 
+    it('runs task setup before starting autonomous runtime', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const order: string[] = [];
+        const module = { id: 'onion.runescape.standard', version: '0.1.0' };
+        const autonomousRuntime = {
+            start: jest.fn(async context => {
+                order.push('runtime:start');
+                context.recordActionAttempt({
+                    requestId: 'auto-action-1',
+                    action: { kind: 'say', text: 'ready after setup' },
+                    result: { ok: true },
+                    source: 'thinking',
+                    sparkModule: module,
+                });
+            }),
+            stop: jest.fn(async () => undefined),
+        };
+        const task: BenchmarkTask = {
+            id: 'make-fire-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            setup: jest.fn(async context => {
+                order.push('setup');
+                await context.submitAction({ kind: 'drop', slot: 0, cause: 'benchmark_seed_ground_item' });
+            }),
+            run: jest.fn(async () => ({ status: 'passed' as const, score: 1 })),
+            runAutonomous: jest.fn(async () => {
+                order.push('runAutonomous');
+                return { status: 'passed' as const, score: 1 };
+            }),
+        };
+
+        const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime, module }).run();
+
+        expect(order).toEqual(['setup', 'runtime:start', 'runAutonomous']);
+        expect(gateway.submitActionWithRequestId).toHaveBeenCalledWith(expect.any(String), {
+            kind: 'drop',
+            slot: 0,
+            cause: 'benchmark_seed_ground_item',
+        });
+        expect(artifact.status).toBe('passed');
+        expect(artifact.metrics.untaggedActions).toBe(1);
+        expect(artifact.metrics.selectedModuleActions).toBe(1);
+    });
+
     it('copies inference metadata into benchmark artifacts', async () => {
         const gateway = new MockBenchmarkGateway();
         const task: BenchmarkTask = {

@@ -356,7 +356,7 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'cooks-assistant-start-3m') {
         return cooksAssistantStartGoal(tick);
     }
-    if (taskId === 'cooks-assistant-complete-5m') {
+    if (taskId === 'cooks-assistant-complete-5m' || taskId === 'cooks-assistant-visible-ingredients-5m') {
         return cooksAssistantQuestGoal(tick);
     }
     if (taskId === 'fishing-cooking-10m') {

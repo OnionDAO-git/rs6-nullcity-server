@@ -208,6 +208,20 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"cooks-assistant-complete-5m","version":"0.1.0"');
     });
 
+    it('can dry-run the Cooks Assistant visible ingredient benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'cooks-assistant-visible-ingredients-5m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"cooks-assistant-visible-ingredients-5m","version":"0.1.0"');
+    });
+
     it('can dry-run the fishing-cooking benchmark task', async () => {
         const writes: string[] = [];
 

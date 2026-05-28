@@ -365,6 +365,15 @@ describe('cooksAssistantQuestAction', () => {
         };
     }
 
+    function questIngredient(itemId: number, x: number, y: number): BodyWorldItem {
+        return {
+            itemId,
+            key: `rs:quest_ingredient_${itemId}`,
+            amount: 1,
+            position: { x, y, level: 0 },
+        };
+    }
+
     it('starts Cook Assistant before hand-in when quest progress is not started', () => {
         const target = cook(101, 100);
         const action = cooksAssistantQuestAction(
@@ -477,6 +486,57 @@ describe('cooksAssistantQuestAction', () => {
             kind: 'say',
             text: 'Cook still needs a pot of flour and an egg.',
             cause: 'cooks_assistant_missing_ingredients',
+        });
+    });
+
+    it('picks up a visible missing Cook Assistant ingredient before reporting missing ingredients', () => {
+        const egg = questIngredient(1944, 101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                    ],
+                },
+                nearby: {
+                    npcs: [cook(101, 100)],
+                    worldItems: [egg],
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: egg,
+            option: 'pick-up',
+            cause: 'cooks_assistant_pickup_ingredient',
+        });
+    });
+
+    it('picks the nearest visible missing Cook Assistant ingredient when several are nearby', () => {
+        const farEgg = questIngredient(1944, 108, 100);
+        const nearFlour = questIngredient(1933, 101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [{ itemId: 1927, amount: 1 }],
+                },
+                nearby: {
+                    worldItems: [farEgg, nearFlour],
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: nearFlour,
+            option: 'pick-up',
+            cause: 'cooks_assistant_pickup_ingredient',
         });
     });
 

@@ -5,6 +5,18 @@
         "tradable": true,
         "weight": 0.1
     },
+    "rs:bucket_of_milk": {
+        "game_id": 1927,
+        "examine": "It's a bucket of milk.",
+        "tradable": true,
+        "weight": 1.1
+    },
+    "rs:pot_of_flour": {
+        "game_id": 1933,
+        "examine": "There is flour in this pot.",
+        "tradable": true,
+        "weight": 0.453
+    },
     "rs:egg": {
         "game_id": 1944,
         "examine": "A nice fresh egg.",
