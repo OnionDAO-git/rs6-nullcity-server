@@ -115,6 +115,21 @@ export class GatewayClient extends EventEmitter {
         return this.submitActionWithRequestId(name, action).then(value => value.ackResult);
     }
 
+    inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }> {
+        return this.request('inspect_resident_gold', { name }).then(
+            value => readPayload(value) as { resident: string; itemId: 995; amount: number },
+        );
+    }
+
+    burnResidentGold(
+        name: string,
+        amount: number,
+    ): Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }> {
+        return this.request('burn_resident_gold', { name, amount }).then(
+            value => readPayload(value) as { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number },
+        );
+    }
+
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {
         return this.requestWithId('submit_action', { name, action }).then(({ requestId, value }) => {
             const payload = readPayload(value);

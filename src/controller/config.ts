@@ -61,6 +61,10 @@ export interface ControllerCliOptions {
     lettersHttpHost: string;
     lettersHttpPath: string;
     lettersHttpWallRedact: boolean;
+    cityHttpPort?: number;
+    cityHttpHost: string;
+    cityHttpPathPrefix: string;
+    cityHttpToken?: string;
 }
 
 const DEFAULT_CONFIG_PATH = 'controller.yml';
@@ -77,6 +81,10 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
     let lettersHttpPath = process.env.CONTROLLER_LETTERS_HTTP_PATH || '/v1/inbox';
     let lettersHttpWallRedact =
         readEnvBoolean(process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT, false) || readEnvBoolean(process.env.CONTROLLER_WALL_REDACT, false);
+    let cityHttpPort = readOptionalPort(process.env.CONTROLLER_CITY_HTTP_PORT, 'CONTROLLER_CITY_HTTP_PORT');
+    let cityHttpHost = process.env.CONTROLLER_CITY_HTTP_HOST || '127.0.0.1';
+    let cityHttpPathPrefix = process.env.CONTROLLER_CITY_HTTP_PATH_PREFIX || '/api/nullcity';
+    let cityHttpToken = readOptionalString(process.env.CONTROLLER_CITY_HTTP_TOKEN || process.env.CITY_DASHBOARD_NULLCITY_TOKEN);
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
@@ -140,6 +148,42 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
             lettersHttpPath = arg.slice('--letters-http-path='.length);
         } else if (arg === '--letters-http-wall-redact' || arg === '--wall-redact') {
             lettersHttpWallRedact = true;
+        } else if (arg === '--city-http-port') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a port`);
+            }
+            cityHttpPort = readOptionalPort(next, arg);
+            i += 1;
+        } else if (arg.startsWith('--city-http-port=')) {
+            cityHttpPort = readOptionalPort(arg.slice('--city-http-port='.length), '--city-http-port');
+        } else if (arg === '--city-http-host') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a host`);
+            }
+            cityHttpHost = next;
+            i += 1;
+        } else if (arg.startsWith('--city-http-host=')) {
+            cityHttpHost = arg.slice('--city-http-host='.length);
+        } else if (arg === '--city-http-path-prefix') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a path prefix`);
+            }
+            cityHttpPathPrefix = next;
+            i += 1;
+        } else if (arg.startsWith('--city-http-path-prefix=')) {
+            cityHttpPathPrefix = arg.slice('--city-http-path-prefix='.length);
+        } else if (arg === '--city-http-token') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a token`);
+            }
+            cityHttpToken = next;
+            i += 1;
+        } else if (arg.startsWith('--city-http-token=')) {
+            cityHttpToken = arg.slice('--city-http-token='.length);
         } else if (arg === '--config' || arg === '-c') {
             const next = argv[i + 1];
             if (!next) {
@@ -163,6 +207,10 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
         lettersHttpHost,
         lettersHttpPath,
         lettersHttpWallRedact,
+        cityHttpPort,
+        cityHttpHost,
+        cityHttpPathPrefix,
+        cityHttpToken,
     };
 }
 

@@ -1,6 +1,6 @@
+import type { Appearance } from '@engine/world/actor/player/player-data';
 import { type ActionResult, type AgentAction, AgentActionSchema } from '@engine/world/actor/resident/action/agent-action';
 import type { Perception } from '@engine/world/actor/resident/perception/perception-types';
-import type { Appearance } from '@engine/world/actor/player/player-data';
 import { z } from 'zod';
 
 export const AGENT_PROTOCOL_VERSION = 1;
@@ -63,6 +63,8 @@ export type ClientMessage =
     | AgentFrame<'connect_resident', { name: string; observe?: boolean; control?: boolean; onDisconnect?: DisconnectPolicy }>
     | AgentFrame<'attach', { name: string; observe?: boolean; control?: boolean }>
     | AgentFrame<'submit_action', { name: string; action: AgentAction }>
+    | AgentFrame<'inspect_resident_gold', { name: string }>
+    | AgentFrame<'burn_resident_gold', { name: string; amount: number }>
     | AgentFrame<'detach', { name: string }>
     | AgentFrame<'disconnect_resident', { name: string; cause?: string }>
     | AgentFrame<'pause_resident', { name: string; cause?: string }>
@@ -74,6 +76,8 @@ export type ServerMessage =
     | AgentFrame<'observable_subject_list', { subjects: ObservableSubjectSummary[] }>
     | AgentFrame<'resident_created', { resident: ResidentSummary }>
     | AgentFrame<'resident_connected', { resident: ResidentSummary; perception: Perception | null }>
+    | AgentFrame<'resident_gold', { resident: string; itemId: 995; amount: number }>
+    | AgentFrame<'resident_gold_burned', { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>
     | AgentFrame<'resident_disconnected', { name: string; cause?: string }>
     | AgentFrame<'resident_paused', { name: string; cause?: string }>
     | AgentFrame<'spectator_connected', { sessionId: string; subject: SpectatorSubject; initialState: unknown }>
@@ -152,6 +156,8 @@ const clientPayloadSchemas = {
         control: z.boolean().optional(),
     }),
     submit_action: z.object({ name: z.string().min(1), action: AgentActionSchema }),
+    inspect_resident_gold: z.object({ name: z.string().min(1) }),
+    burn_resident_gold: z.object({ name: z.string().min(1), amount: z.number().int().positive() }),
     detach: z.object({ name: z.string().min(1) }),
     disconnect_resident: z.object({ name: z.string().min(1), cause: z.string().optional() }),
     pause_resident: z.object({ name: z.string().min(1), cause: z.string().optional() }),

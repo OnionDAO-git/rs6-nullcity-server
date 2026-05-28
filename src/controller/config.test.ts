@@ -304,4 +304,44 @@ describe('controller config', () => {
         expect(() => parseControllerArgs(['--letters-http-port', 'nope'])).toThrow('--letters-http-port must be an integer port');
         expect(() => parseControllerArgs(['--letters-http-port=70000'])).toThrow('--letters-http-port must be an integer port');
     });
+
+    it('parses optional city integration HTTP flags and env defaults', () => {
+        process.env.CONTROLLER_CITY_HTTP_PORT = '43620';
+        process.env.CONTROLLER_CITY_HTTP_HOST = '127.0.0.4';
+        process.env.CONTROLLER_CITY_HTTP_PATH_PREFIX = '/city/nullcity';
+        process.env.CONTROLLER_CITY_HTTP_TOKEN = 'city-secret';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                cityHttpPort: 43620,
+                cityHttpHost: '127.0.0.4',
+                cityHttpPathPrefix: '/city/nullcity',
+                cityHttpToken: 'city-secret',
+            }),
+        );
+
+        expect(
+            parseControllerArgs([
+                '--city-http-port',
+                '43621',
+                '--city-http-host=127.0.0.1',
+                '--city-http-path-prefix',
+                '/api/nullcity',
+                '--city-http-token=cli-secret',
+            ]),
+        ).toEqual(
+            expect.objectContaining({
+                cityHttpPort: 43621,
+                cityHttpHost: '127.0.0.1',
+                cityHttpPathPrefix: '/api/nullcity',
+                cityHttpToken: 'cli-secret',
+            }),
+        );
+    });
+
+    it('rejects invalid city integration HTTP ports', () => {
+        delete process.env.CONTROLLER_CITY_HTTP_PORT;
+        expect(() => parseControllerArgs(['--city-http-port', 'nope'])).toThrow('--city-http-port must be an integer port');
+        expect(() => parseControllerArgs(['--city-http-port=70000'])).toThrow('--city-http-port must be an integer port');
+    });
 });

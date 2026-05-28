@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { findItem } from '@engine/config/config-handler';
 import { activeWorld } from '@engine/world';
@@ -10,6 +10,7 @@ import { Position } from '@engine/world/position';
 import type { DisconnectPolicy, ResidentSummary } from './protocol/messages';
 
 export const RESIDENT_NAME_PATTERN = /^res:[a-z0-9_-]{1,20}$/;
+export const RESIDENT_GOLD_ITEM_ID = 995;
 
 export const normalizeResidentName = (name: string): string => name.toLowerCase();
 
@@ -21,6 +22,12 @@ export interface ResidentCreateOptions {
     appearance?: Appearance;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
+}
+
+export interface ResidentGoldSummary {
+    resident: string;
+    itemId: typeof RESIDENT_GOLD_ITEM_ID;
+    amount: number;
 }
 
 export class ResidentRegistry {
@@ -144,6 +151,57 @@ export class ResidentRegistry {
         return this.activeResident(name);
     }
 
+    public inspectGold(name: string): ResidentGoldSummary {
+        name = this.assertValidName(name);
+        const resident = this.activeResident(name);
+        if (resident) {
+            return {
+                resident: name,
+                itemId: RESIDENT_GOLD_ITEM_ID,
+                amount: resident.inventory.amount(RESIDENT_GOLD_ITEM_ID),
+            };
+        }
+
+        const save = this.loadOfflineResidentSave(name);
+        return {
+            resident: name,
+            itemId: RESIDENT_GOLD_ITEM_ID,
+            amount: this.containerAmount(save.inventory || [], RESIDENT_GOLD_ITEM_ID),
+        };
+    }
+
+    public burnGold(name: string, amount: number): ResidentGoldSummary {
+        name = this.assertValidName(name);
+        if (!Number.isInteger(amount) || amount <= 0) {
+            throw new Error('EBAD_AMOUNT');
+        }
+
+        const resident = this.activeResident(name);
+        if (resident) {
+            const before = resident.inventory.amount(RESIDENT_GOLD_ITEM_ID);
+            if (before < amount) {
+                throw new Error('EINSUFFICIENT_GOLD');
+            }
+            this.removeFromContainer(resident.inventory.items, RESIDENT_GOLD_ITEM_ID, amount, (slot, item) =>
+                resident.inventory.set(slot, item, false),
+            );
+            resident.emitPerceptionEvent({ kind: 'item_lost', item: { itemId: RESIDENT_GOLD_ITEM_ID, key: 'rs:coins', amount } });
+            resident.save();
+            return { resident: name, itemId: RESIDENT_GOLD_ITEM_ID, amount: before - amount };
+        }
+
+        const save = this.loadOfflineResidentSave(name);
+        const before = this.containerAmount(save.inventory || [], RESIDENT_GOLD_ITEM_ID);
+        if (before < amount) {
+            throw new Error('EINSUFFICIENT_GOLD');
+        }
+        this.removeFromContainer(save.inventory || [], RESIDENT_GOLD_ITEM_ID, amount, (slot, item) => {
+            save.inventory[slot] = item;
+        });
+        this.writeOfflineResidentSave(name, save);
+        return { resident: name, itemId: RESIDENT_GOLD_ITEM_ID, amount: before - amount };
+    }
+
     public controllerFor(name: string): string | undefined {
         name = normalizeResidentName(name);
         if (!this.activeResident(name)) {
@@ -260,5 +318,58 @@ export class ResidentRegistry {
             throw new Error(`EBAD_INITIAL_ITEM:${label}`);
         }
         return value;
+    }
+
+    private loadOfflineResidentSave(name: string): { inventory: Array<Item | null>; [key: string]: unknown } {
+        const savePath = this.residentSavePath(name);
+        if (!existsSync(savePath)) {
+            throw new Error('ENO_SUCH_RESIDENT');
+        }
+        try {
+            const parsed = JSON.parse(readFileSync(savePath, 'utf8')) as { inventory?: Array<Item | null>; [key: string]: unknown };
+            if (!Array.isArray(parsed.inventory)) {
+                parsed.inventory = [];
+            }
+            return parsed as { inventory: Array<Item | null>; [key: string]: unknown };
+        } catch {
+            throw new Error('ESAVE_CORRUPT');
+        }
+    }
+
+    private writeOfflineResidentSave(name: string, save: Record<string, unknown>): void {
+        const savePath = this.residentSavePath(name);
+        const tmpPath = `${savePath}.${process.pid}.${Date.now()}.tmp`;
+        writeFileSync(tmpPath, `${JSON.stringify(save, null, 4)}\n`);
+        renameSync(tmpPath, savePath);
+    }
+
+    private residentSavePath(name: string): string {
+        return join(this.saveDir, `${name.toLowerCase()}.json`);
+    }
+
+    private containerAmount(items: Array<Item | null>, itemId: number): number {
+        return items.reduce((total, item) => total + (item?.itemId === itemId ? item.amount || 0 : 0), 0);
+    }
+
+    private removeFromContainer(
+        items: Array<Item | null>,
+        itemId: number,
+        amount: number,
+        setSlot: (slot: number, item: Item | null) => void,
+    ): void {
+        let remaining = amount;
+        for (let slot = 0; slot < items.length && remaining > 0; slot += 1) {
+            const item = items[slot];
+            if (!item || item.itemId !== itemId) {
+                continue;
+            }
+            if (item.amount > remaining) {
+                setSlot(slot, { ...item, amount: item.amount - remaining });
+                remaining = 0;
+            } else {
+                remaining -= item.amount;
+                setSlot(slot, null);
+            }
+        }
     }
 }
