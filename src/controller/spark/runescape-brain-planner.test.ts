@@ -23,6 +23,8 @@ import {
     cleanSpeech,
     isFiremakingGoal,
     isFollowGoal,
+    isCooksAssistantStartGoal,
+    isCooksAssistantQuestGoal,
     isMiningGoal,
     isPrayerTrainingGoal,
     isStandaloneFiremakingGoal,
@@ -327,6 +329,16 @@ describe('benchmarkGoalForTask', () => {
         const g = benchmarkGoalForTask('cooks-assistant-start-3m', 0);
         expect(g?.id).toBe('start-cooks-assistant');
         expect(g?.description).toContain("Cook's Assistant");
+    });
+
+    it("returns a Cook's Assistant completion goal for 'cooks-assistant-complete-5m'", () => {
+        const g = benchmarkGoalForTask('cooks-assistant-complete-5m', 0);
+
+        expect(g?.id).toBe('complete-cooks-assistant');
+        expect(g?.description).toContain("Complete Cook's Assistant");
+        expect(g).toBeDefined();
+        expect(isCooksAssistantStartGoal(g!)).toBe(false);
+        expect(isCooksAssistantQuestGoal(g!)).toBe(true);
     });
 
     it("returns starterFishingCookingGoal for 'fishing-cooking-10m'", () => {

@@ -217,6 +217,23 @@ export function cooksAssistantStartGoal(tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical `complete-cooks-assistant` Active Goal. */
+export function cooksAssistantQuestGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'complete-cooks-assistant',
+        description: "Complete Cook's Assistant by helping the Lumbridge Cook finish the Duke's birthday cake.",
+        steps: [
+            'Find the Lumbridge Cook',
+            'Start the quest if needed',
+            'Carry a bucket of milk, a pot of flour, and an egg',
+            'Return to the Cook and hand in the ingredients',
+        ],
+        success: "Cook's Assistant is marked complete and the quest ingredients are handed in.",
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
+}
+
 /** Build the canonical `catch-and-cook-starter-fish` Active Goal. */
 export function starterFishingCookingGoal(tick: number): ActiveGoalState {
     return {
@@ -339,6 +356,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'cooks-assistant-start-3m') {
         return cooksAssistantStartGoal(tick);
     }
+    if (taskId === 'cooks-assistant-complete-5m') {
+        return cooksAssistantQuestGoal(tick);
+    }
     if (taskId === 'fishing-cooking-10m') {
         return starterFishingCookingGoal(tick);
     }
@@ -417,7 +437,19 @@ export function isCooksAssistantStartGoal(goal?: ActiveGoalState): boolean {
     if (!goal) {
         return false;
     }
-    return /cook'?s assistant|lumbridge cook|start-cooks-assistant|quest progress stage 50/i.test(
+    const text = `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')} ${goal.success || ''}`;
+    if (/complete-cooks-assistant|complete cook'?s assistant|hand in|ingredient|egg|milk|flour|duke'?s birthday cake/i.test(text)) {
+        return false;
+    }
+    return /start-cooks-assistant|start cook'?s assistant|ask(?:ing)? the lumbridge cook what is wrong|quest progress stage 50/i.test(text);
+}
+
+/** True when the goal looks like a Cook's Assistant quest objective, start or completion. */
+export function isCooksAssistantQuestGoal(goal?: ActiveGoalState): boolean {
+    if (!goal) {
+        return false;
+    }
+    return /cook'?s assistant|lumbridge cook|start-cooks-assistant|complete-cooks-assistant|duke'?s birthday cake|egg|milk|flour/i.test(
         `${goal.id} ${goal.description} ${(goal.steps || []).join(' ')} ${goal.success || ''}`,
     );
 }

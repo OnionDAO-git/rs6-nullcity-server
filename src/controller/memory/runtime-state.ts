@@ -97,6 +97,7 @@ export interface PendingDirectTradeState {
 
 export interface PendingQuestDialogueState {
     questId: string;
+    phase?: string;
     step: number;
     startedAtTick: number;
     updatedAtTick: number;

@@ -57,6 +57,7 @@ import {
     findSlot,
     levelOneWoodcuttingAction,
     starterMiningAction,
+    cooksAssistantQuestAction,
     cooksAssistantStartAction,
     starterFishingCookingAction as bodyStarterFishingCookingAction,
     starterFishingRouteAction,
@@ -108,6 +109,7 @@ import {
     isStarterFishingGoal,
     isMiningGoal,
     isCooksAssistantStartGoal,
+    isCooksAssistantQuestGoal,
     starterFishingGoal,
     miningGoal,
     isCombatTrainingGoal,
@@ -158,7 +160,16 @@ const COOKS_ASSISTANT_DIALOGUE_SEQUENCE: AgentAction[] = [
     { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
     { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
     { kind: 'dialogue_choice', optionIndex: 0, cause: 'cooks_assistant_dialogue_step' },
+    { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
+    { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
+    { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
+    { kind: 'dialogue_choice', optionIndex: 3, cause: 'cooks_assistant_dialogue_step' },
+    { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
 ];
+const COOKS_ASSISTANT_HAND_IN_DIALOGUE_SEQUENCE: AgentAction[] = Array.from({ length: 24 }, () => ({
+    kind: 'dialogue_continue',
+    cause: 'cooks_assistant_hand_in_dialogue_step',
+}));
 export const MOVE_STUCK_NON_IMPROVING_OBSERVATIONS = 4;
 export const MOVE_STUCK_NON_CLOSING_TICKS = 96;
 export const MOVE_STUCK_EQUAL_DISTANCE_DETOUR_OBSERVATIONS = 3;
@@ -1531,7 +1542,7 @@ export function cooksAssistantGoalAction(
     perception: HybridPerception,
 ): { action: AgentAction; cause: string } | undefined {
     const goal = ctx.activeGoal();
-    if (!isCooksAssistantStartGoal(goal)) {
+    if (!isCooksAssistantQuestGoal(goal)) {
         ctx.cognition().pendingQuestDialogue = undefined;
         return undefined;
     }
@@ -1541,10 +1552,13 @@ export function cooksAssistantGoalAction(
         return { action: dialogueAction, cause: dialogueAction.cause || 'cooks_assistant_dialogue_step' };
     }
 
-    const action = cooksAssistantStartAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick);
-    if (action?.kind === 'interact' && action.cause === 'cooks_assistant_talk_to_cook') {
+    const action = isCooksAssistantStartGoal(goal)
+        ? cooksAssistantStartAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick)
+        : cooksAssistantQuestAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick);
+    if (action?.kind === 'interact' && /cooks_assistant_(talk_to_cook|hand_in_ingredients)/.test(action.cause || '')) {
         ctx.cognition().pendingQuestDialogue = {
             questId: COOKS_ASSISTANT_QUEST_ID,
+            phase: action.cause === 'cooks_assistant_hand_in_ingredients' ? 'hand_in' : 'start',
             step: 0,
             startedAtTick: ctx.options.state.tick,
             updatedAtTick: ctx.options.state.tick,
@@ -1560,12 +1574,13 @@ function pendingCooksAssistantDialogueAction(ctx: HelperContext, perception: Hyb
         return undefined;
     }
 
-    if (cooksAssistantQuestStarted(perception)) {
+    if (pending.phase === 'hand_in' && cooksAssistantQuestComplete(perception)) {
         cognition.pendingQuestDialogue = undefined;
         return undefined;
     }
 
-    const action = COOKS_ASSISTANT_DIALOGUE_SEQUENCE[pending.step];
+    const sequence = pending.phase === 'hand_in' ? COOKS_ASSISTANT_HAND_IN_DIALOGUE_SEQUENCE : COOKS_ASSISTANT_DIALOGUE_SEQUENCE;
+    const action = sequence[pending.step];
     if (!action) {
         cognition.pendingQuestDialogue = undefined;
         clearCooksAssistantTargetFailures(cognition.targetFailureCooldowns);
@@ -1573,15 +1588,22 @@ function pendingCooksAssistantDialogueAction(ctx: HelperContext, perception: Hyb
     }
 
     const nextStep = pending.step + 1;
-    cognition.pendingQuestDialogue =
-        nextStep >= COOKS_ASSISTANT_DIALOGUE_SEQUENCE.length
-            ? undefined
-            : {
-                  ...pending,
-                  step: nextStep,
-                  updatedAtTick: ctx.options.state.tick,
-              };
+    if (nextStep >= sequence.length) {
+        cognition.pendingQuestDialogue = undefined;
+        clearCooksAssistantTargetFailures(cognition.targetFailureCooldowns);
+    } else {
+        cognition.pendingQuestDialogue = {
+            ...pending,
+            step: nextStep,
+            updatedAtTick: ctx.options.state.tick,
+        };
+    }
     return action;
+}
+
+function cooksAssistantQuestComplete(perception: HybridPerception): boolean {
+    const quest = perception.resident?.quests?.[COOKS_ASSISTANT_QUEST_ID];
+    return quest?.complete === true || quest?.progress === 'complete';
 }
 
 function cooksAssistantQuestStarted(perception: HybridPerception): boolean {
@@ -2515,7 +2537,7 @@ export function goalRoutineOverride(
         }
     }
 
-    if (isCooksAssistantStartGoal(goal)) {
+    if (isCooksAssistantQuestGoal(goal)) {
         const cooksAssistantAction = cooksAssistantGoalAction(ctx, perception);
         if (cooksAssistantAction) {
             return cooksAssistantAction;

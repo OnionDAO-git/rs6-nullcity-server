@@ -12,6 +12,7 @@ import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
 import { BURY_BONES_PRAYER_3M_TASK_ID, makeBuryBonesPrayer3mBenchmarkTask } from './tasks/bury-bones-prayer-3m';
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
+import { COOKS_ASSISTANT_COMPLETE_5M_TASK_ID, makeCooksAssistantComplete5mBenchmarkTask } from './tasks/cooks-assistant-complete-5m';
 import { COOKS_ASSISTANT_START_3M_TASK_ID, makeCooksAssistantStart3mBenchmarkTask } from './tasks/cooks-assistant-start-3m';
 import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './tasks/equipment-prep-3m';
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
@@ -50,6 +51,7 @@ const CORE_TASK_IDS = [
     STARTER_FISHING_5M_TASK_ID,
     STARTER_MINING_5M_TASK_ID,
     COOKS_ASSISTANT_START_3M_TASK_ID,
+    COOKS_ASSISTANT_COMPLETE_5M_TASK_ID,
     FISHING_COOKING_10M_TASK_ID,
     EQUIPMENT_PREP_3M_TASK_ID,
     LEVEL_UP_FIREMAKING_3M_TASK_ID,
@@ -243,6 +245,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === COOKS_ASSISTANT_START_3M_TASK_ID) {
         return makeCooksAssistantStart3mBenchmarkTask();
+    }
+    if (taskId === COOKS_ASSISTANT_COMPLETE_5M_TASK_ID) {
+        return makeCooksAssistantComplete5mBenchmarkTask();
     }
     if (taskId === FISHING_COOKING_10M_TASK_ID) {
         return makeFishingCooking10mBenchmarkTask();

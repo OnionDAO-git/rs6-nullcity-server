@@ -25,6 +25,7 @@ import {
     opportunisticPickupAction,
     prayerTrainingAction,
     cooksAssistantStartAction,
+    cooksAssistantQuestAction,
     starterFishingAction,
     starterFishingCookingAction,
     starterFishingRouteAction,
@@ -343,6 +344,153 @@ describe('cooksAssistantStartAction', () => {
                 resident: {
                     position: { x: 100, y: 100, level: 0 },
                     quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                },
+                nearby: { npcs: [cook(101, 100)] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('cooksAssistantQuestAction', () => {
+    function cook(x: number, y: number): BodyActor {
+        return {
+            id: `npc:cook-${x}-${y}`,
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('starts Cook Assistant before hand-in when quest progress is not started', () => {
+        const target = cook(101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [{ itemId: 1927, amount: 1 }],
+                },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_talk_to_cook',
+        });
+    });
+
+    it('talks to the Cook for hand-in when progress is 50 and all ingredients are carried', () => {
+        const target = cook(101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_hand_in_ingredients',
+        });
+    });
+
+    it('moves into interaction range when Cook is temporarily hidden after quest start', () => {
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 3210, y: 3215, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3208, y: 3215, level: 0 },
+            range: 1,
+            cause: 'cooks_assistant_find_cook',
+        });
+    });
+
+    it('ignores stale Cook target cooldowns after quest start when ingredients are ready to hand in', () => {
+        const target = cook(3207, 3215);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 3208, y: 3215, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [target] },
+            }),
+            { 'actor-key:rs:lumbridge_castle_cook': 20 },
+            25,
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_hand_in_ingredients',
+        });
+    });
+
+    it('reports missing ingredients instead of repeatedly talking to Cook at stage 50', () => {
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [{ itemId: 1927, amount: 1 }],
+                },
+                nearby: { npcs: [cook(101, 100)] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'Cook still needs a pot of flour and an egg.',
+            cause: 'cooks_assistant_missing_ingredients',
+        });
+    });
+
+    it('does nothing once Cook Assistant is complete', () => {
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 'complete', complete: true } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
                 },
                 nearby: { npcs: [cook(101, 100)] },
             }),

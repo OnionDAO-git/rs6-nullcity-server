@@ -27,6 +27,9 @@ export const createNullSocket = (): Socket => {
     const socket = new NullSocketCore();
     return new Proxy(socket, {
         get(target, property, receiver) {
+            if (property === Symbol.toStringTag) {
+                return 'NullSocket';
+            }
             if (property in target) {
                 return Reflect.get(target, property, receiver);
             }

@@ -135,6 +135,9 @@ export const LUMBRIDGE_COOK_POSITION: BodyPos = { x: 3208, y: 3215, level: 0 };
 
 const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
 const LUMBRIDGE_COOK_KEY = 'rs:lumbridge_castle_cook';
+const COOKS_ASSISTANT_BUCKET_OF_MILK = 1927;
+const COOKS_ASSISTANT_POT_OF_FLOUR = 1933;
+const COOKS_ASSISTANT_EGG = 1944;
 
 /** Closed double-door IDs for the south Lumbridge Castle entrance. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_CLOSED_DOOR_IDS: ReadonlySet<number> = new Set([1516, 1519]);
@@ -1531,7 +1534,7 @@ export function cooksAssistantStartAction(
             return {
                 kind: 'move_to',
                 target: LUMBRIDGE_COOK_POSITION,
-                range: 3,
+                range: INTERACTION_APPROACH_RADIUS,
                 cause: 'cooks_assistant_find_cook',
             };
         }
@@ -1555,6 +1558,72 @@ export function cooksAssistantStartAction(
     };
 }
 
+/** Complete Cook's Assistant: start it if needed, then hand in carried ingredients to the Lumbridge Cook. */
+export function cooksAssistantQuestAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const quest = perception.resident?.quests?.[COOKS_ASSISTANT_QUEST_ID];
+    if (quest?.complete === true || quest?.progress === 'complete') {
+        return undefined;
+    }
+
+    if (!cooksAssistantStarted(perception)) {
+        return cooksAssistantStartAction(perception, targetFailureCooldowns, currentTick);
+    }
+
+    const missing = missingCooksAssistantIngredients(perception.resident?.inventory || []);
+    if (missing.length > 0) {
+        return {
+            kind: 'say',
+            text: `Cook still needs ${formatIngredientList(missing)}.`,
+            cause: 'cooks_assistant_missing_ingredients',
+        };
+    }
+
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const cook = (perception.nearby?.npcs || [])
+        .filter(isLumbridgeCook)
+        .filter(npc => sameLevel(here, npc.position))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    if (!cook) {
+        if (!sameLevel(here, LUMBRIDGE_COOK_POSITION)) {
+            return undefined;
+        }
+        if (distance(here, LUMBRIDGE_COOK_POSITION) > INTERACTION_APPROACH_RADIUS) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_COOK_POSITION,
+                range: INTERACTION_APPROACH_RADIUS,
+                cause: 'cooks_assistant_find_cook',
+            };
+        }
+        return undefined;
+    }
+
+    if (distance(here, cook.position) > INTERACTION_APPROACH_RADIUS) {
+        return {
+            kind: 'move_to',
+            target: cook.position,
+            range: 1,
+            cause: 'cooks_assistant_approach_cook',
+        };
+    }
+
+    return {
+        kind: 'interact',
+        target: cook,
+        option: 'talk-to',
+        cause: 'cooks_assistant_hand_in_ingredients',
+    };
+}
+
 function cooksAssistantStarted(perception: BodyHybridPerception): boolean {
     const quest = perception.resident?.quests?.[COOKS_ASSISTANT_QUEST_ID];
     if (!quest) {
@@ -1571,6 +1640,30 @@ function isLumbridgeCook(actor: BodyActor): boolean {
             /^npc:cook/i.test(actor.id || '') ||
             /lumbridge.*cook/i.test(`${actor.key || ''} ${actor.name || ''}`))
     );
+}
+
+function missingCooksAssistantIngredients(inventory: Array<BodyItem | null>): string[] {
+    const missing: string[] = [];
+    if (!inventory.some(item => item?.itemId === COOKS_ASSISTANT_BUCKET_OF_MILK)) {
+        missing.push('a bucket of milk');
+    }
+    if (!inventory.some(item => item?.itemId === COOKS_ASSISTANT_POT_OF_FLOUR)) {
+        missing.push('a pot of flour');
+    }
+    if (!inventory.some(item => item?.itemId === COOKS_ASSISTANT_EGG)) {
+        missing.push('an egg');
+    }
+    return missing;
+}
+
+function formatIngredientList(items: string[]): string {
+    if (items.length <= 1) {
+        return items[0] || 'the quest ingredients';
+    }
+    if (items.length === 2) {
+        return `${items[0]} and ${items[1]}`;
+    }
+    return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
 
 /** Human-readable label for inventory/world items. Strips the `rs:` prefix and underscores. */
