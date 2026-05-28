@@ -895,3 +895,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-27 21:56 codex branch=agents/wip workstream=MODEL-INTEL HANDOFF - SHA=7c9cfc55: cap active residents at 20 (25 stretch); Qwen 0/6 combat, Qwopus 3/6, Haiku 3/6; Sonnet best situational only. format+diffcheck green.
 
 2026-05-28 11:38 codex branch=agents/wip workstream=MODEL-BENCH-PLUMBING STARTING - add benchmark profile metadata/cost fields and provider response parsing for fair paid/local model tests. Files: src/controller/{config,llm,benchmarks} tests/docs. collision=none.
+2026-05-28 12:00 codex branch=agents/wip workstream=MODEL-BENCH-PLUMBING HANDOFF - SHA=4472bc71 profiles split endpoints/models; corrected invalid cross-load docs; canary inf_qwen 3.6s vs spacetower_qwopus 0.5s. fin=2182/2182 build=711.
