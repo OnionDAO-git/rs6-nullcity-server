@@ -41,31 +41,44 @@ export class GatewayServer extends SocketServer {
 
         if (packetId === 15) {
             this.serverType = 'update_server';
-            this.updateServerSocket = createConnection({
-                host: serverConfig.updateServerHost,
-                port: serverConfig.updateServerPort,
-            });
+            const updateTarget = upstreamTarget('update', serverConfig.updateServerHost, serverConfig.updateServerPort);
+            this.updateServerSocket = createConnection(updateTarget);
             this.updateServerSocket.on('data', data => this.clientSocket.write(data));
             this.updateServerSocket.on('end', () => {
                 logger.info(`Update server connection closed.`);
+                this.clientSocket.destroy();
             });
-            this.updateServerSocket.on('error', () => {
-                logger.error(`Update server error.`);
+            this.updateServerSocket.on('error', error => {
+                logger.error(`Update server error (${updateTarget.host}:${updateTarget.port}): ${error.message}`);
+                this.clientSocket.destroy();
+            });
+            this.updateServerSocket.on('timeout', () => {
+                logger.error(`Update server timed out (${updateTarget.host}:${updateTarget.port}).`);
+                this.updateServerSocket.destroy();
+                this.clientSocket.destroy();
             });
             this.updateServerSocket.setNoDelay(true);
             this.updateServerSocket.setKeepAlive(true);
             this.updateServerSocket.setTimeout(30000);
         } else if (packetId === 14) {
             this.serverType = 'login_server';
-            this.loginServerSocket = createConnection({
-                host: serverConfig.loginServerHost,
-                port: serverConfig.loginServerPort,
-            });
+            const loginTarget = upstreamTarget('login', serverConfig.loginServerHost, serverConfig.loginServerPort);
+            this.loginServerSocket = createConnection(loginTarget);
             this.loginServerSocket.on('data', data => {
                 this.parseLoginServerResponse(new ByteBuffer(data));
             });
             this.loginServerSocket.on('end', () => {
-                logger.error(`Login server error.`);
+                logger.error(`Login server connection closed.`);
+                this.clientSocket.destroy();
+            });
+            this.loginServerSocket.on('error', error => {
+                logger.error(`Login server error (${loginTarget.host}:${loginTarget.port}): ${error.message}`);
+                this.clientSocket.destroy();
+            });
+            this.loginServerSocket.on('timeout', () => {
+                logger.error(`Login server timed out (${loginTarget.host}:${loginTarget.port}).`);
+                this.loginServerSocket.destroy();
+                this.clientSocket.destroy();
             });
             this.loginServerSocket.setNoDelay(true);
             this.loginServerSocket.setKeepAlive(true);
@@ -179,4 +192,14 @@ export class GatewayServer extends SocketServer {
 
         await player.init();
     }
+}
+
+type UpstreamKind = 'login' | 'update';
+
+export function upstreamTarget(kind: UpstreamKind, host: string, port: number): { host: string; port: number } {
+    if (host === '0.0.0.0' || host === '::' || host === '[::]') {
+        logger.warn(`${kind} server host ${host} is a bind-all address; using 127.0.0.1 for gateway upstream connection.`);
+        return { host: '127.0.0.1', port };
+    }
+    return { host, port };
 }
