@@ -900,3 +900,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-28 12:15 codex branch=agents/wip workstream=MODEL-BENCH-REPORT HANDOFF - SHA=2d5d9787 added npm run benchmark:report; parsed 42 prior artifacts; surfaced Qwen combat 0/6 vs Qwopus/Haiku 3/6. fin=2185/2185 build=713.
 
 2026-05-28 12:20 codex branch=agents/wip workstream=CAPABILITIES-DOC STARTING - build human-facing, evidence-backed resident capabilities matrix with can-do vs does-do columns. Files: docs/resident-capabilities.md, docs/agent-status.md. collision=none.
+2026-05-28 12:27 codex branch=agents/wip workstream=CAPABILITIES-DOC HANDOFF - SHA=90fba9f8 added docs/resident-capabilities.md + HUMANS link. Evidence: 494,839 action logs, 23 timelines, 54 benchmark artifacts. Verification: diff-check + benchmark:report.
