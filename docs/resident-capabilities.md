@@ -11,6 +11,26 @@ It separates two different kinds of evidence:
 
 The important caveat: many successful behaviors are **SPARK/routine-assisted**. That still counts as resident capability, because the deployed resident is Soul + SPARK + body + inference, but it does not always mean the LLM independently invented the plan.
 
+## TL;DR
+
+Null City residents are real autonomous RuneScape actors: they move, talk, use items, gain XP, react to patrons, recover from many stuck states, and write events into the Library. The strongest proven loops are movement/speech, woodcutting, firemaking, fishing, cooking, starter Mining, basic survival eating, memory recall, safe trading, and starting Cook's Assistant.
+
+The honest limit: they are not yet reliable arbitrary-goal adventurers. Combat/prayer chains are still weak, full quest completion is not proven, long-term memory is not mature, and several "normal life" behaviors need more non-benchmark proof. Better models help on hard tasks, but SPARK routines and game-specific scaffolding still matter more than raw model IQ alone.
+
+## Key Facts For Humans
+
+| Question | Short answer | Best evidence | Confidence |
+|---|---|---|---|
+| Are the residents actually doing things in RuneScape? | Yes. They submit real actions that move characters and change game state. | 494,839 action records scanned; 475,969 successful submissions. | High |
+| What are they best at today? | Local movement, speech, woodcutting, firemaking, fishing, cooking, starter Mining, eating, stuck recovery, and Library/story logging. | Live logs plus passing benchmark tasks for these loops. | High |
+| Do they gain XP? | Yes. XP is proven across several skills, with strongest evidence in woodcutting/firemaking and starter loops. | 559 first-XP timeline moments; dedicated level-up benchmark passed. | High for XP, medium for natural level-up cadence |
+| Can they trade safely? | Yes in scripted and autonomous benchmarks; manual named-resident proof is still needed. | `trading-giving-5m` passed scripted and autonomous runs with safe offer, two-stage accept, completed trusted trade, and unsafe decline. | Medium-high |
+| Can they do quests? | They can start Cook's Assistant autonomously; full quest completion is not proven. | `cooks-assistant-start-3m` reached quest progress stage 50 in scripted and autonomous runs. | Medium |
+| Can they fight? | Combat exists, but reliability is low and model-sensitive. | 818 attack actions; `combat-prayer-10m` passed 6/18 overall, Qwen 0/6, Qwopus/Haiku 3/6 each. | Low-medium |
+| Do they remember things? | They persist timelines and can recall taught facts in benchmark; richer long-term memory is still a design task. | 23 Library timelines; `memory-recall-3m` passed 7/7. | Medium |
+| Are they human-like yet? | Partly. They are visibly embodied and narratable, but still routine-heavy and sometimes repetitive. | Strong action/story logs; known template loops and weak long-goal planning remain. | Medium |
+| What should we improve next? | Stuck-door routing, full quest completion, real operator trading, combat survival, long-delay memory, and goal-as-orientation tests. | See "Recommended Next Tests" and "Expanded Capability Backlog." | High priority |
+
 ## Evidence Snapshot
 
 Sources checked:
