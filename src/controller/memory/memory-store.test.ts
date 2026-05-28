@@ -44,4 +44,33 @@ describe('MemoryStore', () => {
         expect(memories.some(memory => memory.includes('I promised to cook shrimp for Codex.'))).toBe(true);
         expect(memories.some(memory => memory.includes('# res:agent INDEX'))).toBe(true);
     });
+
+    it('retrieves compact durable facts without qmd even when recent memory is noisy', () => {
+        const residentDir = path.join(root, 'res-agent');
+        fs.mkdirSync(path.join(residentDir, 'facts'), { recursive: true });
+        fs.writeFileSync(
+            path.join(residentDir, 'facts', 'social.md'),
+            '- 2026-05-28T19:00:00.000Z James said: "Hans remember that I promised Codex shrimp after fishing."\n',
+        );
+        fs.writeFileSync(
+            path.join(residentDir, 'facts', 'routes.md'),
+            '- 2026-05-28T19:01:00.000Z Learned route: Draynor bank is near 3092,3243 and safe for fish.\n',
+        );
+        fs.mkdirSync(path.join(residentDir, 'events'), { recursive: true });
+        fs.writeFileSync(
+            path.join(residentDir, 'events', 'noise.md'),
+            Array.from(
+                { length: 400 },
+                (_, i) => `- 2026-05-28T19:02:00.000Z {"kind":"stuck_detected","note":"Still here watching the area ${i}"}\n`,
+            ).join(''),
+        );
+        const store = new MemoryStore(root, '');
+
+        const shrimp = store.retrieve('res:agent', 'what did James promise Codex about shrimp?', 3);
+        const route = store.retrieve('res:agent', 'where is Draynor bank safe fish?', 3);
+
+        expect(shrimp.some(memory => memory.includes('promised Codex shrimp'))).toBe(true);
+        expect(route.some(memory => memory.includes('Draynor bank is near 3092,3243'))).toBe(true);
+        expect(shrimp.join('\n')).not.toContain('Still here watching the area');
+    });
 });
