@@ -7,6 +7,7 @@ This doc is the single source of truth for what was settled. Anything more nuanc
 - Existing capability reference: `HUMANS.md` (repo root)
 - Demo evidence: `docs/dev-demo-readiness.md` and `CHANGELOG.md` § `[2026-05-26]`
 - Model benchmark setup: `docs/model-benchmarking.md` (now on both branches)
+- Latest Soul/Attention/NCRI/Storyteller task draft: `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`
 - Stale strategy doc (now superseded): `docs/post-demo-team-brief.md`
 
 ## Decisions (settled — don't relitigate)
