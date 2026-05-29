@@ -39,6 +39,7 @@
         "patron:whisper": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --whisper",
         "patron:bulk-register": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --bulk-register",
         "storyteller:dry-run": "ts-node -r tsconfig-paths/register src/controller/storyteller/cli.ts",
+        "storyteller:run": "ts-node -r tsconfig-paths/register src/controller/storyteller/run-cli.ts",
         "controller:knowledge:review": "npm run build && node dist/controller/knowledge/review-suggestions.js",
         "simulation": "npm run build && npm run build:simulation && node dist/simulation/index.js",
         "simulation:birth": "npm run build:simulation && node dist/simulation/birth.js",
