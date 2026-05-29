@@ -43,3 +43,14 @@ Re-run the same command on a loopback-permitted host, then fold the produced art
 
 - `docs/resident-capabilities.md` AP/GP goal-hierarchy row
 - `docs/issue-register.md` `QA-20260529-008` status update.
+
+## Rerun Attempt (2026-05-29 13:07 CDT)
+
+- Command:
+  - `npm run controller:bench -- --task ap-gp-library-strategy-5m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-29`
+- Result:
+  - Build step succeeded; benchmark startup failed before artifact creation.
+  - Error remained `connect EPERM 127.0.0.1:43595 - Local (0.0.0.0:0)`.
+- Outcome:
+  - `QA-20260529-008` remains infra-blocked in this sandbox.
+  - No new benchmark artifact id was produced.
