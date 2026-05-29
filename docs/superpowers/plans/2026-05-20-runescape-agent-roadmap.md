@@ -735,6 +735,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: server can inspect, audit, and narrate resident GP using real coin item evidence (`itemId: 995`), with no fabricated GP ledger.
   - Verification: focused gold inspect/burn tests, live proof against one resident with known coins, and capability doc evidence row.
   - Verified 2026-05-29 on `agents/wip`: GP inspection appends `city_gold_observed` Library evidence for real coin item `995`; `starter-gp-pickup-3m` benchmark added to core suite; scripted proof `bench_20260529065910_starter_gp_pickup_3m.json` and autonomous proof `bench_20260529070519_starter_gp_pickup_3m.json` show visible GP pickup into inventory with 25 GP carried. Pre-fix autonomous timeout `bench_20260529065956_starter_gp_pickup_3m.json` drove the `collect-visible-gp` benchmark goal fix.
+  - 2026-05-29 (`agents/wip`, codex, packet `S2a`): added city-integration HTTP contract tests for `/wealth` and `/gold-burns` (409 `insufficient_gold`) and fixed `city_gold_burn` Library evidence to record actual burned amount from inventory authority (`burnedAmount`) instead of requested amount.
 
 - `[ ]` **S3: AP-for-GP exchange substrate.**
   - Files: `src/controller/city-integration/service.ts`, `src/controller/patron/patron-gateway.ts`, `src/controller/patron/cli.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/benchmarks/tasks/ap-gp-exchange-*.ts`.

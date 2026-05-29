@@ -152,6 +152,50 @@ describe('CityIntegrationService', () => {
         expect(burnCalls).toBe(1);
     });
 
+    it('records city_gold_burn evidence with real burned amount and source metadata', async () => {
+        service = new CityIntegrationService({
+            memoryRoot: root,
+            now: () => new Date('2026-05-27T12:00:00.000Z'),
+            getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+            inventory: {
+                inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                burnResidentGold: async (resident, _amount) => {
+                    burnCalls += 1;
+                    gold -= 30;
+                    return { resident, itemId: 995, burnedAmount: 30, remainingAmount: gold };
+                },
+            },
+            birth: {
+                birthResident: async input => {
+                    birthCalls += 1;
+                    return { resident: input.residentName, created: true, connected: true };
+                },
+            },
+        });
+
+        const result = await service.burnGold('res:test', {
+            idempotencyKey: 'gold-3',
+            amount: 40,
+            cityUserId: 'user-123',
+            sourceType: 'city_trade',
+            sourceId: 'trade-9',
+        });
+
+        expect(result).toMatchObject({ ok: true, burnedAmount: 30, remainingAmount: 70 });
+        const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+        const event = JSON.parse(fs.readFileSync(timelinePath, 'utf8').trim());
+        expect(event).toMatchObject({
+            kind: 'city_gold_burn',
+            itemId: 995,
+            amount: 30,
+            cityUserId: 'user-123',
+            sourceType: 'city_trade',
+            sourceId: 'trade-9',
+            lifeIndex: 1,
+            significanceReasons: ['city:gold_burn'],
+        });
+    });
+
     it('validates birth payloads before calling the birth authority', async () => {
         await expect(
             service.birthResident({
