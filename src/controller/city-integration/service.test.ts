@@ -203,6 +203,118 @@ describe('CityIntegrationService', () => {
             messageId: 'msg-1',
         });
     });
+    // ── AP-for-GP exchange ────────────────────────────────────────────────────
+
+    it('exchangeApForGp: records failed_gp when resident has insufficient gold', async () => {
+        gold = 0;
+        const result = await service.exchangeApForGp('res:test', {
+            idempotencyKey: 'exch-fail-gp',
+            apAmount: 50,
+            gpAmount: 100,
+            cityUserId: 'user-1',
+        });
+        expect(result.status).toBe('failed_gp');
+        expect(result.failureReason).toBe('insufficient_gold');
+        expect(result.apEvidence).toBeUndefined();
+        expect(result.gpEvidence).toBeUndefined();
+        // AP must NOT have been credited
+        expect(runtime.state.attention).toBe(10);
+    });
+
+    it('exchangeApForGp: records complete exchange when both GP burn and AP credit succeed', async () => {
+        gold = 200;
+        const result = await service.exchangeApForGp('res:test', {
+            idempotencyKey: 'exch-ok',
+            apAmount: 50,
+            gpAmount: 100,
+            cityUserId: 'user-2',
+        });
+        expect(result.status).toBe('complete');
+        expect(result.gpEvidence).toMatchObject({ itemId: 995, burnedAmount: 100, remainingAmount: 100 });
+        expect(result.apEvidence).toMatchObject({ creditedAmount: 50, attentionBefore: 10, attentionAfter: 60 });
+        expect(result.exchangeId).toBe('apgp:res:test:exch-ok');
+        expect(gold).toBe(100);
+        expect(runtime.state.attention).toBe(60);
+    });
+
+    it('exchangeApForGp: idempotent — same key does not burn GP or credit AP twice', async () => {
+        gold = 200;
+        const first = await service.exchangeApForGp('res:test', { idempotencyKey: 'exch-idem', apAmount: 50, gpAmount: 100 });
+        const second = await service.exchangeApForGp('res:test', { idempotencyKey: 'exch-idem', apAmount: 50, gpAmount: 100 });
+        expect(first.status).toBe('complete');
+        expect(second.status).toBe('complete');
+        // Only one burn and one credit
+        expect(gold).toBe(100);
+        expect(runtime.state.attention).toBe(60);
+        expect(burnCalls).toBe(1);
+    });
+
+    it('exchangeApForGp: appends city_ap_gp_exchange Library event on success', async () => {
+        gold = 500;
+        await service.exchangeApForGp('res:test', {
+            idempotencyKey: 'exch-lib',
+            apAmount: 30,
+            gpAmount: 50,
+            cityUserId: 'user-3',
+        });
+        const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+        const events = fs
+            .readFileSync(timelinePath, 'utf8')
+            .trim()
+            .split('\n')
+            .map(l => JSON.parse(l));
+        const exchangeEvent = events.find((e: Record<string, unknown>) => e['kind'] === 'city_ap_gp_exchange');
+        expect(exchangeEvent).toBeDefined();
+        expect(exchangeEvent).toMatchObject({
+            kind: 'city_ap_gp_exchange',
+            status: 'complete',
+            apAmount: 30,
+            gpAmount: 50,
+            cityUserId: 'user-3',
+        });
+    });
+
+    it('exchangeApForGp: appends city_ap_gp_exchange Library event on failed_gp', async () => {
+        gold = 0;
+        await service.exchangeApForGp('res:test', { idempotencyKey: 'exch-lib-fail', apAmount: 30, gpAmount: 50 });
+        const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+        const events = fs
+            .readFileSync(timelinePath, 'utf8')
+            .trim()
+            .split('\n')
+            .map(l => JSON.parse(l));
+        const exchangeEvent = events.find((e: Record<string, unknown>) => e['kind'] === 'city_ap_gp_exchange');
+        expect(exchangeEvent).toBeDefined();
+        expect(exchangeEvent).toMatchObject({ kind: 'city_ap_gp_exchange', status: 'failed_gp' });
+    });
+
+    it('exchangeApForGp: exchange record survives store restart', async () => {
+        gold = 100;
+        await service.exchangeApForGp('res:test', { idempotencyKey: 'exch-persist', apAmount: 25, gpAmount: 50 });
+        // New service instance over same root
+        const service2 = new CityIntegrationService({
+            memoryRoot: root,
+            now: () => new Date('2026-05-29T12:00:00.000Z'),
+            getRuntime: () => undefined,
+            inventory: {
+                inspectResidentGold: async r => ({ resident: r, itemId: 995, amount: 999 }),
+                burnResidentGold: async () => {
+                    throw new Error('should not be called on replay');
+                },
+            },
+            birth: { birthResident: async () => ({ resident: 'res:test', created: false, connected: false }) },
+        });
+        const replayed = await service2.exchangeApForGp('res:test', { idempotencyKey: 'exch-persist', apAmount: 25, gpAmount: 50 });
+        expect(replayed.status).toBe('complete');
+        expect(replayed.gpEvidence?.burnedAmount).toBe(50);
+    });
+
+    it('exchangeApForGp: rejects invalid resident name', async () => {
+        await expect(service.exchangeApForGp('bad name!', { idempotencyKey: 'k', apAmount: 1, gpAmount: 1 })).rejects.toMatchObject({
+            status: 400,
+            code: 'invalid_payload',
+        });
+    });
 });
 
 function soulMarkdown(name: string): string {

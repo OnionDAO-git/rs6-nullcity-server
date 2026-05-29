@@ -6,6 +6,13 @@ import { type RuntimeState, residentSlug } from '../memory/runtime-state';
 import { validateSoulFrontmatter } from '../soul/soul-schema';
 import type { InitialContainerItem, PerceptionEvent } from '../transport/message-codecs';
 import { CityIntegrationStore } from './store';
+import {
+    ApGpExchangeStore,
+    apGpExchangeRequestSchema,
+    deriveExchangeStatus,
+    makeExchangeId,
+    type ApGpExchangeRecord,
+} from './ap-gp-exchange';
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
 const idempotencyKeySchema = z.string().min(1).max(200);
@@ -109,11 +116,144 @@ export type MessageDeliveryRequest = z.infer<typeof messageDeliveryRequestSchema
 
 export class CityIntegrationService {
     private readonly store: CityIntegrationStore;
+    private readonly exchangeStore: ApGpExchangeStore;
     private readonly now: () => Date;
 
     constructor(private readonly options: CityIntegrationOptions) {
         this.store = new CityIntegrationStore(options.memoryRoot);
+        this.exchangeStore = new ApGpExchangeStore(options.memoryRoot);
         this.now = options.now ?? (() => new Date());
+    }
+
+    /**
+     * AP-for-GP exchange: burns real GP (coin item 995) from the resident's
+     * RuneScape inventory and credits AP to the resident's life-force.
+     *
+     * Status is `complete` only when both sides succeed.
+     * A failed GP burn produces `failed_gp` and never credits AP.
+     * A failed AP credit after a successful GP burn produces `failed_ap`.
+     * The exchange record is idempotent: the same key returns the cached result
+     * without re-debiting either side.
+     */
+    async exchangeApForGp(resident: string, input: unknown): Promise<ApGpExchangeRecord> {
+        const residentName = parseResident(resident);
+        const request = parseOrThrow(apGpExchangeRequestSchema, input);
+        const exchangeId = makeExchangeId(residentName, request.idempotencyKey);
+        const createdAt = this.now().toISOString();
+
+        // Idempotency: return the cached record if this key was already processed.
+        const existing = this.exchangeStore.read(request.idempotencyKey);
+        if (existing) {
+            return existing;
+        }
+
+        // Step 1: burn GP from the resident's game inventory.
+        let gpEvidence: ApGpExchangeRecord['gpEvidence'];
+        try {
+            const burned = await this.options.inventory.burnResidentGold(residentName, request.gpAmount);
+            gpEvidence = {
+                itemId: burned.itemId,
+                burnedAmount: burned.burnedAmount,
+                remainingAmount: burned.remainingAmount,
+            };
+        } catch (error) {
+            const failureReason =
+                error instanceof Error && error.message.includes('EINSUFFICIENT_GOLD')
+                    ? 'insufficient_gold'
+                    : error instanceof Error
+                      ? error.message
+                      : String(error);
+            const record: ApGpExchangeRecord = {
+                schemaVersion: 1,
+                exchangeId,
+                idempotencyKey: request.idempotencyKey,
+                resident: residentName,
+                apAmount: request.apAmount,
+                gpAmount: request.gpAmount,
+                cityUserId: request.cityUserId,
+                sourceType: request.sourceType,
+                sourceId: request.sourceId,
+                status: 'failed_gp',
+                failureReason,
+                createdAt,
+            };
+            this.exchangeStore.write(record);
+            this.appendLibraryEvent(residentName, {
+                schemaVersion: 1,
+                ts: createdAt,
+                tick: this.options.getRuntime(residentName)?.getState().tick ?? 0,
+                sessionId: 'external',
+                kind: 'city_ap_gp_exchange',
+                exchangeId,
+                status: 'failed_gp',
+                apAmount: request.apAmount,
+                gpAmount: request.gpAmount,
+                failureReason,
+                cityUserId: request.cityUserId,
+                lifeIndex: this.readLifeIndex(residentName),
+                significanceReasons: ['city:ap_gp_exchange_failed_gp'],
+            });
+            this.audit('exchange_ap_for_gp', request.idempotencyKey, residentName, 'failed_gp', undefined, undefined, {
+                error: failureReason,
+            });
+            return record;
+        }
+
+        // Step 2: credit AP to the resident's life-force runtime.
+        let apEvidence: ApGpExchangeRecord['apEvidence'];
+        let apFailureReason: string | undefined;
+        try {
+            const runtime = this.requireRuntime(residentName);
+            const before = runtime.getState().attention;
+            runtime.incrementAttention(request.apAmount);
+            const after = runtime.getState().attention;
+            apEvidence = {
+                creditedAmount: request.apAmount,
+                attentionBefore: before,
+                attentionAfter: after,
+            };
+        } catch (error) {
+            apFailureReason = error instanceof Error ? error.message : String(error);
+        }
+
+        const status = deriveExchangeStatus(apEvidence, gpEvidence, apFailureReason);
+        const completedAt = status === 'complete' ? this.now().toISOString() : undefined;
+
+        const record: ApGpExchangeRecord = {
+            schemaVersion: 1,
+            exchangeId,
+            idempotencyKey: request.idempotencyKey,
+            resident: residentName,
+            apAmount: request.apAmount,
+            gpAmount: request.gpAmount,
+            cityUserId: request.cityUserId,
+            sourceType: request.sourceType,
+            sourceId: request.sourceId,
+            status,
+            apEvidence,
+            gpEvidence,
+            failureReason: apFailureReason,
+            createdAt,
+            completedAt,
+        };
+
+        this.exchangeStore.write(record);
+        this.appendLibraryEvent(residentName, {
+            schemaVersion: 1,
+            ts: createdAt,
+            tick: this.options.getRuntime(residentName)?.getState().tick ?? 0,
+            sessionId: 'external',
+            kind: 'city_ap_gp_exchange',
+            exchangeId,
+            status,
+            apAmount: request.apAmount,
+            gpAmount: request.gpAmount,
+            cityUserId: request.cityUserId,
+            lifeIndex: this.readLifeIndex(residentName),
+            significanceReasons: ['city:ap_gp_exchange'],
+        });
+        this.audit('exchange_ap_for_gp', request.idempotencyKey, residentName, status);
+        return record;
     }
 
     async birthResident(input: unknown): Promise<unknown> {
