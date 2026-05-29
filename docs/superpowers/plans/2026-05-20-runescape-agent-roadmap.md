@@ -769,10 +769,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: verified binary goal completion can mark a resident's goal complete and create a saved Library moment with AP/GP/NCRI context.
   - Verification: saved-state tests reject partial progress; any Cook's Assistant run is labeled bounded proof rather than broad quest-system scope.
 
-- `[ ]` **S10: Weekend benchmark pack and scorecard.**
+- `[>]` **S10: Weekend benchmark pack and scorecard.**
   - Files: `src/controller/benchmarks/tasks/*`, `src/controller/benchmarks/report.ts`, `docs/resident-capabilities.md`, `docs/model-intelligence-benchmark-results-2026-05-27.md`.
   - Deliverable: one command can run/report AP decay, GP earning, AP-for-GP exchange, NCRI transfer, goal-planning, bounded completion, and Storyteller fixture benchmarks, with model/endpoint fields preserved.
   - Verification: benchmark artifacts include resident id, model profile, endpoint, task id, success/failure, duration, and failure cause.
+  - 2026-05-29 (`agents/wip`, codex): packet `S10a` report-row shape landed in `src/controller/benchmarks/report.ts` with resident+endpoint+model grouping and failure-cause markdown column; verified by focused `report.test.ts`, `check:no-ui`, `fin`, and `build`. `S10b/S10c` still open.
 
 - `[ ]` **S11: Dashboard contract handoff, server JSON only.**
   - Files: `docs/city-dashboard-integration.md`, `src/controller/city-integration/http-server.ts`, `src/controller/city-integration/*.test.ts`.

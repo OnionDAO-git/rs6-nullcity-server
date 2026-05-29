@@ -12,6 +12,7 @@ export interface BenchmarkReport {
 
 export interface BenchmarkReportRow {
     profileId: string;
+    resident: string;
     endpointId?: string;
     provider?: string;
     model?: string;
@@ -36,6 +37,7 @@ export interface BenchmarkReportCliRuntime {
 
 interface ReportAccumulator {
     profileId: string;
+    resident: string;
     endpointId?: string;
     provider?: string;
     model?: string;
@@ -67,16 +69,21 @@ export function buildBenchmarkReport(inputDir = DEFAULT_INPUT_DIR, now = new Dat
         }
         artifacts += 1;
         const profileId = artifact.inference?.profileId || artifact.modelProfile;
+        const resident = artifact.resident;
+        const endpointId = artifact.inference?.endpointId;
+        const provider = artifact.inference?.provider;
+        const model = artifact.inference?.model || artifact.modelProfile;
         const taskId = artifact.task.id;
         const mode = artifact.mode;
-        const key = `${profileId}\0${taskId}\0${mode}`;
+        const key = `${profileId}\0${resident}\0${endpointId || '-'}\0${provider || '-'}\0${model || '-'}\0${taskId}\0${mode}`;
         const row =
             groups.get(key) ||
             ({
                 profileId,
-                endpointId: artifact.inference?.endpointId,
-                provider: artifact.inference?.provider,
-                model: artifact.inference?.model || artifact.modelProfile,
+                resident,
+                endpointId,
+                provider,
+                model,
                 taskId,
                 mode,
                 runs: 0,
@@ -118,13 +125,16 @@ export function formatBenchmarkReportMarkdown(report: BenchmarkReport): string {
         `Input: ${report.inputDir}`,
         `Artifacts: ${report.artifacts} parsed, ${report.skipped} skipped`,
         '',
-        '| Profile | Task | Mode | Runs | Pass | Avg score | Avg sec | Tokens | Cost |',
-        '|---|---|---|---:|---:|---:|---:|---:|---:|',
+        '| Profile | Resident | Endpoint | Model | Task | Mode | Runs | Pass | Avg score | Avg sec | Tokens | Cost | Failure causes |',
+        '|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|',
     ];
     for (const row of report.rows) {
         lines.push(
             [
                 row.profileId,
+                row.resident,
+                row.endpointId || '-',
+                row.model || '-',
                 row.taskId,
                 row.mode,
                 String(row.runs),
@@ -133,6 +143,7 @@ export function formatBenchmarkReportMarkdown(report: BenchmarkReport): string {
                 (row.averageDurationMs / 1000).toFixed(1),
                 String(row.promptTokens + row.completionTokens),
                 `$${row.estimatedCostUsd.toFixed(6)}`,
+                row.failureReasons.length > 0 ? row.failureReasons.join('; ') : '-',
             ]
                 .join(' | ')
                 .replace(/^/, '| ') + ' |',
@@ -218,6 +229,7 @@ function estimatedCostUsd(artifact: BenchmarkArtifact): number {
 function toReportRow(row: ReportAccumulator): BenchmarkReportRow {
     return {
         profileId: row.profileId,
+        resident: row.resident,
         endpointId: row.endpointId,
         provider: row.provider,
         model: row.model,
@@ -236,7 +248,13 @@ function toReportRow(row: ReportAccumulator): BenchmarkReportRow {
 }
 
 function compareRows(left: BenchmarkReportRow, right: BenchmarkReportRow): number {
-    return left.profileId.localeCompare(right.profileId) || left.taskId.localeCompare(right.taskId) || left.mode.localeCompare(right.mode);
+    return (
+        left.profileId.localeCompare(right.profileId) ||
+        left.resident.localeCompare(right.resident) ||
+        (left.endpointId || '').localeCompare(right.endpointId || '') ||
+        left.taskId.localeCompare(right.taskId) ||
+        left.mode.localeCompare(right.mode)
+    );
 }
 
 function round(value: number, digits: number): number {

@@ -199,7 +199,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S8c | Open | - | - | - | - | - | issue:QA-20260529-008 |
 | S9a | Open | - | - | - | - | - | - |
 | S9b | Open | - | - | - | - | - | - |
-| S10a | Open | - | - | - | - | - | - |
+| S10a | In Review | codex | 2026-05-29 | src/controller/benchmarks/report.ts; src/controller/benchmarks/report.test.ts; docs/model-benchmarking.md | - | test:src/controller/benchmarks/report.test.ts; cmd:npm run benchmark:report | - |
 | S10b | Open | - | - | - | - | - | - |
 | S10c | Open | - | - | - | - | - | - |
 | S11a | Open | - | - | - | - | - | - |
