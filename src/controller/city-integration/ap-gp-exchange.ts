@@ -44,23 +44,50 @@ const gpEvidenceSchema = z.object({
     remainingAmount: z.number().int().min(0),
 });
 
-export const apGpExchangeRecordSchema = z.object({
-    schemaVersion: z.literal(1),
-    exchangeId: z.string().min(1),
-    idempotencyKey: z.string().min(1),
-    resident: z.string().min(1),
-    apAmount: z.number().int().positive(),
-    gpAmount: z.number().int().positive(),
-    cityUserId: z.string().optional(),
-    sourceType: z.string().optional(),
-    sourceId: z.string().optional(),
-    status: z.enum(['complete', 'failed_gp', 'failed_ap', 'incomplete']),
-    apEvidence: apEvidenceSchema.optional(),
-    gpEvidence: gpEvidenceSchema.optional(),
-    failureReason: z.string().optional(),
-    createdAt: z.string().min(1),
-    completedAt: z.string().optional(),
-});
+export const apGpExchangeRecordSchema = z
+    .object({
+        schemaVersion: z.literal(1),
+        exchangeId: z.string().min(1),
+        idempotencyKey: z.string().min(1),
+        resident: z.string().min(1),
+        apAmount: z.number().int().positive(),
+        gpAmount: z.number().int().positive(),
+        cityUserId: z.string().optional(),
+        sourceType: z.string().optional(),
+        sourceId: z.string().optional(),
+        status: z.enum(['complete', 'failed_gp', 'failed_ap', 'incomplete']),
+        apEvidence: apEvidenceSchema.optional(),
+        gpEvidence: gpEvidenceSchema.optional(),
+        failureReason: z.string().optional(),
+        createdAt: z.string().min(1),
+        completedAt: z.string().optional(),
+    })
+    .superRefine((record, ctx) => {
+        if (record.status === 'complete') {
+            if (!record.apEvidence) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['apEvidence'],
+                    message: 'complete exchanges require AP evidence',
+                });
+            }
+            if (!record.gpEvidence) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    path: ['gpEvidence'],
+                    message: 'complete exchanges require GP evidence',
+                });
+            }
+        }
+
+        if (record.status === 'failed_ap' && !record.gpEvidence) {
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ['gpEvidence'],
+                message: 'failed_ap exchanges require GP evidence',
+            });
+        }
+    });
 
 export type ApGpExchangeRecord = z.infer<typeof apGpExchangeRecordSchema>;
 
@@ -109,14 +136,15 @@ export class ApGpExchangeStore {
         if (!fs.existsSync(filePath)) {
             return undefined;
         }
-        return JSON.parse(fs.readFileSync(filePath, 'utf8')) as ApGpExchangeRecord;
+        return apGpExchangeRecordSchema.parse(JSON.parse(fs.readFileSync(filePath, 'utf8')));
     }
 
     write(record: ApGpExchangeRecord): void {
+        const normalized = apGpExchangeRecordSchema.parse(record);
         const filePath = this.recordPath(record.idempotencyKey);
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-        fs.writeFileSync(tmpPath, `${JSON.stringify(record, null, 2)}\n`);
+        fs.writeFileSync(tmpPath, `${JSON.stringify(normalized, null, 2)}\n`);
         fs.renameSync(tmpPath, filePath);
     }
 

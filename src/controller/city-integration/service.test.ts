@@ -284,6 +284,42 @@ describe('CityIntegrationService', () => {
         expect(runtime.state.attention).toBe(60);
     });
 
+    it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {
+        gold = 200;
+        const serviceWithoutRuntime = new CityIntegrationService({
+            memoryRoot: root,
+            now: () => new Date('2026-05-27T12:00:00.000Z'),
+            getRuntime: () => undefined,
+            inventory: {
+                inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                burnResidentGold: async (resident, amount) => {
+                    burnCalls += 1;
+                    if (gold < amount) {
+                        throw new Error('EINSUFFICIENT_GOLD');
+                    }
+                    gold -= amount;
+                    return { resident, itemId: 995, burnedAmount: amount, remainingAmount: gold };
+                },
+            },
+            birth: {
+                birthResident: async input => {
+                    birthCalls += 1;
+                    return { resident: input.residentName, created: true, connected: true };
+                },
+            },
+        });
+        const result = await serviceWithoutRuntime.exchangeApForGp('res:test', {
+            idempotencyKey: 'exch-fail-ap',
+            apAmount: 50,
+            gpAmount: 100,
+            cityUserId: 'user-2',
+        });
+        expect(result.status).toBe('failed_ap');
+        expect(result.gpEvidence).toMatchObject({ itemId: 995, burnedAmount: 100, remainingAmount: 100 });
+        expect(result.apEvidence).toBeUndefined();
+        expect(result.failureReason).toBe('resident_not_found');
+    });
+
     it('exchangeApForGp: idempotent — same key does not burn GP or credit AP twice', async () => {
         gold = 200;
         const first = await service.exchangeApForGp('res:test', { idempotencyKey: 'exch-idem', apAmount: 50, gpAmount: 100 });

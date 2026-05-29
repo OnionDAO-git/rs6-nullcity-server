@@ -135,6 +135,51 @@ describe('apGpExchangeRecordSchema', () => {
         };
         expect(apGpExchangeRecordSchema.safeParse(record).success).toBe(false);
     });
+
+    it('rejects status complete when AP evidence is missing', () => {
+        const record = {
+            schemaVersion: 1,
+            exchangeId: 'apgp:res:duke:tx-5',
+            idempotencyKey: 'tx-5',
+            resident: 'res:duke',
+            apAmount: 50,
+            gpAmount: 100,
+            status: 'complete',
+            gpEvidence: { itemId: 995, burnedAmount: 100, remainingAmount: 0 },
+            createdAt: '2026-05-29T00:00:00.000Z',
+        };
+        expect(apGpExchangeRecordSchema.safeParse(record).success).toBe(false);
+    });
+
+    it('rejects status complete when GP evidence is missing', () => {
+        const record = {
+            schemaVersion: 1,
+            exchangeId: 'apgp:res:duke:tx-6',
+            idempotencyKey: 'tx-6',
+            resident: 'res:duke',
+            apAmount: 50,
+            gpAmount: 100,
+            status: 'complete',
+            apEvidence: { creditedAmount: 50, attentionBefore: 10, attentionAfter: 60 },
+            createdAt: '2026-05-29T00:00:00.000Z',
+        };
+        expect(apGpExchangeRecordSchema.safeParse(record).success).toBe(false);
+    });
+
+    it('rejects failed_ap when GP evidence is missing', () => {
+        const record = {
+            schemaVersion: 1,
+            exchangeId: 'apgp:res:duke:tx-7',
+            idempotencyKey: 'tx-7',
+            resident: 'res:duke',
+            apAmount: 50,
+            gpAmount: 100,
+            status: 'failed_ap',
+            failureReason: 'resident_not_found',
+            createdAt: '2026-05-29T00:00:00.000Z',
+        };
+        expect(apGpExchangeRecordSchema.safeParse(record).success).toBe(false);
+    });
 });
 
 describe('ApGpExchangeStore', () => {

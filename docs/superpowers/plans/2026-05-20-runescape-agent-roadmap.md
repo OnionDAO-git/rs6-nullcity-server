@@ -737,10 +737,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-29 on `agents/wip`: GP inspection appends `city_gold_observed` Library evidence for real coin item `995`; `starter-gp-pickup-3m` benchmark added to core suite; scripted proof `bench_20260529065910_starter_gp_pickup_3m.json` and autonomous proof `bench_20260529070519_starter_gp_pickup_3m.json` show visible GP pickup into inventory with 25 GP carried. Pre-fix autonomous timeout `bench_20260529065956_starter_gp_pickup_3m.json` drove the `collect-visible-gp` benchmark goal fix.
   - 2026-05-29 (`agents/wip`, codex, packet `S2a`): added city-integration HTTP contract tests for `/wealth` and `/gold-burns` (409 `insufficient_gold`) and fixed `city_gold_burn` Library evidence to record actual burned amount from inventory authority (`burnedAmount`) instead of requested amount.
 
-- `[ ]` **S3: AP-for-GP exchange substrate.**
+- `[>]` **S3: AP-for-GP exchange substrate.**
   - Files: `src/controller/city-integration/service.ts`, `src/controller/patron/patron-gateway.ts`, `src/controller/patron/cli.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/benchmarks/tasks/ap-gp-exchange-*.ts`.
   - Deliverable: one exchange links an AP ledger event and RuneScape GP trade/burn/transfer evidence under a shared exchange id.
   - Verification: integration test rejects missing AP side, rejects missing GP evidence, accepts linked event; live controlled exchange benchmark passes.
+  - 2026-05-29 (`agents/wip`, codex, packet `S3a`): hardened AP/GP exchange schema+store validation so `complete` status now requires both AP and GP evidence and `failed_ap` requires GP evidence; added focused tests for status/evidence mismatch rejection and `failed_ap` runtime-missing path in city-integration service. Live controlled exchange benchmark (`S3b`) remains open.
 
 - `[>]` **S4: Soul proposal and AP-funded birth queue.** *(S4a substrate shipped; S4b birth integration PENDING)*
   - Files: `src/controller/city-integration/service.ts`, `src/controller/city-integration/store.ts`, `src/controller/soul/soul-schema.ts`, `src/controller/controller-host.ts`, new `src/controller/city-integration/soul-proposals.ts`, tests beside each file.
