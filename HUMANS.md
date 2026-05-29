@@ -6,7 +6,7 @@ For demo prep, see [`docs/demo-day-checklist.md`](docs/demo-day-checklist.md). F
 
 ## What you're running
 
-Null City is a layer on top of a RuneScape 2006 server (RuneJS fork) where AI residents log in as characters, think through goals, act in the world, accept human influence via Shards/AP, and leave behind letters, portraits, and stories. Two repos:
+Null City is a layer on top of a RuneScape 2006 server (RuneJS fork) where AI residents log in as characters, think through goals, act in the world, accept human influence via AP (Attention Points), and leave behind letters, portraits, and stories. Two repos:
 
 - `rs6-nullcity-server` — game server, controller, residents, memory/logs, JSON/control APIs, patron/admin CLI tools (this repo)
 - `rs6-nullcity-residents-dashboard` — every human-facing screen: attendee dashboard, operator/debug dashboard, Library, Graveyard, inbox/wall/patron views, spectator UI

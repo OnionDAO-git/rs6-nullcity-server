@@ -28,6 +28,10 @@ If multiple agents need this file at once, write a focused evidence note under `
 
 Use the CQA packet backlog in `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for coordinated Friday/Saturday work.
 
+## Vocabulary Note
+
+Older benchmark rows, log entries, and test descriptions may reference **"Shards"** as the unit of human attention. As of the 2026-05-29 AP/GP weekend sprint (S0a), the canonical public name is **AP (Attention Points)**. "Shards" in historical evidence is the same concept; no balance or schema migration occurred — the file format (`patron-currency.json`) is unchanged. When reading evidence below, treat "Shards" and "AP" as synonymous.
+
 ## TL;DR
 
 Null City residents are real autonomous RuneScape actors: they move, talk, use items, gain XP, react to patrons, recover from many stuck states, and write events into the Library. The strongest proven loops are movement/speech, woodcutting, firemaking, fishing, cooking, starter Mining, visible ground-item pickup, basic survival eating, memory recall, safe trading, and Cook's Assistant start-to-completion when ingredients are supplied or visible nearby.

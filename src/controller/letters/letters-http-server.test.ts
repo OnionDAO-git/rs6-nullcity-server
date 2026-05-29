@@ -490,10 +490,10 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             const response = await get(server.url.replace('/v1/inbox', '/v1/patron/balance') + '?human=stranger@onion');
             expect(response.status).toBe(200);
             const payload = JSON.parse(response.body) as { human: string; balance: number; currency: string };
-            expect(payload).toMatchObject({ human: 'stranger@onion', balance: 0, currency: 'Shards' });
+            expect(payload).toMatchObject({ human: 'stranger@onion', balance: 0, currency: 'AP' });
         });
 
-        it('returns the correct balance after granting Shards', async () => {
+        it('returns the correct balance after granting AP', async () => {
             const patronStore = new PatronStore(tmp);
             const ledger = patronStore.loadCurrency();
             ledger.credit('alice@onion', 42, { reason: 'test-grant' });
@@ -503,7 +503,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             const response = await get(server.url.replace('/v1/inbox', '/v1/patron/balance') + '?human=alice@onion');
             expect(response.status).toBe(200);
             const payload = JSON.parse(response.body) as { human: string; balance: number; currency: string };
-            expect(payload).toMatchObject({ human: 'alice@onion', balance: 42, currency: 'Shards' });
+            expect(payload).toMatchObject({ human: 'alice@onion', balance: 42, currency: 'AP' });
         });
     });
 
@@ -641,7 +641,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(payload.result).toBe('checked_in');
             expect(payload.shards_earned).toBe(1);
             expect(payload.new_balance).toBe(1);
-            expect(payload.currency).toBe('Shards');
+            expect(payload.currency).toBe('AP');
             // Verify the credit is persisted to disk.
             const patronStore = new PatronStore(tmp);
             const ledger = patronStore.loadCurrency();

@@ -399,7 +399,7 @@ describe('renderEventAsMemory — HD-027 rendering gaps', () => {
     // HD-027 gap (b): attentionDelta is stored in patron_gift timeline events
     // (via LibraryUpdater.observePatron → PatronGateway.offerTo) but was not
     // rendered in the Brain's memory string. Heroes couldn't see the magnitude
-    // of patron support beyond the raw Shard count.
+    // of patron AP support beyond the raw count.
     it('patron_gift rendering includes attentionDelta when present', () => {
         writeTimeline('res:agent', [
             {
@@ -414,7 +414,7 @@ describe('renderEventAsMemory — HD-027 rendering gaps', () => {
 
         const [memory] = readRecentLibraryMemories(tmpRoot, 'res:agent', 5);
         expect(memory).toContain('james');
-        expect(memory).toContain('50 Shards');
+        expect(memory).toContain('50 AP');
         expect(memory).toContain('ally');
         expect(memory).toContain('500');
     });

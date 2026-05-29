@@ -8,8 +8,8 @@ import {
 
 describe('CurrencyLedger', () => {
     describe('canonical naming', () => {
-        it("exports the canonical currency name 'Shards' (Notion Narrative V2)", () => {
-            expect(CURRENCY_NAME).toBe('Shards');
+        it("exports the canonical currency name 'AP' (Attention Points, updated from legacy 'Shards')", () => {
+            expect(CURRENCY_NAME).toBe('AP');
         });
     });
 
@@ -20,13 +20,13 @@ describe('CurrencyLedger', () => {
             expect(ledger.balance('bob')).toBe(0);
         });
 
-        it('credits Shards to a human and reflects in balance', () => {
+        it('credits AP to a human and reflects in balance', () => {
             const ledger = new CurrencyLedger();
             ledger.credit('alice', 5, { reason: 'workshop-attendance', ts: '2026-05-23T03:00:00.000Z' });
             expect(ledger.balance('alice')).toBe(5);
         });
 
-        it('debits Shards from a human and reflects in balance', () => {
+        it('debits AP from a human and reflects in balance', () => {
             const ledger = new CurrencyLedger();
             ledger.credit('alice', 10, { reason: 'workshop-attendance' });
             ledger.debit('alice', 3, { reason: 'mercy_infusion-to-res:agent' });
@@ -54,7 +54,7 @@ describe('CurrencyLedger', () => {
             expect(() => ledger.debit('alice', -1, { reason: 'x' })).toThrow(/positive/i);
         });
 
-        it('rejects non-integer amounts (Shards are atomic units)', () => {
+        it('rejects non-integer amounts (AP are atomic units)', () => {
             const ledger = new CurrencyLedger();
             expect(() => ledger.credit('alice', 1.5, { reason: 'x' })).toThrow(/integer/i);
             ledger.credit('alice', 5, { reason: 'workshop-attendance' });
@@ -93,7 +93,7 @@ describe('CurrencyLedger', () => {
     });
 
     describe('non-transferability (Notion canonical)', () => {
-        it('does NOT expose a transfer() method — Shards are bound to the badge holder', () => {
+        it('does NOT expose a transfer() method — AP is bound to the badge holder', () => {
             const ledger = new CurrencyLedger() as unknown as Record<string, unknown>;
             expect(ledger.transfer).toBeUndefined();
         });
