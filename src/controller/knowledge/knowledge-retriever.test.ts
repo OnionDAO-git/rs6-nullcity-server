@@ -745,4 +745,96 @@ describe('RuneScape knowledge retriever', () => {
             expect((results as any).budgetTrimmed).toBe(true);
         });
     });
+
+    describe('Null City AP/GP economy entries', () => {
+        it('retrieves AP life-force entry for a low-AP survival query', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'my AP is running low I need attention points to survive', {
+                limit: 3,
+            });
+
+            const ids = results.map(r => r.entry.id);
+            expect(ids).toContain('nullcity-ap-lifeforce');
+            const entry = results.find(r => r.entry.id === 'nullcity-ap-lifeforce')!.entry;
+            expect(entry.summary).toMatch(/attention points|life.force|AP/i);
+            expect(entry.summary).toMatch(/ask|support|patron/i);
+        });
+
+        it('retrieves needs-hierarchy entry for a "what to do first" goal query', () => {
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'what should I prioritize first survive earn GP or pursue soul goal',
+                { limit: 3 },
+            );
+
+            const ids = results.map(r => r.entry.id);
+            expect(ids).toContain('nullcity-needs-hierarchy');
+            const entry = results.find(r => r.entry.id === 'nullcity-needs-hierarchy')!.entry;
+            expect(entry.summary).toMatch(/survive|AP|attention/i);
+            expect(entry.summary).toMatch(/GP|gold|earn/i);
+            expect(entry.summary).toMatch(/soul goal|library/i);
+        });
+
+        it('retrieves GP evidence rule for a "no GP" or "promise coins" query', () => {
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'resident wants to claim GP or promise to pay coins without having any',
+                { limit: 4 },
+            );
+
+            const ids = results.map(r => r.entry.id);
+            expect(ids).toContain('nullcity-gp-evidence-rule');
+            const entry = results.find(r => r.entry.id === 'nullcity-gp-evidence-rule')!.entry;
+            expect(entry.summary).toMatch(/item 995|real.*coins|runescape.*coin/i);
+            expect(entry.summary).toMatch(/NEVER|never|do not.*claim/i);
+        });
+
+        it('retrieves AP-for-GP exchange entry for an exchange query', () => {
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'offer GP for AP or trade attention points for gold coins exchange',
+                { limit: 3 },
+            );
+
+            const ids = results.map(r => r.entry.id);
+            expect(ids).toContain('nullcity-ap-gp-exchange');
+            const entry = results.find(r => r.entry.id === 'nullcity-ap-gp-exchange')!.entry;
+            expect(entry.summary).toMatch(/AP|attention points/i);
+            expect(entry.summary).toMatch(/GP|gold|coins/i);
+            expect(entry.summary).toMatch(/evidence|both sides/i);
+        });
+
+        it('AP life-force entry surfaces alongside combat or skill results when AP query added', () => {
+            const results = retrieveKnowledge(ENGINE_KNOWLEDGE_ENTRIES, 'low AP attention points need patron support to stay alive', {
+                limit: 5,
+                minScore: 1,
+            });
+
+            const ids = results.map(r => r.entry.id);
+            expect(ids).toContain('nullcity-ap-lifeforce');
+        });
+
+        it('needs-hierarchy entry mentions the four priorities in order', () => {
+            const entry = ENGINE_KNOWLEDGE_ENTRIES.find(e => e.id === 'nullcity-needs-hierarchy');
+            expect(entry).toBeDefined();
+            const summaryAndTopics = (entry!.summary + entry!.topics.join(' ')).toLowerCase();
+            expect(summaryAndTopics).toMatch(/survive|ap/);
+            expect(summaryAndTopics).toMatch(/gp|earn/);
+            expect(summaryAndTopics).toMatch(/soul|goal/);
+            expect(summaryAndTopics).toMatch(/library/);
+        });
+
+        it('GP evidence rule entry has nullcity and gp in topics', () => {
+            const entry = ENGINE_KNOWLEDGE_ENTRIES.find(e => e.id === 'nullcity-gp-evidence-rule');
+            expect(entry).toBeDefined();
+            expect(entry!.topics).toContain('nullcity');
+            expect(entry!.topics.join(' ')).toMatch(/gp|gold/i);
+        });
+
+        it('AP-for-GP exchange entry documents both AP and GP sides', () => {
+            const entry = ENGINE_KNOWLEDGE_ENTRIES.find(e => e.id === 'nullcity-ap-gp-exchange');
+            expect(entry).toBeDefined();
+            expect(entry!.topics).toContain('nullcity');
+            expect(entry!.keywords.join(' ')).toMatch(/AP.*GP|exchange|AP for GP/i);
+        });
+    });
 });

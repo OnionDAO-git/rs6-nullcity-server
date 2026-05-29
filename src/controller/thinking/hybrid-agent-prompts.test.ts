@@ -285,6 +285,82 @@ describe('hybrid agent prompts', () => {
             expect(prompt.toLowerCase()).toMatch(/imagery|vibe|aesthetic|colour|color|sensory/);
         });
     });
+
+    describe('AP/GP economy knowledge injection', () => {
+        it('Brain prompt includes AP life-force knowledge when gameSkill section contains it', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoul(),
+                perception: perception('AP is critically low. Inventory is empty.'),
+                activeGoal: {
+                    id: 'survive',
+                    description: 'My AP is low — I need to ask for patron support or earn GP.',
+                    createdAtTick: 1,
+                },
+                commandPrefix: '!',
+                gameSkill: {
+                    brainSection: [
+                        'Relevant game knowledge:',
+                        '- Null City: AP (Attention Points) Is Your Life-Force: AP sustains residents; ask for support when low.',
+                        '- Null City: Resident Needs Hierarchy (AP → GP → Soul Goal → Library): survive first, earn GP second.',
+                    ].join('\n'),
+                    bodySection: '',
+                },
+            });
+
+            expect(prompt).toContain('AP');
+            expect(prompt).toContain('Life-Force');
+            expect(prompt).toContain('Needs Hierarchy');
+        });
+
+        it('Body prompt includes GP evidence rule when gameSkill section contains it', () => {
+            const prompt = buildBodyPrompt({
+                soul: testSoul(),
+                perception: perception('Human offers AP in exchange for GP. Inventory: no coins.'),
+                activeGoal: {
+                    id: 'refuse-gp-claim',
+                    description: 'I do not have GP — redirect honestly.',
+                    createdAtTick: 1,
+                },
+                commandPrefix: '!',
+                gameSkill: {
+                    brainSection: '',
+                    bodySection: [
+                        'Relevant game knowledge:',
+                        '- Null City: GP Must Be Real RuneScape Coins (No Hallucinated Payment): NEVER claim GP you do not have.',
+                        '  Source: docs/runescape-skill/economy.md § GP Must Be Real Coins',
+                    ].join('\n'),
+                },
+                visibility: { returnDue: false },
+            });
+
+            expect(prompt).toContain('Hallucinated Payment');
+            expect(prompt).toContain('NEVER');
+        });
+
+        it('Brain prompt includes AP-for-GP exchange knowledge when gameSkill section contains it', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoul(),
+                perception: perception('Inventory has 500 coins. Human wants to trade AP for GP.'),
+                activeGoal: {
+                    id: 'propose-exchange',
+                    description: 'Propose AP-for-GP exchange with confirmed coin evidence.',
+                    createdAtTick: 1,
+                },
+                commandPrefix: '!',
+                gameSkill: {
+                    brainSection: [
+                        'Relevant game knowledge:',
+                        '- Null City: AP-for-GP Exchange (Both Sides Need Evidence): both AP credit and GP burn must be confirmed.',
+                        '  Source: docs/runescape-skill/economy.md § AP-for-GP Exchange',
+                    ].join('\n'),
+                    bodySection: '',
+                },
+            });
+
+            expect(prompt).toContain('AP-for-GP Exchange');
+            expect(prompt).toContain('Both Sides Need Evidence');
+        });
+    });
 });
 
 function testSoulWith(overrides: Partial<Soul['frontmatter']>): Soul {
