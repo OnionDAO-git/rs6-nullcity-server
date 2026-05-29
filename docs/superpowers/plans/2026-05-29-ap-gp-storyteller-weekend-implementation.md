@@ -216,7 +216,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA7 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa7-memory-route-recall.md; docs/resident-capabilities.md; docs/issue-register.md | pending | doc:docs/capability-evidence/2026-05-29-cqa7-memory-route-recall.md; live-log:res:agent:2026-05-24; live-log:res:hans:2026-05-26; live-log:res:pip:2026-05-24; issue:QA-20260529-012 | delayed route-recall benchmark artifact still missing; one malformed structured-dump recall response found in `res:bmk_memory_01x6ig8r` |
 | CQA8 | Open | - | - | - | - | - | - |
 | CQA9 | Open | - | - | - | - | - | - |
-| CQA10 | Open | - | - | - | - | - | issue:QA-20260529-006 |
+| CQA10 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; docs/resident-capabilities.md; docs/issue-register.md | pending | doc:docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; issue:QA-20260529-006 | one-hour audit captured but shows 0 ordinary equip/trade actions; follow-up CQA3/CQA4/CQA5 needed |
 | CQA11 | Open | - | - | - | - | - | - |
 
 | Packet | Parent | Lane | Depends on | Deliverable | Proof |
