@@ -401,6 +401,116 @@ describe('LibraryUpdater — observeNcriEvent', () => {
     });
 });
 
+describe('LibraryUpdater — observeGoalAchieved', () => {
+    it('appends goal_achieved to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T10:00:00.000Z',
+            tick: 42,
+            goalId: 'goal-abc-123',
+            goalText: 'Find a reliable way to make 100 GP/hour and write the strategy into the Library.',
+            evidence: 'runtime:bank-balance',
+            apAtCompletion: 1500,
+            gpAtCompletion: 150,
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'goal_achieved',
+                ts: '2026-05-29T10:00:00.000Z',
+                tick: 42,
+                goalId: 'goal-abc-123',
+                goalText: 'Find a reliable way to make 100 GP/hour and write the strategy into the Library.',
+                evidence: 'runtime:bank-balance',
+                apAtCompletion: 1500,
+                gpAtCompletion: 150,
+                lifeIndex: 1,
+                significanceReasons: ['goal:achieved'],
+            }),
+        ]);
+    });
+
+    it('records goal_achieved without optional AP/GP context when not provided', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T11:00:00.000Z',
+            tick: 55,
+            goalId: 'goal-minimal',
+            goalText: 'Cook a meal for the chef.',
+            evidence: 'library:quest_complete',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toEqual(
+            expect.objectContaining({
+                kind: 'goal_achieved',
+                goalId: 'goal-minimal',
+                evidence: 'library:quest_complete',
+                lifeIndex: 1,
+            }),
+        );
+        expect(timeline[0].apAtCompletion).toBeUndefined();
+        expect(timeline[0].gpAtCompletion).toBeUndefined();
+    });
+
+    it('records multiple goal completions for the same resident independently', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T10:00:00.000Z',
+            tick: 10,
+            goalId: 'goal-first',
+            goalText: 'First goal',
+            evidence: 'e1',
+        });
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T11:00:00.000Z',
+            tick: 20,
+            goalId: 'goal-second',
+            goalText: 'Second goal',
+            evidence: 'e2',
+            gpAtCompletion: 500,
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toEqual(expect.objectContaining({ goalId: 'goal-first', tick: 10 }));
+        expect(timeline[1]).toEqual(expect.objectContaining({ goalId: 'goal-second', tick: 20, gpAtCompletion: 500 }));
+    });
+
+    it('goal_achieved uses lifeIndex from current index state', () => {
+        const { updater, root } = testUpdater();
+
+        // legacy_event(rebirth: false) keeps lives=1, sets state='ended'.
+        // observeRevival then bumps lives to 2.
+        updater.observeTrajectory(trajectory({ kind: 'legacy_event', tick: 5, event: { cause: 'death', rebirth: false } }));
+        updater.observeRevival({ ts: '2026-05-29T09:00:00.000Z', tick: 6, cause: 'restart' });
+
+        const indexAfterRevival = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'index.json'), 'utf8'));
+        expect(indexAfterRevival.lives).toBe(2);
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T10:00:00.000Z',
+            tick: 50,
+            goalId: 'goal-life2',
+            goalText: 'Goal achieved in second life',
+            evidence: 'live:bench',
+        });
+
+        const timeline = readTimeline(root);
+        const goalEvent = timeline.find(e => e.kind === 'goal_achieved');
+        expect(goalEvent).toEqual(expect.objectContaining({ lifeIndex: 2 }));
+    });
+});
+
 function testUpdater(): { updater: LibraryUpdater; root: string } {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'library-updater-'));
     return { updater: new LibraryUpdater('res:agent', root), root };

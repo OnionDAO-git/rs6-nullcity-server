@@ -19,6 +19,28 @@ export interface NcriLibraryEvent {
     previousOwner?: string;
 }
 
+/**
+ * Saved-state Library event emitted when a verified binary GoalContract is
+ * marked achieved. Only fires on confirmed completion — not on partial quest
+ * progress or aspirational goals. The caller (GoalContractStore.markAchieved)
+ * already enforces non-empty evidence before this is called.
+ */
+export interface GoalAchievedLibraryEvent {
+    kind: 'goal_achieved';
+    ts: string;
+    tick: number;
+    /** GoalContract.id — allows cross-referencing the stored contract. */
+    goalId: string;
+    /** Aspirational goal text at the time of completion. */
+    goalText: string;
+    /** Non-empty evidence source proving completion (e.g. "runtime:bank-balance"). */
+    evidence: string;
+    /** AP balance at time of completion, for Storyteller context. */
+    apAtCompletion?: number;
+    /** GP observed (coin item 995) at time of completion, for Storyteller context. */
+    gpAtCompletion?: number;
+}
+
 export interface PatronEvent {
     kind: 'patron_gift' | 'patron_witness' | 'patron_sponsor';
     ts: string;
@@ -203,6 +225,33 @@ export class LibraryUpdater {
             previousOwner: event.previousOwner,
             lifeIndex: index.lives,
             significanceReasons: [`ncri:${event.kind}`],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record a verified binary goal completion as a durable saved-state Library
+     * moment. Only call after GoalContractStore.markAchieved succeeds — that
+     * method already enforces non-empty evidence so partial progress cannot reach
+     * here. The resulting timeline entry is queryable by the Storyteller digest
+     * as a `goal_achieved` resolution event.
+     */
+    observeGoalAchieved(event: GoalAchievedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'goal_achieved',
+            goalId: event.goalId,
+            goalText: event.goalText,
+            evidence: event.evidence,
+            apAtCompletion: event.apAtCompletion,
+            gpAtCompletion: event.gpAtCompletion,
+            lifeIndex: index.lives,
+            significanceReasons: ['goal:achieved'],
         });
         this.touchIndex(index);
         this.schedulePortraitRegeneration();
