@@ -346,6 +346,8 @@ export class CityIntegrationService {
                 sessionId: 'external',
                 kind: 'city_attention_credit',
                 amount: request.amount,
+                attentionBefore: before,
+                attentionAfter: after,
                 cityUserId: request.cityUserId,
                 sourceType: request.sourceType,
                 sourceId: request.sourceId,

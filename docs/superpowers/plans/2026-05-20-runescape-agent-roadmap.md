@@ -723,10 +723,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: public/operator copy consistently says AP/Attention Points for resident life-force and human funding; legacy persisted Shards files continue to load. GP is always real RuneScape gold coins, never a second ledger.
   - Verification: focused patron CLI/ledger tests, `npm run check:no-ui`, `npm run typecheck`, and `npm test -- --runInBand src/controller/patron`.
 
-- `[ ]` **S1: AP ledger and resident life-force proof.**
+- `[>]` **S1: AP ledger and resident life-force proof.**
   - Files: `src/controller/spark/attention.ts`, `src/controller/resident-runtime.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/*.test.ts`, `src/controller/admin/patron-loop-smoke.ts`, `docs/resident-capabilities.md`.
   - Deliverable: AP decay/top-up/fade/resume behavior is replayable, visible in Library events, and benchmarked with a low-AP resident.
   - Verification: low-AP benchmark or smoke proves ask/top-up/resume; focused runtime/city-integration tests; full `npm run fin` before completion.
+  - 2026-05-29 (`agents/wip`, codex): packet `S1a` landed deterministic AP ledger replay helper (`grant`/`spend`/`decay`/`top_up`/`fade`) in `attention.ts` with focused unit coverage; `city_attention_credit` Library events now persist `attentionBefore`/`attentionAfter` for replayable AP deltas. `S1b` live fade/resume benchmark evidence remains open.
 
 - `[x]` **S2: GP evidence model for actual RuneScape coins.**
   - Files: `src/controller/controller-host.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/http-server.ts`, `src/server/agent/*`, `src/controller/benchmarks/tasks/*gold*.ts`, `docs/resident-capabilities.md`.

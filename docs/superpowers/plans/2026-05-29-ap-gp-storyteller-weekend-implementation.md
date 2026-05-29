@@ -180,7 +180,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 |---|---|---|---|---|---|---|---|
 | S0a | Open | - | - | - | - | - | - |
 | S0b | Open | - | - | - | - | - | - |
-| S1a | Open | - | - | - | - | - | - |
+| S1a | In Review | codex | 2026-05-29 | src/controller/spark/attention.ts; src/controller/spark/attention.test.ts; src/controller/city-integration/service.ts; src/controller/city-integration/service.test.ts | - | test:src/controller/spark/attention.test.ts; test:src/controller/city-integration/service.test.ts; cmd:check:no-ui | fin:test:EPERM listen in sandbox |
 | S1b | Open | - | - | - | - | - | - |
 | S2a | Open | - | - | - | - | - | - |
 | S2b | Open | - | - | - | - | - | issue:QA-20260529-002 |

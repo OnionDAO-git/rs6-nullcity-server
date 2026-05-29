@@ -93,7 +93,7 @@ describe('CityIntegrationService', () => {
         });
     });
 
-    it('appends city_attention_credit Library event with amount, source, tick, and lifeIndex', async () => {
+    it('records AP credit timeline evidence with before/after, source metadata, tick, and lifeIndex', async () => {
         await service.creditAttention('res:test', {
             idempotencyKey: 'ap-lib-1',
             amount: 50,
@@ -108,6 +108,8 @@ describe('CityIntegrationService', () => {
         expect(event).toMatchObject({
             kind: 'city_attention_credit',
             amount: 50,
+            attentionBefore: 10,
+            attentionAfter: 60,
             cityUserId: 'user-1',
             sourceType: 'patron_checkin',
             sourceId: 'checkin-123',
