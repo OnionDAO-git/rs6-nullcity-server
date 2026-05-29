@@ -11,6 +11,21 @@ It separates two different kinds of evidence:
 
 The important caveat: many successful behaviors are **SPARK/routine-assisted**. That still counts as resident capability, because the deployed resident is Soul + SPARK + body + inference, but it does not always mean the LLM independently invented the plan.
 
+## How Autonomous QA Agents Should Use This File
+
+This file is now an active QA queue, not a static report.
+
+1. Pick one row that is `Partial`, `Unproven`, low confidence, benchmark-only, or important for AP/GP/Soul quests.
+2. Search existing action logs, Library timelines, and benchmark artifacts before writing code.
+3. If evidence is missing, run or add a focused benchmark with a disposable resident. Use twin/triplet model runs when model quality is the question.
+4. If the resident cannot do it, fix the root cause in the smallest layer that explains the failure.
+5. Update both evidence columns separately:
+   - `Can do it?` for tests/benchmarks/harness proof.
+   - `Does do it live?` for ordinary controller logs, Library timelines, or long-run observation.
+6. Leave artifact ids, command names, model profile, endpoint, elapsed time, and failure cause when relevant.
+
+Use the CQA packet backlog in `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for coordinated Friday/Saturday work.
+
 ## TL;DR
 
 Null City residents are real autonomous RuneScape actors: they move, talk, use items, gain XP, react to patrons, recover from many stuck states, and write events into the Library. The strongest proven loops are movement/speech, woodcutting, firemaking, fishing, cooking, starter Mining, visible ground-item pickup, basic survival eating, memory recall, safe trading, and Cook's Assistant start-to-completion when ingredients are supplied or visible nearby.

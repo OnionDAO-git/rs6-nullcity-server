@@ -32,6 +32,7 @@ For the May 29-June 1 AP/GP + Storyteller weekend sprint, use:
 - `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task-by-task execution.
 - Workstream S in `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the central task board.
 - Claim the smallest available packet from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`), not a whole workstream, unless you are doing release closeout.
+- Capability QA packets (`CQA0`-`CQA11`) are always valid weekend work: read `docs/resident-capabilities.md`, prove or disprove one weak row with real logs/benchmarks, fix root causes, and update the table.
 - Treat the implementation plan's lane table as the file-lock map for parallel agents.
 
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. Keep status-log entries under ~250 chars — long rollups belong in the commit body.

@@ -36,6 +36,7 @@ This sprint is meant to run with several autonomous agents active at once. Work 
 | C. Storyteller | Narrative + LLM engineer | S6, S7 | `src/controller/storyteller/`, `src/controller/llm/`, `config/controller.yml.example` | Resident runtime/body actions |
 | D. Resident intelligence QA | Gameplay benchmark engineer | S8, S9, S10 | `src/controller/benchmarks/`, `src/controller/spark/runescape-body-routines.ts`, `src/controller/thinking/`, `docs/resident-capabilities.md` | AP ledger schemas unless verifying integration |
 | E. Contracts/docs closeout | Release/documentation engineer | S11, S12 | `docs/city-dashboard-integration.md`, `HUMANS.md`, sprint docs | Human-facing UI files in this repo |
+| F. Capability QA sweep | QA/root-cause engineer | CQA packets | `docs/resident-capabilities.md`, `src/controller/benchmarks/`, `src/controller/spark/runescape-body-routines.ts`, action/perception adapters as needed | Economy/storyteller schemas unless a capability requires them |
 
 If two packets need the same file, the later agent should either wait, split its packet, or coordinate explicitly in `docs/agent-status.md`.
 
@@ -70,6 +71,7 @@ Wave 0 should run first and unblock everyone:
 - S10a: benchmark/report artifact shape for weekend packets.
 - S6a: Storyteller digest fixture schema, no model call.
 - S11a: dashboard JSON contract list, no implementation beyond examples unless needed.
+- CQA0: choose and queue the first capability sweep from `docs/resident-capabilities.md`.
 
 Wave 1 can run in parallel after Wave 0:
 
@@ -91,6 +93,21 @@ Wave 3 is weekend closeout:
 - S7a/S7b: model-backed Storyteller with verifier and cost metadata.
 - S11b/S11c: final JSON route contracts for dashboard agents.
 - S12: human-readable shipped state, capability truth table, benchmark summary, and blockers.
+
+### Standing Capability QA Loop
+
+Capability QA is not a one-time doc edit. At least one agent should keep running this loop while AP/GP and Storyteller work proceeds.
+
+1. Read `docs/resident-capabilities.md` and pick the highest-value row that is `Partial`, `Unproven`, `normal-loop proof thin`, `Low`, or missing from the matrix.
+2. Record the chosen capability in `docs/agent-status.md` with exact files and expected benchmark/log evidence.
+3. Search existing action logs, Library timelines, benchmark artifacts, and model reports before writing new code. If evidence already exists, cite the artifact and update the doc.
+4. If evidence is missing, write or extend a benchmark that can prove the capability with a disposable resident. Prefer twin/triplet runs when model quality is the question.
+5. If the benchmark fails, fix the root cause in the smallest appropriate layer: perception, action adapter, SPARK body routine, knowledge retrieval, prompt envelope, pathing/stuck recovery, inventory/equipment handling, or trade FSM.
+6. Re-run the benchmark and capture the artifact id, selected-module actions, relevant game-state deltas, elapsed time, model profile, endpoint, and failure cause if any.
+7. Update `docs/resident-capabilities.md` with both columns: **Can do it?** and **Does do it live?** Do not collapse benchmark proof into normal-loop proof.
+8. Add a follow-up row when the capability only works in a harness but not in ordinary controller life.
+
+Capability QA agents should favor these next probes unless a human reprioritizes them: natural Cook's Assistant ingredient sourcing, long-distance pathing and door recovery, normal gear soak, live operator trade proof, combat survival/flee/eat, AP/GP-aware resident behavior, memory route recall, cross-resident world-event reaction, and GP earning from real coins.
 
 Before starting a task:
 
@@ -153,6 +170,25 @@ These packets are intentionally smaller than S0-S12. Autonomous agents should cl
 | S11b | S11 | E/B/C | relevant endpoint packets | JSON endpoints return typed payloads and never HTML | route tests and `check:no-ui` |
 | S12a | S12 | E | any completed S packets | weekend closeout table with commit SHAs, evidence ids, blockers | docs diffcheck |
 | S12b | S12 | E | S10b/S10c | human model/capability summary says what is proven, weak, or unknown | docs plus benchmark report |
+
+### Capability QA Packets
+
+These can run continuously beside Workstream S. They update `docs/resident-capabilities.md` and should create/fix benchmarks when existing evidence is weak.
+
+| Packet | Capability | Deliverable | Proof |
+|---|---|---|---|
+| CQA0 | Capability triage | Rank the next 10 weakest/highest-value rows from `docs/resident-capabilities.md` | doc update or HANDOFF table |
+| CQA1 | Natural quest item sourcing | Cook's Assistant from empty inventory using natural egg/flour/milk acquisition, or a precise failure reason | benchmark artifact and capability row |
+| CQA2 | Door/path recovery | Target behind door or blocked route clears stale target, opens door when available, or chooses alternate route | stuck-door benchmark artifact |
+| CQA3 | Normal gear soak | Named or disposable residents with unequipped gear choose equip/wield during ordinary controller life | normal action logs plus benchmark fallback |
+| CQA4 | Live operator trade | Named resident completes safe trade with operator/human and declines unsafe loop | action logs, inventory delta, no-loop soak |
+| CQA5 | Combat survival | Resident fights low-risk target, eats/flees at low HP, and avoids repeated death loops | combat benchmark by model profile |
+| CQA6 | GP earning | Resident earns or observes real coin item `995`, not an invented balance | GP benchmark artifact |
+| CQA7 | Memory route recall | Resident learns a route/fact, waits, then uses it later | delayed benchmark or live timeline proof |
+| CQA8 | Cross-resident awareness | Resident notices another resident's world event and responds meaningfully | LoreBus live benchmark artifact |
+| CQA9 | AP/GP behavior | Low-AP resident asks for AP or proposes GP/NCRI value without hallucinating resources | benchmark artifact with AP/GP state |
+| CQA10 | Long-run normal-life audit | One-hour observation across several residents with cause histogram and capability deltas | audit report and capabilities update |
+| CQA11 | Model intelligence twins | Same Soul/task across local and paid profiles, scored on task success and human-like plan quality | benchmark report grouped by model/endpoint |
 
 ## Task S0: AP/GP Terminology Alignment
 

@@ -182,12 +182,14 @@ Do not start these until Dev clears UI direction.
 - Finalize AP/GP vocabulary and contracts.
 - Add Storyteller fixture and dry-run path.
 - Add benchmark schema for capability/economy runs.
+- Start the standing capability QA sweep from `docs/resident-capabilities.md`; pick weak/unproven rows and prove or fix them with real logs/benchmarks.
 
 ### Saturday
 
 - Build AP ledger/decay and resident low-AP behavior.
 - Build GP observation and one starter GP-earning benchmark.
 - Run model twins on GP earning and one quest workflow.
+- Keep one agent on capability QA at all times: natural quest sourcing, door recovery, live trading, normal gear soak, combat survival, memory recall, and GP earning.
 
 ### Sunday
 
@@ -216,6 +218,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S10a benchmark report shape | Makes every later behavior claim comparable. | benchmark agent |
 | S6a Storyteller digest fixture | Gives the Storyteller lane a model-free, deterministic base. | storyteller agent |
 | S11a dashboard contract sketch | Lets dashboard agents prepare without server UI work. | contracts agent |
+| CQA0 capability triage | Turns the capabilities doc into a ranked queue of real proof/fix work. | QA agent |
 
 ### Wave 1: Build The Two Economies And The Narrator Base
 
@@ -227,6 +230,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S2b GP earning proof | Proves residents can create human-useful value. | benchmark agent |
 | S6b Storyteller dry run | Produces a useful digest before paid model calls. | storyteller agent |
 | S8a AP/GP resident knowledge | Keeps residents from talking nonsense about the economy. | prompt/knowledge agent |
+| CQA1/CQA2 quest sourcing + door recovery | Attacks the biggest gaps in real adventuring. | capability QA agent |
 
 ### Wave 2: Close The Gameplay Loop
 
@@ -237,6 +241,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S5a/S5b NCRI registry | Gives RuneScape items special Null City meaning. | NCRI agent |
 | S9a/S9b saved quest state | Lets completed goals enter the Library as canon. | quest/library agent |
 | S10b/S10c model twins | Tests whether paid/smarter models improve actual resident outcomes. | benchmark agent |
+| CQA3-CQA8 normal-life proofs | Proves gear, trade, combat survival, memory, and cross-resident awareness outside happy paths. | capability QA agents |
 
 ### Wave 3: Sunday Closeout
 
@@ -245,6 +250,33 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S7a/S7b model-backed Storyteller | Turns evidence into public canon safely. | storyteller/LLM agent |
 | S11b dashboard JSON endpoints | Gives dashboard repo the final data contracts. | API contract agent |
 | S12a/S12b human state report | Lets James explain what works, what is proven, and what is blocked. | release/docs agent |
+| CQA10/CQA11 one-hour audit + model twins | Gives James a credible answer to "what can residents really do?" | QA/benchmark agent |
+
+### Standing Capability QA Lane
+
+One autonomous agent should continuously work from `docs/resident-capabilities.md`.
+
+Loop:
+
+1. Pick the highest-value row that is unproven, partial, low-confidence, or benchmark-only.
+2. Search existing logs/artifacts before writing code.
+3. If proof is missing, add or run a benchmark with a disposable resident.
+4. If the resident cannot do it, fix the root cause instead of just documenting failure.
+5. Update `docs/resident-capabilities.md` with `can do it` vs `does do it live` evidence.
+6. Commit and push the benchmark/fix/doc update.
+
+Top capability probes:
+
+- Cook's Assistant from empty inventory with natural egg/flour/milk sourcing.
+- Door/path recovery for indoor quest targets.
+- Live operator trade proof with inventory deltas and no-loop soak.
+- Normal gear equip outside benchmark harnesses.
+- Combat survival: fight, eat, flee, avoid death loops.
+- Real GP earning and observation of coin item `995`.
+- Delayed memory route recall.
+- Cross-resident world-event reaction.
+- AP/GP-aware resident asks and exchange offers.
+- One-hour multi-resident normal-life audit.
 
 ### Parallel Safety Rules
 
