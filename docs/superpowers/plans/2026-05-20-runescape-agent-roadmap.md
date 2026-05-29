@@ -739,7 +739,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: one exchange links an AP ledger event and RuneScape GP trade/burn/transfer evidence under a shared exchange id.
   - Verification: integration test rejects missing AP side, rejects missing GP evidence, accepts linked event; live controlled exchange benchmark passes.
 
-- `[ ]` **S4: Soul proposal and AP-funded birth queue.**
+- `[>]` **S4: Soul proposal and AP-funded birth queue.** *(S4a substrate shipped; S4b birth integration PENDING)*
   - Files: `src/controller/city-integration/service.ts`, `src/controller/city-integration/store.ts`, `src/controller/soul/soul-schema.ts`, `src/controller/controller-host.ts`, new `src/controller/city-integration/soul-proposals.ts`, tests beside each file.
   - Deliverable: humans/admins can create a Soul proposal, fund it with AP, cross a threshold, and birth a resident from validated SOUL markdown.
   - Verification: file-backed proposal replay test; idempotent birth test; live smoke where born resident appears in controller state and Library timeline.
