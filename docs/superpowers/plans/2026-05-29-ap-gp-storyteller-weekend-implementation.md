@@ -183,7 +183,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S1a | In Review | codex | 2026-05-29 | src/controller/spark/attention.ts; src/controller/spark/attention.test.ts; src/controller/city-integration/service.ts; src/controller/city-integration/service.test.ts | bbdea4d2 | test:src/controller/spark/attention.test.ts; test:src/controller/city-integration/service.test.ts; cmd:check:no-ui; cmd:build | push:DNS failure; fin:test:EPERM listen in sandbox |
 | S1b | Blocked | codex | 2026-05-29 | src/controller/benchmarks/tasks/ap-decay-ask-5m.ts; src/controller/benchmarks/tasks/ap-decay-ask-5m.test.ts; src/controller/benchmarks/autonomous-runtime.ts; src/controller/benchmarks/autonomous-runtime.test.ts; src/controller/benchmarks/cli.ts; docs/capability-evidence/2026-05-29-s1b-ap-life-force-benchmark-attempt.md | - | test:src/controller/benchmarks/tasks/ap-decay-ask-5m.test.ts; test:src/controller/benchmarks/autonomous-runtime.test.ts | benchmark:EPERM loopback connect (127.0.0.1:43595) |
 | S2a | In Review | codex | 2026-05-29 | src/controller/city-integration/service.ts; src/controller/city-integration/service.test.ts; src/controller/city-integration/http-server.test.ts | ea33eb64 | test:src/controller/city-integration/service.test.ts; test:src/controller/city-integration/http-server.test.ts; cmd:check:no-ui; cmd:typecheck | push:DNS failure; fin:test:listen EPERM in sandbox |
-| S2b | Open | - | - | - | - | - | issue:QA-20260529-002 |
+| S2b | In Review | codex | 2026-05-29 | src/controller/benchmarks/tasks/starter-gp-pickup-3m.ts; src/controller/benchmarks/tasks/starter-gp-pickup-3m.test.ts; docs/resident-capabilities.md | d82213d7 | benchmark:bench_20260529065910_starter_gp_pickup_3m; benchmark:bench_20260529070519_starter_gp_pickup_3m; issue:QA-20260529-002(closed) | - |
 | S3a | Open | - | - | - | - | - | - |
 | S3b | Open | - | - | - | - | - | - |
 | S4a | Open | - | - | - | - | - | - |
@@ -357,7 +357,7 @@ Steps:
 - [x] Write failing tests for `inspectGold` returning `{ ok: true, itemId: 995, amount }`.
 - [x] Write failing tests for `burnGold` returning 409-style `insufficient_gold` without mutating state when the resident lacks coins.
 - [x] Ensure `city_gold_burn` Library events include `itemId: 995`, amount, city user id, source type/id, and life index.
-- [ ] Add an explicit docs row: "GP means real RuneScape coins; evidence source is inventory/bank/trade, not AP ledger."
+- [x] Add an explicit docs row: "GP means real RuneScape coins; evidence source is inventory/bank/trade, not AP ledger."
 - [x] Run:
 
 ```bash
