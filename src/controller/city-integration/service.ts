@@ -181,6 +181,17 @@ export class CityIntegrationService {
     async inspectGold(resident: string): Promise<unknown> {
         const residentName = parseResident(resident);
         const result = await this.options.inventory.inspectResidentGold(residentName);
+        this.appendLibraryEvent(residentName, {
+            schemaVersion: 1,
+            ts: this.now().toISOString(),
+            tick: this.options.getRuntime(residentName)?.getState().tick ?? 0,
+            sessionId: 'external',
+            kind: 'city_gold_observed',
+            itemId: result.itemId,
+            amount: result.amount,
+            lifeIndex: this.readLifeIndex(residentName),
+            significanceReasons: ['city:gold_observed'],
+        });
         this.audit('inspect_gold', undefined, residentName, 'completed', undefined, result);
         return { ok: true, ...result };
     }

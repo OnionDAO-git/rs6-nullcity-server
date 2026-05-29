@@ -100,6 +100,20 @@ describe('CityIntegrationService', () => {
         expect(burnCalls).toBe(1);
     });
 
+    it('records real RuneScape GP observation evidence when inspecting resident gold', async () => {
+        const result = await service.inspectGold('res:test');
+
+        expect(result).toEqual({ ok: true, resident: 'res:test', itemId: 995, amount: 100 });
+        const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+        const event = JSON.parse(fs.readFileSync(timelinePath, 'utf8').trim());
+        expect(event).toMatchObject({
+            kind: 'city_gold_observed',
+            itemId: 995,
+            amount: 100,
+            significanceReasons: ['city:gold_observed'],
+        });
+    });
+
     it('burns gold once and replays the same idempotent result', async () => {
         const first = await service.burnGold('res:test', { idempotencyKey: 'gold-2', amount: 40 });
         const replay = await service.burnGold('res:test', { idempotencyKey: 'gold-2', amount: 40 });

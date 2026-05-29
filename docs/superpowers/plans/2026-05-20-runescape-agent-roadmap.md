@@ -728,10 +728,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: AP decay/top-up/fade/resume behavior is replayable, visible in Library events, and benchmarked with a low-AP resident.
   - Verification: low-AP benchmark or smoke proves ask/top-up/resume; focused runtime/city-integration tests; full `npm run fin` before completion.
 
-- `[ ]` **S2: GP evidence model for actual RuneScape coins.**
+- `[x]` **S2: GP evidence model for actual RuneScape coins.**
   - Files: `src/controller/controller-host.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/http-server.ts`, `src/server/agent/*`, `src/controller/benchmarks/tasks/*gold*.ts`, `docs/resident-capabilities.md`.
   - Deliverable: server can inspect, audit, and narrate resident GP using real coin item evidence (`itemId: 995`), with no fabricated GP ledger.
   - Verification: focused gold inspect/burn tests, live proof against one resident with known coins, and capability doc evidence row.
+  - Verified 2026-05-29 on `agents/wip`: GP inspection appends `city_gold_observed` Library evidence for real coin item `995`; `starter-gp-pickup-3m` benchmark added to core suite; scripted proof `bench_20260529065910_starter_gp_pickup_3m.json` and autonomous proof `bench_20260529070519_starter_gp_pickup_3m.json` show visible GP pickup into inventory with 25 GP carried. Pre-fix autonomous timeout `bench_20260529065956_starter_gp_pickup_3m.json` drove the `collect-visible-gp` benchmark goal fix.
 
 - `[ ]` **S3: AP-for-GP exchange substrate.**
   - Files: `src/controller/city-integration/service.ts`, `src/controller/patron/patron-gateway.ts`, `src/controller/patron/cli.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/benchmarks/tasks/ap-gp-exchange-*.ts`.

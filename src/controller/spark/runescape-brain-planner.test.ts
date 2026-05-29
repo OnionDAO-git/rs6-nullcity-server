@@ -325,6 +325,12 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('mine-starter-ore');
     });
 
+    it("returns a visible RuneScape GP pickup goal for 'starter-gp-pickup-3m'", () => {
+        const g = benchmarkGoalForTask('starter-gp-pickup-3m', 0);
+        expect(g?.id).toBe('collect-visible-gp');
+        expect(g?.description).toContain('RuneScape GP');
+    });
+
     it("returns a Cook's Assistant start goal for 'cooks-assistant-start-3m'", () => {
         const g = benchmarkGoalForTask('cooks-assistant-start-3m', 0);
         expect(g?.id).toBe('start-cooks-assistant');

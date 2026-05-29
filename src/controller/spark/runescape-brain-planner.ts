@@ -205,6 +205,18 @@ export function miningGoal(tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical `collect-visible-gp` Active Goal. */
+export function gpPickupGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'collect-visible-gp',
+        description: 'Collect visible RuneScape GP from the ground and keep the coins as proof.',
+        steps: ['Look for visible coins nearby', 'Pick up the RuneScape GP', 'Keep the coins in inventory as evidence'],
+        success: 'Visible RuneScape GP has been picked up into inventory.',
+        ttlTicks: 300,
+        createdAtTick: tick,
+    };
+}
+
 /** Build the canonical `start-cooks-assistant` Active Goal. */
 export function cooksAssistantStartGoal(tick: number): ActiveGoalState {
     return {
@@ -352,6 +364,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     }
     if (taskId === 'starter-mining-5m') {
         return miningGoal(tick);
+    }
+    if (taskId === 'starter-gp-pickup-3m') {
+        return gpPickupGoal(tick);
     }
     if (taskId === 'cooks-assistant-start-3m') {
         return cooksAssistantStartGoal(tick);

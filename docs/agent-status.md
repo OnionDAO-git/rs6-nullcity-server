@@ -930,3 +930,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-29 00:36 codex branch=agents/wip workstream=QA-MARSHAL-PROCESS HANDOFF - SHA=eee84ced added docs map, issue register, release QA gate, packet board. check:no-ui+diffcheck+stale-rule scan PASS.
 2026-05-29 00:33 codex branch=agents/wip workstream=CIC-MEETING-CAPTURE STARTING - update sprint priorities from CIC notes. Files: docs/2026-05-29-cic-meetup-decisions.md, sprint plan, issue register, implementation plan.
 2026-05-29 00:42 codex branch=agents/wip workstream=CIC-MEETING-CAPTURE HANDOFF - SHA=37b91dcc AP/GP simple loop prioritized; quest/NCRI/Storyteller gated. check:no-ui+diffcheck PASS.
+2026-05-29 01:51 codex branch=agents/wip workstream=S2-GP-EARNING STARTING - claim S2a/S2b+CQA6 real GP evidence. Files: controller GP tests/benchmark task if needed, docs/resident-capabilities.md, docs/issue-register.md, docs/agent-status.md. collision=none
