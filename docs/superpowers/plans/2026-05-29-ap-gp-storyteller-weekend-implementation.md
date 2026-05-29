@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build Dev's weekend Null City loop: AP births and sustains residents, GP is real RuneScape gold, residents can trade real value for AP, NCRIs can be registered/redeemed, and the Storyteller narrates evidence-backed city events.
+**Goal:** Build Dev's weekend Null City loop: AP births and sustains residents, GP is real RuneScape gold, residents can trade real value for AP, residents turn Soul goals into practical AP/GP/Library plans, and the Storyteller can later narrate evidence-backed city events.
 
-**Architecture:** Keep `rs6-nullcity-server` focused on runtime, controller, JSON/control APIs, file-backed persistence, CLI/admin tools, logs, and benchmarks. The dashboard repo owns all human-facing UI. Build the loop as small substrates with tests first: AP ledger compatibility, GP evidence, AP-for-GP exchanges, Soul proposal/birth, NCRI registry, Storyteller digest/store/model, and benchmark proof.
+**Architecture:** Keep `rs6-nullcity-server` focused on runtime, controller, JSON/control APIs, file-backed persistence, CLI/admin tools, logs, and benchmarks. The dashboard repo owns all human-facing UI. Build the loop as small substrates with tests first: AP ledger compatibility, GP evidence, AP-for-GP exchanges, Soul proposal/birth, goal hierarchy/Library strategy retrieval, Storyteller digest/store, and benchmark proof. NCRI lifecycle and model-backed Storyteller work should follow only after the AP/GP loop is measurable.
 
 **Tech Stack:** TypeScript, Zod, Jest, SWC, file-backed JSON/JSONL stores, existing controller/runtime, AgentGateway, CityIntegrationService, patron ledgers, Library timelines, benchmark artifacts, named inference profiles.
 
@@ -18,10 +18,15 @@
 - Run `npm run check:no-ui` before finishing any task here.
 - Do not commit API keys, local secrets, raw endpoint credentials, or unredacted private handles.
 - Every behavior claim needs either a focused test, benchmark artifact, live log, or `docs/resident-capabilities.md` evidence row.
+- Do not expand the broad RuneScape quest system for the weekend MVP. Use quests as bounded proof cases only after the AP/GP and goal-planning loop is measurable.
+- Do not add human bounty mechanics against residents. Human incentives should support, trade with, or observe residents.
+- Do not create a GP ledger. `GP` means real RuneScape gold, normally coin item `995`, observed through game state.
 
 ## Central Tracker
 
 Roadmap workstream: `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md#workstream-s-apgp-economy-soul-birth-ncris-and-storyteller`
+
+CIC product decisions and scope cuts: `docs/2026-05-29-cic-meetup-decisions.md`
 
 ## Autonomous Multi-Agent Operating Model
 
@@ -79,18 +84,19 @@ Wave 1 can run in parallel after Wave 0:
 - S2a/S2b: inspect real GP coin item and produce `gp_observed` evidence.
 - S6b: Storyteller store and dry-run CLI.
 - S8a: AP/GP knowledge retrieval and prompt envelope proof.
+- S8c: resident needs hierarchy and Library strategy lookup proof.
 
 Wave 2 depends on Wave 1 evidence:
 
 - S3a/S3b: AP-for-GP exchange, complete only when both AP and GP evidence exist.
 - S4a/S4b: Soul proposal queue and AP-funded birth.
-- S5a/S5b: NCRI registry and Library events.
-- S9a: quest completion to saved Library state.
-- S10b/S10c: model twins/triplets across GP and quest tasks.
+- S9a: binary goal completion to saved Library state.
+- S10b/S10c: model twins/triplets across GP and goal-planning tasks.
 
 Wave 3 is weekend closeout:
 
-- S7a/S7b: model-backed Storyteller with verifier and cost metadata.
+- S5a/S5b: NCRI static registry and Library events, only after AP/GP exchange evidence exists.
+- S7a/S7b: model-backed Storyteller with verifier and cost metadata, only after digest evidence exists.
 - S11b: final JSON route contracts for dashboard agents.
 - S12: human-readable shipped state, capability truth table, benchmark summary, and blockers.
 
@@ -107,7 +113,7 @@ Capability QA is not a one-time doc edit. At least one agent should keep running
 7. Update `docs/resident-capabilities.md` with both columns: **Can do it?** and **Does do it live?** Do not collapse benchmark proof into normal-loop proof.
 8. Add a follow-up row when the capability only works in a harness but not in ordinary controller life.
 
-Capability QA agents should favor these next probes unless a human reprioritizes them: natural Cook's Assistant ingredient sourcing, long-distance pathing and door recovery, normal gear soak, live operator trade proof, combat survival/flee/eat, AP/GP-aware resident behavior, memory route recall, cross-resident world-event reaction, and GP earning from real coins.
+Capability QA agents should favor these next probes unless a human reprioritizes them: GP earning from real coins, AP/GP-aware resident behavior, goal planning with Library strategy lookup, combat survival/flee/eat, live operator trade proof, normal gear soak, memory route recall, cross-resident world-event reaction, long-distance pathing and door recovery, and natural Cook's Assistant ingredient sourcing as a bounded proof task.
 
 ### QA Marshal Loop
 
@@ -190,6 +196,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S7b | Open | - | - | - | - | - | - |
 | S8a | Open | - | - | - | - | - | - |
 | S8b | Open | - | - | - | - | - | - |
+| S8c | Open | - | - | - | - | - | issue:QA-20260529-008 |
 | S9a | Open | - | - | - | - | - | - |
 | S9b | Open | - | - | - | - | - | - |
 | S10a | Open | - | - | - | - | - | - |
@@ -200,7 +207,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S12a | Open | - | - | - | - | - | - |
 | S12b | Open | - | - | - | - | - | - |
 | CQA0 | Open | - | - | - | - | - | - |
-| CQA1 | Open | - | - | - | - | - | issue:QA-20260529-001 |
+| CQA1 | Deferred | - | - | - | - | - | issue:QA-20260529-001 |
 | CQA2 | Open | - | - | - | - | - | issue:QA-20260529-003 |
 | CQA3 | Open | - | - | - | - | - | issue:QA-20260529-005 |
 | CQA4 | Open | - | - | - | - | - | - |
@@ -226,17 +233,18 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S4b | S4 | A | S4a | AP threshold plus admin approval births resident exactly once | idempotent birth test and smoke |
 | S5a | S5 | B | S2a | NCRI registry schema, persistence, approve/redeem transitions | registry tests |
 | S5b | S5 | B/C | S5a | NCRI events appear in Library/Storyteller digest input | Library/digest tests |
-| S6a | S6 | C | none | `CityEventDigest` fixture covers AP, GP, NCRI, quest, stuck/recovery, quiet resident | deterministic storyteller tests |
+| S6a | S6 | C | none | `CityEventDigest` fixture covers AP, GP, NCRI, bounded completion, stuck/recovery, quiet resident | deterministic storyteller tests |
 | S6b | S6 | C | S6a | `storyteller:dry-run` writes digest JSON and plain operator summary | dry-run command output |
 | S7a | S7 | C | S6b | Storyteller verifier rejects unsupported claims and private handles | verifier tests |
 | S7b | S7 | C | S7a | Model-backed Storyteller run records profile, latency, tokens, cost estimate | fixture run with dispatch JSON |
 | S8a | S8 | D | S0a | AP/GP knowledge retrieved into prompt envelope under relevant contexts | retrieval/prompt tests |
 | S8b | S8 | D | S8a,S2a | Resident with no GP refuses to claim payment; resident with GP can propose safe exchange | benchmark or body-routine tests |
-| S9a | S9 | D | existing Cook completion proof | Quest completion emits saved-state Library moment only on binary completion | Library/story-arc tests |
+| S8c | S8 | D | S8a | Resident ranks AP survival, GP earning/preservation, Soul goal pursuit, and Library writeback in the prompt/body-routine decision path | prompt tests plus benchmark artifact |
+| S9a | S9 | D | existing binary completion proof | Binary goal completion emits saved-state Library moment only on verified completion | Library/story-arc tests |
 | S9b | S9 | D/C | S9a,S6a | Storyteller digest can cite saved resident without inventing goal completion | digest/verifier tests |
 | S10a | S10 | D | none | benchmark report groups by task, resident, endpoint, model, pass rate, duration, failure cause, cost | report tests |
 | S10b | S10 | D | S10a,S2b,S8a | twin/triplet GP task compares Qwen/Qwopus/paid profile behavior | benchmark artifacts + report |
-| S10c | S10 | D | S10a,S9a | twin/triplet quest task compares model intelligence on multi-step goal | benchmark artifacts + report |
+| S10c | S10 | D | S10a,S8c | twin/triplet goal-planning task compares model intelligence on multi-step AP/GP/Soul behavior | benchmark artifacts + report |
 | S11a | S11 | E | S0a,S2a,S6a | dashboard contract examples for AP, GP, proposals, NCRIs, Storyteller, saved state | docs plus route tests if endpoints exist |
 | S11b | S11 | E/B/C | relevant endpoint packets | JSON endpoints return typed payloads and never HTML | route tests and `check:no-ui` |
 | S12a | S12 | E | any completed S packets | weekend closeout table with commit SHAs, evidence ids, blockers | docs diffcheck |
@@ -249,7 +257,7 @@ These can run continuously beside Workstream S. They update `docs/resident-capab
 | Packet | Capability | Deliverable | Proof |
 |---|---|---|---|
 | CQA0 | Capability triage | Rank the next 10 weakest/highest-value rows from `docs/resident-capabilities.md` | doc update or HANDOFF table |
-| CQA1 | Natural quest item sourcing | Cook's Assistant from empty inventory using natural egg/flour/milk acquisition, or a precise failure reason | benchmark artifact and capability row |
+| CQA1 | Natural quest item sourcing | Cook's Assistant from empty inventory using natural egg/flour/milk acquisition, or a precise failure reason; deferred behind AP/GP loop unless a human reopens it | benchmark artifact and capability row |
 | CQA2 | Door/path recovery | Target behind door or blocked route clears stale target, opens door when available, or chooses alternate route | stuck-door benchmark artifact |
 | CQA3 | Normal gear soak | Named or disposable residents with unequipped gear choose equip/wield during ordinary controller life | normal action logs plus benchmark fallback |
 | CQA4 | Live operator trade | Named resident completes safe trade with operator/human and declines unsafe loop | action logs, inventory delta, no-loop soak |
@@ -426,6 +434,8 @@ Acceptance:
 
 **Goal:** Represent admin-approved Null City RuneScape Items as metadata bound to real item ids.
 
+**Scope note:** Start this after S3 proves AP-for-GP exchange. If S3 is not green, keep this to schema/fixture design and do not build a full sale/redeem loop.
+
 **Files:**
 
 - Create: `src/controller/ncri/ncri-registry.ts`
@@ -464,7 +474,7 @@ Acceptance:
 Steps:
 
 - [ ] Define `CityEventDigest` and `StorytellerDispatch` types from `docs/2026-05-28-storyteller-design.md`.
-- [ ] Build a fixture with one low-AP resident, one GP event, one AP-for-GP exchange, one NCRI, one quest event, one stuck/recovered event, and one quiet resident.
+- [ ] Build a fixture with one low-AP resident, one GP event, one AP-for-GP exchange, one NCRI, one bounded completion event, one stuck/recovered event, and one quiet resident.
 - [ ] Write tests proving digest windows are bounded and sorted by importance.
 - [ ] Add `npm run storyteller:dry-run` that writes digest JSON and prints a plain summary.
 - [ ] Run:
@@ -484,6 +494,8 @@ Acceptance:
 ## Task S7: Storyteller Model Run And Verifier
 
 **Goal:** Generate public-canon narration with a smarter model while blocking unsupported claims.
+
+**Scope note:** Start this after S6 has deterministic digest evidence and at least one AP/GP loop proof exists. If the simple loop is still weak, keep Storyteller work at dry-run/verifier level.
 
 **Files:**
 
@@ -509,9 +521,9 @@ Acceptance:
 - Unsupported claims are blocked or marked `needs_review`.
 - Paid/local model comparison can be run without changing code.
 
-## Task S8: Resident AP/GP Knowledge And Behavior
+## Task S8: Resident AP/GP Knowledge, Goal Hierarchy, And Behavior
 
-**Goal:** Residents reason about AP/GP and do not hallucinate trades.
+**Goal:** Residents reason about AP/GP, prioritize survival and GP before aspirational Soul goals, use Library strategies, and do not hallucinate trades.
 
 **Files:**
 
@@ -522,23 +534,28 @@ Acceptance:
 - Modify: `src/controller/thinking/hybrid-agent-thinking-module.test.ts`
 - Modify: `src/controller/spark/runescape-body-routines.ts`
 - Modify: `src/controller/spark/runescape-body-routines.test.ts`
+- Modify: `docs/resident-capabilities.md`
 
 Steps:
 
 - [ ] Add economy knowledge entries: AP sustains residents; GP is real coins; humans may trade AP for GP/items/NCRIs; residents must not claim GP without evidence.
-- [ ] Write retrieval tests for low AP, GP, coin, printer, and AP-for-GP queries.
-- [ ] Write prompt tests proving AP/GP rules appear when resident has low AP or GP-related events.
-- [ ] Add behavior tests for resident-with-GP, resident-without-GP, and low-AP exchange opportunity.
+- [ ] Add goal hierarchy knowledge entries: survive on AP, earn/preserve GP, pursue the Soul goal, write useful discoveries to the Library.
+- [ ] Write retrieval tests for low AP, GP, coin, printer, AP-for-GP queries, and Library strategy lookup.
+- [ ] Write prompt tests proving AP/GP rules and the goal hierarchy appear when resident has low AP, no GP, GP-related events, or a broad Soul goal.
+- [ ] Add behavior tests for resident-with-GP, resident-without-GP, low-AP exchange opportunity, and "aspirational goal with no resources chooses a practical GP/AP step first."
+- [ ] Add or run a benchmark where a resident with a Soul goal like "find a way to make 100 GP/hour and write the strategy into the Library" plans a concrete GP route and records a Library strategy finding.
 
 Acceptance:
 
 - Residents can explain AP/GP in-character.
 - A resident without coins refuses or redirects instead of pretending to pay.
 - A resident with coins can offer a safe exchange under the benchmark harness.
+- A resident with a broad Soul goal chooses practical AP/GP actions before unsupported lore or quest claims.
+- Library strategy retrieval influences at least one benchmarked plan or action note.
 
-## Task S9: Quest Completion To Saved State
+## Task S9: Binary Goal Completion To Saved State
 
-**Goal:** Let binary quest completion save a resident into the Library.
+**Goal:** Let verified binary goal completion save a resident into the Library without expanding the whole RuneScape quest system.
 
 **Files:**
 
@@ -551,16 +568,17 @@ Acceptance:
 
 Steps:
 
-- [ ] Write a failing test that a `quest_complete` or Cook's Assistant complete event marks goal status complete.
+- [ ] Write a failing test that a verified `goal_complete` or bounded `quest_complete` event marks goal status complete.
 - [ ] Add saved Library moment with goal, AP final state, GP/NCRI context when present, and evidence refs.
-- [ ] Re-run autonomous Cook's Assistant completion benchmark.
+- [ ] Re-run a bounded completion benchmark only if needed to prove the saved-state path; do not add broad new quest routing in this task.
 - [ ] Update capability matrix with saved-state proof.
 
 Acceptance:
 
-- Quest completion has a durable saved-state artifact.
+- Verified binary goal completion has a durable saved-state artifact.
 - Saved-state logic does not fire from partial quest progress.
 - Capability doc distinguishes quest start, ingredient pickup, quest completion, and saved state.
+- Any Cook's Assistant proof is clearly labeled as bounded evidence, not weekend MVP scope.
 
 ## Task S10: Weekend Benchmark Pack
 
@@ -578,7 +596,7 @@ Steps:
 
 - [ ] Ensure all new task ids are registered in the benchmark CLI.
 - [ ] Ensure report output groups by model profile, endpoint, task id, pass rate, duration, cost, and failure cause.
-- [ ] Run twin/triplet agents for at least one GP task and one quest task when infrastructure is available.
+- [ ] Run twin/triplet agents for at least one GP task and one AP/GP/Soul-goal planning task when infrastructure is available.
 - [ ] Save artifact ids and summarize results in docs.
 
 Acceptance:
@@ -586,6 +604,7 @@ Acceptance:
 - Agents can compare Qwen/Qwopus/Haiku/Sonnet/MiniMax with the same task prompt and resident setup.
 - Capacity and intelligence results are separate rows, not mixed together.
 - Docs clearly say where evidence is weak.
+- Quest tasks are optional bounded probes; they are not the primary weekend intelligence benchmark unless Dev explicitly reopens that scope.
 
 ## Task S11: Dashboard Contract Handoff
 

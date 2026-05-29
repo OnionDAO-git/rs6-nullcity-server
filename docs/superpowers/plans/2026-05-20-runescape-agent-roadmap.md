@@ -705,6 +705,7 @@ Safe public module facade building blocks are implemented, but the public member
 
 - Human/product brief: `docs/2026-05-29-weekend-sprint-plan.md`
 - Detailed task plan: `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`
+- CIC meeting decisions and scope cuts: `docs/2026-05-29-cic-meetup-decisions.md`
 - AP/GP + Storyteller task draft: `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`
 - Storyteller design: `docs/2026-05-28-storyteller-design.md`
 - Current capability evidence: `docs/resident-capabilities.md`
@@ -714,6 +715,8 @@ Safe public module facade building blocks are implemented, but the public member
 **Standing capability QA lane:** one agent should continuously work through `docs/resident-capabilities.md`, choosing weak/unproven rows, searching real logs/artifacts, running or adding benchmarks, fixing root causes, and updating the matrix with separate `can do it` and `does do it live` evidence. Use CQA packets in the implementation plan for this work. Do not mark resident capability claims complete from unit tests alone.
 
 **Hard boundary:** no human-facing UI in `rs6-nullcity-server`. Server tasks in this workstream may add JSON/control APIs, persisted read models, CLI tools, logs, benchmarks, and docs. Dashboard/Embassy/wall/inbox/Library/Storyteller visual surfaces belong in `../rs6-nullcity-residents-dashboard`. Run `npm run check:no-ui` before marking any S task done.
+
+**CIC scope update 2026-05-29:** weekend work should prove the simple AP/GP loop and resident goal-planning hierarchy before broad quest expansion. Residents should survive on AP, earn/preserve real RuneScape GP, use Library strategy, then pursue Soul goals. Quest benchmarks are bounded proof cases, not the primary weekend MVP.
 
 - `[ ]` **S0: Align AP/GP terminology without breaking legacy data.**
   - Files: `src/controller/patron/currency-ledger.ts`, `src/controller/patron/cli.ts`, `src/controller/patron/*.test.ts`, `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`, `docs/resident-capabilities.md`, `HUMANS.md`.
@@ -742,32 +745,32 @@ Safe public module facade building blocks are implemented, but the public member
 
 - `[ ]` **S5: NCRI registry MVP.**
   - Files: new `src/controller/ncri/ncri-registry.ts`, `src/controller/ncri/ncri-registry.test.ts`, `src/controller/city-integration/service.ts`, `src/controller/evidence/library-updater.ts`.
-  - Deliverable: admin-approved NCRI records bind Null City metadata to real RuneScape item ids, track owner and redemption state, and emit Library events.
+  - Deliverable: after AP-for-GP proof exists, admin-approved NCRI records bind Null City metadata to real RuneScape item ids, track owner and redemption state, and emit Library events. Before S3 is green, keep this to schema/fixture design.
   - Verification: registry persistence tests, duplicate-redemption rejection, event evidence present for Storyteller digest.
 
 - `[ ]` **S6: Storyteller digest/store/CLI dry run.**
   - Files: new `src/controller/storyteller/*`, `src/controller/storyteller/*.test.ts`, `package.json`, `docs/2026-05-28-storyteller-design.md`.
-  - Deliverable: `npm run storyteller:dry-run` builds a bounded `CityEventDigest` from Library timelines, AP events, GP evidence, NCRIs, quest progress, and system warnings without calling a model.
+  - Deliverable: `npm run storyteller:dry-run` builds a bounded `CityEventDigest` from Library timelines, AP events, GP evidence, NCRIs, goals/bounded completions, and system warnings without calling a model.
   - Verification: fixture digest tests; dry-run writes digest JSON; `npm run check:no-ui` remains clean.
 
 - `[ ]` **S7: Storyteller model run and grounding verifier.**
   - Files: `src/controller/storyteller/*`, `src/controller/llm/*`, `src/controller/config.ts`, `config/controller.yml.example`, tests beside each file.
-  - Deliverable: manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
+  - Deliverable: after S6 digest evidence and at least one AP/GP loop proof exist, manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
   - Verification: fixture runs across at least two model profiles; verifier rejection tests; cost/token metadata recorded.
 
-- `[ ]` **S8: Resident AP/GP knowledge and behavior hooks.**
+- `[ ]` **S8: Resident AP/GP knowledge, goal hierarchy, and behavior hooks.**
   - Files: `docs/runescape-skill/economy.md`, `src/controller/knowledge/knowledge-retriever.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`, `src/controller/spark/runescape-body-routines.ts`, focused tests.
-  - Deliverable: residents know AP keeps them alive, GP is real RuneScape gold for humans/printers, and they should earn/trade GP only when evidence says they have it.
-  - Verification: prompt/retrieval tests include AP/GP snippets; benchmark resident with no GP refuses to claim it can pay; resident with GP offers safe exchange under low AP.
+  - Deliverable: residents know AP keeps them alive, GP is real RuneScape gold for humans/printers, they should earn/trade GP only when evidence says they have it, and broad Soul goals should become practical AP/GP/Library plans.
+  - Verification: prompt/retrieval tests include AP/GP and goal hierarchy snippets; benchmark resident with no GP refuses to claim it can pay; resident with GP offers safe exchange under low AP; broad-goal resident chooses practical GP/AP action and writes useful strategy.
 
-- `[ ]` **S9: Quest-to-saved-state contract.**
+- `[ ]` **S9: Binary goal-to-saved-state contract.**
   - Files: `src/controller/evidence/library-updater.ts`, `src/controller/evidence/story-arc.ts`, `src/controller/benchmarks/tasks/cooks-assistant-complete-5m.ts`, `docs/resident-capabilities.md`.
-  - Deliverable: binary quest completion can mark a resident's goal complete and create a saved Library moment with AP/GP/NCRI context.
-  - Verification: autonomous Cook's Assistant completion remains green and produces saved-state evidence.
+  - Deliverable: verified binary goal completion can mark a resident's goal complete and create a saved Library moment with AP/GP/NCRI context.
+  - Verification: saved-state tests reject partial progress; any Cook's Assistant run is labeled bounded proof rather than broad quest-system scope.
 
 - `[ ]` **S10: Weekend benchmark pack and scorecard.**
   - Files: `src/controller/benchmarks/tasks/*`, `src/controller/benchmarks/report.ts`, `docs/resident-capabilities.md`, `docs/model-intelligence-benchmark-results-2026-05-27.md`.
-  - Deliverable: one command can run/report AP decay, GP earning, AP-for-GP exchange, NCRI transfer, quest completion, and Storyteller fixture benchmarks, with model/endpoint fields preserved.
+  - Deliverable: one command can run/report AP decay, GP earning, AP-for-GP exchange, NCRI transfer, goal-planning, bounded completion, and Storyteller fixture benchmarks, with model/endpoint fields preserved.
   - Verification: benchmark artifacts include resident id, model profile, endpoint, task id, success/failure, duration, and failure cause.
 
 - `[ ]` **S11: Dashboard contract handoff, server JSON only.**

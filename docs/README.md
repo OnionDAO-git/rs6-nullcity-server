@@ -30,6 +30,7 @@ This file tells humans and AI agents which docs are canonical today and which do
 | Doc | Use |
 |---|---|
 | `docs/null-city-rs6-vision.md` | Long-term vision and design invariants. |
+| `docs/2026-05-29-cic-meetup-decisions.md` | Latest CIC meetup decisions: simple AP/GP loop, scope cuts, no server UI, and weekend priorities. |
 | `docs/2026-05-26-meeting-decisions.md` | Latest James/Dev/Adam meeting decisions and constraints. |
 | `docs/2026-05-28-attention-loop-and-storyteller-tasks.md` | AP/GP loop and Storyteller task seed. |
 | `docs/2026-05-28-storyteller-design.md` | Storyteller feature design. |
