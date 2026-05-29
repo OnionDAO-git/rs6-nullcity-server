@@ -4,6 +4,12 @@ Drafted: 2026-05-29
 
 Status: **Planning draft for the weekend sprint.** This translates Dev's latest gameplay loop, the AP/GP economy, and the locked Storyteller feature into buildable work. Revise after tonight's meeting if Dev's MDA framework changes the shape of the mechanics.
 
+Central tracker:
+
+- Roadmap tasks: `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` → **Workstream S**.
+- Implementation plan: `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`.
+- This file is the compact human/product brief; agents should update the roadmap task markers as they work.
+
 ## Objective
 
 Ship the smallest coherent Null City loop that can survive contact with humans:
@@ -22,6 +28,8 @@ Ship the smallest coherent Null City loop that can survive contact with humans:
 - Do not create a second "Gold Points" ledger.
 - Any AP-for-GP exchange needs two linked facts: AP ledger event plus RuneScape trade/inventory evidence.
 - Keep UI work paused until Dev's MDA framework explicitly clears it. Prefer CLI, API, persistence, logs, tests, and benchmarks first.
+- **No human-facing UI in this repo.** Server work may expose JSON/read-model/control APIs only. Any dashboard, attendee page, wall, Library, inbox, patron, Storyteller feed, HTML/CSS/Svelte/React/JSX/TSX work belongs in `../rs6-nullcity-residents-dashboard`.
+- Run `npm run check:no-ui` before finishing any server task that touches HTTP routes, public assets, package scripts, or docs that describe surfaces.
 - Use file-backed persistence first unless an existing datastore is already wired.
 - Size for **10-30 concurrent residents**, not 400 simultaneous residents.
 - Run real resident benchmarks for behavior claims; do not mark a capability complete from unit tests alone.

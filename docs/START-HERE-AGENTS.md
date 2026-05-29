@@ -17,13 +17,14 @@ For the full vision: read **`docs/null-city-rs6-vision.md`**. That's the north s
 Do not skip. Order matters.
 
 1. **`docs/null-city-rs6-vision.md`** — *the why.* The vision, the three core loops, the design invariants you must not break.
-2. **`docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`** — *the what.* The canonical workstream board (A through O) with task status markers `[ ] [>] [~] [!] [x]`.
+2. **`docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`** — *the what.* The canonical workstream board with task status markers `[ ] [>] [~] [!] [x]`.
 3. **`docs/agent-coordination.md`** — *the how.* Multi-agent collision avoidance, file lock conventions, branch policy.
 4. **`docs/agent-status.md`** — *the now.* Append-only sync log. Read the tail to see what's in flight before touching anything.
 
 After those four, if you're working a specific workstream:
 
 5. **Workstream-specific spec** in `docs/superpowers/specs/` — see the index table in the vision doc.
+6. For the May 29-June 1 weekend sprint, read **`docs/2026-05-29-weekend-sprint-plan.md`** and **`docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`** before touching AP/GP, Soul birth, NCRI, Storyteller, or benchmark work.
 
 ---
 
@@ -41,6 +42,8 @@ After those four, if you're working a specific workstream:
 7. When done, mark `[x]` in the roadmap with a verification note. Append a closing entry to the status log.
 
 **You push to `nullcity` directly.** Per the maintainer: "no branches, just pushes to main, working fast and pushing reviewed code to main is a way to stay in sync." Branches are reserved for genuinely experimental / multi-hour autonomous work that would break the working tree for other agents mid-push.
+
+**Current branch rule:** routine agent work now lands on `agents/wip`; curated milestone squash-merges go to `nullcity`. Follow `docs/agent-coordination.md` if this paragraph conflicts with older instructions.
 
 ---
 
@@ -67,6 +70,7 @@ After those four, if you're working a specific workstream:
 - **Workstream P: Deeper game-skill knowledge** — spec exists. 6 plans: retrieval improvements, 23-skill expansion, world geography, NPCs+items, quests. Promotes `feat/skill-*.md` files.
 - **Workstream Q: Smarter behavior (F+G finish)** — spec exists. 5 plans for non-command small talk, stuck-help-speech, combat personality, trading, broader command loop.
 - **Workstream R: SPARK module extraction (B2-B5)** — spec exists. 5 plans carving the 2578-line monolith into 4 composable units + slim orchestrator. Foundation move; unblocks Q's integration points.
+- **Workstream S: AP/GP economy, Soul birth, NCRIs, Storyteller** — active weekend sprint. Use `docs/2026-05-29-weekend-sprint-plan.md` for product context and `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task execution.
 
 ---
 
@@ -84,6 +88,7 @@ These come from the vision doc but I'm restating them here because they're easy 
 8. **No `/Users/...` paths or private-context references in committed docs.** `NullCityNotes.md` is private. Cite as "Null City v1 design notes (private)."
 9. **Don't push to `main`** — there is no `main`. Push to `nullcity` (the default branch).
 10. **Don't `git commit --amend` blindly** if you're sharing the working tree with another agent (Codex). Their WIP can be folded into your commit. See `docs/multi_agent_codex_overnight.md` in the maintainer's memory if accessible, or learn it the hard way once.
+11. **No human-facing UI in this server repo.** `rs6-nullcity-server` owns runtime, controller, JSON/control APIs, persistence, CLI tools, logs, and benchmarks. All dashboard, attendee, wall, inbox, Library, Graveyard, patron, Storyteller feed, HTML/CSS/Svelte/React/JSX/TSX work belongs in `../rs6-nullcity-residents-dashboard`. Run `npm run check:no-ui` before finishing server work that touches HTTP routes, package scripts, or surface docs.
 
 ---
 

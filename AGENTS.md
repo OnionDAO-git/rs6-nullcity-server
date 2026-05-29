@@ -27,6 +27,11 @@ Before substantial autonomy, controller, dashboard, or agent behavior work, read
 
 The roadmap is the source of truth for active task status and next work. Older plans and RuneBench design notes are background unless the roadmap explicitly points to them as active.
 
+For the May 29-June 1 AP/GP + Storyteller weekend sprint, use:
+- `docs/2026-05-29-weekend-sprint-plan.md` for the human/product brief.
+- `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task-by-task execution.
+- Workstream S in `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the central task board.
+
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. Keep status-log entries under ~250 chars — long rollups belong in the commit body.
 
 **Branch workflow (revised 2026-05-23):** day-to-day multi-agent work goes to the shared `agents/wip` branch, not directly to `nullcity`. Curated squash-merges from `agents/wip` → `nullcity` happen on milestone completion (workstream slice done + verifications green), every ~24h, or on the maintainer's ask. The default branch should read as a milestone log; in-progress STARTING/HANDOFF churn lives on `agents/wip`. Full mechanics in `docs/agent-coordination.md` § Rule 3. `docs/agent-status.md` lives only on `agents/wip` and is excluded from squash-merges to `nullcity`.

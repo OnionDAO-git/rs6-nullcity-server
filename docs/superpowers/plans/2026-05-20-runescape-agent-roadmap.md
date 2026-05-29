@@ -697,6 +697,85 @@ Safe public module facade building blocks are implemented, but the public member
   - Verified 2026-05-23 on `agents/wip`: Exposed the `run_workflow_card` tool and registered three core resources (`workflow_cards`, `observe_resident_progress`, and `observe_resident_trajectory`) in `ControllerMcpServer`. All unit and integration tests passed cleanly (1318/1318).
   - Hardened 2026-05-23 on `agents/wip`: workflow-card resource entries now expose explicit MCP runnable metadata, resident progress/trajectory resource URIs encode names like `res:agent`, and `follow-codex` carries default `follow_player` params. Validation passed with focused MCP tests (`25/25`), typecheck, lint, format, build, diffcheck, full Jest (`1321/1321`), and a disposable HTTP MCP proof that read workflow/progress/trajectory resources and completed `run_workflow_card follow-codex`.
 
+## Workstream S: AP/GP Economy, Soul Birth, NCRIs, And Storyteller
+
+**Purpose:** Build Dev's current Null City loop for the May 29-June 1 weekend sprint: humans fund Souls with Attention Points (AP), residents survive by managing AP, residents earn/trade actual RuneScape GP, NCRIs connect in-game value to physical prints, saved residents enter the Library, and the Storyteller narrates public canon from evidence.
+
+**Primary docs:**
+
+- Human/product brief: `docs/2026-05-29-weekend-sprint-plan.md`
+- Detailed task plan: `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`
+- AP/GP + Storyteller task draft: `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`
+- Storyteller design: `docs/2026-05-28-storyteller-design.md`
+- Current capability evidence: `docs/resident-capabilities.md`
+
+**Hard boundary:** no human-facing UI in `rs6-nullcity-server`. Server tasks in this workstream may add JSON/control APIs, persisted read models, CLI tools, logs, benchmarks, and docs. Dashboard/Embassy/wall/inbox/Library/Storyteller visual surfaces belong in `../rs6-nullcity-residents-dashboard`. Run `npm run check:no-ui` before marking any S task done.
+
+- `[ ]` **S0: Align AP/GP terminology without breaking legacy data.**
+  - Files: `src/controller/patron/currency-ledger.ts`, `src/controller/patron/cli.ts`, `src/controller/patron/*.test.ts`, `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`, `docs/resident-capabilities.md`, `HUMANS.md`.
+  - Deliverable: public/operator copy consistently says AP/Attention Points for resident life-force and human funding; legacy persisted Shards files continue to load. GP is always real RuneScape gold coins, never a second ledger.
+  - Verification: focused patron CLI/ledger tests, `npm run check:no-ui`, `npm run typecheck`, and `npm test -- --runInBand src/controller/patron`.
+
+- `[ ]` **S1: AP ledger and resident life-force proof.**
+  - Files: `src/controller/spark/attention.ts`, `src/controller/resident-runtime.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/*.test.ts`, `src/controller/admin/patron-loop-smoke.ts`, `docs/resident-capabilities.md`.
+  - Deliverable: AP decay/top-up/fade/resume behavior is replayable, visible in Library events, and benchmarked with a low-AP resident.
+  - Verification: low-AP benchmark or smoke proves ask/top-up/resume; focused runtime/city-integration tests; full `npm run fin` before completion.
+
+- `[ ]` **S2: GP evidence model for actual RuneScape coins.**
+  - Files: `src/controller/controller-host.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/http-server.ts`, `src/server/agent/*`, `src/controller/benchmarks/tasks/*gold*.ts`, `docs/resident-capabilities.md`.
+  - Deliverable: server can inspect, audit, and narrate resident GP using real coin item evidence (`itemId: 995`), with no fabricated GP ledger.
+  - Verification: focused gold inspect/burn tests, live proof against one resident with known coins, and capability doc evidence row.
+
+- `[ ]` **S3: AP-for-GP exchange substrate.**
+  - Files: `src/controller/city-integration/service.ts`, `src/controller/patron/patron-gateway.ts`, `src/controller/patron/cli.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/benchmarks/tasks/ap-gp-exchange-*.ts`.
+  - Deliverable: one exchange links an AP ledger event and RuneScape GP trade/burn/transfer evidence under a shared exchange id.
+  - Verification: integration test rejects missing AP side, rejects missing GP evidence, accepts linked event; live controlled exchange benchmark passes.
+
+- `[ ]` **S4: Soul proposal and AP-funded birth queue.**
+  - Files: `src/controller/city-integration/service.ts`, `src/controller/city-integration/store.ts`, `src/controller/soul/soul-schema.ts`, `src/controller/controller-host.ts`, new `src/controller/city-integration/soul-proposals.ts`, tests beside each file.
+  - Deliverable: humans/admins can create a Soul proposal, fund it with AP, cross a threshold, and birth a resident from validated SOUL markdown.
+  - Verification: file-backed proposal replay test; idempotent birth test; live smoke where born resident appears in controller state and Library timeline.
+
+- `[ ]` **S5: NCRI registry MVP.**
+  - Files: new `src/controller/ncri/ncri-registry.ts`, `src/controller/ncri/ncri-registry.test.ts`, `src/controller/city-integration/service.ts`, `src/controller/evidence/library-updater.ts`.
+  - Deliverable: admin-approved NCRI records bind Null City metadata to real RuneScape item ids, track owner and redemption state, and emit Library events.
+  - Verification: registry persistence tests, duplicate-redemption rejection, event evidence present for Storyteller digest.
+
+- `[ ]` **S6: Storyteller digest/store/CLI dry run.**
+  - Files: new `src/controller/storyteller/*`, `src/controller/storyteller/*.test.ts`, `package.json`, `docs/2026-05-28-storyteller-design.md`.
+  - Deliverable: `npm run storyteller:dry-run` builds a bounded `CityEventDigest` from Library timelines, AP events, GP evidence, NCRIs, quest progress, and system warnings without calling a model.
+  - Verification: fixture digest tests; dry-run writes digest JSON; `npm run check:no-ui` remains clean.
+
+- `[ ]` **S7: Storyteller model run and grounding verifier.**
+  - Files: `src/controller/storyteller/*`, `src/controller/llm/*`, `src/controller/config.ts`, `config/controller.yml.example`, tests beside each file.
+  - Deliverable: manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
+  - Verification: fixture runs across at least two model profiles; verifier rejection tests; cost/token metadata recorded.
+
+- `[ ]` **S8: Resident AP/GP knowledge and behavior hooks.**
+  - Files: `docs/runescape-skill/economy.md`, `src/controller/knowledge/knowledge-retriever.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`, `src/controller/spark/runescape-body-routines.ts`, focused tests.
+  - Deliverable: residents know AP keeps them alive, GP is real RuneScape gold for humans/printers, and they should earn/trade GP only when evidence says they have it.
+  - Verification: prompt/retrieval tests include AP/GP snippets; benchmark resident with no GP refuses to claim it can pay; resident with GP offers safe exchange under low AP.
+
+- `[ ]` **S9: Quest-to-saved-state contract.**
+  - Files: `src/controller/evidence/library-updater.ts`, `src/controller/evidence/story-arc.ts`, `src/controller/benchmarks/tasks/cooks-assistant-complete-5m.ts`, `docs/resident-capabilities.md`.
+  - Deliverable: binary quest completion can mark a resident's goal complete and create a saved Library moment with AP/GP/NCRI context.
+  - Verification: autonomous Cook's Assistant completion remains green and produces saved-state evidence.
+
+- `[ ]` **S10: Weekend benchmark pack and scorecard.**
+  - Files: `src/controller/benchmarks/tasks/*`, `src/controller/benchmarks/report.ts`, `docs/resident-capabilities.md`, `docs/model-intelligence-benchmark-results-2026-05-27.md`.
+  - Deliverable: one command can run/report AP decay, GP earning, AP-for-GP exchange, NCRI transfer, quest completion, and Storyteller fixture benchmarks, with model/endpoint fields preserved.
+  - Verification: benchmark artifacts include resident id, model profile, endpoint, task id, success/failure, duration, and failure cause.
+
+- `[ ]` **S11: Dashboard contract handoff, server JSON only.**
+  - Files: `docs/city-dashboard-integration.md`, `src/controller/city-integration/http-server.ts`, `src/controller/city-integration/*.test.ts`.
+  - Deliverable: document JSON contracts the dashboard needs for AP, GP, Soul proposals, NCRIs, Storyteller dispatches, and saved state. Do not add HTML/CSS/UI to this repo.
+  - Verification: contract examples validate in tests; `npm run check:no-ui` passes.
+
+- `[ ]` **S12: Weekend closeout and human-readable state.**
+  - Files: `HUMANS.md`, `docs/resident-capabilities.md`, `docs/model-benchmarking.md`, `docs/2026-05-29-weekend-sprint-plan.md`, `docs/agent-status.md`.
+  - Deliverable: by Sunday night, humans can read what shipped, what was proven live, how many residents are safe, which models worked, and what remains blocked.
+  - Verification: docs-only `git diff --check`; every completed S task has a roadmap verification note and pushed commit.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
