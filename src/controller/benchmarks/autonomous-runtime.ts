@@ -43,7 +43,15 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
         decayCurve: 'steep',
         floor: 0,
     },
+    'ap-topup-resume-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
 };
+
+const AP_TOPUP_RESUME_5M_TASK_ID = 'ap-topup-resume-5m';
+const AP_TOPUP_RESUME_AMOUNT = 3000;
 
 export interface ResidentRuntimeBenchmarkDriverOptions {
     config: ControllerConfig;
@@ -60,10 +68,12 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
     private perceptionListener?: (residentId: string, perception: Perception) => void;
     private eventListener?: (residentId: string, event: PerceptionEvent) => void;
     private readonly inFlightPerceptions = new Set<Promise<void>>();
+    private apTopupInjected = false;
 
     constructor(private readonly options: ResidentRuntimeBenchmarkDriverOptions) {}
 
     async start(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
+        this.apTopupInjected = false;
         this.context = context;
         this.runDirs = createRunDirs(context);
         const seededMemories = seedBenchmarkMemories(this.runDirs.memory, context.resident, context.task.memorySeeds || []);
@@ -102,6 +112,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         this.runDirs = undefined;
         this.context = undefined;
         this.gameSkill = undefined;
+        this.apTopupInjected = false;
     }
 
     private createEvidence(context: BenchmarkAutonomousRuntimeContext): ResidentRuntimeEvidence {
@@ -165,6 +176,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             }
             const task = this.runtime
                 .onPerception(perception)
+                .then(() => this.injectApTopupAfterFade(context))
                 .catch(error => context.recordSummary(`Autonomous runtime perception error: ${errorMessage(error)}`));
             this.inFlightPerceptions.add(task);
             task.finally(() => this.inFlightPerceptions.delete(task));
@@ -177,6 +189,27 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         };
         this.options.gateway.on('perception', this.perceptionListener);
         this.options.gateway.on('event', this.eventListener);
+    }
+
+    private injectApTopupAfterFade(context: BenchmarkAutonomousRuntimeContext): void {
+        if (context.task.id !== AP_TOPUP_RESUME_5M_TASK_ID || this.apTopupInjected || !this.runtime) {
+            return;
+        }
+        const runtime = this.runtime as unknown as {
+            getState?: () => { attention: number; deceased?: { cause?: string } };
+            incrementAttention?: (amount: number) => void;
+        };
+        if (typeof runtime.getState !== 'function' || typeof runtime.incrementAttention !== 'function') {
+            return;
+        }
+        const state = runtime.getState();
+        const faded = state.attention <= 0 || state.deceased?.cause === 'attention_exhausted';
+        if (!faded) {
+            return;
+        }
+        runtime.incrementAttention(AP_TOPUP_RESUME_AMOUNT);
+        this.apTopupInjected = true;
+        context.recordSummary(`Injected AP top-up (${AP_TOPUP_RESUME_AMOUNT}) after fade for benchmark resume proof.`);
     }
 
     private unbindGatewayEvents(): void {

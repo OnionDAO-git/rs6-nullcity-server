@@ -60,3 +60,43 @@ Representative action evidence:
 ```
 
 Result: low-AP ask + attention-exhausted fade is now live-proven. Top-up/resume after a patron AP grant is still a separate follow-up proof.
+
+## Follow-up: top-up/resume substrate (2026-05-29 late run)
+
+To close the remaining S1b/QA-20260529-009 gap, this run added a dedicated benchmark path for fade -> AP top-up -> resumed activity:
+
+- New task: `ap-topup-resume-5m` in `src/controller/benchmarks/tasks/ap-topup-resume-5m.ts`.
+- New verifier: requires low-AP ask + fade/logout + AP jump (`attentionAfter <= 0` then `> 0`) + resumed non-logout action after top-up.
+- Runtime driver hook: `ResidentRuntimeBenchmarkDriver` now injects one benchmark-scoped AP top-up (`+3000`) after detecting `attention_exhausted` when task id is `ap-topup-resume-5m`.
+- CLI registration: task is available in single-run and `--task all` suites.
+
+Verification in this run:
+
+- `npm test -- --runInBand src/controller/benchmarks/tasks/ap-topup-resume-5m.test.ts src/controller/benchmarks/autonomous-runtime.test.ts src/controller/benchmarks/tasks/ap-decay-ask-5m.test.ts src/controller/benchmarks/cli.test.ts` ✅
+- `npm run check:no-ui` ✅
+- `npm run build` ✅
+- `npm run fin` ❌ (sandbox loopback `EPERM` in unrelated HTTP/WebSocket suites)
+
+Live attempt in this run:
+
+```bash
+npm run controller:bench -- --task ap-topup-resume-5m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-29
+```
+
+Result:
+
+- `[controller:bench] connect EPERM 127.0.0.1:43595 - Local (0.0.0.0:0)`
+
+Dry-run proof of registration:
+
+```bash
+npm run controller:bench -- --task ap-topup-resume-5m --module onion.runescape.standard --mode autonomous --dry-run
+```
+
+Output:
+
+```json
+{"dryRun":true,"mode":"autonomous","task":{"id":"ap-topup-resume-5m","version":"0.1.0"},"module":{"id":"onion.runescape.standard","version":"0.1.0"}}
+```
+
+Current state: top-up/resume verifier and runtime substrate are landed, but live artifact capture remains blocked in this sandbox.

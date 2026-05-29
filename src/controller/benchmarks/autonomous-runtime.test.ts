@@ -13,6 +13,10 @@ jest.mock('../resident-runtime', () => ({
 }));
 
 describe('ResidentRuntimeBenchmarkDriver', () => {
+    beforeEach(() => {
+        (ResidentRuntime as jest.Mock).mockClear();
+    });
+
     it('wires runtime evidence and exposes trajectory/progress artifact paths', async () => {
         const context = benchmarkContext();
         const driver = new ResidentRuntimeBenchmarkDriver({
@@ -153,6 +157,72 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
             decayCurve: 'steep',
             floor: 0,
         });
+
+        await driver.stop('test_complete');
+    });
+
+    it('uses a low starting attention profile for ap-topup-resume-5m autonomous proof runs', async () => {
+        const context = benchmarkContext({
+            task: { id: 'ap-topup-resume-5m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },
+        });
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: new FakeGateway() as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        const runtimeOptions = (ResidentRuntime as jest.Mock).mock.calls.at(-1)?.[0];
+        expect(runtimeOptions.soul.frontmatter.attentionProfile).toMatchObject({
+            startingAttention: 12,
+            decayCurve: 'steep',
+            floor: 0,
+        });
+
+        await driver.stop('test_complete');
+    });
+
+    it('injects a one-time AP top-up after attention-exhausted fade for ap-topup-resume-5m', async () => {
+        const gateway = new FakeGateway();
+        const context = benchmarkContext({
+            task: { id: 'ap-topup-resume-5m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },
+        });
+        const runtime = {
+            onPerception: jest.fn(async () => undefined),
+            onEvent: jest.fn(),
+            stop: jest.fn(),
+            getState: jest.fn(() => ({ attention: 0, deceased: { cause: 'attention_exhausted' } })),
+            incrementAttention: jest.fn(),
+        };
+        (ResidentRuntime as jest.Mock).mockImplementationOnce(() => runtime);
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: gateway as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        gateway.emit('perception', context.resident, {
+            resident: { position: { x: 3222, y: 3218, level: 0 }, inventory: [], attention: 0 },
+            nearby: { worldItems: [] },
+            events: [],
+        });
+        await Promise.resolve();
+
+        expect(runtime.incrementAttention).toHaveBeenCalledWith(3000);
+        expect(context.recordSummary).toHaveBeenCalledWith(expect.stringContaining('Injected AP top-up (3000)'));
+
+        gateway.emit('perception', context.resident, {
+            resident: { position: { x: 3222, y: 3218, level: 0 }, inventory: [], attention: 0 },
+            nearby: { worldItems: [] },
+            events: [],
+        });
+        await Promise.resolve();
+        expect(runtime.incrementAttention).toHaveBeenCalledTimes(1);
 
         await driver.stop('test_complete');
     });
