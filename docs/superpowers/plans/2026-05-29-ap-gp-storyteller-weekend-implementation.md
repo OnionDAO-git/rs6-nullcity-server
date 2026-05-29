@@ -209,7 +209,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA0 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa0-triage.md; docs/issue-register.md | - | doc:docs/capability-evidence/2026-05-29-cqa0-triage.md; issue:QA-20260529-009 | - |
 | CQA1 | Deferred | - | - | - | - | - | issue:QA-20260529-001 |
 | CQA2 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa2-door-path-recovery.md; docs/resident-capabilities.md; docs/issue-register.md | 798a8914 | benchmark:bench_20260528181711_equipment_prep_3m; benchmark:bench_20260528021111_explore_report_5m; issue:QA-20260529-003(closed) | - |
-| CQA3 | Open | - | - | - | - | - | issue:QA-20260529-005 |
+| CQA3 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa3-normal-gear-soak.md; docs/resident-capabilities.md; docs/issue-register.md | - | doc:docs/capability-evidence/2026-05-29-cqa3-normal-gear-soak.md; issue:QA-20260529-005 | named residents mostly pre-equipped or missing unequipped combat gear; ordinary equip-action proof still absent |
 | CQA4 | Open | - | - | - | - | - | - |
 | CQA5 | Open | - | - | - | - | - | issue:QA-20260529-004 |
 | CQA6 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa6-gp-coin-995-verification.md; docs/issue-register.md | 96745f95 | benchmark:bench_20260529065910_starter_gp_pickup_3m; benchmark:bench_20260529070519_starter_gp_pickup_3m | - |
