@@ -20,7 +20,7 @@ Owner: `codex`
 - `npm test -- --runInBand src/controller/nervous-system/nervous-system.test.ts src/controller/benchmarks/tasks/ap-decay-ask-5m.test.ts src/controller/benchmarks/benchmark-runner.test.ts src/controller/benchmarks/autonomous-runtime.test.ts` ✅
 - `npm run check:no-ui` ✅
 - `npm run build` ✅
-- `npm run fin` ✅ (`2562/2562` tests)
+- `npm run fin` ✅ (`2605/2605` tests after rebasing over the P0 contract substrate commits)
 
 ## Live evidence
 
