@@ -24,6 +24,8 @@ This file is now an active QA queue, not a static report.
    - `Does do it live?` for ordinary controller logs, Library timelines, or long-run observation.
 6. Leave artifact ids, command names, model profile, endpoint, elapsed time, and failure cause when relevant.
 
+If multiple agents need this file at once, write a focused evidence note under `docs/capability-evidence/` first and let the QA Marshal fold it into this rollup.
+
 Use the CQA packet backlog in `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for coordinated Friday/Saturday work.
 
 ## TL;DR

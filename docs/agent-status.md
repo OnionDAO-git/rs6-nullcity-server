@@ -926,3 +926,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-29 00:08 codex branch=agents/wip workstream=WEEKEND-SPRINT-PROCESS HANDOFF - SHA=22651f14 added S0a-S12b packet backlog, lane map, mission waves, DoD/evidence rules. check:no-ui+diffcheck PASS.
 2026-05-29 00:12 codex branch=agents/wip workstream=CAPABILITY-QA-PROCESS STARTING - make resident-capabilities evidence pass a standing weekend lane with packets and root-cause-fix rules. Files: sprint plan, implementation plan, roadmap, AGENTS/START-HERE.
 2026-05-29 00:16 codex branch=agents/wip workstream=CAPABILITY-QA-PROCESS HANDOFF - SHA=456f6d97 added CQA0-CQA11 standing capability QA lane. check:no-ui+diffcheck+placeholder-scan PASS.
+2026-05-29 00:25 codex branch=agents/wip workstream=QA-MARSHAL-PROCESS STARTING - process hardening. Files: docs/README.md, docs/issue-register.md, docs/release-qa-status.md, AGENTS.md, docs/START-HERE-AGENTS.md.

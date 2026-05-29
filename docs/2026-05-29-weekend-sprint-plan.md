@@ -9,6 +9,8 @@ Central tracker:
 - Roadmap tasks: `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` → **Workstream S**.
 - Implementation plan: `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`.
 - This file is the compact human/product brief; agents should update the roadmap task markers as they work.
+- QA findings: `docs/issue-register.md`.
+- Release gate: `docs/release-qa-status.md`.
 
 ## Objective
 

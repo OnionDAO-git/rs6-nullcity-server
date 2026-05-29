@@ -77,7 +77,7 @@ Wave 1 can run in parallel after Wave 0:
 
 - S1a/S1b: AP ledger replay, decay, top-up, fade/resume proof.
 - S2a/S2b: inspect real GP coin item and produce `gp_observed` evidence.
-- S6b/S6c: Storyteller store and dry-run CLI.
+- S6b: Storyteller store and dry-run CLI.
 - S8a: AP/GP knowledge retrieval and prompt envelope proof.
 
 Wave 2 depends on Wave 1 evidence:
@@ -91,7 +91,7 @@ Wave 2 depends on Wave 1 evidence:
 Wave 3 is weekend closeout:
 
 - S7a/S7b: model-backed Storyteller with verifier and cost metadata.
-- S11b/S11c: final JSON route contracts for dashboard agents.
+- S11b: final JSON route contracts for dashboard agents.
 - S12: human-readable shipped state, capability truth table, benchmark summary, and blockers.
 
 ### Standing Capability QA Loop
@@ -108,6 +108,18 @@ Capability QA is not a one-time doc edit. At least one agent should keep running
 8. Add a follow-up row when the capability only works in a harness but not in ordinary controller life.
 
 Capability QA agents should favor these next probes unless a human reprioritizes them: natural Cook's Assistant ingredient sourcing, long-distance pathing and door recovery, normal gear soak, live operator trade proof, combat survival/flee/eat, AP/GP-aware resident behavior, memory route recall, cross-resident world-event reaction, and GP earning from real coins.
+
+### QA Marshal Loop
+
+The QA Marshal is a reviewer/release role, not an implementation lane.
+
+- Reviews packet HANDOFFs for scope, tests, evidence, and doc honesty.
+- Maintains `docs/issue-register.md` and `docs/release-qa-status.md`.
+- Blocks weekend closeout or `agents/wip` -> `nullcity` squash when open `P0` issues remain.
+- Opens issues when claims are unsupported, evidence is weak, file ownership is violated, or a failed benchmark cannot be fixed in the same cycle.
+- Accepts packet results only when tests, `check:no-ui`, and relevant benchmark/log evidence match the claim.
+
+Use `docs/issue-register.md` for discovered problems; use this plan for planned packet work.
 
 Before starting a task:
 
@@ -137,9 +149,68 @@ After finishing:
 | Benchmarks and reports | `src/controller/benchmarks/tasks/*`, `src/controller/benchmarks/report.ts`, `docs/resident-capabilities.md` |
 | Dashboard contracts | `docs/city-dashboard-integration.md`, `src/controller/city-integration/http-server.ts` |
 
+### High-Contention Files
+
+The lane map suggests ownership; exact file locks come from `docs/agent-status.md` STARTING lines. These files need extra care:
+
+| File | Why it is risky | Rule |
+|---|---|---|
+| `src/controller/city-integration/service.ts` | S2/S3/S4/S5/S11 can all touch it. | Check issue/register/STARTING lines; claim exact methods or choose a different packet. |
+| `src/controller/city-integration/http-server.ts` | Dashboard JSON contracts and AP/GP routes can collide. | Do not mix unrelated route work in one commit. |
+| `src/controller/resident-runtime.ts` | Runtime behavior has broad blast radius. | Use focused tests and avoid opportunistic refactors. |
+| `src/controller/spark/runescape-body-routines.ts` | Capability QA and AP/GP behavior hooks can collide. | Claim specific routine names in STARTING. |
+| `docs/resident-capabilities.md` | Many CQA packets want this file. | Prefer `docs/capability-evidence/<date>-<packet>.md`; QA Marshal can fold notes into the rollup. |
+| `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` | Shared task board. | Keep edits surgical: marker, note, or Workstream S row only. |
+
 ## Agent Packet Backlog
 
 These packets are intentionally smaller than S0-S12. Autonomous agents should claim one packet, finish it completely, then claim the next.
+
+### Packet Claim Board
+
+Use this board for packet-level status. Parent S-task markers remain in the roadmap; this table is the fine-grained claim/status layer.
+
+| Packet | Status | Owner | Started | Files | Commit | Evidence | Blocker |
+|---|---|---|---|---|---|---|---|
+| S0a | Open | - | - | - | - | - | - |
+| S0b | Open | - | - | - | - | - | - |
+| S1a | Open | - | - | - | - | - | - |
+| S1b | Open | - | - | - | - | - | - |
+| S2a | Open | - | - | - | - | - | - |
+| S2b | Open | - | - | - | - | - | issue:QA-20260529-002 |
+| S3a | Open | - | - | - | - | - | - |
+| S3b | Open | - | - | - | - | - | - |
+| S4a | Open | - | - | - | - | - | - |
+| S4b | Open | - | - | - | - | - | - |
+| S5a | Open | - | - | - | - | - | - |
+| S5b | Open | - | - | - | - | - | - |
+| S6a | Open | - | - | - | - | - | - |
+| S6b | Open | - | - | - | - | - | - |
+| S7a | Open | - | - | - | - | - | - |
+| S7b | Open | - | - | - | - | - | - |
+| S8a | Open | - | - | - | - | - | - |
+| S8b | Open | - | - | - | - | - | - |
+| S9a | Open | - | - | - | - | - | - |
+| S9b | Open | - | - | - | - | - | - |
+| S10a | Open | - | - | - | - | - | - |
+| S10b | Open | - | - | - | - | - | - |
+| S10c | Open | - | - | - | - | - | - |
+| S11a | Open | - | - | - | - | - | - |
+| S11b | Open | - | - | - | - | - | - |
+| S12a | Open | - | - | - | - | - | - |
+| S12b | Open | - | - | - | - | - | - |
+| CQA0 | Open | - | - | - | - | - | - |
+| CQA1 | Open | - | - | - | - | - | issue:QA-20260529-001 |
+| CQA2 | Open | - | - | - | - | - | issue:QA-20260529-003 |
+| CQA3 | Open | - | - | - | - | - | issue:QA-20260529-005 |
+| CQA4 | Open | - | - | - | - | - | - |
+| CQA5 | Open | - | - | - | - | - | issue:QA-20260529-004 |
+| CQA6 | Open | - | - | - | - | - | issue:QA-20260529-002 |
+| CQA7 | Open | - | - | - | - | - | - |
+| CQA8 | Open | - | - | - | - | - | - |
+| CQA9 | Open | - | - | - | - | - | - |
+| CQA10 | Open | - | - | - | - | - | issue:QA-20260529-006 |
+| CQA11 | Open | - | - | - | - | - | - |
 
 | Packet | Parent | Lane | Depends on | Deliverable | Proof |
 |---|---|---|---|---|---|

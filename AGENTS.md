@@ -34,6 +34,13 @@ For the May 29-June 1 AP/GP + Storyteller weekend sprint, use:
 - Claim the smallest available packet from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`), not a whole workstream, unless you are doing release closeout.
 - Capability QA packets (`CQA0`-`CQA11`) are always valid weekend work: read `docs/resident-capabilities.md`, prove or disprove one weak row with real logs/benchmarks, fix root causes, and update the table.
 - Treat the implementation plan's lane table as the file-lock map for parallel agents.
+- QA findings live in `docs/issue-register.md`; release/readiness gating lives in `docs/release-qa-status.md`.
+
+Paste-ready kickoff prompt for another AI:
+
+```text
+You are an autonomous agent in /Users/james/Code/OnionDAO/rs6-nullcity-server on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, docs/2026-05-29-weekend-sprint-plan.md, and docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md. Claim one unblocked S* or CQA* packet, append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui and appropriate verification, update roadmap/capability/issue docs if needed, commit explicit files to agents/wip, push, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
+```
 
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. Keep status-log entries under ~250 chars — long rollups belong in the commit body.
 
