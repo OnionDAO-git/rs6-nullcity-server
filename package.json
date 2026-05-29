@@ -53,7 +53,8 @@
         "format": "biome format",
         "format:fin": "biome format --write --reporter=summary",
         "format:fix": "biome format --write",
-        "fin": "npm run typecheck && npm run lint:fin && npm run format:fin && npm run test:fin",
+        "check:no-ui": "node scripts/check-no-server-ui.js",
+        "fin": "npm run check:no-ui && npm run typecheck && npm run lint:fin && npm run format:fin && npm run test:fin",
         "test": "jest",
         "test:fin": "jest --silent --reporters=\"summary\"",
         "typecheck": "tsc -p ./ --noEmit"

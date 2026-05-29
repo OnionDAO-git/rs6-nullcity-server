@@ -3,6 +3,8 @@
 [![RuneJS](https://i.imgur.com/QSXNzwC.png)](https://github.com/runejs/)
 
 > Null City humans (operators, demo hosts, new contributors): start with [HUMANS.md](HUMANS.md). AI agents: start with [AGENTS.md](AGENTS.md). This README preserves the upstream RuneJS server notes.
+>
+> Architecture boundary: this repo is runtime/controller/API only. All human-facing UI belongs in `../rs6-nullcity-residents-dashboard`.
 
 # RuneJS Game Server
 

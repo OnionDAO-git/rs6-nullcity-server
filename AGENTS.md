@@ -48,6 +48,15 @@ Until June 1, 2026, OnionDAO work is pre-launch development. Default to building
 - Agent gateway: `src/server/agent/`
 - Dashboard repo: `../rs6-nullcity-residents-dashboard`
 
+## UI Boundary
+
+Dev's architecture rule is strict: `rs6-nullcity-server` must not own human-facing UI.
+
+- Keep this repo focused on runtime, controller, resident intelligence, memory/logging, data files, CLI tools, and JSON/control APIs.
+- Put every dashboard, debug shell, attendee page, wall/inbox/patron page, Library/Graveyard view, HTML/CSS/Svelte/React/JSX/TSX surface in `../rs6-nullcity-residents-dashboard`.
+- Server endpoints may expose read models such as `/v1/inbox`, `/v1/wall/snapshot`, `/v1/library`, and `/v1/graveyard`, but they should return JSON rather than HTML.
+- Run `npm run check:no-ui` before finishing server work that touches web-facing routes or public assets.
+
 ## Working Rules
 
 - Prefer `rg`/`rg --files` for search.
@@ -84,6 +93,7 @@ npm run typecheck
 npm run lint
 npm run format
 npm run build
+npm run check:no-ui
 npm test -- --runInBand
 ```
 

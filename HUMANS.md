@@ -6,10 +6,10 @@ For demo prep, see [`docs/demo-day-checklist.md`](docs/demo-day-checklist.md). F
 
 ## What you're running
 
-Null City is a layer on top of a RuneScape 2006 server (RuneJS fork) where AI residents log in as characters, think through goals, act in the world, accept human influence via Shards, and leave behind letters, portraits, and a wall ticker. Two repos:
+Null City is a layer on top of a RuneScape 2006 server (RuneJS fork) where AI residents log in as characters, think through goals, act in the world, accept human influence via Shards/AP, and leave behind letters, portraits, and stories. Two repos:
 
-- `rs6-nullcity-server` — game server, controller, public pages, patron tools (this repo)
-- `rs6-nullcity-residents-dashboard` — operator + demo dashboard (separate repo)
+- `rs6-nullcity-server` — game server, controller, residents, memory/logs, JSON/control APIs, patron/admin CLI tools (this repo)
+- `rs6-nullcity-residents-dashboard` — every human-facing screen: attendee dashboard, operator/debug dashboard, Library, Graveyard, inbox/wall/patron views, spectator UI
 
 ## Branches
 
@@ -32,7 +32,7 @@ npm install && npm run build
 # 2. Game server (RuneScape engine)
 screen -dmS nullcity-game bash -lc 'npm run start:game'
 
-# 3. Wait ~10s, then controller + public pages
+# 3. Wait ~10s, then controller + JSON APIs
 screen -dmS nullcity-controller bash -lc \
   'CONTROLLER_MCP_TOKENS=operator-token \
    CONTROLLER_MCP_OPERATOR_FOR_operator_token=operator-codex \
@@ -48,7 +48,15 @@ Then in `rs6-nullcity-residents-dashboard`:
 
 ```bash
 bun install                                          # first time
-screen -dmS nullcity-dashboard bash -lc 'bun run dev'
+screen -dmS nullcity-dashboard bash -lc \
+  'NULLCITY_SERVER_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server \
+   NULLCITY_MEMORY_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server/data/controller/memory \
+   NULLCITY_LOGS_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server/data/controller/logs \
+   NULLCITY_AGENT_LOGS_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server/data/agent-logs \
+   NULLCITY_SOULS_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server/src/controller/soul/starter-souls \
+   NULLCITY_RESIDENT_SAVE_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server/data/residents \
+   NULLCITY_BENCHMARK_ROOT=/Users/james/Code/OnionDAO/rs6-nullcity-server/data/benchmarks \
+   bun run dev'
 ```
 
 ## URLs
@@ -56,12 +64,13 @@ screen -dmS nullcity-dashboard bash -lc 'bun run dev'
 | Surface | URL | Use for |
 |---|---|---|
 | Dashboard | http://127.0.0.1:5174/ | Operator + demo surface (resident state, RS spectator) |
-| Landing | http://127.0.0.1:43596/ | Public entry — links to the 5 story surfaces |
-| Wall ticker | http://127.0.0.1:43596/wall/ | Live letter stream |
-| Inbox | http://127.0.0.1:43596/inbox/?human=HANDLE | Letters for one patron |
-| Patron | http://127.0.0.1:43596/patron/?human=HANDLE | Shards + standing + recent letters |
-| Library | http://127.0.0.1:43596/library/ | Resident portraits |
-| Graveyard | http://127.0.0.1:43596/graveyard/ | Epitaphs |
+| Debug dashboard | http://127.0.0.1:5174/debug | Runtime/operator panels |
+| Library | http://127.0.0.1:5174/library | Resident lives and portraits |
+| Graveyard | http://127.0.0.1:5174/graveyard | Epitaphs and saved/dead residents |
+| Dashboard BFF | http://127.0.0.1:8787/api/health | Dashboard health/API server |
+| Controller JSON | http://127.0.0.1:43596/v1/health | Controller letters/patron/story read APIs |
+
+All HTML/UI routes should come from `rs6-nullcity-residents-dashboard`. The controller on `43596` is for JSON/read APIs only.
 
 ## Verify
 
@@ -74,10 +83,9 @@ npm run controller:smoke -- --observe-seconds 60 --allow-recent-visible
 Quick HTTP health check:
 
 ```bash
-for r in / /wall/ /inbox/ /patron/ /library/ /graveyard/ /v1/health; do
-  curl -s -o /dev/null -w "%{http_code} $r\n" http://127.0.0.1:43596$r
-done
-                                              # expect 200 on every line
+curl -fsS http://127.0.0.1:8787/api/health
+curl -fsS http://127.0.0.1:8787/api/overview | jq '{gateway:.gateway.connected, controller:.controller.available, readiness:.readiness.level}'
+curl -fsS http://127.0.0.1:43596/v1/health
 ```
 
 ## Patron flow (the demoable loop)
@@ -91,7 +99,11 @@ CONTROLLER_MCP_HTTP_PORT=43610 CONTROLLER_MCP_TOKENS=operator-token \
 npm run patron:witness -- --human demo@onion --resident res:hans
 ```
 
-Then open `http://127.0.0.1:43596/inbox/?human=demo@onion` — a new letter should appear.
+Then use the dashboard inbox/patron surfaces to view the result, or inspect the controller JSON directly:
+
+```bash
+curl -s 'http://127.0.0.1:43596/v1/inbox?human=demo@onion' | jq .
+```
 
 Full CLI list: `patron:register / bulk-register / grant / offer / gift / witness / ask / whisper / checkin / referral / balance / standing / smoke`.
 
