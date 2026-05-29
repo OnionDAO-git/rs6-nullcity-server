@@ -6,8 +6,8 @@ Null City keeps the proven inference route as `default` and adds named canary en
 
 - `default`: `http://inf.nullcity.ai:1234`, model `qwen/qwen3.6-27b`.
 - `spacetower_qwopus_q4`: `http://spacetower.nullcity.ai:8100`, model `qwopus3.5-27b-v3@q4_k_s`.
-- `spacetower_qwen`: same new URL with `qwen/qwen3.6-27b`.
-- `inf_qwopus_q4`: old URL with `qwopus3.5-27b-v3@q4_k_s`.
+
+Do not assume cross-loaded model combinations exist on both machines. As of the latest Dev correction, `inf` is the Qwen baseline and `spacetower` is the Qwopus canary.
 
 ## Safe Default
 

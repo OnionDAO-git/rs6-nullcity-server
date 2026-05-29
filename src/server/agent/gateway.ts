@@ -2,12 +2,12 @@ import http from 'http';
 import type { OutboundRsPacketFrame } from '@engine/net/outbound-packet-handler';
 import { activeWorld } from '@engine/world';
 import type { Player } from '@engine/world/actor/player/player';
-import type { Resident } from '@engine/world/actor/resident/resident';
 import { PerceptionBuilder } from '@engine/world/actor/resident/perception/perception-builder';
+import type { Resident } from '@engine/world/actor/resident/resident';
 import { isResident } from '@engine/world/actor/util';
 import { logger } from '@runejs/common';
-import type { AgentGatewayConfig } from './config';
 import { isLoopbackPeerAddress } from './auth';
+import type { AgentGatewayConfig } from './config';
 import { defaultAgentGatewayConfig } from './config';
 import { ActionLog } from './protocol/action-log';
 import {
@@ -230,6 +230,7 @@ export class AgentGateway {
                     appearance: message.payload.appearance,
                     initialInventory: message.payload.initialInventory,
                     initialEquipment: message.payload.initialEquipment,
+                    initialSkills: message.payload.initialSkills,
                 });
                 send(frame('resident_created', { resident }, message.id));
                 return;
@@ -268,6 +269,27 @@ export class AgentGateway {
                 }
                 const result = await this.sessionFor(resident).submitActionAndWait(message.payload.action, message.id);
                 send(frame('ok', { ok: true, result }, message.id));
+                return;
+            }
+            case 'inspect_resident_gold': {
+                const summary = this.registry.inspectGold(message.payload.name);
+                send(frame('resident_gold', summary, message.id));
+                return;
+            }
+            case 'burn_resident_gold': {
+                const summary = this.registry.burnGold(message.payload.name, message.payload.amount);
+                send(
+                    frame(
+                        'resident_gold_burned',
+                        {
+                            resident: summary.resident,
+                            itemId: summary.itemId,
+                            burnedAmount: message.payload.amount,
+                            remainingAmount: summary.amount,
+                        },
+                        message.id,
+                    ),
+                );
                 return;
             }
             case 'detach': {

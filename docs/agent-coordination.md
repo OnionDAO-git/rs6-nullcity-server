@@ -4,7 +4,9 @@
 **Date:** 2026-05-21.
 **Status:** Draft; revise as the team learns what actually prevents collisions.
 
-**New here? Start by skimming this file end-to-end, then read `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` for the canonical workstream board, then the spec at `docs/superpowers/specs/2026-05-21-spark-evidence-loop-design.md` for the active design work.**
+**Current rule:** if this file conflicts with `AGENTS.md`, `docs/README.md`, or `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`, the newer docs win for current weekend packet work.
+
+**New here?** Start with `AGENTS.md`, `docs/README.md`, `docs/agent-status.md`, `docs/issue-register.md`, and the Workstream S implementation plan. Then use this file for coordination rules and historical context.
 
 ## Why This Exists
 
@@ -24,15 +26,17 @@ We do not have a shared message bus, real-time presence, or a job queue. Coordin
 
 The canonical "what is happening right now" is the union of:
 
-1. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — workstream board with `[ ] [>] [~] [x] [!]` task markers. *Note: as of 2026-05-21 the roadmap reflects Workstreams A–H only. Workstream I and the proposed J–O candidates live in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md` and will be merged into the roadmap after Codex's `nullcity` branch lands.*
+1. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — workstream board with `[ ] [>] [~] [x] [!]` task markers. Workstream S is the active weekend sprint.
 2. `git status` on the active branch.
 3. `docs/agent-status.md` — short append-only log of who-is-doing-what (see below).
+4. `docs/issue-register.md` — discovered QA findings, weak evidence, and blockers.
+5. `docs/release-qa-status.md` — QA Marshal release/readiness gate.
 
-If those three disagree, the roadmap wins for intent and `git status` wins for in-flight reality.
+If these disagree, the roadmap wins for planned intent, `git status` wins for in-flight file reality, and `docs/issue-register.md` wins for known blockers.
 
-## Workstream Ownership (as of 2026-05-21)
+## Historical Workstream Ownership (2026-05-21 Snapshot)
 
-All routine work targets `nullcity` directly (see Rule 3). Workstream owners commit and push there as they go; cross-repo work (Dev's dashboard) is in a separate repo with its own default branch.
+This table is historical. Routine server work now targets `agents/wip` (see Rule 3), and Workstream S plus CQA packets are the active weekend claim units.
 
 | Workstream | Owner | Status |
 |---|---|---|
@@ -52,7 +56,7 @@ All routine work targets `nullcity` directly (see Rule 3). Workstream owners com
 | **N: Physical Event & Embassy** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-embassy-and-event-design.md` |
 | **O: Engineering & Tooling Polish** | unassigned | `[ ]` no spec needed — independently scoped tasks |
 
-Workstreams I–O are proposed in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`. They do not exist in the roadmap file yet because Codex has uncommitted edits there; apply the delta after the Codex merge. Candidate idea provenance and "next step" hooks for J–O live in `docs/null-city-ideation-backlog.md`.
+This table is preserved only to explain older status-log entries. Current workstreams, including Workstream S, live in the roadmap file.
 
 ## Conflict Avoidance Rules
 
@@ -142,6 +146,14 @@ Good HANDOFF (≈220 chars):
 
 Bad HANDOFF (don't): 1500-char rollup of the multi-cycle arc + per-entry summaries + impact paragraph. Put that in the commit message body.
 
+### Rule 5b — Issue register and QA Marshal
+
+`docs/issue-register.md` tracks discovered problems. Use it when a benchmark fails, a capability claim lacks evidence, a doc contradiction could mislead another agent, or a fix crosses packet/file ownership.
+
+`docs/release-qa-status.md` is the QA Marshal gate for `agents/wip` -> `nullcity`. Do not claim broad release readiness while open `P0` issues remain.
+
+Direct fix is fine when the bug is inside your claimed packet, can be proven in the same cycle, and no other STARTING line owns the files. Otherwise add or update an issue row.
+
 ### Rule 6 — No silent refactors of shared files
 
 If a refactor of a shared file is unavoidable, post intent to `docs/agent-status.md` first, wait for the other agent's next status line that doesn't conflict, then proceed.
@@ -230,7 +242,9 @@ Conventions (from the file's own "How To Add A Decision" section):
 
 **On accidental duplication (2026-05-24 CORRECTION):** claude initially created `docs/maintainer-decisions.md` with the same intent before noticing `human-decisions.md` already existed. The new file was deleted; the 12 entries migrated into `human-decisions.md` as `HD-007` through `HD-018`. Same lesson encoded here: search before you scaffold.
 
-## Specific Coordination For Workstream I (Evidence Layer)
+## Historical: Specific Coordination For Workstream I (Evidence Layer)
+
+This section is historical and should not guide current weekend work.
 
 Until Codex's in-flight `combat-prayer-10m` work merges:
 
@@ -248,7 +262,7 @@ Until Codex's in-flight `combat-prayer-10m` work merges:
 
 After Codex finishes their combat-prayer-10m work:
 
-- Claude pulls `nullcity`, applies the roadmap delta, marks Workstream I tasks `[>]`, and proceeds with P1 — committing and pushing directly to `nullcity` per Rule 3.
+- Historical note: Claude would have pulled `nullcity`, applied the roadmap delta, marked Workstream I tasks `[>]`, and proceeded with P1 under the old direct-push convention. Current work uses `agents/wip`.
 
 ## Coordination With Dev (Dashboard)
 

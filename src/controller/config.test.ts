@@ -114,7 +114,7 @@ describe('controller config', () => {
         expect(productionConfigIssues(config, { RAILGUN: 'true', CONTROLLER_KNOWLEDGE_DIR: '/data/controller/knowledge' })).toEqual([]);
     });
 
-    it('ships a tracked inference canary config for old/new URL and model comparisons', () => {
+    it('ships a tracked inference canary config for the loaded owned-hardware models', () => {
         const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.inference-canary.yml'));
 
         expect(config.llm.endpoints.default).toMatchObject({
@@ -127,16 +127,67 @@ describe('controller config', () => {
             model: 'qwopus3.5-27b-v3@q4_k_s',
             timeoutMs: 30000,
         });
-        expect(config.llm.endpoints.spacetower_qwen).toMatchObject({
+        expect(config.llm.endpoints.spacetower_qwen).toBeUndefined();
+        expect(config.llm.endpoints.inf_qwopus_q4).toBeUndefined();
+    });
+
+    it('resolves model profiles separately from endpoint hardware definitions', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
+        const configPath = path.join(root, 'controller.yml');
+        process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+        fs.writeFileSync(
+            configPath,
+            [
+                'llm:',
+                '  endpoints:',
+                '    spacetower:',
+                '      provider: openai-compatible',
+                '      baseUrl: http://spacetower.nullcity.ai:8100',
+                '      timeoutMs: 30000',
+                '    openrouter:',
+                '      provider: openrouter',
+                '      baseUrl: https://openrouter.ai/api',
+                '      apiKey: ${OPENROUTER_API_KEY}',
+                '      responseFormat: text',
+                '  profiles:',
+                '    default:',
+                '      endpoint: spacetower',
+                '      model: qwopus3.5-27b-v3@q4_k_s',
+                '    haiku:',
+                '      endpoint: openrouter',
+                '      model: anthropic/claude-3.5-haiku',
+                '      timeoutMs: 45000',
+                '      cost:',
+                '        promptTokenUsd: 0.0000008',
+                '        completionTokenUsd: 0.000004',
+            ].join('\n'),
+        );
+
+        const config = loadControllerConfig(configPath);
+
+        expect(config.llm.profiles.default).toMatchObject({
+            profileId: 'default',
+            endpointId: 'spacetower',
+            provider: 'openai-compatible',
             baseUrl: 'http://spacetower.nullcity.ai:8100',
-            model: 'qwen/qwen3.6-27b',
-            timeoutMs: 60000,
-        });
-        expect(config.llm.endpoints.inf_qwopus_q4).toMatchObject({
-            baseUrl: 'http://inf.nullcity.ai:1234',
             model: 'qwopus3.5-27b-v3@q4_k_s',
             timeoutMs: 30000,
         });
+        expect(config.llm.profiles.haiku).toMatchObject({
+            profileId: 'haiku',
+            endpointId: 'openrouter',
+            provider: 'openrouter',
+            baseUrl: 'https://openrouter.ai/api',
+            apiKey: 'test-openrouter-key',
+            model: 'anthropic/claude-3.5-haiku',
+            responseFormat: 'text',
+            timeoutMs: 45000,
+            cost: {
+                promptTokenUsd: 0.0000008,
+                completionTokenUsd: 0.000004,
+            },
+        });
+        expect(config.llm.endpoints.haiku).toEqual(config.llm.profiles.haiku);
     });
 
     it('requires gateway auth for remote production gateway control', () => {
@@ -303,5 +354,45 @@ describe('controller config', () => {
         delete process.env.CONTROLLER_LETTERS_HTTP_PORT;
         expect(() => parseControllerArgs(['--letters-http-port', 'nope'])).toThrow('--letters-http-port must be an integer port');
         expect(() => parseControllerArgs(['--letters-http-port=70000'])).toThrow('--letters-http-port must be an integer port');
+    });
+
+    it('parses optional city integration HTTP flags and env defaults', () => {
+        process.env.CONTROLLER_CITY_HTTP_PORT = '43620';
+        process.env.CONTROLLER_CITY_HTTP_HOST = '127.0.0.4';
+        process.env.CONTROLLER_CITY_HTTP_PATH_PREFIX = '/city/nullcity';
+        process.env.CONTROLLER_CITY_HTTP_TOKEN = 'city-secret';
+
+        expect(parseControllerArgs([])).toEqual(
+            expect.objectContaining({
+                cityHttpPort: 43620,
+                cityHttpHost: '127.0.0.4',
+                cityHttpPathPrefix: '/city/nullcity',
+                cityHttpToken: 'city-secret',
+            }),
+        );
+
+        expect(
+            parseControllerArgs([
+                '--city-http-port',
+                '43621',
+                '--city-http-host=127.0.0.1',
+                '--city-http-path-prefix',
+                '/api/nullcity',
+                '--city-http-token=cli-secret',
+            ]),
+        ).toEqual(
+            expect.objectContaining({
+                cityHttpPort: 43621,
+                cityHttpHost: '127.0.0.1',
+                cityHttpPathPrefix: '/api/nullcity',
+                cityHttpToken: 'cli-secret',
+            }),
+        );
+    });
+
+    it('rejects invalid city integration HTTP ports', () => {
+        delete process.env.CONTROLLER_CITY_HTTP_PORT;
+        expect(() => parseControllerArgs(['--city-http-port', 'nope'])).toThrow('--city-http-port must be an integer port');
+        expect(() => parseControllerArgs(['--city-http-port=70000'])).toThrow('--city-http-port must be an integer port');
     });
 });

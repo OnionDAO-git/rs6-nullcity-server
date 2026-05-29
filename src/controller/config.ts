@@ -36,6 +36,7 @@ export interface ControllerConfig {
     };
     llm: {
         endpoints: Record<string, LlmEndpointConfig>;
+        profiles: Record<string, LlmEndpointConfig>;
     };
     patrons?: PatronConfig[];
 }
@@ -46,7 +47,19 @@ export interface LlmEndpointConfig {
     baseUrl?: string;
     apiKey?: string;
     model?: string;
+    provider?: string;
+    endpointId?: string;
+    profileId?: string;
+    responseFormat?: LlmResponseFormat;
     timeoutMs: number;
+    cost?: LlmCostConfig;
+}
+
+export type LlmResponseFormat = 'json_schema' | 'text';
+
+export interface LlmCostConfig {
+    promptTokenUsd?: number;
+    completionTokenUsd?: number;
 }
 
 export interface ControllerCliOptions {
@@ -61,6 +74,10 @@ export interface ControllerCliOptions {
     lettersHttpHost: string;
     lettersHttpPath: string;
     lettersHttpWallRedact: boolean;
+    cityHttpPort?: number;
+    cityHttpHost: string;
+    cityHttpPathPrefix: string;
+    cityHttpToken?: string;
 }
 
 const DEFAULT_CONFIG_PATH = 'controller.yml';
@@ -77,6 +94,10 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
     let lettersHttpPath = process.env.CONTROLLER_LETTERS_HTTP_PATH || '/v1/inbox';
     let lettersHttpWallRedact =
         readEnvBoolean(process.env.CONTROLLER_LETTERS_HTTP_WALL_REDACT, false) || readEnvBoolean(process.env.CONTROLLER_WALL_REDACT, false);
+    let cityHttpPort = readOptionalPort(process.env.CONTROLLER_CITY_HTTP_PORT, 'CONTROLLER_CITY_HTTP_PORT');
+    let cityHttpHost = process.env.CONTROLLER_CITY_HTTP_HOST || '127.0.0.1';
+    let cityHttpPathPrefix = process.env.CONTROLLER_CITY_HTTP_PATH_PREFIX || '/api/nullcity';
+    let cityHttpToken = readOptionalString(process.env.CONTROLLER_CITY_HTTP_TOKEN || process.env.CITY_DASHBOARD_NULLCITY_TOKEN);
 
     for (let i = 0; i < argv.length; i += 1) {
         const arg = argv[i];
@@ -140,6 +161,42 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
             lettersHttpPath = arg.slice('--letters-http-path='.length);
         } else if (arg === '--letters-http-wall-redact' || arg === '--wall-redact') {
             lettersHttpWallRedact = true;
+        } else if (arg === '--city-http-port') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a port`);
+            }
+            cityHttpPort = readOptionalPort(next, arg);
+            i += 1;
+        } else if (arg.startsWith('--city-http-port=')) {
+            cityHttpPort = readOptionalPort(arg.slice('--city-http-port='.length), '--city-http-port');
+        } else if (arg === '--city-http-host') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a host`);
+            }
+            cityHttpHost = next;
+            i += 1;
+        } else if (arg.startsWith('--city-http-host=')) {
+            cityHttpHost = arg.slice('--city-http-host='.length);
+        } else if (arg === '--city-http-path-prefix') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a path prefix`);
+            }
+            cityHttpPathPrefix = next;
+            i += 1;
+        } else if (arg.startsWith('--city-http-path-prefix=')) {
+            cityHttpPathPrefix = arg.slice('--city-http-path-prefix='.length);
+        } else if (arg === '--city-http-token') {
+            const next = argv[i + 1];
+            if (!next) {
+                throw new Error(`${arg} requires a token`);
+            }
+            cityHttpToken = next;
+            i += 1;
+        } else if (arg.startsWith('--city-http-token=')) {
+            cityHttpToken = arg.slice('--city-http-token='.length);
         } else if (arg === '--config' || arg === '-c') {
             const next = argv[i + 1];
             if (!next) {
@@ -163,6 +220,10 @@ export function parseControllerArgs(argv: string[]): ControllerCliOptions {
         lettersHttpHost,
         lettersHttpPath,
         lettersHttpWallRedact,
+        cityHttpPort,
+        cityHttpHost,
+        cityHttpPathPrefix,
+        cityHttpToken,
     };
 }
 
@@ -172,6 +233,9 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
     const parsed = raw ? yaml.load(interpolateEnv(raw)) : {};
     const source = isRecord(parsed) ? parsed : {};
     const baseDir = path.dirname(resolvedPath);
+
+    const llmEndpoints = readLlmEndpoints(readPath(source, ['llm', 'endpoints']));
+    const llmProfiles = readLlmProfiles(readPath(source, ['llm', 'profiles']), llmEndpoints);
 
     const config: ControllerConfig = {
         controller: {
@@ -208,7 +272,8 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
             storageMode: readKnowledgeStorageMode(readPath(source, ['knowledge', 'storageMode']), 'persistent-volume'),
         },
         llm: {
-            endpoints: readLlmEndpoints(readPath(source, ['llm', 'endpoints'])),
+            endpoints: { ...llmEndpoints, ...llmProfiles },
+            profiles: llmProfiles,
         },
         patrons: readPatronArray(source.patrons),
     };
@@ -347,7 +412,7 @@ function readStringArray(value: unknown): string[] {
 
 function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
     const endpoints: Record<string, LlmEndpointConfig> = {
-        default: { timeoutMs: 30000 },
+        default: { endpointId: 'default', timeoutMs: 30000 },
     };
 
     if (!isRecord(value)) {
@@ -363,11 +428,68 @@ function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
             baseUrl: readOptionalString(endpoint.baseUrl),
             apiKey: readOptionalString(endpoint.apiKey),
             model: readOptionalString(endpoint.model),
+            provider: readOptionalString(endpoint.provider),
+            endpointId: name,
+            responseFormat: readLlmResponseFormat(endpoint.responseFormat),
             timeoutMs: readNumber(endpoint.timeoutMs, 30000),
+            cost: readLlmCost(endpoint.cost),
         };
     }
 
     return endpoints;
+}
+
+function readLlmProfiles(value: unknown, endpoints: Record<string, LlmEndpointConfig>): Record<string, LlmEndpointConfig> {
+    const profiles: Record<string, LlmEndpointConfig> = {};
+    if (!isRecord(value)) {
+        return profiles;
+    }
+
+    for (const [name, profile] of Object.entries(value)) {
+        if (!isRecord(profile)) {
+            continue;
+        }
+
+        const endpointId = readString(profile.endpoint, 'default');
+        const endpoint = endpoints[endpointId] || endpoints.default || { timeoutMs: 30000 };
+        profiles[name] = {
+            baseUrl: readOptionalString(profile.baseUrl) ?? endpoint.baseUrl,
+            apiKey: readOptionalString(profile.apiKey) ?? endpoint.apiKey,
+            model: readOptionalString(profile.model) ?? endpoint.model,
+            provider: readOptionalString(profile.provider) ?? endpoint.provider,
+            endpointId,
+            profileId: name,
+            responseFormat: readLlmResponseFormat(profile.responseFormat) ?? endpoint.responseFormat,
+            timeoutMs: readNumber(profile.timeoutMs, endpoint.timeoutMs ?? 30000),
+            cost: readLlmCost(profile.cost) ?? endpoint.cost,
+        };
+    }
+
+    return profiles;
+}
+
+function readLlmResponseFormat(value: unknown): LlmResponseFormat | undefined {
+    return value === 'json_schema' || value === 'text' ? value : undefined;
+}
+
+function readLlmCost(value: unknown): LlmCostConfig | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    const cost: LlmCostConfig = {};
+    const promptTokenUsd = readOptionalNumber(value.promptTokenUsd);
+    const completionTokenUsd = readOptionalNumber(value.completionTokenUsd);
+    if (promptTokenUsd !== undefined) {
+        cost.promptTokenUsd = promptTokenUsd;
+    }
+    if (completionTokenUsd !== undefined) {
+        cost.completionTokenUsd = completionTokenUsd;
+    }
+    return Object.keys(cost).length > 0 ? cost : undefined;
+}
+
+function readOptionalNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

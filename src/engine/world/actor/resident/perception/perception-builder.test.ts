@@ -95,6 +95,24 @@ describe('PerceptionBuilder', () => {
             }),
         );
     });
+
+    it('exposes quest progress in resident perception', () => {
+        const instance = instanceWithSpawnedObjects([]);
+        const player = {
+            ...playerAt({ x: 3208, y: 3215, level: 0 }, instance),
+            quests: [
+                { questId: 'rs:cooks_assistant', progress: 50, complete: false },
+                { questId: 'rs:done', progress: 'complete', complete: true },
+            ],
+        } as unknown as Player;
+
+        const perception = new PerceptionBuilder({ visionRange: 18 }).buildForPlayer(player);
+
+        expect(perception.resident.quests).toEqual({
+            'rs:cooks_assistant': { progress: 50, complete: false },
+            'rs:done': { progress: 'complete', complete: true },
+        });
+    });
 });
 
 function instanceWithSpawnedObjects(spawnedObjects: unknown[]): Player['instance'] {

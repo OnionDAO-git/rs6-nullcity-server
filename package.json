@@ -21,6 +21,7 @@
         "controller:once": "npm run build && node dist/controller/index.js --once",
         "controller:dev": "ts-node -r tsconfig-paths/register src/controller/index.ts",
         "controller:bench": "npm run build && node dist/controller/benchmarks/cli.js",
+        "benchmark:report": "ts-node -r tsconfig-paths/register src/controller/benchmarks/report.ts",
         "controller:revive": "ts-node -r tsconfig-paths/register src/controller/admin/revive-cli.ts",
         "controller:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/live-smoke.ts",
         "inference:canary": "ts-node -r tsconfig-paths/register src/controller/admin/inference-canary-smoke.ts",
@@ -52,7 +53,8 @@
         "format": "biome format",
         "format:fin": "biome format --write --reporter=summary",
         "format:fix": "biome format --write",
-        "fin": "npm run typecheck && npm run lint:fin && npm run format:fin && npm run test:fin",
+        "check:no-ui": "node scripts/check-no-server-ui.js",
+        "fin": "npm run check:no-ui && npm run typecheck && npm run lint:fin && npm run format:fin && npm run test:fin",
         "test": "jest",
         "test:fin": "jest --silent --reporters=\"summary\"",
         "typecheck": "tsc -p ./ --noEmit"

@@ -36,6 +36,9 @@ heroProfile:
 factionAffinity:
   saradomin: 70
   guthix: 10
+siblings:
+  - res:hans
+  - res:wise-old-man
 spawnPosition:
   x: 3242
   y: 3208

@@ -24,6 +24,7 @@ export interface Perception {
         readonly inventory: ReadonlyArray<ItemRef | null>;
         readonly equipment: ReadonlyArray<ItemRef | null>;
         readonly activeTrade?: ActiveTrade;
+        readonly quests?: Record<string, { progress: number | string; complete: boolean }>;
     };
     readonly nearby: {
         readonly players: ReadonlyArray<ActorRef>;

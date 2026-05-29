@@ -1,3 +1,35 @@
 node_modules
 npm-debug.log
 .gitignore
+.git
+.github
+coverage
+dist
+.idea
+.vscode
+*.log
+.env
+.env.*
+!.env.example
+
+# Runtime state that must not be baked into images.
+data/saves/*
+!data/saves/.gitkeep
+data/dump
+data/houses
+data/logs
+data/agent-logs
+data/controller/logs
+data/controller/memory
+data/controller/data
+data/memory/*
+!data/memory/README.md
+data/residents/*.json
+data/souls/**/*.json
+data/knowledge/suggestions.*.jsonl
+data/benchmarks
+!data/benchmarks/README.md
+
+# Generated config — entrypoint writes this from env vars.
+config/server-config.json
+config/server-config.yaml

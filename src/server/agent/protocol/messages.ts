@@ -1,6 +1,6 @@
+import type { Appearance } from '@engine/world/actor/player/player-data';
 import { type ActionResult, type AgentAction, AgentActionSchema } from '@engine/world/actor/resident/action/agent-action';
 import type { Perception } from '@engine/world/actor/resident/perception/perception-types';
-import type { Appearance } from '@engine/world/actor/player/player-data';
 import { z } from 'zod';
 
 export const AGENT_PROTOCOL_VERSION = 1;
@@ -10,6 +10,7 @@ export type DisconnectPolicy = 'logout' | 'idle';
 export type SpectatorMode = 'follow' | 'free-camera' | 'picture-in-picture';
 export type SpectatorSubject = { kind: 'resident'; name: string } | { kind: 'player'; username: string };
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+export type InitialSkillSeed = number | { exp?: number; level?: number };
 export type SpectatorPacketType = 'FIXED' | 'DYNAMIC_SMALL' | 'DYNAMIC_LARGE';
 
 export interface SpectatorRsPacketFrame {
@@ -58,11 +59,14 @@ export type ClientMessage =
               appearance?: Appearance;
               initialInventory?: InitialContainerItem[];
               initialEquipment?: InitialContainerItem[];
+              initialSkills?: Record<string, InitialSkillSeed>;
           }
       >
     | AgentFrame<'connect_resident', { name: string; observe?: boolean; control?: boolean; onDisconnect?: DisconnectPolicy }>
     | AgentFrame<'attach', { name: string; observe?: boolean; control?: boolean }>
     | AgentFrame<'submit_action', { name: string; action: AgentAction }>
+    | AgentFrame<'inspect_resident_gold', { name: string }>
+    | AgentFrame<'burn_resident_gold', { name: string; amount: number }>
     | AgentFrame<'detach', { name: string }>
     | AgentFrame<'disconnect_resident', { name: string; cause?: string }>
     | AgentFrame<'pause_resident', { name: string; cause?: string }>
@@ -74,6 +78,8 @@ export type ServerMessage =
     | AgentFrame<'observable_subject_list', { subjects: ObservableSubjectSummary[] }>
     | AgentFrame<'resident_created', { resident: ResidentSummary }>
     | AgentFrame<'resident_connected', { resident: ResidentSummary; perception: Perception | null }>
+    | AgentFrame<'resident_gold', { resident: string; itemId: 995; amount: number }>
+    | AgentFrame<'resident_gold_burned', { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>
     | AgentFrame<'resident_disconnected', { name: string; cause?: string }>
     | AgentFrame<'resident_paused', { name: string; cause?: string }>
     | AgentFrame<'spectator_connected', { sessionId: string; subject: SpectatorSubject; initialState: unknown }>
@@ -116,6 +122,13 @@ const initialContainerItemSchema = z.union([
     z.object({ itemId: z.number().int().positive(), amount: z.number().int().positive().optional() }),
     z.null(),
 ]);
+const initialSkillSeedSchema = z.union([
+    z.number().nonnegative(),
+    z.object({
+        exp: z.number().nonnegative().optional(),
+        level: z.number().int().min(1).max(99).optional(),
+    }),
+]);
 const spectatorSubjectSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('resident'), name: z.string().min(1) }),
     z.object({ kind: z.literal('player'), username: z.string().min(1) }),
@@ -139,6 +152,7 @@ const clientPayloadSchemas = {
         appearance: appearanceSchema.optional(),
         initialInventory: z.array(initialContainerItemSchema).optional(),
         initialEquipment: z.array(initialContainerItemSchema).optional(),
+        initialSkills: z.record(initialSkillSeedSchema).optional(),
     }),
     connect_resident: z.object({
         name: z.string().min(1),
@@ -152,6 +166,8 @@ const clientPayloadSchemas = {
         control: z.boolean().optional(),
     }),
     submit_action: z.object({ name: z.string().min(1), action: AgentActionSchema }),
+    inspect_resident_gold: z.object({ name: z.string().min(1) }),
+    burn_resident_gold: z.object({ name: z.string().min(1), amount: z.number().int().positive() }),
     detach: z.object({ name: z.string().min(1) }),
     disconnect_resident: z.object({ name: z.string().min(1), cause: z.string().optional() }),
     pause_resident: z.object({ name: z.string().min(1), cause: z.string().optional() }),

@@ -27,6 +27,21 @@ Before substantial autonomy, controller, dashboard, or agent behavior work, read
 
 The roadmap is the source of truth for active task status and next work. Older plans and RuneBench design notes are background unless the roadmap explicitly points to them as active.
 
+For the May 29-June 1 AP/GP + Storyteller weekend sprint, use:
+- `docs/2026-05-29-weekend-sprint-plan.md` for the human/product brief.
+- `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task-by-task execution.
+- Workstream S in `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the central task board.
+- Claim the smallest available packet from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`), not a whole workstream, unless you are doing release closeout.
+- Capability QA packets (`CQA0`-`CQA11`) are always valid weekend work: read `docs/resident-capabilities.md`, prove or disprove one weak row with real logs/benchmarks, fix root causes, and update the table.
+- Treat the implementation plan's lane table as the file-lock map for parallel agents.
+- QA findings live in `docs/issue-register.md`; release/readiness gating lives in `docs/release-qa-status.md`.
+
+Paste-ready kickoff prompt for another AI:
+
+```text
+You are an autonomous agent in /Users/james/Code/OnionDAO/rs6-nullcity-server on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, docs/2026-05-29-weekend-sprint-plan.md, and docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md. Claim one unblocked S* or CQA* packet, append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui and appropriate verification, update roadmap/capability/issue docs if needed, commit explicit files to agents/wip, push, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
+```
+
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. Keep status-log entries under ~250 chars — long rollups belong in the commit body.
 
 **Branch workflow (revised 2026-05-23):** day-to-day multi-agent work goes to the shared `agents/wip` branch, not directly to `nullcity`. Curated squash-merges from `agents/wip` → `nullcity` happen on milestone completion (workstream slice done + verifications green), every ~24h, or on the maintainer's ask. The default branch should read as a milestone log; in-progress STARTING/HANDOFF churn lives on `agents/wip`. Full mechanics in `docs/agent-coordination.md` § Rule 3. `docs/agent-status.md` lives only on `agents/wip` and is excluded from squash-merges to `nullcity`.
@@ -47,6 +62,15 @@ Until June 1, 2026, OnionDAO work is pre-launch development. Default to building
 - Body/action/evidence flow: `src/controller/body/`, `src/controller/actions/`, `src/controller/resident-runtime.ts`
 - Agent gateway: `src/server/agent/`
 - Dashboard repo: `../rs6-nullcity-residents-dashboard`
+
+## UI Boundary
+
+Dev's architecture rule is strict: `rs6-nullcity-server` must not own human-facing UI.
+
+- Keep this repo focused on runtime, controller, resident intelligence, memory/logging, data files, CLI tools, and JSON/control APIs.
+- Put every dashboard, debug shell, attendee page, wall/inbox/patron page, Library/Graveyard view, HTML/CSS/Svelte/React/JSX/TSX surface in `../rs6-nullcity-residents-dashboard`.
+- Server endpoints may expose read models such as `/v1/inbox`, `/v1/wall/snapshot`, `/v1/library`, and `/v1/graveyard`, but they should return JSON rather than HTML.
+- Run `npm run check:no-ui` before finishing server work that touches web-facing routes or public assets.
 
 ## Working Rules
 
@@ -84,6 +108,7 @@ npm run typecheck
 npm run lint
 npm run format
 npm run build
+npm run check:no-ui
 npm test -- --runInBand
 ```
 

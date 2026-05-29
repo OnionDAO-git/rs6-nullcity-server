@@ -78,12 +78,15 @@ export interface PerceptionEvent {
 }
 
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+export type InitialSkillSeed = number | { exp?: number; level?: number };
 
 export interface CreateResidentPayload {
     name: string;
     spawnPosition?: unknown;
+    appearance?: unknown;
     initialInventory?: InitialContainerItem[];
     initialEquipment?: InitialContainerItem[];
+    initialSkills?: Record<string, InitialSkillSeed>;
 }
 
 export interface ConnectResidentPayload {
@@ -111,6 +114,8 @@ export type ClientMessage =
     | GatewayEnvelope<'connect_resident', ConnectResidentPayload>
     | GatewayEnvelope<'attach', ConnectResidentPayload>
     | GatewayEnvelope<'submit_action', SubmitActionPayload>
+    | GatewayEnvelope<'inspect_resident_gold', { name: string }>
+    | GatewayEnvelope<'burn_resident_gold', { name: string; amount: number }>
     | GatewayEnvelope<'detach', ResidentNamePayload>
     | GatewayEnvelope<'disconnect_resident', ResidentNamePayload>
     | GatewayEnvelope<'pause_resident', ResidentNamePayload>
@@ -120,6 +125,8 @@ export type ServerMessage =
     | GatewayEnvelope<'resident_list', { residents: ResidentSummary[] }>
     | GatewayEnvelope<'resident_created', { resident: ResidentSummary }>
     | GatewayEnvelope<'resident_connected', { resident: ResidentSummary; perception?: Perception | null }>
+    | GatewayEnvelope<'resident_gold', { resident: string; itemId: 995; amount: number }>
+    | GatewayEnvelope<'resident_gold_burned', { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>
     | GatewayEnvelope<'resident_disconnected', ResidentNamePayload & { cause?: string }>
     | GatewayEnvelope<'resident_paused', ResidentNamePayload & { cause?: string }>
     | GatewayEnvelope<'perception', { resident_id: string; perception: Perception }>

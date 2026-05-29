@@ -1,26 +1,27 @@
+import { type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
 import { ControllerConfig } from './config';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
-import { createDefaultGameSkillEntries } from './knowledge/game-skill-entries';
+import { FactionStockpileLedger } from './factions/stockpile-ledger';
 import { GameSkillService } from './knowledge/game-skill-context';
+import { createDefaultGameSkillEntries } from './knowledge/game-skill-entries';
 import { KnowledgeSuggestionStore } from './knowledge/suggestions';
 import { LlmClient } from './llm/llm-client';
 import { ActionLog } from './logging/action-log';
 import { InferenceLog } from './logging/inference-log';
+import { LoreBus } from './lore/lore-bus';
 import { MemoryStore } from './memory/memory-store';
-import { residentSlug, RuntimeStateStore, type RuntimeState } from './memory/runtime-state';
+import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/runtime-state';
+import { CurrencyLedger } from './patron/currency-ledger';
+import { LettersStore } from './patron/letters-store';
+import { PatronGateway } from './patron/patron-gateway';
+import { PatronStore } from './patron/patron-store';
+import { StandingLedger } from './patron/standing-ledger';
 import { ResidentRuntime, type ResidentRuntimeEvidence, type ResidentRuntimeGameSkill } from './resident-runtime';
 import { SoulLoader } from './soul/soul-loader';
 import type { SparkModule } from './spark';
 import { standardSparkModules } from './spark/standard-modules';
 import { GatewayClient } from './transport/gateway-client';
-import { PatronStore } from './patron/patron-store';
-import { PatronGateway } from './patron/patron-gateway';
-import { CurrencyLedger } from './patron/currency-ledger';
-import { StandingLedger } from './patron/standing-ledger';
-import { LettersStore } from './patron/letters-store';
 import type { PerceptionEvent } from './transport/message-codecs';
-import { LoreBus } from './lore/lore-bus';
-import { FactionStockpileLedger } from './factions/stockpile-ledger';
 
 const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
 
@@ -183,6 +184,40 @@ export class ControllerHost {
 
     public getRuntime(name: string): ResidentRuntime | undefined {
         return this.runtimes.get(name);
+    }
+
+    public async birthResidentFromCity(input: BirthResidentRequest): Promise<{ resident: string; created: boolean; connected: boolean }> {
+        writeBirthSoulFile(this.config.souls.dir, input);
+        const soul = this.soulLoader.load(input.residentName);
+        const residents = new Map((await this.gateway.listResidents('all')).map(resident => [resident.name, resident]));
+        const existing = residents.get(input.residentName);
+        let created = false;
+        if (!existing) {
+            await this.gateway.createResident({
+                name: input.residentName,
+                spawnPosition: input.spawnPosition || soul.frontmatter.spawnPosition,
+                appearance: input.appearance,
+                initialInventory: cityInitialInventory(input) || soul.frontmatter.initialInventory,
+                initialEquipment: input.initialEquipment || soul.frontmatter.initialEquipment,
+            });
+            created = true;
+        }
+        if (!this.runtimes.has(input.residentName)) {
+            await this.connectWithSoul(soul);
+        }
+        this.desired.add(input.residentName);
+        return { resident: input.residentName, created, connected: true };
+    }
+
+    public inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }> {
+        return this.gateway.inspectResidentGold(name);
+    }
+
+    public burnResidentGold(
+        name: string,
+        amount: number,
+    ): Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }> {
+        return this.gateway.burnResidentGold(name, amount);
     }
 
     public enqueuePerceptionEvent(residentName: string, event: PerceptionEvent): boolean {

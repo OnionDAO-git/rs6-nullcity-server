@@ -469,6 +469,32 @@ describe('ActionAdapter', () => {
         expect(mockActionPipelineCall).toHaveBeenCalledWith('npc_interaction', actingResident, fishingSpot, fishingSpot.position, 'net');
     });
 
+    it('closes the active chatbox when a resident continues ordinary dialogue', () => {
+        const actingResident = {
+            interfaceState: { closeWidget: jest.fn() },
+            dialogueInteractionEvent: { next: jest.fn() },
+        } as unknown as Resident;
+
+        const result = new ActionAdapter().apply(actingResident, { kind: 'dialogue_continue' });
+
+        expect(result).toEqual({ ok: true });
+        expect(actingResident.interfaceState.closeWidget).toHaveBeenCalledWith('chatbox', undefined, -1);
+        expect(actingResident.dialogueInteractionEvent.next).not.toHaveBeenCalled();
+    });
+
+    it('closes the active chatbox with one-based option data for resident dialogue choices', () => {
+        const actingResident = {
+            interfaceState: { closeWidget: jest.fn() },
+            dialogueInteractionEvent: { next: jest.fn() },
+        } as unknown as Resident;
+
+        const result = new ActionAdapter().apply(actingResident, { kind: 'dialogue_choice', optionIndex: 0 });
+
+        expect(result).toEqual({ ok: true });
+        expect(actingResident.interfaceState.closeWidget).toHaveBeenCalledWith('chatbox', undefined, 1);
+        expect(actingResident.dialogueInteractionEvent.next).not.toHaveBeenCalled();
+    });
+
     it('dispatches generic inventory item actions through the engine item pipe', () => {
         const actingResident = resident();
 
@@ -480,6 +506,31 @@ describe('ActionAdapter', () => {
 
         expect(result).toEqual({ ok: true });
         expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'bury');
+    });
+
+    it('normalizes resident equip actions to the engine equip option', () => {
+        const actingResident = resident();
+
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'equip',
+            slot: 0,
+        });
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'equip');
+    });
+
+    it('normalizes resident wear/wield item actions to the engine equip option', () => {
+        const actingResident = resident();
+
+        const result = new ActionAdapter().apply(actingResident, {
+            kind: 'item_action',
+            slot: 0,
+            option: 'wear',
+        } as never);
+
+        expect(result).toEqual({ ok: true });
+        expect(mockActionPipelineCall).toHaveBeenCalledWith('item_interaction', actingResident, 42, 0, 3214, 0, 'equip');
     });
 
     it('dispatches use_item_on against NPCs through the engine item-on-npc pipe', () => {

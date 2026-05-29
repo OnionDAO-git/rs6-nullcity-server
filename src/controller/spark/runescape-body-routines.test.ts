@@ -10,6 +10,7 @@ import {
     buryBonesAction,
     combatLootOrPrayerAction,
     combatTrainingAction,
+    equipmentPrepAction,
     explorationAction,
     explorationItemCooldownKey,
     explorationObjectCooldownKey,
@@ -23,11 +24,14 @@ import {
     lowHealthRecoveryAction,
     opportunisticPickupAction,
     prayerTrainingAction,
+    cooksAssistantStartAction,
+    cooksAssistantQuestAction,
     starterFishingAction,
     starterFishingCookingAction,
     starterFishingRouteAction,
     safeCombatTarget,
     safeBoneSourceTarget,
+    starterMiningAction,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
@@ -224,6 +228,334 @@ describe('levelOneWoodcuttingAction', () => {
                 nearby: { objects: [{ objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } }] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('starterMiningAction', () => {
+    const COPPER_ROCK = objectIds.default.copper[0].default;
+    const TIN_ROCK = objectIds.default.tin[0].default;
+    const EMPTY_COPPER_ROCK = objectIds.default.copper[0].empty;
+    const BRONZE_PICKAXE = 1265;
+
+    it('returns interact "mine" when adjacent to a starter ore rock with a pickaxe', () => {
+        const rock = { objectId: COPPER_ROCK, position: { x: 100, y: 100, level: 0 } };
+        const action = starterMiningAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BRONZE_PICKAXE, 'rs:bronze_pickaxe')] },
+                nearby: { objects: [rock] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'interact',
+            target: rock,
+            option: 'mine',
+            cause: 'starter_mining_routine',
+        });
+    });
+
+    it('moves toward the nearest visible starter ore rock when out of range', () => {
+        const farRock = { objectId: TIN_ROCK, position: { x: 110, y: 100, level: 0 } };
+        const nearRock = { objectId: COPPER_ROCK, position: { x: 104, y: 100, level: 0 } };
+        const action = starterMiningAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BRONZE_PICKAXE, 'rs:bronze_pickaxe')] },
+                nearby: { objects: [farRock, nearRock] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: nearRock.position,
+            range: 1,
+            cause: 'starter_mining_routine',
+        });
+    });
+
+    it('ignores empty rocks and returns undefined without a pickaxe', () => {
+        const emptyRock = { objectId: EMPTY_COPPER_ROCK, position: { x: 100, y: 100, level: 0 } };
+        expect(
+            starterMiningAction(
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(BRONZE_PICKAXE, 'rs:bronze_pickaxe')] },
+                    nearby: { objects: [emptyRock] },
+                }),
+            ),
+        ).toBeUndefined();
+        expect(
+            starterMiningAction(
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                    nearby: { objects: [{ objectId: COPPER_ROCK, position: { x: 100, y: 100, level: 0 } }] },
+                }),
+            ),
+        ).toBeUndefined();
+    });
+});
+
+describe('cooksAssistantStartAction', () => {
+    function cook(x: number, y: number): BodyActor {
+        return {
+            id: `npc:cook-${x}-${y}`,
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    it('talks to the Lumbridge Cook when adjacent and Cook Assistant is not started', () => {
+        const target = cook(101, 100);
+        const action = cooksAssistantStartAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_talk_to_cook',
+        });
+    });
+
+    it('moves toward the Lumbridge Cook when visible but not adjacent', () => {
+        const target = cook(104, 100);
+        const action = cooksAssistantStartAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 } },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: target.position,
+            range: 1,
+            cause: 'cooks_assistant_approach_cook',
+        });
+    });
+
+    it('does nothing once Cook Assistant progress is at the started milestone', () => {
+        const action = cooksAssistantStartAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                },
+                nearby: { npcs: [cook(101, 100)] },
+            }),
+        );
+
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('cooksAssistantQuestAction', () => {
+    function cook(x: number, y: number): BodyActor {
+        return {
+            id: `npc:cook-${x}-${y}`,
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x, y, level: 0 },
+            hpFraction: 1,
+        };
+    }
+
+    function questIngredient(itemId: number, x: number, y: number): BodyWorldItem {
+        return {
+            itemId,
+            key: `rs:quest_ingredient_${itemId}`,
+            amount: 1,
+            position: { x, y, level: 0 },
+        };
+    }
+
+    it('starts Cook Assistant before hand-in when quest progress is not started', () => {
+        const target = cook(101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    inventory: [{ itemId: 1927, amount: 1 }],
+                },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_talk_to_cook',
+        });
+    });
+
+    it('talks to the Cook for hand-in when progress is 50 and all ingredients are carried', () => {
+        const target = cook(101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [target] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_hand_in_ingredients',
+        });
+    });
+
+    it('moves into interaction range when Cook is temporarily hidden after quest start', () => {
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 3210, y: 3215, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3208, y: 3215, level: 0 },
+            range: 1,
+            cause: 'cooks_assistant_find_cook',
+        });
+    });
+
+    it('ignores stale Cook target cooldowns after quest start when ingredients are ready to hand in', () => {
+        const target = cook(3207, 3215);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 3208, y: 3215, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [target] },
+            }),
+            { 'actor-key:rs:lumbridge_castle_cook': 20 },
+            25,
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target,
+            option: 'talk-to',
+            cause: 'cooks_assistant_hand_in_ingredients',
+        });
+    });
+
+    it('reports missing ingredients instead of repeatedly talking to Cook at stage 50', () => {
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [{ itemId: 1927, amount: 1 }],
+                },
+                nearby: { npcs: [cook(101, 100)] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'Cook still needs a pot of flour and an egg.',
+            cause: 'cooks_assistant_missing_ingredients',
+        });
+    });
+
+    it('picks up a visible missing Cook Assistant ingredient before reporting missing ingredients', () => {
+        const egg = questIngredient(1944, 101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                    ],
+                },
+                nearby: {
+                    npcs: [cook(101, 100)],
+                    worldItems: [egg],
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: egg,
+            option: 'pick-up',
+            cause: 'cooks_assistant_pickup_ingredient',
+        });
+    });
+
+    it('picks the nearest visible missing Cook Assistant ingredient when several are nearby', () => {
+        const farEgg = questIngredient(1944, 108, 100);
+        const nearFlour = questIngredient(1933, 101, 100);
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    inventory: [{ itemId: 1927, amount: 1 }],
+                },
+                nearby: {
+                    worldItems: [farEgg, nearFlour],
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: nearFlour,
+            option: 'pick-up',
+            cause: 'cooks_assistant_pickup_ingredient',
+        });
+    });
+
+    it('does nothing once Cook Assistant is complete', () => {
+        const action = cooksAssistantQuestAction(
+            perception({
+                resident: {
+                    position: { x: 100, y: 100, level: 0 },
+                    quests: { 'rs:cooks_assistant': { progress: 'complete', complete: true } },
+                    inventory: [
+                        { itemId: 1927, amount: 1 },
+                        { itemId: 1933, amount: 1 },
+                        { itemId: 1944, amount: 1 },
+                    ],
+                },
+                nearby: { npcs: [cook(101, 100)] },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });
@@ -1502,6 +1834,22 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
     });
 
+    it('equips useful carried gear before starting combat', () => {
+        const chicken = combatNpc('Chicken', 3220, 3220);
+        const action = combatTrainingAction(
+            perception({
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [item(9703, 'rs:training_sword')],
+                    equipment: [],
+                },
+                nearby: { npcs: [chicken] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' });
+    });
+
     it('eats food when low on HP and food is carried', () => {
         const action = combatTrainingAction(
             perception({
@@ -1561,6 +1909,43 @@ describe('combatTrainingAction', () => {
             }),
         );
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
+    });
+});
+
+describe('equipmentPrepAction', () => {
+    it('returns an equip action for a useful weapon in inventory', () => {
+        const action = equipmentPrepAction(
+            perception({
+                resident: {
+                    inventory: [item(9703, 'rs:training_sword')],
+                    equipment: [],
+                },
+            }),
+        );
+        expect(action).toEqual({ kind: 'equip', slot: 0, cause: 'equip_useful_gear' });
+    });
+
+    it('does not try to equip utility resources or already-equipped items', () => {
+        expect(
+            equipmentPrepAction(
+                perception({
+                    resident: {
+                        inventory: [item(590, 'rs:tinderbox'), item(1511, 'rs:logs'), item(995, 'rs:coins')],
+                        equipment: [],
+                    },
+                }),
+            ),
+        ).toBeUndefined();
+        expect(
+            equipmentPrepAction(
+                perception({
+                    resident: {
+                        inventory: [item(9703, 'rs:training_sword')],
+                        equipment: [item(9703, 'rs:training_sword')],
+                    },
+                }),
+            ),
+        ).toBeUndefined();
     });
 });
 

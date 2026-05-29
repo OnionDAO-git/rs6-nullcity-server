@@ -5,6 +5,7 @@ import { Emote, dialogue, execute, goto } from '@engine/world/actor/dialogue';
 import type { Player } from '@engine/world/actor/player/player';
 import { Quest } from '@engine/world/actor/player/quest';
 import { itemIds } from '@engine/world/config/item-ids';
+import { hasAllCooksAssistantIngredients } from './cooks-assistant-quest-state';
 
 const journalHandler: QuestJournalHandler = {
     0: `I can start this quest by speaking to the <col=800000>Cook</col> in the
@@ -280,7 +281,7 @@ const handInIngredientsAction: npcInteractionActionHandler = async details => {
 
     await dialogue([player, { npc, key: 'cook' }], dialogueTree);
 
-    if (questComplete) {
+    if (questComplete || hasAllCooksAssistantIngredients(quest)) {
         player.setQuestProgress('rs:cooks_assistant', 'complete');
     }
 };

@@ -46,6 +46,7 @@ import { LettersStore } from './patron/letters-store';
 import {
     buildEpitaphDispatchRequests,
     dispatchEpitaphs,
+    findLivingSibling,
     loadPreparedEpitaph,
     type DeceasedResidentSummary,
 } from './patron/epitaph-dispatcher';
@@ -62,6 +63,7 @@ import { LoreBus } from './lore/lore-bus';
 import { FireLitReflex } from './lore/fire-lit-reflex';
 import { MomentLabeler } from './evidence/moment-labeler';
 import { whisperInboxFor, type WhisperInbox } from './lore/whisper';
+import { loreBusInboxFor, type LoreBusInbox } from './lore/lore-bus-inbox';
 
 const MAX_PENDING_EVENTS = 50;
 const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
@@ -161,6 +163,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly fireLitReflex?: FireLitReflex;
     private readonly momentLabeler?: MomentLabeler;
     private readonly whisperInbox?: WhisperInbox;
+    private readonly loreBusInbox?: LoreBusInbox;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
@@ -210,6 +213,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.loreBus = options.loreBus;
             this.fireLitReflex = new FireLitReflex({ bus: options.loreBus });
             this.whisperInbox = whisperInboxFor(options.loreBus, this.name);
+            this.loreBusInbox = loreBusInboxFor(options.loreBus, this.name);
             this.momentLabeler = options.evidence ? new MomentLabeler({ builder: options.evidence.trajectory }) : undefined;
         }
         this.options.stateStore.save(this.state);
@@ -304,6 +308,21 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     to: this.name,
                     ts: whisper.ts,
                 } as any);
+            }
+        }
+
+        if (this.loreBusInbox) {
+            const observerPos = (perception as { resident?: { position?: { x: number; y: number; level: number } } })?.resident?.position;
+            const drainedLoreEvents = this.loreBusInbox.drain(observerPos);
+            for (const event of drainedLoreEvents) {
+                this.pendingEvents.push({
+                    kind: 'world_event',
+                    loreKind: event.kind,
+                    source: event.source,
+                    payload: event.payload,
+                    sourcePosition: event.sourcePosition,
+                    ts: event.ts,
+                });
             }
         }
 
@@ -1019,7 +1038,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const lettersStoreDir = this.evidence?.store.root;
             if (lettersStoreDir) {
                 const store = new LettersStore(lettersStoreDir);
-                const letters = buildEpitaphDispatchRequests(summary, patronHandles);
+                const senderResident = findLivingSibling(this.options.soul.frontmatter.siblings ?? [], r =>
+                    this.options.stateStore.isAlive(r),
+                );
+                const letters = buildEpitaphDispatchRequests(summary, patronHandles, { senderResident });
                 if (letters.length > 0) {
                     dispatchEpitaphs(letters, store);
                 }
@@ -1163,6 +1185,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     stop(cause = 'runtime_stopped'): void {
         if (this.whisperInbox) {
             this.whisperInbox.unsubscribe();
+        }
+        if (this.loreBusInbox) {
+            this.loreBusInbox.unsubscribe();
         }
         this.thinking.stop(cause);
         this.recordEvidence(() => this.evidence?.store.endSession(this.evidence.sessionId, 'shutdown'));

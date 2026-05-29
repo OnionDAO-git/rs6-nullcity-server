@@ -17,6 +17,7 @@ import {
     normalizeText,
     positionKey,
     withoutTargetFailedPerception,
+    resetClockSensitiveCognition,
 } from './hybrid-agent-utils';
 
 import { directChatAction } from './hybrid-agent-chat';
@@ -81,7 +82,6 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         let brainDecision: any;
         try {
             this.advanceTick(perception);
-            this.ensureCognition();
             this.cognition().tickTelemetry = undefined;
             ensureBenchmarkGoal(this);
             ensureFactionLandmarkGoal(this);
@@ -198,7 +198,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     }
                 }
 
-                const bodyPerception = this.perceptionWithoutFailedTargets(perception as HybridPerception);
+                const bodyPerception = withoutTargetFailedPerception(
+                    perception as HybridPerception,
+                    this.cognition().targetFailureCooldowns,
+                    this.options.state.tick,
+                );
                 const visibility = visibilityStatus(this, bodyPerception);
                 const preInference = preInferenceBodyAction(this, bodyPerception, visibility);
                 if (preInference) {
@@ -308,31 +312,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     cancelledResult(thinkId: number, perception?: HybridPerception): ThoughtResult | undefined {
         const existing = this.cancelledThinkResults.get(thinkId);
-        if (existing) {
-            return existing;
-        }
+        if (existing) return existing;
         const cause = this.cancelledThinkIds.get(thinkId);
-        if (!cause) {
-            return undefined;
-        }
-        let planChange: unknown;
-        if (cause === 'thinking_watchdog_timeout') {
-            planChange = applyBrainTimeoutFallback(this, perception);
-        }
-        const result = {
-            actions: [],
-            syntheticEvents: [],
-            cause,
-            envelopeTokens: 0,
-            nooped: true,
-            planChange,
-        };
+        if (!cause) return undefined;
+        const planChange = cause === 'thinking_watchdog_timeout' ? applyBrainTimeoutFallback(this, perception) : undefined;
+        const result = { actions: [], syntheticEvents: [], cause, envelopeTokens: 0, nooped: true, planChange };
         this.cancelledThinkResults.set(thinkId, result);
         return result;
-    }
-
-    private perceptionWithoutFailedTargets(perception: HybridPerception): HybridPerception {
-        return withoutTargetFailedPerception(perception, this.cognition().targetFailureCooldowns, this.options.state.tick);
     }
 
     commandPrefix(): string {
@@ -346,10 +332,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
     activeGoal(): ActiveGoalState | undefined {
         const goal = this.cognition().activeGoal;
-        if (!goal || this.goalExpired(goal)) {
-            return undefined;
-        }
-        return goal;
+        return goal && (goal.ttlTicks === undefined || this.options.state.tick - goal.createdAtTick <= goal.ttlTicks) ? goal : undefined;
     }
 
     pickupCooldowns(): Record<string, number> {
@@ -437,7 +420,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         }
 
         const goal = this.activeGoal();
-        if (!goal || this.goalExpired(goal)) {
+        if (!goal) {
             return true;
         }
         return this.options.state.tick - (cognition.lastBrainTick || 0) >= (this.behavior().brainEveryTicks ?? DEFAULT_BRAIN_EVERY_TICKS);
@@ -449,35 +432,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         );
     }
 
-    private ensureCognition(): void {
-        this.options.state.cognition ||= {};
-    }
-
     cognition() {
-        this.ensureCognition();
-        return this.options.state.cognition!;
+        return (this.options.state.cognition ||= {});
     }
 
     private advanceTick(perception: Perception): void {
         const perceptionTick = typeof perception.tick === 'number' ? perception.tick : 0;
         if (perceptionTick > 0 && this.options.state.tick - perceptionTick > WORLD_TICK_RESET_DRIFT) {
-            this.resetClockSensitiveCognition(perceptionTick);
+            resetClockSensitiveCognition(this.options.state, perceptionTick);
             this.options.state.tick = perceptionTick;
             return;
         }
         this.options.state.tick = Math.max(this.options.state.tick + 1, perceptionTick);
-    }
-
-    private resetClockSensitiveCognition(perceptionTick: number): void {
-        const cognition = this.cognition();
-        const followTarget = cognition.followTarget ? { ...cognition.followTarget, setAtTick: perceptionTick } : undefined;
-        this.options.state.cognition = {
-            followTarget,
-        };
-        this.options.state.lastMeaningfulProgressAt = undefined;
-        this.options.state.stuckSince = undefined;
-        this.options.state.budgets.lastTick = undefined;
-        this.options.state.budgets.requestsThisTick = undefined;
     }
 
     private result(
@@ -496,9 +462,5 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             ...telemetry,
             ...extra,
         };
-    }
-
-    private goalExpired(goal: ActiveGoalState): boolean {
-        return goal.ttlTicks !== undefined && this.options.state.tick - goal.createdAtTick > goal.ttlTicks;
     }
 }

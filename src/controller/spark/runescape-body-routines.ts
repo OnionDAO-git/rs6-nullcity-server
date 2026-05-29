@@ -23,6 +23,7 @@ import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
     MEDIUM_RISK_BONE_SOURCE_PATTERN,
+    hasPickaxe,
     hasSmallFishingNet,
     hasWoodcuttingAxe,
     isBones,
@@ -68,6 +69,8 @@ export type BodyHybridPerception = {
         combatTarget?: BodyActor | null;
         busy?: boolean;
         inventory?: Array<BodyItem | null>;
+        equipment?: Array<BodyItem | null>;
+        quests?: Record<string, { progress?: number | string; complete?: boolean }>;
     };
     nearby?: {
         players?: BodyActor[];
@@ -90,6 +93,13 @@ export const FIRE_OBJECT_IDS: ReadonlySet<number> = new Set([objectIds.fire]);
 export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
+]);
+
+/** Level-1 ore rocks the starter mining routine may mine. Empty/depleted rock ids are intentionally excluded. */
+export const STARTER_ORE_IDS: ReadonlySet<number> = new Set([
+    ...objectIds.default.clay.map(rock => rock.default),
+    ...objectIds.default.copper.map(rock => rock.default),
+    ...objectIds.default.tin.map(rock => rock.default),
 ]);
 
 /** Tree object IDs that are useful as scouting landmarks, even when the resident cannot chop them yet. */
@@ -119,6 +129,20 @@ export const LUMBRIDGE_STARTER_FISHING_SPOTS: ReadonlyArray<BodyPos> = [LUMBRIDG
 
 /** Reachable castle entry used when west-side kitchen doors are visible but not pathable. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY: BodyPos = { x: 3217, y: 3218, level: 0 };
+
+/** Lumbridge Cook location used by the Cook's Assistant starter quest. */
+export const LUMBRIDGE_COOK_POSITION: BodyPos = { x: 3208, y: 3215, level: 0 };
+
+const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
+const LUMBRIDGE_COOK_KEY = 'rs:lumbridge_castle_cook';
+const COOKS_ASSISTANT_BUCKET_OF_MILK = 1927;
+const COOKS_ASSISTANT_POT_OF_FLOUR = 1933;
+const COOKS_ASSISTANT_EGG = 1944;
+const COOKS_ASSISTANT_INGREDIENTS: ReadonlyArray<{ itemId: number; label: string }> = [
+    { itemId: COOKS_ASSISTANT_BUCKET_OF_MILK, label: 'a bucket of milk' },
+    { itemId: COOKS_ASSISTANT_POT_OF_FLOUR, label: 'a pot of flour' },
+    { itemId: COOKS_ASSISTANT_EGG, label: 'an egg' },
+];
 
 /** Closed double-door IDs for the south Lumbridge Castle entrance. */
 export const LUMBRIDGE_CASTLE_KITCHEN_ENTRY_CLOSED_DOOR_IDS: ReadonlySet<number> = new Set([1516, 1519]);
@@ -205,6 +229,18 @@ export const LOW_HEALTH_RECOVERY_WAYPOINT_RANGE = 6;
 
 /** Visible hostile radius that triggers retreat to a recovery waypoint. */
 const LOW_HEALTH_RECOVERY_THREAT_RADIUS = 24;
+
+/** Common starter gear ids worth equipping before combat or dangerous work. */
+const USEFUL_GEAR_ITEM_IDS: ReadonlySet<number> = new Set([
+    841, 882, 1059, 1061, 1063, 1075, 1087, 1095, 1103, 1117, 1129, 1139, 1155, 1167, 1171, 1173, 1189, 1205, 1277, 1279, 1281, 1349, 1351,
+    1353, 1361, 9703, 9704,
+]);
+
+const USEFUL_GEAR_KEY_PATTERN =
+    /(^|[:_\s-])(sword|dagger|scimitar|mace|battleaxe|axe|hatchet|bow|arrow|staff|shield|helm|helmet|body|platebody|chainbody|legs|platelegs|plateskirt|skirt|boots|gloves|vambraces|cowl|coif|cape|amulet|ring|robe)([:_\s-]|$)/i;
+
+const NON_GEAR_KEY_PATTERN =
+    /(^|[:_\s-])(coins?|logs?|tinderbox|bones?|raw|shrimp|anchovies|fish|food|meat|bread|cake|net|pickaxe|ore|bar)([:_\s-]|$)/i;
 
 // --- Shared primitive helpers (moved verbatim from the monolith). ---
 
@@ -306,6 +342,30 @@ export function isEdibleFood(item: BodyItem): boolean {
 /** Returns the first inventory slot containing ready-to-eat food, or undefined. */
 export function firstFoodSlot(inventory: Array<BodyItem | null>): number | undefined {
     return findSlot(inventory, isEdibleFood);
+}
+
+/** True when an inventory item is likely wearable/wieldable and useful. */
+export function isUsefulGear(item: BodyItem): boolean {
+    const key = item.key || '';
+    if (USEFUL_GEAR_ITEM_IDS.has(item.itemId)) {
+        return true;
+    }
+    return USEFUL_GEAR_KEY_PATTERN.test(key) && !NON_GEAR_KEY_PATTERN.test(key);
+}
+
+/** Equip one useful carried item before combat-oriented routines spend ticks attacking. */
+export function equipmentPrepAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const inventory = perception.resident?.inventory || [];
+    const equipment = perception.resident?.equipment || [];
+    const slot = findSlot(inventory, item => isUsefulGear(item) && !equipment.some(equipped => sameItem(equipped, item)));
+    return slot === undefined ? undefined : { kind: 'equip', slot, cause: 'equip_useful_gear' };
+}
+
+function sameItem(a: BodyItem | null | undefined, b: BodyItem): boolean {
+    if (!a) {
+        return false;
+    }
+    return a.itemId === b.itemId || (Boolean(a.key) && a.key === b.key);
 }
 
 /** Returns the nearest low-health recovery waypoint to the given position. */
@@ -553,6 +613,36 @@ export function levelOneWoodcuttingAction(
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
+}
+
+/** Approach and mine the nearest level-1 clay/copper/tin rock when carrying a pickaxe. */
+export function starterMiningAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !hasPickaxe(perception)) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.objects || [])
+        .filter(
+            object =>
+                sameLevel(here, object.position) &&
+                STARTER_ORE_IDS.has(object.objectId) &&
+                !isTargetFailureCooldownActive(object, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!target) {
+        return undefined;
+    }
+
+    if (distance(here, target.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: target.position, range: INTERACTION_APPROACH_RADIUS, cause: 'starter_mining_routine' };
+    }
+
+    return { kind: 'interact', target, option: 'mine', cause: 'starter_mining_routine' };
 }
 
 /**
@@ -1124,6 +1214,11 @@ export function prayerTrainingAction(
         return undefined;
     }
 
+    const gear = equipmentPrepAction(perception);
+    if (gear) {
+        return actionWithCause(gear, 'prayer_equip_useful_gear');
+    }
+
     const here = perception.resident?.position;
     if (!here) {
         return undefined;
@@ -1231,6 +1326,10 @@ export function combatTrainingAction(
         const loot = combatLootOrPrayerAction(perception, pickupCooldowns, currentTick, targetFailureCooldowns);
         if (loot) {
             return loot;
+        }
+        const gear = equipmentPrepAction(perception);
+        if (gear) {
+            return actionWithCause(gear, 'combat_equip_useful_gear');
         }
     }
 
@@ -1413,6 +1512,183 @@ export function npcTalkAction(perception: BodyHybridPerception, target: BodyActo
         return { kind: 'move_to', target: target.position, range: 1, cause };
     }
     return { kind: 'interact', target, option: 'talk-to', cause };
+}
+
+/** Start Cook's Assistant by finding the Lumbridge Cook and opening the quest dialogue. */
+export function cooksAssistantStartAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || cooksAssistantStarted(perception)) {
+        return undefined;
+    }
+
+    const cook = (perception.nearby?.npcs || [])
+        .filter(isLumbridgeCook)
+        .filter(npc => sameLevel(here, npc.position))
+        .filter(npc => !isTargetFailureCooldownActive(npc, targetFailureCooldowns, currentTick))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    if (!cook) {
+        if (!sameLevel(here, LUMBRIDGE_COOK_POSITION)) {
+            return undefined;
+        }
+        if (distance(here, LUMBRIDGE_COOK_POSITION) > INTERACTION_APPROACH_RADIUS) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_COOK_POSITION,
+                range: INTERACTION_APPROACH_RADIUS,
+                cause: 'cooks_assistant_find_cook',
+            };
+        }
+        return undefined;
+    }
+
+    if (distance(here, cook.position) > INTERACTION_APPROACH_RADIUS) {
+        return {
+            kind: 'move_to',
+            target: cook.position,
+            range: 1,
+            cause: 'cooks_assistant_approach_cook',
+        };
+    }
+
+    return {
+        kind: 'interact',
+        target: cook,
+        option: 'talk-to',
+        cause: 'cooks_assistant_talk_to_cook',
+    };
+}
+
+/** Complete Cook's Assistant: start it if needed, then hand in carried ingredients to the Lumbridge Cook. */
+export function cooksAssistantQuestAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const quest = perception.resident?.quests?.[COOKS_ASSISTANT_QUEST_ID];
+    if (quest?.complete === true || quest?.progress === 'complete') {
+        return undefined;
+    }
+
+    if (!cooksAssistantStarted(perception)) {
+        return cooksAssistantStartAction(perception, targetFailureCooldowns, currentTick);
+    }
+
+    const missing = missingCooksAssistantIngredients(perception.resident?.inventory || []);
+    if (missing.length > 0) {
+        const pickup = cooksAssistantIngredientPickupAction(perception, missing, targetFailureCooldowns, currentTick);
+        if (pickup) {
+            return pickup;
+        }
+        return {
+            kind: 'say',
+            text: `Cook still needs ${formatIngredientList(missing.map(ingredient => ingredient.label))}.`,
+            cause: 'cooks_assistant_missing_ingredients',
+        };
+    }
+
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+
+    const cook = (perception.nearby?.npcs || [])
+        .filter(isLumbridgeCook)
+        .filter(npc => sameLevel(here, npc.position))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    if (!cook) {
+        if (!sameLevel(here, LUMBRIDGE_COOK_POSITION)) {
+            return undefined;
+        }
+        if (distance(here, LUMBRIDGE_COOK_POSITION) > INTERACTION_APPROACH_RADIUS) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_COOK_POSITION,
+                range: INTERACTION_APPROACH_RADIUS,
+                cause: 'cooks_assistant_find_cook',
+            };
+        }
+        return undefined;
+    }
+
+    if (distance(here, cook.position) > INTERACTION_APPROACH_RADIUS) {
+        return {
+            kind: 'move_to',
+            target: cook.position,
+            range: 1,
+            cause: 'cooks_assistant_approach_cook',
+        };
+    }
+
+    return {
+        kind: 'interact',
+        target: cook,
+        option: 'talk-to',
+        cause: 'cooks_assistant_hand_in_ingredients',
+    };
+}
+
+function cooksAssistantStarted(perception: BodyHybridPerception): boolean {
+    const quest = perception.resident?.quests?.[COOKS_ASSISTANT_QUEST_ID];
+    if (!quest) {
+        return false;
+    }
+    return quest.complete === true || quest.progress === 'complete' || (typeof quest.progress === 'number' && quest.progress >= 50);
+}
+
+function isLumbridgeCook(actor: BodyActor): boolean {
+    return (
+        actor.kind === 'npc' &&
+        (actor.key === LUMBRIDGE_COOK_KEY ||
+            /^cook$/i.test(actor.name || '') ||
+            /^npc:cook/i.test(actor.id || '') ||
+            /lumbridge.*cook/i.test(`${actor.key || ''} ${actor.name || ''}`))
+    );
+}
+
+function missingCooksAssistantIngredients(inventory: Array<BodyItem | null>): Array<{ itemId: number; label: string }> {
+    return COOKS_ASSISTANT_INGREDIENTS.filter(ingredient => !inventory.some(item => item?.itemId === ingredient.itemId));
+}
+
+function cooksAssistantIngredientPickupAction(
+    perception: BodyHybridPerception,
+    missing: ReadonlyArray<{ itemId: number; label: string }>,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || !inventoryHasFreeSlot(perception.resident?.inventory || [])) {
+        return undefined;
+    }
+    const missingIds = new Set(missing.map(ingredient => ingredient.itemId));
+    const item = (perception.nearby?.worldItems || [])
+        .filter(
+            candidate =>
+                missingIds.has(candidate.itemId) &&
+                sameLevel(here, candidate.position) &&
+                !isOwnedByAnotherActor(candidate, undefined, perception.resident?.id) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!item) {
+        return undefined;
+    }
+    return { kind: 'interact', target: item, option: 'pick-up', cause: 'cooks_assistant_pickup_ingredient' };
+}
+
+function formatIngredientList(items: string[]): string {
+    if (items.length <= 1) {
+        return items[0] || 'the quest ingredients';
+    }
+    if (items.length === 2) {
+        return `${items[0]} and ${items[1]}`;
+    }
+    return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
 }
 
 /** Human-readable label for inventory/world items. Strips the `rs:` prefix and underscores. */

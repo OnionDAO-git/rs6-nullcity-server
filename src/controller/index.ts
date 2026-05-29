@@ -1,9 +1,11 @@
+import { closeCityIntegrationHttpServer, startCityIntegrationHttpServer } from './city-integration/http-server';
+import { CityIntegrationService } from './city-integration/service';
 import { assertProductionControllerConfig, loadControllerConfig, parseControllerArgs, sanitizedControllerConfigSummary } from './config';
-import { acquireControllerLock } from './controller-lock';
 import { ControllerHost } from './controller-host';
+import { acquireControllerLock } from './controller-lock';
 import { closeLettersHttpServer, startLettersHttpServer } from './letters/letters-http-server';
-import { LlmClient } from './llm/llm-client';
 import { runInferenceHealthProbe } from './llm/inference-health';
+import { LlmClient } from './llm/llm-client';
 import { closeControllerMcpHttpServer, startControllerMcpHttpServer } from './mcp/http-server';
 import { LettersStore } from './patron/letters-store';
 
@@ -17,8 +19,13 @@ async function main(): Promise<void> {
     const host = new ControllerHost(config, { once: args.once, logEnvelope: args.logEnvelope, llm });
     let mcpHttpServer: Awaited<ReturnType<typeof startControllerMcpHttpServer>> | undefined;
     let lettersHttpServer: Awaited<ReturnType<typeof startLettersHttpServer>> | undefined;
+    let cityHttpServer: Awaited<ReturnType<typeof startCityIntegrationHttpServer>> | undefined;
 
     const shutdown = async () => {
+        if (cityHttpServer) {
+            await closeCityIntegrationHttpServer(cityHttpServer.server);
+            cityHttpServer = undefined;
+        }
         if (lettersHttpServer) {
             await closeLettersHttpServer(lettersHttpServer.server);
             lettersHttpServer = undefined;
@@ -66,7 +73,37 @@ async function main(): Promise<void> {
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
         }
+        if (args.cityHttpPort !== undefined) {
+            if (!args.cityHttpToken) {
+                throw new Error('CONTROLLER_CITY_HTTP_TOKEN is required when --city-http-port is set');
+            }
+            const cityService = new CityIntegrationService({
+                memoryRoot: config.memory.dir,
+                getRuntime: resident => host.getRuntime(resident),
+                inventory: {
+                    inspectResidentGold: resident => host.inspectResidentGold(resident),
+                    burnResidentGold: (resident, amount) => host.burnResidentGold(resident, amount),
+                },
+                birth: {
+                    birthResident: input => host.birthResidentFromCity(input),
+                },
+            });
+            cityHttpServer = await startCityIntegrationHttpServer({
+                service: cityService,
+                port: args.cityHttpPort,
+                host: args.cityHttpHost,
+                pathPrefix: args.cityHttpPathPrefix,
+                bearerToken: args.cityHttpToken,
+            });
+            process.stderr.write(`[controller] city integration HTTP listening at ${cityHttpServer.url}\n`);
+        }
     } catch (error) {
+        if (cityHttpServer) {
+            await closeCityIntegrationHttpServer(cityHttpServer.server).catch(closeError => {
+                process.stderr.write(`[controller] city integration HTTP close failed after startup error: ${errorMessage(closeError)}\n`);
+            });
+            cityHttpServer = undefined;
+        }
         if (lettersHttpServer) {
             await closeLettersHttpServer(lettersHttpServer.server).catch(closeError => {
                 process.stderr.write(`[controller] letters HTTP close failed after startup error: ${errorMessage(closeError)}\n`);
@@ -87,6 +124,10 @@ async function main(): Promise<void> {
     }
 
     if (args.once) {
+        if (cityHttpServer) {
+            await closeCityIntegrationHttpServer(cityHttpServer.server);
+            cityHttpServer = undefined;
+        }
         if (lettersHttpServer) {
             await closeLettersHttpServer(lettersHttpServer.server);
             lettersHttpServer = undefined;

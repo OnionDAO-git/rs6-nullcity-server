@@ -4,7 +4,7 @@ import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import { STARTER_FISHING_SPOT_DISCOVERY_RANGE, explorationPatrolCooldownKey } from '../spark/runescape-body-routines';
-import type { Perception } from '../transport/message-codecs';
+import type { AgentAction, Perception } from '../transport/message-codecs';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 import { PatronRegistry } from '../patron/patron-registry';
 
@@ -4129,7 +4129,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' }]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_combat');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4158,8 +4158,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'combat_attack_safe_target' }]);
-        expect(result.cause).toBe('combat_attack_safe_target');
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' }]);
+        expect(result.cause).toBe('combat_equip_useful_gear');
     });
 
     it('loots useful drops before attacking the next safe combat target', async () => {
@@ -4839,7 +4839,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'prayer_attack_safe_bone_source' }]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4859,7 +4859,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: chicken, cause: 'prayer_attack_safe_bone_source' }]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4888,8 +4888,8 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'attack', target: rat, cause: 'prayer_attack_safe_bone_source' }]);
-        expect(result.cause).toBe('prayer_attack_safe_bone_source');
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
+        expect(result.cause).toBe('prayer_equip_useful_gear');
     });
 
     it('seeks a nearby Lumbridge bone source for prayer training instead of attacking named non-training NPCs', async () => {
@@ -4906,9 +4906,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 6, cause: 'prayer_seek_safe_bone_source' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4999,6 +4997,34 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('continues consecutive dialogue pages even when the action repeats', async () => {
+        const hans = npc('Hans', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const first = await agent.think(
+            perception({
+                tick: 3,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [{ kind: 'dialogue_opened', npc: hans, prompt: 'Hello there.' }],
+            }),
+        );
+        const second = await agent.think(
+            perception({
+                tick: 4,
+                resident: residentAt(3218, 3201),
+                npcs: [hans],
+                events: [{ kind: 'dialogue_updated', npc: hans, prompt: 'Please continue.' }],
+            }),
+        );
+
+        expect(first.actions).toEqual([{ kind: 'dialogue_continue', cause: 'dialogue_continue' }]);
+        expect(second.actions).toEqual([{ kind: 'dialogue_continue', cause: 'dialogue_continue' }]);
+        expect(second.cause).toBe('dialogue_continue');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('selects the first dialogue option without waiting for inference', async () => {
         const hans = npc('Hans', 3219, 3201);
         const llm = scriptedLlm([]);
@@ -5015,6 +5041,170 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'dialogue_choice', optionIndex: 0, cause: 'dialogue_choice_first' }]);
         expect(result.cause).toBe('dialogue_choice_first');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it("continues Cook's Assistant starter dialogue after talking to the Cook even without dialogue events", async () => {
+        const cook = { ...npc('Cook', 3210, 3215), id: 'npc:cook', key: 'rs:lumbridge_castle_cook' };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'start-cooks-assistant',
+                description: "Start Cook's Assistant by asking the Lumbridge Cook what is wrong.",
+                steps: ['Find the Lumbridge Cook', 'Talk to the Cook', 'Continue the dialogue', 'Choose the helpful first option'],
+                success: "Cook's Assistant reaches quest progress stage 50.",
+                createdAtTick: 1,
+                ttlTicks: 450,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const first = await agent.think(
+            perception({
+                tick: 8,
+                resident: residentAt(3209, 3215),
+                npcs: [cook],
+            }),
+        );
+        const second = await agent.think(
+            perception({
+                tick: 16,
+                resident: residentAt(3209, 3215),
+                npcs: [cook],
+            }),
+        );
+        const third = await agent.think(
+            perception({
+                tick: 24,
+                resident: residentAt(3209, 3215),
+                npcs: [cook],
+            }),
+        );
+
+        expect(first.actions).toEqual([{ kind: 'interact', target: cook, option: 'talk-to', cause: 'cooks_assistant_talk_to_cook' }]);
+        expect(second.actions).toEqual([{ kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' }]);
+        expect(third.actions).toEqual([{ kind: 'dialogue_choice', optionIndex: 0, cause: 'cooks_assistant_dialogue_step' }]);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it("exits Cook's Assistant ingredient hint dialogue after starting the quest", async () => {
+        const cook = { ...npc('Cook', 3210, 3215), id: 'npc:cook', key: 'rs:lumbridge_castle_cook' };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'start-cooks-assistant',
+                description: "Start Cook's Assistant by asking the Lumbridge Cook what is wrong.",
+                steps: ['Find the Lumbridge Cook', 'Talk to the Cook', 'Continue the dialogue', 'Choose the helpful first option'],
+                success: "Cook's Assistant reaches quest progress stage 50.",
+                createdAtTick: 1,
+                ttlTicks: 450,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+        const actions: AgentAction[] = [];
+
+        for (let i = 0; i < 12; i += 1) {
+            const result = await agent.think(
+                perception({
+                    tick: 8 + i * 8,
+                    resident: {
+                        ...residentAt(3209, 3215),
+                        quests: i >= 6 ? { 'rs:cooks_assistant': { progress: 50, complete: false } } : {},
+                    },
+                    npcs: [cook],
+                }),
+            );
+            actions.push(result.actions[0]);
+        }
+
+        expect(actions[7]).toEqual({ kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' });
+        expect(actions[10]).toEqual({ kind: 'dialogue_choice', optionIndex: 3, cause: 'cooks_assistant_dialogue_step' });
+        expect(actions[11]).toEqual({ kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' });
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it("clears stale Cook target failures when Cook's Assistant starter dialogue ends", async () => {
+        const cook = { ...npc('Cook', 3210, 3215), id: 'npc:cook', key: 'rs:lumbridge_castle_cook' };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'start-cooks-assistant',
+                description: "Start Cook's Assistant by asking the Lumbridge Cook what is wrong.",
+                steps: ['Find the Lumbridge Cook', 'Talk to the Cook', 'Continue the dialogue', 'Choose the helpful first option'],
+                success: "Cook's Assistant reaches quest progress stage 50.",
+                createdAtTick: 1,
+                ttlTicks: 450,
+            },
+            targetFailureCooldowns: {
+                'actor-key:rs:lumbridge_castle_cook': 100,
+                'actor-name:cook': 100,
+                'object:1530:3208,3211,0': 100,
+            },
+            pendingQuestDialogue: {
+                questId: 'rs:cooks_assistant',
+                phase: 'start',
+                step: 10,
+                startedAtTick: 8,
+                updatedAtTick: 8,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 96,
+                resident: {
+                    ...residentAt(3209, 3215),
+                    quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                },
+                npcs: [cook],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' }]);
+        expect(state.cognition?.targetFailureCooldowns).toEqual({ 'object:1530:3208,3211,0': 100 });
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it("keeps advancing Cook's Assistant hand-in dialogue long enough to reach quest completion", async () => {
+        const cook = { ...npc('Cook', 3210, 3215), id: 'npc:cook', key: 'rs:lumbridge_castle_cook' };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'complete-cooks-assistant',
+                description: "Complete Cook's Assistant with the ingredients already in inventory.",
+                steps: ['Talk to the Cook', 'Hand in milk, flour, and egg', 'Continue until the quest completes'],
+                success: "Cook's Assistant is complete.",
+                createdAtTick: 1,
+                ttlTicks: 900,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+        const actions: AgentAction[] = [];
+
+        for (let i = 0; i < 16; i += 1) {
+            const result = await agent.think(
+                perception({
+                    tick: 8 + i * 8,
+                    resident: {
+                        ...residentAt(3209, 3215),
+                        inventory: [{ itemId: 1927 }, { itemId: 1933 }, { itemId: 1944 }],
+                        quests: { 'rs:cooks_assistant': { progress: 50, complete: false } },
+                    },
+                    npcs: [cook],
+                }),
+            );
+            actions.push(result.actions[0]);
+        }
+
+        expect(actions[0]).toEqual({ kind: 'interact', target: cook, option: 'talk-to', cause: 'cooks_assistant_hand_in_ingredients' });
+        expect(actions.slice(1, 15)).toEqual(
+            Array.from({ length: 14 }, () => ({ kind: 'dialogue_continue', cause: 'cooks_assistant_hand_in_dialogue_step' })),
+        );
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

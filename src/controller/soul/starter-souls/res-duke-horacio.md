@@ -38,6 +38,9 @@ factionAffinity:
   saradomin: 35
   guthix: 35
   unaligned: 30
+siblings:
+  - res:hans
+  - res:wise-old-man
 spawnPosition:
   x: 3222
   y: 3219

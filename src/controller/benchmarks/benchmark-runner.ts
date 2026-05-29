@@ -65,6 +65,7 @@ export interface BenchmarkTask {
     resident?: Omit<CreateResidentPayload, 'name'>;
     peers?: BenchmarkTaskPeer[];
     memorySeeds?: BenchmarkMemorySeed[];
+    setup?(context: BenchmarkTaskContext): Promise<void>;
     run(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
     runAutonomous?(context: BenchmarkTaskContext): Promise<BenchmarkTaskOutcome>;
 }
@@ -109,6 +110,7 @@ export interface BenchmarkRunnerOptions {
     mode?: BenchmarkRunMode;
     autonomousRuntime?: BenchmarkAutonomousRuntime;
     modelProfile: string;
+    inference?: BenchmarkArtifact['inference'];
     commits: BenchmarkArtifact['commits'];
     runId?: string;
     residentName?: string;
@@ -175,6 +177,10 @@ export class BenchmarkRunner {
                 });
                 peer.connected = true;
             }
+            const taskContext = this.createTaskContext(evidence, abortController.signal);
+            if (this.options.task.setup) {
+                await this.options.task.setup(taskContext);
+            }
             if (mode === 'autonomous') {
                 const autonomousRuntime = this.options.autonomousRuntime;
                 const runAutonomous = this.options.task.runAutonomous;
@@ -186,17 +192,9 @@ export class BenchmarkRunner {
                 }
                 await autonomousRuntime.start(this.createAutonomousRuntimeContext(evidence, abortController.signal));
                 autonomousStarted = true;
-                outcome = await this.runTaskWithTimeout(
-                    this.createTaskContext(evidence, abortController.signal),
-                    abortController,
-                    runAutonomous,
-                );
+                outcome = await this.runTaskWithTimeout(taskContext, abortController, runAutonomous);
             } else {
-                outcome = await this.runTaskWithTimeout(
-                    this.createTaskContext(evidence, abortController.signal),
-                    abortController,
-                    this.options.task.run,
-                );
+                outcome = await this.runTaskWithTimeout(taskContext, abortController, this.options.task.run);
             }
         } catch (error) {
             outcome = outcomeFromError(error);
@@ -295,6 +293,7 @@ export class BenchmarkRunner {
                 mode,
                 resident: this.resident,
                 modelProfile: this.options.modelProfile,
+                inference: this.options.inference,
                 commits: this.options.commits,
                 startedAt,
                 endedAt,
@@ -502,6 +501,9 @@ function peerCreatePayload(peer: BenchmarkTaskPeer): Omit<CreateResidentPayload,
     }
     if (peer.initialEquipment !== undefined) {
         payload.initialEquipment = peer.initialEquipment;
+    }
+    if (peer.initialSkills !== undefined) {
+        payload.initialSkills = peer.initialSkills;
     }
     return payload;
 }

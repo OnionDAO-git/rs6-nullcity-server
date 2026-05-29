@@ -3,11 +3,13 @@ import {
     type WorkflowActor,
     type WorkflowCard,
     type WorkflowItem,
+    hasPickaxe,
     hasSmallFishingNet,
     hasWoodcuttingAxe,
     isBones,
     isFiremakingLog,
     isFishingSpot,
+    isPickaxe,
     isSafeBoneSource,
     isSafeCombatTarget,
     isSmallFishingNet,
@@ -82,6 +84,24 @@ describe('runescape-workflows item-type predicates', () => {
         });
     });
 
+    describe('isPickaxe', () => {
+        it('matches canonical pickaxe itemIds', () => {
+            for (const id of [1265, 1267, 1269, 1273, 1271, 1275]) {
+                expect(isPickaxe(item(id))).toBe(true);
+            }
+        });
+
+        it('matches pickaxe keys', () => {
+            expect(isPickaxe(item(99999, 'rs:bronze_pickaxe'))).toBe(true);
+            expect(isPickaxe(item(99999, 'iron pickaxe'))).toBe(true);
+        });
+
+        it('rejects non-pickaxe items', () => {
+            expect(isPickaxe(item(1351, 'rs:bronze_axe'))).toBe(false);
+            expect(isPickaxe(item(995, 'rs:coins'))).toBe(false);
+        });
+    });
+
     describe('isSmallFishingNet', () => {
         it('matches the canonical small fishing net itemId (303)', () => {
             expect(isSmallFishingNet(item(303))).toBe(true);
@@ -140,6 +160,10 @@ describe('runescape-workflows inventory predicates', () => {
         expect(hasWoodcuttingAxe({ resident: { inventory: [null, null, item(99999, 'rs:bronze axe')] } })).toBe(true);
     });
 
+    it('hasWoodcuttingAxe finds an equipped axe', () => {
+        expect(hasWoodcuttingAxe({ resident: { inventory: [], equipment: [item(1351, 'rs:bronze_axe')] } })).toBe(true);
+    });
+
     it('hasWoodcuttingAxe returns false on an empty or axe-less inventory', () => {
         expect(hasWoodcuttingAxe({ resident: { inventory: [] } })).toBe(false);
         expect(hasWoodcuttingAxe({ resident: { inventory: [item(995, 'rs:coins')] } })).toBe(false);
@@ -151,9 +175,23 @@ describe('runescape-workflows inventory predicates', () => {
         expect(hasSmallFishingNet({ resident: { inventory: [item(99999, 'rs:small_fishing_net')] } })).toBe(true);
     });
 
+    it('hasSmallFishingNet finds a carried or equipped net-like tool', () => {
+        expect(hasSmallFishingNet({ resident: { inventory: [], equipment: [item(303, 'rs:small_fishing_net')] } })).toBe(true);
+    });
+
     it('hasSmallFishingNet returns false when absent', () => {
         expect(hasSmallFishingNet({ resident: { inventory: [item(995)] } })).toBe(false);
         expect(hasSmallFishingNet({})).toBe(false);
+    });
+
+    it('hasPickaxe finds a carried or equipped pickaxe', () => {
+        expect(hasPickaxe({ resident: { inventory: [item(1265, 'rs:bronze_pickaxe')] } })).toBe(true);
+        expect(hasPickaxe({ resident: { inventory: [], equipment: [item(1267, 'rs:iron_pickaxe')] } })).toBe(true);
+    });
+
+    it('hasPickaxe returns false when absent', () => {
+        expect(hasPickaxe({ resident: { inventory: [item(1351, 'rs:bronze_axe')] } })).toBe(false);
+        expect(hasPickaxe({})).toBe(false);
     });
 
     it('hasWoodcuttingAxe ignores null inventory slots', () => {

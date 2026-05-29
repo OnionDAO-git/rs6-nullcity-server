@@ -36,6 +36,8 @@ heroProfile:
   anchor: [3210, 3424, 0]
 factionAffinity:
   unaligned: 100
+siblings:
+  - res:the-hush
 spawnPosition:
   x: 3210
   y: 3424

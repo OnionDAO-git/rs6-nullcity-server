@@ -10,13 +10,23 @@ import type { BenchmarkRunMode } from './benchmark-artifact';
 import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
+import { BURY_BONES_PRAYER_3M_TASK_ID, makeBuryBonesPrayer3mBenchmarkTask } from './tasks/bury-bones-prayer-3m';
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
+import { COOKS_ASSISTANT_COMPLETE_5M_TASK_ID, makeCooksAssistantComplete5mBenchmarkTask } from './tasks/cooks-assistant-complete-5m';
+import { COOKS_ASSISTANT_START_3M_TASK_ID, makeCooksAssistantStart3mBenchmarkTask } from './tasks/cooks-assistant-start-3m';
+import {
+    COOKS_ASSISTANT_VISIBLE_INGREDIENTS_5M_TASK_ID,
+    makeCooksAssistantVisibleIngredients5mBenchmarkTask,
+} from './tasks/cooks-assistant-visible-ingredients-5m';
+import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './tasks/equipment-prep-3m';
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
+import { LEVEL_UP_FIREMAKING_3M_TASK_ID, makeLevelUpFiremaking3mBenchmarkTask } from './tasks/level-up-firemaking-3m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
+import { STARTER_MINING_5M_TASK_ID, makeStarterMining5mBenchmarkTask } from './tasks/starter-mining-5m';
 import { TRADING_GIVING_5M_TASK_ID, makeTradingGiving5mBenchmarkTask } from './tasks/trading-giving-5m';
 import { WOODCUTTING_FIREMAKING_10M_TASK_ID, makeWoodcuttingFiremaking10mBenchmarkTask } from './tasks/woodcutting-firemaking-10m';
 
@@ -43,7 +53,13 @@ const CORE_TASK_IDS = [
     FOLLOW_AND_CHAT_5M_TASK_ID,
     WOODCUTTING_FIREMAKING_10M_TASK_ID,
     STARTER_FISHING_5M_TASK_ID,
+    STARTER_MINING_5M_TASK_ID,
+    COOKS_ASSISTANT_START_3M_TASK_ID,
+    COOKS_ASSISTANT_COMPLETE_5M_TASK_ID,
     FISHING_COOKING_10M_TASK_ID,
+    EQUIPMENT_PREP_3M_TASK_ID,
+    LEVEL_UP_FIREMAKING_3M_TASK_ID,
+    BURY_BONES_PRAYER_3M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
@@ -134,6 +150,7 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
         try {
             await gateway.hello();
             const sparkModules = standardSparkModules();
+            const inference = benchmarkInferenceMetadata(config);
             const results: Array<{ taskId: string; status: string; score: number; runId: string; artifactPath: string }> = [];
             for (const task of tasks) {
                 const artifact = await new BenchmarkRunner({
@@ -150,7 +167,8 @@ export async function runBenchmarkCli(argv: string[], runtime: BenchmarkCliRunti
                                   sparkModules,
                               })
                             : undefined,
-                    modelProfile: config.llm.endpoints.default?.model || 'default',
+                    modelProfile: inference?.profileId || inference?.model || 'default',
+                    inference,
                     commits: [gitCommit('rs6-nullcity-server')],
                 }).run();
                 const artifactPath = writeArtifact(options.outputDir, artifact);
@@ -226,8 +244,29 @@ function taskById(taskId: string): BenchmarkTask {
     if (taskId === STARTER_FISHING_5M_TASK_ID) {
         return makeStarterFishing5mBenchmarkTask();
     }
+    if (taskId === STARTER_MINING_5M_TASK_ID) {
+        return makeStarterMining5mBenchmarkTask();
+    }
+    if (taskId === COOKS_ASSISTANT_START_3M_TASK_ID) {
+        return makeCooksAssistantStart3mBenchmarkTask();
+    }
+    if (taskId === COOKS_ASSISTANT_COMPLETE_5M_TASK_ID) {
+        return makeCooksAssistantComplete5mBenchmarkTask();
+    }
+    if (taskId === COOKS_ASSISTANT_VISIBLE_INGREDIENTS_5M_TASK_ID) {
+        return makeCooksAssistantVisibleIngredients5mBenchmarkTask();
+    }
     if (taskId === FISHING_COOKING_10M_TASK_ID) {
         return makeFishingCooking10mBenchmarkTask();
+    }
+    if (taskId === EQUIPMENT_PREP_3M_TASK_ID) {
+        return makeEquipmentPrep3mBenchmarkTask();
+    }
+    if (taskId === LEVEL_UP_FIREMAKING_3M_TASK_ID) {
+        return makeLevelUpFiremaking3mBenchmarkTask();
+    }
+    if (taskId === BURY_BONES_PRAYER_3M_TASK_ID) {
+        return makeBuryBonesPrayer3mBenchmarkTask();
     }
     if (taskId === COMBAT_PRAYER_10M_TASK_ID) {
         return makeCombatPrayer10mBenchmarkTask();
@@ -273,6 +312,21 @@ function gitOutput(args: string[]): string | undefined {
     } catch {
         return undefined;
     }
+}
+
+function benchmarkInferenceMetadata(config: ReturnType<typeof loadControllerConfig>): BenchmarkArtifact['inference'] {
+    const endpoint = config.llm.profiles?.default || config.llm.endpoints.default;
+    if (!endpoint) {
+        return undefined;
+    }
+    return {
+        profileId: endpoint.profileId || 'default',
+        endpointId: endpoint.endpointId,
+        provider: endpoint.provider,
+        baseUrl: endpoint.baseUrl,
+        model: endpoint.model,
+        pricing: endpoint.cost,
+    };
 }
 
 function readRequiredValue(argv: string[], index: number, arg: string): string {

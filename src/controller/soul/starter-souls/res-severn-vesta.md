@@ -36,6 +36,8 @@ heroProfile:
   anchor: [3242, 3208, 0]
 factionAffinity:
   unaligned: 100
+siblings:
+  - res:mother-anvil
 spawnPosition:
   x: 3242
   y: 3208

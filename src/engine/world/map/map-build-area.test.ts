@@ -56,7 +56,8 @@ describe('map build area', () => {
 
     it('normalizes configured scale to the supported packet range', () => {
         expect(normalizeLoadedZoneScale(undefined)).toBe(DEFAULT_LOADED_ZONE_SCALE);
-        expect(normalizeLoadedZoneScale(0)).toBe(DEFAULT_LOADED_ZONE_SCALE);
+        expect(normalizeLoadedZoneScale(0)).toBe(1);
+        expect(normalizeLoadedZoneScale(1)).toBe(1);
         expect(normalizeLoadedZoneScale(2.8)).toBe(2);
         expect(normalizeLoadedZoneScale(99)).toBe(MAX_LOADED_ZONE_SCALE);
     });

@@ -36,6 +36,8 @@ heroProfile:
   anchor: [3015, 3357, 0]
 factionAffinity:
   unaligned: 100
+siblings:
+  - res:severn-vesta
 spawnPosition:
   x: 3015
   y: 3357

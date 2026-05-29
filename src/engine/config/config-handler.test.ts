@@ -45,4 +45,12 @@ describe('item configuration', () => {
         expect(config.itemIds[7954]).toBe('rs:burnt_shrimp');
         expect(config.items['rs:burnt_shrimp']).toMatchObject({ gameId: 7954 });
     });
+
+    it("registers Cook's Assistant ingredients used by resident quest benchmarks", async () => {
+        const config = await loadItemConfigurations('data/config/items/');
+
+        expect(config.itemIds[1927]).toBe('rs:bucket_of_milk');
+        expect(config.itemIds[1933]).toBe('rs:pot_of_flour');
+        expect(config.itemIds[1944]).toBe('rs:egg');
+    });
 });

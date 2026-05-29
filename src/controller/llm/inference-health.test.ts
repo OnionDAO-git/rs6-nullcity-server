@@ -1,6 +1,13 @@
 import { runInferenceHealthProbe } from './inference-health';
 
 describe('runInferenceHealthProbe', () => {
+    const originalFetch = global.fetch;
+
+    afterEach(() => {
+        global.fetch = originalFetch;
+        jest.restoreAllMocks();
+    });
+
     it('passes when the configured endpoint returns the expected health JSON', async () => {
         const complete = jest.fn(async () => ({
             text: '{"health":"ok","probe":"nullcity-inference-health"}',
@@ -177,6 +184,49 @@ describe('runInferenceHealthProbe', () => {
         expect(result).toMatchObject({
             ok: false,
             status: 'unexpected_completion',
+        });
+    });
+
+    it('honors endpoint text response format and reads provider reasoning/cost fields', async () => {
+        const fetchMock = jest.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
+            const body = JSON.parse(String(init?.body));
+            expect(body.response_format).toEqual({ type: 'text' });
+            return new Response(
+                JSON.stringify({
+                    model: 'minimax/minimax-m2.7',
+                    choices: [
+                        {
+                            message: {
+                                content: null,
+                                reasoning: '{"health":"ok","probe":"nullcity-inference-health"}',
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 9, completion_tokens: 4, cost: 0.00012 },
+                }),
+                { status: 200 },
+            );
+        });
+        global.fetch = fetchMock;
+
+        const result = await runInferenceHealthProbe({
+            endpoints: {
+                default: {
+                    baseUrl: 'https://openrouter.test/api',
+                    model: 'minimax/minimax-m2.7',
+                    timeoutMs: 60000,
+                    responseFormat: 'text',
+                },
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            status: 'ok',
+            model: 'minimax/minimax-m2.7',
+            promptTokens: 9,
+            completionTokens: 4,
+            costUsd: 0.00012,
         });
     });
 });

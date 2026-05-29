@@ -307,90 +307,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
         });
     });
 
-    describe('static embassy pages', () => {
-        it('serves the wall ticker page from the documented /wall/ route', async () => {
-            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
-            const wallPageUrl = server.url.replace('/v1/inbox', '/wall/');
-
-            const response = await get(wallPageUrl);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Null City Embassy');
-            expect(response.body).toContain('/v1/wall/snapshot');
-        });
-
-        it('serves the patron inbox page from the documented /inbox/ route', async () => {
-            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
-            const inboxPageUrl = server.url.replace('/v1/inbox', '/inbox/');
-
-            const response = await get(inboxPageUrl);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Null City Embassy');
-            expect(response.body).toContain('/v1/inbox');
-        });
-
-        it('also accepts explicit index.html URLs for operator copy/paste', async () => {
-            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
-
-            const wall = await get(server.url.replace('/v1/inbox', '/wall/index.html'));
-            const inbox = await get(server.url.replace('/v1/inbox', '/inbox/index.html'));
-
-            expect(wall.status).toBe(200);
-            expect(inbox.status).toBe(200);
-            expect(wall.contentType).toMatch(/text\/html/);
-            expect(inbox.contentType).toMatch(/text\/html/);
-        });
-
-        it('serves the patron profile page from /patron/ (HD-016 self-service HTML)', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const patronPageUrl = server.url.replace('/v1/inbox', '/patron/');
-
-            const response = await get(patronPageUrl);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Patron Status');
-            expect(response.body).toContain('/v1/patron/balance');
-        });
-
-        it('also serves the patron profile page at /patron/index.html', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/patron/index.html'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-        });
-
-        it('serves the landing page at the root URL with nav cards', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            // Strip the inbox path entirely so we hit `/`.
-            const root = server.url.replace('/v1/inbox', '/');
-
-            const response = await get(root);
-
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            // Has a recognisable header.
-            expect(response.body).toContain('Null City Embassy');
-            // Links to each of the 5 public surfaces.
-            expect(response.body).toContain('href="/wall/"');
-            expect(response.body).toContain('href="/inbox/"');
-            expect(response.body).toContain('href="/patron/"');
-            expect(response.body).toContain('href="/library/"');
-            expect(response.body).toContain('href="/graveyard/"');
-        });
-
-        it('also serves the landing page at /index.html', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/index.html'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Null City Embassy');
-        });
-    });
-
     describe('public-surface filters (PRE-MERGE-POLISH)', () => {
         it('GET /v1/wall/snapshot drops res-qa-* residents from the public roster', async () => {
             server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
@@ -793,15 +709,6 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.diedAt).toBe('2026-05-26T10:00:00.000Z');
             expect(entry.livedTicks).toBe(1234);
         });
-
-        it('serves the graveyard printable page from /graveyard/', async () => {
-            server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/graveyard/'));
-            expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Graveyard');
-            expect(response.body).toContain('/v1/graveyard');
-        });
     });
 
     describe('GET /v1/library (Pillar 3 — Library of Souls browse)', () => {
@@ -862,14 +769,92 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.arcPhase).toBe('progress');
             expect(entry.patronHandles).toContain('alice@onion');
         });
+    });
 
-        it('serves the Library of Souls browse page from /library/', async () => {
+    describe('GET /v1/patron/residents (Pillar 2 — residents you have known)', () => {
+        it('returns 404 when lettersRoot is not configured', async () => {
             server = await startLettersHttpServer({ store, port: 0 });
-            const response = await get(server.url.replace('/v1/inbox', '/library/'));
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents?human=alice'));
+            expect(response.status).toBe(404);
+        });
+
+        it('returns 400 when human param is missing', async () => {
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents'));
+            expect(response.status).toBe(400);
+            expect(JSON.parse(response.body)).toMatchObject({ error: expect.stringContaining('human') });
+        });
+
+        it('returns empty list when patron has not supported any residents', async () => {
+            writePortraitJson(tmp, 'res-fern', {
+                schemaVersion: 1,
+                residentName: 'Fern',
+                currentState: 'living',
+                livesCount: 1,
+                patrons: [{ handle: 'bob@onion', events: [], sentence: 'bob.' }],
+                voice: { quotes: [] },
+                wants: { current: [], unfulfilledAtDeath: [] },
+                born: { ts: '2026-05-26T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z', tick: 100 },
+                relationships: [],
+                artifacts: [],
+            });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents?human=alice%40onion'));
             expect(response.status).toBe(200);
-            expect(response.contentType).toMatch(/text\/html/);
-            expect(response.body).toContain('Library of Souls');
-            expect(response.body).toContain('/v1/library');
+            const payload = JSON.parse(response.body) as { residents: unknown[]; total: number };
+            expect(payload.residents).toEqual([]);
+            expect(payload.total).toBe(0);
+        });
+
+        it('returns residents the patron has backed, with state and faction fields', async () => {
+            writePortraitJson(tmp, 'res-fern', {
+                schemaVersion: 1,
+                residentName: 'Fern',
+                currentState: 'living',
+                livesCount: 1,
+                epithet: 'the wanderer',
+                patrons: [
+                    { handle: 'alice@onion', events: [], sentence: 'alice supported.' },
+                    { handle: 'bob@onion', events: [], sentence: 'bob supported.' },
+                ],
+                voice: { quotes: [{ tick: 10, text: 'Hello world.', lifeIndex: 1, tag: 'first' }] },
+                wants: { current: ['explore'], unfulfilledAtDeath: [] },
+                born: { ts: '2026-05-26T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z', tick: 100 },
+                relationships: [],
+                artifacts: [],
+            });
+            writePortraitJson(tmp, 'res-oak', {
+                schemaVersion: 1,
+                residentName: 'Oak',
+                currentState: 'deceased',
+                livesCount: 2,
+                patrons: [{ handle: 'alice@onion', events: [], sentence: 'alice.' }],
+                voice: { quotes: [] },
+                wants: { current: [], unfulfilledAtDeath: ['find a tree'] },
+                born: { ts: '2026-05-25T00:00:00.000Z', tick: 0 },
+                lastUpdated: { ts: '2026-05-26T08:00:00.000Z', tick: 200 },
+                relationships: [],
+                artifacts: [],
+            });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+            // Case-insensitive handle matching: ALICE@ONION matches alice@onion portraits.
+            const response = await get(server.url.replace('/v1/inbox', '/v1/patron/residents?human=ALICE%40onion'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                residents: Array<{ slug: string; displayName: string; currentState: string; livesCount: number }>;
+                total: number;
+            };
+            expect(payload.total).toBe(2);
+            const slugs = payload.residents.map(r => r.slug).sort();
+            expect(slugs).toEqual(['res-fern', 'res-oak']);
+            const fern = payload.residents.find(r => r.slug === 'res-fern');
+            expect(fern?.displayName).toBe('Fern');
+            expect(fern?.currentState).toBe('living');
+            const oak = payload.residents.find(r => r.slug === 'res-oak');
+            expect(oak?.currentState).toBe('deceased');
+            expect(oak?.livesCount).toBe(2);
         });
     });
 });

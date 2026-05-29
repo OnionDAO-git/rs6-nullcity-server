@@ -1,0 +1,30 @@
+FROM node:24-slim
+WORKDIR /usr/src/app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsdl-pango-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci
+
+COPY tsconfig.json .swcrc ./
+COPY src ./src
+RUN npm run build
+
+# Game asset cache (read-only at runtime) and static data baked into the image.
+# data/ is copied to data-seed/ so the entrypoint can populate the persistent
+# volume on first boot without volume-mount stomping on baked-in content.
+# config/ holds static lookups (e.g. file-names.properties); the entrypoint
+# overlays the runtime-generated server-config.json on top.
+COPY cache ./cache
+COPY config ./config
+COPY data ./data-seed
+
+COPY scripts/railway-entrypoint.sh /usr/local/bin/railway-entrypoint
+RUN chmod +x /usr/local/bin/railway-entrypoint
+
+# 43591 login | 43592 update | 43594 game | 43595 agent gateway
+EXPOSE 43591 43592 43594 43595
+
+CMD ["/usr/local/bin/railway-entrypoint"]
