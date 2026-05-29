@@ -52,7 +52,7 @@ The honest limit: they are not yet reliable arbitrary-goal adventurers. Combat/p
 | Can they fight? | Combat exists, but reliability is low and model-sensitive. | 818 attack actions; `combat-prayer-10m` passed 6/18 overall, Qwen 0/6, Qwopus/Haiku 3/6 each. | Low-medium |
 | Do they remember things? | They persist timelines and can recall taught facts in benchmark; richer long-term memory is still a design task. | 23 Library timelines; `memory-recall-3m` passed 7/7. | Medium |
 | Are they human-like yet? | Partly. They are visibly embodied and narratable, but still routine-heavy and sometimes repetitive. | Strong action/story logs; known template loops and weak long-goal planning remain. | Medium |
-| What should we improve next? | Quest item gathering, stuck-door routing, real operator trading, combat survival, long-delay memory, and goal-as-orientation tests. | See "Recommended Next Tests" and "Expanded Capability Backlog." | High priority |
+| What should we improve next? | Quest item gathering, real operator trading, combat survival, long-delay memory, long-run door-heavy route reliability, and goal-as-orientation tests. | See "Recommended Next Tests" and "Expanded Capability Backlog." | High priority |
 
 ## Evidence Snapshot
 
@@ -242,7 +242,7 @@ To make this doc stronger, run the following as repeated experiments:
 
 1. **Natural quest gathering:** Cook's Assistant from an empty inventory, requiring egg pickup at the chicken coop, flour from pot/windmill or bank/shop, and milk via bucket/cow. Score route selection, tool recovery, ingredient memory, and hand-in.
 2. **Danger survival:** low HP, food available, hostile NPC nearby. Score whether the resident heals/flees before continuing.
-3. **Stuck-door recovery:** target behind a door or failed coordinate loop. Score door opening, target clearing, and route change.
+3. **Door-heavy long-run soak:** run named residents through indoor/door routes for at least one hour and score repeat open-obstacle success plus fallback route quality outside benchmark harnesses.
 4. **Patron conflict:** patron guidance vs distracting local chat. Score whether Shards influence priority without direct puppet control.
 5. **Memory route recall:** teach a bank/resource fact, wait, then ask the resident to use it later.
 6. **Live operator trade proof:** the benchmark now proves scripted and autonomous trade behavior; next run a manual operator trade with a named resident and confirm action-log trade verbs, inventory transfer, and safe decline behavior outside the harness.
@@ -257,7 +257,7 @@ This document is **not complete**. It is now a good evidence-backed starting poi
 | Movement | Walk to a coordinate | Proven | Already heavily observed; add long-distance route benchmark next. |
 | Movement | Follow a human/player | Proven in benchmark | Needs live operator proof during a manual session. |
 | Movement | Escape a local patrol loop | Partial | Add target-clearing benchmark after repeated same-tile movement. |
-| Movement | Open/route through doors | Unproven | Needed for quests and indoor targets. |
+| Movement | Open/route through doors | Proven in autonomous benchmarks; normal-loop proof still thin | `bench_20260528181711_equipment_prep_3m.json` includes a successful body `interact` with cause `stuck_open_obstacle` (`finalStatus=success`, `effectEvidenceCount=1`). `bench_20260528021111_explore_report_5m.json` includes a successful body `move_to` with cause `stuck_move_recovery` (`finalStatus=success`). Next proof should be a named-resident long-run indoor route soak. |
 | Movement | Use travel shortcuts / `travel` admin command | Unproven for residents | Useful for demo setup, but should not replace normal movement. |
 | Perception | See nearby objects/items/NPCs | Proven indirectly | Add a perception snapshot benchmark with expected nearby entities. |
 | Perception | Notice another resident's world event | Implemented, live proof thin | L3 LoreBus needs a live "Hans notices Duke's fire" benchmark. |

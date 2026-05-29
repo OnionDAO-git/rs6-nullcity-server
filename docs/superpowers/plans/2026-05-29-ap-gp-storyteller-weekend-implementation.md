@@ -208,7 +208,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S12b | Open | - | - | - | - | - | - |
 | CQA0 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa0-triage.md; docs/issue-register.md | - | doc:docs/capability-evidence/2026-05-29-cqa0-triage.md; issue:QA-20260529-009 | - |
 | CQA1 | Deferred | - | - | - | - | - | issue:QA-20260529-001 |
-| CQA2 | Open | - | - | - | - | - | issue:QA-20260529-003 |
+| CQA2 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa2-door-path-recovery.md; docs/resident-capabilities.md; docs/issue-register.md | - | benchmark:bench_20260528181711_equipment_prep_3m; benchmark:bench_20260528021111_explore_report_5m; issue:QA-20260529-003(closed) | - |
 | CQA3 | Open | - | - | - | - | - | issue:QA-20260529-005 |
 | CQA4 | Open | - | - | - | - | - | - |
 | CQA5 | Open | - | - | - | - | - | issue:QA-20260529-004 |
