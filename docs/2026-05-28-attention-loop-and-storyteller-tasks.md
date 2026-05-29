@@ -219,6 +219,8 @@ Tests / proof:
 
 Goal: a smarter model periodically narrates Null City as public canon, grounded in logs and resident state.
 
+Detailed design and task list: `docs/2026-05-28-storyteller-design.md`.
+
 Tasks:
 
 - Define `StorytellerConfig`:
@@ -444,4 +446,3 @@ Metrics:
 8. Should Storyteller dispatches be editable before public posting, or canon immediately?
 9. Which surface leads the participant experience: Embassy, RuneScape client, dashboard, or physical portal?
 10. What is the active resident cap we announce publicly: 8 fixed only, 20 total, or "queue opens after the first demo"?
-
