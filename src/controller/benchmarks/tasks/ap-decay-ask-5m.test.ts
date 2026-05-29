@@ -12,10 +12,10 @@ describe('ap-decay-ask-5m benchmark task', () => {
             const outcome = verifyApDecayAsk5m({
                 elapsedMs: 50_000,
                 actions: [
-                    attempt({ kind: 'say', text: 'My attention grows thin.', cause: 'nervous:request-attention' }),
-                    attempt({ kind: 'logout', cause: 'attention_exhausted' }),
+                    attempt({ kind: 'say', text: 'My attention grows thin.', cause: 'nervous:request-attention' }, 'success', 10),
+                    attempt({ kind: 'logout', cause: 'attention_exhausted' }, 'failure', 0),
                 ],
-                perceptions: [perception({ attention: 12 }), perception({ attention: 4 }), perception({ attention: 0 })],
+                perceptions: [],
                 events: [{ kind: 'attention_exhausted' }],
             });
 
@@ -23,7 +23,7 @@ describe('ap-decay-ask-5m benchmark task', () => {
                 status: 'passed',
                 score: 1,
                 metrics: {
-                    startingAp: 12,
+                    startingAp: 10,
                     finalAp: 0,
                     apDecayObserved: 1,
                     lowApAskActions: 1,
@@ -128,11 +128,37 @@ describe('ap-decay-ask-5m benchmark task', () => {
 
             expect(task.resident?.spawnPosition).toEqual({ x: 3222, y: 3218, level: 0 });
         });
+
+        it('returns a verifier failure before the runner-level timeout can preempt metrics', async () => {
+            let calls = 0;
+            const task = makeApDecayAsk5mBenchmarkTask(() => {
+                calls += 1;
+                return calls === 1 ? 0 : 295_001;
+            });
+            const context = {
+                actionAttempts: () => [],
+                perceptions: () => [perception({ attention: 12 }), perception({ attention: 9 })],
+                events: () => [],
+                recordSummary: jest.fn(),
+                signal: new AbortController().signal,
+            };
+
+            const outcome = await task.runAutonomous?.(context as never);
+
+            expect(outcome).toMatchObject({
+                status: 'failed',
+                score: 0.35,
+                metrics: expect.objectContaining({
+                    apDecayObserved: 1,
+                    lowApAskActions: 0,
+                }),
+            });
+        });
     });
 });
 
-function attempt(action: AgentAction, finalStatus = 'success') {
-    return { action, finalStatus };
+function attempt(action: AgentAction, finalStatus = 'success', attentionAfter?: number) {
+    return { action, finalStatus, attentionAfter };
 }
 
 function lowApAsk(text: string) {

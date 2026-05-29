@@ -79,6 +79,7 @@ export interface BenchmarkRecordedActionAttempt {
     finalStatus?: ActionFinalStatus;
     finalReason?: string;
     evidence?: ActionEvidence[];
+    attentionAfter?: number;
 }
 
 export interface BenchmarkRecordedInferenceRequest {
@@ -541,6 +542,7 @@ function actionAttemptEvidence(
         finalReason: attempt.finalReason,
         evidenceCount: attempt.evidence?.length,
         effectEvidenceCount: actionEffectEvidenceCount(attempt.evidence),
+        attentionAfter: attempt.attentionAfter,
         sparkModule: attempt.sparkModule,
     };
 }

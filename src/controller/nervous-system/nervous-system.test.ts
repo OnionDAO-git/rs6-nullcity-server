@@ -297,9 +297,20 @@ describe('NervousSystem', () => {
             expect(later?.action?.cause).toBe('nervous:request-attention');
         });
 
-        it('does not appeal for residents without a declared attention floor', () => {
+        it('appeals for residents without a declared attention floor when AP is critically low', () => {
             const state = runtimeState(100);
-            state.attention = 1;
+            state.attention = 10;
+            const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect((reaction?.action as { text?: string }).text).toContain('AP');
+        });
+
+        it('does not appeal for residents without a declared attention floor while AP is above the critical threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 11;
             const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
 
             const reaction = sys.react(healthyPerception(100));

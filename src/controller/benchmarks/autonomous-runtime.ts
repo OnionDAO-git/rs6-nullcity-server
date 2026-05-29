@@ -217,6 +217,7 @@ class RecordingActionLog extends ActionLog {
             result: isRecord(entry.result) ? (entry.result as ActionResult) : undefined,
             source: typeof entry.source === 'string' ? entry.source : undefined,
             sparkModule: identity(entry.sparkModule),
+            attentionAfter: numericField(entry, 'attention_after'),
         });
     }
 }
@@ -343,6 +344,11 @@ function identity(value: unknown): SparkModuleIdentity | undefined {
         return undefined;
     }
     return { id: value.id, version: value.version };
+}
+
+function numericField(record: Record<string, unknown>, key: string): number | undefined {
+    const value = record[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function isAction(value: unknown): value is AgentAction {

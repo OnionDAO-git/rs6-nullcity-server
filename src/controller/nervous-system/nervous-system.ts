@@ -23,11 +23,13 @@ const FOOD_KEY_PATTERN =
 const REQUEST_ATTENTION_COOLDOWN_TICKS = 600;
 /** Buffer above the declared attention floor at which the appeal fires. */
 const LOW_ATTENTION_REQUEST_BUFFER = 5000;
+/** Residents without an attention floor still need one last AP appeal before fading. */
+const CRITICAL_ATTENTION_REQUEST_THRESHOLD = 10;
 /** Rotating phrases for the low-attention appeal (index = tick % length). */
 const APPEAL_PHRASES = [
-    'My attention grows thin. If you have Shards to spare, even a small offering helps.',
-    'I can feel myself fading. An offering at the embassy would keep me here a while longer.',
-    "I won't last at this pace. If anyone has earned Shards today, I'd welcome the support.",
+    'My AP grows thin. If you have Attention Points to spare, even a small offering helps.',
+    'I can feel my AP fading. An offering at the embassy would keep me here a while longer.',
+    "I won't last at this pace. If anyone has earned AP today, I'd welcome the support.",
 ] as const;
 
 /** Attention buffer above floor within which the "final testament" fires (once per life). */
@@ -303,12 +305,10 @@ export class NervousSystem {
 
     private requestAttentionReaction(perception: Perception): NervousReaction | undefined {
         const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
-        if (floor <= 0) {
-            return undefined;
-        }
-        const threshold = floor + LOW_ATTENTION_REQUEST_BUFFER;
+        const threshold = floor > 0 ? floor + LOW_ATTENTION_REQUEST_BUFFER : CRITICAL_ATTENTION_REQUEST_THRESHOLD;
         const attention = this.options.state.attention;
-        if (attention <= 0 || attention >= threshold) {
+        const shouldAppeal = floor > 0 ? attention < threshold : attention <= threshold;
+        if (attention <= 0 || !shouldAppeal) {
             return undefined;
         }
         const tick = cooldownTick(this.options.state, perception);

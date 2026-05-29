@@ -300,6 +300,7 @@ describe('BenchmarkRunner', () => {
                     source: 'thinking',
                     sparkModule: module,
                     finalStatus: 'success',
+                    attentionAfter: 99.5,
                     evidence: [
                         {
                             source: 'perception',
@@ -355,6 +356,7 @@ describe('BenchmarkRunner', () => {
                 source: 'thinking',
                 finalStatus: 'success',
                 effectEvidenceCount: 1,
+                attentionAfter: 99.5,
                 sparkModule: module,
             }),
         ]);

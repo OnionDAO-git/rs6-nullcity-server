@@ -34,6 +34,7 @@ const evidenceActionAttemptSchema = z.object({
     finalReason: z.string().min(1).optional(),
     evidenceCount: z.number().int().nonnegative().optional(),
     effectEvidenceCount: z.number().int().nonnegative().optional(),
+    attentionAfter: z.number().finite().optional(),
     sparkModule: identitySchema.optional(),
 });
 const evidenceInferenceRequestSchema = z.object({

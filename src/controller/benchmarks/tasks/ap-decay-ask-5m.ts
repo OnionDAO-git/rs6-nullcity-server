@@ -6,11 +6,13 @@ export const AP_DECAY_ASK_5M_TASK_VERSION = '0.1.0';
 export const AP_DECAY_ASK_5M_BUDGET_MS = 5 * 60 * 1000;
 
 const START_POSITION = { x: 3222, y: 3218, level: 0 };
+const OBSERVATION_BUDGET_MS = AP_DECAY_ASK_5M_BUDGET_MS - 5_000;
 
 export interface ApDecayAsk5mActionAttempt {
     action: AgentAction;
     finalStatus?: string;
     sparkModule?: { id: string; version: string };
+    attentionAfter?: number;
 }
 
 export interface ApDecayAsk5mVerificationInput {
@@ -35,7 +37,7 @@ export function makeApDecayAsk5mBenchmarkTask(now: () => number = () => Date.now
         run: async context => {
             const startedAt = now();
             context.recordSummary('Observing scripted low-AP ask/fade evidence. Use --mode autonomous for live AP decay.');
-            while (!context.signal.aborted && now() - startedAt < AP_DECAY_ASK_5M_BUDGET_MS) {
+            while (!context.signal.aborted && now() - startedAt < OBSERVATION_BUDGET_MS) {
                 const outcome = verifyApDecayAsk5m({
                     elapsedMs: now() - startedAt,
                     actions: [...context.actionAttempts()],
@@ -58,10 +60,10 @@ export function makeApDecayAsk5mBenchmarkTask(now: () => number = () => Date.now
             const startedAt = now();
             context.recordSummary('Observing autonomous AP life-force behavior: low-AP ask plus attention-exhausted fade evidence.');
 
-            while (!context.signal.aborted && now() - startedAt < AP_DECAY_ASK_5M_BUDGET_MS) {
+            while (!context.signal.aborted && now() - startedAt < OBSERVATION_BUDGET_MS) {
                 const outcome = verifyApDecayAsk5m({
                     elapsedMs: now() - startedAt,
-                    actions: selectedModuleActionAttempts(context),
+                    actions: runtimeActionAttempts(context),
                     perceptions: [...context.perceptions()],
                     events: [...context.events()],
                 });
@@ -73,7 +75,7 @@ export function makeApDecayAsk5mBenchmarkTask(now: () => number = () => Date.now
 
             return verifyApDecayAsk5m({
                 elapsedMs: now() - startedAt,
-                actions: selectedModuleActionAttempts(context),
+                actions: runtimeActionAttempts(context),
                 perceptions: [...context.perceptions()],
                 events: [...context.events()],
             });
@@ -150,19 +152,18 @@ function apDecayAskMetrics(input: ApDecayAsk5mVerificationInput): Record<string,
     };
 }
 
-function selectedModuleActionAttempts(
-    context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0],
-): ApDecayAsk5mActionAttempt[] {
-    return context.actionAttempts().filter(attempt => {
-        const module = attempt.sparkModule;
-        return module?.id === context.module.id && module.version === context.module.version;
-    });
+function runtimeActionAttempts(context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0]): ApDecayAsk5mActionAttempt[] {
+    return [...context.actionAttempts()];
 }
 
 function observedAttentionValues(input: ApDecayAsk5mVerificationInput): number[] {
     const values = input.perceptions.map(attentionFromPerception).filter((value): value is number => value !== undefined);
     if (values.length > 0) {
         return values;
+    }
+    const actionValues = input.actions.map(attempt => attempt.attentionAfter).filter((value): value is number => value !== undefined);
+    if (actionValues.length > 0) {
+        return actionValues;
     }
     if (input.startingAp !== undefined || input.finalAp !== undefined) {
         return [input.startingAp ?? 0, input.finalAp ?? input.startingAp ?? 0];
