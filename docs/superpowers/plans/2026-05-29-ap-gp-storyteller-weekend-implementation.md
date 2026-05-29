@@ -212,7 +212,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA3 | Open | - | - | - | - | - | issue:QA-20260529-005 |
 | CQA4 | Open | - | - | - | - | - | - |
 | CQA5 | Open | - | - | - | - | - | issue:QA-20260529-004 |
-| CQA6 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa6-gp-coin-995-verification.md; docs/issue-register.md | - | benchmark:bench_20260529065910_starter_gp_pickup_3m; benchmark:bench_20260529070519_starter_gp_pickup_3m | - |
+| CQA6 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa6-gp-coin-995-verification.md; docs/issue-register.md | 96745f95 | benchmark:bench_20260529065910_starter_gp_pickup_3m; benchmark:bench_20260529070519_starter_gp_pickup_3m | - |
 | CQA7 | Open | - | - | - | - | - | - |
 | CQA8 | Open | - | - | - | - | - | - |
 | CQA9 | Open | - | - | - | - | - | - |
