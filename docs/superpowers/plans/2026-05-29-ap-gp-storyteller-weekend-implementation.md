@@ -206,7 +206,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S11b | Open | - | - | - | - | - | - |
 | S12a | Open | - | - | - | - | - | - |
 | S12b | Open | - | - | - | - | - | - |
-| CQA0 | Open | - | - | - | - | - | - |
+| CQA0 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa0-triage.md; docs/issue-register.md | - | doc:docs/capability-evidence/2026-05-29-cqa0-triage.md; issue:QA-20260529-009 | - |
 | CQA1 | Deferred | - | - | - | - | - | issue:QA-20260529-001 |
 | CQA2 | Open | - | - | - | - | - | issue:QA-20260529-003 |
 | CQA3 | Open | - | - | - | - | - | issue:QA-20260529-005 |
