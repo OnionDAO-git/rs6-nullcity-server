@@ -1,7 +1,15 @@
-import { buildDigest, buildFixtureDigest, sortByImportance, resetRefCounter, economyEventsToDigestBuckets } from './digest-builder';
+import {
+    buildDigest,
+    buildFixtureDigest,
+    sortByImportance,
+    resetRefCounter,
+    economyEventsToDigestBuckets,
+    goalContractsToDigestGoalEvents,
+} from './digest-builder';
 import { cityEventDigestSchema, IMPORTANCE_WEIGHT } from './types';
 import type { DigestEvent, ResidentSnapshot } from './types';
 import type { EconomyEvent } from '../city-integration/economy-event';
+import type { GoalContract } from '../city-integration/goal-contract';
 
 const WIN_START = new Date('2026-05-29T05:50:00.000Z');
 const WIN_END = new Date('2026-05-29T06:00:00.000Z');
@@ -632,5 +640,256 @@ describe('economyEventsToDigestBuckets — full pipeline (S5b end-to-end)', () =
         expect(digest.apEvents[0].kind).toBe('ap_granted');
         expect(digest.gpEvents[0].kind).toBe('gp_earned');
         expect(digest.ncriEvents[0].kind).toBe('ncri_created');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// goalContractsToDigestGoalEvents — S9b: GoalContract → DigestEvent bridge
+//
+// Converts GoalContract[] from GoalContractStore into goal_completed DigestEvents
+// for the Storyteller digest. Only achieved contracts produce evidence; active
+// and abandoned contracts are intentionally excluded so the Storyteller cannot
+// invent completions from aspirational or partial-progress data.
+// ---------------------------------------------------------------------------
+
+const BASE_ACHIEVED_GOAL: GoalContract = {
+    schemaVersion: 1,
+    id: 'goal-test-001',
+    residentName: 'res:bob',
+    goalText: 'Cook a meal for the chef at the Lumbridge castle.',
+    status: 'achieved',
+    createdAt: '2026-05-29T01:00:00.000Z',
+    updatedAt: '2026-05-29T05:00:00.000Z',
+    achievedAt: '2026-05-29T05:00:00.000Z',
+    achievedEvidence: 'quest_complete:cooks_assistant',
+};
+
+describe('goalContractsToDigestGoalEvents — S9b', () => {
+    it('converts an achieved goal to a goal_completed DigestEvent', () => {
+        const events = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        expect(events).toHaveLength(1);
+        expect(events[0].kind).toBe('goal_completed');
+        expect(events[0].residentName).toBe('res:bob');
+        expect(events[0].ref).toBe('goal:goal-test-001');
+        expect(events[0].importance).toBe('medium');
+        expect(events[0].ts).toBe('2026-05-29T05:00:00.000Z');
+    });
+
+    it('includes goalId, goalText, and achievedEvidence in event evidence', () => {
+        const [event] = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        expect(event.evidence?.goalId).toBe('goal-test-001');
+        expect(event.evidence?.goalText).toBe('Cook a meal for the chef at the Lumbridge castle.');
+        expect(event.evidence?.achievedEvidence).toBe('quest_complete:cooks_assistant');
+    });
+
+    it('includes binary completion condition when present', () => {
+        const goal: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            id: 'goal-with-condition',
+            completion: { condition: 'bank GP >= 100', evidenceSource: 'runtime:bank-balance' },
+        };
+        const [event] = goalContractsToDigestGoalEvents([goal]);
+        expect(event.evidence?.condition).toBe('bank GP >= 100');
+    });
+
+    it('omits condition from evidence when goal has no binary completion', () => {
+        const [event] = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        // BASE_ACHIEVED_GOAL has no completion field — condition should be absent/undefined
+        expect(event.evidence?.condition).toBeUndefined();
+    });
+
+    it('skips active goals — no evidence of completion', () => {
+        const activeGoal: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            id: 'goal-active',
+            status: 'active',
+            achievedAt: undefined,
+            achievedEvidence: undefined,
+        };
+        expect(goalContractsToDigestGoalEvents([activeGoal])).toHaveLength(0);
+    });
+
+    it('skips abandoned goals — no evidence of completion', () => {
+        const abandonedGoal: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            id: 'goal-abandoned',
+            status: 'abandoned',
+            achievedAt: undefined,
+            achievedEvidence: undefined,
+            abandonedAt: '2026-05-29T04:00:00.000Z',
+            abandonedReason: 'resource shortage',
+        };
+        expect(goalContractsToDigestGoalEvents([abandonedGoal])).toHaveLength(0);
+    });
+
+    it('skips achieved goals missing achievedAt (malformed record)', () => {
+        const malformed: GoalContract = { ...BASE_ACHIEVED_GOAL, achievedAt: undefined };
+        expect(goalContractsToDigestGoalEvents([malformed])).toHaveLength(0);
+    });
+
+    it('skips achieved goals missing achievedEvidence (malformed record)', () => {
+        const malformed: GoalContract = { ...BASE_ACHIEVED_GOAL, achievedEvidence: undefined };
+        expect(goalContractsToDigestGoalEvents([malformed])).toHaveLength(0);
+    });
+
+    it('converts multiple achieved goals, one event per goal', () => {
+        const goal2: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            id: 'goal-test-002',
+            residentName: 'res:alice',
+            goalText: 'Earn 100 GP per hour reliably.',
+            achievedAt: '2026-05-29T04:30:00.000Z',
+            achievedEvidence: 'gp_balance:102',
+        };
+        const events = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL, goal2]);
+        expect(events).toHaveLength(2);
+        expect(events[0].residentName).toBe('res:bob');
+        expect(events[1].residentName).toBe('res:alice');
+    });
+
+    it('skips active goals mixed with achieved ones — only achieved goals produce events', () => {
+        const activeGoal: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            id: 'goal-active-2',
+            status: 'active',
+            achievedAt: undefined,
+            achievedEvidence: undefined,
+        };
+        const events = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL, activeGoal]);
+        expect(events).toHaveLength(1);
+        expect(events[0].ref).toBe('goal:goal-test-001');
+    });
+
+    it('returns an empty array when given an empty list', () => {
+        expect(goalContractsToDigestGoalEvents([])).toHaveLength(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// S9b integration: GoalContract → goalContractsToDigestGoalEvents → buildDigest
+// → verifyDispatch — proving the full saved-resident citation chain
+// ---------------------------------------------------------------------------
+
+describe('S9b integration — GoalContract → digest → verifier', () => {
+    function makeEmptyDigest() {
+        return buildDigest({
+            digestId: 'empty-s9b',
+            windowStart: new Date('2026-05-29T04:00:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+        });
+    }
+
+    function makeS9bDispatch(publicBody: string, eventRefsUsed: string[] = []) {
+        return {
+            schemaVersion: 1 as const,
+            dispatchId: 's9b-test-dispatch',
+            digestId: 'test-digest',
+            generatedAt: '2026-05-29T06:01:00.000Z',
+            modelProfile: 'test',
+            latencyMs: 100,
+            estimatedCostUsd: null,
+            inputTokens: null,
+            outputTokens: null,
+            publicTitle: 'City Update',
+            publicBody,
+            publicBullets: [],
+            operatorSummary: 'Test.',
+            operatorWarnings: [],
+            eventRefsUsed,
+            needsReview: false,
+        };
+    }
+
+    it('achieved GoalContract flows into digest goalEvents as goal_completed', () => {
+        const goalEvents = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        const digest = buildDigest({
+            digestId: 's9b-integration-001',
+            windowStart: new Date('2026-05-29T04:00:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            goalEvents,
+        });
+        expect(digest.goalEvents).toHaveLength(1);
+        expect(digest.goalEvents[0].kind).toBe('goal_completed');
+        expect(digest.goalEvents[0].residentName).toBe('res:bob');
+    });
+
+    it('verifier accepts goal_completed claim backed by achieved GoalContract in digest', () => {
+        const { verifyDispatch } = require('./verifier') as typeof import('./verifier');
+        const goalEvents = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        const digest = buildDigest({
+            digestId: 's9b-integration-002',
+            windowStart: new Date('2026-05-29T04:00:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            goalEvents,
+        });
+        const dispatch = makeS9bDispatch('Bob finished his goal and was saved to the Library.');
+        const result = verifyDispatch(dispatch, digest);
+        expect(result.warnings.some(w => w.includes('goal completion'))).toBe(false);
+        expect(result.passed).toBe(true);
+    });
+
+    it('verifier rejects goal_completed claim when only active goals exist (no evidence)', () => {
+        const { verifyDispatch } = require('./verifier') as typeof import('./verifier');
+        const activeGoal: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            status: 'active',
+            achievedAt: undefined,
+            achievedEvidence: undefined,
+        };
+        const goalEvents = goalContractsToDigestGoalEvents([activeGoal]);
+        expect(goalEvents).toHaveLength(0);
+        const dispatch = makeS9bDispatch('Bob completed his goal today.');
+        const result = verifyDispatch(dispatch, makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('goal completion'))).toBe(true);
+    });
+
+    it('verifier accepts a goal ref from achieved GoalContract in eventRefsUsed', () => {
+        const { verifyDispatch } = require('./verifier') as typeof import('./verifier');
+        const goalEvents = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        const digest = buildDigest({
+            digestId: 's9b-integration-003',
+            windowStart: new Date('2026-05-29T04:00:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            goalEvents,
+        });
+        const goalRef = `goal:${BASE_ACHIEVED_GOAL.id}`;
+        const dispatch = makeS9bDispatch('Bob achieved his goal.', [goalRef]);
+        const result = verifyDispatch(dispatch, digest);
+        expect(result.warnings.some(w => w.includes('unknown event ref'))).toBe(false);
+        expect(result.passed).toBe(true);
+    });
+
+    it('achieved goal event appears in topEvents when it passes window filter', () => {
+        const goalEvents = goalContractsToDigestGoalEvents([BASE_ACHIEVED_GOAL]);
+        const digest = buildDigest({
+            digestId: 's9b-integration-004',
+            windowStart: new Date('2026-05-29T04:00:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            goalEvents,
+        });
+        const inTop = digest.topEvents.some(e => e.ref === `goal:${BASE_ACHIEVED_GOAL.id}`);
+        expect(inTop).toBe(true);
+    });
+
+    it('achieved goal achieved outside the digest window does not appear in goalEvents', () => {
+        const earlyGoal: GoalContract = {
+            ...BASE_ACHIEVED_GOAL,
+            id: 'goal-early',
+            achievedAt: '2026-05-28T10:00:00.000Z', // before window
+        };
+        const goalEvents = goalContractsToDigestGoalEvents([earlyGoal]);
+        const digest = buildDigest({
+            digestId: 's9b-integration-005',
+            windowStart: new Date('2026-05-29T04:00:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            goalEvents,
+        });
+        expect(digest.goalEvents).toHaveLength(0);
     });
 });

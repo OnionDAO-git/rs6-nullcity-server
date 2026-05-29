@@ -1,4 +1,5 @@
 import type { EconomyEvent } from '../city-integration/economy-event';
+import type { GoalContract } from '../city-integration/goal-contract';
 import {
     type CityEventDigest,
     type DigestEvent,
@@ -193,6 +194,55 @@ export function economyEventsToDigestBuckets(events: EconomyEvent[]): EconomyDig
     }
 
     return { apEvents, gpEvents, exchangeEvents, ncriEvents };
+}
+
+// ---------------------------------------------------------------------------
+// GoalContract → DigestEvent bridge (S9b).
+//
+// Converts GoalContract[] from GoalContractStore into goal_completed DigestEvents
+// for the Storyteller's goalEvents bucket. Only GoalContracts with status
+// 'achieved' and both achievedAt + achievedEvidence set produce evidence entries.
+//
+// Active and abandoned contracts are intentionally excluded: the Storyteller
+// must not invent completions from aspirational or partial-progress data. This
+// guard mirrors GoalContractStore.markAchieved()'s non-empty-evidence requirement.
+//
+// After calling this function, pass the returned array as goalEvents to
+// buildDigest(). The window filter inside buildDigest will then exclude
+// achievements whose achievedAt falls outside the digest window — so a "saved
+// resident" whose goal was achieved weeks ago won't appear as current-window
+// news unless the operator widens the window.
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert achieved GoalContracts into goal_completed DigestEvents for the
+ * Storyteller's goalEvents bucket. Active, abandoned, or malformed contracts
+ * produce no events — the Storyteller cannot cite unsupported completions.
+ */
+export function goalContractsToDigestGoalEvents(goals: GoalContract[]): DigestEvent[] {
+    const events: DigestEvent[] = [];
+    for (const goal of goals) {
+        if (goal.status !== 'achieved') continue;
+        if (!goal.achievedAt || !goal.achievedEvidence) continue;
+        const evidence: Record<string, unknown> = {
+            goalId: goal.id,
+            goalText: goal.goalText,
+            achievedEvidence: goal.achievedEvidence,
+        };
+        if (goal.completion?.condition !== undefined) {
+            evidence['condition'] = goal.completion.condition;
+        }
+        events.push({
+            ref: `goal:${goal.id}`,
+            kind: 'goal_completed',
+            residentName: goal.residentName,
+            ts: goal.achievedAt,
+            note: `${goal.residentName} achieved goal: "${goal.goalText}" (evidence: ${goal.achievedEvidence})`,
+            importance: 'medium',
+            evidence,
+        });
+    }
+    return events;
 }
 
 // ---------------------------------------------------------------------------
