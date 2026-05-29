@@ -749,12 +749,12 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: after AP-for-GP proof exists, admin-approved NCRI records bind Null City metadata to real RuneScape item ids, track owner and redemption state, and emit Library events. Before S3 is green, keep this to schema/fixture design.
   - Verification: registry persistence tests, duplicate-redemption rejection, event evidence present for Storyteller digest.
 
-- `[ ]` **S6: Storyteller digest/store/CLI dry run.**
+- `[x]` **S6: Storyteller digest/store/CLI dry run.**
   - Files: new `src/controller/storyteller/*`, `src/controller/storyteller/*.test.ts`, `package.json`, `docs/2026-05-28-storyteller-design.md`.
   - Deliverable: `npm run storyteller:dry-run` builds a bounded `CityEventDigest` from Library timelines, AP events, GP evidence, NCRIs, goals/bounded completions, and system warnings without calling a model.
   - Verification: fixture digest tests; dry-run writes digest JSON; `npm run check:no-ui` remains clean.
 
-- `[ ]` **S7: Storyteller model run and grounding verifier.**
+- `[>]` **S7: Storyteller model run and grounding verifier.**
   - Files: `src/controller/storyteller/*`, `src/controller/llm/*`, `src/controller/config.ts`, `config/controller.yml.example`, tests beside each file.
   - Deliverable: after S6 digest evidence and at least one AP/GP loop proof exist, manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
   - Verification: fixture runs across at least two model profiles; verifier rejection tests; cost/token metadata recorded.
