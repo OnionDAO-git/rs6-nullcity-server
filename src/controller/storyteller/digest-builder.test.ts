@@ -1,6 +1,7 @@
-import { buildDigest, buildFixtureDigest, sortByImportance, resetRefCounter } from './digest-builder';
+import { buildDigest, buildFixtureDigest, sortByImportance, resetRefCounter, economyEventsToDigestBuckets } from './digest-builder';
 import { cityEventDigestSchema, IMPORTANCE_WEIGHT } from './types';
 import type { DigestEvent, ResidentSnapshot } from './types';
+import type { EconomyEvent } from '../city-integration/economy-event';
 
 const WIN_START = new Date('2026-05-29T05:50:00.000Z');
 const WIN_END = new Date('2026-05-29T06:00:00.000Z');
@@ -373,5 +374,263 @@ describe('IMPORTANCE_WEIGHT', () => {
         expect(IMPORTANCE_WEIGHT.high).toBeGreaterThan(IMPORTANCE_WEIGHT.medium);
         expect(IMPORTANCE_WEIGHT.medium).toBeGreaterThan(IMPORTANCE_WEIGHT.low);
         expect(IMPORTANCE_WEIGHT.low).toBeGreaterThan(IMPORTANCE_WEIGHT.minimal);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// economyEventsToDigestBuckets — S5b: EconomyEvent → DigestEvent adapter
+// ---------------------------------------------------------------------------
+
+function makeEconomyEvent(overrides: Partial<EconomyEvent> & Pick<EconomyEvent, 'kind'>): EconomyEvent {
+    return {
+        schemaVersion: 1,
+        id: `evt-${Math.random().toString(36).slice(2)}`,
+        ts: '2026-05-29T05:55:00.000Z',
+        residentName: 'res:test',
+        ...overrides,
+    };
+}
+
+describe('economyEventsToDigestBuckets — NCRI events (S5b core)', () => {
+    it('maps ncri_sale to ncriEvents with kind ncri_created', () => {
+        const event = makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-001', note: 'NCRI sold' });
+        const { ncriEvents, apEvents, gpEvents, exchangeEvents } = economyEventsToDigestBuckets([event]);
+        expect(ncriEvents).toHaveLength(1);
+        expect(ncriEvents[0].kind).toBe('ncri_created');
+        expect(ncriEvents[0].ref).toBe(event.id);
+        expect(ncriEvents[0].evidence?.['ncriId']).toBe('ncri-001');
+        expect(apEvents).toHaveLength(0);
+        expect(gpEvents).toHaveLength(0);
+        expect(exchangeEvents).toHaveLength(0);
+    });
+
+    it('maps ncri_redemption to ncriEvents with kind ncri_redeemed', () => {
+        const event = makeEconomyEvent({ kind: 'ncri_redemption', ncriId: 'ncri-002', note: 'NCRI redeemed' });
+        const { ncriEvents } = economyEventsToDigestBuckets([event]);
+        expect(ncriEvents).toHaveLength(1);
+        expect(ncriEvents[0].kind).toBe('ncri_redeemed');
+        expect(ncriEvents[0].evidence?.['ncriId']).toBe('ncri-002');
+    });
+
+    it('preserves refId in NCRI event evidence', () => {
+        const event = makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-003', refId: 'apgp:exchange:999' });
+        const { ncriEvents } = economyEventsToDigestBuckets([event]);
+        expect(ncriEvents[0].evidence?.['refId']).toBe('apgp:exchange:999');
+    });
+
+    it('preserves cityUserId in NCRI event evidence', () => {
+        const event = makeEconomyEvent({ kind: 'ncri_redemption', ncriId: 'ncri-004', cityUserId: 'patron:james' });
+        const { ncriEvents } = economyEventsToDigestBuckets([event]);
+        expect(ncriEvents[0].evidence?.['cityUserId']).toBe('patron:james');
+    });
+
+    it('marks NCRI events as importance high', () => {
+        const sale = makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-005' });
+        const redeem = makeEconomyEvent({ kind: 'ncri_redemption', ncriId: 'ncri-006' });
+        const { ncriEvents } = economyEventsToDigestBuckets([sale, redeem]);
+        expect(ncriEvents.every(e => e.importance === 'high')).toBe(true);
+    });
+
+    it('handles multiple NCRI events', () => {
+        const events = [
+            makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-a' }),
+            makeEconomyEvent({ kind: 'ncri_redemption', ncriId: 'ncri-b' }),
+            makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-c' }),
+        ];
+        const { ncriEvents } = economyEventsToDigestBuckets(events);
+        expect(ncriEvents).toHaveLength(3);
+        expect(ncriEvents[0].kind).toBe('ncri_created');
+        expect(ncriEvents[1].kind).toBe('ncri_redeemed');
+        expect(ncriEvents[2].kind).toBe('ncri_created');
+    });
+});
+
+describe('economyEventsToDigestBuckets — AP events', () => {
+    it('maps ap_grant to apEvents with kind ap_granted', () => {
+        const event = makeEconomyEvent({ kind: 'ap_grant', apDelta: 100 });
+        const { apEvents } = economyEventsToDigestBuckets([event]);
+        expect(apEvents).toHaveLength(1);
+        expect(apEvents[0].kind).toBe('ap_granted');
+        expect(apEvents[0].importance).toBe('low');
+    });
+
+    it('maps ap_topup to apEvents with kind ap_granted', () => {
+        const event = makeEconomyEvent({ kind: 'ap_topup', apDelta: 50 });
+        const { apEvents } = economyEventsToDigestBuckets([event]);
+        expect(apEvents).toHaveLength(1);
+        expect(apEvents[0].kind).toBe('ap_granted');
+    });
+
+    it('maps ap_fade to apEvents with kind resident_faded and importance critical', () => {
+        const event = makeEconomyEvent({ kind: 'ap_fade' });
+        const { apEvents } = economyEventsToDigestBuckets([event]);
+        expect(apEvents).toHaveLength(1);
+        expect(apEvents[0].kind).toBe('resident_faded');
+        expect(apEvents[0].importance).toBe('critical');
+    });
+
+    it('skips ap_decay — too granular for narrative layer', () => {
+        const event = makeEconomyEvent({ kind: 'ap_decay', apDelta: -5 });
+        const { apEvents, gpEvents, exchangeEvents, ncriEvents } = economyEventsToDigestBuckets([event]);
+        expect(apEvents).toHaveLength(0);
+        expect(gpEvents).toHaveLength(0);
+        expect(exchangeEvents).toHaveLength(0);
+        expect(ncriEvents).toHaveLength(0);
+    });
+
+    it('preserves apDelta in AP event evidence', () => {
+        const event = makeEconomyEvent({ kind: 'ap_grant', apDelta: 200 });
+        const { apEvents } = economyEventsToDigestBuckets([event]);
+        expect(apEvents[0].evidence?.['apDelta']).toBe(200);
+    });
+});
+
+describe('economyEventsToDigestBuckets — GP events', () => {
+    it('maps gp_observed to gpEvents with kind gp_observed', () => {
+        const event = makeEconomyEvent({ kind: 'gp_observed', gpDelta: 500 });
+        const { gpEvents } = economyEventsToDigestBuckets([event]);
+        expect(gpEvents).toHaveLength(1);
+        expect(gpEvents[0].kind).toBe('gp_observed');
+        expect(gpEvents[0].importance).toBe('high');
+    });
+
+    it('maps gp_earned to gpEvents with kind gp_earned', () => {
+        const event = makeEconomyEvent({ kind: 'gp_earned', gpDelta: 150 });
+        const { gpEvents } = economyEventsToDigestBuckets([event]);
+        expect(gpEvents).toHaveLength(1);
+        expect(gpEvents[0].kind).toBe('gp_earned');
+    });
+
+    it('maps gp_traded to gpEvents with kind gp_earned', () => {
+        const event = makeEconomyEvent({ kind: 'gp_traded', gpDelta: -200 });
+        const { gpEvents } = economyEventsToDigestBuckets([event]);
+        expect(gpEvents).toHaveLength(1);
+        expect(gpEvents[0].kind).toBe('gp_earned');
+    });
+
+    it('preserves gpDelta in GP event evidence', () => {
+        const event = makeEconomyEvent({ kind: 'gp_earned', gpDelta: 300 });
+        const { gpEvents } = economyEventsToDigestBuckets([event]);
+        expect(gpEvents[0].evidence?.['gpDelta']).toBe(300);
+    });
+});
+
+describe('economyEventsToDigestBuckets — exchange events', () => {
+    it('maps ap_gp_exchange to exchangeEvents with kind ap_for_gp_exchange', () => {
+        const event = makeEconomyEvent({ kind: 'ap_gp_exchange', apDelta: 50, gpDelta: -200 });
+        const { exchangeEvents } = economyEventsToDigestBuckets([event]);
+        expect(exchangeEvents).toHaveLength(1);
+        expect(exchangeEvents[0].kind).toBe('ap_for_gp_exchange');
+        expect(exchangeEvents[0].importance).toBe('high');
+        expect(exchangeEvents[0].evidence?.['apDelta']).toBe(50);
+        expect(exchangeEvents[0].evidence?.['gpDelta']).toBe(-200);
+    });
+});
+
+describe('economyEventsToDigestBuckets — bucket isolation', () => {
+    it('routes each event kind to exactly one bucket', () => {
+        const events: EconomyEvent[] = [
+            makeEconomyEvent({ kind: 'ap_grant', apDelta: 100 }),
+            makeEconomyEvent({ kind: 'gp_earned', gpDelta: 150 }),
+            makeEconomyEvent({ kind: 'ap_gp_exchange', apDelta: 50, gpDelta: -200 }),
+            makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-x' }),
+            makeEconomyEvent({ kind: 'ncri_redemption', ncriId: 'ncri-y' }),
+            makeEconomyEvent({ kind: 'ap_decay', apDelta: -5 }),
+        ];
+        const { apEvents, gpEvents, exchangeEvents, ncriEvents } = economyEventsToDigestBuckets(events);
+        expect(apEvents).toHaveLength(1); // ap_grant (ap_decay skipped)
+        expect(gpEvents).toHaveLength(1); // gp_earned
+        expect(exchangeEvents).toHaveLength(1); // ap_gp_exchange
+        expect(ncriEvents).toHaveLength(2); // ncri_sale + ncri_redemption
+        const totalBucketed = apEvents.length + gpEvents.length + exchangeEvents.length + ncriEvents.length;
+        expect(totalBucketed).toBe(5); // 6 events, 1 ap_decay skipped
+    });
+
+    it('returns empty buckets for an empty events array', () => {
+        const { apEvents, gpEvents, exchangeEvents, ncriEvents } = economyEventsToDigestBuckets([]);
+        expect(apEvents).toHaveLength(0);
+        expect(gpEvents).toHaveLength(0);
+        expect(exchangeEvents).toHaveLength(0);
+        expect(ncriEvents).toHaveLength(0);
+    });
+});
+
+describe('economyEventsToDigestBuckets — full pipeline (S5b end-to-end)', () => {
+    it('NCRI sale event flows through buckets into buildDigest().ncriEvents', () => {
+        const ncriSaleEvent = makeEconomyEvent({
+            kind: 'ncri_sale',
+            ncriId: 'ncri-lumbridge-egg',
+            note: 'Admin sold Lumbridge Egg NCRI to res:alice',
+        });
+        const buckets = economyEventsToDigestBuckets([ncriSaleEvent]);
+        const digest = buildDigest({
+            digestId: 'pipeline-test-001',
+            windowStart: new Date('2026-05-29T05:50:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            ...buckets,
+        });
+        expect(digest.ncriEvents).toHaveLength(1);
+        expect(digest.ncriEvents[0].kind).toBe('ncri_created');
+        expect(digest.ncriEvents[0].evidence?.['ncriId']).toBe('ncri-lumbridge-egg');
+    });
+
+    it('NCRI redemption event flows through buckets into buildDigest().ncriEvents', () => {
+        const ncriRedemptionEvent = makeEconomyEvent({
+            kind: 'ncri_redemption',
+            ncriId: 'ncri-abyssal-whip',
+            note: 'res:bob redeemed Abyssal Whip NCRI',
+        });
+        const buckets = economyEventsToDigestBuckets([ncriRedemptionEvent]);
+        const digest = buildDigest({
+            digestId: 'pipeline-test-002',
+            windowStart: new Date('2026-05-29T05:50:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            ...buckets,
+        });
+        expect(digest.ncriEvents).toHaveLength(1);
+        expect(digest.ncriEvents[0].kind).toBe('ncri_redeemed');
+    });
+
+    it('NCRI events appear in topEvents when important enough', () => {
+        const ncriSaleEvent = makeEconomyEvent({
+            kind: 'ncri_sale',
+            ncriId: 'ncri-007',
+            note: 'High-importance NCRI sale',
+        });
+        const buckets = economyEventsToDigestBuckets([ncriSaleEvent]);
+        const digest = buildDigest({
+            digestId: 'pipeline-test-003',
+            windowStart: new Date('2026-05-29T05:50:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            ...buckets,
+        });
+        const ncriInTop = digest.topEvents.find(e => e.kind === 'ncri_created');
+        expect(ncriInTop).toBeDefined();
+    });
+
+    it('NCRI events are separate from AP and GP event buckets in the digest', () => {
+        const events: EconomyEvent[] = [
+            makeEconomyEvent({ kind: 'ap_grant', apDelta: 100 }),
+            makeEconomyEvent({ kind: 'gp_earned', gpDelta: 200 }),
+            makeEconomyEvent({ kind: 'ncri_sale', ncriId: 'ncri-xyz' }),
+        ];
+        const buckets = economyEventsToDigestBuckets(events);
+        const digest = buildDigest({
+            digestId: 'pipeline-test-004',
+            windowStart: new Date('2026-05-29T05:50:00.000Z'),
+            windowEnd: new Date('2026-05-29T06:00:00.000Z'),
+            residents: [],
+            ...buckets,
+        });
+        expect(digest.apEvents).toHaveLength(1);
+        expect(digest.gpEvents).toHaveLength(1);
+        expect(digest.ncriEvents).toHaveLength(1);
+        // Verify AP≠GP≠NCRI separation (S0a vocabulary rule)
+        expect(digest.apEvents[0].kind).toBe('ap_granted');
+        expect(digest.gpEvents[0].kind).toBe('gp_earned');
+        expect(digest.ncriEvents[0].kind).toBe('ncri_created');
     });
 });

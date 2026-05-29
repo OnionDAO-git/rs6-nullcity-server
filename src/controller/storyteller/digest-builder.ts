@@ -1,3 +1,4 @@
+import type { EconomyEvent } from '../city-integration/economy-event';
 import {
     type CityEventDigest,
     type DigestEvent,
@@ -108,6 +109,90 @@ export function buildDigest(input: DigestBuilderInput): CityEventDigest {
             lowApResidents,
         },
     };
+}
+
+// ---------------------------------------------------------------------------
+// EconomyEvent → DigestEvent bucket adapter (S5b).
+//
+// Converts a flat EconomyEvent[] (from EconomyEventLog) into the pre-bucketed
+// DigestEvent arrays that buildDigest() consumes. This is the bridge between
+// the P0 economy event log and the Storyteller's grounded evidence packet.
+//
+// ap_decay events are skipped: they are too granular for the narrative layer
+// and are already aggregated as apDecayedTotal in the CityEventDigest P0
+// contract. Only structurally significant AP events (grant, topup, fade) and
+// all GP/NCRI/exchange events produce DigestEvent entries.
+// ---------------------------------------------------------------------------
+
+export interface EconomyDigestBuckets {
+    apEvents: DigestEvent[];
+    gpEvents: DigestEvent[];
+    exchangeEvents: DigestEvent[];
+    ncriEvents: DigestEvent[];
+}
+
+/**
+ * Convert EconomyEvent[] from EconomyEventLog into DigestEvent buckets for
+ * buildDigest(). ap_decay is intentionally dropped (too granular). All other
+ * kinds produce a DigestEvent in the appropriate bucket.
+ *
+ * NCRI flow: ncri_sale → ncriEvents (kind: ncri_created),
+ *            ncri_redemption → ncriEvents (kind: ncri_redeemed).
+ * This is the primary S5b bridge ensuring NCRI evidence reaches the Storyteller.
+ */
+export function economyEventsToDigestBuckets(events: EconomyEvent[]): EconomyDigestBuckets {
+    const apEvents: DigestEvent[] = [];
+    const gpEvents: DigestEvent[] = [];
+    const exchangeEvents: DigestEvent[] = [];
+    const ncriEvents: DigestEvent[] = [];
+
+    for (const event of events) {
+        const ref = event.id;
+        const ts = event.ts;
+        const residentName = event.residentName ?? 'unknown';
+        const note = event.note ?? `${event.kind}`;
+        const evidence: Record<string, unknown> = {};
+        if (event.apDelta !== undefined) evidence['apDelta'] = event.apDelta;
+        if (event.gpDelta !== undefined) evidence['gpDelta'] = event.gpDelta;
+        if (event.ncriId !== undefined) evidence['ncriId'] = event.ncriId;
+        if (event.refId !== undefined) evidence['refId'] = event.refId;
+        if (event.cityUserId !== undefined) evidence['cityUserId'] = event.cityUserId;
+
+        switch (event.kind) {
+            case 'ap_grant':
+            case 'ap_topup':
+                apEvents.push({ ref, kind: 'ap_granted', residentName, ts, note, importance: 'low', evidence });
+                break;
+            case 'ap_fade':
+                apEvents.push({ ref, kind: 'resident_faded', residentName, ts, note, importance: 'critical', evidence });
+                break;
+            case 'ap_decay':
+                // Intentionally skipped — too granular for narrative; aggregated in CityEventDigest P0.
+                break;
+            case 'gp_observed':
+                gpEvents.push({ ref, kind: 'gp_observed', residentName, ts, note, importance: 'high', evidence });
+                break;
+            case 'gp_earned':
+                gpEvents.push({ ref, kind: 'gp_earned', residentName, ts, note, importance: 'high', evidence });
+                break;
+            case 'gp_traded':
+                gpEvents.push({ ref, kind: 'gp_earned', residentName, ts, note, importance: 'high', evidence });
+                break;
+            case 'ap_gp_exchange':
+                exchangeEvents.push({ ref, kind: 'ap_for_gp_exchange', residentName, ts, note, importance: 'high', evidence });
+                break;
+            case 'ncri_sale':
+                // ncri_sale: admin created and sold an NCRI to a resident/owner.
+                ncriEvents.push({ ref, kind: 'ncri_created', residentName, ts, note, importance: 'high', evidence });
+                break;
+            case 'ncri_redemption':
+                // ncri_redemption: owner redeemed (consumed) the NCRI.
+                ncriEvents.push({ ref, kind: 'ncri_redeemed', residentName, ts, note, importance: 'high', evidence });
+                break;
+        }
+    }
+
+    return { apEvents, gpEvents, exchangeEvents, ncriEvents };
 }
 
 // ---------------------------------------------------------------------------
