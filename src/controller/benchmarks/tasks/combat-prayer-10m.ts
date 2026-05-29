@@ -217,6 +217,11 @@ function combatPrayerMetrics(input: CombatPrayer10mVerificationInput): Record<st
     const prayerLevelEvents = allEvents(input).filter(isPrayerLevelEvent).length;
     const bonesLostEvents = allEvents(input).filter(isBonesLostEvent).length;
     const bonesConsumedAfterGainValue = bonesConsumedAfterGain(input.perceptions) ? 1 : 0;
+    const orderedActionChainValue = orderedActionChain(input.actions) ? 1 : 0;
+    const prayerSuccessValue = prayerXpIncreasedValue || prayerLevelEvents ? 1 : 0;
+    const unsafeLoopDetected = repeatedActionLoop(input.actions.filter(isCombatPrayerLoopAction));
+    const completedPrayerChain = orderedActionChainValue === 1 && bonesEvidence === 1 && prayerSuccessValue === 1;
+
     return {
         actionsAttempted: input.actions.length,
         attackActions: attackActions.length,
@@ -224,7 +229,7 @@ function combatPrayerMetrics(input: CombatPrayer10mVerificationInput): Record<st
         unsafeTargetActions,
         pickupBonesActions,
         buryActions,
-        orderedActionChain: orderedActionChain(input.actions) ? 1 : 0,
+        orderedActionChain: orderedActionChainValue,
         combatEvidence,
         bonesEvidence,
         bonesAppeared: bonesAppeared(input.perceptions) ? 1 : 0,
@@ -234,10 +239,10 @@ function combatPrayerMetrics(input: CombatPrayer10mVerificationInput): Record<st
         prayerXpIncreased: prayerXpIncreasedValue,
         prayerLevelEvents,
         bonesLostEvents,
-        prayerSuccess: prayerXpIncreasedValue || prayerLevelEvents ? 1 : 0,
+        prayerSuccess: prayerSuccessValue,
         deathEvents: allEvents(input).filter(isDeathEvent).length,
         survivalActions: input.actions.filter(attempt => attempt.action.kind === 'eat' || attempt.action.cause === 'combat_retreat').length,
-        unsafeLoops: repeatedActionLoop(input.actions.filter(isCombatPrayerLoopAction)) ? 1 : 0,
+        unsafeLoops: unsafeLoopDetected && !completedPrayerChain ? 1 : 0,
     };
 }
 
