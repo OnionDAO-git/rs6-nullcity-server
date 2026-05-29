@@ -17,68 +17,11 @@ export interface ApDecayAsk5mVerificationInput {
     elapsedMs: number;
     actions: ApDecayAsk5mActionAttempt[];
     perceptions: Perception[];
-    events: PerceptionEvent[];
-    /** AP balance at the start of the benchmark window (from runtime state or ledger). */
-    startingAp: number;
-    /** AP balance at the end of the observation window. */
-    finalAp: number;
-}
-
-function apDecayMetrics(input: ApDecayAsk5mVerificationInput): Record<string, number> {
-    return {
-        startingAp: input.startingAp,
-        finalAp: input.finalAp,
-        apDecayObserved: input.finalAp < input.startingAp || input.startingAp === 0 ? 1 : 0,
-        lowApAskCount: countLowApAsks(input.actions),
-        fadeObserved: hasFadeEvent(input.events) ? 1 : 0,
-        resumeAfterTopUp: 0,
-    };
-}
-
-export function verifyApDecayAsk5m(input: ApDecayAsk5mVerificationInput): BenchmarkTaskOutcome {
-    const metrics = apDecayMetrics(input);
-
-    if (!metrics['apDecayObserved']) {
-        return {
-            status: 'failed',
-            score: 0,
-            failureReason: `AP did not decay during window: started ${input.startingAp}, ended ${input.finalAp}`,
-            metrics,
-        };
-    }
-
-    if (metrics['lowApAskCount'] === 0 && !metrics['fadeObserved']) {
-        return {
-            status: 'failed',
-            score: 0.5,
-            failureReason: 'AP decayed but resident showed no low-AP ask or fade event',
-            metrics,
-        };
-    }
-
-    return {
-        status: 'passed',
-        score: 1,
-        metrics,
-    };
-}
-
-function countLowApAsks(actions: ApDecayAsk5mActionAttempt[]): number {
-    return actions.filter(a => {
-        if (a.action.kind !== 'say') return false;
-        const text = (a.action as { kind: 'say'; text?: string }).text?.toLowerCase() ?? '';
-        return (
-            text.includes('attention') ||
-            text.includes('support') ||
-            text.includes('fading') ||
-            text.includes('running low') ||
-            text.includes('need ap')
-        );
-    }).length;
-}
-
-function hasFadeEvent(events: PerceptionEvent[]): boolean {
-    return events.some(e => e.kind === 'resident_faded' || e.kind === 'attention_exhausted');
+    events?: PerceptionEvent[];
+    /** Optional AP balance at the start of the benchmark window. If omitted, perception history is used. */
+    startingAp?: number;
+    /** Optional AP balance at the end of the observation window. If omitted, perception history is used. */
+    finalAp?: number;
 }
 
 export function makeApDecayAsk5mBenchmarkTask(now: () => number = () => Date.now()): BenchmarkTask {
@@ -89,67 +32,199 @@ export function makeApDecayAsk5mBenchmarkTask(now: () => number = () => Date.now
         resident: {
             spawnPosition: START_POSITION,
         },
-        run: async _context => ({
-            status: 'failed' as const,
-            score: 0,
-            failureReason: 'ap-decay-ask-5m requires autonomous mode; run with --mode autonomous',
-            metrics: { startingAp: 0, finalAp: 0, apDecayObserved: 0, lowApAskCount: 0, fadeObserved: 0, resumeAfterTopUp: 0 },
-        }),
-        runAutonomous: async context => {
+        run: async context => {
             const startedAt = now();
-            context.recordSummary('Observing autonomous AP decay behavior: watching for low-AP ask or fade event over 5 minutes.');
-
+            context.recordSummary('Observing scripted low-AP ask/fade evidence. Use --mode autonomous for live AP decay.');
             while (!context.signal.aborted && now() - startedAt < AP_DECAY_ASK_5M_BUDGET_MS) {
-                const perceptions = [...context.perceptions()];
-                const latestState = latestApState(perceptions);
                 const outcome = verifyApDecayAsk5m({
                     elapsedMs: now() - startedAt,
-                    actions: selectedModuleActions(context),
-                    perceptions,
+                    actions: [...context.actionAttempts()],
+                    perceptions: [...context.perceptions()],
                     events: [...context.events()],
-                    startingAp: latestState.startingAp,
-                    finalAp: latestState.finalAp,
                 });
                 if (outcome.status === 'passed') {
                     return outcome;
                 }
-                await sleep(2000, context.signal);
+                await sleep(1000, context.signal);
             }
-
-            const perceptions = [...context.perceptions()];
-            const latestState = latestApState(perceptions);
             return verifyApDecayAsk5m({
                 elapsedMs: now() - startedAt,
-                actions: selectedModuleActions(context),
-                perceptions,
+                actions: [...context.actionAttempts()],
+                perceptions: [...context.perceptions()],
                 events: [...context.events()],
-                startingAp: latestState.startingAp,
-                finalAp: latestState.finalAp,
+            });
+        },
+        runAutonomous: async context => {
+            const startedAt = now();
+            context.recordSummary('Observing autonomous AP life-force behavior: low-AP ask plus attention-exhausted fade evidence.');
+
+            while (!context.signal.aborted && now() - startedAt < AP_DECAY_ASK_5M_BUDGET_MS) {
+                const outcome = verifyApDecayAsk5m({
+                    elapsedMs: now() - startedAt,
+                    actions: selectedModuleActionAttempts(context),
+                    perceptions: [...context.perceptions()],
+                    events: [...context.events()],
+                });
+                if (outcome.status === 'passed') {
+                    return outcome;
+                }
+                await sleep(1000, context.signal);
+            }
+
+            return verifyApDecayAsk5m({
+                elapsedMs: now() - startedAt,
+                actions: selectedModuleActionAttempts(context),
+                perceptions: [...context.perceptions()],
+                events: [...context.events()],
             });
         },
     };
 }
 
-function latestApState(perceptions: Perception[]): { startingAp: number; finalAp: number } {
-    const attentions = perceptions.map(p => {
-        const resident = p.resident as { attention?: number } | undefined;
-        return typeof resident?.attention === 'number' ? resident.attention : null;
+export function verifyApDecayAsk5m(input: ApDecayAsk5mVerificationInput): BenchmarkTaskOutcome {
+    const metrics = apDecayAskMetrics(input);
+    if (input.elapsedMs > AP_DECAY_ASK_5M_BUDGET_MS) {
+        return {
+            status: 'timeout',
+            score: 0,
+            metrics,
+            failureReason: 'ap-decay-ask-5m exceeded the 5 minute budget before low-AP fade evidence was observed',
+        };
+    }
+    if (metrics.apDecayObserved === 0) {
+        return {
+            status: 'failed',
+            score: 0,
+            metrics,
+            failureReason: `AP did not decay during window: started ${metrics.startingAp}, ended ${metrics.finalAp}`,
+        };
+    }
+    if (metrics.lowApAskActions === 0) {
+        return {
+            status: 'failed',
+            score: 0.35,
+            metrics,
+            failureReason: 'No low-AP ask action was observed before benchmark end',
+        };
+    }
+    if (metrics.attentionExhaustedLogouts === 0 && metrics.fadeEvents === 0) {
+        return {
+            status: 'failed',
+            score: 0.65,
+            metrics,
+            failureReason: 'Low-AP ask was observed, but no attention_exhausted fade/logout proof was captured',
+        };
+    }
+    if (metrics.sawAttentionDropToZero === 0) {
+        return {
+            status: 'failed',
+            score: 0.75,
+            metrics,
+            failureReason: 'Low-AP ask and fade were observed, but no AP balance reached zero',
+        };
+    }
+    return {
+        status: 'passed',
+        score: 1,
+        metrics,
+        summaries: ['ap-decay-ask-5m observed low-AP ask plus attention-exhausted fade evidence.'],
+    };
+}
+
+function apDecayAskMetrics(input: ApDecayAsk5mVerificationInput): Record<string, number> {
+    const attentions = observedAttentionValues(input);
+    const startingAp = input.startingAp ?? (attentions.length > 0 ? attentions[0] : 0);
+    const finalAp = input.finalAp ?? (attentions.length > 0 ? attentions[attentions.length - 1] : 0);
+    const events = allEvents(input);
+    return {
+        actionsAttempted: input.actions.length,
+        startingAp,
+        finalAp,
+        minObservedAttention: attentions.length > 0 ? Math.min(...attentions) : -1,
+        apDecayObserved: finalAp < startingAp || startingAp === 0 || attentions.some(value => value <= 0) ? 1 : 0,
+        lowApAskActions: input.actions.filter(attempt => isLowApAskAction(attempt.action)).length,
+        attentionExhaustedLogouts: input.actions.filter(attempt => isAttentionExhaustedLogout(attempt.action)).length,
+        fadeEvents: events.filter(isFadeEvent).length,
+        sawAttentionDropToZero: finalAp <= 0 || attentions.some(value => value <= 0) ? 1 : 0,
+        resumeAfterTopUp: 0,
+    };
+}
+
+function selectedModuleActionAttempts(
+    context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0],
+): ApDecayAsk5mActionAttempt[] {
+    return context.actionAttempts().filter(attempt => {
+        const module = attempt.sparkModule;
+        return module?.id === context.module.id && module.version === context.module.version;
     });
-    const valid = attentions.filter((a): a is number => a !== null);
-    if (valid.length === 0) return { startingAp: 0, finalAp: 0 };
-    return { startingAp: valid[0], finalAp: valid[valid.length - 1] };
 }
 
-function selectedModuleActions(context: { actionAttempts: () => Iterable<ApDecayAsk5mActionAttempt> }): ApDecayAsk5mActionAttempt[] {
-    return [...context.actionAttempts()].filter(a => a.sparkModule !== undefined);
+function observedAttentionValues(input: ApDecayAsk5mVerificationInput): number[] {
+    const values = input.perceptions.map(attentionFromPerception).filter((value): value is number => value !== undefined);
+    if (values.length > 0) {
+        return values;
+    }
+    if (input.startingAp !== undefined || input.finalAp !== undefined) {
+        return [input.startingAp ?? 0, input.finalAp ?? input.startingAp ?? 0];
+    }
+    return [];
 }
 
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-    return new Promise<void>(resolve => {
-        const timer = setTimeout(resolve, ms);
-        signal.addEventListener('abort', () => {
-            clearTimeout(timer);
+function attentionFromPerception(perception: Perception): number | undefined {
+    const resident = isRecord(perception.resident) ? perception.resident : undefined;
+    return resident && typeof resident.attention === 'number' ? resident.attention : undefined;
+}
+
+function allEvents(input: ApDecayAsk5mVerificationInput): PerceptionEvent[] {
+    return [...(input.events || []), ...input.perceptions.flatMap(perceptionEvents)];
+}
+
+function perceptionEvents(perception: Perception): PerceptionEvent[] {
+    return Array.isArray(perception.events) ? (perception.events as PerceptionEvent[]) : [];
+}
+
+function isLowApAskAction(action: AgentAction): boolean {
+    if (action.kind === 'request_attention') {
+        return true;
+    }
+    const cause = stringField(action, 'cause') || '';
+    const text = stringField(action, 'text') || '';
+    return action.kind === 'say' && /request-attention|attention|support|fading|running low|need ap|shards/i.test(`${cause} ${text}`);
+}
+
+function isAttentionExhaustedLogout(action: AgentAction): boolean {
+    return action.kind === 'logout' && /attention_exhausted/i.test(stringField(action, 'cause') || '');
+}
+
+function isFadeEvent(event: PerceptionEvent): boolean {
+    const kind = stringField(event, 'kind') || '';
+    const cause = stringField(event, 'cause') || '';
+    return /resident_faded|attention_exhausted/i.test(`${kind} ${cause}`);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object';
+}
+
+async function sleep(ms: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) {
+        return;
+    }
+    await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
             resolve();
-        });
-    });
+        }, ms);
+        const onAbort = () => {
+            clearTimeout(timeout);
+            signal.removeEventListener('abort', onAbort);
+            reject(new Error('aborted'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+    }).catch(() => undefined);
 }

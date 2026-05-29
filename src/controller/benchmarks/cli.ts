@@ -235,6 +235,9 @@ function tasksById(taskId: string): BenchmarkTask[] {
 }
 
 function taskById(taskId: string): BenchmarkTask {
+    if (taskId === AP_DECAY_ASK_5M_TASK_ID) {
+        return makeApDecayAsk5mBenchmarkTask();
+    }
     if (taskId === MAKE_FIRE_5M_TASK_ID) {
         return makeFire5mBenchmarkTask();
     }

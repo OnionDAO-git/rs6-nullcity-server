@@ -24,6 +24,22 @@ import type {
     BenchmarkRecordedInferenceRequest,
 } from './benchmark-runner';
 
+const DEFAULT_BENCHMARK_ATTENTION_PROFILE = {
+    startingAttention: 5000,
+    decayCurve: 'steep' as const,
+};
+
+const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
+    string,
+    { startingAttention: number; decayCurve: 'gentle' | 'standard' | 'steep'; floor?: number }
+> = {
+    'ap-decay-ask-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
+};
+
 export interface ResidentRuntimeBenchmarkDriverOptions {
     config: ControllerConfig;
     gateway: GatewayClient;
@@ -226,6 +242,7 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
     const resident = context.task.resident || {};
     const spawnPosition = position(resident.spawnPosition);
     const sourcePath = `benchmark:${context.task.id}`;
+    const attentionProfile = BENCHMARK_ATTENTION_PROFILE_OVERRIDES[context.task.id] || DEFAULT_BENCHMARK_ATTENTION_PROFILE;
     return {
         frontmatter: validateSoulFrontmatter(
             {
@@ -236,10 +253,7 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
                     endpoint: 'default',
                     temperature: 0.3,
                 },
-                attentionProfile: {
-                    startingAttention: 5000,
-                    decayCurve: 'steep',
-                },
+                attentionProfile,
                 legacy: {
                     kind: 'endurer',
                     parameters: {

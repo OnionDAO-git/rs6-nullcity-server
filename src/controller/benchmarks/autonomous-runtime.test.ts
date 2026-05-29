@@ -133,6 +133,29 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
 
         await driver.stop('test_complete');
     });
+
+    it('uses a low starting attention profile for ap-decay-ask-5m autonomous proof runs', async () => {
+        const context = benchmarkContext({
+            task: { id: 'ap-decay-ask-5m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },
+        });
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: new FakeGateway() as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        const runtimeOptions = (ResidentRuntime as jest.Mock).mock.calls.at(-1)?.[0];
+        expect(runtimeOptions.soul.frontmatter.attentionProfile).toMatchObject({
+            startingAttention: 12,
+            decayCurve: 'steep',
+            floor: 0,
+        });
+
+        await driver.stop('test_complete');
+    });
 });
 
 class FakeGateway extends EventEmitter {
