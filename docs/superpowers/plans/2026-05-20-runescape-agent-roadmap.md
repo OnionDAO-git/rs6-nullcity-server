@@ -709,6 +709,8 @@ Safe public module facade building blocks are implemented, but the public member
 - Storyteller design: `docs/2026-05-28-storyteller-design.md`
 - Current capability evidence: `docs/resident-capabilities.md`
 
+**Autonomous agent process:** use the implementation plan's **Agent Packet Backlog** for Friday/Saturday work. Packets S0a-S12b are the safe claim units; this roadmap keeps parent task status. Every packet needs a `STARTING` line, exact file list, focused tests, `npm run check:no-ui`, pushed commit, and `HANDOFF` with evidence.
+
 **Hard boundary:** no human-facing UI in `rs6-nullcity-server`. Server tasks in this workstream may add JSON/control APIs, persisted read models, CLI tools, logs, benchmarks, and docs. Dashboard/Embassy/wall/inbox/Library/Storyteller visual surfaces belong in `../rs6-nullcity-residents-dashboard`. Run `npm run check:no-ui` before marking any S task done.
 
 - `[ ]` **S0: Align AP/GP terminology without breaking legacy data.**

@@ -196,6 +196,64 @@ Do not start these until Dev clears UI direction.
 - Refresh human docs and capability evidence.
 - Prepare a short demo: Soul -> AP birth -> resident earns/trades GP -> Storyteller narrates -> Library saves.
 
+## Friday/Saturday Autonomous Agent Mission Board
+
+This board is the human-readable dispatch layer. The exact packet definitions live in `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md#agent-packet-backlog`.
+
+### How To Claim Work
+
+1. Pick one packet from the next available wave.
+2. Check `docs/agent-status.md` for active file locks.
+3. Flip the parent roadmap task to `[>]` if no one else has it.
+4. Append `STARTING` with packet id, lane, and exact files.
+5. Finish, prove, commit, push, and append `HANDOFF`.
+
+### Wave 0: Unblock The Whole Sprint
+
+| Packet | Why it matters | Good first owner |
+|---|---|---|
+| S0a AP/GP copy scan | Prevents Shards/AP/GP vocabulary drift before code spreads. | docs/ledger agent |
+| S10a benchmark report shape | Makes every later behavior claim comparable. | benchmark agent |
+| S6a Storyteller digest fixture | Gives the Storyteller lane a model-free, deterministic base. | storyteller agent |
+| S11a dashboard contract sketch | Lets dashboard agents prepare without server UI work. | contracts agent |
+
+### Wave 1: Build The Two Economies And The Narrator Base
+
+| Packet | Why it matters | Good first owner |
+|---|---|---|
+| S1a AP ledger replay | AP must be replayable before it can sustain lives. | AP agent |
+| S1b low-AP resident proof | Shows residents understand survival pressure. | gameplay QA agent |
+| S2a GP inspect | GP must be real RuneScape coins, not an invented balance. | game-state agent |
+| S2b GP earning proof | Proves residents can create human-useful value. | benchmark agent |
+| S6b Storyteller dry run | Produces a useful digest before paid model calls. | storyteller agent |
+| S8a AP/GP resident knowledge | Keeps residents from talking nonsense about the economy. | prompt/knowledge agent |
+
+### Wave 2: Close The Gameplay Loop
+
+| Packet | Why it matters | Good first owner |
+|---|---|---|
+| S3a/S3b AP-for-GP exchange | Connects human support to resident-earned value. | economy integration agent |
+| S4a/S4b Soul birth queue | Turns human attention into new residents. | birth/runtime agent |
+| S5a/S5b NCRI registry | Gives RuneScape items special Null City meaning. | NCRI agent |
+| S9a/S9b saved quest state | Lets completed goals enter the Library as canon. | quest/library agent |
+| S10b/S10c model twins | Tests whether paid/smarter models improve actual resident outcomes. | benchmark agent |
+
+### Wave 3: Sunday Closeout
+
+| Packet | Why it matters | Good first owner |
+|---|---|---|
+| S7a/S7b model-backed Storyteller | Turns evidence into public canon safely. | storyteller/LLM agent |
+| S11b dashboard JSON endpoints | Gives dashboard repo the final data contracts. | API contract agent |
+| S12a/S12b human state report | Lets James explain what works, what is proven, and what is blocked. | release/docs agent |
+
+### Parallel Safety Rules
+
+- Do not run two live controllers against the same data directory unless the task explicitly uses isolated benchmark dirs.
+- Do not mix capacity benchmarks with intelligence benchmarks; report them as separate evidence.
+- Do not call paid models from cron or unattended loops without a named model profile, cap, and artifact path.
+- Do not update `docs/resident-capabilities.md` from hope. Use benchmark ids, live logs, tests, or explicit "not proven" notes.
+- Do not build human-facing UI in this repo. Dashboard work belongs in `../rs6-nullcity-residents-dashboard`.
+
 ## Meeting Decisions Needed
 
 1. Is "AP" the public term, or should public UI always spell out "Attention Points"?

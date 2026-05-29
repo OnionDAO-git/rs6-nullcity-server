@@ -71,6 +71,7 @@ After those four, if you're working a specific workstream:
 - **Workstream Q: Smarter behavior (F+G finish)** — spec exists. 5 plans for non-command small talk, stuck-help-speech, combat personality, trading, broader command loop.
 - **Workstream R: SPARK module extraction (B2-B5)** — spec exists. 5 plans carving the 2578-line monolith into 4 composable units + slim orchestrator. Foundation move; unblocks Q's integration points.
 - **Workstream S: AP/GP economy, Soul birth, NCRIs, Storyteller** — active weekend sprint. Use `docs/2026-05-29-weekend-sprint-plan.md` for product context and `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task execution.
+  - Friday/Saturday autonomous agents should claim packet ids from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`) and use its lane table as the file-lock map. Do not grab an entire S task when a smaller packet will do.
 
 ---
 
