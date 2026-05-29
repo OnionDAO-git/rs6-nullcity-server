@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { LibraryUpdater } from './library-updater';
+import type { NcriLibraryEvent } from './library-updater';
 
 describe('LibraryUpdater', () => {
     it('appends only story-significant trajectory lines to timeline.jsonl', () => {
@@ -319,6 +320,84 @@ describe('LibraryUpdater', () => {
         expect(markdown).toContain('## In their own words');
         expect(markdown).toContain('### How it ended');
         expect(markdown).toContain('## Patrons');
+    });
+});
+
+describe('LibraryUpdater — observeNcriEvent', () => {
+    it('appends ncri_created to timeline with required fields', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeNcriEvent({
+            kind: 'ncri_created',
+            ts: '2026-05-29T17:10:00.000Z',
+            tick: 42,
+            ncriId: 'ncri-abc-123',
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            owner: 'user-james',
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'ncri_created',
+                ncriId: 'ncri-abc-123',
+                itemId: 4151,
+                displayName: 'Abyssal Whip',
+                owner: 'user-james',
+                lifeIndex: 1,
+                significanceReasons: ['ncri:ncri_created'],
+            }),
+        ]);
+    });
+
+    it('appends ncri_transferred with previousOwner', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeNcriEvent({
+            kind: 'ncri_transferred',
+            ts: '2026-05-29T17:15:00.000Z',
+            tick: 50,
+            ncriId: 'ncri-abc-123',
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            owner: 'user-recipient',
+            previousOwner: 'user-james',
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'ncri_transferred',
+                owner: 'user-recipient',
+                previousOwner: 'user-james',
+                significanceReasons: ['ncri:ncri_transferred'],
+            }),
+        ]);
+    });
+
+    it('appends ncri_redeemed to timeline without previousOwner', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeNcriEvent({
+            kind: 'ncri_redeemed',
+            ts: '2026-05-29T17:20:00.000Z',
+            tick: 60,
+            ncriId: 'ncri-abc-123',
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            owner: 'user-recipient',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toEqual(
+            expect.objectContaining({
+                kind: 'ncri_redeemed',
+                ncriId: 'ncri-abc-123',
+                itemId: 4151,
+                significanceReasons: ['ncri:ncri_redeemed'],
+            }),
+        );
+        expect(timeline[0].previousOwner).toBeUndefined();
     });
 });
 

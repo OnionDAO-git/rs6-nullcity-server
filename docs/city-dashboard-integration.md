@@ -80,3 +80,64 @@ approved → born (S4b: after birthResident succeeds, idempotent)
 ```
 
 AP is tracked as `apFunded` (AP = Attention Points, not GP). GP is real RuneScape coin item `995` tracked separately via resident game state.
+
+## NCRI Routes (S5a — substrate ready, HTTP wiring PENDING)
+
+NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncri/<id>.json`. The `NcriRegistry` class (`src/controller/ncri/ncri-registry.ts`) handles persistence and state transitions. HTTP routes exposing these are planned for S5b.
+
+**Approval lifecycle:** `pending` → `approved` (admin gate)
+**Redemption lifecycle:** `available` → `redeemed` (idempotent)
+**Owner transitions:** allowed when `approvalStatus = 'approved'` and `redemptionStatus = 'available'`
+
+**Planned routes (dashboard contract):**
+
+- `POST /api/nullcity/ncri` — admin: create a new NCRI definition
+  - Body: `{ itemId, displayName, lore, propertyTags?, printable?, printAssetRef?, owner }`
+  - Response: `NcriRecord` JSON (`approvalStatus: "pending"`, `redemptionStatus: "available"`)
+- `POST /api/nullcity/ncri/:id/approve` — admin approve
+  - Body: `{ adminNotes? }`
+  - Response: updated `NcriRecord` (`approvalStatus: "approved"`)
+- `POST /api/nullcity/ncri/:id/transfer` — transfer ownership (requires approved + available)
+  - Body: `{ newOwner }`
+  - Response: updated `NcriRecord`
+- `POST /api/nullcity/ncri/:id/redeem` — mark redeemed (idempotent)
+  - Body: `{}`
+  - Response: updated `NcriRecord` (`redemptionStatus: "redeemed"`)
+- `GET /api/nullcity/ncri` — list all NCRIs, sorted by `createdAt`
+  - Response: `NcriRecord[]`
+- `GET /api/nullcity/ncri/:id` — get one NCRI
+  - Response: `NcriRecord`
+
+**NcriRecord JSON shape:**
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "ncri-1748541600000-x9kj2a",
+  "itemId": 4151,
+  "displayName": "Abyssal Whip of the City",
+  "lore": "A legendary weapon inscribed with Null City lore, forged at CIC Chicago.",
+  "propertyTags": ["combat", "printable"],
+  "printable": true,
+  "printAssetRef": "assets/prints/abyssal-whip-v1.svg",
+  "owner": "user:alice",
+  "approvalStatus": "approved",
+  "redemptionStatus": "available",
+  "adminNotes": "First NCRI minted for the June 1 event.",
+  "createdAt": "2026-05-29T17:00:00.000Z",
+  "updatedAt": "2026-05-29T17:05:00.000Z",
+  "redeemedAt": null
+}
+```
+
+**Library events emitted by `LibraryUpdater.observeNcriEvent()`:**
+
+| kind | when | significanceReasons |
+|---|---|---|
+| `ncri_created` | Admin creates a new NCRI definition | `["ncri:ncri_created"]` |
+| `ncri_transferred` | Ownership transferred to a new city user | `["ncri:ncri_transferred"]` |
+| `ncri_redeemed` | NCRI marked redeemed by owner | `["ncri:ncri_redeemed"]` |
+
+NCRI Library events appear in the resident's `timeline.jsonl` so the Storyteller digest can cite them. The `CityEventDigest.ncriEvents` field carries these events (see `src/controller/storyteller/types.ts`).
+
+**Important:** NCRI `itemId` is a real RuneScape item id (positive integer). No GP ledger is created by this module; GP pricing for sale/redeem lives in the exchange layer (S3). A `printable: true` NCRI requires a physical print fulfillment step outside this repo.

@@ -5,6 +5,20 @@ import { renderPortrait, type PortraitIndex, type PortraitRenderOptions } from '
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
 
+export interface NcriLibraryEvent {
+    kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
+    ts: string;
+    tick: number;
+    ncriId: string;
+    /** Real RuneScape item id (coin item 995 = GP; other ids = special items). */
+    itemId: number;
+    displayName: string;
+    /** Current owner (cityUserId) after this event. */
+    owner: string;
+    /** Previous owner, set only for ncri_transferred events. */
+    previousOwner?: string;
+}
+
 export interface PatronEvent {
     kind: 'patron_gift' | 'patron_witness' | 'patron_sponsor';
     ts: string;
@@ -169,6 +183,26 @@ export class LibraryUpdater {
             attentionDelta: event.attentionDelta,
             lifeIndex: index.lives,
             significanceReasons: [`patron:${event.kind}`],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    observeNcriEvent(event: NcriLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: event.kind,
+            ncriId: event.ncriId,
+            itemId: event.itemId,
+            displayName: event.displayName,
+            owner: event.owner,
+            previousOwner: event.previousOwner,
+            lifeIndex: index.lives,
+            significanceReasons: [`ncri:${event.kind}`],
         });
         this.touchIndex(index);
         this.schedulePortraitRegeneration();
