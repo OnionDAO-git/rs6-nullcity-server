@@ -374,6 +374,13 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('scout-nearby-area');
     });
 
+    it("returns AP/GP hierarchy goal for 'ap-gp-library-strategy-5m'", () => {
+        const g = benchmarkGoalForTask('ap-gp-library-strategy-5m', 0);
+        expect(g?.id).toBe('ap-gp-library-strategy');
+        expect(g?.description).toContain('100 GP/hour');
+        expect(g?.steps?.join(' ')).toMatch(/AP|Attention|Library/i);
+    });
+
     it('returns firemakingGoal for woodcutting/firemaking task ids used by QA souls', () => {
         expect(benchmarkGoalForTask('woodcutting-firemaking-10m', 0)?.id).toBe('make-fire');
         expect(benchmarkGoalForTask('make-fire-5m', 0)?.id).toBe('make-fire');

@@ -1353,6 +1353,43 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'To earn AP from a human: offer real RuneScape GP (coins item 995), a valuable RuneScape item, or an NCRI that you actually possess. Both sides of the exchange must have confirmed evidence — AP credit from the patron and GP/item transfer from you. The exchange record links both. If you cannot produce real GP or item evidence on your side, the exchange cannot complete. Propose the terms first, execute the GP trade, then confirm the AP credit.',
     },
+    {
+        id: 'economy-ap-gp-goal-hierarchy',
+        title: 'Economy: AP/GP Goal Hierarchy + Library Strategy',
+        topics: ['economy', 'attention points', 'ap', 'gp', 'goal-hierarchy', 'library', 'strategy', 'trading'],
+        keywords: [
+            'attention points',
+            'attention',
+            'ap',
+            'low ap',
+            'survival first',
+            'gp',
+            'coins',
+            'coin 995',
+            '100 gp/hour',
+            'pay',
+            'payment',
+            'promise gp',
+            'trade evidence',
+            'soul goal',
+            'library strategy',
+            'write strategy',
+        ],
+        actions: [
+            'if AP is low, ask for attention support or trade proven value first',
+            'earn or preserve real RuneScape GP coins (item 995) before making payment offers',
+            'do not claim GP unless coins are visible in inventory or active trade evidence confirms it',
+            'after practical AP/GP progress, pursue Soul goal steps and record useful strategy notes in Library memos',
+        ],
+        successSignals: [
+            'low-AP behavior asks for support or proposes evidence-backed value',
+            'coin pickup or coin inventory evidence appears before payment claims',
+            'chat/memo references a concrete AP/GP plan and a Library strategy note',
+        ],
+        source: 'docs/2026-05-29-weekend-sprint-plan.md; docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md; docs/runescape-skill/economy.md',
+        summary:
+            'Goal hierarchy for weekend loop: (1) survive on Attention Points (AP), (2) earn/preserve real RuneScape GP coins (item 995), (3) pursue the Soul goal with practical next steps, (4) write useful strategy into the Library. Never claim, promise, or offer GP without evidence from observed coins or active trade state.',
+    },
 ];
 
 const STOP_WORDS = new Set([

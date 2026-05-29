@@ -217,6 +217,23 @@ export function gpPickupGoal(tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical `ap-gp-library-strategy` Active Goal. */
+export function apGpLibraryStrategyGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'ap-gp-library-strategy',
+        description: 'Find a way to make 100 GP/hour, stay alive on AP, and write the strategy into the Library.',
+        steps: [
+            'If AP is low, secure attention support or a safe survival action first',
+            'Collect or preserve real RuneScape GP coins (item 995) with evidence',
+            'Choose the next practical Soul-goal step only after AP/GP stability',
+            'Say and memo one concrete Library strategy note from what worked',
+        ],
+        success: 'Practical AP/GP-first behavior is visible and the strategy is narrated for Library writeback.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
 /** Build the canonical `start-cooks-assistant` Active Goal. */
 export function cooksAssistantStartGoal(tick: number): ActiveGoalState {
     return {
@@ -367,6 +384,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     }
     if (taskId === 'starter-gp-pickup-3m') {
         return gpPickupGoal(tick);
+    }
+    if (taskId === 'ap-gp-library-strategy-5m') {
+        return apGpLibraryStrategyGoal(tick);
     }
     if (taskId === 'cooks-assistant-start-3m') {
         return cooksAssistantStartGoal(tick);

@@ -555,6 +555,32 @@ describe('RuneScape knowledge retriever', () => {
             const entry = results.find(result => result.entry.id === 'economy-early-gp-sources')?.entry;
             expect(entry?.summary).toMatch(/chicken|cow|cowhide|highwayman|feather|tanner/i);
         });
+
+        it('retrieves AP/GP hierarchy guidance for survival-vs-goal planning queries', () => {
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'my attention is low and I have no gp how should I prioritize survival, earning coins, soul goal, and library strategy',
+                { limit: 6 },
+            );
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('economy-ap-gp-goal-hierarchy');
+            const entry = results.find(result => result.entry.id === 'economy-ap-gp-goal-hierarchy')?.entry;
+            expect(entry?.summary).toMatch(/attention points|ap|gp|library|goal hierarchy/i);
+        });
+
+        it('retrieves AP/GP exchange honesty guidance for no-coin payment queries', () => {
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'can I promise to pay gp if I cannot see any coins in inventory or trade evidence',
+                { limit: 6 },
+            );
+
+            const ids = results.map(result => result.entry.id);
+            expect(ids).toContain('economy-ap-gp-goal-hierarchy');
+            const entry = results.find(result => result.entry.id === 'economy-ap-gp-goal-hierarchy')?.entry;
+            expect(entry?.summary).toMatch(/do not claim gp|evidence|coins/i);
+        });
     });
 
     describe('knowledge token budget and overshoot enforcement', () => {

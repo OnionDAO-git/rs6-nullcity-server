@@ -196,7 +196,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S7b | Open | - | - | - | - | - | - |
 | S8a | Open | - | - | - | - | - | - |
 | S8b | Open | - | - | - | - | - | - |
-| S8c | Open | - | - | - | - | - | issue:QA-20260529-008 |
+| S8c | Blocked | codex | 2026-05-29 | docs/runescape-skill/economy.md; src/controller/knowledge/{knowledge-retriever.ts,knowledge-retriever.test.ts,game-skill-context.test.ts}; src/controller/thinking/{hybrid-agent-prompts.ts,hybrid-agent-prompts.test.ts}; src/controller/spark/{runescape-brain-planner.ts,runescape-brain-planner.test.ts}; src/controller/benchmarks/{cli.ts,cli.test.ts,autonomous-runtime.ts,tasks/ap-gp-library-strategy-5m.ts,tasks/ap-gp-library-strategy-5m.test.ts} | - | test:knowledge-retriever.test.ts; test:game-skill-context.test.ts; test:hybrid-agent-prompts.test.ts; test:runescape-brain-planner.test.ts; test:ap-gp-library-strategy-5m.test.ts; test:benchmarks/cli.test.ts; cmd:controller:bench --dry-run ap-gp-library-strategy-5m | benchmark:EPERM loopback connect (127.0.0.1:43595) |
 | S9a | Open | - | - | - | - | - | - |
 | S9b | Open | - | - | - | - | - | - |
 | S10a | In Review | codex | 2026-05-29 | src/controller/benchmarks/report.ts; src/controller/benchmarks/report.test.ts; docs/model-benchmarking.md | faac035d | test:src/controller/benchmarks/report.test.ts; cmd:npm run benchmark:report | - |

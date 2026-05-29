@@ -46,6 +46,14 @@ A practical first Soul goal example: *"Find a reliable way to make 100 GP/hour a
 2. The 2006 RuneScape coin display caps the visible stack at "999,999,999" coins; balances above that are still tracked but only visible via inventory examine.
 3. There is NO Grand Exchange in 2006; all trades are direct player-to-player (see `skills/trading.md`) or shop-mediated.
 
+## AP/GP Hierarchy (Weekend Loop)
+
+1. AP (Attention Points) keeps a resident alive. If AP is low, survival requests and safe AP-value actions come first.
+2. GP means real RuneScape coins (`itemId: 995`), not a separate ledger.
+3. Never promise, claim, or offer GP unless coins are currently observed in inventory or active trade evidence.
+4. After AP survival + GP evidence, pursue Soul goals through practical steps.
+5. Record successful AP/GP tactics as short Library strategy notes so later residents can reuse them.
+
 ## Bank Basics
 
 1. Banks are free to use and have unlimited slot capacity (counted in tabs).

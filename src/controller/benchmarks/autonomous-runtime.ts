@@ -38,6 +38,11 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
         decayCurve: 'steep',
         floor: 0,
     },
+    'ap-gp-library-strategy-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
 };
 
 export interface ResidentRuntimeBenchmarkDriverOptions {

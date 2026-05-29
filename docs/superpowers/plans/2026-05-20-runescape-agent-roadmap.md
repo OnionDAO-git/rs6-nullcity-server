@@ -761,10 +761,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: after S6 digest evidence and at least one AP/GP loop proof exist, manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
   - Verification: fixture runs across at least two model profiles; verifier rejection tests; cost/token metadata recorded.
 
-- `[ ]` **S8: Resident AP/GP knowledge, goal hierarchy, and behavior hooks.**
+- `[>]` **S8: Resident AP/GP knowledge, goal hierarchy, and behavior hooks.**
   - Files: `docs/runescape-skill/economy.md`, `src/controller/knowledge/knowledge-retriever.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`, `src/controller/spark/runescape-body-routines.ts`, focused tests.
   - Deliverable: residents know AP keeps them alive, GP is real RuneScape gold for humans/printers, they should earn/trade GP only when evidence says they have it, and broad Soul goals should become practical AP/GP/Library plans.
   - Verification: prompt/retrieval tests include AP/GP and goal hierarchy snippets; benchmark resident with no GP refuses to claim it can pay; resident with GP offers safe exchange under low AP; broad-goal resident chooses practical GP/AP action and writes useful strategy.
+  - 2026-05-29 (`agents/wip`, codex): packet `S8c` landed AP/GP hierarchy knowledge + prompt guardrails + benchmark substrate (`ap-gp-library-strategy-5m`) with focused green tests. Live benchmark artifact capture is blocked in this sandbox by loopback gateway `connect EPERM 127.0.0.1:43595`; rerun required on loopback-permitted host.
 
 - `[ ]` **S9: Binary goal-to-saved-state contract.**
   - Files: `src/controller/evidence/library-updater.ts`, `src/controller/evidence/story-arc.ts`, `src/controller/benchmarks/tasks/cooks-assistant-complete-5m.ts`, `docs/resident-capabilities.md`.

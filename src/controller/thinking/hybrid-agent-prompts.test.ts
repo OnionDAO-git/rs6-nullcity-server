@@ -132,6 +132,32 @@ describe('hybrid agent prompts', () => {
         expect(prompt).toContain('Only include memo');
     });
 
+    it('includes AP/GP/Library hierarchy guardrails in the Brain prompt', () => {
+        const prompt = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Attention is low and there are no visible coins.'),
+            commandPrefix: '!',
+        });
+
+        expect(prompt).toContain('Needs hierarchy');
+        expect(prompt).toMatch(/survive on AP|Attention Points/i);
+        expect(prompt).toMatch(/real RuneScape GP|coin/i);
+        expect(prompt).toMatch(/Library/i);
+    });
+
+    it('includes AP/GP honesty guardrails in the Body prompt', () => {
+        const prompt = buildBodyPrompt({
+            soul: testSoul(),
+            perception: perception('No visible coins. A player asks for payment.'),
+            commandPrefix: '!',
+            visibility: { returnDue: false },
+        });
+
+        expect(prompt).toContain('Never claim or offer GP');
+        expect(prompt).toMatch(/must be observed/i);
+        expect(prompt).toMatch(/AP/i);
+    });
+
     describe('SOUL identity injection', () => {
         it('injects archetype directive language into the Brain prompt', () => {
             const enduringPrompt = buildBrainPrompt({
