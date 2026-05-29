@@ -92,6 +92,31 @@ describe('CityIntegrationService', () => {
         });
     });
 
+    it('appends city_attention_credit Library event with amount, source, tick, and lifeIndex', async () => {
+        await service.creditAttention('res:test', {
+            idempotencyKey: 'ap-lib-1',
+            amount: 50,
+            cityUserId: 'user-1',
+            sourceType: 'patron_checkin',
+            sourceId: 'checkin-123',
+            note: 'Welcome bonus',
+        });
+
+        const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+        const event = JSON.parse(fs.readFileSync(timelinePath, 'utf8').trim());
+        expect(event).toMatchObject({
+            kind: 'city_attention_credit',
+            amount: 50,
+            cityUserId: 'user-1',
+            sourceType: 'patron_checkin',
+            sourceId: 'checkin-123',
+            note: 'Welcome bonus',
+            tick: 7,
+            lifeIndex: 1,
+            significanceReasons: ['city:attention_credit'],
+        });
+    });
+
     it('returns insufficient gold without burning coins', async () => {
         const result = await service.burnGold('res:test', { idempotencyKey: 'gold-1', amount: 150 });
 

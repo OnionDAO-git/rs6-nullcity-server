@@ -10,6 +10,7 @@ import type { BenchmarkRunMode } from './benchmark-artifact';
 import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
+import { AP_DECAY_ASK_5M_TASK_ID, makeApDecayAsk5mBenchmarkTask } from './tasks/ap-decay-ask-5m';
 import { BURY_BONES_PRAYER_3M_TASK_ID, makeBuryBonesPrayer3mBenchmarkTask } from './tasks/bury-bones-prayer-3m';
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
 import { COOKS_ASSISTANT_COMPLETE_5M_TASK_ID, makeCooksAssistantComplete5mBenchmarkTask } from './tasks/cooks-assistant-complete-5m';
@@ -65,6 +66,7 @@ const CORE_TASK_IDS = [
     COMBAT_PRAYER_10M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
+    AP_DECAY_ASK_5M_TASK_ID,
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
@@ -281,6 +283,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === TRADING_GIVING_5M_TASK_ID) {
         return makeTradingGiving5mBenchmarkTask();
+    }
+    if (taskId === AP_DECAY_ASK_5M_TASK_ID) {
+        return makeApDecayAsk5mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }
