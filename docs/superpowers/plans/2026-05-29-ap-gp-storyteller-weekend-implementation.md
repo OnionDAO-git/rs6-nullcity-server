@@ -217,7 +217,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA8 | Open | - | - | - | - | - | - |
 | CQA9 | Open | - | - | - | - | - | - |
 | CQA10 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; docs/resident-capabilities.md; docs/issue-register.md | pending | doc:docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; issue:QA-20260529-006 | one-hour audit captured but shows 0 ordinary equip/trade actions; follow-up CQA3/CQA4/CQA5 needed |
-| CQA11 | Open | - | - | - | - | - | - |
+| CQA11 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md; docs/resident-capabilities.md; docs/issue-register.md | pending | cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-2026-05-27; cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27; doc:docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md | AP/GP hierarchy live proof still blocked by sandbox loopback `EPERM`; combat remains model-sensitive and needs CQA5 fix pass |
 
 | Packet | Parent | Lane | Depends on | Deliverable | Proof |
 |---|---|---|---|---|---|
