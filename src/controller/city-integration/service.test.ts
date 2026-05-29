@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import type { RuntimeState } from '../memory/runtime-state';
 import { CityIntegrationError, CityIntegrationService, type CityRuntime } from './service';
+import { SoulProposalStore } from './soul-proposals';
 
 class FakeRuntime implements CityRuntime {
     readonly events: unknown[] = [];
@@ -314,6 +315,157 @@ describe('CityIntegrationService', () => {
             status: 400,
             code: 'invalid_payload',
         });
+    });
+
+    // ── birthFromProposal ─────────────────────────────────────────────────────
+
+    it('birthFromProposal: rejects if proposal not found', async () => {
+        await expect(service.birthFromProposal('no-such-id')).rejects.toMatchObject({
+            status: 404,
+            code: 'proposal_not_found',
+        });
+    });
+
+    it('birthFromProposal: rejects if proposal status is proposed', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 500,
+            proposerCityUserId: 'user:alice',
+        });
+        await expect(service.birthFromProposal(proposal.id)).rejects.toMatchObject({
+            status: 409,
+            code: 'proposal_not_approved',
+        });
+        expect(birthCalls).toBe(0);
+    });
+
+    it('birthFromProposal: rejects if proposal status is threshold_crossed', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 50,
+            proposerCityUserId: 'user:alice',
+        });
+        store.fund(proposal.id, 100, 'user:alice');
+        const funded = store.get(proposal.id)!;
+        expect(funded.status).toBe('threshold_crossed');
+        await expect(service.birthFromProposal(proposal.id)).rejects.toMatchObject({
+            status: 409,
+            code: 'proposal_not_approved',
+        });
+        expect(birthCalls).toBe(0);
+    });
+
+    it('birthFromProposal: rejects if proposal status is rejected', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 500,
+            proposerCityUserId: 'user:alice',
+        });
+        store.reject(proposal.id, 'out of scope');
+        await expect(service.birthFromProposal(proposal.id)).rejects.toMatchObject({
+            status: 409,
+            code: 'proposal_not_approved',
+        });
+        expect(birthCalls).toBe(0);
+    });
+
+    it('birthFromProposal: births an approved proposal and transitions it to born', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 50,
+            proposerCityUserId: 'user:alice',
+        });
+        store.fund(proposal.id, 100, 'user:alice');
+        store.approve(proposal.id);
+
+        const result = await service.birthFromProposal(proposal.id);
+        expect(result).toMatchObject({ ok: true, proposalId: proposal.id, resident: 'res:test' });
+        expect(birthCalls).toBe(1);
+
+        const after = store.get(proposal.id)!;
+        expect(after.status).toBe('born');
+        expect(after.bornAt).toBeDefined();
+    });
+
+    it('birthFromProposal: idempotent — calling twice births only once', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 50,
+            proposerCityUserId: 'user:alice',
+        });
+        store.fund(proposal.id, 100, 'user:alice');
+        store.approve(proposal.id);
+
+        const first = await service.birthFromProposal(proposal.id);
+        const second = await service.birthFromProposal(proposal.id);
+
+        expect(first).toMatchObject({ ok: true, resident: 'res:test' });
+        expect(second).toMatchObject({ ok: true, resident: 'res:test' });
+        expect(birthCalls).toBe(1);
+
+        const after = store.get(proposal.id)!;
+        expect(after.status).toBe('born');
+    });
+
+    it('birthFromProposal: emits city_birth Library event with proposalId and fundedAttention', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 50,
+            proposerCityUserId: 'user:alice',
+        });
+        store.fund(proposal.id, 75, 'user:alice');
+        store.approve(proposal.id);
+
+        await service.birthFromProposal(proposal.id);
+
+        const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+        const events = fs
+            .readFileSync(timelinePath, 'utf8')
+            .trim()
+            .split('\n')
+            .map(l => JSON.parse(l) as Record<string, unknown>);
+        const birthEvent = events.find(e => e['kind'] === 'city_birth');
+        expect(birthEvent).toBeDefined();
+        expect(birthEvent).toMatchObject({
+            kind: 'city_birth',
+            proposalId: proposal.id,
+            fundedAttention: 75,
+            significanceReasons: ['city:birth'],
+        });
+    });
+
+    it('birthFromProposal: uses fundedAttention from proposal (apFunded)', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            apThreshold: 50,
+            proposerCityUserId: 'user:alice',
+        });
+        store.fund(proposal.id, 200, 'user:alice');
+        store.approve(proposal.id);
+
+        const result = await service.birthFromProposal(proposal.id);
+        expect(result).toMatchObject({ fundedAttention: 200 });
     });
 });
 

@@ -13,6 +13,7 @@ import {
     makeExchangeId,
     type ApGpExchangeRecord,
 } from './ap-gp-exchange';
+import { SoulProposalStore } from './soul-proposals';
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
 const idempotencyKeySchema = z.string().min(1).max(200);
@@ -117,11 +118,13 @@ export type MessageDeliveryRequest = z.infer<typeof messageDeliveryRequestSchema
 export class CityIntegrationService {
     private readonly store: CityIntegrationStore;
     private readonly exchangeStore: ApGpExchangeStore;
+    private readonly proposalStore: SoulProposalStore;
     private readonly now: () => Date;
 
     constructor(private readonly options: CityIntegrationOptions) {
         this.store = new CityIntegrationStore(options.memoryRoot);
         this.exchangeStore = new ApGpExchangeStore(options.memoryRoot);
+        this.proposalStore = new SoulProposalStore(options.memoryRoot);
         this.now = options.now ?? (() => new Date());
     }
 
@@ -283,6 +286,42 @@ export class CityIntegrationService {
             });
             return result;
         });
+    }
+
+    /**
+     * Birth a resident from an approved SoulProposal.
+     *
+     * Only proposals in `approved` status can be birthed. The method is
+     * idempotent: a proposal that is already `born` returns the cached birth
+     * record without calling the birth authority again. The proposal status
+     * transitions from `approved` to `born` after a successful birth.
+     */
+    async birthFromProposal(proposalId: string): Promise<unknown> {
+        const proposal = this.proposalStore.get(proposalId);
+        if (!proposal) {
+            throw new CityIntegrationError(404, 'proposal_not_found');
+        }
+        if (proposal.status !== 'approved' && proposal.status !== 'born') {
+            throw new CityIntegrationError(
+                409,
+                'proposal_not_approved',
+                `proposal '${proposalId}' has status '${proposal.status}'; must be 'approved'`,
+            );
+        }
+
+        const request: BirthResidentRequest = {
+            proposalId: proposal.id,
+            residentName: proposal.residentName,
+            soulMarkdown: proposal.soulMarkdown,
+            fundedAttention: proposal.apFunded,
+        };
+
+        const result = await this.birthResident(request);
+
+        // Mark born after successful birth (idempotent — safe to call if already born).
+        this.proposalStore.markBorn(proposalId);
+
+        return result;
     }
 
     async creditAttention(resident: string, input: unknown): Promise<unknown> {
