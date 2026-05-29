@@ -2,34 +2,92 @@
 
 Drafted: 2026-05-28
 
-Status: **Draft for tonight's meeting.** This captures James + Dev's latest product loop and the AI Storyteller/commentator idea. Update after Dev's MDA framework and tonight's decisions.
+Status: **Draft for tonight's meeting and weekend sprint.** This captures James + Dev's latest product loop, the two-currency AP/GP economy, and the AI Storyteller/commentator idea. Update after Dev's MDA framework and tonight's decisions.
+
+Sprint plan: `docs/2026-05-29-weekend-sprint-plan.md`.
 
 ## Product Loop TL;DR
 
 Null City's core loop is:
 
 1. Humans define a **Soul** with a goal, personality, vices, hindrances, faction, and starting constraints.
-2. Humans collectively spend **Shards / Attention** to fund that Soul.
+2. Humans collectively spend **Attention Points (AP)** to fund that Soul.
 3. When the Soul reaches a birth threshold, it is born as a RuneScape resident.
-4. The resident's Attention decays over time.
-5. The resident survives by earning more Attention from humans, asking for help, progressing toward its goal, or trading **Null City RuneScape Items**.
-6. Admins approve NCRIs for now. Later, residents earn NCRIs by finishing quests.
-7. NCRIs are real RuneScape items with special Null City metadata/properties; some can be redeemed for physical 3D prints.
-8. When a resident completes its binary quest goal, the Library of Souls marks them as **saved** and writes their canonical story.
-9. A public-canon **Storyteller** periodically reads city events and narrates what is happening.
+4. The resident's AP decays over time; AP is their life-force.
+5. Residents survive by earning more AP from humans: asking for help, progressing toward goals, or trading real RuneScape value back to humans.
+6. **Gold Points (GP)** are actual RuneScape gold coins, not a separate ledger currency. OnionDAO humans need GP for 3D printers and other event utilities.
+7. Humans can trade AP to residents in exchange for GP, useful items, services, or **Null City RuneScape Items (NCRIs)**.
+8. Admins approve NCRIs for now. Later, residents earn NCRIs by finishing quests.
+9. NCRIs are real RuneScape items with special Null City metadata/properties; some can be redeemed for physical 3D prints.
+10. When a resident completes its binary quest goal, the Library of Souls marks them as **saved** and writes their canonical story.
+11. A public-canon **Storyteller** periodically reads city events and narrates what is happening, including AP scarcity, GP movement, NCRIs, and saved residents.
 
 ## Current Assumptions
 
 | Topic | Working assumption | Needs confirmation? |
 |---|---|---|
-| Shards vs Attention | Shards are Attention. Use one ledger with two UI names if needed. | Low |
-| Attention decay | Decays over time at a configurable rate. Keep the first version simple. | Low |
+| Attention Points (AP) | AP is the Null City life-force used to birth and sustain residents. Legacy "Shards" language should be migrated/aliased to AP. | Low |
+| Gold Points (GP) | GP is actual RuneScape gold coins, likely item `995`, held in player/resident inventory/bank and moved by RuneScape trade. | Low |
+| AP/GP exchange | Humans can trade AP to residents for real RuneScape GP or approved items. AP is ledger state; GP is game state. | Medium |
+| AP decay | Decays over time at a configurable rate. Keep the first version simple. | Low |
 | Soul birth | Collective threshold creates/births the resident. | Medium |
 | NCRI creation | Admins create/approve NCRIs first. Later residents earn them through quests. | Medium |
 | NCRI form | RuneScape items with Null City metadata and special properties. | Medium |
 | Goal completion | Binary quest completion marks the resident saved. | Low |
 | Storyteller | Public canon from day one, using a smarter model. | Medium |
 | Storyteller cadence | Every ~10 minutes, configurable, plus event triggers later. | Low |
+
+## P0: Two-Currency Economy Model
+
+Goal: make AP and GP unambiguous so residents, humans, code, and Storyteller all reason about the same economy.
+
+Definitions:
+
+- **Attention Points (AP):** Null City ledger currency. AP births residents, keeps them alive, and represents human attention/support.
+- **Gold Points (GP):** real RuneScape gold coins. GP is used by OnionDAO humans for 3D printers and event utilities. GP should be represented by actual RuneScape coin items, not a second off-chain "gold" ledger.
+- **AP-for-GP trade:** a human grants AP to a resident; the resident trades GP/items/NCRIs back through RuneScape trade.
+
+Tasks:
+
+- Update human-facing language:
+  - use AP / Attention Points for resident life-force;
+  - use GP / RuneScape gold for printer/event utility;
+  - avoid "Gold Points ledger" language.
+- Define economy invariants:
+  - AP balance is ledger-backed and replayable;
+  - GP balance is game-state-backed through RuneScape inventory/bank/trade;
+  - AP can be granted without GP moving;
+  - GP cannot be fabricated by Null City ledger writes;
+  - any AP-for-GP exchange must record both the AP ledger event and the RuneScape trade evidence.
+- Add `CurrencyEvent` / `EconomyEvent` model:
+  - `ap_granted`
+  - `ap_decay`
+  - `ap_low`
+  - `ap_exhausted`
+  - `gp_observed`
+  - `gp_earned`
+  - `gp_traded`
+  - `ap_for_gp_trade`
+  - `ncri_sold`
+  - `ncri_redeemed`
+- Teach residents the economy:
+  - AP keeps me alive;
+  - humans need GP for printers and event utility;
+  - I can earn GP in RuneScape and trade it for AP;
+  - I must use safe trade rules and avoid spam/exploitation.
+- Add admin configuration:
+  - AP decay rate;
+  - optional AP/GP reference exchange rate;
+  - minimum trade cooldown;
+  - maximum resident GP sale per interval;
+  - printer GP costs.
+
+Tests / proof:
+
+- Unit test AP ledger replay.
+- Unit test that GP events reference RuneScape coin item evidence.
+- Integration test: resident trade gives GP, human AP grant lands, exchange event links both sides.
+- Benchmark: low-AP resident with GP asks for AP and completes a safe AP-for-GP exchange.
 
 ## P0: Soul Proposal And Birth
 
@@ -45,7 +103,7 @@ Tasks:
   - vices/hindrances
   - faction/alignment
   - optional preferred role/location
-  - birth Attention threshold
+  - birth AP threshold
   - proposer human handle
   - status: proposed, funding, born, rejected, archived
 - Define validation rules:
@@ -57,13 +115,13 @@ Tasks:
   - start file-backed to match current project style
   - later can move to a real datastore if needed
 - Add funding flow:
-  - human contributes Shards/Attention to a proposal
+  - human contributes AP to a proposal
   - ledger records contributor, amount, timestamp, proposal id
   - proposal shows progress toward threshold
 - Add birth flow:
   - threshold crossed
   - approved proposal becomes resident Soul file / runtime payload
-  - initial resident state gets starting Attention balance
+  - initial resident state gets starting AP balance
   - Library records `soul_born`
 - Add basic admin controls:
   - approve/reject proposal
@@ -76,18 +134,19 @@ Tests / proof:
 - Integration test: proposal starts at 0, two humans fund it, threshold crosses, birth event is emitted.
 - Live smoke: born resident appears in controller state and Library timeline.
 
-## P0: Attention Ledger And Decay
+## P0: AP Ledger And Decay
 
-Goal: Attention becomes the resident life-force and the accounting layer for human influence.
+Goal: AP becomes the resident life-force and the accounting layer for human influence.
 
 Tasks:
 
-- Define `AttentionLedger` transaction types:
+- Define `AttentionLedger` / `APLedger` transaction types:
   - `proposal_contribution`
   - `birth_grant`
   - `time_decay`
   - `patron_gift`
   - `resident_ask`
+  - `ap_for_gp_trade`
   - `ncri_sale`
   - `quest_reward`
   - `admin_adjustment`
@@ -102,19 +161,19 @@ Tasks:
   - paused/offline safety behavior
   - minimum tick interval to avoid ledger spam
 - Define death/fade behavior:
-  - Attention reaches zero
+  - AP reaches zero
   - resident stops acting
   - Library records fade/death
   - public surfaces mark resident as gone/faded
 - Define top-up behavior:
-  - humans can add Attention to living residents
-  - resident can ask for Attention
-  - NCRI sale can add Attention
+  - humans can add AP to living residents
+  - resident can ask for AP
+  - NCRI sale or AP-for-GP trade can add AP
 
 Tests / proof:
 
 - Ledger is append-only and replayable.
-- Decay decreases balance over simulated time.
+- Decay decreases AP balance over simulated time.
 - Resident fades at zero and does not continue acting.
 - Patron gift increases balance and records a Library moment.
 
@@ -140,7 +199,8 @@ Tasks:
   - goal
   - how they completed it
   - who funded them
-  - final Attention state
+  - final AP state
+  - relevant GP/NCRI trades
   - notable memories / quotes
 
 Tests / proof:
@@ -188,31 +248,39 @@ Tests / proof:
 - Trade transfers an NCRI item and metadata owner together.
 - Redemption marks item redeemed and prevents duplicate print claims.
 
-## P1: NCRI Sale / Attention Earning
+## P1: NCRI / GP Sale And AP Earning
 
-Goal: residents can earn Attention by selling or exchanging NCRIs.
+Goal: residents can earn AP by selling or exchanging NCRIs and other RuneScape value.
 
 Tasks:
 
 - Extend safe trading policy:
   - resident can offer approved NCRIs
-  - resident only accepts Attention/Shards or approved item classes
+  - resident can offer GP or approved useful items when humans need GP
+  - resident only accepts AP-side support or approved item classes
   - no loops, no repeated spam offers
 - Add resident behavior hook:
-  - if Attention is low and resident owns an NCRI, ask nearby humans or patrons if they want it
-  - if goal requires Attention, mention why
+  - if AP is low and resident owns an NCRI, ask nearby humans or patrons if they want it
+  - if AP is low and resident owns GP, offer a fair AP-for-GP exchange
+  - if humans need printer GP, plan a GP-earning task or offer existing GP
+  - if a goal is blocked by low AP, explain the specific need and ask for support
 - Add price/rules:
   - fixed admin price first
+  - AP/GP reference exchange rate first
   - later dynamic price based on rarity/story
 - Add Library events:
   - `ncri_offered`
   - `ncri_sold`
   - `ncri_redeemed`
+  - `ap_for_gp_trade`
+  - `gp_earned`
 
 Tests / proof:
 
-- Autonomous benchmark: resident with NCRI and low Attention offers it to trusted peer.
-- Trade completes and resident Attention increases.
+- Autonomous benchmark: resident with NCRI and low AP offers it to trusted peer.
+- Autonomous benchmark: resident with GP and low AP offers AP-for-GP exchange to trusted peer.
+- Trade completes and resident AP increases.
+- RuneScape coin movement is verified in trade evidence.
 - Unsafe partner or wrong payment is declined.
 
 ## P1: Storyteller / City Crier
@@ -236,7 +304,9 @@ Tasks:
   - action summaries
   - deaths/fades/revivals
   - Soul births
-  - Attention gifts/decay/low-attention warnings
+  - AP gifts/decay/low-AP warnings
+  - GP earned/traded/spent signals
+  - AP-for-GP exchanges
   - NCRI offers/sales/redemptions
   - quest starts/completions
   - stuck/recovery patterns
@@ -271,7 +341,9 @@ Event triggers, after cadence works:
 - resident fades/dies
 - resident completes goal and is saved
 - NCRI minted/sold/redeemed
-- major Attention threshold crossed
+- major AP threshold crossed
+- AP-for-GP trade completed
+- meaningful GP earned
 - quest completed
 - multi-resident interaction
 - system-wide stuck/failure event
@@ -300,11 +372,16 @@ Tasks:
   - funding progress
   - birth threshold
   - top-10 queue
-- Add resident Attention view:
-  - current Attention
+- Add resident AP view:
+  - current AP
   - decay rate
   - recent gifts/sales/asks
-  - low-Attention warning
+  - low-AP warning
+- Add human GP view:
+  - RuneScape GP balance where available
+  - printer costs
+  - recent AP-for-GP trades
+  - redemption readiness
 - Add NCRI view:
   - item
   - owner
@@ -325,14 +402,20 @@ Guardrail:
 
 ## P1: Resident Behavior Hooks
 
-Goal: residents act like Attention-driven Souls without becoming puppets.
+Goal: residents act like AP-driven Souls without becoming puppets.
 
 Tasks:
 
-- Low Attention behavior:
-  - resident notices low Attention
+- Low AP behavior:
+  - resident notices low AP
   - asks patrons/humans for help
-  - prioritizes earning Attention over idle routines
+  - prioritizes earning AP over idle routines
+  - offers GP/items/NCRIs when fair and safe
+- GP earning behavior:
+  - resident understands humans need real RuneScape GP
+  - resident can plan known GP-earning activities
+  - resident can report GP carried, earned, or available to trade
+  - resident avoids promising GP it does not have
 - Goal behavior:
   - resident keeps goal in prompt/context
   - goal progress appears in action logs and Library
@@ -349,7 +432,9 @@ Tasks:
 
 Tests / proof:
 
-- Low Attention resident asks for help within a controlled benchmark.
+- Low AP resident asks for help within a controlled benchmark.
+- Resident with GP completes safe AP-for-GP exchange in a controlled benchmark.
+- Resident without GP refuses to claim it can pay.
 - Resident with vice behaves differently than twin without vice in a simple test.
 - Goal completion transitions resident to saved state.
 
@@ -361,15 +446,19 @@ Tasks:
 
 - Admin commands:
   - create/approve Soul proposal
-  - grant/revoke Attention
+  - grant/revoke AP
   - adjust decay rate
   - create/approve NCRI
   - grant NCRI to resident
+  - configure AP/GP reference exchange rate
+  - inspect resident/human GP state through game evidence
   - mark print redeemed
   - force-save or retire resident if needed
 - Ops dashboards/logs:
-  - Attention drain rates
-  - residents near zero Attention
+  - AP drain rates
+  - residents near zero AP
+  - GP earned/traded/spent
+  - AP-for-GP exchange volume
   - active resident count vs capacity cap
   - Storyteller cost and latest run status
   - NCRI redemption queue
@@ -394,21 +483,31 @@ Tasks:
   - fund proposal to threshold
   - birth resident
   - observe first action and Library birth event
-- Attention decay benchmark:
-  - resident starts with small Attention
+- AP decay benchmark:
+  - resident starts with small AP
   - decays to warning threshold
   - asks for help
   - decays to zero if ignored
-- Attention top-up benchmark:
-  - patron gives Attention
+- AP top-up benchmark:
+  - patron gives AP
   - resident survives longer
   - Library records patron gift
+- AP-for-GP trade benchmark:
+  - resident carries RuneScape coins
+  - resident is low on AP
+  - trusted human grants AP
+  - resident trades GP safely
+  - both AP ledger and GP trade evidence link to one exchange event
+- GP earning benchmark:
+  - resident starts with no GP
+  - resident performs a known starter GP-earning route
+  - resident reports GP earned and can trade it
 - Goal completion benchmark:
   - resident completes simple binary quest
   - saved state is recorded
 - NCRI trade benchmark:
   - resident sells NCRI
-  - Attention increases
+  - AP increases
   - item ownership changes
 - Storyteller fixture benchmark:
   - given a known event digest
@@ -418,7 +517,9 @@ Metrics:
 
 - time to birth
 - time alive
-- Attention spent/earned
+- AP spent/earned
+- GP earned/traded/spent
+- AP-for-GP exchange success/failure
 - quest progress rate
 - NCRI sale success/failure
 - Storyteller hallucination rate
@@ -426,23 +527,26 @@ Metrics:
 
 ## Suggested Build Order
 
-1. **Data contracts first:** SoulProposal, AttentionLedger, GoalContract, NCRI metadata, Storyteller dispatch.
+1. **Data contracts first:** SoulProposal, APLedger, EconomyEvent, GoalContract, NCRI metadata, Storyteller dispatch.
 2. **File-backed persistence:** keep the first implementation simple and inspectable.
-3. **CLI/admin flows:** prove loop without new UI.
-4. **Benchmarks:** birth, decay, goal completion, NCRI trade, Storyteller fixture.
+3. **CLI/admin flows:** prove AP grants, GP evidence, and AP-for-GP exchange without new UI.
+4. **Benchmarks:** birth, AP decay, AP-for-GP exchange, goal completion, NCRI trade, Storyteller fixture.
 5. **Public/dashboard surfaces:** after Dev's MDA framework lands.
-6. **Resident behavior hooks:** low Attention asks, NCRI selling, saved-state reaction.
+6. **Resident behavior hooks:** low AP asks, GP earning, AP-for-GP trade, NCRI selling, saved-state reaction.
 7. **Event-triggered Storyteller:** after scheduled Storyteller is stable.
 
 ## Meeting Questions
 
-1. Is "Shards = Attention" the official terminology, or should the UI show both?
-2. What is the default birth threshold for week 1?
-3. What is the default Attention decay rate?
-4. Does a saved resident keep acting, retire, or become immortal/canonical?
-5. What is the first NCRI we want to demonstrate?
-6. Who can approve NCRIs at the event?
-7. Should Storyteller sound like a civic chronicle, comic announcer, archivist, or something else?
-8. Should Storyteller dispatches be editable before public posting, or canon immediately?
-9. Which surface leads the participant experience: Embassy, RuneScape client, dashboard, or physical portal?
-10. What is the active resident cap we announce publicly: 8 fixed only, 20 total, or "queue opens after the first demo"?
+1. Is "AP" the official public term, or should the UI say "Attention Points" everywhere?
+2. What is the default Soul birth AP threshold for week 1?
+3. What is the default AP decay rate?
+4. What is the first AP/GP reference exchange rate, if any?
+5. What RuneScape activities should residents use first to earn GP?
+6. What are the first 3D-printer GP costs humans should see?
+7. Does a saved resident keep acting, retire, or become immortal/canonical?
+8. What is the first NCRI we want to demonstrate?
+9. Who can approve NCRIs at the event?
+10. Should Storyteller sound like a civic chronicle, comic announcer, archivist, or something else?
+11. Should Storyteller dispatches be editable before public posting, or canon immediately?
+12. Which surface leads the participant experience: Embassy, RuneScape client, dashboard, or physical portal?
+13. What is the active resident cap we announce publicly: 8 fixed only, 20 total, or "queue opens after the first demo"?

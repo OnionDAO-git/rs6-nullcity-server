@@ -1,0 +1,210 @@
+# Null City Weekend Sprint Plan — AP/GP Loop + Storyteller
+
+Drafted: 2026-05-29
+
+Status: **Planning draft for the weekend sprint.** This translates Dev's latest gameplay loop, the AP/GP economy, and the locked Storyteller feature into buildable work. Revise after tonight's meeting if Dev's MDA framework changes the shape of the mechanics.
+
+## Objective
+
+Ship the smallest coherent Null City loop that can survive contact with humans:
+
+1. Humans propose Souls with goals, vices/hindrances, personality, and faction.
+2. Humans spend **Attention Points (AP)** to fund birth and sustain residents.
+3. Residents lose AP over time and act to earn more AP.
+4. **Gold Points (GP)** are actual RuneScape gold coins, used by humans for 3D printers and event utilities.
+5. Residents can earn real RuneScape GP and trade GP/items/NCRIs back to humans for AP.
+6. Admin-approved NCRIs can be sold, traded, redeemed, and narrated.
+7. A smarter-model Storyteller turns evidence from residents, AP, GP, NCRIs, and quests into public canon.
+
+## Guardrails
+
+- AP is a Null City ledger balance. GP is RuneScape game state, likely coin item `995`.
+- Do not create a second "Gold Points" ledger.
+- Any AP-for-GP exchange needs two linked facts: AP ledger event plus RuneScape trade/inventory evidence.
+- Keep UI work paused until Dev's MDA framework explicitly clears it. Prefer CLI, API, persistence, logs, tests, and benchmarks first.
+- Use file-backed persistence first unless an existing datastore is already wired.
+- Size for **10-30 concurrent residents**, not 400 simultaneous residents.
+- Run real resident benchmarks for behavior claims; do not mark a capability complete from unit tests alone.
+
+## P0: Economy Contracts
+
+Define the contracts everyone else can build against.
+
+- `APLedger`: append-only AP balance events for proposals, residents, and humans.
+- `EconomyEvent`: AP decay, AP grant, GP observed, GP earned, GP traded, AP-for-GP exchange, NCRI sale, NCRI redemption.
+- `SoulProposal`: proposed Soul, funding threshold, status, proposer, goal, vices/hindrances, faction.
+- `GoalContract`: binary completion condition and evidence source.
+- `NCRI`: admin-approved item metadata bound to a real RuneScape item.
+- `StorytellerDispatch`: public narrative plus operator evidence refs.
+
+Done when:
+
+- Contracts are documented and testable.
+- AP and GP vocabulary is consistent in docs and prompts.
+- Fixtures cover at least one AP decay, one GP earning event, one AP-for-GP trade, one NCRI, and one saved goal.
+
+## P0: AP Life-Force Loop
+
+Residents need AP to live and should understand that fact.
+
+Tasks:
+
+- Implement or finalize AP ledger replay and balance reads.
+- Add configurable AP decay with safe minimum tick intervals.
+- Add low-AP, zero-AP, and top-up events.
+- Teach residents: "AP keeps me alive; I can ask for it; I can earn it by giving humans real value."
+- Add benchmark where a low-AP resident asks for support instead of idling.
+
+Evidence needed:
+
+- AP balance changes over time in a replayable ledger.
+- Resident fades or pauses at zero AP.
+- Resident can receive AP top-up and resume.
+- Storyteller can narrate low AP without inventing facts.
+
+## P0: GP As Real RuneScape Gold
+
+GP is not a dashboard number; it is actual in-game gold.
+
+Tasks:
+
+- Identify the canonical RuneScape coin item id and inventory/bank/trade evidence path.
+- Add GP observation events from resident state.
+- Add starter GP-earning tasks residents can reliably attempt.
+- Track GP offered/traded to humans through safe trade evidence.
+- Prevent residents from promising GP they do not have.
+
+Evidence needed:
+
+- A resident starts with zero or known GP, performs a starter route, and produces a `gp_earned` event.
+- A resident with GP can complete a safe AP-for-GP exchange.
+- A resident without GP refuses or redirects rather than hallucinating payment.
+
+## P0: Storyteller MVP
+
+The Storyteller is a locked feature and should become the city's public narrator.
+
+Tasks:
+
+- Build a bounded `CityEventDigest` from resident timelines, AP ledger, GP evidence, NCRIs, quests, and system health.
+- Add a dry-run CLI that prints the digest without calling a model.
+- Add a model-backed run using a smarter model profile.
+- Add verifier rules: no unsupported deaths, births, AP grants, GP trades, NCRIs, or quest completions.
+- Persist latest dispatch JSON and public text snapshot.
+
+Evidence needed:
+
+- Fixture digest produces a short public dispatch and operator summary.
+- Dispatch correctly distinguishes AP from GP.
+- Unsupported claims are rejected or flagged.
+- Config supports scheduled runs every ~10 minutes and manual runs for demos.
+
+## P1: Soul Birth + Queue
+
+Humans should collectively choose which Souls get born.
+
+Tasks:
+
+- Add proposal schema and file-backed queue.
+- Add AP funding threshold.
+- Add admin approve/reject/pause controls.
+- Emit `soul_born` when AP threshold is crossed and approved.
+- Materialize a resident runtime payload from the proposal.
+
+Evidence needed:
+
+- Two humans fund one proposal, threshold crosses, resident is born.
+- Library timeline records birth.
+- Resident starts with AP and a binary goal.
+
+## P1: NCRI + Printer Utility
+
+NCRIs connect RuneScape action, human attention, and physical artifacts.
+
+Tasks:
+
+- Add admin NCRI registry.
+- Bind NCRI metadata to real RuneScape item ids.
+- Add sale/redeem state.
+- Record AP earned through NCRI sale.
+- Add operator-only printer GP costs until UI is approved.
+
+Evidence needed:
+
+- Admin creates an NCRI definition.
+- Resident obtains or is granted the item.
+- Human trades AP for the NCRI or related GP/item value.
+- Redemption state is recorded and Storyteller can mention it.
+
+## P1: Resident Capability QA
+
+The economy only matters if residents can actually do things.
+
+Focus capabilities:
+
+- Earn GP from a starter route.
+- Complete Cook's Assistant or another simple binary quest.
+- Fight/flee/survive a low-risk combat encounter.
+- Equip or use a basic item.
+- Trade safely without loops.
+- Remember a useful fact or location.
+- Recover from a stuck door/path issue.
+
+Evidence needed:
+
+- Update `docs/resident-capabilities.md` with "can do it" vs "does do it" rows.
+- Store benchmark logs with resident id, model profile, endpoint, task, attempts, success, duration, failure cause.
+- Use twins/triplets across model profiles where model quality is the open question.
+
+## P2: Human Surfaces After MDA
+
+Do not start these until Dev clears UI direction.
+
+- Soul proposal and AP funding view.
+- Human AP and GP summary.
+- Printer cost / redemption view.
+- NCRI registry and proof view.
+- Storyteller public feed.
+- Resident detail surface showing goal, AP, GP, NCRIs, model, spark, and recent evidence.
+
+## Weekend Timeline
+
+### Friday Night
+
+- Finalize AP/GP vocabulary and contracts.
+- Add Storyteller fixture and dry-run path.
+- Add benchmark schema for capability/economy runs.
+
+### Saturday
+
+- Build AP ledger/decay and resident low-AP behavior.
+- Build GP observation and one starter GP-earning benchmark.
+- Run model twins on GP earning and one quest workflow.
+
+### Sunday
+
+- Build AP-for-GP proof path and NCRI registry MVP.
+- Run Storyteller on real logs.
+- Refresh human docs and capability evidence.
+- Prepare a short demo: Soul -> AP birth -> resident earns/trades GP -> Storyteller narrates -> Library saves.
+
+## Meeting Decisions Needed
+
+1. Is "AP" the public term, or should public UI always spell out "Attention Points"?
+2. What is the week-one Soul birth AP threshold?
+3. What is the default AP decay rate?
+4. Should AP-for-GP use a reference exchange rate, auction/voting, or admin pricing first?
+5. What is the first GP-earning activity residents should optimize?
+6. What are the first 3D-printer GP costs?
+7. What are the first 3 NCRIs?
+8. What happens to a saved resident: retire, immortalize, or continue without decay?
+9. What is the Storyteller's name and how spicy can the tone be?
+10. Which surfaces are allowed before the MDA framework lands?
+
+## Reference Docs
+
+- Product loop and task breakdown: `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`
+- Storyteller design: `docs/2026-05-28-storyteller-design.md`
+- Current capability evidence: `docs/resident-capabilities.md`
+- Human project guide: `HUMANS.md`
+- Meeting decisions: `docs/2026-05-26-meeting-decisions.md`

@@ -9,14 +9,17 @@ This doc is the single source of truth for what was settled. Anything more nuanc
 - Model benchmark setup: `docs/model-benchmarking.md` (now on both branches)
 - Latest Soul/Attention/NCRI/Storyteller task draft: `docs/2026-05-28-attention-loop-and-storyteller-tasks.md`
 - Storyteller-specific design: `docs/2026-05-28-storyteller-design.md`
+- Weekend sprint plan for AP/GP + Storyteller: `docs/2026-05-29-weekend-sprint-plan.md`
 - Stale strategy doc (now superseded): `docs/post-demo-team-brief.md`
+
+Post-meeting update (2026-05-29): Dev's current loop uses **Attention Points (AP)** for Soul birth/survival and **Gold Points (GP)** for real RuneScape gold used by humans for printers and event utilities. Older "shards" language should be treated as legacy/alias language until product copy is finalized.
 
 ## Decisions (settled — don't relitigate)
 
-1. **No new UI code until Dev's MDA framework lands** (Thursday 2026-05-29). Aesthetics → Dynamics → Mechanics. Story/faction first; mechanics + UI follow. The framework is the gate.
+1. **No new UI code until Dev's MDA framework lands.** Aesthetics → Dynamics → Mechanics. Story/faction first; mechanics + UI follow. The framework is the gate.
 2. **Anything 3D lives inside the modified RuneScape client.** External map / AI-generated portraits / wall display — rejected. Dev burned days on this at NYE; RuneScape assets are a proprietary format. Spectator-mode auto-hopping page replaces the wall-display use case.
-3. **Three UIs, not one.** Operator Dashboard + user-facing Embassy (daily-login shards, workshop shards, favorite agents) + modified RuneScape web client (admin via tilde, travel command, HD mode via `?resizable=true&scale=4`).
-4. **Spawning uses queue + voting + shards threshold.** Anyone proposes an agent; collective shards push it onto a top-10; threshold spawns it. Not free-for-all. Shards stay expensive (~2-3 workshops to earn enough). **Week 1 starts with 8 fixed agents** before any spawn-vote happens.
+3. **Three UIs, not one.** Operator Dashboard + user-facing Embassy (daily-login AP, workshop AP, favorite agents) + modified RuneScape web client (admin via tilde, travel command, HD mode via `?resizable=true&scale=4`).
+4. **Spawning uses queue + voting + AP threshold.** Anyone proposes an agent; collective AP pushes it onto a top-10; threshold spawns it. Not free-for-all. AP stays expensive (~2-3 workshops to earn enough). **Week 1 starts with 8 fixed agents** before any spawn-vote happens.
 5. **Pre-loaded skill files stay; memory system is required for new facts.** Fog-of-war too risky with current models. NPCs met, quests received, kills — those need a memory layer. Evaluating mem0, qmd, and Adam's third path (MCP that runs a second inference to fetch only the relevant snippet).
 6. **Model strategy: cheap local for masses, paid for important roles.** Per-agent model swap already supported. Storyteller / overseer gets the paid model. Bring-your-own-API-keys for users: rejected.
 7. **Player and agent both subclass actor; humans can walk and teleport but not actually play.** Most player actions disabled. Travel command exists so humans can teleport to agents.
@@ -74,11 +77,11 @@ Explicitly off the table until further notice:
 
 ## Physical hook (Adam)
 
-ESP32 badge ↔ physical "portal box" at the venue. An agent stands at the corresponding in-game location; the box proposes a trade (shards for items); the human accepts on their badge; the trade executes in-game. Adam owns the hardware path; the in-game half needs `J-γ` (chathead) wiring or equivalent.
+ESP32 badge ↔ physical "portal box" at the venue. An agent stands at the corresponding in-game location; the box proposes a trade (AP for GP/items/NCRIs); the human accepts on their badge; the trade executes in-game. Adam owns the hardware path; the in-game half needs `J-γ` (chathead) wiring or equivalent.
 
 ## Schedule
 
-- **Thursday 7–10 PM (2026-05-29)**: remote jam — finalize MVP + storyline.
+- **Remote jam (confirm current calendar)**: finalize MVP + storyline.
 - **Friday–Sunday (2026-05-30 to 06-01)**: in-person setup at the venue (monitors, 3D printers).
 
 ## Watch-outs
