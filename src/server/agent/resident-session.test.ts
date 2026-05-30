@@ -40,6 +40,71 @@ describe('ResidentSession', () => {
         session.close();
     });
 
+    it('logs action result latency for gateway-side ACK diagnosis', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-05-30T21:00:00.000Z'));
+        const resident = fakeResident();
+        const actionLog = { append: jest.fn() } as unknown as ActionLog;
+        const session = new ResidentSession(resident, actionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
+        session.attach(observer);
+
+        try {
+            const result = session.submitActionAndWait({ kind: 'noop' }, 'request-1', 1000);
+
+            jest.setSystemTime(new Date('2026-05-30T21:00:00.042Z'));
+            (activeWorld.tickComplete as unknown as TickSubject).next();
+
+            await expect(result).resolves.toEqual({ ok: true });
+            expect(actionLog.append).toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({
+                    type: 'action_result',
+                    requestId: 'request-1',
+                    actionKind: 'noop',
+                    status: 'success',
+                    elapsedMs: 42,
+                    orphaned: false,
+                }),
+            );
+        } finally {
+            session.close();
+            jest.useRealTimers();
+        }
+    });
+
+    it('logs action result timeouts before orphaning the pending request', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-05-30T21:00:00.000Z'));
+        const resident = fakeResident();
+        const actionLog = { append: jest.fn() } as unknown as ActionLog;
+        const session = new ResidentSession(resident, actionLog);
+        const observer = { id: 'observer', sendPerception: jest.fn(), sendActionResults: jest.fn() };
+        session.attach(observer);
+
+        try {
+            const result = session.submitActionAndWait({ kind: 'say', text: 'still here' }, 'request-2', 25);
+
+            jest.advanceTimersByTime(25);
+            await expect(result).resolves.toEqual({ ok: false, reason: 'action_result_timeout' });
+
+            expect(actionLog.append).toHaveBeenCalledWith(
+                'res:pip',
+                expect.objectContaining({
+                    type: 'action_timeout',
+                    requestId: 'request-2',
+                    actionKind: 'say',
+                    timeoutMs: 25,
+                    elapsedMs: 25,
+                    pendingDepth: 1,
+                }),
+            );
+        } finally {
+            session.close();
+            jest.useRealTimers();
+        }
+    });
+
     it('resolves wait_for_event callers on matching perception events', async () => {
         const resident = fakeResident([{ kind: 'chat', text: 'hello' }] as never);
         const session = new ResidentSession(resident, { append: jest.fn() } as unknown as ActionLog);

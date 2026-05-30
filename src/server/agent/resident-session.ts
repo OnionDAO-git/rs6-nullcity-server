@@ -69,6 +69,7 @@ export class ResidentSession {
         return new Promise(resolve => {
             const timer = setTimeout(() => {
                 this.removeResultWaiter(resolve);
+                this.logActionTimeout(request, timeoutMs);
                 this.expirePendingRequest(request);
                 resolve({ ok: false, reason: 'action_result_timeout' });
             }, timeoutMs);
@@ -80,7 +81,12 @@ export class ResidentSession {
         if (this.closed) {
             throw new Error('ESESSION_CLOSED');
         }
-        const request = { requestId };
+        const request = {
+            requestId,
+            actionKind: action.kind,
+            enqueuedAt: Date.now(),
+            enqueuedTick: this.latestPerception?.tick,
+        };
         this.resident.enqueueActions([action]);
         this.pendingRequests.push(request);
         this.actionLog.append(this.resident.username, { type: 'action', requestId, action });
@@ -154,6 +160,7 @@ export class ResidentSession {
     private correlateActionResults(results: ReadonlyArray<ActionResult>): ResidentActionResult[] {
         return results.map(result => {
             const request = this.pendingRequests.shift();
+            this.logActionResult(request, result);
             if (request?.orphaned) {
                 return { result };
             }
@@ -171,6 +178,39 @@ export class ResidentSession {
             return;
         }
         request.orphaned = true;
+    }
+
+    private logActionTimeout(request: PendingActionRequest, timeoutMs: number): void {
+        this.actionLog.append(this.resident.username, {
+            type: 'action_timeout',
+            requestId: request.requestId,
+            actionKind: request.actionKind,
+            timeoutMs,
+            elapsedMs: Math.max(0, Date.now() - request.enqueuedAt),
+            enqueuedTick: request.enqueuedTick,
+            pendingDepth: this.pendingRequests.length,
+        });
+    }
+
+    private logActionResult(request: PendingActionRequest | undefined, result: ActionResult): void {
+        const orphaned = Boolean(request?.orphaned || !request);
+        this.actionLog.append(this.resident.username, {
+            type: 'action_result',
+            requestId: orphaned ? undefined : request?.requestId,
+            originalRequestId: orphaned ? request?.requestId : undefined,
+            actionKind: request?.actionKind,
+            status: result.ok === false ? 'failure' : 'success',
+            reason: actionResultReason(result),
+            elapsedMs: request ? Math.max(0, Date.now() - request.enqueuedAt) : undefined,
+            enqueuedTick: request?.enqueuedTick,
+            resolvedTick: this.latestPerception?.tick,
+            ticksWaited:
+                typeof request?.enqueuedTick === 'number' && typeof this.latestPerception?.tick === 'number'
+                    ? Math.max(0, this.latestPerception.tick - request.enqueuedTick)
+                    : undefined,
+            orphaned,
+            pendingDepth: this.pendingRequests.length,
+        });
     }
 
     private resolveResultWaiterForRequest(request: PendingActionRequest, result: ActionResult): void {
@@ -236,10 +276,22 @@ interface ResultWaiter {
 interface PendingActionRequest {
     requestId?: string | number;
     orphaned?: boolean;
+    actionKind: string;
+    enqueuedAt: number;
+    enqueuedTick?: number;
 }
 
 interface EventWaiter {
     kinds: string[];
     resolve(event: PerceptionEvent | null): void;
     timer: NodeJS.Timeout;
+}
+
+function actionResultReason(result: ActionResult): string | undefined {
+    const reason = (result as { reason?: unknown }).reason;
+    if (typeof reason === 'string') {
+        return reason;
+    }
+    const cause = (result as { cause?: unknown }).cause;
+    return typeof cause === 'string' ? cause : undefined;
 }
