@@ -80,6 +80,7 @@ function requestJson(
 }
 
 describe('CityIntegration HTTP server', () => {
+    let tempRoot: string;
     let root: string;
     let runtime: FakeRuntime;
     let gold: number;
@@ -87,7 +88,9 @@ describe('CityIntegration HTTP server', () => {
     const token = 'city-secret';
 
     beforeEach(() => {
-        root = fs.mkdtempSync(path.join(os.tmpdir(), 'city-http-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'city-http-'));
+        root = path.join(tempRoot, 'memory');
+        fs.mkdirSync(root, { recursive: true });
         runtime = new FakeRuntime();
         gold = 100;
     });
@@ -97,7 +100,7 @@ describe('CityIntegration HTTP server', () => {
             await closeCityIntegrationHttpServer(started.server);
             started = undefined;
         }
-        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(tempRoot, { recursive: true, force: true });
     });
 
     function makeService(): CityIntegrationService {
@@ -530,6 +533,120 @@ describe('CityIntegration HTTP server', () => {
                 warningCount: 2,
                 eventRefCount: 1,
             },
+        });
+    });
+
+    it('GET /storyteller/canon and /storyteller/review return queue snapshots', async () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        const canonRoot = path.join(storytellerRoot, 'canon', 'run-canon');
+        const canonOlderRoot = path.join(storytellerRoot, 'canon', 'run-canon-older');
+        const reviewRoot = path.join(storytellerRoot, 'review', 'run-review');
+        fs.mkdirSync(canonRoot, { recursive: true });
+        fs.mkdirSync(canonOlderRoot, { recursive: true });
+        fs.mkdirSync(reviewRoot, { recursive: true });
+
+        fs.writeFileSync(
+            path.join(canonRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-canon',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                topEvents: [{ ref: 'canon-1' }],
+                residents: [{ residentName: 'res:test' }],
+            }),
+        );
+        fs.writeFileSync(
+            path.join(canonRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-canon',
+                generatedAt: '2026-05-27T12:05:00.000Z',
+                modelProfile: 'storyteller-v1',
+                needsReview: false,
+                operatorWarnings: [],
+                reviewReasons: [],
+                eventRefsUsed: ['canon-1'],
+                publicBullets: ['canon bullet'],
+            }),
+        );
+        fs.writeFileSync(
+            path.join(canonOlderRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-canon-older',
+                builtAt: '2026-05-27T11:00:00.000Z',
+                topEvents: [{ ref: 'canon-older-1' }],
+                residents: [{ residentName: 'res:test' }],
+            }),
+        );
+        fs.writeFileSync(
+            path.join(canonOlderRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-canon-older',
+                generatedAt: '2026-05-27T11:05:00.000Z',
+                modelProfile: 'storyteller-v1',
+                needsReview: false,
+                operatorWarnings: [],
+                reviewReasons: [],
+                eventRefsUsed: ['canon-older-1'],
+                publicBullets: ['older canon bullet'],
+            }),
+        );
+
+        fs.writeFileSync(
+            path.join(reviewRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-review',
+                builtAt: '2026-05-27T13:00:00.000Z',
+                topEvents: [{ ref: 'review-1' }],
+                residents: [{ residentName: 'res:peer' }],
+            }),
+        );
+        fs.writeFileSync(
+            path.join(reviewRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-review',
+                generatedAt: '2026-05-27T13:05:00.000Z',
+                modelProfile: 'storyteller-v1',
+                needsReview: true,
+                operatorWarnings: ['warn'],
+                reviewReasons: ['missing event ref'],
+                eventRefsUsed: ['review-1'],
+                publicBullets: ['review bullet'],
+            }),
+        );
+
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const canon = await requestJson('GET', `${started.url}/storyteller/canon`, token);
+        expect(canon.status).toBe(200);
+        expect(canon.payload).toMatchObject({
+            ok: true,
+            queue: 'canon',
+            count: 2,
+        });
+        expect((canon.payload as { entries?: unknown[] }).entries).toEqual(
+            expect.arrayContaining([expect.objectContaining({ runId: 'run-canon', digestId: 'digest-canon' })]),
+        );
+        expect((canon.payload as { entries?: unknown[] }).entries).toHaveLength(2);
+
+        const canonLimited = await requestJson('GET', `${started.url}/storyteller/canon?limit=1`, token);
+        expect((canonLimited.payload as { entries?: unknown[] }).entries).toEqual(
+            expect.arrayContaining([expect.objectContaining({ runId: 'run-canon', digestId: 'digest-canon' })]),
+        );
+        expect((canonLimited.payload as { entries?: unknown[] }).entries).toHaveLength(1);
+
+        const canonInvalidLimit = await requestJson('GET', `${started.url}/storyteller/canon?limit=1junk`, token);
+        expect((canonInvalidLimit.payload as { entries?: unknown[] }).entries).toHaveLength(2);
+
+        const review = await requestJson('GET', `${started.url}/storyteller/review`, token);
+        expect(review.status).toBe(200);
+        expect(review.payload).toMatchObject({
+            ok: true,
+            queue: 'review',
+            count: 1,
+            entries: [{ runId: 'run-review', digestId: 'digest-review' }],
         });
     });
 

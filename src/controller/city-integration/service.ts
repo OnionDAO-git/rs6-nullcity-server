@@ -30,6 +30,8 @@ import { LibraryUpdater } from '../evidence';
 import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
+export const STORYTELLER_QUEUE_DEFAULT_LIMIT = 20;
+export const STORYTELLER_QUEUE_MAX_LIMIT = 50;
 // S-NCRI-1: listing an NCRI for sale requires pricing. Re-uses the setPricingSchema
 // from NcriPricingStore so the shape is validated once.
 const listNcriForSaleSchema = setPricingSchema;
@@ -139,6 +141,13 @@ export interface CityStorytellerLatestSummary {
     residentCount: number;
     summary?: string;
     dispatch?: CityStorytellerDispatchSummary;
+}
+
+export interface CityStorytellerQueueSummary {
+    ok: true;
+    queue: 'canon' | 'review';
+    count: number;
+    entries: CityStorytellerLatestSummary[];
 }
 
 export const birthResidentRequestSchema = z
@@ -1040,6 +1049,36 @@ export class CityIntegrationService {
         return runs[0];
     }
 
+    storytellerCanon(limit = 20): CityStorytellerQueueSummary {
+        return this.storytellerQueue('canon', limit);
+    }
+
+    storytellerReview(limit = 20): CityStorytellerQueueSummary {
+        return this.storytellerQueue('review', limit);
+    }
+
+    private storytellerQueue(queue: 'canon' | 'review', limit: number): CityStorytellerQueueSummary {
+        const boundedLimit = clampStorytellerQueueLimit(limit);
+        const storytellerRoot = path.join(path.dirname(this.options.memoryRoot), 'storyteller', queue);
+        if (!fs.existsSync(storytellerRoot)) {
+            return { ok: true, queue, count: 0, entries: [] };
+        }
+
+        const runs = fs
+            .readdirSync(storytellerRoot, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .map(entry => this.readStorytellerRun(path.join(storytellerRoot, entry.name), entry.name))
+            .filter((run): run is CityStorytellerLatestSummary => Boolean(run));
+
+        runs.sort((left, right) => storytellerLatestStampMs(right) - storytellerLatestStampMs(left));
+        return {
+            ok: true,
+            queue,
+            count: runs.length,
+            entries: runs.slice(0, boundedLimit),
+        };
+    }
+
     private readStorytellerRun(runRoot: string, runId: string): CityStorytellerLatestSummary | undefined {
         const digest = asObject(readJson(path.join(runRoot, 'digest.json')));
         if (!digest) return undefined;
@@ -1264,6 +1303,13 @@ function readJson(filePath: string): unknown | undefined {
     } catch {
         return undefined;
     }
+}
+
+function clampStorytellerQueueLimit(limit: number): number {
+    if (!Number.isFinite(limit)) return STORYTELLER_QUEUE_DEFAULT_LIMIT;
+    const whole = Math.trunc(limit);
+    if (whole <= 0) return STORYTELLER_QUEUE_DEFAULT_LIMIT;
+    return Math.min(whole, STORYTELLER_QUEUE_MAX_LIMIT);
 }
 
 function asObject(value: unknown): Record<string, unknown> | undefined {

@@ -4,7 +4,7 @@ import path from 'path';
 import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
 import { OverseerLedger, parseStorytellerOverseerArgs, runStorytellerOverseerTick, StorytellerOverseerCliError } from './overseer';
-import type { CityEventDigest } from './types';
+import type { CityEventDigest, StorytellerDispatch } from './types';
 
 function tempOutputDir(): string {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'storyteller-overseer-'));
@@ -30,6 +30,28 @@ function emptyDigest(digestId = 'empty-digest'): CityEventDigest {
             fadedResidents: 0,
             lowApResidents: 0,
         },
+    };
+}
+
+function fixtureDispatch(overrides: Partial<StorytellerDispatch> = {}): StorytellerDispatch {
+    return {
+        schemaVersion: 1,
+        dispatchId: 'dispatch-fixture',
+        digestId: 'fixture-digest-001',
+        generatedAt: '2026-05-30T20:00:00.000Z',
+        modelProfile: 'storyteller-v1',
+        latencyMs: 1200,
+        estimatedCostUsd: 0.1,
+        inputTokens: 800,
+        outputTokens: 240,
+        publicTitle: 'Null City Dispatch',
+        publicBody: 'Grounded update.',
+        publicBullets: ['bullet-1'],
+        operatorSummary: 'summary',
+        operatorWarnings: [],
+        eventRefsUsed: ['ap:001'],
+        needsReview: false,
+        ...overrides,
     };
 }
 
@@ -161,6 +183,88 @@ describe('runStorytellerOverseerTick', () => {
         expect(result.row.reason).toContain('missing-ref');
         expect(result.row.artifactDir).toBeNull();
     });
+
+    it('publishes zero-warning dispatches to canon when auto-publish is enabled', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const digest = buildFixtureDigest().digest;
+        store.writeDigest(digest);
+        store.writeDispatch(fixtureDispatch({ digestId: digest.digestId }));
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+            autoPublishOnZeroWarnings: true,
+        });
+
+        expect(result.row.decision).toBe('published_canon');
+        expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'digest.json'))).toBe(true);
+        expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(true);
+        expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'dispatch.json'))).toBe(false);
+    });
+
+    it('queues dispatches with review flags in the review surface', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const digest = buildFixtureDigest().digest;
+        store.writeDigest(digest);
+        store.writeDispatch(
+            fixtureDispatch({
+                digestId: digest.digestId,
+                needsReview: true,
+                reviewReasons: ['missing event ref'],
+            }),
+        );
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+        });
+
+        expect(result.row.decision).toBe('queued_review');
+        expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'digest.json'))).toBe(true);
+        expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'dispatch.json'))).toBe(true);
+        expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(false);
+    });
+
+    it('holds dispatch publishing when the daily cost cap is exceeded', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const digest = buildFixtureDigest().digest;
+        store.writeDigest(digest);
+        store.writeDispatch(fixtureDispatch({ digestId: digest.digestId, estimatedCostUsd: 0.11 }));
+
+        const ledger = new OverseerLedger(outputDir);
+        ledger.append({
+            schemaVersion: 1,
+            rowId: 'prior-row',
+            createdAt: '2026-05-30T19:40:00.000Z',
+            digestId: 'prior-digest',
+            fingerprint: 'fp-prior',
+            decision: 'published_canon',
+            reason: 'published',
+            eventRefs: ['gp:1'],
+            artifactDir: path.join(outputDir, 'canon', 'prior-digest'),
+            estimatedCostUsd: 0.15,
+        });
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+            dailyCostCapUsd: 0.2,
+        });
+
+        expect(result.row.decision).toBe('held_budget');
+        expect(result.row.reason).toContain('daily cost cap');
+        expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'dispatch.json'))).toBe(false);
+    });
 });
 
 describe('parseStorytellerOverseerArgs', () => {
@@ -172,10 +276,22 @@ describe('parseStorytellerOverseerArgs', () => {
             source: 'latest',
             outputDir: '/tmp/storyteller',
             dedupWindowMs: 60_000,
+            autoPublishOnZeroWarnings: true,
         });
     });
 
     it('rejects watch mode until the cost-capped packet lands', () => {
         expect(() => parseStorytellerOverseerArgs(['--watch', '--fixture'])).toThrow(StorytellerOverseerCliError);
+    });
+
+    it('parses daily cost cap and disables auto-publish when requested', () => {
+        expect(
+            parseStorytellerOverseerArgs(['--tick', '--latest', '--daily-cost-cap-usd', '0.5', '--no-auto-publish-on-zero-warnings']),
+        ).toMatchObject({
+            tick: true,
+            source: 'latest',
+            dailyCostCapUsd: 0.5,
+            autoPublishOnZeroWarnings: false,
+        });
     });
 });

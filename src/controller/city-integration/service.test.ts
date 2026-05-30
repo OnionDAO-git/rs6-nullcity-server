@@ -42,6 +42,7 @@ class FakeRuntime implements CityRuntime {
 }
 
 describe('CityIntegrationService', () => {
+    let tempRoot: string;
     let root: string;
     let runtime: FakeRuntime;
     let gold: number;
@@ -50,7 +51,9 @@ describe('CityIntegrationService', () => {
     let service: CityIntegrationService;
 
     beforeEach(() => {
-        root = fs.mkdtempSync(path.join(os.tmpdir(), 'city-integration-'));
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'city-integration-'));
+        root = path.join(tempRoot, 'memory');
+        fs.mkdirSync(root, { recursive: true });
         runtime = new FakeRuntime();
         gold = 100;
         burnCalls = 0;
@@ -80,7 +83,7 @@ describe('CityIntegrationService', () => {
     });
 
     afterEach(() => {
-        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(tempRoot, { recursive: true, force: true });
     });
 
     it('credits resident attention once per idempotency key', async () => {
@@ -519,6 +522,132 @@ describe('CityIntegrationService', () => {
                 code: 'storyteller_not_found',
             }),
         );
+    });
+
+    it('storytellerCanon and storytellerReview return queue snapshots for dashboard readers', () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        const canonRoot = path.join(storytellerRoot, 'canon', 'run-canon');
+        const reviewRoot = path.join(storytellerRoot, 'review', 'run-review');
+        fs.mkdirSync(canonRoot, { recursive: true });
+        fs.mkdirSync(reviewRoot, { recursive: true });
+
+        fs.writeFileSync(
+            path.join(canonRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-canon',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                topEvents: [{ ref: 'canon-1' }],
+                residents: [{ residentName: 'res:test' }],
+                summary: 'canon digest',
+            }),
+        );
+        fs.writeFileSync(
+            path.join(canonRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-canon',
+                generatedAt: '2026-05-27T12:05:00.000Z',
+                modelProfile: 'storyteller-v1',
+                needsReview: false,
+                operatorWarnings: [],
+                reviewReasons: [],
+                eventRefsUsed: ['canon-1'],
+                publicBullets: ['canon bullet'],
+            }),
+        );
+
+        fs.writeFileSync(
+            path.join(reviewRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-review',
+                builtAt: '2026-05-27T13:00:00.000Z',
+                topEvents: [{ ref: 'review-1' }],
+                residents: [{ residentName: 'res:peer' }],
+                summary: 'review digest',
+            }),
+        );
+        fs.writeFileSync(
+            path.join(reviewRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-review',
+                generatedAt: '2026-05-27T13:05:00.000Z',
+                modelProfile: 'storyteller-v1',
+                needsReview: true,
+                operatorWarnings: ['verify refs'],
+                reviewReasons: ['missing event ref'],
+                eventRefsUsed: ['review-1'],
+                publicBullets: ['review bullet'],
+            }),
+        );
+
+        const canon = service.storytellerCanon();
+        expect(canon).toMatchObject({
+            ok: true,
+            queue: 'canon',
+            count: 1,
+            entries: [
+                {
+                    runId: 'run-canon',
+                    digestId: 'digest-canon',
+                    dispatch: {
+                        dispatchId: 'dispatch-canon',
+                        needsReview: false,
+                    },
+                },
+            ],
+        });
+
+        const review = service.storytellerReview();
+        expect(review).toMatchObject({
+            ok: true,
+            queue: 'review',
+            count: 1,
+            entries: [
+                {
+                    runId: 'run-review',
+                    digestId: 'digest-review',
+                    dispatch: {
+                        dispatchId: 'dispatch-review',
+                        needsReview: true,
+                    },
+                },
+            ],
+        });
+    });
+
+    it('bounds storyteller queue snapshots even when callers request a huge limit', () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller', 'canon');
+        for (let i = 0; i < 55; i++) {
+            const runRoot = path.join(storytellerRoot, `run-${String(i).padStart(2, '0')}`);
+            fs.mkdirSync(runRoot, { recursive: true });
+            fs.writeFileSync(
+                path.join(runRoot, 'digest.json'),
+                JSON.stringify({
+                    digestId: `digest-${i}`,
+                    builtAt: `2026-05-27T12:${String(i).padStart(2, '0')}:00.000Z`,
+                    topEvents: [{ ref: `event-${i}` }],
+                    residents: [{ residentName: 'res:test' }],
+                }),
+            );
+            fs.writeFileSync(
+                path.join(runRoot, 'dispatch.json'),
+                JSON.stringify({
+                    dispatchId: `dispatch-${i}`,
+                    generatedAt: `2026-05-27T12:${String(i).padStart(2, '0')}:30.000Z`,
+                    modelProfile: 'storyteller-v1',
+                    needsReview: false,
+                    operatorWarnings: [],
+                    reviewReasons: [],
+                    eventRefsUsed: [`event-${i}`],
+                    publicBullets: [`bullet-${i}`],
+                }),
+            );
+        }
+
+        const canon = service.storytellerCanon(999);
+
+        expect(canon.count).toBe(55);
+        expect(canon.entries).toHaveLength(50);
+        expect(canon.entries[0]?.digestId).toBe('digest-54');
     });
 
     it('builds live economy rollups and redacts private human handles for dashboard readers', async () => {

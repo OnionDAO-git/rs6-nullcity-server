@@ -817,12 +817,13 @@ Safe public module facade building blocks are implemented, but the public member
 
 Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into the packets below. Pick the lowest-numbered open packet in a chain first. Most substrate work is cloud-doable; live-only packets are tagged.
 
-- `[ ]` **S13: Storyteller Overseer (continuous-mode wrapper).**
+- `[>]` **S13: Storyteller Overseer (continuous-mode wrapper).**
   - Spec: `docs/superpowers/specs/2026-05-30-storyteller-overseer-design.md`.
   - Files: new `src/controller/storyteller/overseer.ts`, new `OverseerLedger`, `config/controller.yml.example`, `package.json` (new CLI scripts), `docs/city-dashboard-integration.md`.
   - Packets: `S-STORY-1` (skeleton + dry-run loop, cloud), `S-STORY-2` (cost cap + canon/review publish surface, cloud), `S-STORY-3` (persona + watch-mode paid run, **needs hot stack + paid profile**).
   - Issue: `QA-20260530-004`.
   - Deliverable: cron-friendly Overseer wraps the one-shot `storyteller:run`, owns dedup, cost cap, persona, and operator approval gate; `canon/` vs `review/` JSON surfaces feed the dashboard.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-STORY-2`): added Overseer `--daily-cost-cap-usd` and `--no-auto-publish-on-zero-warnings`, publication budget-hold decisioning (`held_budget` for already-recorded dispatches), and queue publishing decisions (`published_canon`/`queued_review`) with queue artifacts at `data/controller/storyteller/{canon,review}/<digestId>/{digest,dispatch}.json`. Added bounded dashboard bridge JSON routes `GET /api/nullcity/storyteller/{canon,review}` and focused tests (`overseer`, `service`, `http-server`). Paid-call spend preflight remains S-STORY-3/watch-mode.
 
 - `[ ]` **S14: NCRI Sale Lifecycle (purchasable closing edge of the simple loop).**
   - Spec: `docs/superpowers/specs/2026-05-30-ncri-sale-lifecycle-design.md`.

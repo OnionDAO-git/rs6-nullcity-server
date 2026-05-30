@@ -4,11 +4,18 @@ import path from 'path';
 import { buildFixtureDigest } from './digest-builder';
 import { runStorytellerDryRun } from './cli';
 import { StorytellerStore, buildOperatorSummary } from './store';
-import type { CityEventDigest, DigestEvent } from './types';
+import type { CityEventDigest, DigestEvent, StorytellerDispatch } from './types';
 
 export type StorytellerOverseerSource = 'fixture' | 'latest' | 'digest-id' | 'memory-root';
 
-export type StorytellerOverseerDecision = 'dry_run' | 'held_duplicate' | 'held_no_delta' | 'held_unresolved_refs';
+export type StorytellerOverseerDecision =
+    | 'dry_run'
+    | 'published_canon'
+    | 'queued_review'
+    | 'held_budget'
+    | 'held_duplicate'
+    | 'held_no_delta'
+    | 'held_unresolved_refs';
 
 export interface StorytellerOverseerLedgerRow {
     schemaVersion: 1;
@@ -20,6 +27,7 @@ export interface StorytellerOverseerLedgerRow {
     reason: string;
     eventRefs: string[];
     artifactDir: string | null;
+    estimatedCostUsd?: number | null;
     duplicateOfRowId?: string;
 }
 
@@ -31,6 +39,8 @@ export interface StorytellerOverseerTickArgs {
     since?: string;
     until?: string;
     dedupWindowMs?: number;
+    dailyCostCapUsd?: number;
+    autoPublishOnZeroWarnings?: boolean;
     now?: () => Date;
 }
 
@@ -89,6 +99,8 @@ export function parseStorytellerOverseerArgs(argv: string[]): StorytellerOversee
     let since: string | undefined;
     let until: string | undefined;
     let dedupWindowMs = DEFAULT_DEDUP_WINDOW_MS;
+    let dailyCostCapUsd: number | undefined;
+    let autoPublishOnZeroWarnings = true;
 
     const claimSource = (nextSource: StorytellerOverseerSource): void => {
         if (source !== undefined) {
@@ -143,6 +155,15 @@ export function parseStorytellerOverseerArgs(argv: string[]): StorytellerOversee
                 throw new StorytellerOverseerCliError('invalid_dedup_window', '--dedup-window-ms must be a non-negative integer');
             }
             i++;
+        } else if (flag === '--daily-cost-cap-usd') {
+            if (!next) throw new StorytellerOverseerCliError('missing_value', '--daily-cost-cap-usd requires a number');
+            dailyCostCapUsd = Number.parseFloat(next);
+            if (!Number.isFinite(dailyCostCapUsd) || dailyCostCapUsd < 0) {
+                throw new StorytellerOverseerCliError('invalid_cost_cap', '--daily-cost-cap-usd must be a non-negative number');
+            }
+            i++;
+        } else if (flag === '--no-auto-publish-on-zero-warnings') {
+            autoPublishOnZeroWarnings = false;
         } else if (flag === '--help' || flag === '-h') {
             throw new StorytellerOverseerCliError('help', usage());
         } else {
@@ -154,7 +175,8 @@ export function parseStorytellerOverseerArgs(argv: string[]): StorytellerOversee
         throw new StorytellerOverseerCliError('missing_source', 'use one source: --fixture, --latest, --digest-id, or --memory-root');
     }
 
-    const parsed: StorytellerOverseerCliArgs = { tick, source, outputDir, dedupWindowMs };
+    const parsed: StorytellerOverseerCliArgs = { tick, source, outputDir, dedupWindowMs, autoPublishOnZeroWarnings };
+    if (dailyCostCapUsd !== undefined) parsed.dailyCostCapUsd = dailyCostCapUsd;
     if (digestId !== undefined) parsed.digestId = digestId;
     if (memoryRoot !== undefined) parsed.memoryRoot = memoryRoot;
     if (since !== undefined) parsed.since = since;
@@ -166,8 +188,10 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
     const now = args.now ? args.now() : new Date();
     const createdAt = now.toISOString();
     const dedupWindowMs = args.dedupWindowMs ?? DEFAULT_DEDUP_WINDOW_MS;
+    const autoPublishOnZeroWarnings = args.autoPublishOnZeroWarnings ?? true;
     const store = new StorytellerStore(args.outputDir);
     const ledger = new OverseerLedger(args.outputDir);
+    const rows = ledger.readAll();
     const digest = readDigest(args, store, now);
     const eventRefs = digestEventRefs(digest);
     const fingerprint = topEventFingerprint(digest);
@@ -196,7 +220,7 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
                 artifactDir: null,
             });
         } else {
-            const duplicate = findRecentDuplicate(ledger.readAll(), fingerprint, now, dedupWindowMs);
+            const duplicate = findRecentDuplicate(rows, fingerprint, now, dedupWindowMs);
             if (duplicate) {
                 row = makeRow({
                     createdAt,
@@ -211,15 +235,54 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
             } else {
                 store.writeDigest(digest);
                 store.writeSummary(digest.digestId, buildOperatorSummary(digest));
-                row = makeRow({
-                    createdAt,
-                    digest,
-                    fingerprint,
-                    decision: 'dry_run',
-                    reason: 'dry-run Storyteller digest recorded without a model call',
-                    eventRefs: fingerprintRefs(digest),
-                    artifactDir: path.join(args.outputDir, digest.digestId),
-                });
+                const dispatch = store.readDispatch(digest.digestId);
+                if (!dispatch) {
+                    row = makeRow({
+                        createdAt,
+                        digest,
+                        fingerprint,
+                        decision: 'dry_run',
+                        reason: 'dry-run Storyteller digest recorded without a model call',
+                        eventRefs: fingerprintRefs(digest),
+                        artifactDir: path.join(args.outputDir, digest.digestId),
+                    });
+                } else {
+                    const costUsd = asFiniteNonNegativeNumber(dispatch.estimatedCostUsd);
+                    const capUsd = asFiniteNonNegativeNumber(args.dailyCostCapUsd);
+                    if (capUsd !== undefined && costUsd !== undefined) {
+                        const spentToday = dailySpentUsd(rows, now);
+                        if (spentToday + costUsd > capUsd) {
+                            row = makeRow({
+                                createdAt,
+                                digest,
+                                fingerprint,
+                                decision: 'held_budget',
+                                reason: `daily cost cap exceeded (${(spentToday + costUsd).toFixed(6)} > ${capUsd.toFixed(6)})`,
+                                eventRefs: dispatch.eventRefsUsed.length ? [...dispatch.eventRefsUsed] : fingerprintRefs(digest),
+                                artifactDir: null,
+                                estimatedCostUsd: costUsd,
+                            });
+                            ledger.append(row);
+                            return { row, digest };
+                        }
+                    }
+
+                    const shouldPublishCanon = autoPublishOnZeroWarnings && canAutoPublishDispatch(dispatch);
+                    const queue = shouldPublishCanon ? 'canon' : 'review';
+                    const queueDir = writeDispatchQueueArtifact(args.outputDir, queue, digest, dispatch);
+                    row = makeRow({
+                        createdAt,
+                        digest,
+                        fingerprint,
+                        decision: shouldPublishCanon ? 'published_canon' : 'queued_review',
+                        reason: shouldPublishCanon
+                            ? 'dispatch has no review warnings and was auto-published to canon'
+                            : 'dispatch requires review or auto-publish is disabled',
+                        eventRefs: dispatch.eventRefsUsed.length ? [...dispatch.eventRefsUsed] : fingerprintRefs(digest),
+                        artifactDir: queueDir,
+                        estimatedCostUsd: costUsd ?? null,
+                    });
+                }
             }
         }
     }
@@ -235,6 +298,7 @@ export function usage(): string {
         '  npm run storyteller:overseer -- --tick --latest [--output-dir <path>]',
         '  npm run storyteller:overseer -- --tick --digest-id <id> [--output-dir <path>]',
         '  npm run storyteller:overseer -- --tick --memory-root <path> [--since <iso>] [--until <iso>]',
+        '                                     [--daily-cost-cap-usd <usd>] [--no-auto-publish-on-zero-warnings]',
         '',
         'Runs one no-paid-call Storyteller Overseer tick with dedupe and an append-only ledger.',
     ].join('\n');
@@ -288,6 +352,7 @@ function makeRow(input: {
     reason: string;
     eventRefs: string[];
     artifactDir: string | null;
+    estimatedCostUsd?: number | null;
     duplicateOfRowId?: string;
 }): StorytellerOverseerLedgerRow {
     const row: StorytellerOverseerLedgerRow = {
@@ -300,6 +365,7 @@ function makeRow(input: {
         reason: input.reason,
         eventRefs: input.eventRefs,
         artifactDir: input.artifactDir,
+        ...(input.estimatedCostUsd !== undefined ? { estimatedCostUsd: input.estimatedCostUsd } : {}),
     };
     if (input.duplicateOfRowId !== undefined) {
         row.duplicateOfRowId = input.duplicateOfRowId;
@@ -352,11 +418,47 @@ function findRecentDuplicate(
     dedupWindowMs: number,
 ): StorytellerOverseerLedgerRow | undefined {
     return [...rows].reverse().find(row => {
-        if (row.decision !== 'dry_run' || row.fingerprint !== fingerprint) {
+        if (!isNarrationDecision(row.decision) || row.fingerprint !== fingerprint) {
             return false;
         }
         const createdAt = new Date(row.createdAt).getTime();
         const ageMs = now.getTime() - createdAt;
         return ageMs >= 0 && ageMs <= dedupWindowMs;
     });
+}
+
+function isNarrationDecision(decision: StorytellerOverseerDecision): boolean {
+    return decision === 'dry_run' || decision === 'published_canon' || decision === 'queued_review';
+}
+
+function canAutoPublishDispatch(dispatch: StorytellerDispatch): boolean {
+    const warningCount = dispatch.operatorWarnings.length + (dispatch.reviewReasons?.length ?? 0);
+    return !dispatch.needsReview && warningCount === 0;
+}
+
+function writeDispatchQueueArtifact(
+    outputDir: string,
+    queue: 'canon' | 'review',
+    digest: CityEventDigest,
+    dispatch: StorytellerDispatch,
+): string {
+    const queueDir = path.join(outputDir, queue, digest.digestId);
+    fs.mkdirSync(queueDir, { recursive: true });
+    fs.writeFileSync(path.join(queueDir, 'digest.json'), JSON.stringify(digest, null, 2), 'utf-8');
+    fs.writeFileSync(path.join(queueDir, 'dispatch.json'), JSON.stringify(dispatch, null, 2), 'utf-8');
+    return queueDir;
+}
+
+function asFiniteNonNegativeNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function dailySpentUsd(rows: StorytellerOverseerLedgerRow[], now: Date): number {
+    const dayPrefix = now.toISOString().slice(0, 10);
+    return rows.reduce((total, row) => {
+        if (!isNarrationDecision(row.decision)) return total;
+        if (!row.createdAt.startsWith(dayPrefix)) return total;
+        const usd = asFiniteNonNegativeNumber(row.estimatedCostUsd);
+        return total + (usd ?? 0);
+    }, 0);
 }

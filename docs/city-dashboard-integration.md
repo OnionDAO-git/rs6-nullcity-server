@@ -43,6 +43,8 @@ Routes:
 - `GET /api/nullcity/economy/listings`: active NCRI listings (approved + available).
 - `GET /api/nullcity/economy/heartbeat`: live liveness/readiness signal for economy/dashboard polling.
 - `GET /api/nullcity/storyteller/latest`: latest grounded digest+dispatch artifact summary for dashboard read models.
+- `GET /api/nullcity/storyteller/canon`: published Storyteller canon queue snapshots.
+- `GET /api/nullcity/storyteller/review`: review-required Storyteller queue snapshots.
 
 Idempotency and audit records are persisted under `memory.dir/city-integration/`.
 
@@ -639,6 +641,8 @@ Artifacts are written to `data/controller/storyteller/<run-id>/digest.json` and 
 For dashboard bridges, the controller HTTP API now exposes:
 
 - `GET /api/nullcity/storyteller/latest`
+- `GET /api/nullcity/storyteller/canon?limit=<n>`
+- `GET /api/nullcity/storyteller/review?limit=<n>`
 
 Returns the newest run by `dispatch.generatedAt` fallback `digest.builtAt/windowEnd/windowStart`:
 
@@ -673,3 +677,36 @@ Returns the newest run by `dispatch.generatedAt` fallback `digest.builtAt/window
 ```
 
 If no storyteller artifacts exist yet, the route returns `404 { "error": "storyteller_not_found" }`.
+
+Queue routes return bounded snapshots for operator feeds:
+
+```json
+{
+  "ok": true,
+  "queue": "canon",
+  "count": 3,
+  "entries": [
+    {
+      "ok": true,
+      "runId": "run-2026-05-30T121500Z",
+      "digestId": "digest-2026-05-30T121000Z",
+      "builtAt": "2026-05-30T12:10:00.000Z",
+      "topEventCount": 6,
+      "residentCount": 4,
+      "dispatch": {
+        "dispatchId": "dispatch-2026-05-30T121500Z",
+        "needsReview": false,
+        "warningCount": 0,
+        "eventRefCount": 5
+      }
+    }
+  ]
+}
+```
+
+Notes:
+
+- `queue` is either `canon` (auto-published/approved) or `review` (operator review needed).
+- `count` is the full queue length; `entries` respects `limit` (default `20`, max `50`).
+- Missing queue folders return `200` with empty `entries`.
+- S-STORY-2 can hold publication when already-recorded dispatch cost would exceed the daily cap. It does **not** invoke paid models, so spend-preflight enforcement before model calls remains part of S-STORY-3/watch-mode.

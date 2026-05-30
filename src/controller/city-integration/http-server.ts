@@ -1,6 +1,6 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
-import { CityIntegrationError, CityIntegrationService } from './service';
+import { CityIntegrationError, CityIntegrationService, STORYTELLER_QUEUE_DEFAULT_LIMIT, STORYTELLER_QUEUE_MAX_LIMIT } from './service';
 
 export interface CityIntegrationHttpOptions {
     service: CityIntegrationService;
@@ -101,6 +101,16 @@ async function handle(
 
     if (request.method === 'GET' && path === `${pathPrefix}/storyteller/latest`) {
         writeJson(response, 200, options.service.storytellerLatest());
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/canon`) {
+        writeJson(response, 200, options.service.storytellerCanon(readListLimit(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/review`) {
+        writeJson(response, 200, options.service.storytellerReview(readListLimit(url)));
         return;
     }
 
@@ -344,6 +354,18 @@ function readLiveEconomyQuery(url: URL): { since?: string; limit?: number; resid
         ...(limit !== undefined ? { limit } : {}),
         ...(residentLimit !== undefined ? { residentLimit } : {}),
     };
+}
+
+function readListLimit(url: URL): number {
+    const raw = url.searchParams.get('limit');
+    if (!raw || !/^\d+$/.test(raw)) {
+        return STORYTELLER_QUEUE_DEFAULT_LIMIT;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return STORYTELLER_QUEUE_DEFAULT_LIMIT;
+    }
+    return Math.min(parsed, STORYTELLER_QUEUE_MAX_LIMIT);
 }
 
 function parsePositiveInt(value: string | null): number | undefined {
