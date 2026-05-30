@@ -30,6 +30,8 @@ export interface ControllerHostOptions {
     once?: boolean;
     logEnvelope?: boolean;
     gateway?: GatewayClient;
+    cityGateway?: CityInventoryGateway;
+    cityGatewayFactory?: () => CityInventoryGateway;
     soulLoader?: SoulLoader;
     memory?: MemoryStore;
     stateStore?: RuntimeStateStore;
@@ -54,6 +56,17 @@ export interface ControllerHostOptions {
     economyEventLog?: EconomyEventLog;
 }
 
+export interface CityInventoryGateway {
+    connect(): Promise<void>;
+    hello(): Promise<void>;
+    close(): void;
+    inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }>;
+    burnResidentGold(
+        name: string,
+        amount: number,
+    ): Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>;
+}
+
 function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefined {
     const endpointTimeouts = Object.values(config.llm.endpoints)
         .map(endpoint => endpoint.timeoutMs)
@@ -66,6 +79,10 @@ function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefi
 
 export class ControllerHost {
     private readonly gateway: GatewayClient;
+    private readonly cityGateway?: CityInventoryGateway;
+    private readonly cityGatewayFactory?: () => CityInventoryGateway;
+    private readonly cityGatewayIsShared: boolean;
+    private cityGatewaySeq = 0;
     private readonly runtimes = new Map<string, ResidentRuntime>();
     private readonly configuredDesired: Set<string>;
     private readonly desired: Set<string>;
@@ -96,14 +113,30 @@ export class ControllerHost {
         private readonly config: ControllerConfig,
         private readonly options: ControllerHostOptions = {},
     ) {
+        const injectedGateway = options.gateway;
         this.gateway =
-            options.gateway ||
+            injectedGateway ||
             new GatewayClient({
                 url: config.gateway.url,
                 authToken: config.gateway.authToken,
                 controllerId: config.gateway.controllerId,
                 reconnect: !options.once,
             });
+        this.cityGateway = options.cityGateway || (options.cityGatewayFactory ? undefined : injectedGateway);
+        this.cityGatewayFactory =
+            options.cityGatewayFactory ||
+            (this.cityGateway
+                ? undefined
+                : () =>
+                      new GatewayClient({
+                          url: config.gateway.url,
+                          authToken: config.gateway.authToken,
+                          controllerId: `${config.gateway.controllerId}:city:${process.pid}:${++this.cityGatewaySeq}`,
+                          reconnect: false,
+                          requestTimeoutMs: 20_000,
+                          inventoryRequestTimeoutMs: 30_000,
+                      }));
+        this.cityGatewayIsShared = this.cityGateway === this.gateway;
         this.configuredDesired = new Set(config.residents);
         this.desired = new Set(config.residents);
         this.soulLoader = options.soulLoader || new SoulLoader(config.souls.dir);
@@ -172,6 +205,10 @@ export class ControllerHost {
 
     async start(): Promise<void> {
         await this.gateway.connect();
+        if (this.cityGateway && !this.cityGatewayIsShared) {
+            await this.cityGateway.connect();
+            await this.cityGateway.hello();
+        }
         this.running = true;
         await this.handshakeAndReconcile();
 
@@ -196,6 +233,9 @@ export class ControllerHost {
         } catch (error) {
             // eslint-disable-next-line no-console
             console.error('[controller-host] patron ledger persist failed during shutdown', error);
+        }
+        if (this.cityGateway && !this.cityGatewayIsShared) {
+            this.cityGateway.close();
         }
         this.gateway.close();
     }
@@ -239,14 +279,20 @@ export class ControllerHost {
     }
 
     public inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }> {
-        return this.gateway.inspectResidentGold(name);
+        return this.withCityGateway(
+            gateway => gateway.inspectResidentGold(name),
+            error => isTransientCityGatewayError(error),
+        );
     }
 
     public burnResidentGold(
         name: string,
         amount: number,
     ): Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }> {
-        return this.gateway.burnResidentGold(name, amount);
+        return this.withCityGateway(
+            gateway => gateway.burnResidentGold(name, amount),
+            error => isGatewayNotOpenError(error),
+        );
     }
 
     public enqueuePerceptionEvent(residentName: string, event: PerceptionEvent): boolean {
@@ -504,8 +550,58 @@ export class ControllerHost {
         }
     }
 
+    private async withCityGateway<T>(
+        operation: (gateway: CityInventoryGateway) => Promise<T>,
+        shouldRetryOperationError: (error: unknown) => boolean,
+    ): Promise<T> {
+        if (this.cityGateway) {
+            return operation(this.cityGateway);
+        }
+
+        if (!this.cityGatewayFactory) {
+            throw new Error('City inventory gateway is not configured');
+        }
+
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+            const gateway = this.cityGatewayFactory();
+            let stage: 'connect' | 'hello' | 'operation' = 'connect';
+            try {
+                await gateway.connect();
+                stage = 'hello';
+                await gateway.hello();
+                stage = 'operation';
+                return await operation(gateway);
+            } catch (error) {
+                lastError = error;
+                const retrySafe = stage !== 'operation' || shouldRetryOperationError(error);
+                if (attempt >= 3 || !retrySafe) {
+                    throw error;
+                }
+                await delay(150 * attempt);
+            } finally {
+                gateway.close();
+            }
+        }
+        throw lastError instanceof Error ? lastError : new Error(String(lastError));
+    }
+
     private handleError(error: unknown): void {
         const message = error instanceof Error ? error.stack || error.message : String(error);
         process.stderr.write(`[controller] ${message}\n`);
     }
+}
+
+function isTransientCityGatewayError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /Gateway socket is not open|Gateway socket closed|ECONNRESET|timed out/i.test(message);
+}
+
+function isGatewayNotOpenError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return /Gateway socket is not open/i.test(message);
+}
+
+function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }

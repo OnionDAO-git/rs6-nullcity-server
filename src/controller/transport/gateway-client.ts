@@ -36,9 +36,12 @@ export interface GatewayClientOptions {
      * Packet S-DEMO-P0-1 (QA-20260530-018).
      */
     inventoryRequestTimeoutMs?: number;
+    actionQueueTimeoutMs?: number;
+    maxConcurrentActions?: number;
     reconnect?: boolean;
 }
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_INVENTORY_TIMEOUT_MS = 30_000;
 
 export interface GatewayClientEvents {
@@ -62,6 +65,12 @@ type PendingRequest = {
     timeout: NodeJS.Timeout;
 };
 
+type QueuedActionSlot = {
+    start: () => void;
+    reject: (reason: Error) => void;
+    timeout: NodeJS.Timeout;
+};
+
 export declare interface GatewayClient {
     on<U extends keyof GatewayClientEvents>(event: U, listener: (...args: GatewayClientEvents[U]) => void): this;
     emit<U extends keyof GatewayClientEvents>(event: U, ...args: GatewayClientEvents[U]): boolean;
@@ -72,6 +81,8 @@ export class GatewayClient extends EventEmitter {
     private requestSeq = 0;
     private readonly pending = new Map<string, PendingRequest>();
     private readonly backoff = new Backoff();
+    private readonly queuedActionSlots: QueuedActionSlot[] = [];
+    private activeActionSlots = 0;
     private closed = false;
 
     constructor(private readonly options: GatewayClientOptions) {
@@ -90,6 +101,10 @@ export class GatewayClient extends EventEmitter {
             pending.reject(new Error('Gateway client closed'));
         }
         this.pending.clear();
+        for (const queued of this.queuedActionSlots.splice(0)) {
+            clearTimeout(queued.timeout);
+            queued.reject(new Error('Gateway client closed'));
+        }
         this.socket?.close();
         this.socket = undefined;
     }
@@ -150,13 +165,15 @@ export class GatewayClient extends EventEmitter {
     }
 
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {
-        return this.requestWithId('submit_action', { name, action }).then(({ requestId, value }) => {
-            const payload = readPayload(value);
-            return {
-                requestId,
-                ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
-            };
-        });
+        return this.withActionSlot(() =>
+            this.requestWithId('submit_action', { name, action }).then(({ requestId, value }) => {
+                const payload = readPayload(value);
+                return {
+                    requestId,
+                    ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
+                };
+            }),
+        );
     }
 
     detach(name: string): Promise<void> {
@@ -200,7 +217,7 @@ export class GatewayClient extends EventEmitter {
         }
 
         const requestId = `controller-${Date.now()}-${++this.requestSeq}`;
-        const timeoutMs = opts?.timeoutMs ?? this.options.requestTimeoutMs ?? 10000;
+        const timeoutMs = opts?.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
         const timeout = setTimeout(() => {
             const pending = this.pending.get(requestId);
             if (!pending) {
@@ -216,6 +233,67 @@ export class GatewayClient extends EventEmitter {
 
         socket.send(encodeMessage(makeRequest(type, requestId, payload)));
         return promise.then(value => ({ requestId, value }));
+    }
+
+    private withActionSlot<T>(operation: () => Promise<T>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            let timeout: NodeJS.Timeout | undefined;
+            const start = () => {
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = undefined;
+                }
+                this.activeActionSlots += 1;
+                operation()
+                    .then(resolve, reject)
+                    .finally(() => {
+                        this.activeActionSlots = Math.max(0, this.activeActionSlots - 1);
+                        this.drainActionQueue();
+                    });
+            };
+
+            if (this.activeActionSlots < this.maxConcurrentActions()) {
+                start();
+                return;
+            }
+
+            const queued: QueuedActionSlot = {
+                start,
+                reject,
+                timeout: setTimeout(() => {
+                    const index = this.queuedActionSlots.indexOf(queued);
+                    if (index >= 0) {
+                        this.queuedActionSlots.splice(index, 1);
+                    }
+                    reject(new Error('Gateway action queue timed out: submit_action'));
+                }, this.actionQueueTimeoutMs()),
+            };
+            timeout = queued.timeout;
+            this.queuedActionSlots.push(queued);
+        });
+    }
+
+    private drainActionQueue(): void {
+        while (this.activeActionSlots < this.maxConcurrentActions() && this.queuedActionSlots.length > 0) {
+            this.queuedActionSlots.shift()?.start();
+        }
+    }
+
+    private maxConcurrentActions(): number {
+        const configured = this.options.maxConcurrentActions;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return 1;
+    }
+
+    private actionQueueTimeoutMs(): number {
+        const configured = this.options.actionQueueTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        const requestTimeout = this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+        return Math.max(1, Math.floor(requestTimeout / 2));
     }
 
     private handleMessage(raw: WebSocket.RawData): void {

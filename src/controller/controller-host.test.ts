@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from './config';
-import { ControllerHost, type ControllerHostOptions } from './controller-host';
+import { ControllerHost, type CityInventoryGateway, type ControllerHostOptions } from './controller-host';
 import { LettersStore } from './patron/letters-store';
 import { PatronStore } from './patron/patron-store';
 import type { LlmClient } from './llm/llm-client';
@@ -39,6 +39,13 @@ class FakeGateway extends EventEmitter {
         return resident;
     });
     submitAction = jest.fn(async () => ({ ok: true }));
+    inspectResidentGold = jest.fn(async (resident: string) => ({ resident, itemId: 995 as const, amount: 125 }));
+    burnResidentGold = jest.fn(async (resident: string, amount: number) => ({
+        resident,
+        itemId: 995 as const,
+        burnedAmount: amount,
+        remainingAmount: 125 - amount,
+    }));
 }
 
 describe('ControllerHost reconcile lifecycle', () => {
@@ -125,6 +132,69 @@ describe('ControllerHost reconcile lifecycle', () => {
 
         expect(host.enqueuePerceptionEvent('res:pip', event)).toBe(true);
         expect(runtime.onEvent).toHaveBeenCalledWith(event);
+
+        await host.stop();
+    });
+
+    it('routes GP inventory calls through an isolated city gateway when provided', async () => {
+        const gateway = new FakeGateway();
+        const cityGateway = new FakeGateway();
+        gateway.inspectResidentGold.mockRejectedValue(new Error('shared resident gateway overloaded'));
+        gateway.burnResidentGold.mockRejectedValue(new Error('shared resident gateway overloaded'));
+        cityGateway.inspectResidentGold.mockResolvedValue({ resident: 'res:pip', itemId: 995, amount: 777 });
+        cityGateway.burnResidentGold.mockResolvedValue({
+            resident: 'res:pip',
+            itemId: 995,
+            burnedAmount: 25,
+            remainingAmount: 752,
+        });
+        const host = new ControllerHost(config(), {
+            ...dependencies(gateway),
+            cityGateway: cityGateway as unknown as ControllerHostOptions['cityGateway'],
+        });
+
+        await host.start();
+
+        await expect(host.inspectResidentGold('res:pip')).resolves.toEqual({ resident: 'res:pip', itemId: 995, amount: 777 });
+        await expect(host.burnResidentGold('res:pip', 25)).resolves.toEqual({
+            resident: 'res:pip',
+            itemId: 995,
+            burnedAmount: 25,
+            remainingAmount: 752,
+        });
+
+        expect(gateway.inspectResidentGold).not.toHaveBeenCalled();
+        expect(gateway.burnResidentGold).not.toHaveBeenCalled();
+        expect(cityGateway.connect).toHaveBeenCalledTimes(1);
+        expect(cityGateway.hello).toHaveBeenCalledTimes(1);
+
+        await host.stop();
+
+        expect(cityGateway.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses a fresh retryable city gateway for GP inventory calls when the live host owns the gateway', async () => {
+        const gateway = new FakeGateway();
+        const firstCityGateway = new FakeGateway();
+        const secondCityGateway = new FakeGateway();
+        const cityGateways = [firstCityGateway, secondCityGateway];
+        firstCityGateway.inspectResidentGold.mockRejectedValue(new Error('Gateway socket is not open'));
+        secondCityGateway.inspectResidentGold.mockResolvedValue({ resident: 'res:pip', itemId: 995, amount: 321 });
+        const host = new ControllerHost(config(), {
+            ...dependencies(gateway),
+            cityGatewayFactory: jest.fn(() => cityGateways.shift() as unknown as CityInventoryGateway),
+        });
+
+        await host.start();
+
+        await expect(host.inspectResidentGold('res:pip')).resolves.toEqual({ resident: 'res:pip', itemId: 995, amount: 321 });
+
+        expect(firstCityGateway.connect).toHaveBeenCalledTimes(1);
+        expect(firstCityGateway.hello).toHaveBeenCalledTimes(1);
+        expect(firstCityGateway.close).toHaveBeenCalledTimes(1);
+        expect(secondCityGateway.connect).toHaveBeenCalledTimes(1);
+        expect(secondCityGateway.hello).toHaveBeenCalledTimes(1);
+        expect(secondCityGateway.close).toHaveBeenCalledTimes(1);
 
         await host.stop();
     });

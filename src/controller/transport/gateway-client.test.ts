@@ -175,4 +175,103 @@ describe('GatewayClient', () => {
             result: { ok: true, cause: 'applied_on_tick' },
         });
     });
+    it('limits concurrent submit_action requests to protect the game gateway', async () => {
+        let releaseFirstSubmit: (() => void) | undefined;
+        const submittedResidents: string[] = [];
+        server.once('connection', socket => {
+            socket.once('message', raw => {
+                const hello = JSON.parse(raw.toString()) as { id?: string | number };
+                socket.send(JSON.stringify({ v: 1, id: hello.id, kind: 'ok', payload: { ok: true } }));
+                socket.on('message', submitRaw => {
+                    const submit = JSON.parse(submitRaw.toString()) as {
+                        id?: string | number;
+                        kind?: string;
+                        payload?: { name?: string };
+                    };
+                    if (submit.kind !== 'submit_action') {
+                        return;
+                    }
+                    submittedResidents.push(String(submit.payload?.name || ''));
+                    if (submittedResidents.length === 1) {
+                        releaseFirstSubmit = () => socket.send(JSON.stringify({ v: 1, id: submit.id, kind: 'ok', payload: { ok: true } }));
+                        return;
+                    }
+                    socket.send(JSON.stringify({ v: 1, id: submit.id, kind: 'ok', payload: { ok: true } }));
+                });
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 500,
+            maxConcurrentActions: 1,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+
+        const first = client.submitActionWithRequestId('res:one', { kind: 'noop' });
+        await waitFor(() => submittedResidents.length === 1);
+        const second = client.submitActionWithRequestId('res:two', { kind: 'noop' });
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        expect(submittedResidents).toEqual(['res:one']);
+
+        releaseFirstSubmit?.();
+        await first;
+        await second;
+        client.close();
+
+        expect(submittedResidents).toEqual(['res:one', 'res:two']);
+    });
+
+    it('expires queued submit_action requests instead of sending stale actions', async () => {
+        const submittedResidents: string[] = [];
+        server.once('connection', socket => {
+            socket.once('message', raw => {
+                const hello = JSON.parse(raw.toString()) as { id?: string | number };
+                socket.send(JSON.stringify({ v: 1, id: hello.id, kind: 'ok', payload: { ok: true } }));
+                socket.on('message', submitRaw => {
+                    const submit = JSON.parse(submitRaw.toString()) as { kind?: string; payload?: { name?: string } };
+                    if (submit.kind === 'submit_action') {
+                        submittedResidents.push(String(submit.payload?.name || ''));
+                    }
+                });
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 100,
+            actionQueueTimeoutMs: 30,
+            maxConcurrentActions: 1,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+
+        const first = client.submitActionWithRequestId('res:one', { kind: 'noop' });
+        await waitFor(() => submittedResidents.length === 1);
+        const second = client.submitActionWithRequestId('res:two', { kind: 'noop' });
+
+        await expect(second).rejects.toThrow('Gateway action queue timed out: submit_action');
+        expect(submittedResidents).toEqual(['res:one']);
+
+        client.close();
+        await expect(first).rejects.toThrow(/Gateway request timed out: submit_action|Gateway client closed/);
+    });
 });
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+        if (predicate()) {
+            return;
+        }
+        await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    throw new Error('timed out waiting for predicate');
+}
