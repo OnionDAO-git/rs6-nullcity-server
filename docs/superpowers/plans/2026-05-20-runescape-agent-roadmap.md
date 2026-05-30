@@ -851,6 +851,7 @@ Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into th
   - Issue: `QA-20260530-008`.
   - Deliverable: `GET /api/nullcity/economy/live` returns a redacted city-wide snapshot of AP/GP totals, top residents, active listings, pending proposals, and recent events; powers dashboard packet D9.
   - 2026-05-30 (`agents/wip`, codex, packet `S-ECON-VIEW-1`): shipped `/api/nullcity/economy/{live,totals,events,residents}` plus redacted live event tail, AP/GP windowed rollups, pending proposal summary, and cache header (`max-age=2`) on `/live`. Added `live-economy.ts` read model, service facade methods, route tests, and contract docs.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-ECON-VIEW-2`): added `/api/nullcity/economy/listings` (approved+available NCRI read model) and `/api/nullcity/economy/heartbeat` (resident activity + event tail + storyteller freshness + degraded flags) with focused service/HTTP tests and updated dashboard contract docs.
 
 ## Recently Completed
 

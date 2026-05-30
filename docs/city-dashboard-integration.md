@@ -40,6 +40,8 @@ Routes:
 - `GET /api/nullcity/economy/totals`: live AP/GP totals and top resident balances.
 - `GET /api/nullcity/economy/events`: live redacted event tail.
 - `GET /api/nullcity/economy/residents`: live per-resident AP/GP summary.
+- `GET /api/nullcity/economy/listings`: active NCRI listings (approved + available).
+- `GET /api/nullcity/economy/heartbeat`: live liveness/readiness signal for economy/dashboard polling.
 - `GET /api/nullcity/storyteller/latest`: latest grounded digest+dispatch artifact summary for dashboard read models.
 
 Idempotency and audit records are persisted under `memory.dir/city-integration/`.
@@ -439,7 +441,7 @@ Other non-complete statuses are server-side operator failures (`failed_ap` or `f
 
 The dashboard D5 Storyteller feed should consume this endpoint; the CLI `npm run storyteller:dry-run -- --memory-root <path>` builds the full narrative-layer `StorytellerDigest` from this data (no model call). `npm run storyteller:run` adds a model-backed narrative on top.
 
-## Economy Live View (S-ECON-VIEW-1)
+## Economy Live View (S-ECON-VIEW-1 / S-ECON-VIEW-2)
 
 These routes provide a polling-friendly live AP/GP read model for dashboard packet D9 and viewer surfaces.
 
@@ -485,6 +487,34 @@ Same window semantics as `/economy/live`, but returns:
 - `city`
 - `residents` (all known residents from runtime state + economy events + proposal queue)
 - `topResidentsByAttention`
+
+### GET `/api/nullcity/economy/listings`
+
+Returns approved, not-yet-redeemed NCRIs as active listings for dashboard economy/operator panels.
+
+- `asOf`
+- `listings[]` with:
+  - `ncriId`, `itemId`, `displayName`
+  - `owner`, `sourceResidentName` (when known)
+  - `approvalStatus` (`approved`), `redemptionStatus` (`available`)
+  - `createdAt`, `updatedAt`
+  - `listed: true`
+
+### GET `/api/nullcity/economy/heartbeat`
+
+Returns a compact liveness/readiness snapshot for dashboard polling loops.
+
+- `Cache-Control: max-age=2`
+- payload fields:
+  - `asOf`
+  - `controllerUptimeSec`
+  - `residentCount`, `activeResidentCount`
+  - `economyEventCount`
+  - `lastEconomyEventTs`, `lastEconomyEventKind`
+  - `lastDigestBuiltAt` (when Storyteller artifacts exist)
+  - `degradedFlags[]` (`no_economy_events`, `no_active_residents`, `storyteller_missing`)
+
+This route is read-only and does not mutate controller/runtime state.
 
 ## Resident Routes (S11a)
 

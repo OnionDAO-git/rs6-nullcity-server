@@ -287,7 +287,7 @@ describe('CityIntegration HTTP server', () => {
         });
     });
 
-    it('GET /economy/live|totals|events|residents returns JSON rollups with redacted handles', async () => {
+    it('GET /economy/live|totals|events|residents|listings|heartbeat returns JSON economy read models', async () => {
         writeRuntimeState(root, 'res:peer', 40);
         started = await startCityIntegrationHttpServer({
             service: makeService(),
@@ -313,6 +313,21 @@ describe('CityIntegration HTTP server', () => {
             apThreshold: 100,
             proposerCityUserId: 'user:alice',
         });
+        const createdNcri = await requestJson('POST', `${started.url}/ncri`, token, {
+            itemId: 4151,
+            displayName: 'Abyssal Whip of the City',
+            lore: 'A champion relic.',
+            owner: 'res:test',
+        });
+        expect(createdNcri.status).toBe(201);
+        const ncriId = (createdNcri.payload as { id: string }).id;
+        const approvedNcri = await requestJson('POST', `${started.url}/ncri/${ncriId}/approve`, token, {});
+        expect(approvedNcri.status).toBe(200);
+        const transferredNcri = await requestJson('POST', `${started.url}/ncri/${ncriId}/transfer`, token, {
+            newOwner: 'user:buyer',
+            reason: 'sale',
+        });
+        expect(transferredNcri.status).toBe(200);
 
         const live = await requestJson('GET', `${started.url}/economy/live?limit=5&residentLimit=3`, token);
         expect(live.status).toBe(200);
@@ -360,6 +375,31 @@ describe('CityIntegration HTTP server', () => {
             'res:peer',
             'res:test',
         ]);
+
+        const listings = await requestJson('GET', `${started.url}/economy/listings`, token);
+        expect(listings.status).toBe(200);
+        expect(listings.payload).toMatchObject({
+            listings: [
+                {
+                    ncriId,
+                    owner: 'user:buyer',
+                    sourceResidentName: 'res:test',
+                    listed: true,
+                },
+            ],
+        });
+
+        fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
+
+        const heartbeat = await requestJson('GET', `${started.url}/economy/heartbeat`, token);
+        expect(heartbeat.status).toBe(200);
+        expect(heartbeat.cacheControl).toBe('max-age=2');
+        expect(heartbeat.payload).toMatchObject({
+            residentCount: 2,
+            activeResidentCount: 1,
+            degradedFlags: ['storyteller_missing'],
+            lastEconomyEventKind: 'ncri_sale',
+        });
     });
 
     it('GET /storyteller/latest returns the newest digest/dispatch payload for dashboard bridges', async () => {

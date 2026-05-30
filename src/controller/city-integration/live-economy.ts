@@ -76,6 +76,31 @@ export interface LiveEconomySnapshot {
     pendingProposals: LiveEconomyPendingProposalSummary[];
 }
 
+export interface LiveEconomyListingSummary {
+    ncriId: string;
+    itemId: number;
+    displayName: string;
+    owner: string;
+    sourceResidentName?: string;
+    approvalStatus: 'approved';
+    redemptionStatus: 'available';
+    createdAt: string;
+    updatedAt: string;
+    listed: true;
+}
+
+export interface LiveEconomyHeartbeat {
+    asOf: string;
+    controllerUptimeSec: number;
+    residentCount: number;
+    activeResidentCount: number;
+    economyEventCount: number;
+    lastEconomyEventTs?: string;
+    lastEconomyEventKind?: EconomyEventKind;
+    lastDigestBuiltAt?: string;
+    degradedFlags: string[];
+}
+
 export interface BuildLiveEconomySnapshotOptions {
     memoryRoot: string;
     now: () => Date;

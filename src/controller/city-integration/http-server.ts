@@ -89,6 +89,16 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/listings`) {
+        writeJson(response, 200, options.service.economyListings());
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/heartbeat`) {
+        writeJson(response, 200, options.service.economyHeartbeat(), { 'Cache-Control': 'max-age=2' });
+        return;
+    }
+
     if (request.method === 'GET' && path === `${pathPrefix}/storyteller/latest`) {
         writeJson(response, 200, options.service.storytellerLatest());
         return;

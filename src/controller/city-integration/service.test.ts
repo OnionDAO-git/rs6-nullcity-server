@@ -483,6 +483,56 @@ describe('CityIntegrationService', () => {
         expect(residents.residents.map(row => row.residentName).sort()).toEqual(['res:peer', 'res:test']);
     });
 
+    it('exposes approved-available NCRI listings and heartbeat liveness metadata', async () => {
+        fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
+
+        const listed = service.createNcri({
+            itemId: 4151,
+            displayName: 'Abyssal Whip of the City',
+            lore: 'A champion relic.',
+            owner: 'res:test',
+        });
+        service.approveNcri(listed.id, {});
+        service.transferNcri(listed.id, { newOwner: 'user:buyer', reason: 'sale' });
+
+        const redeemed = service.createNcri({
+            itemId: 995,
+            displayName: 'Coins of Memory',
+            lore: 'Already redeemed proof.',
+            owner: 'res:test',
+        });
+        service.approveNcri(redeemed.id, {});
+        service.redeemNcri(redeemed.id);
+
+        const listings = service.economyListings();
+        expect(listings.asOf).toBe('2026-05-27T12:00:00.000Z');
+        expect(listings.listings).toEqual([
+            expect.objectContaining({
+                ncriId: listed.id,
+                itemId: 4151,
+                displayName: 'Abyssal Whip of the City',
+                owner: 'user:buyer',
+                sourceResidentName: 'res:test',
+                approvalStatus: 'approved',
+                redemptionStatus: 'available',
+                listed: true,
+            }),
+        ]);
+
+        const heartbeat = service.economyHeartbeat();
+        expect(heartbeat).toMatchObject({
+            asOf: '2026-05-27T12:00:00.000Z',
+            residentCount: 1,
+            activeResidentCount: 1,
+            economyEventCount: 2,
+            lastEconomyEventKind: 'ncri_redemption',
+        });
+        expect(heartbeat.degradedFlags).not.toContain('no_economy_events');
+        expect(heartbeat.degradedFlags).not.toContain('no_active_residents');
+        expect(heartbeat.controllerUptimeSec).toBeGreaterThanOrEqual(0);
+        expect(heartbeat.lastEconomyEventTs).toBe('2026-05-27T12:00:00.000Z');
+    });
+
     it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {
         gold = 200;
         const serviceWithoutRuntime = new CityIntegrationService({

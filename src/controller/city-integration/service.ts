@@ -18,7 +18,13 @@ import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
 import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
-import { buildLiveEconomySnapshot, type LiveEconomyQuery, type LiveEconomySnapshot } from './live-economy';
+import {
+    buildLiveEconomySnapshot,
+    type LiveEconomyHeartbeat,
+    type LiveEconomyListingSummary,
+    type LiveEconomyQuery,
+    type LiveEconomySnapshot,
+} from './live-economy';
 import { LibraryUpdater } from '../evidence';
 import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
@@ -814,6 +820,65 @@ export class CityIntegrationService {
             city: live.city,
             residents: live.residents,
             topResidentsByAttention: live.topResidentsByAttention,
+        };
+    }
+
+    economyListings(): { asOf: string; listings: LiveEconomyListingSummary[] } {
+        const asOf = this.now().toISOString();
+        const listings = this.ncriRegistry
+            .list()
+            .filter(record => record.approvalStatus === 'approved' && record.redemptionStatus === 'available')
+            .map((record): LiveEconomyListingSummary => ({
+                ncriId: record.id,
+                itemId: record.itemId,
+                displayName: record.displayName,
+                owner: record.owner,
+                sourceResidentName: record.sourceResidentName,
+                approvalStatus: 'approved',
+                redemptionStatus: 'available',
+                createdAt: record.createdAt,
+                updatedAt: record.updatedAt,
+                listed: true,
+            }))
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+
+        return { asOf, listings };
+    }
+
+    economyHeartbeat(): LiveEconomyHeartbeat {
+        const nowIso = this.now().toISOString();
+        const live = this.economyLive({ limit: 1, residentLimit: 1 });
+        const allEvents = this.economyEventLog.readAll();
+        const lastEvent = allEvents.length ? allEvents[allEvents.length - 1] : undefined;
+        let lastDigestBuiltAt: string | undefined;
+        const degradedFlags: string[] = [];
+
+        if (!lastEvent) {
+            degradedFlags.push('no_economy_events');
+        }
+        if (live.city.activeResidentCount === 0) {
+            degradedFlags.push('no_active_residents');
+        }
+
+        try {
+            lastDigestBuiltAt = this.storytellerLatest().builtAt;
+        } catch (error) {
+            if (!(error instanceof CityIntegrationError && error.code === 'storyteller_not_found')) {
+                throw error;
+            }
+            degradedFlags.push('storyteller_missing');
+        }
+
+        return {
+            asOf: nowIso,
+            controllerUptimeSec: Math.max(0, Math.floor(process.uptime())),
+            residentCount: live.city.residentCount,
+            activeResidentCount: live.city.activeResidentCount,
+            economyEventCount: allEvents.length,
+            lastEconomyEventTs: lastEvent?.ts,
+            lastEconomyEventKind: lastEvent?.kind,
+            lastDigestBuiltAt,
+            degradedFlags,
         };
     }
 
