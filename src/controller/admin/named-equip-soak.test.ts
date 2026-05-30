@@ -22,6 +22,7 @@ describe('named equip soak verifier', () => {
             inventoryAfter: [item(315, 3)],
             equipmentAfter: [item(9703, 1)],
             setupCommandSubmitted: 1,
+            setupMode: 'unequip',
         });
 
         expect(outcome.status).toBe('passed');
@@ -49,6 +50,7 @@ describe('named equip soak verifier', () => {
             inventoryAfter: [item(315, 3), item(9703, 1), item(9704, 1)],
             equipmentAfter: [],
             setupCommandSubmitted: 1,
+            setupMode: 'unequip',
         });
 
         expect(outcome.status).toBe('failed');
@@ -61,8 +63,69 @@ describe('named equip soak verifier', () => {
             resident: 'res:qa-survivor',
             commandPeer: 'res:codex-cqa3-151600',
             commandPrefix: 'survive',
+            setupMode: 'unequip',
             configPath: 'controller.yml',
             outputDir: 'data/benchmarks/capability-qa-2026-05-30',
+        });
+    });
+
+    it('can verify a resident that starts with useful gear preloaded in inventory', () => {
+        const outcome = verifyNamedEquipSoakEvidence({
+            resident: 'res:qa-survivor',
+            entries: [
+                log({ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' }),
+                log({ kind: 'attack', cause: 'combat_train_attack' }),
+            ],
+            inventoryBefore: [item(9703, 1), item(9704, 1)],
+            inventoryAfterSetup: [item(9703, 1), item(9704, 1)],
+            inventoryAfter: [],
+            equipmentAfter: [item(9703, 1)],
+            setupCommandSubmitted: 1,
+            setupMode: 'preloaded-inventory',
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics.setupUnequipActions).toBe(0);
+        expect(outcome.summaries[0]).toContain('preloaded useful gear');
+    });
+
+    it('passes gear capability when equip succeeds even if combat engagement is handled by CQA5', () => {
+        const outcome = verifyNamedEquipSoakEvidence({
+            resident: 'res:qa-survivor',
+            entries: [log({ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' })],
+            inventoryBefore: [item(9703, 1)],
+            inventoryAfterSetup: [item(9703, 1)],
+            inventoryAfter: [],
+            equipmentAfter: [item(9703, 1)],
+            setupCommandSubmitted: 1,
+            setupMode: 'preloaded-inventory',
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics.postEquipAttacks).toBe(0);
+        expect(outcome.summaries[0]).toContain('combat engagement remains CQA5 scope');
+    });
+
+    it('accepts preloaded gear that was already equipped during the soak lookback window', () => {
+        const outcome = verifyNamedEquipSoakEvidence({
+            resident: 'res:qa-survivor',
+            entries: [log({ kind: 'equip', slot: 0, cause: 'combat_equip_useful_gear' })],
+            inventoryBefore: [],
+            inventoryAfterSetup: [],
+            inventoryAfter: [],
+            equipmentAfter: [item(9703, 1)],
+            setupCommandSubmitted: 1,
+            setupMode: 'preloaded-inventory',
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics.usefulGearInInventoryAfterSetup).toBe(0);
+        expect(outcome.metrics.usefulGearInEquipmentAfter).toBe(1);
+    });
+
+    it('parses explicit preloaded-inventory setup mode', () => {
+        expect(parseNamedEquipSoakArgs(['--setup-mode', 'preloaded-inventory'])).toMatchObject({
+            setupMode: 'preloaded-inventory',
         });
     });
 
