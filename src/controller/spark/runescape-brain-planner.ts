@@ -18,6 +18,8 @@
 
 import { z } from 'zod';
 import type { ActiveGoalState } from '../memory/runtime-state';
+import { rankCandidateGoals } from './needs-hierarchy';
+import type { GoalCandidate, ResidentNeedsContext } from './needs-hierarchy';
 
 // --- Brain completion Zod schemas (moved verbatim from the monolith). ---
 
@@ -511,4 +513,51 @@ export function isFollowGoal(goal?: ActiveGoalState): boolean {
 /** True when the goal is the deterministic faction-landmark work goal seeded for flagship heroes. */
 export function isFactionLandmarkWorkGoal(goal?: ActiveGoalState): boolean {
     return Boolean(goal && /^faction-landmark-work-/i.test(goal.id));
+}
+
+// --- Candidate-goal selection seam (packet S-SMART-NEEDS) ----------------
+//
+// Additive seam that lets a caller re-order a candidate-goal list by the
+// resident's current needs tier (AP/GP/active-goal hierarchy) before the
+// orchestrator picks one. When `needsContext` is omitted the list is
+// returned unchanged so existing call sites keep their behavior verbatim.
+//
+// This is intentionally a NEW exported function rather than a mutation of
+// an existing helper — the only risk is to callers that opt in by passing
+// `needsContext`. Easily revertible: delete this block and the
+// `needs-hierarchy` import, restore the original module export list.
+//
+// Wire-up plan: at the next orchestrator slim-down (Plan ε) the call site
+// in `hybrid-agent-helpers.ts` that picks a benchmark/library goal can
+// build a `GoalCandidate[]` from its current candidate list (using the
+// goal's id + a small tag derivation from the existing
+// `isStarter*Goal`/`isCombatTrainingGoal` predicates) and pass it through
+// `selectCandidateGoals({ needsContext })` before `benchmarkGoalForTask`.
+
+export interface SelectCandidateGoalsOptions {
+    needsContext?: ResidentNeedsContext;
+}
+
+/**
+ * Re-order `candidates` by needs-hierarchy alignment when
+ * `options.needsContext` is provided; otherwise return the input list
+ * unchanged. Pure and side-effect-free.
+ */
+export function selectCandidateGoals(
+    candidates: ReadonlyArray<GoalCandidate>,
+    options: SelectCandidateGoalsOptions = {},
+): ReadonlyArray<GoalCandidate> {
+    if (!options.needsContext || candidates.length === 0) {
+        return candidates;
+    }
+    const ranked = rankCandidateGoals(candidates, options.needsContext);
+    const byId = new Map(candidates.map(c => [c.id, c]));
+    const result: GoalCandidate[] = [];
+    for (const entry of ranked) {
+        const original = byId.get(entry.id);
+        if (original) {
+            result.push(original);
+        }
+    }
+    return result;
 }

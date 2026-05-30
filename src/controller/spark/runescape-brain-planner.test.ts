@@ -21,6 +21,7 @@ import {
     isExplorationGoal,
     isFactionLandmarkWorkGoal,
     cleanSpeech,
+    selectCandidateGoals,
     isFiremakingGoal,
     isFollowGoal,
     isCooksAssistantStartGoal,
@@ -469,5 +470,29 @@ describe('goal-identity predicates', () => {
         expect(isFactionLandmarkWorkGoal(factionLandmarkWorkGoal('foundry', 0))).toBe(true);
         expect(isFactionLandmarkWorkGoal(explorationGoal(0))).toBe(false);
         expect(isFactionLandmarkWorkGoal(undefined)).toBe(false);
+    });
+});
+
+describe('selectCandidateGoals (S-SMART-NEEDS seam)', () => {
+    it('returns the input list unchanged when no needsContext is supplied', () => {
+        const candidates = [
+            { id: 'pursue-quest', tags: ['pursue'] },
+            { id: 'eat-shrimp', tags: ['survive', 'eat'] },
+            { id: 'sell-logs', tags: ['gp', 'earn'] },
+        ];
+        const result = selectCandidateGoals(candidates);
+        expect(result.map(c => c.id)).toEqual(['pursue-quest', 'eat-shrimp', 'sell-logs']);
+    });
+
+    it('puts the survive-tagged candidate first when ap is at/below floor + buffer', () => {
+        const candidates = [
+            { id: 'pursue-quest', tags: ['pursue'] },
+            { id: 'sell-logs', tags: ['gp', 'earn'] },
+            { id: 'eat-shrimp', tags: ['survive', 'eat'] },
+        ];
+        const result = selectCandidateGoals(candidates, {
+            needsContext: { ap: 5, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true },
+        });
+        expect(result[0]?.id).toBe('eat-shrimp');
     });
 });
