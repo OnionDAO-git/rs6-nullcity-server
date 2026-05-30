@@ -828,18 +828,20 @@ export class CityIntegrationService {
         const listings = this.ncriRegistry
             .list()
             .filter(record => record.approvalStatus === 'approved' && record.redemptionStatus === 'available')
-            .map((record): LiveEconomyListingSummary => ({
-                ncriId: record.id,
-                itemId: record.itemId,
-                displayName: record.displayName,
-                owner: record.owner,
-                sourceResidentName: record.sourceResidentName,
-                approvalStatus: 'approved',
-                redemptionStatus: 'available',
-                createdAt: record.createdAt,
-                updatedAt: record.updatedAt,
-                listed: true,
-            }))
+            .map(
+                (record): LiveEconomyListingSummary => ({
+                    ncriId: record.id,
+                    itemId: record.itemId,
+                    displayName: record.displayName,
+                    owner: record.owner,
+                    sourceResidentName: record.sourceResidentName,
+                    approvalStatus: 'approved',
+                    redemptionStatus: 'available',
+                    createdAt: record.createdAt,
+                    updatedAt: record.updatedAt,
+                    listed: true,
+                }),
+            )
             .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
         return { asOf, listings };
