@@ -296,7 +296,17 @@ export class CityIntegrationService {
             apFailureReason = error instanceof Error ? error.message : String(error);
         }
 
-        const status = deriveExchangeStatus(apEvidence, gpEvidence, apFailureReason);
+        // After a successful GP burn (gpEvidence is present at this point in
+        // the flow), only an AP-side failure can reach deriveExchangeStatus —
+        // so attribute explicitly to 'ap' to satisfy the tightened helper
+        // contract (S-AUDIT-FIX-2 / F2). When apEvidence is also present and
+        // no failure occurred, deriveExchangeStatus returns 'complete' and the
+        // failureContext is ignored.
+        const status = deriveExchangeStatus(
+            apEvidence,
+            gpEvidence,
+            apFailureReason !== undefined ? { failedSide: 'ap', failureReason: apFailureReason } : undefined,
+        );
         const completedAt = status === 'complete' ? this.now().toISOString() : undefined;
 
         const record: ApGpExchangeRecord = {

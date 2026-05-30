@@ -24,20 +24,56 @@ describe('deriveExchangeStatus', () => {
         expect(deriveExchangeStatus(apEv, gpEv)).toBe('complete');
     });
 
-    it('returns failed_gp when insufficient_gold failure reason and no GP evidence', () => {
-        expect(deriveExchangeStatus(undefined, undefined, 'insufficient_gold')).toBe('failed_gp');
+    it('returns failed_gp when caller explicitly attributes failure to GP side', () => {
+        expect(
+            deriveExchangeStatus(undefined, undefined, {
+                failedSide: 'gp',
+                failureReason: 'insufficient_gold',
+            }),
+        ).toBe('failed_gp');
     });
 
-    it('returns failed_ap when GP evidence present but AP evidence missing', () => {
+    it('returns failed_ap when GP evidence present but AP evidence missing (one-sided record)', () => {
         expect(deriveExchangeStatus(undefined, gpEv)).toBe('failed_ap');
+    });
+
+    it('returns failed_ap when caller explicitly attributes failure to AP side', () => {
+        expect(
+            deriveExchangeStatus(undefined, undefined, {
+                failedSide: 'ap',
+                failureReason: 'resident_not_found',
+            }),
+        ).toBe('failed_ap');
+    });
+
+    it('returns failed_unknown when caller cannot attribute failure side (defensive)', () => {
+        expect(
+            deriveExchangeStatus(undefined, undefined, {
+                failedSide: 'unknown',
+                failureReason: 'resident_not_found',
+            }),
+        ).toBe('failed_unknown');
     });
 
     it('returns incomplete when AP evidence present but GP evidence missing', () => {
         expect(deriveExchangeStatus(apEv, undefined)).toBe('incomplete');
     });
 
-    it('returns incomplete when both evidences absent and no failure reason', () => {
+    it('returns incomplete when both evidences absent and no failure attributed', () => {
         expect(deriveExchangeStatus(undefined, undefined)).toBe('incomplete');
+    });
+
+    it('does NOT silently classify any failure as failed_gp (F2 regression)', () => {
+        // Audit F2: previously, any failureReason with no evidence returned 'failed_gp'
+        // regardless of where the failure actually came from. Tightened helper now
+        // requires explicit failedSide attribution; an AP-side failure must never be
+        // recorded as failed_gp.
+        expect(
+            deriveExchangeStatus(undefined, undefined, {
+                failedSide: 'ap',
+                failureReason: 'resident_not_found',
+            }),
+        ).not.toBe('failed_gp');
     });
 });
 

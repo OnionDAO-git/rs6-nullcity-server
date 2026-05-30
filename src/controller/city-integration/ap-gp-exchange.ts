@@ -12,14 +12,28 @@ import type { EconomyEventLog } from './economy-event';
  *   - GP burned from the resident's RuneScape inventory (coin item 995)
  *
  * Status is `complete` only when BOTH sides have been confirmed.
- * One-sided records are `failed_gp`, `failed_ap`, or `incomplete` so the
- * Storyteller can never narrate "AP traded for GP" without real evidence.
+ * One-sided records are `failed_gp`, `failed_ap`, `failed_unknown`, or
+ * `incomplete` so the Storyteller can never narrate "AP traded for GP"
+ * without real evidence and can never mis-attribute the failed side.
  *
  * Exchange id format: `apgp:<resident>:<idempotencyKey>`
  * No GP ledger is created; GP evidence is always coin item 995 game state.
  */
 
-export type ApGpExchangeStatus = 'complete' | 'failed_gp' | 'failed_ap' | 'incomplete';
+export type ApGpExchangeStatus = 'complete' | 'failed_gp' | 'failed_ap' | 'failed_unknown' | 'incomplete';
+
+/**
+ * Which side of an exchange failed, when failure is reported with no
+ * collected evidence on either side. Callers must classify the failure
+ * source explicitly; the helper will not guess.
+ *
+ *   - `'gp'`     — GP burn failed (e.g. insufficient_gold). AP was never credited.
+ *   - `'ap'`     — AP credit failed (e.g. resident_not_found before any GP move).
+ *                  Note: AP-side failure AFTER a successful GP burn is already
+ *                  expressible via `gpEvidence` present + `apEvidence` absent.
+ *   - `'unknown'`— Setup / pre-flight / unclassifiable failure.
+ */
+export type ApGpExchangeFailedSide = 'gp' | 'ap' | 'unknown';
 
 export interface ApGpApEvidence {
     creditedAmount: number;
@@ -56,7 +70,7 @@ export const apGpExchangeRecordSchema = z
         cityUserId: z.string().optional(),
         sourceType: z.string().optional(),
         sourceId: z.string().optional(),
-        status: z.enum(['complete', 'failed_gp', 'failed_ap', 'incomplete']),
+        status: z.enum(['complete', 'failed_gp', 'failed_ap', 'failed_unknown', 'incomplete']),
         apEvidence: apEvidenceSchema.optional(),
         gpEvidence: gpEvidenceSchema.optional(),
         failureReason: z.string().optional(),
@@ -109,24 +123,58 @@ export function makeExchangeId(resident: string, idempotencyKey: string): string
     return `apgp:${resident}:${idempotencyKey}`;
 }
 
+/**
+ * Optional failure metadata for {@link deriveExchangeStatus}.
+ *
+ * When both AP and GP evidences are absent but a failure occurred, the caller
+ * MUST explicitly attribute the failure to a side via `failedSide`. The helper
+ * refuses to guess: an unattributed failure with no evidence on either side
+ * collapses to `failed_unknown` so downstream readers (Storyteller, digest,
+ * verifier) never see a fabricated `failed_gp` classification.
+ *
+ * Audit packet: S-AUDIT-FIX-2 / issue QA-20260530-012 / finding F2.
+ */
+export interface ApGpExchangeFailureContext {
+    failedSide: ApGpExchangeFailedSide;
+    failureReason?: string;
+}
+
 export function deriveExchangeStatus(
     apEvidence: ApGpApEvidence | undefined,
     gpEvidence: ApGpGpEvidence | undefined,
-    failureReason?: string,
+    failureContext?: ApGpExchangeFailureContext,
 ): ApGpExchangeStatus {
-    if (failureReason === 'insufficient_gold' || (gpEvidence === undefined && apEvidence === undefined && failureReason)) {
-        return 'failed_gp';
-    }
-    if (apEvidence === undefined && gpEvidence !== undefined) {
-        return 'failed_ap';
-    }
-    if (apEvidence !== undefined && gpEvidence === undefined) {
-        return 'incomplete';
-    }
+    // Both sides confirmed → complete. (Trumps any failureContext: success
+    // evidence wins over a stray failureReason captured mid-flow.)
     if (apEvidence !== undefined && gpEvidence !== undefined) {
         return 'complete';
     }
-    return 'incomplete';
+
+    // GP burn happened but AP credit did not — one-sided record; failed_ap.
+    // This is provable from evidence alone and does not require failedSide.
+    if (apEvidence === undefined && gpEvidence !== undefined) {
+        return 'failed_ap';
+    }
+
+    // AP credited but GP not yet burned — interim/incomplete state.
+    if (apEvidence !== undefined && gpEvidence === undefined) {
+        return 'incomplete';
+    }
+
+    // Both evidences absent. Only an explicit failedSide attribution can
+    // classify the failure mode honestly; otherwise the exchange is simply
+    // incomplete (no failure has been reported yet).
+    if (failureContext === undefined) {
+        return 'incomplete';
+    }
+    switch (failureContext.failedSide) {
+        case 'gp':
+            return 'failed_gp';
+        case 'ap':
+            return 'failed_ap';
+        case 'unknown':
+            return 'failed_unknown';
+    }
 }
 
 export class ApGpExchangeStore {
