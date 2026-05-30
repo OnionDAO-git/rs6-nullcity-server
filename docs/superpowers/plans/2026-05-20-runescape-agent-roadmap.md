@@ -759,6 +759,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: `npm run storyteller:dry-run` builds a bounded `CityEventDigest` from Library timelines, AP events, GP evidence, NCRIs, goals/bounded completions, and system warnings without calling a model.
   - Verification: fixture digest tests; dry-run writes digest JSON; `npm run check:no-ui` remains clean.
   - 2026-05-29 (`agents/wip`, codex, packet `S6b`): live city integration service actions now emit normalized `EconomyEventLog` rows for AP top-ups, GP observations, GP burns/trades, and AP-for-GP exchanges. `npm run city:digest -- --memory-root ...` and `GET /api/nullcity/economy/digest` can now read those service events as a dashboard/Storyteller JSON read model. Verified with focused service/http/digest tests, `check:no-ui`, `build`, and `fin`.
+  - 2026-05-30 (`agents/wip`, codex, packet `S6b-live`): `npm run storyteller:dry-run -- --memory-root <path>` now reads live `EconomyEventLog` + `GoalContractStore`, writes Storyteller `digest.json`/`summary.txt`, and still performs no model call. Verified with CLI tests, full Storyteller suite, and live CLI smoke.
 
 - `[>]` **S7: Storyteller model run and grounding verifier.**
   - Files: `src/controller/storyteller/*`, `src/controller/llm/*`, `src/controller/config.ts`, `config/controller.yml.example`, tests beside each file.
