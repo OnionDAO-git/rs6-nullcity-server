@@ -128,6 +128,36 @@ describe('GatewayClient', () => {
         client.close();
     });
 
+    it('listResidents honors a larger listResidentsRequestTimeoutMs override', async () => {
+        server.once('connection', socket => {
+            socket.on('message', raw => {
+                const message = JSON.parse(raw.toString()) as { id?: string | number; kind?: string };
+                if (message.kind === 'controller_hello') {
+                    socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'ok', payload: { ok: true } }));
+                    return;
+                }
+                if (message.kind === 'list_residents') {
+                    setTimeout(() => {
+                        socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'residents', payload: { residents: [] } }));
+                    }, 150);
+                }
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 50,
+            listResidentsRequestTimeoutMs: 300,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        await expect(client.listResidents()).resolves.toEqual([]);
+        client.close();
+    });
+
     it('can submit an action while preserving request id separately from ack result', async () => {
         server.once('connection', socket => {
             socket.once('message', raw => {
@@ -175,6 +205,38 @@ describe('GatewayClient', () => {
             result: { ok: true, cause: 'applied_on_tick' },
         });
     });
+
+    it('submitAction honors a larger actionRequestTimeoutMs override', async () => {
+        server.once('connection', socket => {
+            socket.once('message', raw => {
+                const hello = JSON.parse(raw.toString()) as { id?: string | number };
+                socket.send(JSON.stringify({ v: 1, id: hello.id, kind: 'ok', payload: { ok: true } }));
+                socket.once('message', submitRaw => {
+                    const submit = JSON.parse(submitRaw.toString()) as { id?: string | number };
+                    setTimeout(() => {
+                        socket.send(JSON.stringify({ v: 1, id: submit.id, kind: 'ok', payload: { ok: true } }));
+                    }, 150);
+                });
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 50,
+            actionRequestTimeoutMs: 300,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        await expect(client.submitActionWithRequestId('res:slow', { kind: 'noop' })).resolves.toEqual({
+            requestId: expect.any(String),
+            ackResult: { ok: true },
+        });
+        client.close();
+    });
+
     it('limits concurrent submit_action requests to protect the game gateway', async () => {
         let releaseFirstSubmit: (() => void) | undefined;
         const submittedResidents: string[] = [];
@@ -225,6 +287,42 @@ describe('GatewayClient', () => {
         client.close();
 
         expect(submittedResidents).toEqual(['res:one', 'res:two']);
+    });
+
+    it('defaults to a small action lane pool so startup bursts do not starve residents', async () => {
+        const submittedResidents: string[] = [];
+        server.once('connection', socket => {
+            socket.once('message', raw => {
+                const hello = JSON.parse(raw.toString()) as { id?: string | number };
+                socket.send(JSON.stringify({ v: 1, id: hello.id, kind: 'ok', payload: { ok: true } }));
+                socket.on('message', submitRaw => {
+                    const submit = JSON.parse(submitRaw.toString()) as { kind?: string; payload?: { name?: string } };
+                    if (submit.kind === 'submit_action') {
+                        submittedResidents.push(String(submit.payload?.name || ''));
+                    }
+                });
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 500,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+
+        const submissions = ['res:one', 'res:two', 'res:three', 'res:four', 'res:five'].map(name =>
+            client.submitActionWithRequestId(name, { kind: 'noop' }),
+        );
+        await waitFor(() => submittedResidents.length >= 4);
+
+        expect(submittedResidents).toEqual(['res:one', 'res:two', 'res:three', 'res:four']);
+
+        client.close();
+        await Promise.allSettled(submissions);
     });
 
     it('expires queued submit_action requests instead of sending stale actions', async () => {

@@ -36,6 +36,8 @@ export interface GatewayClientOptions {
      * Packet S-DEMO-P0-1 (QA-20260530-018).
      */
     inventoryRequestTimeoutMs?: number;
+    listResidentsRequestTimeoutMs?: number;
+    actionRequestTimeoutMs?: number;
     actionQueueTimeoutMs?: number;
     maxConcurrentActions?: number;
     reconnect?: boolean;
@@ -43,6 +45,10 @@ export interface GatewayClientOptions {
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_INVENTORY_TIMEOUT_MS = 30_000;
+const DEFAULT_LIST_RESIDENTS_TIMEOUT_MS = 30_000;
+const DEFAULT_ACTION_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_ACTION_QUEUE_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_CONCURRENT_ACTIONS = 4;
 
 export interface GatewayClientEvents {
     perception: [residentId: string, perception: Perception];
@@ -122,7 +128,7 @@ export class GatewayClient extends EventEmitter {
     }
 
     listResidents(filter: ResidentFilter = 'all'): Promise<ResidentSummary[]> {
-        return this.request('list_residents', { filter }).then(value => {
+        return this.request('list_residents', { filter }, { timeoutMs: this.listResidentsTimeoutMs() }).then(value => {
             const payload = readPayload(value);
             const residents = Array.isArray(payload.residents) ? payload.residents : [];
             return residents as ResidentSummary[];
@@ -164,15 +170,25 @@ export class GatewayClient extends EventEmitter {
         return this.options.inventoryRequestTimeoutMs ?? DEFAULT_INVENTORY_TIMEOUT_MS;
     }
 
+    private listResidentsTimeoutMs(): number {
+        const configured = this.options.listResidentsRequestTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_LIST_RESIDENTS_TIMEOUT_MS;
+    }
+
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {
         return this.withActionSlot(() =>
-            this.requestWithId('submit_action', { name, action }).then(({ requestId, value }) => {
-                const payload = readPayload(value);
-                return {
-                    requestId,
-                    ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
-                };
-            }),
+            this.requestWithId('submit_action', { name, action }, { timeoutMs: this.actionRequestTimeoutMs() }).then(
+                ({ requestId, value }) => {
+                    const payload = readPayload(value);
+                    return {
+                        requestId,
+                        ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
+                    };
+                },
+            ),
         );
     }
 
@@ -284,7 +300,7 @@ export class GatewayClient extends EventEmitter {
         if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
             return Math.max(1, Math.floor(configured));
         }
-        return 1;
+        return DEFAULT_MAX_CONCURRENT_ACTIONS;
     }
 
     private actionQueueTimeoutMs(): number {
@@ -292,8 +308,15 @@ export class GatewayClient extends EventEmitter {
         if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
             return Math.max(1, Math.floor(configured));
         }
-        const requestTimeout = this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
-        return Math.max(1, Math.floor(requestTimeout / 2));
+        return DEFAULT_ACTION_QUEUE_TIMEOUT_MS;
+    }
+
+    private actionRequestTimeoutMs(): number {
+        const configured = this.options.actionRequestTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_ACTION_REQUEST_TIMEOUT_MS;
     }
 
     private handleMessage(raw: WebSocket.RawData): void {
