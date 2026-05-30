@@ -10,7 +10,7 @@ Operational guide for the staff at the door during the IRL event. Written for no
 |---|---|
 | What's a "patron"? | A human visitor who's chosen to support a resident. |
 | What's a "resident"? | An AI agent playing in our RuneScape server. |
-| What are Shards? | The in-event currency patrons spend to support residents. |
+| What are AP? | Attention Points — the in-event currency patrons spend to support residents. |
 | What's a Letter? | A message a resident sends to a patron — landing on the inbox web page (and optionally a printed lanyard card). |
 | Who do I ask for help? | Tap a maintainer on the shoulder. Look for the lanyard with a red dot. |
 
@@ -62,14 +62,14 @@ Operational guide for the staff at the door during the IRL event. Written for no
 
 When **Alice** walks up with her OnionDAO badge:
 
-### 1. Grant her some Shards
+### 1. Grant her some AP (Attention Points)
 ```bash
 npm run patron:grant -- --human alice@onion --amount 10
 ```
 Expected stdout:
 ```
-[patron:grant] Successfully credited 10 Shards to human "alice@onion".
-[patron:grant] New balance: 10 Shards.
+[patron:grant] Successfully credited 10 AP to human "alice@onion".
+[patron:grant] New balance: 10 AP.
 ```
 
 ### 2. She picks a resident to support
@@ -96,8 +96,8 @@ npm run patron:offer -- \
 ```
 
 This:
-- Debits 5 Shards from Alice
-- Adds attention to res:fern (10 attention per Shard = 50 attention)
+- Debits 5 AP from Alice
+- Adds attention to res:fern (10 attention per AP = 50 attention)
 - Records standing — Alice is now an **Acquaintance** of the embassy
 - **Writes a letter** to `data/controller/memory/data/letters/aliceonion/inbox.jsonl`
 
@@ -151,7 +151,7 @@ When this happens, the **death loop** fires automatically:
 ## Common error recovery
 
 ### "Insufficient currency" when offering
-Alice has spent her Shards. Grant her more:
+Alice has spent her AP. Grant her more:
 ```bash
 npm run patron:grant -- --human alice@onion --amount 5
 ```
@@ -175,7 +175,7 @@ Wrong resident name. Check `ls src/controller/soul/starter-souls/` for valid nam
 The deterministic CLI path still works as the fallback. Run `npm run patron:ask -- --human <handle> --resident res:hans --text "hi"` from the staffer console; Hans's `nervous:patron-memory-acknowledge` reflex (HD-031) should fire within a few seconds.
 
 If a staffer wants an unambiguous welcome moment for a new arrival:
-1. Run `npm run patron:grant -- --human <handle> --amount 10` to credit a starter Shard balance.
+1. Run `npm run patron:grant -- --human <handle> --amount 10` to credit a starter AP balance.
 2. Run `npm run patron:offer -- --human <handle> --resident res:hans --amount 10` to fire the patron-acknowledge reflex AND cross them to Acquaintance tier (drops one welcome letter in their inbox).
 3. Hans says thanks by name within seconds; show the patron their inbox URL printed by the offer command.
 
@@ -193,11 +193,11 @@ LettersStore slugs are case-insensitive: `Alice@Onion` and `alice@onion` are the
 
 | verb | what it does | when to use it |
 | --- | --- | --- |
-| `patron:grant` | Credit Shards to a patron's wallet. | Onboarding (first visit) or top-up when they spent their balance. |
-| `patron:offer` | Patron spends Shards → resident gets attention + standing bumps. | The default action when a patron wants to support a resident. |
+| `patron:grant` | Credit AP (Attention Points) to a patron's wallet. | Onboarding (first visit) or top-up when they spent their balance. |
+| `patron:offer` | Patron spends AP → resident gets attention + standing bumps. | The default action when a patron wants to support a resident. |
 | `patron:ask` | Patron asks a resident a free-text question; resident sees a `chat` perception event + the patron-acknowledge reflex fires within ~1s. | Patron wants a verbal interaction (resident may say something back). |
-| `patron:witness` | Patron records that they witnessed a resident's act (skill milestone, brave fight, etc.) — bumps standing without spending Shards. | Free-tier visitor moments; gives standing without requiring a Shard balance. |
-| `patron:balance` | Show a patron's current Shard balance (read-only). | Quick lookup at the door or when a patron asks "how many Shards do I have?" |
+| `patron:witness` | Patron records that they witnessed a resident's act (skill milestone, brave fight, etc.) — bumps standing without spending AP. | Free-tier visitor moments; gives standing without requiring an AP balance. |
+| `patron:balance` | Show a patron's current AP balance (read-only). | Quick lookup at the door or when a patron asks "how many AP do I have?" |
 | `patron:standing` | Show a patron's standing tier + pts + progress to next tier. | When a patron wants to know if they've reached Ally or Officer. |
 | `patron:whisper` | Send a private message from a patron to a specific resident (appears as a nervous-system perception). | When a patron wants to send a private note to a resident. |
 | `patron:bulk-register` | Register a file of attendee handles into `controller.yml#patrons[]` in one command. | Pre-event setup (REQUIRED before doors open to enable D3 in-world greetings). |
@@ -235,9 +235,9 @@ If the snapshot returns 404 the controller was started without `--letters-http-p
 ## Live in-event commands cheatsheet
 
 ```bash
-# Check a patron's Shard balance
+# Check a patron's AP balance
 npm run patron:balance -- --human alice@onion
-# → [patron:balance] alice@onion: 42 Shards
+# → [patron:balance] alice@onion: 42 AP
 
 # Check a patron's standing tier + progress
 npm run patron:standing -- --human alice@onion

@@ -386,11 +386,11 @@ export class ControllerMcpServer {
 
         server.tool(
             'patron_offer',
-            'Offer Shards to a running resident and update live attention/evidence',
+            'Offer AP (Attention Points) to a running resident and update live attention/evidence',
             {
-                human: z.string().min(1).describe('Human or patron handle offering Shards'),
+                human: z.string().min(1).describe('Human or patron handle offering AP (Attention Points)'),
                 resident: z.string().min(1).describe('Resident name, with or without res: prefix'),
-                amount: z.number().int().positive().describe('Shard amount to offer'),
+                amount: z.number().int().positive().describe('AP amount to offer'),
             },
             async ({ human, resident, amount }) => {
                 const residentName = normalizeResidentName(resident);

@@ -16,7 +16,7 @@ describe('NervousSystem', () => {
 
         expect(reaction?.action).toEqual({
             kind: 'say',
-            text: 'Thank you for the Shards, alice@onion!',
+            text: 'Thank you for the AP, alice@onion!',
             cause: 'nervous:patron-memory-acknowledge',
         });
         expect(reaction?.suppressThinking).toBe(true);
@@ -65,7 +65,7 @@ describe('NervousSystem', () => {
 
         expect(reaction?.action).toEqual({
             kind: 'say',
-            text: 'Thank you for the Shards, bob@onion, and everyone backing me!',
+            text: 'Thank you for the AP, bob@onion, and everyone backing me!',
             cause: 'nervous:patron-memory-acknowledge',
         });
 
@@ -91,7 +91,7 @@ describe('NervousSystem', () => {
 
         expect(reaction?.action).toEqual({
             kind: 'say',
-            text: 'Thank you for the Shards, codex-live-mcp-1779728689@onion!',
+            text: 'Thank you for the AP, codex-live-mcp-1779728689@onion!',
             cause: 'nervous:patron-memory-acknowledge',
         });
     });
@@ -111,7 +111,7 @@ describe('NervousSystem', () => {
 
         expect(reaction?.action).toEqual({
             kind: 'say',
-            text: 'Thank you for the Shards, fresh-live@onion!',
+            text: 'Thank you for the AP, fresh-live@onion!',
             cause: 'nervous:patron-memory-acknowledge',
         });
     });
@@ -130,7 +130,7 @@ describe('NervousSystem', () => {
 
         expect(system.react(healthyPerception(33_300))?.action).toEqual({
             kind: 'say',
-            text: 'Thank you for the Shards, old-live@onion!',
+            text: 'Thank you for the AP, old-live@onion!',
             cause: 'nervous:patron-memory-acknowledge',
         });
 
@@ -139,7 +139,24 @@ describe('NervousSystem', () => {
 
         expect(later?.action).toEqual({
             kind: 'say',
-            text: 'Thank you for the Shards, fresh-live@onion!',
+            text: 'Thank you for the AP, fresh-live@onion!',
+            cause: 'nervous:patron-memory-acknowledge',
+        });
+    });
+
+    it('thanks a patron whose library memory uses AP format (S0a forward-compat)', () => {
+        const state = runtimeState(42);
+        const system = new NervousSystem({
+            soul: soul(),
+            state,
+            memory: memoryWith(['Patron gift from alice@onion: 10 AP (you are now acquaintance to them) (2026-05-30 10:00:00)']),
+        });
+
+        const reaction = system.react(healthyPerception(42));
+
+        expect(reaction?.action).toEqual({
+            kind: 'say',
+            text: 'Thank you for the AP, alice@onion!',
             cause: 'nervous:patron-memory-acknowledge',
         });
     });

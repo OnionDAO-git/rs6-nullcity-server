@@ -727,7 +727,7 @@ describe('ControllerMcpServer', () => {
 
             const tool = registeredTools.patron_offer;
             expect(tool).toBeDefined();
-            expect(tool.description).toContain('Offer Shards');
+            expect(tool.description).toContain('Offer AP (Attention Points)');
             expect(tool.inputSchema).toBeDefined();
         });
 

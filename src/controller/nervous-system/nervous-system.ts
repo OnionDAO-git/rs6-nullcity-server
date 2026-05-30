@@ -240,7 +240,7 @@ export class NervousSystem {
 
         let memories: string[];
         try {
-            memories = this.options.memory.retrieve(this.options.soul.frontmatter.name, 'patron gift Shards support witness sponsor', 6);
+            memories = this.options.memory.retrieve(this.options.soul.frontmatter.name, 'patron gift AP support witness sponsor', 6);
         } catch {
             this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
             this.options.state.hookCooldowns['patron-memory-acknowledge:scan'] = tick + 10;
@@ -455,8 +455,8 @@ function patronThanksMessage(patron: PatronMemory, backlog = false): string {
     if (patron.kind === 'witness') {
         return `Thank you for witnessing this, ${patron.handle}${suffix}`;
     }
-    if (patron.detail && /\bshards?\b/i.test(patron.detail)) {
-        return `Thank you for the Shards, ${patron.handle}${suffix}`;
+    if (patron.detail && /\b(?:shards?|AP)\b/i.test(patron.detail)) {
+        return `Thank you for the AP, ${patron.handle}${suffix}`;
     }
     return `Thank you for the support, ${patron.handle}${suffix}`;
 }

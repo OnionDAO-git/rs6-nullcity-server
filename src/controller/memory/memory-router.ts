@@ -163,7 +163,7 @@ function renderPatronFact(event: Record<string, unknown>): string {
         return `Patron ${handle} asked: "${question}"`;
     }
     if (event.kind === 'patron_gift') {
-        const amount = typeof event.amount === 'number' ? `${event.amount} Shards` : undefined;
+        const amount = typeof event.amount === 'number' ? `${event.amount} AP` : undefined;
         const artifact = typeof event.artifact === 'string' ? event.artifact : undefined;
         const gift = amount || artifact || 'a gift';
         return `Patron ${handle} gave ${gift}.`;

@@ -46,6 +46,19 @@ describe('MemoryRouter durable facts', () => {
         ]);
     });
 
+    it('renders patron_gift memory with AP terminology (S0a)', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'patron_gift',
+            patronHandle: 'alice@onion',
+            amount: 10,
+        });
+
+        expect(facts).toHaveLength(1);
+        expect(facts[0].path).toBe('facts/patrons.md');
+        expect(facts[0].content).toContain('Patron alice@onion gave 10 AP.');
+        expect(facts[0].content).not.toContain('Shards');
+    });
+
     it('extracts death locations into danger facts', () => {
         const facts = router.routeDurableFacts('res:hans', {
             kind: 'died',
