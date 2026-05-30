@@ -17,8 +17,102 @@ This run was observation-only. No code touched. Three new economy events were ap
 
 ## V1 — Needs-hierarchy ranker firing live
 
-**Status: SKIPPED — RECIPE BLOCKED**
-**Confidence: MEDIUM that the wire-up is deployed; LOW that it activates in live demo windows.**
+**Status: UNBLOCKED — recipe now substrate-supported; awaits controller restart for end-to-end live observation**
+**Confidence: MEDIUM that the wire-up is deployed; HIGH that the recipe is now executable on-demand (only blocker is restarting the controller to pick up the new dist binary).**
+
+### Update 2026-05-30 (S-OBS-DRAIN-1 closes the verification-tooling gap)
+
+The "no on-demand AP-drain HTTP endpoint" gap noted in the original attempt log below was closed by packet **S-OBS-DRAIN-1** (commit `fe8e8984` on `agents/wip`):
+
+- New service method `CityIntegrationService.adminDrainAttention(residentName, {amount, reason})`
+- New HTTP route `POST /api/nullcity/admin/residents/:id/ap-drain {amount, reason}` (operator-token gated, same bearer as `/attention-grants`)
+- `ResidentRuntime.decrementAttention(amount)` clamps balance at 0, persists, returns actualDrain
+- Emits an `ap_decay` economy event (`apDelta = -actualDrain`, `note = reason`) so the JSONL/digest/dashboard surface the operator drain in the same channel as per-tick decay, **plus** a `city_attention_drain` library timeline event with `requestedDrain`/`actualDrain`/`attentionBefore`/`attentionAfter`/`tick`/`reason`/`lifeIndex` for per-resident audit
+- Kept on a separate `/admin/` URL segment so the user-facing `attention-grants` schema stays positive-only — no back-compat risk
+- Tests: 7 new service tests + 3 new HTTP tests; `fin` 2981/2981 PASS
+
+### Snapshot of relevant residents at the time of the unblock (controller pid 16763, **OLD binary**, dist 2026-05-30 14:44)
+
+| resident | online | AP | tick | activeGoal.id |
+|---|---|---|---|---|
+| `res:agent` | yes | 52355 | 29 | `null` (no benchmarkTask configured) |
+| `res:qa-woodcutter` | yes | 22486 | 33 | `master-woodcutting` (S-GOAL-1 orientation working live!) |
+| `res:qa-trader` | yes | 23027.5 | 33 | `scout-nearby-area` (benchmark) |
+| `res:qa-scout` | yes | 22917.5 | 37 | `scout-nearby-area` (benchmark) |
+| `res:qa-survivor` | yes | 22947.5 | 54 | `train-combat-safely` (benchmark) |
+| `res:qa-cook` | yes | 22948.5 | 36 | `catch-and-cook-starter-fish` (benchmark) |
+| `res:qa-angler` | yes | 22573 | 31 | `catch-and-cook-starter-fish` (benchmark) |
+
+**Bonus live finding** (no extra packet needed): `res:qa-woodcutter` shows `activeGoal: master-woodcutting` live — its S-GOAL-1 `orientationGoal {id: master-woodcutting, tier: pursue}` is firing through `ensureBenchmarkGoal`. That's S-GOAL-1's first organic live evidence for the healthy-AP arm of the recipe. Survival-flip arm still pending controller restart so the new admin-drain code can execute.
+
+### Endpoint probe against the OLD running binary (expected to 404)
+
+```bash
+$ curl -sS -X POST -H "Authorization: Bearer operator-token" -H "Content-Type: application/json" \
+    -d '{"amount":22480,"reason":"S-OBS-DRAIN-1 live-verify F3 (probe before restart)"}' \
+    "http://127.0.0.1:43611/api/nullcity/admin/residents/res%3Aqa-woodcutter/ap-drain"
+{"error":"Not Found"}
+```
+
+Confirms the new endpoint is NOT in the running binary — the source tree was rebuilt against `fe8e8984` but the controller process (pid 16763) was launched manually (`node dist/controller/index.js ...`, no nodemon watching dist for the controller). A maintainer-initiated controller restart is required to pick up the new binary.
+
+### Recipe to run AFTER controller restart (end-to-end live verify)
+
+```bash
+# (1) Snapshot a benchmark resident at healthy AP (qa-trader has benchmarkTask=scout-explore-5m by default)
+curl -sS -H "Authorization: Bearer operator-token" \
+  http://127.0.0.1:43611/api/nullcity/residents/res%3Aqa-trader/public-snapshot \
+  | jq '{ap:.state.attention, tick:.state.tick, goal:.state.cognition.activeGoal.id, online}'
+# expected (per snapshot above): { ap: ~23000, tick: ~33, goal: "scout-nearby-area", online: true }
+
+# (2) Drain AP into the SURVIVE band. With no soul.attentionProfile.floor configured
+# on qa-trader, apFloor defaults to 0 and SURVIVE buffer is 5, so AP must end <= 5.
+DRAIN=$(echo "23028 - 5" | bc)
+curl -sS -X POST -H "Authorization: Bearer operator-token" -H "Content-Type: application/json" \
+  -d "{\"amount\":$DRAIN,\"reason\":\"live-verify F3 needs-hierarchy SURVIVE flip\"}" \
+  "http://127.0.0.1:43611/api/nullcity/admin/residents/res%3Aqa-trader/ap-drain"
+# expected: { ok: true, attentionBefore: ~23028, attentionAfter: <=5, actualDrain: $DRAIN, reason: "..." }
+
+# (3) Wait one Brain cycle (qa-trader inherits brainEveryTicks; typical ~30-60s on live tick rate)
+sleep 60
+
+# (4) Re-snapshot — activeGoal should now be 'collect-visible-gp' (the survival winner from
+# goalPoolForBenchmark when currentTier === 'survive').
+curl -sS -H "Authorization: Bearer operator-token" \
+  http://127.0.0.1:43611/api/nullcity/residents/res%3Aqa-trader/public-snapshot \
+  | jq '{ap:.state.attention, tick:.state.tick, goal:.state.cognition.activeGoal.id}'
+# expected: { ap: <=5, tick: bigger, goal: "collect-visible-gp" }    <-- THE F3 LIVE PROOF
+
+# (5) Top up AP via the positive grant endpoint to push back to healthy
+curl -sS -X POST -H "Authorization: Bearer operator-token" -H "Content-Type: application/json" \
+  -d '{"idempotencyKey":"f3-verify-topup-1","amount":20000,"sourceType":"qa_live_verify","note":"F3 live-verify back to healthy"}' \
+  "http://127.0.0.1:43611/api/nullcity/residents/res%3Aqa-trader/attention-grants"
+
+sleep 60
+
+# (6) Re-snapshot — activeGoal should flip BACK to the benchmark (round-trip proof)
+curl -sS -H "Authorization: Bearer operator-token" \
+  http://127.0.0.1:43611/api/nullcity/residents/res%3Aqa-trader/public-snapshot \
+  | jq '{ap:.state.attention, tick:.state.tick, goal:.state.cognition.activeGoal.id}'
+# expected: { ap: ~20005, tick: even bigger, goal: "scout-nearby-area" }
+```
+
+### JSONL evidence the recipe should produce
+
+```bash
+wc -l data/controller/memory/city-integration/economy-events.jsonl
+# expected: +2 lines (one ap_decay + one ap_topup)
+tail -3 data/controller/memory/city-integration/economy-events.jsonl
+# expected an ap_decay row: {"kind":"ap_decay","residentName":"res:qa-trader","apDelta":-23023,"note":"live-verify F3 needs-hierarchy SURVIVE flip",...}
+tail -2 data/controller/memory/library/res-qa-trader/timeline.jsonl
+# expected a city_attention_drain row + a city_attention_credit row
+```
+
+If the SURVIVE flip is observed → F3 is LIVE-VERIFIED — the substrate claim graduates from MEDIUM to HIGH. Update `docs/resident-capabilities.md` accordingly.
+
+If the flip is NOT observed → file a new P0. That's a HUGE finding: substrate code claims it works, integration tests pass, but live planner does not call through. Document full state.cognition before/after, the wait period, and the drain/topup HTTP responses.
+
+### Original (pre-S-OBS-DRAIN-1) attempt log — kept for posterity
 
 ### What was attempted
 
