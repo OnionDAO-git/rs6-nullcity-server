@@ -6744,6 +6744,119 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
+    it('abandons a persisted starter fishing move after that coordinate times out', async () => {
+        const failedSpot = { x: 3239, y: 3244, level: 0 };
+        const alternateSpot = { x: 3241, y: 3242, level: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire'],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 405,
+            lastBodyTick: 405,
+            targetFailureCooldowns: {
+                'target:3239,3244,0': 397,
+            },
+            activeMove: {
+                target: failedSpot,
+                range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+                cause: 'starter_fishing_seek_spot',
+                startedAtTick: 402,
+                lastTick: 405,
+                lastPositionKey: '3216,3223,0',
+                stationaryCount: 0,
+                lastDistance: 23,
+                bestDistance: 23,
+                lastImprovedTick: 402,
+                nonImprovingCount: 0,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 417,
+                resident: {
+                    ...residentAt(3216, 3223),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'move_to',
+                target: alternateSpot,
+                range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+                cause: 'starter_fishing_reposition_to_bank',
+            },
+        ]);
+        expect(result.cause).toBe('starter_fishing_reposition_to_bank');
+        expect(state.cognition?.activeMove?.target).toEqual(alternateSpot);
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
+    it('scouts instead of retrying starter fishing route targets when all are cooling down', async () => {
+        const failedSpot = { x: 3239, y: 3244, level: 0 };
+        const alternateSpot = { x: 3241, y: 3242, level: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'catch-and-cook-starter-fish',
+                description: 'Catch shrimp with a small fishing net, then cook the catch on a fire or range.',
+                steps: ['Carry a small fishing net', 'Catch raw shrimp or anchovies', 'Find or make a fire'],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 255,
+            lastBodyTick: 255,
+            targetFailureCooldowns: {
+                'target:3239,3244,0': 163,
+                'target:3241,3242,0': 255,
+            },
+            activeMove: {
+                target: alternateSpot,
+                range: STARTER_FISHING_SPOT_DISCOVERY_RANGE,
+                cause: 'starter_fishing_reposition_to_bank',
+                startedAtTick: 218,
+                lastTick: 255,
+                lastPositionKey: '3215,3225,0',
+                stationaryCount: 0,
+                lastDistance: 26,
+                bestDistance: 25,
+                lastImprovedTick: 218,
+                nonImprovingCount: 1,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 256,
+                resident: {
+                    ...residentAt(3215, 3225),
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                },
+            }),
+        );
+
+        expect(result.actions[0]).toMatchObject({
+            kind: 'move_to',
+            cause: 'starter_fishing_route_blocked',
+        });
+        const target = (result.actions[0] as { target?: unknown }).target;
+        expect(target).not.toEqual(failedSpot);
+        expect(target).not.toEqual(alternateSpot);
+        expect(result.cause).toBe('starter_fishing_route_blocked');
+        expect(state.cognition?.activeMove?.target).not.toEqual(failedSpot);
+        expect(state.cognition?.activeMove?.target).not.toEqual(alternateSpot);
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
     it('does not repeat the castle entrance cooking route after that route times out', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();

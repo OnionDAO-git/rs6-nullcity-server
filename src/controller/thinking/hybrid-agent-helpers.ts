@@ -80,6 +80,10 @@ import {
     isOwnedByAnotherActor,
     isStaleSelfOwnedLog,
     COIN_ITEM_IDS,
+    LUMBRIDGE_CASTLE_RANGE as BODY_LUMBRIDGE_CASTLE_RANGE,
+    LUMBRIDGE_STARTER_FISHING_SPOTS as BODY_LUMBRIDGE_STARTER_FISHING_SPOTS,
+    STARTER_FISHING_ROUTE_MAX_DISTANCE as BODY_STARTER_FISHING_ROUTE_MAX_DISTANCE,
+    STARTER_FISHING_SPOT_DISCOVERY_RANGE as BODY_STARTER_FISHING_SPOT_DISCOVERY_RANGE,
 } from '../spark/runescape-body-routines';
 export { distance };
 import {
@@ -1196,12 +1200,11 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 // --- EXPORTED HELPER METHODS EXTRACTED FROM ORCHESTRATOR ---
 
 export const LUMBRIDGE_STARTER_FISHING_SPOTS = [
-    { x: 3241, y: 3150, level: 0 },
-    { x: 3242, y: 3151, level: 0 },
+    ...BODY_LUMBRIDGE_STARTER_FISHING_SPOTS,
 ];
-export const LUMBRIDGE_CASTLE_RANGE = { x: 3211, y: 3215, level: 0 };
-export const STARTER_FISHING_ROUTE_MAX_DISTANCE = 20;
-export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = 5;
+export const LUMBRIDGE_CASTLE_RANGE = BODY_LUMBRIDGE_CASTLE_RANGE;
+export const STARTER_FISHING_ROUTE_MAX_DISTANCE = BODY_STARTER_FISHING_ROUTE_MAX_DISTANCE;
+export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = BODY_STARTER_FISHING_SPOT_DISCOVERY_RANGE;
 export const VISIBILITY_ANCHOR_RETURN_STEP_DISTANCE = 8;
 export const VISIBILITY_ANCHOR_RETURN_DIRECT_DISTANCE = 24;
 export const SCOUTING_ANCHOR_RETURN_MIN_GOAL_AGE_TICKS = 120;
@@ -1660,6 +1663,23 @@ export function starterFishingGoalAction(
 
     const fishingAction = starterFishingRouteAction(perception);
     if (fishingAction) {
+        if (moveTargetFailureCooldownActive(fishingAction, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick)) {
+            const fallback = explorationOrSkillOpportunityAction(ctx, perception, ctx.visibilityAnchor());
+            if (fallback) {
+                return {
+                    action: actionWithCause(fallback.action, 'starter_fishing_route_blocked'),
+                    cause: 'starter_fishing_route_blocked',
+                };
+            }
+            return {
+                action: {
+                    kind: 'say',
+                    text: 'I cannot reach the Lumbridge starter fishing spots right now. I am going to look for another opening.',
+                    cause: 'starter_fishing_route_blocked',
+                },
+                cause: 'starter_fishing_route_blocked',
+            };
+        }
         return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
     }
 
