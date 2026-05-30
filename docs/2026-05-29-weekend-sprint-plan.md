@@ -2,7 +2,14 @@
 
 Drafted: 2026-05-29
 
-Status: **Planning draft for the weekend sprint.** This translates Dev's latest gameplay loop, the AP/GP economy, and the locked Storyteller feature into buildable work. The CIC meeting made the simple loop the priority: prove AP survival, real GP earning, AP-for-GP exchange, and practical Soul-goal planning before stretch systems.
+> **SUPERSEDED 2026-05-30 23:00 CDT for planning purposes.** Live planning lives in
+> [`docs/2026-05-30-final-32hr-sprint-plan.md`](2026-05-30-final-32hr-sprint-plan.md) (the 32-hour pre-Chicago triage).
+> This file is preserved for the **shipped-packet log** at the bottom (the Weekend Closeout Summary
+> section is the authoritative record of what landed this weekend). The triage/timeline/waves above the
+> closeout summary are now historical — do not pick packets from the waves below; pick from the
+> MUST-SHIP / NICE / POST-DEMO tables in the 32hr final sprint plan instead.
+
+Status: **Historical — closeout-summary section authoritative.** This translates Dev's latest gameplay loop, the AP/GP economy, and the locked Storyteller feature into buildable work. The CIC meeting made the simple loop the priority: prove AP survival, real GP earning, AP-for-GP exchange, and practical Soul-goal planning before stretch systems.
 
 Central tracker:
 
