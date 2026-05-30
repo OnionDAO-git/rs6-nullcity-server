@@ -22,6 +22,8 @@ import {
     isFactionLandmarkWorkGoal,
     cleanSpeech,
     selectCandidateGoals,
+    goalPoolForBenchmark,
+    buildResidentNeedsContext,
     isFiremakingGoal,
     isFollowGoal,
     isCooksAssistantStartGoal,
@@ -494,5 +496,77 @@ describe('selectCandidateGoals (S-SMART-NEEDS seam)', () => {
             needsContext: { ap: 5, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true },
         });
         expect(result[0]?.id).toBe('eat-shrimp');
+    });
+});
+
+describe('goalPoolForBenchmark (S-AUDIT-FIX-3 pool builder)', () => {
+    it('returns an empty pool when no benchmark goal is known for the task', () => {
+        const pool = goalPoolForBenchmark('unknown-task', 0);
+        expect(pool).toEqual([]);
+    });
+
+    it('returns benchmark + survival candidates with tier-aligned tags', () => {
+        const pool = goalPoolForBenchmark('starter-fishing-5m', 0);
+        const ids = pool.map(c => c.id);
+        // Two distinct sources: pursue (benchmark) + earn/survive (GP pickup
+        // fallback). The hierarchy ranker uses the tags to re-order.
+        expect(ids).toContain('catch-starter-fish');
+        expect(ids).toContain('collect-visible-gp');
+        const pursue = pool.find(c => c.id === 'catch-starter-fish');
+        const survive = pool.find(c => c.id === 'collect-visible-gp');
+        expect(pursue?.tags).toContain('pursue');
+        expect(survive?.tags).toContain('earn');
+        expect(survive?.tags).toContain('survive');
+    });
+
+    it('does not duplicate the benchmark goal when the benchmark is already the survival candidate', () => {
+        // starter-gp-pickup-3m IS the survival candidate (gpPickupGoal); pool
+        // should not list it twice.
+        const pool = goalPoolForBenchmark('starter-gp-pickup-3m', 0);
+        const ids = pool.map(c => c.id);
+        expect(ids.filter(id => id === 'collect-visible-gp')).toHaveLength(1);
+    });
+});
+
+describe('buildResidentNeedsContext (S-AUDIT-FIX-3 context builder)', () => {
+    it('reads attention as ap and uses the explicit attentionFloor as apFloor', () => {
+        const ctx = buildResidentNeedsContext({
+            attention: 12,
+            attentionFloor: 10,
+            hasActiveGoal: false,
+        });
+        expect(ctx.ap).toBe(12);
+        expect(ctx.apFloor).toBe(10);
+        expect(ctx.hasActiveGoal).toBe(false);
+    });
+
+    it('defaults attentionFloor to 0 when undefined (no soul-level floor configured)', () => {
+        const ctx = buildResidentNeedsContext({
+            attention: 50,
+            attentionFloor: undefined,
+            hasActiveGoal: true,
+        });
+        expect(ctx.apFloor).toBe(0);
+    });
+
+    it('defaults gpEstimate to 0 (planner has no live GP snapshot yet)', () => {
+        const ctx = buildResidentNeedsContext({
+            attention: 100,
+            attentionFloor: 10,
+            hasActiveGoal: true,
+        });
+        // gpEstimate=0 sits below GP_HEALTHY_THRESHOLD so the planner keeps
+        // residents in EARN until a later packet wires real GP through.
+        expect(ctx.gpEstimate).toBe(0);
+    });
+
+    it('forwards an explicit gpEstimate when caller knows the GP balance', () => {
+        const ctx = buildResidentNeedsContext({
+            attention: 100,
+            attentionFloor: 10,
+            hasActiveGoal: true,
+            gpEstimate: 250,
+        });
+        expect(ctx.gpEstimate).toBe(250);
     });
 });

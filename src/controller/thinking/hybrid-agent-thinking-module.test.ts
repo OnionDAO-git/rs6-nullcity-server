@@ -6429,6 +6429,93 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
+    // --- S-AUDIT-FIX-3 needs-hierarchy wiring (F3 / QA-20260530-013) -----
+    // These two tests are the live proof that selectCandidateGoals is no
+    // longer dead code: under low AP the planner picks the SURVIVE-aligned
+    // goal (collect-visible-gp) over the PURSUE-aligned benchmark
+    // (catch-starter-fish), and under healthy AP the benchmark wins.
+    //
+    // Live-verify recipe: in a hot stack, drain a resident's AP below
+    // attentionProfile.floor + 5 with a benchmarkTask configured —
+    // restart think loop and inspect state.cognition.activeGoal.id; it
+    // should be 'collect-visible-gp', not the benchmark id.
+
+    it('low-AP residents pick the survival candidate (collect-visible-gp) over the benchmark', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        // Sit at floor+buffer = 10+5 = 15; anything <=15 is survive band.
+        // attention=12 → survive band.
+        state.attention = 12;
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.attentionProfile = {
+            startingAttention: 100,
+            decayCurve: 'standard',
+            floor: 10,
+        };
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3000, 3000),
+                    inventory: [],
+                },
+            }),
+        );
+
+        // The needs-hierarchy ranker fires inside ensureBenchmarkGoal and
+        // picks the survival fallback over the PURSUE-tagged benchmark.
+        expect(state.cognition?.activeGoal?.id).toBe('collect-visible-gp');
+    });
+
+    it('healthy-AP residents keep the benchmark goal (catch-starter-fish) — ranker only fires in survive band', async () => {
+        // Pair test for the low-AP case above. With ap=100 well above
+        // floor(10)+buffer(5)=15, currentTier(needsContext) === 'pursue'
+        // (or 'earn' when gp is unknown). The conservative wire-up keeps
+        // the benchmark verbatim in those tiers so existing benchmark
+        // residents continue to pursue their soul-aligned goal. Only the
+        // survive band lets the gp-pickup survival candidate win.
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.attention = 100;
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.attentionProfile = {
+            startingAttention: 100,
+            decayCurve: 'standard',
+            floor: 10,
+        };
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        const agent = hybridAgent(llm, state, benchmarkSoul);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3000, 3000),
+                    inventory: [],
+                },
+            }),
+        );
+
+        expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
+    });
+
     it('seeds fishing-cooking as an active benchmark goal without initial Brain drift', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();

@@ -561,3 +561,84 @@ export function selectCandidateGoals(
     }
     return result;
 }
+
+// --- S-AUDIT-FIX-3: live wire-up for selectCandidateGoals ---------------
+//
+// `selectCandidateGoals` above was previously dead code in production —
+// exported and unit-tested, but no caller built a candidate pool with more
+// than one entry. This block adds the two helpers needed to wire it into
+// the live `ensureBenchmarkGoal` path (F3 / QA-20260530-013):
+//
+//   1. `goalPoolForBenchmark` builds a candidate pool with the benchmark
+//      goal (PURSUE-tagged) and a survival fallback (EARN+SURVIVE-tagged).
+//      The survival fallback is the GP-pickup goal: a low-effort,
+//      high-evidence task that funds future AP via the AP-for-GP exchange
+//      (S3a). Until per-resident GP balance flows through, GP-pickup is
+//      the most practical survive/earn lever a low-AP resident has.
+//
+//   2. `buildResidentNeedsContext` projects a `ResidentNeedsContext` from
+//      the planner-visible resident state. `attention` is the live AP
+//      balance (mirrors `ApLedger.balance()` for the active session);
+//      `attentionFloor` is the soul's configured floor (defaults to 0
+//      when undocumented). `gpEstimate` defaults to 0 until a future
+//      packet plumbs live GP through — this conservatively keeps the
+//      ranker in EARN when no GP signal exists, which matches the
+//      hierarchy intent.
+
+/**
+ * Active Goal returned by `benchmarkGoalForTask` paired with the survival
+ * fallback. Pure: same inputs -> same outputs. Returns an empty list when
+ * the benchmark task id is unknown (no goal to seed).
+ *
+ * Tag taxonomy (must align with `needs-hierarchy.ts` TIER_TAGS):
+ *   - benchmark goal: ['pursue'] — Soul-aligned, the "what I wanted to do"
+ *   - GP pickup    : ['earn', 'survive', 'gp'] — funds AP via exchange,
+ *                    so doubles as a survive action when AP is low
+ */
+export function goalPoolForBenchmark(taskId: unknown, tick: number): ReadonlyArray<GoalCandidate & { goal: ActiveGoalState }> {
+    const benchmark = benchmarkGoalForTask(taskId, tick);
+    if (!benchmark) {
+        return [];
+    }
+    const survival = gpPickupGoal(tick);
+    const pool: Array<GoalCandidate & { goal: ActiveGoalState }> = [{ id: benchmark.id, tags: ['pursue'], goal: benchmark }];
+    // Deduplicate when the benchmark IS the survival candidate (e.g.
+    // starter-gp-pickup-3m). Without this guard the ranker would see the
+    // same goal twice with different tags and pick non-deterministically.
+    if (benchmark.id !== survival.id) {
+        pool.push({ id: survival.id, tags: ['earn', 'survive', 'gp'], goal: survival });
+    }
+    return pool;
+}
+
+export interface BuildResidentNeedsContextInput {
+    /** Live AP balance for this tick (mirrors `RuntimeState.attention`). */
+    attention: number;
+    /**
+     * Soul-configured AP floor (`soul.frontmatter.attentionProfile.floor`).
+     * Undefined when the soul has no explicit floor — defaults to 0.
+     */
+    attentionFloor: number | undefined;
+    /** True iff the planner already has an active goal in flight. */
+    hasActiveGoal: boolean;
+    /**
+     * Optional live GP balance. The planner does not yet have a fresh GP
+     * snapshot per tick; callers that DO have one (live game-state hook)
+     * may forward it. When omitted, defaults to 0 — the conservative
+     * choice that keeps the ranker in EARN until real GP flows.
+     */
+    gpEstimate?: number;
+}
+
+/**
+ * Project the planner-visible resident state into a `ResidentNeedsContext`
+ * the ranker can score against. Pure; no I/O.
+ */
+export function buildResidentNeedsContext(input: BuildResidentNeedsContextInput): ResidentNeedsContext {
+    return {
+        ap: input.attention,
+        apFloor: input.attentionFloor ?? 0,
+        gpEstimate: input.gpEstimate ?? 0,
+        hasActiveGoal: input.hasActiveGoal,
+    };
+}

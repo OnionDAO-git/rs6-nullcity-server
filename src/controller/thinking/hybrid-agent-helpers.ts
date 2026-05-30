@@ -125,10 +125,14 @@ import {
     isStandaloneFiremakingGoal,
     isFollowGoal,
     factionLandmarkWorkGoal,
-    benchmarkGoalForTask,
     parseBrainCompletion,
     goalId,
+    goalPoolForBenchmark,
+    buildResidentNeedsContext,
+    selectCandidateGoals,
+    benchmarkGoalForTask,
 } from '../spark/runescape-brain-planner';
+import { currentTier } from '../spark/needs-hierarchy';
 import { pickPhrase } from '../soul/phrasebook';
 import {
     actorName,
@@ -2413,12 +2417,40 @@ export function suppressRepeatedActions(ctx: HelperContext, actions: AgentAction
 }
 
 export function ensureBenchmarkGoal(ctx: HelperContext): void {
-    const goal = benchmarkGoalForTask(ctx.options.soul.frontmatter.legacy?.parameters?.benchmarkTask, ctx.options.state.tick);
-    if (!goal) {
+    const benchmarkTask = ctx.options.soul.frontmatter.legacy?.parameters?.benchmarkTask;
+    const benchmark = benchmarkGoalForTask(benchmarkTask, ctx.options.state.tick);
+    if (!benchmark) {
         return;
     }
 
+    // S-AUDIT-FIX-3 (F3 / QA-20260530-013): the needs-hierarchy ranker now
+    // governs benchmark seeding. The candidate pool is [benchmark, survival]
+    // (see `goalPoolForBenchmark` for the source provenance + tag taxonomy),
+    // and `selectCandidateGoals` re-orders by `currentTier(needsContext)`.
+    //
+    // Conservative wire-up: we only override the benchmark when the tier
+    // computes to `'survive'` (ap <= apFloor + AP_SURVIVE_BUFFER). At higher
+    // tiers we keep the benchmark verbatim — the planner does not yet have
+    // a live GP snapshot, so EARN-tier overrides would be based on a stale
+    // `gpEstimate=0` default and would deprive every benchmark resident of
+    // their soul-aligned goal. A future packet that plumbs live GP through
+    // can broaden this to honor EARN as well.
     const cognition = ctx.cognition();
+    const needsContext = buildResidentNeedsContext({
+        attention: ctx.options.state.attention,
+        attentionFloor: ctx.options.soul.frontmatter.attentionProfile?.floor,
+        hasActiveGoal: Boolean(cognition.activeGoal),
+    });
+    let goal = benchmark;
+    if (currentTier(needsContext) === 'survive') {
+        const pool = goalPoolForBenchmark(benchmarkTask, ctx.options.state.tick);
+        const ranked = selectCandidateGoals(pool, { needsContext });
+        const winner = ranked[0];
+        if (winner) {
+            goal = (winner as (typeof pool)[number]).goal;
+        }
+    }
+
     if (!cognition.activeGoal || cognition.activeGoal.id !== goal.id || goalExpired(ctx, cognition.activeGoal)) {
         ctx.clearGoalMomentum();
         cognition.activeGoal = goal;
