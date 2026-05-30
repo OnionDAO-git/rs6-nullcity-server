@@ -68,14 +68,48 @@ Verifier summary:
 
 Ordinary named-resident evidence now exists in `data/controller/logs/res:qa-trader/actions/2026-05-30.jsonl`: `res:qa-trader` sent a trusted `trade_request`, offered one safe shrimp (`itemId=315`), accepted both trade stages, completed the trade, then sent a second trade request to an untrusted peer and declined it with `trade_decline_untrusted_partner`. The matching target events include `trade_completed` with `given:[{itemId:315,amount:1}]` and `trade_cancelled` for the unsafe attempt.
 
+6. Repeated-prompt/no-loop soak on 2026-05-30 also passed after tightening peer placement to keep the harness focused on trade safety rather than pathing drift:
+
+```bash
+npm run controller:trade-soak -- --unsafe-repeats=3 --duration-ms=180000 --poll-ms=500
+```
+
+Artifact:
+
+```text
+data/benchmarks/capability-qa-2026-05-30/named_trade_soak_20260530125718.json
+```
+
+Verifier summary:
+
+```json
+{
+  "status": "passed",
+  "score": 1,
+  "unsafeRepeatTarget": 3,
+  "tradeRequests": 4,
+  "trustedTradeRequests": 1,
+  "unsafeTradeRequests": 3,
+  "safeItemOffers": 1,
+  "acceptStage1": 1,
+  "acceptStage2": 1,
+  "unsafeDeclines": 3,
+  "tradeCompletedEvents": 1,
+  "tradeCancelledEvents": 3,
+  "safeInventoryDelta": -1,
+  "postUnsafeOffersOrAccepts": 0
+}
+```
+
+The same ordinary `res:qa-trader` action log now shows a trusted trade completion followed by three unsafe `trade_request` actions and three `trade_decline_untrusted_partner` actions. The verifier also checks that once the unsafe peer starts prompting, the resident emits no follow-up `trade_offer_item` or `trade_accept_*` actions, preventing transaction-loop regressions.
+
 ## Conclusion
 
-`CQA4` is now proven for one named resident under an operator-style live soak. Trade logic is benchmark-proven and ordinary `res:qa-trader` logs now show the full trusted trade plus unsafe decline path with a real inventory delta outside the benchmark harness.
+`CQA4` is now proven for one named resident under operator-style live soaks. Trade logic is benchmark-proven, ordinary `res:qa-trader` logs now show the full trusted trade plus unsafe decline path with a real inventory delta outside the benchmark harness, and the no-loop soak proves repeated unsafe prompts are declined without offer/accept follow-through.
 
 ## Next Action
 
 Recommended follow-ups:
 
-- Repeat the soak as a no-loop test with repeated trusted and unsafe prompts to prove the resident does not get trapped in transaction loops.
 - Repeat with a human/operator-controlled player actor once the demo operator path is available.
 - Fold this proof into the next long-run CQA10 baseline to see whether ordinary life produces trade behaviors without a directed command.

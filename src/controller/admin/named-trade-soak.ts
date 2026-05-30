@@ -27,6 +27,7 @@ export interface NamedTradeSoakOptions {
     outputDir: string;
     durationMs: number;
     pollMs: number;
+    unsafeRepeatCount: number;
     keepPeers: boolean;
     trustedSpawn: { x: number; y: number; level: number };
     unsafeSpawn: { x: number; y: number; level: number };
@@ -41,6 +42,7 @@ export interface NamedTradeSoakVerificationInput {
     inventoryAfter: NamedTradeSoakInventoryItem[];
     tradeCompletedEvents: number;
     tradeCancelledEvents: number;
+    unsafeRepeatCount?: number;
 }
 
 export interface NamedTradeSoakPeerSpawns {
@@ -83,6 +85,7 @@ export function parseNamedTradeSoakArgs(argv: string[], now: Date = new Date()):
         outputDir: process.env.CONTROLLER_TRADE_SOAK_OUTPUT_DIR || path.join('data', 'benchmarks', `capability-qa-${isoDate(now)}`),
         durationMs: readPositiveInt(process.env.CONTROLLER_TRADE_SOAK_DURATION_MS, DEFAULT_DURATION_MS),
         pollMs: readPositiveInt(process.env.CONTROLLER_TRADE_SOAK_POLL_MS, DEFAULT_POLL_MS),
+        unsafeRepeatCount: readPositiveInt(process.env.CONTROLLER_TRADE_SOAK_UNSAFE_REPEATS, 1),
         keepPeers: process.env.CONTROLLER_TRADE_SOAK_KEEP_PEERS === '1' || process.env.CONTROLLER_TRADE_SOAK_KEEP_PEERS === 'true',
         trustedSpawn: { x: 3226, y: 3230, level: 0 },
         unsafeSpawn: { x: 3228, y: 3230, level: 0 },
@@ -124,6 +127,10 @@ export function parseNamedTradeSoakArgs(argv: string[], now: Date = new Date()):
             options.pollMs = readPositiveInt(readRequiredValue(argv, ++i, arg), DEFAULT_POLL_MS);
         } else if (arg.startsWith('--poll-ms=')) {
             options.pollMs = readPositiveInt(arg.slice('--poll-ms='.length), DEFAULT_POLL_MS);
+        } else if (arg === '--unsafe-repeats') {
+            options.unsafeRepeatCount = readPositiveInt(readRequiredValue(argv, ++i, arg), 1);
+        } else if (arg.startsWith('--unsafe-repeats=')) {
+            options.unsafeRepeatCount = readPositiveInt(arg.slice('--unsafe-repeats='.length), 1);
         } else if (arg === '--keep-peers') {
             options.keepPeers = true;
         } else {
@@ -154,10 +161,19 @@ export function verifyNamedTradeSoakEvidence(input: NamedTradeSoakVerificationIn
     if (metrics.safeInventoryDelta >= 0) {
         return failed('No inventory decrease for a safe trade item was observed', metrics);
     }
+    if (metrics.unsafeTradeRequests < metrics.unsafeRepeatTarget) {
+        return failed('Not every repeated unsafe trade prompt produced a named-resident trade_request', metrics);
+    }
     if (metrics.unsafeDeclines === 0) {
         return failed('No ordinary action-log unsafe trade_decline was observed', metrics);
     }
-    if (metrics.tradeCancelledEvents === 0) {
+    if (metrics.postUnsafeOffersOrAccepts > 0) {
+        return failed('Unsafe peer prompted trade loop produced offer/accept actions', metrics);
+    }
+    if (metrics.unsafeDeclines < metrics.unsafeRepeatTarget) {
+        return failed('Not every repeated unsafe trade prompt was declined', metrics);
+    }
+    if (metrics.tradeCancelledEvents < metrics.unsafeRepeatTarget) {
         return failed('No unsafe trade_cancelled event was observed', metrics);
     }
     return {
@@ -176,9 +192,10 @@ export function peerSpawnsNearPerception(perception: Perception | undefined): Na
     if (typeof position?.x !== 'number' || typeof position.y !== 'number' || typeof position.level !== 'number') {
         return undefined;
     }
+    const spawn = { x: position.x, y: position.y, level: position.level };
     return {
-        trustedSpawn: { x: position.x - 1, y: position.y, level: position.level },
-        unsafeSpawn: { x: position.x + 1, y: position.y, level: position.level },
+        trustedSpawn: spawn,
+        unsafeSpawn: spawn,
     };
 }
 
@@ -260,7 +277,9 @@ export async function runNamedTradeSoakCli(argv: string[], runtime: NamedTradeSo
         );
 
         await trustedTradeSequence(gateway, options, actionLogPath, baselineSize, targetEvents, targetRef);
-        await unsafeTradeSequence(gateway, options, actionLogPath, baselineSize, targetRef);
+        for (let repeatIndex = 0; repeatIndex < options.unsafeRepeatCount; repeatIndex += 1) {
+            await unsafeTradeSequence(gateway, options, actionLogPath, baselineSize, targetRef, repeatIndex);
+        }
         await sleep(options.pollMs);
         const entries = readActionLogEntriesSince(actionLogPath, baselineSize);
         const inventoryAfter = inventoryFromPerception(targetPerceptions.at(-1));
@@ -273,6 +292,7 @@ export async function runNamedTradeSoakCli(argv: string[], runtime: NamedTradeSo
             inventoryAfter,
             tradeCompletedEvents: targetEvents.filter(event => event.kind === 'trade_completed').length,
             tradeCancelledEvents: targetEvents.filter(event => event.kind === 'trade_cancelled').length,
+            unsafeRepeatCount: options.unsafeRepeatCount,
         });
         const artifactPath = writeArtifact(options.outputDir, {
             schemaVersion: 1,
@@ -350,25 +370,38 @@ async function unsafeTradeSequence(
     actionLogPath: string,
     baselineSize: number,
     targetRef: NamedTradeSoakActorRef,
+    repeatIndex: number,
 ): Promise<void> {
     await gateway.submitAction(options.unsafePeer, {
         kind: 'say',
-        text: `${options.commandPrefix} trade me`,
+        text: `${options.commandPrefix} trade me ${repeatIndex + 1}`,
         cause: 'named_trade_soak_unsafe_command',
     });
-    await waitFor(() => metricFromLog(actionLogPath, baselineSize, 'trade_request') >= 2, options, 'unsafe trade_request');
+    await waitFor(
+        () => tradeRequestsToPeerFromLog(actionLogPath, baselineSize, options.unsafePeer) >= repeatIndex + 1,
+        options,
+        `unsafe trade_request ${repeatIndex + 1}`,
+    );
     await gateway.submitAction(options.unsafePeer, {
         kind: 'trade_request',
         target: targetRef,
         cause: 'named_trade_soak_unsafe_reciprocal',
     });
-    await waitFor(() => metricFromLog(actionLogPath, baselineSize, 'trade_decline') >= 1, options, 'unsafe trade_decline');
+    await waitFor(
+        () => unsafeDeclinesFromLog(actionLogPath, baselineSize) >= repeatIndex + 1,
+        options,
+        `unsafe trade_decline ${repeatIndex + 1}`,
+    );
 }
 
 function namedTradeSoakMetrics(input: NamedTradeSoakVerificationInput): Record<string, number> {
+    const firstUnsafeRequestIndex = input.entries.findIndex(entry => isTradeRequestToPeer(entry, input.unsafePeer));
     return {
+        unsafeRepeatTarget: Math.max(1, input.unsafeRepeatCount || 1),
         ordinaryActionEntries: input.entries.length,
         tradeRequests: countAction(input.entries, 'trade_request'),
+        trustedTradeRequests: input.entries.filter(entry => isTradeRequestToPeer(entry, input.trustedPeer)).length,
+        unsafeTradeRequests: input.entries.filter(entry => isTradeRequestToPeer(entry, input.unsafePeer)).length,
         safeItemOffers: input.entries.filter(entry => entry.action?.kind === 'trade_offer_item' && safeOffer(entry.action)).length,
         acceptStage1: countAction(input.entries, 'trade_accept_stage_1'),
         acceptStage2: countAction(input.entries, 'trade_accept_stage_2'),
@@ -383,6 +416,10 @@ function namedTradeSoakMetrics(input: NamedTradeSoakVerificationInput): Record<s
         safeInventoryBefore: safeItemCount(input.inventoryBefore),
         safeInventoryAfter: safeItemCount(input.inventoryAfter),
         safeInventoryDelta: safeItemCount(input.inventoryAfter) - safeItemCount(input.inventoryBefore),
+        postUnsafeOffersOrAccepts:
+            firstUnsafeRequestIndex < 0
+                ? 0
+                : input.entries.slice(firstUnsafeRequestIndex + 1).filter(entry => isTradeOfferOrAccept(entry.action)).length,
     };
 }
 
@@ -455,6 +492,16 @@ function metricFromLog(filePath: string, baselineSize: number, actionKind: strin
     return countAction(readActionLogEntriesSince(filePath, baselineSize), actionKind);
 }
 
+function tradeRequestsToPeerFromLog(filePath: string, baselineSize: number, peer: string): number {
+    return readActionLogEntriesSince(filePath, baselineSize).filter(entry => isTradeRequestToPeer(entry, peer)).length;
+}
+
+function unsafeDeclinesFromLog(filePath: string, baselineSize: number): number {
+    return readActionLogEntriesSince(filePath, baselineSize).filter(
+        entry => entry.action?.kind === 'trade_decline' && /untrusted|unsafe/i.test(String(entry.action.cause || '')),
+    ).length;
+}
+
 function inventoryFromPerception(perception: Perception | undefined): NamedTradeSoakInventoryItem[] {
     const resident = isRecord(perception?.resident) ? perception?.resident : undefined;
     const inventory = Array.isArray(resident?.inventory) ? resident.inventory : [];
@@ -514,6 +561,7 @@ function publicOptions(options: NamedTradeSoakOptions): Record<string, unknown> 
         configPath: options.configPath,
         durationMs: options.durationMs,
         pollMs: options.pollMs,
+        unsafeRepeatCount: options.unsafeRepeatCount,
         trustedSpawn: options.trustedSpawn,
         unsafeSpawn: options.unsafeSpawn,
     };
@@ -557,6 +605,25 @@ function tradeSoakPeerSuffix(now: Date): string {
 
 function sameResident(candidate: string, expected: string): boolean {
     return candidate === expected || candidate === `resident:${expected}`;
+}
+
+function isTradeRequestToPeer(entry: NamedTradeSoakLogEntry, peer: string): boolean {
+    if (entry.action?.kind !== 'trade_request') {
+        return false;
+    }
+    return actionTargetMatches(entry.action, peer);
+}
+
+function actionTargetMatches(action: Record<string, unknown>, peer: string): boolean {
+    const target = isRecord(action.target) ? action.target : {};
+    const candidates = [target.id, target.name]
+        .filter((value): value is string => typeof value === 'string')
+        .flatMap(value => [value, value.startsWith('resident:') ? value.slice('resident:'.length) : `resident:${value}`]);
+    return candidates.some(candidate => sameResident(candidate.toLowerCase(), peer.toLowerCase()));
+}
+
+function isTradeOfferOrAccept(action: Record<string, unknown> | undefined): boolean {
+    return action?.kind === 'trade_offer_item' || action?.kind === 'trade_accept_stage_1' || action?.kind === 'trade_accept_stage_2';
 }
 
 function safeJson(line: string): NamedTradeSoakLogEntry | undefined {
