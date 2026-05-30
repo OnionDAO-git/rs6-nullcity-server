@@ -221,6 +221,7 @@ function combatPrayerMetrics(input: CombatPrayer10mVerificationInput): Record<st
     const prayerSuccessValue = prayerXpIncreasedValue || prayerLevelEvents ? 1 : 0;
     const unsafeLoopDetected = repeatedActionLoop(input.actions.filter(isCombatPrayerLoopAction));
     const completedPrayerChain = orderedActionChainValue === 1 && bonesEvidence === 1 && prayerSuccessValue === 1;
+    const madeCombatBonesProgress = combatEvidence === 1 && bonesEvidence === 1;
 
     return {
         actionsAttempted: input.actions.length,
@@ -242,7 +243,7 @@ function combatPrayerMetrics(input: CombatPrayer10mVerificationInput): Record<st
         prayerSuccess: prayerSuccessValue,
         deathEvents: allEvents(input).filter(isDeathEvent).length,
         survivalActions: input.actions.filter(attempt => attempt.action.kind === 'eat' || attempt.action.cause === 'combat_retreat').length,
-        unsafeLoops: unsafeLoopDetected && !completedPrayerChain ? 1 : 0,
+        unsafeLoops: unsafeLoopDetected && !completedPrayerChain && !madeCombatBonesProgress ? 1 : 0,
     };
 }
 
