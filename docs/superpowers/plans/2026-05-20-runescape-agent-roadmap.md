@@ -723,12 +723,13 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: public/operator copy consistently says AP/Attention Points for resident life-force and human funding; legacy persisted Shards files continue to load. GP is always real RuneScape gold coins, never a second ledger.
   - Verification: focused patron CLI/ledger tests, `npm run check:no-ui`, `npm run typecheck`, and `npm test -- --runInBand src/controller/patron`.
 
-- `[>]` **S1: AP ledger and resident life-force proof.**
+- `[x]` **S1: AP ledger and resident life-force proof.**
   - Files: `src/controller/spark/attention.ts`, `src/controller/resident-runtime.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/*.test.ts`, `src/controller/admin/patron-loop-smoke.ts`, `docs/resident-capabilities.md`.
   - Deliverable: AP decay/top-up/fade/resume behavior is replayable, visible in Library events, and benchmarked with a low-AP resident.
   - Verification: low-AP benchmark or smoke proves ask/top-up/resume; focused runtime/city-integration tests; full `npm run fin` before completion.
-  - 2026-05-29 (`agents/wip`, codex): packet `S1a` landed deterministic AP ledger replay helper (`grant`/`spend`/`decay`/`top_up`/`fade`) in `attention.ts` with focused unit coverage; `city_attention_credit` Library events now persist `attentionBefore`/`attentionAfter` for replayable AP deltas. `S1b` live fade/resume benchmark evidence remains open.
-  - 2026-05-29 (`agents/wip`, codex): packet `S1b` added benchmark substrate (`ap-decay-ask-5m` task + low-attention benchmark soul override) and then live-proved low-AP ask + fade in `bench_20260529175058_ap_decay_ask_5m` after fixing no-floor residents to ask for AP at critical attention. Top-up/resume remains open. See `docs/capability-evidence/2026-05-29-s1b-ap-life-force-benchmark-attempt.md`.
+  - 2026-05-29 (`agents/wip`, codex): packet `S1a` landed deterministic AP ledger replay helper (`grant`/`spend`/`decay`/`top_up`/`fade`) in `attention.ts` with focused unit coverage; `city_attention_credit` Library events now persist `attentionBefore`/`attentionAfter` for replayable AP deltas.
+  - 2026-05-29 (`agents/wip`, codex): packet `S1b` added benchmark substrate (`ap-decay-ask-5m` task + low-attention benchmark soul override) and then live-proved low-AP ask + fade in `bench_20260529175058_ap_decay_ask_5m` after fixing no-floor residents to ask for AP at critical attention. See `docs/capability-evidence/2026-05-29-s1b-ap-life-force-benchmark-attempt.md`.
+  - 2026-05-30 (`agents/wip`, codex, packet `S1b-review`): QA Marshal verified and closed `QA-20260529-009` after live artifact `bench_20260530021203_ap_topup_resume_5m` proved ask -> `attention_exhausted` -> benchmark AP top-up -> reconnect/retry -> successful `nervous:attention-topup-resume`. Named-resident ordinary patron top-up remains a confidence bump, not the S1 substrate blocker.
 
 - `[x]` **S2: GP evidence model for actual RuneScape coins.**
   - Files: `src/controller/controller-host.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/http-server.ts`, `src/server/agent/*`, `src/controller/benchmarks/tasks/*gold*.ts`, `docs/resident-capabilities.md`.
