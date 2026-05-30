@@ -19,6 +19,7 @@ Routes:
 - `POST /api/nullcity/proposals/:id/fund`: add AP funding to a proposal.
 - `POST /api/nullcity/proposals/:id/approve`: admin-approve a threshold-crossed proposal.
 - `POST /api/nullcity/proposals/:id/reject`: admin-reject a proposal.
+- `POST /api/nullcity/proposals/:id/birth`: materialize an approved proposal into a resident (idempotent).
 - `POST /api/nullcity/residents`: birth a resident from a funded proposal payload.
 - `POST /api/nullcity/residents/:id/attention-grants`: credit resident attention with `idempotencyKey`.
 - `GET /api/nullcity/residents/:id/wealth`: inspect resident RuneScape gold, item `995`.
@@ -48,6 +49,10 @@ Soul proposals live in `memory.dir/city-integration/proposals/<id>.json`. The `S
 - `POST /api/nullcity/proposals/:id/reject` — admin reject
   - Body: `{ adminNotes? }`
   - Response: updated `SoulProposal` (status: `"rejected"`)
+- `POST /api/nullcity/proposals/:id/birth` — birth approved proposal into a resident
+  - Body: `{}`
+  - Response: `{ ok: true, proposalId, resident, created, connected, fundedAttention }`
+  - Notes: idempotent; repeated calls return the same birth record and do not birth twice.
 - `GET /api/nullcity/proposals` — list all proposals, sorted by `createdAt`
   - Response: `SoulProposal[]`
 - `GET /api/nullcity/proposals/:id` — get one proposal

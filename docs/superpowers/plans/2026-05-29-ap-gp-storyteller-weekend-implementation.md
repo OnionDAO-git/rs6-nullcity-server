@@ -193,7 +193,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S3a | In Review | codex | 2026-05-29 | src/controller/city-integration/ap-gp-exchange.ts; src/controller/city-integration/ap-gp-exchange.test.ts; src/controller/city-integration/service.test.ts | pending | test:src/controller/city-integration/ap-gp-exchange.test.ts; test:src/controller/city-integration/service.test.ts; cmd:check:no-ui | live exchange benchmark still open in S3b |
 | S3b | In Review | codex | 2026-05-30 | src/controller/benchmarks/tasks/ap-gp-exchange-5m.ts; src/controller/benchmarks/benchmark-runner.ts; docs/capability-evidence/2026-05-30-s3b-ap-gp-exchange-live-proof.md | pending | benchmark:bench_20260530034914_ap_gp_exchange_5m; test:src/controller/benchmarks/tasks/ap-gp-exchange-5m.test.ts; test:src/controller/benchmarks/benchmark-runner.test.ts; cmd:controller:bench ap-gp-exchange-5m autonomous | controlled economy proof passed; ordinary resident-initiated trade remains `CQA4`/`QA-20260529-011` |
 | S4a | In Review | codex | 2026-05-30 | src/controller/city-integration/{service.ts,service.test.ts,http-server.ts,http-server.test.ts}; docs/city-dashboard-integration.md | da407bca | test:city-integration 160/160; cmd:check:no-ui; cmd:build; cmd:fin 2784/2784 | dashboard JSON proposal queue/funding/admin-review routes ready; S4b birth materialization remains next |
-| S4b | Open | - | - | - | - | - | - |
+| S4b | In Review | codex | 2026-05-30 | src/controller/city-integration/{http-server.ts,http-server.test.ts}; docs/{city-dashboard-integration.md,superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md,superpowers/plans/2026-05-20-runescape-agent-roadmap.md} | pending | test:src/controller/city-integration/{service,http-server}.test.ts; cmd:check:no-ui; cmd:build | live controller smoke for approved proposal -> born resident still pending |
 | S5a | Open | - | - | - | - | - | - |
 | S5b | Open | - | - | - | - | - | - |
 | S6a | Open | - | - | - | - | - | - |
@@ -444,9 +444,9 @@ Steps:
 
 - [ ] Define `SoulProposal` with id, residentName, soulMarkdown, goal text, binary completion condition, AP threshold, AP funded, proposer, status, and timestamps.
 - [ ] Write replay tests for proposed -> funding -> threshold-crossed -> born.
-- [ ] Reuse existing `birthResidentFromCity` for actual resident materialization after proposal approval and threshold.
-- [ ] Record `city_birth` in Library timeline with proposal id and funded AP.
-- [ ] Document JSON contracts only; dashboard UI comes later in dashboard repo.
+- [x] Reuse existing `birthResidentFromCity` for actual resident materialization after proposal approval and threshold.
+- [x] Record `city_birth` in Library timeline with proposal id and funded AP.
+- [x] Document JSON contracts only; dashboard UI comes later in dashboard repo.
 
 Acceptance:
 

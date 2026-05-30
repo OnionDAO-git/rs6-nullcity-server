@@ -79,7 +79,7 @@ async function handle(
         return;
     }
 
-    const proposalMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/proposals/([^/]+)(?:/(fund|approve|reject))?$`));
+    const proposalMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/proposals/([^/]+)(?:/(fund|approve|reject|birth))?$`));
     if (proposalMatch) {
         const proposalId = decodeURIComponent(proposalMatch[1]);
         const action = proposalMatch[2];
@@ -97,6 +97,10 @@ async function handle(
         }
         if (request.method === 'POST' && action === 'reject') {
             writeJson(response, 200, await options.service.rejectSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'birth') {
+            writeJson(response, 200, await options.service.birthFromProposal(proposalId));
             return;
         }
         writeJson(response, 405, { error: `Method ${request.method} not allowed` });

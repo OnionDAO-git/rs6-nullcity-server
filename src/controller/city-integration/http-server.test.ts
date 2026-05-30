@@ -191,7 +191,7 @@ describe('CityIntegration HTTP server', () => {
         });
     });
 
-    it('exposes Soul proposal create/list/get/fund/approve/reject routes for dashboard funding flows', async () => {
+    it('exposes Soul proposal create/list/get/fund/approve/reject/birth routes for dashboard funding flows', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),
             port: 0,
@@ -233,9 +233,28 @@ describe('CityIntegration HTTP server', () => {
         expect(approved.status).toBe(200);
         expect(approved.payload).toMatchObject({ id: proposalId, status: 'approved', adminNotes: 'Approved for birth queue smoke' });
 
+        const born = await requestJson('POST', `${started.url}/proposals/${proposalId}/birth`, token);
+        expect(born.status).toBe(200);
+        expect(born.payload).toMatchObject({
+            ok: true,
+            proposalId,
+            resident: 'res:test',
+            fundedAttention: 100,
+        });
+
+        // Birth route should be idempotent for retry-safe dashboard operations.
+        const bornAgain = await requestJson('POST', `${started.url}/proposals/${proposalId}/birth`, token);
+        expect(bornAgain.status).toBe(200);
+        expect(bornAgain.payload).toMatchObject({
+            ok: true,
+            proposalId,
+            resident: 'res:test',
+            fundedAttention: 100,
+        });
+
         const fetched = await requestJson('GET', `${started.url}/proposals/${proposalId}`, token);
         expect(fetched.status).toBe(200);
-        expect(fetched.payload).toMatchObject({ id: proposalId, status: 'approved' });
+        expect(fetched.payload).toMatchObject({ id: proposalId, status: 'born' });
 
         const rejectedCreate = await requestJson('POST', `${started.url}/proposals`, token, {
             residentName: 'res:spare',
