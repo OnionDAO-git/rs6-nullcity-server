@@ -194,7 +194,7 @@ async function handle(
 
     const match = path.match(
         new RegExp(
-            `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,
+            `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|ap-gp-exchanges|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,
         ),
     );
     if (!match) {
@@ -207,6 +207,11 @@ async function handle(
 
     if (request.method === 'POST' && route === 'attention-grants') {
         writeJson(response, 200, await options.service.creditAttention(resident, await readJson(request)));
+        return;
+    }
+    if (request.method === 'POST' && route === 'ap-gp-exchanges') {
+        const result = await options.service.exchangeApForGp(resident, await readJson(request));
+        writeJson(response, exchangeHttpStatus(result.status), result);
         return;
     }
     if (request.method === 'POST' && route === 'gold-burns') {
@@ -236,6 +241,16 @@ async function handle(
     }
 
     writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+}
+
+function exchangeHttpStatus(status: unknown): number {
+    if (status === 'complete') {
+        return 200;
+    }
+    if (status === 'failed_gp') {
+        return 409;
+    }
+    return 500;
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {

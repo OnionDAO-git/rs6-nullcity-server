@@ -23,6 +23,7 @@ Routes:
 - `POST /api/nullcity/residents`: birth a resident from a funded proposal payload.
 - `POST /api/nullcity/residents/:id/attention-grants`: credit resident attention with `idempotencyKey`.
 - `GET /api/nullcity/residents/:id/wealth`: inspect resident RuneScape gold, item `995`.
+- `POST /api/nullcity/residents/:id/ap-gp-exchanges`: atomically burn resident GP item `995` and credit AP in one linked exchange record.
 - `POST /api/nullcity/residents/:id/gold-burns`: burn resident gold item `995` with `idempotencyKey`.
 - `POST /api/nullcity/residents/:id/messages`: deliver an attendee inbox message to a resident.
 - `GET /api/nullcity/residents/:id/public-snapshot`: runtime state plus latest Library projection.
@@ -305,6 +306,60 @@ Burn (consume) GP from a resident's RuneScape inventory — used as the GP leg o
 ```
 
 A `409` never mutates inventory. The caller can retry with a lower amount or a new idempotency key. This is the guard that prevents residents from paying GP they do not have.
+
+### POST `/api/nullcity/residents/:id/ap-gp-exchanges`
+
+Complete an AP-for-GP exchange in one linked record: burn real RuneScape coin item `995` from the resident, then credit AP to that same resident.
+
+Use this route for dashboard/operator exchanges so Storyteller and economy views can cite one exchange id with both sides of evidence. Use `gold-burns` only for lower-level diagnostics or non-AP GP spends.
+
+**Request body:**
+
+```json
+{
+  "idempotencyKey": "exchange-2026-05-30-007",
+  "apAmount": 50,
+  "gpAmount": 25,
+  "cityUserId": "user:bob",
+  "sourceType": "operator_exchange",
+  "sourceId": "dashboard-trade-007"
+}
+```
+
+**Response 200** (both GP burn and AP credit succeeded):
+
+```json
+{
+  "schemaVersion": 1,
+  "exchangeId": "apgp:res:ada:exchange-2026-05-30-007",
+  "idempotencyKey": "exchange-2026-05-30-007",
+  "resident": "res:ada",
+  "apAmount": 50,
+  "gpAmount": 25,
+  "cityUserId": "user:bob",
+  "sourceType": "operator_exchange",
+  "sourceId": "dashboard-trade-007",
+  "status": "complete",
+  "apEvidence": {
+    "creditedAmount": 50,
+    "attentionBefore": 3000,
+    "attentionAfter": 3050
+  },
+  "gpEvidence": {
+    "itemId": 995,
+    "burnedAmount": 25,
+    "remainingAmount": 100
+  },
+  "createdAt": "2026-05-30T18:30:00.000Z",
+  "completedAt": "2026-05-30T18:30:00.000Z"
+}
+```
+
+**Response 409** (`status: "failed_gp"`): the resident does not hold enough real coin `995`. No AP is credited and no GP is burned.
+
+Other non-complete statuses are server-side operator failures (`failed_ap` or `failed_unknown`) and should be shown as review-required. If `failed_ap` occurs, GP evidence may already exist and an operator should reconcile before retrying.
+
+**Side effects on success:** appends a `city_ap_gp_exchange` Library event and an `ap_gp_exchange` economy log entry. `/economy/live`, `/economy/events`, `/economy/digest`, Storyteller digests, and the dashboard economy panel can all display the exchange without inventing either side.
 
 ## Economy Digest (S11a)
 

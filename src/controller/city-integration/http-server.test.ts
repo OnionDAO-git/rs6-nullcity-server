@@ -179,6 +179,76 @@ describe('CityIntegration HTTP server', () => {
         expect(gold).toBe(100);
     });
 
+    it('POST /ap-gp-exchanges burns real coin 995 and credits resident AP in one linked record', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/residents/res%3Atest/ap-gp-exchanges`, token, {
+            idempotencyKey: 'exchange-http-1',
+            apAmount: 50,
+            gpAmount: 25,
+            cityUserId: 'user:alice',
+            sourceType: 'operator_exchange',
+            sourceId: 'exchange-demo-1',
+        });
+
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/application\/json/);
+        expect(response.payload).toMatchObject({
+            exchangeId: 'apgp:res:test:exchange-http-1',
+            resident: 'res:test',
+            status: 'complete',
+            apAmount: 50,
+            gpAmount: 25,
+            cityUserId: 'user:alice',
+            sourceType: 'operator_exchange',
+            sourceId: 'exchange-demo-1',
+            apEvidence: {
+                creditedAmount: 50,
+                attentionBefore: 10,
+                attentionAfter: 60,
+            },
+            gpEvidence: {
+                itemId: 995,
+                burnedAmount: 25,
+                remainingAmount: 75,
+            },
+        });
+        expect(gold).toBe(75);
+        expect(runtime.state.attention).toBe(60);
+    });
+
+    it('POST /ap-gp-exchanges returns 409 when the resident lacks enough real coin 995', async () => {
+        gold = 10;
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/residents/res%3Atest/ap-gp-exchanges`, token, {
+            idempotencyKey: 'exchange-http-fail-gp',
+            apAmount: 50,
+            gpAmount: 25,
+            cityUserId: 'user:alice',
+        });
+
+        expect(response.status).toBe(409);
+        expect(response.payload).toMatchObject({
+            exchangeId: 'apgp:res:test:exchange-http-fail-gp',
+            resident: 'res:test',
+            status: 'failed_gp',
+            failureReason: 'insufficient_gold',
+        });
+        expect(response.payload).not.toHaveProperty('apEvidence');
+        expect(response.payload).not.toHaveProperty('gpEvidence');
+        expect(gold).toBe(10);
+        expect(runtime.state.attention).toBe(10);
+    });
+
     it('GET /economy/digest returns AP and GP service activity for dashboard/storyteller readers', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),

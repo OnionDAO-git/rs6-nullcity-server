@@ -49,8 +49,8 @@ export interface ApGpGpEvidence {
 
 const apEvidenceSchema = z.object({
     creditedAmount: z.number().int().positive(),
-    attentionBefore: z.number().int().min(0),
-    attentionAfter: z.number().int().min(0),
+    attentionBefore: z.number().min(0),
+    attentionAfter: z.number().min(0),
 });
 
 const gpEvidenceSchema = z.object({

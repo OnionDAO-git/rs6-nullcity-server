@@ -127,6 +127,24 @@ describe('apGpExchangeRecordSchema', () => {
         expect(apGpExchangeRecordSchema.safeParse(record).success).toBe(true);
     });
 
+    it('accepts fractional attention evidence because live AP decays between ticks', () => {
+        const record = {
+            schemaVersion: 1,
+            exchangeId: 'apgp:res:duke:tx-fractional-ap',
+            idempotencyKey: 'tx-fractional-ap',
+            resident: 'res:duke',
+            apAmount: 50,
+            gpAmount: 25,
+            status: 'complete',
+            apEvidence: { creditedAmount: 50, attentionBefore: 25430.5, attentionAfter: 25480.5 },
+            gpEvidence: { itemId: 995, burnedAmount: 25, remainingAmount: 1850 },
+            createdAt: '2026-05-30T18:22:00.000Z',
+            completedAt: '2026-05-30T18:22:00.000Z',
+        };
+
+        expect(apGpExchangeRecordSchema.safeParse(record).success).toBe(true);
+    });
+
     it('validates a failed_gp exchange record (no apEvidence, no gpEvidence)', () => {
         const record = {
             schemaVersion: 1,
