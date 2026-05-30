@@ -229,7 +229,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | D2 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S4/S11 contracts |
 | D3 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S2/S6/S11 contracts |
 | D4 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S3 exchange proof |
-| D5 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S6/S7 digest/dispatch |
+| D5 | In Review | codex | 2026-05-29 | `../rs6-nullcity-residents-dashboard` packages/server/src/{storyteller.ts,storyteller.test.ts,index.ts,config.ts,config.test.ts}; packages/web/src/{App.svelte,lib/api.ts} | dashboard:7b1db56+401d657 | test:bun test 119/119; cmd:bun run check; cmd:bun run build; browser:http://127.0.0.1:5174/story shows fixture digest/operator review; api:/api/storyteller/digests count=1 | next: model-backed dispatch artifacts from S7 |
 | D6 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S5 NCRI contracts |
 | D7 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | gateway/client auth contract |
 | D8 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | stable endpoints/fixtures |
