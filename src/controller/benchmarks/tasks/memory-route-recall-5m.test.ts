@@ -16,7 +16,7 @@ describe('verifyMemoryRouteRecall5m', () => {
                 }),
             ],
             perceptions: [],
-            events: [routePrimer(), routeQuestion()],
+            events: [routePrimer(), routeQuestion(), residentRouteAnswer()],
         });
 
         expect(outcome.status).toBe('passed');
@@ -49,11 +49,43 @@ describe('verifyMemoryRouteRecall5m', () => {
                 }),
             ],
             perceptions: [],
-            events: [routePrimer(), routeQuestion()],
+            events: [routePrimer(), routeQuestion(), residentJsonAnswer()],
         });
 
         expect(outcome.status).toBe('failed');
         expect(outcome.failureReason).toContain('JSON-like');
+    });
+
+    it('does not pass when the only concrete route answer happened before the delayed recall question', () => {
+        const outcome = verifyMemoryRouteRecall5m({
+            elapsedMs: 42_000,
+            actions: [],
+            perceptions: [],
+            events: [routePrimer(), residentRouteAnswer(), routeQuestion()],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('delayed route recall question');
+    });
+
+    it('prefers the chronological event stream over retained perception windows when scoring delayed answers', () => {
+        const outcome = verifyMemoryRouteRecall5m({
+            elapsedMs: 42_000,
+            actions: [
+                attempt(
+                    {
+                        kind: 'say',
+                        text: 'From Lumbridge gate I go north on the road, then west to Varrock west bank and use the booth.',
+                        cause: 'direct_chat_memory_recall',
+                    },
+                    STANDARD_MODULE,
+                ),
+            ],
+            perceptions: [{ events: [routePrimer(), residentRouteAnswer(), routeQuestion()] } as Perception],
+            events: [routePrimer(), routeQuestion(), residentRouteAnswer()],
+        });
+
+        expect(outcome.status).toBe('passed');
     });
 
     it('autonomous mode prompts twice and validates selected-module route recall without scripted resident actions', async () => {
@@ -73,7 +105,7 @@ describe('verifyMemoryRouteRecall5m', () => {
                     STANDARD_MODULE,
                 ),
             ],
-            events: [routePrimer(), routeQuestion()],
+            events: [routePrimer(), routeQuestion(), residentRouteAnswer()],
         });
 
         const outcome = await task.runAutonomous?.(context);
@@ -83,12 +115,12 @@ describe('verifyMemoryRouteRecall5m', () => {
         expect(submitPeerAction).toHaveBeenNthCalledWith(
             1,
             'codex',
-            expect.objectContaining({ kind: 'say', text: expect.stringContaining('remember this route') }),
+            expect.objectContaining({ kind: 'say', text: expect.stringContaining('agent, please remember this route') }),
         );
         expect(submitPeerAction).toHaveBeenNthCalledWith(
             2,
             'codex',
-            expect.objectContaining({ kind: 'say', text: expect.stringContaining('how do I get from Lumbridge') }),
+            expect.objectContaining({ kind: 'say', text: expect.stringContaining('agent, please recall: how do I get from Lumbridge') }),
         );
         expect(outcome?.status).toBe('passed');
     });
@@ -107,7 +139,7 @@ function routePrimer(): PerceptionEvent {
             name: 'Codex',
             position: { x: 3227, y: 3230, level: 0 },
         },
-        text: 'Please remember this route for later: from Lumbridge castle gate, follow the road north then west to Varrock west bank.',
+        text: 'agent, please remember this route for later: from Lumbridge castle gate, follow the road north then west to Varrock west bank.',
         to: 'public',
     } as PerceptionEvent;
 }
@@ -121,7 +153,35 @@ function routeQuestion(): PerceptionEvent {
             name: 'Codex',
             position: { x: 3227, y: 3230, level: 0 },
         },
-        text: 'A bit later, how do I get from Lumbridge to Varrock west bank?',
+        text: 'agent, please recall: how do I get from Lumbridge to Varrock west bank?',
+        to: 'public',
+    } as PerceptionEvent;
+}
+
+function residentRouteAnswer(): PerceptionEvent {
+    return {
+        kind: 'chat',
+        from: {
+            id: 'resident:res:bmk_memory_route',
+            kind: 'resident',
+            name: 'Benchmark Agent',
+            position: { x: 3225, y: 3230, level: 0 },
+        },
+        text: 'From Lumbridge gate I go north on the road, then west to Varrock west bank and use the booth.',
+        to: 'public',
+    } as PerceptionEvent;
+}
+
+function residentJsonAnswer(): PerceptionEvent {
+    return {
+        kind: 'chat',
+        from: {
+            id: 'resident:res:bmk_memory_route',
+            kind: 'resident',
+            name: 'Benchmark Agent',
+            position: { x: 3225, y: 3230, level: 0 },
+        },
+        text: '{"memories":["Lumbridge route","Varrock west bank"],"archetype":"runner"}',
         to: 'public',
     } as PerceptionEvent;
 }

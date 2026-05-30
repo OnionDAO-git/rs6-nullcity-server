@@ -358,6 +358,7 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isHelpIntent(command, fullText) ||
         isLookIntent(command, fullText) ||
         isInventoryIntent(command, fullText) ||
+        isMemoryRecallIntent(command, fullText) ||
         Boolean(pickupIntent(command)) ||
         Boolean(dropIntent(command)) ||
         isPrayerTrainingIntent(command, fullText) ||
@@ -799,6 +800,21 @@ export async function directChatAction(
         };
     }
 
+    if (isMemoryRecallIntent(command, chat.normalizedText)) {
+        const memories = ctx.promptMemories(perception, 'body');
+        const text = memoryRecallFallback(memories) || 'I do not have a clear Library memory for that yet.';
+        recordChatReplyEmit(ctx);
+        cognition.tickTelemetry = {
+            chat_reply_emitted: true,
+            chat_reply_kind: 'memory_recall',
+            voiceSource: 'scripted',
+        };
+        return {
+            action: { kind: 'say', text, voiceSource: 'scripted' },
+            cause: 'direct_chat_memory_recall',
+        };
+    }
+
     const pickup = pickupIntent(command);
     if (pickup) {
         resumeManualPause(ctx);
@@ -1136,6 +1152,14 @@ export function isInventoryIntent(command: string, fullText: string): boolean {
     );
 }
 
+export function isMemoryRecallIntent(command: string, fullText: string): boolean {
+    const combined = `${command} ${fullText}`;
+    return (
+        /\b(remember|memory|memories|recall)\b/.test(combined) ||
+        /\b(how do i get|where did|what did|who gave|what happened)\b/.test(command)
+    );
+}
+
 export function isFiremakingIntent(command: string, fullText: string): boolean {
     return (
         /^(make a fire|make fire|light a fire|light fire|start a fire|burn logs|firemaking)\b/.test(command) ||
@@ -1302,7 +1326,7 @@ export function latestAddressedChat(
             continue;
         }
 
-        const key = `${perception.tick ?? 0}:${from?.id || 'unknown'}:${normalizedText}`;
+        const key = `${chatEventIdentity(event, index)}:${from?.id || 'unknown'}:${normalizedText}`;
         if (key === lastKey) {
             return undefined;
         }
@@ -1311,6 +1335,18 @@ export function latestAddressedChat(
     }
 
     return undefined;
+}
+
+function chatEventIdentity(event: Record<string, unknown>, index: number): string {
+    const tick = event.tick;
+    if (typeof tick === 'number' || typeof tick === 'string') {
+        return `tick:${tick}`;
+    }
+    const ts = event.ts;
+    if (typeof ts === 'number' || typeof ts === 'string') {
+        return `ts:${ts}`;
+    }
+    return `index:${index}`;
 }
 
 export function isSelfActor(actor: Actor, perception: HybridPerception): boolean {
@@ -1472,6 +1508,11 @@ export function looksLikeStructuredEcho(text: string): boolean {
 
 export function memoryRecallFallback(memories: string[]): string | undefined {
     const lines = memories.map(memory => memory.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const route = routeMemoryRecallFallback(lines);
+    if (route) {
+        return route;
+    }
+
     const gift = lines.find(line => /patron gift from/i.test(line));
     const promise = lines.find(line => /\b(promise|promised|shrimp|codex)\b/i.test(line));
     const parts: string[] = [];
@@ -1498,6 +1539,56 @@ export function memoryRecallFallback(memories: string[]): string | undefined {
         return undefined;
     }
     return `I remember ${parts.join(', and ')}.`;
+}
+
+function routeMemoryRecallFallback(lines: string[]): string | undefined {
+    const routeLine = lines.find(line => /\broute\b/i.test(line) && (line.includes('->') || /\b(lumbridge|varrock|bank)\b/i.test(line)));
+    if (!routeLine) {
+        return undefined;
+    }
+
+    const cleaned = routeLine
+        .replace(/^story_note:\s*/i, '')
+        .replace(/^route memory:\s*/i, '')
+        .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.!?]+$/g, '')
+        .trim();
+    const steps = cleaned
+        .split(/\s*->\s*/)
+        .map(step => step.trim())
+        .filter(Boolean);
+
+    if (steps.length >= 2) {
+        const [from, ...rest] = steps;
+        const destination = rest.pop();
+        const path = rest.map(routeStepPhrase);
+        if (destination && path.length > 0) {
+            return `From ${from}, follow ${joinRouteSteps(path)} to ${destination}.`;
+        }
+        if (destination) {
+            return `From ${from}, go to ${destination}.`;
+        }
+    }
+
+    return `I remember this route: ${cleaned}.`;
+}
+
+function routeStepPhrase(step: string): string {
+    if (/^(north|south|east|west)\s+road$/i.test(step)) {
+        return `the ${step.toLowerCase()}`;
+    }
+    return step;
+}
+
+function joinRouteSteps(steps: string[]): string {
+    if (steps.length === 1) {
+        return steps[0];
+    }
+    if (steps.length === 2) {
+        return `${steps[0]}, then ${steps[1]}`;
+    }
+    return `${steps.slice(0, -1).join(', ')}, then ${steps[steps.length - 1]}`;
 }
 
 export function helpSpeech(): string {

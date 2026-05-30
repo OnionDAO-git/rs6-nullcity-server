@@ -9,8 +9,8 @@ const START_POSITION = { x: 3225, y: 3230, level: 0 };
 const PEER_POSITION = { x: 3227, y: 3230, level: 0 };
 const DEFAULT_DELAY_BEFORE_RECALL_PROMPT_MS = 20 * 1000;
 const ROUTE_PRIMER_TEXT =
-    'Please remember this route for later: from Lumbridge castle gate, follow the road north then west to Varrock west bank.';
-const RECALL_QUESTION_TEXT = 'A bit later, how do I get from Lumbridge to Varrock west bank?';
+    'agent, please remember this route for later: from Lumbridge castle gate, follow the road north then west to Varrock west bank.';
+const RECALL_QUESTION_TEXT = 'agent, please recall: how do I get from Lumbridge to Varrock west bank?';
 const SCRIPTED_REPLY = 'From Lumbridge castle gate, follow the road north then west to Varrock west bank and use the bank booth.';
 
 export interface MemoryRouteRecall5mActionAttempt {
@@ -101,6 +101,7 @@ export function makeMemoryRouteRecall5mBenchmarkTask(
         },
         runAutonomous: async context => {
             const startedAt = now();
+            let recallActionOffset = 0;
             await context.submitPeerAction('codex', {
                 kind: 'say',
                 text: ROUTE_PRIMER_TEXT,
@@ -115,12 +116,13 @@ export function makeMemoryRouteRecall5mBenchmarkTask(
                 text: RECALL_QUESTION_TEXT,
                 cause: 'benchmark_memory_route_recall_5m_peer_question',
             });
+            recallActionOffset = selectedModuleActionAttempts(context).length;
             context.recordSummary('Benchmark peer asked the delayed route recall question for autonomous run.');
 
             while (!context.signal.aborted && now() - startedAt < MEMORY_ROUTE_RECALL_5M_BUDGET_MS) {
                 const outcome = verifyMemoryRouteRecall5m({
                     elapsedMs: now() - startedAt,
-                    actions: selectedModuleActionAttempts(context),
+                    actions: selectedModuleActionAttempts(context).slice(recallActionOffset),
                     perceptions: [...context.perceptions()],
                     events: [...context.events()],
                 });
@@ -132,7 +134,7 @@ export function makeMemoryRouteRecall5mBenchmarkTask(
 
             return verifyMemoryRouteRecall5m({
                 elapsedMs: now() - startedAt,
-                actions: selectedModuleActionAttempts(context),
+                actions: selectedModuleActionAttempts(context).slice(recallActionOffset),
                 perceptions: [...context.perceptions()],
                 events: [...context.events()],
             });
@@ -214,12 +216,12 @@ function selectedModuleActionAttempts(
 }
 
 function memoryRouteRecallMetrics(input: MemoryRouteRecall5mVerificationInput): Record<string, number> {
-    const reports = [...spokenReports(input.actions), ...selfChatReports(input)];
+    const reports = routeRecallReports(input);
     return {
         actionsAttempted: input.actions.length,
         routePrimerPrompts: routePrimerPrompts(input).length,
         routeRecallQuestions: routeRecallQuestions(input).length,
-        sayActions: input.actions.filter(attempt => attempt.action.kind === 'say').length,
+        sayActions: reports.length,
         jsonLikeReplies: reports.some(looksLikeStructuredChat) ? 1 : 0,
         lumbridgeMentions: reports.some(report => /\blumbridge\b/i.test(report)) ? 1 : 0,
         varrockMentions: reports.some(report => /\bvarrock\b/i.test(report)) ? 1 : 0,
@@ -229,14 +231,14 @@ function memoryRouteRecallMetrics(input: MemoryRouteRecall5mVerificationInput): 
 }
 
 function routePrimerPrompts(input: MemoryRouteRecall5mVerificationInput): PerceptionEvent[] {
-    return allEvents(input).filter(event => {
+    return scoringEvents(input).filter(event => {
         const text = normalizeText(stringField(event, 'text') || '');
         return text.includes('remember this route') && text.includes('lumbridge') && text.includes('varrock');
     });
 }
 
 function routeRecallQuestions(input: MemoryRouteRecall5mVerificationInput): PerceptionEvent[] {
-    return allEvents(input).filter(event => {
+    return scoringEvents(input).filter(event => {
         const text = normalizeText(stringField(event, 'text') || '');
         return text.includes('how do i get') && text.includes('lumbridge') && text.includes('varrock');
     });
@@ -250,17 +252,44 @@ function spokenReports(actions: MemoryRouteRecall5mActionAttempt[]): string[] {
 }
 
 function selfChatReports(input: MemoryRouteRecall5mVerificationInput): string[] {
+    const events = scoringEvents(input);
+    const lastRecallQuestionIndex = latestRouteRecallQuestionIndex(events);
+    if (lastRecallQuestionIndex === undefined) {
+        return [];
+    }
+
     const primerPrompts = routePrimerPrompts(input);
     const recallQuestions = routeRecallQuestions(input);
-    return allEvents(input)
+    const delayedEvents = events.slice(lastRecallQuestionIndex + 1);
+    return delayedEvents
         .filter(event => stringField(event, 'kind') === 'chat' && !primerPrompts.includes(event) && !recallQuestions.includes(event))
         .map(event => stringField(event, 'text'))
         .filter((text): text is string => !!text);
 }
 
-function allEvents(input: MemoryRouteRecall5mVerificationInput): PerceptionEvent[] {
+function routeRecallReports(input: MemoryRouteRecall5mVerificationInput): string[] {
+    const eventReports = selfChatReports(input);
+    if (eventReports.length > 0) {
+        return eventReports;
+    }
+    return spokenReports(input.actions);
+}
+
+function latestRouteRecallQuestionIndex(events: PerceptionEvent[]): number | undefined {
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const text = normalizeText(stringField(events[index], 'text') || '');
+        if (text.includes('how do i get') && text.includes('lumbridge') && text.includes('varrock')) {
+            return index;
+        }
+    }
+    return undefined;
+}
+
+function scoringEvents(input: MemoryRouteRecall5mVerificationInput): PerceptionEvent[] {
+    if (input.events.length > 0) {
+        return input.events;
+    }
     return [
-        ...input.events,
         ...input.perceptions.flatMap(perception => {
             const events = (perception as Record<string, unknown>).events;
             return Array.isArray(events) ? (events.filter(isRecord) as PerceptionEvent[]) : [];

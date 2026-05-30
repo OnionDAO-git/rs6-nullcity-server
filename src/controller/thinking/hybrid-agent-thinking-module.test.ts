@@ -5,6 +5,7 @@ import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import { STARTER_FISHING_SPOT_DISCOVERY_RANGE, explorationPatrolCooldownKey } from '../spark/runescape-body-routines';
 import type { AgentAction, Perception } from '../transport/message-codecs';
+import { latestAddressedChat } from './hybrid-agent-chat';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 import { PatronRegistry } from '../patron/patron-registry';
 
@@ -3631,6 +3632,15 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('does not reprocess the same retained addressed chat event on later perception ticks', () => {
+        const event = chatFromCodex('What are you doing agent?', 3217, 3201);
+        const first = latestAddressedChat(perception({ tick: 2, events: [event] }), 'agent', undefined);
+        const second = latestAddressedChat(perception({ tick: 3, events: [event] }), 'agent', first?.key);
+
+        expect(first).toBeDefined();
+        expect(second).toBeUndefined();
+    });
+
     it('answers addressed small talk without waiting for Body inference', async () => {
         const llm = scriptedLlm([]);
         const agent = hybridAgent(llm, runtimeState());
@@ -3650,6 +3660,39 @@ describe('HybridAgentThinkingModule', () => {
             },
         ]);
         expect(result.cause).toBe('direct_chat_small_talk');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('answers addressed route-memory questions from Library memories before Body stuck recovery', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(
+            llm,
+            state,
+            soul(),
+            memory(['Route memory: Lumbridge castle gate -> north road -> west road -> Varrock west bank booth.']),
+        );
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent, please recall: how do I get from Lumbridge to Varrock west bank?', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'From Lumbridge castle gate, follow the north road, then the west road to Varrock west bank booth.',
+                voiceSource: 'scripted',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_memory_recall');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
