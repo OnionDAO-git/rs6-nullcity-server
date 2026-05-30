@@ -114,6 +114,31 @@ describe('CityIntegration HTTP server', () => {
         });
     }
 
+    it('POST /attention-grants credits AP and returns before/after attention state (S11a)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/residents/res%3Atest/attention-grants`, token, {
+            idempotencyKey: 'topup-s11a',
+            amount: 25,
+            cityUserId: 'user:alice',
+            sourceType: 'patron_topup',
+        });
+
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/application\/json/);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            resident: 'res:test',
+            attentionBefore: 10,
+            attentionAfter: 35,
+            creditedAmount: 25,
+        });
+    });
+
     it('GET /wealth returns real RuneScape coin item 995 state', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),

@@ -193,3 +193,308 @@ Resident binary goals. When a goal is marked `achieved`, the service writes a du
 `POST /goals/:id/achieve` is idempotent: a second call with the same id returns the existing achieved record without writing a duplicate Library event.
 
 The `goal_achieved` Library timeline event is a `resolve`-phase arc event visible in `inferStoryArc` and the `CityEventDigest.goalEvents` bucket (via `goalContractsToDigestGoalEvents`). The Storyteller verifier checks for `goal_completed` evidence before narrating a goal completion in public canon.
+
+## AP Attention-Grants (S11a)
+
+Credit AP (Attention Points) to a live resident. AP is the Null City life-force currency — not RuneScape gold.
+
+**Route:** `POST /api/nullcity/residents/:id/attention-grants`
+
+**Request body:**
+
+```json
+{
+  "idempotencyKey": "patron-topup-2026-05-30-001",
+  "amount": 50,
+  "cityUserId": "user:alice",
+  "sourceType": "patron_topup",
+  "sourceId": "checkout:abc123",
+  "note": "Alice topped up res:ada for the June 1 event."
+}
+```
+
+- `idempotencyKey` (required): caller-chosen key; repeat calls with the same key return the cached result.
+- `amount` (required): positive integer AP to credit.
+- `cityUserId`, `sourceType`, `sourceId`, `note`: optional audit metadata.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "attentionBefore": 120,
+  "attentionAfter": 170,
+  "creditedAmount": 50
+}
+```
+
+**Side effects:**
+
+- Appends a `city_attention_credit` event to the resident's Library timeline.
+- Appends an `ap_topup` entry to the shared `EconomyEventLog` so the next `/economy/digest` reflects the credit.
+
+**Error 404** `{ "error": "resident_not_found" }` — resident not online in the controller.
+
+**Error 409** `{ "error": "idempotency_payload_mismatch" }` — same key was previously used with different body fields.
+
+## GP Wealth Inspection and Gold Burns (S11a)
+
+GP is real RuneScape gold (coin item `995`). These routes read or consume actual in-game inventory; no Null City ledger is created.
+
+### GET `/api/nullcity/residents/:id/wealth`
+
+Inspect how much GP (item `995`) a resident currently holds.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "itemId": 995,
+  "amount": 1250
+}
+```
+
+**Side effects:** Appends a `city_gold_observed` Library event and a `gp_observed` economy log entry.
+
+### POST `/api/nullcity/residents/:id/gold-burns`
+
+Burn (consume) GP from a resident's RuneScape inventory — used as the GP leg of an AP-for-GP exchange.
+
+**Request body:**
+
+```json
+{
+  "idempotencyKey": "exchange-2026-05-30-007",
+  "amount": 200,
+  "cityUserId": "user:bob",
+  "sourceType": "city_trade",
+  "sourceId": "apgp:res:ada:exchange-2026-05-30-007"
+}
+```
+
+**Response 200** (sufficient gold):
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "itemId": 995,
+  "burnedAmount": 200,
+  "remainingAmount": 1050
+}
+```
+
+**Response 409** (insufficient gold — resident does not have enough coins):
+
+```json
+{
+  "ok": false,
+  "resident": "res:ada",
+  "itemId": 995,
+  "error": "insufficient_gold",
+  "requestedAmount": 200
+}
+```
+
+A `409` never mutates inventory. The caller can retry with a lower amount or a new idempotency key. This is the guard that prevents residents from paying GP they do not have.
+
+## Economy Digest (S11a)
+
+`GET /api/nullcity/economy/digest` — aggregate AP/GP/NCRI/goal activity for the Storyteller and dashboard D5 panel.
+
+**Optional query params:**
+
+| Param | Type | Meaning |
+|---|---|---|
+| `since` | ISO 8601 string | Include only events at or after this timestamp. |
+| `until` | ISO 8601 string | Include only events at or before this timestamp. |
+
+**Response 200 — `CityEventDigest`:**
+
+```json
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-30T14:00:00.000Z",
+  "windowStart": "2026-05-30T12:00:00.000Z",
+  "windowEnd": "2026-05-30T14:00:00.000Z",
+  "totalEvents": 12,
+  "countsByKind": {
+    "ap_grant": 2,
+    "ap_topup": 1,
+    "ap_decay": 5,
+    "ap_fade": 0,
+    "gp_observed": 2,
+    "gp_earned": 1,
+    "gp_traded": 1,
+    "ap_gp_exchange": 0,
+    "ncri_sale": 0,
+    "ncri_redemption": 0
+  },
+  "apGrantedTotal": 120,
+  "apDecayedTotal": 45,
+  "gpEarnedTotal": 150,
+  "gpTradedTotal": 200,
+  "residents": [
+    {
+      "residentName": "res:ada",
+      "apGranted": 70,
+      "apDecayed": 20,
+      "apNet": 50,
+      "gpEarned": 150,
+      "gpTraded": 200,
+      "eventCount": 8
+    }
+  ],
+  "notable": [
+    {
+      "ts": "2026-05-30T13:45:00.000Z",
+      "kind": "gp_traded",
+      "residentName": "res:ada",
+      "summary": "res:ada traded 200 GP"
+    }
+  ],
+  "goals": {
+    "active": 3,
+    "achieved": 1,
+    "abandoned": 0,
+    "recentlyAchieved": [
+      {
+        "residentName": "res:ada",
+        "goalText": "Find a reliable way to make 100 GP/hour and write the strategy into the Library.",
+        "achievedAt": "2026-05-30T11:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+**Important vocabulary:**
+
+- `apGrantedTotal` and `apDecayedTotal` track **AP** (Attention Points — the Null City ledger). They have no connection to RuneScape coins.
+- `gpEarnedTotal` and `gpTradedTotal` track **real RuneScape GP** (coin item `995`). They are **not** a second Null City ledger.
+- `notable` events include high-GP transactions (≥ 100 GP by default) and NCRI redemptions.
+
+The dashboard D5 Storyteller feed should consume this endpoint; the CLI `npm run storyteller:dry-run -- --memory-root <path>` builds the full narrative-layer `StorytellerDigest` from this data (no model call). `npm run storyteller:run` adds a model-backed narrative on top.
+
+## Resident Routes (S11a)
+
+These routes expose live runtime state and Library timelines for individual residents.
+
+### GET `/api/nullcity/residents/:id/public-snapshot`
+
+Current runtime snapshot plus Library index and recent events. Use for the dashboard D3 resident detail panel.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "online": true,
+  "state": {
+    "resident": "res:ada",
+    "attention": 170,
+    "tick": 14203,
+    "budgets": { "requestsThisMinute": 2, "requestsToday": 87 }
+  },
+  "position": { "x": 3222, "y": 3218, "level": 0 },
+  "library": {
+    "residentName": "res:ada",
+    "currentState": "active",
+    "soulPath": "docs/souls/res-ada.md"
+  },
+  "portrait": { "name": "res:ada", "description": "A determined achiever." },
+  "recentLibraryEvents": [
+    { "kind": "city_attention_credit", "ts": "2026-05-30T13:55:00.000Z", "amount": 50 }
+  ],
+  "deceased": false
+}
+```
+
+- `online: false` when the resident is not running in the current controller session.
+- `state` and `position` are `undefined` when offline.
+- `recentLibraryEvents` contains the last 50 events.
+
+### GET `/api/nullcity/residents/:id/library-events` (alias: `/log`)
+
+Last 200 Library timeline events for the resident — sorted oldest first.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "events": [
+    { "kind": "city_attention_credit", "ts": "2026-05-30T13:55:00.000Z", "amount": 50 }
+  ]
+}
+```
+
+### GET `/api/nullcity/residents/:id/death`
+
+Check whether a resident has faded/died.
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "deceased": false,
+  "libraryState": "active"
+}
+```
+
+`libraryState` is `"ended"` when the resident's Library arc has been resolved (e.g. after a fade or binary goal save).
+
+### POST `/api/nullcity/residents/:id/messages`
+
+Deliver an attendee inbox message to a live resident. The resident receives it as a perception event on the next controller tick.
+
+**Request body:**
+
+```json
+{
+  "messageId": "msg-2026-05-30-001",
+  "threadId": "thread-ada-alice",
+  "cityUserId": "user:alice",
+  "senderDisplayName": "Alice",
+  "body": "Hey Ada, how is the fishing going?",
+  "idempotencyKey": "msg-2026-05-30-001"
+}
+```
+
+**Response 200:**
+
+```json
+{
+  "ok": true,
+  "resident": "res:ada",
+  "delivered": true,
+  "event": {
+    "kind": "human_inbox_message",
+    "ts": "2026-05-30T14:00:00.000Z",
+    "text": "Hey Ada, how is the fishing going?",
+    "threadId": "thread-ada-alice",
+    "messageId": "msg-2026-05-30-001",
+    "from": { "id": "city-user:user:alice", "kind": "human", "name": "Alice" }
+  }
+}
+```
+
+**Error 404** — resident not online. The dashboard should poll `/public-snapshot` to confirm online status before delivering a message.
+
+## Storyteller Dispatch (S11a — CLI only, no HTTP endpoint)
+
+The Storyteller does not expose an HTTP endpoint in this repo. All dispatch is CLI-driven to avoid unattended paid-model calls:
+
+- `npm run storyteller:dry-run -- --memory-root <path>` — deterministic digest from live AP/GP/NCRI/goal evidence; no model call.
+- `npm run storyteller:dry-run -- --fixture` — deterministic digest from test fixtures; no model call.
+- `npm run storyteller:run -- --latest` — model-backed narration from the most recent dry-run digest.
+- `npm run storyteller:run -- --digest-id <id>` — model-backed narration from a specific digest artifact.
+
+Artifacts are written to `data/controller/storyteller/<run-id>/digest.json` and `dispatch.json`. The dashboard D5 panel should poll the server file path or a static JSON mount — no live endpoint exists yet. Post-event, S11b may add a `GET /api/nullcity/storyteller/latest` route if the dashboard requires it.
