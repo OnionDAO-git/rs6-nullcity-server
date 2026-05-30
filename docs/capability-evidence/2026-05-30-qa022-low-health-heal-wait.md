@@ -51,7 +51,7 @@ The first eligible stranded beacon still says the resident is hurt and holding n
 - `npm run typecheck`: PASS.
 - `npm run build`: PASS, SWC compiled 799 files.
 - `npm run lint`: PASS, 973 files checked with no fixes applied.
-- `npm run fin`: PASS, 217 suites and 3006 tests after the S-STORY-2 queue-snapshot fixes landed.
+- `npm run test:fin`: PASS, 217 suites and 3006 tests after the S-STORY-2 queue-snapshot packet landed.
 
 ## Live Result
 
