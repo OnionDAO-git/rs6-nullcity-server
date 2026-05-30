@@ -1,6 +1,6 @@
 # QA-20260530-022 low-health heal-wait evidence
 
-Date: 2026-05-30 17:55 CDT
+Date: 2026-05-30 17:45-17:50 CDT
 
 ## Problem
 
@@ -42,11 +42,13 @@ The first eligible stranded beacon still says the resident is hurt and holding n
 
 ## Verification
 
-- `npm test -- src/controller/thinking/hybrid-agent-thinking-module.test.ts -t low_health_stranded`: PASS, 2 targeted tests.
-- `npm test -- src/controller/thinking/hybrid-agent-thinking-module.test.ts -t "low health"`: PASS, 1 targeted test selected by pattern plus skipped surrounding cases.
-- `npm run typecheck`: PASS.
 - `npm run check:no-ui`: PASS.
+- `npx jest src/controller/thinking/hybrid-agent-thinking-module.test.ts -t "heal-wait action" --runInBand --coverage=false`: PASS, 1 targeted regression.
+- `npx jest src/controller/thinking/hybrid-agent-thinking-module.test.ts -t "low health|low_health|low-health|heal-wait" --runInBand --coverage=false`: PASS, 4 targeted low-health tests.
+- `npm run typecheck`: PASS.
 - `npm run build`: PASS, SWC compiled 799 files.
+- `npm run test:fin`: PASS, 217 suites and 3004 tests.
+- `npm run lint`: PASS, 973 files checked with no fixes applied.
 
 ## Live Follow-Up
 
