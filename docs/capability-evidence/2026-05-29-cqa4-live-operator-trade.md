@@ -10,7 +10,7 @@ Goal was to prove or disprove ordinary named-resident trade behavior outside the
 
 ## Evidence Collected
 
-1. Ordinary controller action logs still show zero trade actions:
+1. Baseline on 2026-05-29: ordinary controller action logs still showed zero trade actions:
 
 ```bash
 rg -n '"kind":"trade_' data/controller/logs/res:*/actions/*.jsonl -S | wc -l
@@ -35,15 +35,47 @@ rg -n 'trade_(request|open|completed|cancel|offer|accept|decline)' data/controll
 
 4. This matches the one-hour CQA10 baseline: ordinary life observed no trade actions (`trade_*=0`) despite active resident movement/speech loops.
 
+5. Follow-up live operator soak on 2026-05-30 passed outside the benchmark harness:
+
+```bash
+npm run controller:trade-soak -- --resident res:qa-trader --trusted-peer res:codex-cq42 --unsafe-peer res:alice-cq42 --duration-ms 120000
+```
+
+Artifact:
+
+```text
+data/benchmarks/capability-qa-2026-05-30/named_trade_soak_20260530092531.json
+```
+
+Verifier summary:
+
+```json
+{
+  "status": "passed",
+  "score": 1,
+  "tradeRequests": 2,
+  "safeItemOffers": 1,
+  "acceptStage1": 1,
+  "acceptStage2": 1,
+  "unsafeDeclines": 1,
+  "tradeCompletedEvents": 1,
+  "tradeCancelledEvents": 1,
+  "safeInventoryBefore": 3,
+  "safeInventoryAfter": 2,
+  "safeInventoryDelta": -1
+}
+```
+
+Ordinary named-resident evidence now exists in `data/controller/logs/res:qa-trader/actions/2026-05-30.jsonl`: `res:qa-trader` sent a trusted `trade_request`, offered one safe shrimp (`itemId=315`), accepted both trade stages, completed the trade, then sent a second trade request to an untrusted peer and declined it with `trade_decline_untrusted_partner`. The matching target events include `trade_completed` with `given:[{itemId:315,amount:1}]` and `trade_cancelled` for the unsafe attempt.
+
 ## Conclusion
 
-`CQA4` remains unproven for ordinary/operator behavior. Trade logic is benchmark-proven in harness runs, but current ordinary resident/controller evidence still shows zero real trade attempts and zero Library trade moments.
+`CQA4` is now proven for one named resident under an operator-style live soak. Trade logic is benchmark-proven and ordinary `res:qa-trader` logs now show the full trusted trade plus unsafe decline path with a real inventory delta outside the benchmark harness.
 
 ## Next Action
 
-Run a named-resident live trade soak with explicit preconditions and evidence capture:
+Recommended follow-ups:
 
-- Seed a named resident (for example `res:qa-trader`) with tradable inventory and known starting inventory snapshot.
-- Run one trusted partner exchange and one unsafe/untrusted attempt.
-- Capture ordinary `data/controller/logs/res:*/actions/*.jsonl` `trade_*` attempts plus before/after inventory delta and matching timeline events.
-
+- Repeat the soak as a no-loop test with repeated trusted and unsafe prompts to prove the resident does not get trapped in transaction loops.
+- Repeat with a human/operator-controlled player actor once the demo operator path is available.
+- Fold this proof into the next long-run CQA10 baseline to see whether ordinary life produces trade behaviors without a directed command.
