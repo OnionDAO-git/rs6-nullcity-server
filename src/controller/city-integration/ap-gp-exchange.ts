@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
+import type { EconomyEventLog } from './economy-event';
 
 /**
  * AP-for-GP exchange event model.
@@ -129,7 +130,10 @@ export function deriveExchangeStatus(
 }
 
 export class ApGpExchangeStore {
-    constructor(private readonly memoryRoot: string) {}
+    constructor(
+        private readonly memoryRoot: string,
+        private readonly economyEventLog?: EconomyEventLog,
+    ) {}
 
     read(idempotencyKey: string): ApGpExchangeRecord | undefined {
         const filePath = this.recordPath(idempotencyKey);
@@ -146,6 +150,24 @@ export class ApGpExchangeStore {
         const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
         fs.writeFileSync(tmpPath, `${JSON.stringify(normalized, null, 2)}\n`);
         fs.renameSync(tmpPath, filePath);
+
+        if (this.economyEventLog && normalized.status === 'complete') {
+            // The exchange burns GP from the resident and credits AP to them, so
+            // from the resident's economic perspective: AP increases, GP decreases.
+            const apDelta = normalized.apEvidence?.creditedAmount ?? normalized.apAmount;
+            const gpDelta = -(normalized.gpEvidence?.burnedAmount ?? normalized.gpAmount);
+            const looksLikeRes = /^res:[a-z0-9_-]{1,20}$/.test(normalized.resident);
+            this.economyEventLog.append({
+                kind: 'ap_gp_exchange',
+                ...(looksLikeRes ? { residentName: normalized.resident } : {}),
+                apDelta,
+                gpDelta,
+                refId: normalized.exchangeId,
+                ...(normalized.completedAt !== undefined ? { ts: normalized.completedAt } : {}),
+                ...(normalized.cityUserId !== undefined ? { cityUserId: normalized.cityUserId } : {}),
+                note: `exchanged ${Math.abs(gpDelta)} GP for ${apDelta} AP`,
+            });
+        }
     }
 
     private recordPath(idempotencyKey: string): string {

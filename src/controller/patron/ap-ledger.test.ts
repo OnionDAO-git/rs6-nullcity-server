@@ -1,3 +1,7 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { EconomyEventLog } from '../city-integration/economy-event';
 import { ApLedger, type ApEvent } from './ap-ledger';
 
 describe('ApLedger', () => {
@@ -243,6 +247,101 @@ describe('ApLedger', () => {
             const ledger = ApLedger.empty();
             expect(() => ledger.append({ kind: 'spend', amount: 0, reason: 'x', ts: 't' })).toThrow();
         });
+    });
+});
+
+describe('ApLedger EconomyEventLog emission', () => {
+    let memoryRoot: string;
+    let log: EconomyEventLog;
+    const residentName = 'res:duke';
+
+    beforeEach(() => {
+        memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-ledger-emit-'));
+        log = new EconomyEventLog(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'));
+    });
+
+    afterEach(() => {
+        fs.rmSync(memoryRoot, { recursive: true, force: true });
+    });
+
+    it('emits ap_grant on grant append (positive apDelta + residentName + refId)', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        ledger.append({ kind: 'grant', amount: 100, source: 'city:birth', ts: '2026-05-30T01:00:00.000Z', cityUserId: 'user-1' });
+        const events = log.readAll();
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+            kind: 'ap_grant',
+            residentName,
+            apDelta: 100,
+            cityUserId: 'user-1',
+        });
+        expect(events[0].refId).toMatch(/^apledger:\d+$/);
+    });
+
+    it('emits ap_decay on decay append (negative apDelta)', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        ledger.append(grant(50));
+        ledger.append({ kind: 'decay', amount: 5, curve: 'standard', tick: 1, ts: '2026-05-30T01:00:00.000Z' });
+        const decayEvents = log.readAll().filter(e => e.kind === 'ap_decay');
+        expect(decayEvents).toHaveLength(1);
+        expect(decayEvents[0]).toMatchObject({ kind: 'ap_decay', residentName, apDelta: -5 });
+    });
+
+    it('does not emit ap_decay for zero-amount decay (hero-floor case)', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        ledger.append({ kind: 'decay', amount: 0, curve: 'standard', tick: 1, ts: '2026-05-30T01:00:00.000Z' });
+        const events = log.readAll();
+        expect(events.filter(e => e.kind === 'ap_decay')).toHaveLength(0);
+    });
+
+    it('emits ap_topup on top_up append', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        ledger.append({ kind: 'top_up', amount: 75, source: 'patron:alice', ts: '2026-05-30T01:00:00.000Z', cityUserId: 'user-alice' });
+        const events = log.readAll();
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({ kind: 'ap_topup', residentName, apDelta: 75, cityUserId: 'user-alice' });
+    });
+
+    it('emits ap_fade on fade append', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        ledger.append(grant(10));
+        ledger.append({ kind: 'fade', tick: 1, ts: '2026-05-30T01:00:00.000Z' });
+        const fadeEvents = log.readAll().filter(e => e.kind === 'ap_fade');
+        expect(fadeEvents).toHaveLength(1);
+        expect(fadeEvents[0]).toMatchObject({ kind: 'ap_fade', residentName, apDelta: 0 });
+    });
+
+    it('does not emit anything for spend or resume', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        ledger.append(grant(100));
+        ledger.append({ kind: 'spend', amount: 1, reason: 'move_to', ts: '2026-05-30T01:00:00.000Z' });
+        ledger.append({ kind: 'resume', amount: 0, ts: '2026-05-30T01:00:00.000Z' });
+        const events = log.readAll();
+        expect(events).toHaveLength(1); // only the grant
+        expect(events[0].kind).toBe('ap_grant');
+    });
+
+    it('does not emit when economyEventLog is undefined (backward compatible)', () => {
+        const ledger = ApLedger.empty();
+        ledger.append(grant(50));
+        expect(log.readAll()).toHaveLength(0); // log is empty; no emission attempted
+    });
+
+    it('does not emit when residentName context is absent', () => {
+        const ledger = ApLedger.empty(log);
+        ledger.append(grant(50));
+        expect(log.readAll()).toHaveLength(0);
+    });
+
+    it('attachEconomyEventLog enables emission post-construction', () => {
+        const ledger = ApLedger.empty();
+        ledger.append(grant(50));
+        expect(log.readAll()).toHaveLength(0);
+        ledger.attachEconomyEventLog(log, { residentName });
+        ledger.append(grant(20));
+        const events = log.readAll();
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({ kind: 'ap_grant', apDelta: 20 });
     });
 });
 

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
+import type { EconomyEventLog } from '../city-integration/economy-event';
 
 /**
  * NCRI (Null City RuneScape Item) registry.
@@ -81,6 +82,7 @@ export class NcriRegistry {
     constructor(
         private readonly memoryRoot: string,
         private readonly now: () => Date = () => new Date(),
+        private readonly economyEventLog?: EconomyEventLog,
     ) {}
 
     create(input: CreateNcriInput): NcriRecord {
@@ -132,6 +134,20 @@ export class NcriRegistry {
         const ts = this.now().toISOString();
         const updated: NcriRecord = { ...record, owner: newOwner, updatedAt: ts };
         this.writeRecord(updated);
+
+        if (this.economyEventLog && updated.owner !== record.owner) {
+            // Treat an ownership change on an approved+available NCRI as a sale
+            // (the most common transfer path in Null City). cityUserId is the new
+            // owner; residentName is not tracked on the NCRI record itself.
+            this.economyEventLog.append({
+                kind: 'ncri_sale',
+                ncriId: updated.id,
+                refId: updated.id,
+                cityUserId: updated.owner,
+                ts: updated.updatedAt,
+                note: `NCRI ${updated.displayName} (${updated.id}) transferred to ${updated.owner}`,
+            });
+        }
         return updated;
     }
 
@@ -147,6 +163,17 @@ export class NcriRegistry {
         const ts = this.now().toISOString();
         const updated: NcriRecord = { ...record, redemptionStatus: 'redeemed', redeemedAt: ts, updatedAt: ts };
         this.writeRecord(updated);
+
+        if (this.economyEventLog) {
+            this.economyEventLog.append({
+                kind: 'ncri_redemption',
+                ncriId: updated.id,
+                refId: updated.id,
+                cityUserId: updated.owner,
+                ts: updated.redeemedAt ?? updated.updatedAt,
+                note: `NCRI ${updated.displayName} (${updated.id}) redeemed by ${updated.owner}`,
+            });
+        }
         return updated;
     }
 

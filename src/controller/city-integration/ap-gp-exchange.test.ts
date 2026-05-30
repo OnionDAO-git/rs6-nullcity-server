@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { EconomyEventLog } from './economy-event';
 import {
     ApGpExchangeStore,
     deriveExchangeStatus,
@@ -257,5 +258,88 @@ describe('ApGpExchangeStore', () => {
         store.write(baseRecord());
         const store2 = new ApGpExchangeStore(root);
         expect(store2.read('tx-1')).toEqual(baseRecord());
+    });
+});
+
+describe('ApGpExchangeStore EconomyEventLog emission', () => {
+    let root: string;
+    let log: EconomyEventLog;
+    let store: ApGpExchangeStore;
+
+    beforeEach(() => {
+        root = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-gp-exchange-emit-'));
+        log = new EconomyEventLog(root, () => new Date('2026-05-30T01:00:00.000Z'));
+        store = new ApGpExchangeStore(root, log);
+    });
+
+    afterEach(() => {
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    const completeRecord = (
+        overrides: Partial<Parameters<ApGpExchangeStore['write']>[0]> = {},
+    ): Parameters<ApGpExchangeStore['write']>[0] => ({
+        schemaVersion: 1,
+        exchangeId: 'apgp:res:duke:tx-1',
+        idempotencyKey: 'tx-1',
+        resident: 'res:duke',
+        apAmount: 50,
+        gpAmount: 100,
+        status: 'complete',
+        apEvidence: { creditedAmount: 50, attentionBefore: 10, attentionAfter: 60 },
+        gpEvidence: { itemId: 995, burnedAmount: 100, remainingAmount: 50 },
+        cityUserId: 'user-1',
+        createdAt: '2026-05-29T00:00:00.000Z',
+        completedAt: '2026-05-30T01:00:00.000Z',
+        ...overrides,
+    });
+
+    it('emits ap_gp_exchange on complete exchange (apDelta + gpDelta + refId)', () => {
+        store.write(completeRecord());
+        const events = log.readAll();
+        expect(events).toHaveLength(1);
+        expect(events[0]).toMatchObject({
+            kind: 'ap_gp_exchange',
+            residentName: 'res:duke',
+            apDelta: 50,
+            gpDelta: -100,
+            refId: 'apgp:res:duke:tx-1',
+            cityUserId: 'user-1',
+        });
+    });
+
+    it('does NOT emit for failed_gp (no completion)', () => {
+        const failed: Parameters<ApGpExchangeStore['write']>[0] = {
+            schemaVersion: 1,
+            exchangeId: 'apgp:res:duke:tx-2',
+            idempotencyKey: 'tx-2',
+            resident: 'res:duke',
+            apAmount: 50,
+            gpAmount: 100,
+            status: 'failed_gp',
+            failureReason: 'insufficient_gold',
+            createdAt: '2026-05-29T00:00:00.000Z',
+        };
+        store.write(failed);
+        expect(log.readAll()).toHaveLength(0);
+    });
+
+    it('does NOT emit when economyEventLog is undefined (backward compatible)', () => {
+        const storeNoLog = new ApGpExchangeStore(root);
+        storeNoLog.write(completeRecord({ idempotencyKey: 'tx-3', exchangeId: 'apgp:res:duke:tx-3' }));
+        expect(log.readAll()).toHaveLength(0);
+    });
+
+    it('uses apEvidence.creditedAmount and gpEvidence.burnedAmount when present', () => {
+        const record = completeRecord({
+            idempotencyKey: 'tx-4',
+            exchangeId: 'apgp:res:duke:tx-4',
+            apEvidence: { creditedAmount: 42, attentionBefore: 0, attentionAfter: 42 },
+            gpEvidence: { itemId: 995, burnedAmount: 99, remainingAmount: 1 },
+        });
+        store.write(record);
+        const event = log.readAll()[0];
+        expect(event.apDelta).toBe(42);
+        expect(event.gpDelta).toBe(-99);
     });
 });

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { EconomyEventLog } from '../city-integration/economy-event';
 import { NcriRegistry, NcriRegistryError, createNcriSchema } from './ncri-registry';
 
 function makeRegistry(): { registry: NcriRegistry; memoryRoot: string } {
@@ -371,5 +372,96 @@ describe('createNcriSchema', () => {
     it('rejects missing required fields', () => {
         const result = createNcriSchema.safeParse({ itemId: 4151 });
         expect(result.success).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// EconomyEventLog emission
+// ---------------------------------------------------------------------------
+
+describe('NcriRegistry EconomyEventLog emission', () => {
+    let memoryRoot: string;
+    let log: EconomyEventLog;
+    let registry: NcriRegistry;
+
+    beforeEach(() => {
+        memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-emit-'));
+        log = new EconomyEventLog(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'));
+        registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'), log);
+    });
+
+    afterEach(() => {
+        fs.rmSync(memoryRoot, { recursive: true, force: true });
+    });
+
+    function createApprovedNcri(owner = 'user-orig'): string {
+        const rec = registry.create({
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            lore: 'Forged in the Abyss.',
+            printable: true,
+            owner,
+        });
+        registry.approve(rec.id);
+        return rec.id;
+    }
+
+    it('emits ncri_sale on transfer (ncriId + cityUserId of new owner)', () => {
+        const id = createApprovedNcri('user-orig');
+        registry.transfer(id, 'user-new');
+        const sales = log.readAll().filter(e => e.kind === 'ncri_sale');
+        expect(sales).toHaveLength(1);
+        expect(sales[0]).toMatchObject({
+            kind: 'ncri_sale',
+            ncriId: id,
+            cityUserId: 'user-new',
+        });
+        expect(sales[0].refId).toBe(id);
+    });
+
+    it('emits ncri_redemption on redeem', () => {
+        const id = createApprovedNcri('user-orig');
+        registry.redeem(id);
+        const redemptions = log.readAll().filter(e => e.kind === 'ncri_redemption');
+        expect(redemptions).toHaveLength(1);
+        expect(redemptions[0]).toMatchObject({
+            kind: 'ncri_redemption',
+            ncriId: id,
+            cityUserId: 'user-orig',
+        });
+    });
+
+    it('does not double-emit on idempotent redeem', () => {
+        const id = createApprovedNcri('user-orig');
+        registry.redeem(id);
+        registry.redeem(id);
+        const redemptions = log.readAll().filter(e => e.kind === 'ncri_redemption');
+        expect(redemptions).toHaveLength(1);
+    });
+
+    it('does not emit when economyEventLog is undefined (backward compatible)', () => {
+        const registryNoLog = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'));
+        const rec = registryNoLog.create({
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            lore: 'Forged in the Abyss.',
+            printable: true,
+            owner: 'user-x',
+        });
+        registryNoLog.approve(rec.id);
+        registryNoLog.transfer(rec.id, 'user-y');
+        registryNoLog.redeem(rec.id);
+        expect(log.readAll()).toHaveLength(0);
+    });
+
+    it('does not emit ncri_sale if transfer is a no-op (same owner)', () => {
+        // transfer to a different owner first to set things up, then we deliberately
+        // call with the same owner — the registry currently still updates updatedAt;
+        // verify our check on owner-change does NOT emit if owners match.
+        const id = createApprovedNcri('user-orig');
+        registry.transfer(id, 'user-orig');
+        // The emission guard checks updated.owner !== record.owner; since they match,
+        // no ncri_sale should fire.
+        expect(log.readAll().filter(e => e.kind === 'ncri_sale')).toHaveLength(0);
     });
 });

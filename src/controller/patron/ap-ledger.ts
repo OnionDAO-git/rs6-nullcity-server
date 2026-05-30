@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { EconomyEventLog } from '../city-integration/economy-event';
 
 /**
  * Append-only AP (Attention Points) event ledger for a single resident.
@@ -15,6 +16,18 @@ import { z } from 'zod';
  * - `resume` is optional post-top-up acknowledgement; same semantics as top_up
  *   for balance purposes but distinguishes "runtime resumed" from "patron paid".
  */
+
+/**
+ * Optional context for AP-ledger emission to EconomyEventLog. When the
+ * ledger is configured with both an EconomyEventLog and an EconomyContext,
+ * each grant/decay/top-up/fade append also emits a normalized EconomyEvent
+ * so the (gated) Storyteller's CityEventDigest can ground narration in
+ * real AP movement.
+ */
+export interface ApLedgerEconomyContext {
+    /** Resident this ledger belongs to (res:<slug>). Omitted -> no event emission. */
+    residentName?: string;
+}
 
 export type ApEventKind = 'grant' | 'spend' | 'decay' | 'top_up' | 'fade' | 'resume';
 
@@ -153,26 +166,113 @@ function applyEvent(balance: number, faded: boolean, event: ApEvent): { balance:
 
 export class ApLedger {
     private readonly events_: ApEvent[];
+    private economyEventLog_?: EconomyEventLog;
+    private economyContext_: ApLedgerEconomyContext;
 
-    private constructor(events: ApEvent[]) {
+    private constructor(events: ApEvent[], economyEventLog?: EconomyEventLog, economyContext: ApLedgerEconomyContext = {}) {
         this.events_ = events;
+        this.economyEventLog_ = economyEventLog;
+        this.economyContext_ = economyContext;
     }
 
-    static empty(): ApLedger {
-        return new ApLedger([]);
+    static empty(economyEventLog?: EconomyEventLog, economyContext: ApLedgerEconomyContext = {}): ApLedger {
+        return new ApLedger([], economyEventLog, economyContext);
     }
 
-    static fromSnapshot(snapshot: ApLedgerSnapshot): ApLedger {
+    static fromSnapshot(
+        snapshot: ApLedgerSnapshot,
+        economyEventLog?: EconomyEventLog,
+        economyContext: ApLedgerEconomyContext = {},
+    ): ApLedger {
         const parsed = apLedgerSnapshotSchema.parse(snapshot);
-        return new ApLedger([...parsed.events]);
+        return new ApLedger([...parsed.events], economyEventLog, economyContext);
     }
 
-    static fromEvents(events: ApEvent[]): ApLedger {
-        return new ApLedger(events.map(e => apEventSchema.parse(e)));
+    static fromEvents(events: ApEvent[], economyEventLog?: EconomyEventLog, economyContext: ApLedgerEconomyContext = {}): ApLedger {
+        return new ApLedger(
+            events.map(e => apEventSchema.parse(e)),
+            economyEventLog,
+            economyContext,
+        );
+    }
+
+    /**
+     * Attach (or replace) the EconomyEventLog + resident context after
+     * construction. Useful when the ledger is built from a stored snapshot
+     * before the runtime wires up its emission seam.
+     */
+    attachEconomyEventLog(economyEventLog: EconomyEventLog, economyContext: ApLedgerEconomyContext = {}): void {
+        this.economyEventLog_ = economyEventLog;
+        this.economyContext_ = economyContext;
     }
 
     append(event: ApEvent): void {
-        this.events_.push(apEventSchema.parse(event));
+        const validated = apEventSchema.parse(event);
+        this.events_.push(validated);
+        this.emitEconomyEvent(validated);
+    }
+
+    private emitEconomyEvent(event: ApEvent): void {
+        const log = this.economyEventLog_;
+        if (!log) {
+            return;
+        }
+        const residentName = this.economyContext_.residentName;
+        if (!residentName) {
+            return;
+        }
+        const refId = `apledger:${this.events_.length - 1}`;
+        switch (event.kind) {
+            case 'grant':
+                log.append({
+                    kind: 'ap_grant',
+                    residentName,
+                    apDelta: event.amount,
+                    refId,
+                    ts: event.ts,
+                    ...(event.cityUserId !== undefined ? { cityUserId: event.cityUserId } : {}),
+                    note: `granted ${event.amount} AP (${event.source})`,
+                });
+                return;
+            case 'decay':
+                if (event.amount > 0) {
+                    log.append({
+                        kind: 'ap_decay',
+                        residentName,
+                        apDelta: -event.amount,
+                        refId,
+                        ts: event.ts,
+                        note: `decayed ${event.amount} AP (${event.curve})`,
+                    });
+                }
+                return;
+            case 'top_up':
+                log.append({
+                    kind: 'ap_topup',
+                    residentName,
+                    apDelta: event.amount,
+                    refId,
+                    ts: event.ts,
+                    ...(event.cityUserId !== undefined ? { cityUserId: event.cityUserId } : {}),
+                    note: `topped up ${event.amount} AP (${event.source})`,
+                });
+                return;
+            case 'fade':
+                log.append({
+                    kind: 'ap_fade',
+                    residentName,
+                    apDelta: 0,
+                    refId,
+                    ts: event.ts,
+                    note: 'faded (AP reached 0)',
+                });
+                return;
+            case 'spend':
+            case 'resume':
+                // spend is intra-tick action cost (too granular for digest);
+                // resume is a runtime-state acknowledgement (no economic value beyond top_up).
+                return;
+        }
     }
 
     replay(): ApLedgerState {
