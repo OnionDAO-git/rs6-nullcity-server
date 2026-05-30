@@ -18,6 +18,7 @@ import {
     frame,
     parseClientMessage,
 } from './protocol/messages';
+import { recoverRequestId } from './protocol/recover-request-id';
 import { ResidentRegistry } from './resident-registry';
 import { type ResidentObserver, ResidentSession } from './resident-session';
 import { ResidentMcpFacade } from './transports/mcp-transport';
@@ -37,6 +38,13 @@ interface SpectatorSessionState {
     subscription: { unsubscribe(): void };
     lastRegionId?: number;
 }
+
+// S-DEMO-P0-1 (QA-20260530-018): processing-time threshold for the per-message
+// slow-handler warning. The controller's snappy request budget is ~1s on a
+// healthy stack; anything above this floor on the WS message handler is worth
+// surfacing because it explains gateway request timeouts as tick saturation
+// rather than an actual handler bug.
+const SLOW_MESSAGE_LOG_MS = 1000;
 
 export class AgentGateway {
     private readonly config: AgentGatewayConfig;
@@ -135,11 +143,36 @@ export class AgentGateway {
         };
 
         socket.on('message', async raw => {
+            // S-DEMO-P0-1 (QA-20260530-018): record arrival time so we can
+            // log slow processing later. Tick-saturation on the game-server
+            // can starve the WS message scheduler and push handler runtime
+            // past the controller's request timeout — observability here
+            // makes that mode diagnosable on the hot stack.
+            const arrivedAt = Date.now();
             let message: ClientMessage;
             try {
                 message = parseClientMessage(raw);
             } catch (error) {
-                send(frame('error', { code: 'EBAD_FRAME', message: error?.message || 'Bad frame' }));
+                // S-DEMO-P0-1: recover the request id (best-effort) so the
+                // controller's pending request rejects immediately instead
+                // of waiting for its 10s timeout. The previous shape sent
+                // an `error` frame without `request_id`, which the
+                // controller routes to the generic 'error' emitter rather
+                // than to a pending-request reject — manifesting as the
+                // exact `Gateway request timed out: <kind>` symptom logged
+                // in QA-20260530-018.
+                const recoveredId = recoverRequestId(raw);
+                send(
+                    frame(
+                        'error',
+                        {
+                            request_id: recoveredId,
+                            code: 'EBAD_FRAME',
+                            message: error?.message || 'Bad frame',
+                        },
+                        recoveredId,
+                    ),
+                );
                 return;
             }
 
@@ -165,6 +198,18 @@ export class AgentGateway {
                         message.id,
                     ),
                 );
+            } finally {
+                // S-DEMO-P0-1: warn when a single message took longer than
+                // the controller's snappy timeout window (1s) — this
+                // surfaces tick-saturation as the actual cause of
+                // `Gateway request timed out: burn_resident_gold` /
+                // `inspect_resident_gold` rather than a phantom hang.
+                const elapsedMs = Date.now() - arrivedAt;
+                if (elapsedMs > SLOW_MESSAGE_LOG_MS) {
+                    logger.warn(
+                        `AgentGateway slow message kind=${message?.kind || 'unknown'} id=${String(message?.id ?? '')} elapsedMs=${elapsedMs}`,
+                    );
+                }
             }
         });
 

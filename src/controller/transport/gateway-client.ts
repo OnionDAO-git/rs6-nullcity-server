@@ -23,8 +23,23 @@ export interface GatewayClientOptions {
     version?: string;
     capabilities?: string[];
     requestTimeoutMs?: number;
+    /**
+     * Optional per-call override applied to inventory-side gateway requests
+     * (`inspect_resident_gold`, `burn_resident_gold`). The default request
+     * timeout of 10s assumes the game-server's WS message loop can schedule
+     * within ~1 tick (600ms), but observed live-stack tick saturation
+     * (LLM-driven brain calls + multi-resident pathfinding) can push handler
+     * scheduling past 10s, surfacing as `Gateway request timed out` even
+     * though the server eventually processes the burn correctly. Raising the
+     * inventory timeout to 30s preserves the demo path during heavy ticks
+     * without changing snappy default timeouts for non-inventory requests.
+     * Packet S-DEMO-P0-1 (QA-20260530-018).
+     */
+    inventoryRequestTimeoutMs?: number;
     reconnect?: boolean;
 }
+
+const DEFAULT_INVENTORY_TIMEOUT_MS = 30_000;
 
 export interface GatewayClientEvents {
     perception: [residentId: string, perception: Perception];
@@ -116,7 +131,7 @@ export class GatewayClient extends EventEmitter {
     }
 
     inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }> {
-        return this.request('inspect_resident_gold', { name }).then(
+        return this.request('inspect_resident_gold', { name }, { timeoutMs: this.inventoryTimeoutMs() }).then(
             value => readPayload(value) as { resident: string; itemId: 995; amount: number },
         );
     }
@@ -125,9 +140,13 @@ export class GatewayClient extends EventEmitter {
         name: string,
         amount: number,
     ): Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }> {
-        return this.request('burn_resident_gold', { name, amount }).then(
+        return this.request('burn_resident_gold', { name, amount }, { timeoutMs: this.inventoryTimeoutMs() }).then(
             value => readPayload(value) as { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number },
         );
+    }
+
+    private inventoryTimeoutMs(): number {
+        return this.options.inventoryRequestTimeoutMs ?? DEFAULT_INVENTORY_TIMEOUT_MS;
     }
 
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {
@@ -170,17 +189,18 @@ export class GatewayClient extends EventEmitter {
         });
     }
 
-    private request(type: string, payload?: unknown): Promise<unknown> {
-        return this.requestWithId(type, payload).then(({ value }) => value);
+    private request(type: string, payload?: unknown, opts?: { timeoutMs?: number }): Promise<unknown> {
+        return this.requestWithId(type, payload, opts).then(({ value }) => value);
     }
 
-    private requestWithId(type: string, payload?: unknown): Promise<{ requestId: string; value: unknown }> {
+    private requestWithId(type: string, payload?: unknown, opts?: { timeoutMs?: number }): Promise<{ requestId: string; value: unknown }> {
         const socket = this.socket;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             return Promise.reject(new Error('Gateway socket is not open'));
         }
 
         const requestId = `controller-${Date.now()}-${++this.requestSeq}`;
+        const timeoutMs = opts?.timeoutMs ?? this.options.requestTimeoutMs ?? 10000;
         const timeout = setTimeout(() => {
             const pending = this.pending.get(requestId);
             if (!pending) {
@@ -188,7 +208,7 @@ export class GatewayClient extends EventEmitter {
             }
             this.pending.delete(requestId);
             pending.reject(new Error(`Gateway request timed out: ${type}`));
-        }, this.options.requestTimeoutMs || 10000);
+        }, timeoutMs);
 
         const promise = new Promise<unknown>((resolve, reject) => {
             this.pending.set(requestId, { resolve, reject, timeout });

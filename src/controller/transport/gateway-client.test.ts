@@ -52,6 +52,82 @@ describe('GatewayClient', () => {
         });
     });
 
+    // S-DEMO-P0-1 (QA-20260530-018): the controller-side inventory ops
+    // (`inspect_resident_gold`, `burn_resident_gold`) now opt into a
+    // longer per-call timeout so transient tick-saturation on the
+    // game-server doesn't surface as a phantom timeout for the AP-for-GP
+    // demo flow.
+    it('inspectResidentGold honors a larger inventoryRequestTimeoutMs override', async () => {
+        // Default requestTimeoutMs (50ms) would reject any slow handler;
+        // inventoryRequestTimeoutMs (300ms) must take precedence here.
+        // Server replies after 150ms — outside default, inside inventory.
+        server.once('connection', socket => {
+            socket.on('message', raw => {
+                const message = JSON.parse(raw.toString()) as { id?: string | number; kind?: string };
+                if (message.kind === 'controller_hello') {
+                    socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'ok', payload: { ok: true } }));
+                    return;
+                }
+                if (message.kind === 'inspect_resident_gold') {
+                    setTimeout(() => {
+                        socket.send(
+                            JSON.stringify({
+                                v: 1,
+                                id: message.id,
+                                kind: 'resident_gold',
+                                payload: { resident: 'res:slow', itemId: 995, amount: 42 },
+                            }),
+                        );
+                    }, 150);
+                }
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 50,
+            inventoryRequestTimeoutMs: 300,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        const result = await client.inspectResidentGold('res:slow');
+        client.close();
+
+        expect(result).toEqual({ resident: 'res:slow', itemId: 995, amount: 42 });
+    });
+
+    // S-DEMO-P0-1: belt-and-suspenders — if the inventoryRequestTimeoutMs
+    // is shorter than the actual response, we should still observe the
+    // typed timeout error (i.e. the override path doesn't accidentally
+    // remove timeouts entirely).
+    it('burnResidentGold times out when the inventoryRequestTimeoutMs is exceeded', async () => {
+        server.once('connection', socket => {
+            socket.on('message', raw => {
+                const message = JSON.parse(raw.toString()) as { id?: string | number; kind?: string };
+                if (message.kind === 'controller_hello') {
+                    socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'ok', payload: { ok: true } }));
+                }
+                // burn_resident_gold: never reply — confirm the override timeout still fires.
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 50,
+            inventoryRequestTimeoutMs: 80,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        await expect(client.burnResidentGold('res:slow', 5)).rejects.toThrow('Gateway request timed out: burn_resident_gold');
+        client.close();
+    });
+
     it('can submit an action while preserving request id separately from ack result', async () => {
         server.once('connection', socket => {
             socket.once('message', raw => {
