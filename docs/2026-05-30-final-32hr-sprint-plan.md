@@ -73,6 +73,7 @@ Every open packet, classified by whether it blocks the demo flow above.
 | **Post-Chicago retro template (#181)** | By definition post-event. | Spawn after the show. |
 | **All E18/E20/E21/E22/E23 instrumentation experiments** | Knowledge work; doesn't change the demo flow. | Post-event. |
 | **E13 Cook's Assistant tier-3 probe / E14 combat smoke** | Same — instrumentation, not demo flow. | Post-event. |
+| **EXP-HARD-1 combat-survival-1h soak + failure classification** | The highest-leverage post-Chicago intelligence experiment. Converts substrate into real failure-mode signal across the DESIGN/INFERENCE/BODY/PERCEPTION/KNOWLEDGE/ENGINE taxonomy. | Spec: `docs/superpowers/specs/2026-05-30-hard-task-soak-experiment-design.md`. Sub-slices EXP-HARD-1-A/B/C. Schedule 2026-06-02. |
 | **Patron lifecycle / cold-start metrics / backup-restore drills (#175/#176/#177/#178)** | Operational hygiene, not demo flow. | Post-event. |
 
 ## Critical path (32 hours to doors)
