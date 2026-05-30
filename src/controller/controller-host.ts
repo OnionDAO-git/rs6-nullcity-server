@@ -1,3 +1,4 @@
+import { EconomyEventLog } from './city-integration/economy-event';
 import { type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
 import { ControllerConfig } from './config';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
@@ -42,6 +43,15 @@ export interface ControllerHostOptions {
     patronGateway?: PatronGateway;
     loreBus?: LoreBus;
     factionStockpile?: FactionStockpileLedger;
+    /**
+     * Optional shared {@link EconomyEventLog}. When omitted the host
+     * constructs one rooted at `config.memory.dir`. The same instance is
+     * exposed via {@link ControllerHost.getEconomyEventLog} so the city
+     * integration layer (CityIntegrationService) and any future per-resident
+     * emitters (ApLedger via `attachEconomyEventLog`) share one append-only
+     * stream per memoryRoot. Packet S-HOST-WIRE.
+     */
+    economyEventLog?: EconomyEventLog;
 }
 
 function configuredThinkingWatchdogMs(config: ControllerConfig): number | undefined {
@@ -80,6 +90,7 @@ export class ControllerHost {
     private readonly standingLedger: StandingLedger;
     public readonly loreBus: LoreBus;
     public readonly factionStockpile: FactionStockpileLedger;
+    private readonly economyEventLog: EconomyEventLog;
 
     constructor(
         private readonly config: ControllerConfig,
@@ -138,7 +149,25 @@ export class ControllerHost {
             });
         this.loreBus = options.loreBus || new LoreBus();
         this.factionStockpile = options.factionStockpile || new FactionStockpileLedger(config.memory.dir);
+        // Shared per-host EconomyEventLog. CityIntegrationService is created
+        // in src/controller/index.ts after the host; that call site passes
+        // `host.getEconomyEventLog()` so AP/GP/NCRI emissions all land in one
+        // append-only stream rooted at `config.memory.dir`.
+        // TODO (S-HOST-WIRE follow-up): once ResidentRuntime owns an ApLedger
+        // (currently it uses `state.attention` directly), the spawn path in
+        // `startRuntime` should call `apLedger.attachEconomyEventLog(this.economyEventLog, { residentName: soul.frontmatter.name })`
+        // so resident-side AP grant/decay/top-up/fade events feed the same log.
+        this.economyEventLog = options.economyEventLog || new EconomyEventLog(config.memory.dir);
         this.bindGatewayEvents();
+    }
+
+    /**
+     * Shared {@link EconomyEventLog} for this host. Pass to
+     * {@link CityIntegrationService} so AP/GP/NCRI activity is recorded in
+     * one append-only stream per `memoryRoot`. See packet S-HOST-WIRE.
+     */
+    public getEconomyEventLog(): EconomyEventLog {
+        return this.economyEventLog;
     }
 
     async start(): Promise<void> {

@@ -194,6 +194,18 @@ export class CityIntegrationService {
     }
 
     /**
+     * Expose the shared {@link EconomyEventLog} so the {@link ControllerHost}
+     * can pass the *same* log into per-resident {@link ApLedger} instances
+     * (via `attachEconomyEventLog`) and other future emitters. One file per
+     * `memoryRoot` keeps grant/exchange/sale events ordered in a single
+     * append-only stream the (gated) Storyteller can narrate. Packet
+     * S-HOST-WIRE.
+     */
+    getEconomyEventLog(): EconomyEventLog {
+        return this.economyEventLog;
+    }
+
+    /**
      * AP-for-GP exchange: burns real GP (coin item 995) from the resident's
      * RuneScape inventory and credits AP to the resident's life-force.
      *

@@ -87,6 +87,11 @@ async function main(): Promise<void> {
                 birth: {
                     birthResident: input => host.birthResidentFromCity(input),
                 },
+                // S-HOST-WIRE: share the host's EconomyEventLog so AP/GP/NCRI
+                // events from the city HTTP surface land in the same
+                // append-only stream that future per-resident ApLedger
+                // emitters will use (see ControllerHost.getEconomyEventLog).
+                economyEventLog: host.getEconomyEventLog(),
             });
             cityHttpServer = await startCityIntegrationHttpServer({
                 service: cityService,
