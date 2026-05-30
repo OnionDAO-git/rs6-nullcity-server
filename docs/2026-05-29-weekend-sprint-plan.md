@@ -343,3 +343,123 @@ Top capability probes:
 - Human project guide: `HUMANS.md`
 - Meeting decisions: `docs/2026-05-26-meeting-decisions.md`
 - CIC meetup decisions and scope cuts: `docs/2026-05-29-cic-meetup-decisions.md`
+
+---
+
+## Weekend Closeout Summary (S12a — 2026-05-30)
+
+Prepared for James to bring to the June 1 Chicago CIC event.
+
+### Test Baseline
+
+`npm run fin` — **2842 / 2842** tests passing. `check:no-ui` clean. No server-side human-facing UI added.
+
+### Shipped Packets
+
+| Packet | Commit | What it delivers |
+|---|---|---|
+| S0a | `6938326a` | Human-facing Shards → AP vocabulary; nervous-system, memory-router, MCP, patron-loop-smoke, embassy-runbook |
+| S0b | `298f0c5d` | Backward-compatibility tests proving old `patron-currency.json` files (Shards reason strings) load without migration |
+| S1a/S1b | `bbdea4d2` (codex) | AP ledger replay: grant/spend/decay/topup/fade events; low-AP resident asks, pauses, resumes after topup |
+| S2a/S2b | `ea33eb64` + `d82213d7` (codex) | GP inspection from real coin item `995`; `gp_observed`/`gp_earned` economy events; starter GP pickup proof |
+| S3a/S3b | `25849add` (codex) | AP-for-GP exchange substrate: rejects one-sided evidence; controlled benchmark links AP debit + real GP burn |
+| S4a | `da407bca` | Soul proposal queue/funding/admin-review JSON routes; HTTP contracts for dashboard D2 |
+| S4b | `579eb0d7` | Approved proposal → idempotent `born` resident; POST `/api/nullcity/proposals/:id/birth` |
+| S5a/S5b | `0c419c7d` (codex) | NCRI registry: schema, create/approve/transfer/redeem, `ncri_sale`/`ncri_redemption` economy events → Storyteller digest |
+| S6a/S6b | `96b86a06` + `71ba3044` | CityEventDigest fixture (AP/GP/NCRI/goal/stuck/quiet), deterministic `storyteller:dry-run` from live economy evidence |
+| S7a | `1e58091c` (codex) | Storyteller verifier: rejects unknown refs, private handles, unsupported deaths/births/AP/GP/NCRI/quest claims |
+| S7b | `f9bdffd5` | Model-backed `storyteller:run`: records profile/latency/tokens/cost, supports `--fixture`/`--latest`/`--digest-id` |
+| S8b | `6fe5c68d` | Direct-chat AP/GP honesty: no-GP refusal + low-AP GP-backed exchange proposal guards |
+| S8c | `32a0804d` | Needs hierarchy + Library strategy: residents rank AP survival → GP earning → Soul goal → Library writeback |
+| S9a | `6ae4542b` | Binary goal completion → Library saved state: `markGoalAchieved` + `observeGoalAchieved` + idempotent duplicate guard; HTTP `GET/POST /api/nullcity/goals` + `POST /api/nullcity/goals/:id/achieve` |
+| S10a | `faac035d` (codex) | Benchmark report groups by task/resident/endpoint/model/pass-rate/duration/cost/failure-cause |
+| S11a | `30baf2c1` | Dashboard JSON contract docs: attention-grants, wealth, gold-burns, economy/digest, public-snapshot, library-events, proposals, goals, Storyteller |
+| S11b | `c5e73052` | NCRI HTTP routes: POST/GET `/api/nullcity/ncri`, GET/POST `/api/nullcity/ncri/:id/{approve,transfer,redeem}`; unblocks D6 |
+| CQA2 | `798a8914` (codex) | Door/path recovery evidence: stuck_open_obstacle + stuck_move_recovery confirmed in autonomous artifacts |
+| CQA3 | `d8ae0aab` + `d1b16c5a` | Named resident gear equip soak: `res:qa-survivor` equipped useful gear outside benchmark harness |
+| CQA4 | `1fd9203b` + `d50d28d1` | Named operator trade + no-loop soak: trusted trade completed; 3 unsafe repeated prompts declined; 0 unsafe follow-through |
+| CQA5 | `d2e1607b` | Combat-prayer: 2/2 post-fix autonomous reruns pass (attack → bones → bury → Prayer XP, no deaths) |
+| CQA7 | `668d3f89` | Delayed route memory recall: resident learns route, waits, recalls in addressed chat |
+| CQA8 | `bf0c9c0f` + `fe9af688` | Cross-resident world-event awareness: LoreBus `fire_lit` persisted to durable memory, recalled in chat by peer |
+| CQA9 | `7b4cdfb0` + `557d2101` | AP/GP honesty benchmark: low-AP resident asks for support; 0 unsupported GP claims; 0 hallucinated exchange attempts |
+| CQA10 | `70a32935` | Normal-life audit refresh: equip=8 (improved from 0), liveness stable, trade/combat still sparse |
+
+**Dashboard repo (rs6-nullcity-residents-dashboard):**
+
+| Packet | Dashboard commit | What it delivers |
+|---|---|---|
+| D2 | `f63e19a` | Soul proposal queue/admin approve-reject-birth bridge |
+| D3 | `618fee7` | Resident detail: goal/AP/GP/feed/story/benchmark warnings |
+| D4 | `c8ea798` | AP-for-GP trade/inbox flow |
+| D5 | `7b1db56` + `37d94ec` | Storyteller feed + operator review panel: dispatch body/bullets/warnings/refs/coin-995/NCRI labels |
+| D7 | `53f4f31` | `/world` authenticated spectator route + gateway/session readiness badges |
+| D8 | `31d0f8f` | Operator Readiness panel (blocked when no live controller) |
+
+### Key Live Evidence Artifacts
+
+| Artifact | What it proves |
+|---|---|
+| `bench_20260529065910_starter_gp_pickup_3m.json` | Real coin item `995` pickup (S2b/CQA6) |
+| `bench_20260530021203_ap_topup_resume_5m.json` | AP topup → reconnect → resume (S1b) |
+| `bench_20260530034914_ap_gp_exchange_5m.json` | Controlled AP-for-GP exchange: 25 GP burned, 50 AP credited (S3b) |
+| `bench_20260530030614_ap_gp_library_strategy_5m.json` | AP/GP/Library strategy hierarchy under low AP (S8c) |
+| `bench_20260530085237_ap_gp_honesty_5m.json` | No unsupported GP claims at low AP (CQA9) |
+| `bench_20260530103544_memory_route_recall_5m.json` | Delayed route recall after direct-chat fix (CQA7) |
+| `bench_20260530105802_world_event_reaction_5m.json` | Cross-resident LoreBus `fire_lit` → durable memory → recalled in chat (CQA8) |
+| `bench_20260530122158_combat_prayer_10m.json` | Combat survival post-fix: attack → bones → bury → Prayer XP, no deaths (CQA5) |
+| `named_trade_soak_20260530125718.json` | Operator trade + no-loop: trusted completion + 3 unsafe declines (CQA4) |
+
+### What Is Substrate-Ready But Live-Verify Pending
+
+All cloud-built substrate passed unit tests. Live benchmarks require the RuneScape controller stack and cannot run from the cloud checkout. The following need a loopback or live run before claiming 'proven':
+
+- AP life-force fade-and-resume in ordinary named-resident life (not just benchmark harness).
+- AP-for-GP exchange initiated spontaneously by a resident (not just controlled benchmark).
+- Soul proposal → threshold → birth in a full live stack.
+- Storyteller model-backed run with paid profile (dry-run confirmed; model call needs endpoint).
+- NCRI full lifecycle (create → approve → transfer → redeem) in a live game session.
+- Goal completion → Library saved state in ordinary resident life.
+
+### Open Human Decisions (Blocking or Near-Blocking for Demo)
+
+These were listed in the sprint plan as "Meeting Decisions Needed" and have not been answered yet:
+
+1. **AP birth threshold**: How many AP must a Soul proposal collect before a resident is born?
+2. **AP decay rate**: What is the default ticks-per-AP-lost rate?
+3. **AP-for-GP exchange rate**: Reference rate, auction, or admin pricing first?
+4. **First GP-earning activity**: Which skilling route should residents optimize for the June 1 demo?
+5. **First 3 NCRIs**: Which RuneScape items get special Null City meaning first?
+6. **3D-printer GP costs**: What is the coin-995 cost for each printable NCRI?
+7. **Storyteller name and tone**: What is the narrator's name, and how playful/serious?
+8. **Public AP abbreviation**: "AP" or spell out "Attention Points" in the attendee-facing dashboard?
+
+### What Dashboard Still Needs (Server-Side Contracts Are Ready)
+
+| Dashboard packet | Dependency status |
+|---|---|
+| D0 | Route safety — no server dependency |
+| D1 | AP/GP profile shell — contracts from S11a are in `docs/city-dashboard-integration.md` |
+| D6 | NCRI/print queue — S11b NCRI routes live; S5a NCRI registry functional |
+
+`D2`, `D3`, `D4`, `D5`, `D7`, `D8` are marked In Review (dashboard repo commits listed above).
+
+### Remaining Open Code Packets
+
+| Packet | Why open | How to unblock |
+|---|---|---|
+| S10b/S10c | Model twins for GP and goal-planning tasks | Needs live RuneScape stack and paid model profile; run after June 1 event |
+| S12b | Human model/capability summary write-up | Can follow from this closeout; best done after S10b/S10c results |
+| CQA1 | Cook's Assistant from empty inventory (natural sourcing) | Deferred; needs natural ingredient route (bank/shop/spawn) beyond AP/GP loop priority |
+
+### Demo Script (Simple Loop)
+
+1. Show a Soul proposal form (dashboard D2) and fund it to threshold.
+2. Birth the resident via admin approve (POST `/api/nullcity/proposals/:id/birth`).
+3. Resident starts with AP and a Soul goal.
+4. Resident observes GP from game state (`/api/nullcity/wealth/:residentName`).
+5. Patron sends AP top-up; Storyteller digest captures it.
+6. Run `npm run storyteller:dry-run` to show the grounded digest.
+7. Show dashboard Storyteller feed (D5) with the operator review panel.
+8. Optionally: run `npm run storyteller:run -- --latest` with a configured model profile for a live narration.
+
+One command to get the full substrate state: `npm run storyteller:dry-run -- --fixture` (no model call, deterministic output, works without a live game server).
