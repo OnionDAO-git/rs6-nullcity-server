@@ -776,6 +776,90 @@ describe('CityIntegrationService', () => {
         expect(service.economyListings().listings).toHaveLength(0);
     });
 
+    it('buyNcri completes listed sale atomically and is idempotent by key', async () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 150, gpRedemptionCost: 500 });
+
+        const first = await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+            sourceId: 'order-abc',
+        });
+        expect(first).toMatchObject({
+            ok: true,
+            ncriId: ncri.id,
+            buyerCityUserId: 'city-user:alice',
+            previousOwner: 'res:test',
+            apPrice: 150,
+            gpRedemptionCost: 500,
+            sourceId: 'order-abc',
+            record: expect.objectContaining({
+                id: ncri.id,
+                owner: 'city-user:alice',
+                saleStatus: 'sold',
+            }),
+        });
+        expect(service.economyListings().listings).toHaveLength(0);
+
+        const replay = await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+            sourceId: 'order-abc',
+        });
+        expect(replay).toMatchObject({ ok: true, ncriId: ncri.id, idempotent: true });
+    });
+
+    it('buyNcri rejects stale AP price mismatches', async () => {
+        const ncri = service.createNcri({
+            itemId: 4151,
+            displayName: 'Whip',
+            lore: 'Rare.',
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 200, gpRedemptionCost: 1000 });
+
+        await expect(
+            service.buyNcri(ncri.id, {
+                idempotencyKey: 'buy-2',
+                cityUserId: 'city-user:bob',
+                apPrice: 199,
+            }),
+        ).rejects.toMatchObject({
+            status: 409,
+            code: 'price_mismatch',
+        });
+    });
+
+    it('buyNcri rejects non-listed NCRIs', async () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'Not listed.',
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+
+        await expect(
+            service.buyNcri(ncri.id, {
+                idempotencyKey: 'buy-3',
+                cityUserId: 'city-user:carol',
+                apPrice: 50,
+            }),
+        ).rejects.toMatchObject({
+            status: 409,
+            code: 'not_listed',
+        });
+    });
+
     it('economyListings heartbeat still works alongside NCRI listing changes', async () => {
         fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
 

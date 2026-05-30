@@ -892,6 +892,59 @@ describe('CityIntegration HTTP server', () => {
         expect(result.status).toBe(409);
     });
 
+    it('NCRI buy route (S-NCRI-2): list-for-sale → buy (idempotent) → removed from marketplace', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const base = started.url;
+
+        const created = await requestJson('POST', `${base}/ncri`, token, {
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            owner: 'res:test',
+        });
+        expect(created.status).toBe(201);
+        const ncriId = (created.payload as { id: string }).id;
+        await requestJson('POST', `${base}/ncri/${ncriId}/approve`, token, {});
+        await requestJson('POST', `${base}/ncri/${ncriId}/list`, token, {
+            apPrice: 150,
+            gpRedemptionCost: 500,
+        });
+
+        const bought = await requestJson('POST', `${base}/ncri/${ncriId}/buy`, token, {
+            idempotencyKey: 'buy-http-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+            sourceId: 'order-http-1',
+        });
+        expect(bought.status).toBe(200);
+        expect(bought.payload).toMatchObject({
+            ok: true,
+            ncriId,
+            buyerCityUserId: 'city-user:alice',
+            apPrice: 150,
+            gpRedemptionCost: 500,
+            sourceId: 'order-http-1',
+            record: expect.objectContaining({ id: ncriId, owner: 'city-user:alice', saleStatus: 'sold' }),
+        });
+
+        const replay = await requestJson('POST', `${base}/ncri/${ncriId}/buy`, token, {
+            idempotencyKey: 'buy-http-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+            sourceId: 'order-http-1',
+        });
+        expect(replay.status).toBe(200);
+        expect(replay.payload).toMatchObject({ ok: true, ncriId, idempotent: true });
+
+        const listings = await requestJson('GET', `${base}/economy/listings`, token);
+        const items = (listings.payload as { listings: { ncriId: string }[] }).listings;
+        expect(items.find(item => item.ncriId === ncriId)).toBeUndefined();
+    });
+
     it('GoalContract routes (S9a): create → list → get → achieve lifecycle', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),

@@ -34,13 +34,14 @@ Routes:
 - `GET /api/nullcity/ncri/:id`: fetch one NCRI by id.
 - `POST /api/nullcity/ncri/:id/approve`: admin-approve a pending NCRI.
 - `POST /api/nullcity/ncri/:id/transfer`: transfer NCRI ownership (requires approved + available).
+- `POST /api/nullcity/ncri/:id/buy`: idempotent listed-sale purchase with AP price-match guard.
 - `POST /api/nullcity/ncri/:id/redeem`: mark NCRI as redeemed (idempotent).
 - `GET /api/nullcity/economy/digest`: current AP/GP/NCRI/exchange economy digest for dashboard/Storyteller.
 - `GET /api/nullcity/economy/live`: city-wide live AP/GP rollup with residents/events/proposals (cacheable JSON).
 - `GET /api/nullcity/economy/totals`: live AP/GP totals and top resident balances.
 - `GET /api/nullcity/economy/events`: live redacted event tail.
 - `GET /api/nullcity/economy/residents`: live per-resident AP/GP summary.
-- `GET /api/nullcity/economy/listings`: active NCRI listings (approved + available).
+- `GET /api/nullcity/economy/listings`: active NCRI listings (`saleStatus=listed`, approved + available).
 - `GET /api/nullcity/economy/heartbeat`: live liveness/readiness signal for economy/dashboard polling.
 - `GET /api/nullcity/storyteller/latest`: latest grounded digest+dispatch artifact summary for dashboard read models.
 - `GET /api/nullcity/storyteller/canon`: published Storyteller canon queue snapshots.
@@ -115,6 +116,7 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
 
 **Approval lifecycle:** `pending` → `approved` (admin gate)
 **Redemption lifecycle:** `available` → `redeemed` (idempotent)
+**Sale lifecycle:** `unlisted` → `listed` → `sold` (or `delisted`)
 **Owner transitions:** allowed when `approvalStatus = 'approved'` and `redemptionStatus = 'available'`
 
 **Routes (dashboard contract):**
@@ -126,8 +128,12 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
   - Body: `{ adminNotes? }`
   - Response: updated `NcriRecord` (`approvalStatus: "approved"`)
 - `POST /api/nullcity/ncri/:id/transfer` — transfer ownership (requires approved + available)
-  - Body: `{ newOwner }`
+  - Body: `{ newOwner, reason? }` where `reason` is one of `sale | gift | admin_transfer`
   - Response: updated `NcriRecord`
+- `POST /api/nullcity/ncri/:id/buy` — atomic listed-sale transition with idempotency key
+  - Body: `{ idempotencyKey, cityUserId, apPrice, sourceId? }`
+  - Response: `{ ok, ncriId, buyerCityUserId, previousOwner, apPrice, gpRedemptionCost, record, idempotent? }`
+  - Rejects when the NCRI is not listed, is already redeemed, or the submitted AP price is stale.
 - `POST /api/nullcity/ncri/:id/redeem` — mark redeemed (idempotent)
   - Body: `{}`
   - Response: updated `NcriRecord` (`redemptionStatus: "redeemed"`)
@@ -493,6 +499,7 @@ Same window semantics as `/economy/live`, but returns:
 ### GET `/api/nullcity/economy/listings`
 
 Returns approved, not-yet-redeemed NCRIs as active listings for dashboard economy/operator panels.
+Only `saleStatus === "listed"` entries are returned; `sold` and `delisted` records are excluded.
 
 - `asOf`
 - `listings[]` with:

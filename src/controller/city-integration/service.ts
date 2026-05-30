@@ -57,6 +57,14 @@ const markGoalAchievedSchema = z
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
 const idempotencyKeySchema = z.string().min(1).max(200);
+const buyNcriSchema = z
+    .object({
+        idempotencyKey: idempotencyKeySchema,
+        cityUserId: z.string().min(1),
+        apPrice: z.number().int().nonnegative(),
+        sourceId: z.string().min(1).optional(),
+    })
+    .strict();
 const positionSchema = z.object({ x: z.number().int(), y: z.number().int(), level: z.number().int().min(0).optional() });
 const initialItemSchema = z.union([
     z.number().int().positive(),
@@ -596,6 +604,83 @@ export class CityIntegrationService {
      */
     delistNcri(id: string): NcriRecord {
         return this.withNcriErrors(() => this.ncriRegistry.delistFromSale(id));
+    }
+
+    /**
+     * Complete an NCRI purchase from the marketplace using a pre-agreed AP price.
+     * Idempotent by caller-provided key to prevent double-sale retries.
+     */
+    async buyNcri(
+        id: string,
+        input: unknown,
+    ): Promise<{
+        ok: true;
+        ncriId: string;
+        buyerCityUserId: string;
+        previousOwner: string;
+        apPrice: number;
+        gpRedemptionCost: number;
+        record: NcriRecord;
+        sourceId?: string;
+        idempotent?: boolean;
+    }> {
+        const request = parseOrThrow(buyNcriSchema, input);
+        const payload = {
+            ncriId: id,
+            residentName: 'res:city',
+            idempotencyKey: request.idempotencyKey,
+            cityUserId: request.cityUserId,
+            apPrice: request.apPrice,
+            sourceId: request.sourceId,
+        };
+        return this.idempotent('buy_ncri', request.idempotencyKey, payload, async () =>
+            this.withNcriErrors(() => {
+                const record = this.ncriRegistry.get(id);
+                if (!record) {
+                    throw new NcriRegistryError('not_found', `NCRI '${id}' not found`);
+                }
+                if (record.saleStatus !== 'listed') {
+                    throw new NcriRegistryError('not_listed', `cannot buy NCRI '${id}' with saleStatus '${record.saleStatus}'`);
+                }
+                if (record.redemptionStatus !== 'available') {
+                    throw new NcriRegistryError(
+                        'already_redeemed',
+                        `cannot buy NCRI '${id}' with redemptionStatus '${record.redemptionStatus}'`,
+                    );
+                }
+                const pricing = this.ncriPricingStore.latestPrice(id);
+                if (!pricing) {
+                    throw new NcriRegistryError('pricing_missing', `NCRI '${id}' has no active pricing`);
+                }
+                if (pricing.apPrice !== request.apPrice) {
+                    throw new NcriRegistryError(
+                        'price_mismatch',
+                        `NCRI '${id}' AP price changed (${pricing.apPrice} expected, got ${request.apPrice})`,
+                    );
+                }
+
+                const previousOwner = record.owner;
+                const sold = this.ncriRegistry.transfer(id, request.cityUserId, {
+                    reason: 'sale',
+                    sale: {
+                        apPrice: pricing.apPrice,
+                        gpRedemptionCost: pricing.gpRedemptionCost,
+                        cityUserId: request.cityUserId,
+                        refId: request.sourceId ?? `ncri-sale:${id}:${request.idempotencyKey}`,
+                    },
+                });
+                return {
+                    ok: true as const,
+                    ncriId: id,
+                    buyerCityUserId: request.cityUserId,
+                    previousOwner,
+                    apPrice: pricing.apPrice,
+                    gpRedemptionCost: pricing.gpRedemptionCost,
+                    record: sold,
+                    ...(request.sourceId ? { sourceId: request.sourceId } : {}),
+                };
+            }),
+        );
     }
 
     /**
@@ -1237,6 +1322,7 @@ function mapSoulProposalError(error: SoulProposalError): CityIntegrationError {
 function mapNcriError(error: NcriRegistryError): CityIntegrationError {
     if (error.code === 'not_found') return new CityIntegrationError(404, 'ncri_not_found', error.message);
     if (error.code === 'invalid_owner') return new CityIntegrationError(400, error.code, error.message);
+    if (error.code === 'event_append_failed') return new CityIntegrationError(500, error.code, error.message);
     return new CityIntegrationError(409, error.code, error.message);
 }
 

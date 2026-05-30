@@ -22,8 +22,9 @@ export type NcriRedemptionStatus = 'available' | 'redeemed';
  * - `unlisted` (default): approved but not yet offered for sale.
  * - `listed`: actively offered for AP purchase on the marketplace.
  * - `delisted`: was listed, then withdrawn without a sale completing.
+ * - `sold`: was listed and ownership changed via a sale.
  */
-export type NcriSaleStatus = 'unlisted' | 'listed' | 'delisted';
+export type NcriSaleStatus = 'unlisted' | 'listed' | 'delisted' | 'sold';
 
 export interface NcriRecord {
     schemaVersion: 1;
@@ -65,7 +66,7 @@ const ncriRecordSchema = z.object({
         .optional(),
     approvalStatus: z.enum(['pending', 'approved']),
     redemptionStatus: z.enum(['available', 'redeemed']),
-    saleStatus: z.enum(['unlisted', 'listed', 'delisted']).default('unlisted'),
+    saleStatus: z.enum(['unlisted', 'listed', 'delisted', 'sold']).default('unlisted'),
     adminNotes: z.string().optional(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
@@ -100,6 +101,13 @@ export type NcriTransferReason = 'sale' | 'gift' | 'admin_transfer';
 export interface TransferNcriOptions {
     /** Defaults to `'sale'` for backward compatibility with pre-S-AUDIT-FIX-1 callers. */
     reason?: NcriTransferReason;
+    /** Optional sale metadata for richer `ncri_sale` economy evidence. */
+    sale?: {
+        apPrice?: number;
+        gpRedemptionCost?: number;
+        cityUserId?: string;
+        refId?: string;
+    };
 }
 
 export class NcriRegistryError extends Error {
@@ -210,6 +218,7 @@ export class NcriRegistry {
             throw new NcriRegistryError('invalid_owner', 'newOwner must be a non-empty string');
         }
         const reason: NcriTransferReason = options.reason ?? 'sale';
+        const sale = options.sale;
         const record = this.requireRecord(id);
         if (record.approvalStatus !== 'approved') {
             throw new NcriRegistryError('not_approved', `cannot transfer NCRI '${id}' with approvalStatus '${record.approvalStatus}'`);
@@ -218,23 +227,37 @@ export class NcriRegistry {
             throw new NcriRegistryError('already_redeemed', `cannot transfer NCRI '${id}' after redemption`);
         }
         const ts = this.now().toISOString();
-        const updated: NcriRecord = { ...record, owner: newOwner, updatedAt: ts };
+        const ownershipChanged = newOwner !== record.owner;
+        const nextSaleStatus: NcriSaleStatus = reason === 'sale' && ownershipChanged && record.saleStatus === 'listed' ? 'sold' : record.saleStatus;
+        const updated: NcriRecord = { ...record, owner: newOwner, saleStatus: nextSaleStatus, updatedAt: ts };
         this.writeRecord(updated);
 
-        if (this.economyEventLog && updated.owner !== record.owner) {
-            // Map caller-supplied reason → event kind + summary verb so the digest +
-            // Storyteller never have to second-guess whether money changed hands.
-            const kind = reasonToEventKind(reason);
-            const verb = reasonToVerb(reason);
-            this.economyEventLog.append({
-                kind,
-                ncriId: updated.id,
-                refId: updated.id,
-                residentName: record.sourceResidentName ?? residentOwner(record.owner),
-                cityUserId: updated.owner,
-                ts: updated.updatedAt,
-                note: `NCRI ${updated.displayName} (${updated.id}) ${verb} to ${updated.owner}`,
-            });
+        if (this.economyEventLog && ownershipChanged) {
+            try {
+                // Map caller-supplied reason → event kind + summary verb so the digest +
+                // Storyteller never have to second-guess whether money changed hands.
+                const kind = reasonToEventKind(reason);
+                const verb = reasonToVerb(reason);
+                const saleNoteSuffix =
+                    reason === 'sale'
+                        ? ` for ${sale?.apPrice ?? '?'} AP${typeof sale?.gpRedemptionCost === 'number' ? ` (redeem ${sale.gpRedemptionCost} GP)` : ''}`
+                        : '';
+                this.economyEventLog.append({
+                    kind,
+                    ncriId: updated.id,
+                    refId: sale?.refId ?? updated.id,
+                    residentName: record.sourceResidentName ?? residentOwner(record.owner),
+                    cityUserId: sale?.cityUserId ?? updated.owner,
+                    ...(reason === 'sale' && typeof sale?.apPrice === 'number' ? { apDelta: sale.apPrice } : {}),
+                    ts: updated.updatedAt,
+                    note: `NCRI ${updated.displayName} (${updated.id}) ${verb} to ${updated.owner}${saleNoteSuffix}`,
+                });
+            } catch (error) {
+                // Roll back owner/sale-state mutation if audit event write fails.
+                this.writeRecord(record);
+                const reasonText = error instanceof Error ? error.message : String(error);
+                throw new NcriRegistryError('event_append_failed', `failed to append NCRI transfer event: ${reasonText}`);
+            }
         }
         return updated;
     }

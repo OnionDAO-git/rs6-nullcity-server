@@ -180,6 +180,7 @@ describe('NcriRegistry.transfer', () => {
         expect(transferred.owner).toBe('user-recipient');
         expect(transferred.approvalStatus).toBe('approved');
         expect(transferred.redemptionStatus).toBe('available');
+        expect(transferred.saleStatus).toBe('unlisted');
     });
 
     it('rejects transfer of a non-approved (pending) NCRI', () => {
@@ -233,6 +234,17 @@ describe('NcriRegistry.transfer', () => {
 
         const loaded = registry.get(record.id);
         expect(loaded?.owner).toBe('new-owner-id');
+    });
+
+    it('marks listed NCRIs as sold when transferred with sale reason', () => {
+        const { registry } = makeRegistry();
+
+        const record = registry.create({ itemId: 4151, displayName: 'Whip', lore: 'Test.', printable: false, owner: 'admin' });
+        registry.approve(record.id);
+        registry.listForSale(record.id);
+
+        const sold = registry.transfer(record.id, 'user-buyer', { reason: 'sale' });
+        expect(sold.saleStatus).toBe('sold');
     });
 });
 
@@ -428,6 +440,30 @@ describe('NcriRegistry EconomyEventLog emission', () => {
         expect(events.filter(e => e.kind === 'ncri_admin_transfer')).toHaveLength(0);
     });
 
+    it('emits AP-priced ncri_sale metadata when provided by the caller', () => {
+        const id = createApprovedNcri('res:duke');
+        registry.listForSale(id);
+        registry.transfer(id, 'city-user:buyer', {
+            reason: 'sale',
+            sale: {
+                apPrice: 150,
+                gpRedemptionCost: 500,
+                cityUserId: 'city-user:buyer',
+                refId: 'ncri-sale:test-1',
+            },
+        });
+        const sales = log.readAll().filter(e => e.kind === 'ncri_sale');
+        expect(sales).toHaveLength(1);
+        expect(sales[0]).toMatchObject({
+            ncriId: id,
+            cityUserId: 'city-user:buyer',
+            apDelta: 150,
+            refId: 'ncri-sale:test-1',
+        });
+        expect(sales[0].note).toContain('for 150 AP');
+        expect(sales[0].note).toContain('redeem 500 GP');
+    });
+
     it('emits ncri_gift (not ncri_sale) when reason="gift"', () => {
         const id = createApprovedNcri('user-orig');
         registry.transfer(id, 'user-new', { reason: 'gift' });
@@ -501,6 +537,34 @@ describe('NcriRegistry EconomyEventLog emission', () => {
         // The emission guard checks updated.owner !== record.owner; since they match,
         // no ncri_sale should fire.
         expect(log.readAll().filter(e => e.kind === 'ncri_sale')).toHaveLength(0);
+    });
+
+    it('rolls back transfer when event append fails', () => {
+        const failingLog = {
+            append: () => {
+                throw new Error('disk_full');
+            },
+        } as unknown as EconomyEventLog;
+        const rollbackRegistry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'), failingLog);
+        const rec = rollbackRegistry.create({
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            lore: 'Forged in the Abyss.',
+            printable: true,
+            owner: 'user-x',
+        });
+        rollbackRegistry.approve(rec.id);
+        rollbackRegistry.listForSale(rec.id);
+
+        expect(() => rollbackRegistry.transfer(rec.id, 'user-y', { reason: 'sale' })).toThrow(NcriRegistryError);
+        try {
+            rollbackRegistry.transfer(rec.id, 'user-y', { reason: 'sale' });
+        } catch (error) {
+            expect((error as NcriRegistryError).code).toBe('event_append_failed');
+        }
+        const loaded = rollbackRegistry.get(rec.id);
+        expect(loaded?.owner).toBe('user-x');
+        expect(loaded?.saleStatus).toBe('listed');
     });
 });
 

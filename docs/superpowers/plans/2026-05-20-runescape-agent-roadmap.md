@@ -827,12 +827,13 @@ Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into th
   - 2026-05-30 (`agents/wip`, codex, packet `S-STORY-2`): added Overseer `--daily-cost-cap-usd` and `--no-auto-publish-on-zero-warnings`, publication budget-hold decisioning (`held_budget` for already-recorded dispatches), and queue publishing decisions (`published_canon`/`queued_review`) with queue artifacts at `data/controller/storyteller/{canon,review}/<digestId>/{digest,dispatch}.json`. Added bounded dashboard bridge JSON routes `GET /api/nullcity/storyteller/{canon,review}` and focused tests (`overseer`, `service`, `http-server`). Paid-call spend preflight remains S-STORY-3/watch-mode.
   - 2026-05-30 (`agents/wip`, codex, packet `S-STORY-3a`): extracted shared paid-model budget preflight for `storyteller:run`. Manual paid endpoint calls now require an explicit daily cap and block before network/model invocation if the cap is missing or already spent. Full watch-mode/persona scheduling remains open and must use a named profile plus small cap.
 
-- `[ ]` **S14: NCRI Sale Lifecycle (purchasable closing edge of the simple loop).**
+- `[>]` **S14: NCRI Sale Lifecycle (purchasable closing edge of the simple loop).**
   - Spec: `docs/superpowers/specs/2026-05-30-ncri-sale-lifecycle-design.md`.
   - Files: `src/controller/ncri/ncri-registry.ts`, new `src/controller/ncri/pricing-store.ts`, new `src/controller/ncri/sale-flow.ts`, `src/controller/city-integration/http-server.ts`, `src/controller/evidence/library-updater.ts`, `docs/city-dashboard-integration.md`.
   - Packets: `S-NCRI-1` (listing + pricing, cloud), `S-NCRI-2` (atomic sale + rollback, cloud), `S-NCRI-3` (redemption + print-queue contract, cloud substrate / live print), `S-NCRI-4` (seed first 3 NCRIs + admin CLI, cloud).
   - Issue: `QA-20260530-005`.
   - Deliverable: NCRIs move through `draft → approved → listed → sold → awaiting_redemption → redeemed` with atomic AP debit, real GP-burn redemption evidence, and audit JSONL.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-NCRI-2`): added idempotent `POST /api/nullcity/ncri/:id/buy` with AP price-match validation, ownership transition to buyer, `saleStatus` transition `listed -> sold`, and rollback-safe owner restoration when sale event append fails. Focused `ncri-registry`, `service`, and `http-server` tests cover success, idempotency, stale-price rejection, and rollback behavior.
 
 - `[ ]` **S15: Resident Memory System (mem0 + qmd + MCP-snippet hybrid).**
   - Spec: `docs/superpowers/specs/2026-05-30-resident-memory-system-design.md`.
