@@ -282,6 +282,84 @@ describe('CityIntegration HTTP server', () => {
         expect(response.status).toBe(404);
         expect(response.payload).toMatchObject({ error: 'proposal_not_found' });
     });
+
+    it('NCRI routes: create → list → get → approve → transfer → redeem lifecycle', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const base = started.url;
+
+        // Create (admin)
+        const created = await requestJson('POST', `${base}/ncri`, token, {
+            itemId: 4151,
+            displayName: 'Abyssal Whip of the City',
+            lore: 'A legendary weapon inscribed with Null City lore.',
+            owner: 'user:alice',
+        });
+        expect(created.status).toBe(201);
+        expect(created.payload).toMatchObject({
+            itemId: 4151,
+            displayName: 'Abyssal Whip of the City',
+            approvalStatus: 'pending',
+            redemptionStatus: 'available',
+            owner: 'user:alice',
+        });
+        expect(created.contentType).toContain('application/json');
+        const ncriId = (created.payload as { id: string }).id;
+
+        // List
+        const list = await requestJson('GET', `${base}/ncri`, token);
+        expect(list.status).toBe(200);
+        expect(Array.isArray(list.payload)).toBe(true);
+        expect((list.payload as { id: string }[]).some(r => r.id === ncriId)).toBe(true);
+
+        // Get by id
+        const got = await requestJson('GET', `${base}/ncri/${ncriId}`, token);
+        expect(got.status).toBe(200);
+        expect(got.payload).toMatchObject({ id: ncriId, approvalStatus: 'pending' });
+
+        // 404 for unknown
+        const missing = await requestJson('GET', `${base}/ncri/no-such-id`, token);
+        expect(missing.status).toBe(404);
+        expect(missing.payload).toMatchObject({ error: 'ncri_not_found' });
+
+        // Approve
+        const approved = await requestJson('POST', `${base}/ncri/${ncriId}/approve`, token, {
+            adminNotes: 'Approved for June 1 event.',
+        });
+        expect(approved.status).toBe(200);
+        expect(approved.payload).toMatchObject({ id: ncriId, approvalStatus: 'approved' });
+
+        // Transfer ownership
+        const transferred = await requestJson('POST', `${base}/ncri/${ncriId}/transfer`, token, {
+            newOwner: 'user:bob',
+        });
+        expect(transferred.status).toBe(200);
+        expect(transferred.payload).toMatchObject({ id: ncriId, owner: 'user:bob' });
+
+        // Transfer on unapproved NCRI returns 409
+        const pending = await requestJson('POST', `${base}/ncri`, token, {
+            itemId: 995,
+            displayName: 'Gold Coins',
+            lore: 'Standard RS gold.',
+            owner: 'user:alice',
+        });
+        const pendingId = (pending.payload as { id: string }).id;
+        const badTransfer = await requestJson('POST', `${base}/ncri/${pendingId}/transfer`, token, { newOwner: 'user:bob' });
+        expect(badTransfer.status).toBe(409);
+
+        // Redeem
+        const redeemed = await requestJson('POST', `${base}/ncri/${ncriId}/redeem`, token);
+        expect(redeemed.status).toBe(200);
+        expect(redeemed.payload).toMatchObject({ id: ncriId, redemptionStatus: 'redeemed' });
+
+        // Idempotent redeem returns same record
+        const redeemedAgain = await requestJson('POST', `${base}/ncri/${ncriId}/redeem`, token);
+        expect(redeemedAgain.status).toBe(200);
+        expect(redeemedAgain.payload).toMatchObject({ id: ncriId, redemptionStatus: 'redeemed' });
+    });
 });
 
 function soulMarkdown(name: string): string {

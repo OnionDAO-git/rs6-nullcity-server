@@ -107,6 +107,40 @@ async function handle(
         return;
     }
 
+    if (request.method === 'POST' && path === `${pathPrefix}/ncri`) {
+        writeJson(response, 201, options.service.createNcri(await readJson(request)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/ncri`) {
+        writeJson(response, 200, options.service.listNcri());
+        return;
+    }
+
+    const ncriMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/ncri/([^/]+)(?:/(approve|transfer|redeem))?$`));
+    if (ncriMatch) {
+        const ncriId = decodeURIComponent(ncriMatch[1]);
+        const action = ncriMatch[2] as 'approve' | 'transfer' | 'redeem' | undefined;
+        if (request.method === 'GET' && action === undefined) {
+            writeJson(response, 200, options.service.getNcri(ncriId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'approve') {
+            writeJson(response, 200, options.service.approveNcri(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'transfer') {
+            writeJson(response, 200, options.service.transferNcri(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'redeem') {
+            writeJson(response, 200, options.service.redeemNcri(ncriId));
+            return;
+        }
+        writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
     const match = path.match(
         new RegExp(
             `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,

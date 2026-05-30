@@ -28,6 +28,13 @@ Routes:
 - `GET /api/nullcity/residents/:id/public-snapshot`: runtime state plus latest Library projection.
 - `GET /api/nullcity/residents/:id/log` and `/library-events`: recent Library timeline events.
 - `GET /api/nullcity/residents/:id/death`: runtime death marker and Library state.
+- `POST /api/nullcity/ncri`: admin: create a new NCRI definition.
+- `GET /api/nullcity/ncri`: list all NCRIs, sorted by `createdAt`.
+- `GET /api/nullcity/ncri/:id`: fetch one NCRI by id.
+- `POST /api/nullcity/ncri/:id/approve`: admin-approve a pending NCRI.
+- `POST /api/nullcity/ncri/:id/transfer`: transfer NCRI ownership (requires approved + available).
+- `POST /api/nullcity/ncri/:id/redeem`: mark NCRI as redeemed (idempotent).
+- `GET /api/nullcity/economy/digest`: current AP/GP/NCRI/exchange economy digest for dashboard/Storyteller.
 
 Idempotency and audit records are persisted under `memory.dir/city-integration/`.
 
@@ -92,15 +99,15 @@ approved → born (S4b: after birthResident succeeds, idempotent)
 
 AP is tracked as `apFunded` (AP = Attention Points, not GP). GP is real RuneScape coin item `995` tracked separately via resident game state.
 
-## NCRI Routes (S5a — substrate ready, HTTP wiring PENDING)
+## NCRI Routes (S5a/S11b — JSON routes ready)
 
-NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncri/<id>.json`. The `NcriRegistry` class (`src/controller/ncri/ncri-registry.ts`) handles persistence and state transitions. HTTP routes exposing these are planned for S5b.
+NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncri/<id>.json`. The `NcriRegistry` class (`src/controller/ncri/ncri-registry.ts`) handles persistence and state transitions. HTTP routes are live in `src/controller/city-integration/http-server.ts`.
 
 **Approval lifecycle:** `pending` → `approved` (admin gate)
 **Redemption lifecycle:** `available` → `redeemed` (idempotent)
 **Owner transitions:** allowed when `approvalStatus = 'approved'` and `redemptionStatus = 'available'`
 
-**Planned routes (dashboard contract):**
+**Routes (dashboard contract):**
 
 - `POST /api/nullcity/ncri` — admin: create a new NCRI definition
   - Body: `{ itemId, displayName, lore, propertyTags?, printable?, printAssetRef?, owner }`

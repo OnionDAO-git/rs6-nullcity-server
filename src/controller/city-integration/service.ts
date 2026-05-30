@@ -17,6 +17,10 @@ import { buildCityEventDigest, type CityEventDigest } from './city-event-digest'
 import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
+import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
+
+const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
+const transferNcriSchema = z.object({ newOwner: z.string().min(1) }).strict();
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
 const idempotencyKeySchema = z.string().min(1).max(200);
@@ -136,6 +140,7 @@ export class CityIntegrationService {
     private readonly store: CityIntegrationStore;
     private readonly exchangeStore: ApGpExchangeStore;
     private readonly proposalStore: SoulProposalStore;
+    private readonly ncriRegistry: NcriRegistry;
     private readonly economyEventLog: EconomyEventLog;
     private readonly now: () => Date;
 
@@ -145,6 +150,7 @@ export class CityIntegrationService {
         this.store = new CityIntegrationStore(options.memoryRoot);
         this.exchangeStore = new ApGpExchangeStore(options.memoryRoot, this.economyEventLog);
         this.proposalStore = new SoulProposalStore(options.memoryRoot, this.now);
+        this.ncriRegistry = new NcriRegistry(options.memoryRoot, this.now, this.economyEventLog);
     }
 
     /**
@@ -340,6 +346,41 @@ export class CityIntegrationService {
     async rejectSoulProposal(proposalId: string, input: unknown): Promise<SoulProposal> {
         const request = parseOrThrow(reviewSoulProposalRequestSchema, input);
         return this.withSoulProposalErrors(() => this.proposalStore.reject(proposalId, request.adminNotes));
+    }
+
+    // -------------------------------------------------------------------------
+    // NCRI routes (S11b) — admin-approved Null City RuneScape Items.
+    // -------------------------------------------------------------------------
+
+    createNcri(input: unknown): NcriRecord {
+        const parsed = parseOrThrow(createNcriSchema, input);
+        return this.withNcriErrors(() => this.ncriRegistry.create(parsed));
+    }
+
+    listNcri(): NcriRecord[] {
+        return this.ncriRegistry.list();
+    }
+
+    getNcri(id: string): NcriRecord {
+        return this.withNcriErrors(() => {
+            const record = this.ncriRegistry.get(id);
+            if (!record) throw new NcriRegistryError('not_found', `NCRI '${id}' not found`);
+            return record;
+        });
+    }
+
+    approveNcri(id: string, input: unknown): NcriRecord {
+        const parsed = parseOrThrow(reviewNcriSchema, input);
+        return this.withNcriErrors(() => this.ncriRegistry.approve(id, parsed.adminNotes));
+    }
+
+    transferNcri(id: string, input: unknown): NcriRecord {
+        const parsed = parseOrThrow(transferNcriSchema, input);
+        return this.withNcriErrors(() => this.ncriRegistry.transfer(id, parsed.newOwner));
+    }
+
+    redeemNcri(id: string): NcriRecord {
+        return this.withNcriErrors(() => this.ncriRegistry.redeem(id));
     }
 
     /**
@@ -688,6 +729,17 @@ export class CityIntegrationService {
             throw error;
         }
     }
+
+    private withNcriErrors<T>(fn: () => T): T {
+        try {
+            return fn();
+        } catch (error) {
+            if (error instanceof NcriRegistryError) {
+                throw mapNcriError(error);
+            }
+            throw error;
+        }
+    }
 }
 
 function parseResident(value: string): string {
@@ -701,6 +753,12 @@ function mapSoulProposalError(error: SoulProposalError): CityIntegrationError {
     if (error.code === 'invalid_amount') {
         return new CityIntegrationError(400, error.code, error.message);
     }
+    return new CityIntegrationError(409, error.code, error.message);
+}
+
+function mapNcriError(error: NcriRegistryError): CityIntegrationError {
+    if (error.code === 'not_found') return new CityIntegrationError(404, 'ncri_not_found', error.message);
+    if (error.code === 'invalid_owner') return new CityIntegrationError(400, error.code, error.message);
     return new CityIntegrationError(409, error.code, error.message);
 }
 
