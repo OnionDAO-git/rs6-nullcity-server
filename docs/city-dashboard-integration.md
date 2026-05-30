@@ -508,7 +508,7 @@ Returns a compact liveness/readiness snapshot for dashboard polling loops.
 - payload fields:
   - `asOf`
   - `controllerUptimeSec`
-  - `residentCount`, `activeResidentCount`
+  - `residentCount`, `activeResidentCount` (online runtime residents or residents with recent economy events)
   - `economyEventCount`
   - `lastEconomyEventTs`, `lastEconomyEventKind`
   - `lastDigestBuiltAt` (when Storyteller artifacts exist)

@@ -852,13 +852,14 @@ export class CityIntegrationService {
         const live = this.economyLive({ limit: 1, residentLimit: 1 });
         const allEvents = this.economyEventLog.readAll();
         const lastEvent = allEvents.length ? allEvents[allEvents.length - 1] : undefined;
+        const activeResidentCount = live.residents.filter(resident => resident.online || resident.activeInWindow).length;
         let lastDigestBuiltAt: string | undefined;
         const degradedFlags: string[] = [];
 
         if (!lastEvent) {
             degradedFlags.push('no_economy_events');
         }
-        if (live.city.activeResidentCount === 0) {
+        if (activeResidentCount === 0) {
             degradedFlags.push('no_active_residents');
         }
 
@@ -875,7 +876,7 @@ export class CityIntegrationService {
             asOf: nowIso,
             controllerUptimeSec: Math.max(0, Math.floor(process.uptime())),
             residentCount: live.city.residentCount,
-            activeResidentCount: live.city.activeResidentCount,
+            activeResidentCount,
             economyEventCount: allEvents.length,
             lastEconomyEventTs: lastEvent?.ts,
             lastEconomyEventKind: lastEvent?.kind,

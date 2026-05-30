@@ -533,6 +533,22 @@ describe('CityIntegrationService', () => {
         expect(heartbeat.lastEconomyEventTs).toBe('2026-05-27T12:00:00.000Z');
     });
 
+    it('economyHeartbeat counts online runtime residents as active even without economy events', () => {
+        fs.mkdirSync(path.join(root, 'res-test'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'res-test', 'runtime-state.json'), JSON.stringify(runtime.state));
+        fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
+
+        const heartbeat = service.economyHeartbeat();
+
+        expect(heartbeat).toMatchObject({
+            residentCount: 1,
+            activeResidentCount: 1,
+            economyEventCount: 0,
+            degradedFlags: ['no_economy_events', 'storyteller_missing'],
+        });
+        expect(heartbeat.degradedFlags).not.toContain('no_active_residents');
+    });
+
     it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {
         gold = 200;
         const serviceWithoutRuntime = new CityIntegrationService({
