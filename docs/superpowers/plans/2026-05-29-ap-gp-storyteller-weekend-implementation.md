@@ -42,6 +42,7 @@ This sprint is meant to run with several autonomous agents active at once. Work 
 | D. Resident intelligence QA | Gameplay benchmark engineer | S8, S9, S10 | `src/controller/benchmarks/`, `src/controller/spark/runescape-body-routines.ts`, `src/controller/thinking/`, `docs/resident-capabilities.md` | AP ledger schemas unless verifying integration |
 | E. Contracts/docs closeout | Release/documentation engineer | S11, S12 | `docs/city-dashboard-integration.md`, `HUMANS.md`, sprint docs | Human-facing UI files in this repo |
 | F. Capability QA sweep | QA/root-cause engineer | CQA packets | `docs/resident-capabilities.md`, `src/controller/benchmarks/`, `src/controller/spark/runescape-body-routines.ts`, action/perception adapters as needed | Economy/storyteller schemas unless a capability requires them |
+| G. Dashboard product | Dashboard/frontend engineer | D0-D8 | `../rs6-nullcity-residents-dashboard/packages/`, `../rs6-nullcity-residents-dashboard/spec/`, dashboard `AGENTS.md` | Server UI files; server runtime code unless S11 is claimed |
 
 If two packets need the same file, the later agent should either wait, split its packet, or coordinate explicitly in `docs/agent-status.md`.
 
@@ -57,6 +58,7 @@ Each autonomous packet must leave behind these artifacts:
 - `docs/resident-capabilities.md` updated whenever the packet proves, weakens, or disproves a resident capability.
 - Commit pushed to `agents/wip` with a message that includes the packet id, for example `feat(ap): S1a add resident AP decay proof`.
 - One short `HANDOFF` line in `docs/agent-status.md` with commit SHA, tests, live evidence id, blockers, and next packet.
+- Dashboard packets use the same discipline in the dashboard repo: claim one `D*` packet or one `spec/09` phase, keep server changes out of the dashboard commit unless S11 is separately claimed, run `bun run typecheck && bun run check && bun run build`, and push the dashboard branch named in its `AGENTS.md`.
 
 ### Evidence Artifact Convention
 
@@ -76,6 +78,7 @@ Wave 0 should run first and unblock everyone:
 - S10a: benchmark/report artifact shape for weekend packets.
 - S6a: Storyteller digest fixture schema, no model call.
 - S11a: dashboard JSON contract list, no implementation beyond examples unless needed.
+- D0: dashboard route safety and automation kickoff in `../rs6-nullcity-residents-dashboard`.
 - CQA0: choose and queue the first capability sweep from `docs/resident-capabilities.md`.
 
 Wave 1 can run in parallel after Wave 0:
@@ -85,6 +88,7 @@ Wave 1 can run in parallel after Wave 0:
 - S6b: Storyteller store and dry-run CLI.
 - S8a: AP/GP knowledge retrieval and prompt envelope proof.
 - S8c: resident needs hierarchy and Library strategy lookup proof.
+- D1/D3: dashboard AP/GP profile and resident detail projections as soon as contracts exist.
 
 Wave 2 depends on Wave 1 evidence:
 
@@ -92,12 +96,14 @@ Wave 2 depends on Wave 1 evidence:
 - S4a/S4b: Soul proposal queue and AP-funded birth.
 - S9a: binary goal completion to saved Library state.
 - S10b/S10c: model twins/triplets across GP and goal-planning tasks.
+- D2/D4: dashboard Soul proposal/AP funding and AP-for-GP interaction UI.
 
 Wave 3 is weekend closeout:
 
 - S5a/S5b: NCRI static registry and Library events, only after AP/GP exchange evidence exists.
 - S7a/S7b: model-backed Storyteller with verifier and cost metadata, only after digest evidence exists.
 - S11b: final JSON route contracts for dashboard agents.
+- D5-D8: Storyteller feed, NCRI/print queue, world route, and dashboard release QA.
 - S12: human-readable shipped state, capability truth table, benchmark summary, and blockers.
 
 ### Standing Capability QA Loop
@@ -218,6 +224,15 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA9 | Open | - | - | - | - | - | - |
 | CQA10 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; docs/resident-capabilities.md; docs/issue-register.md | pending | doc:docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; issue:QA-20260529-006 | one-hour audit captured but shows 0 ordinary equip/trade actions; follow-up CQA3/CQA4/CQA5 needed |
 | CQA11 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md; docs/resident-capabilities.md; docs/issue-register.md | pending | cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-2026-05-27; cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27; doc:docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md | AP/GP hierarchy live proof still blocked by sandbox loopback `EPERM`; combat remains model-sensitive and needs CQA5 fix pass |
+| D0 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | - |
+| D1 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S0/S2/S11 contracts |
+| D2 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S4/S11 contracts |
+| D3 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S2/S6/S11 contracts |
+| D4 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S3 exchange proof |
+| D5 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S6/S7 digest/dispatch |
+| D6 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S5 NCRI contracts |
+| D7 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | gateway/client auth contract |
+| D8 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | stable endpoints/fixtures |
 
 | Packet | Parent | Lane | Depends on | Deliverable | Proof |
 |---|---|---|---|---|---|
@@ -249,6 +264,15 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S11b | S11 | E/B/C | relevant endpoint packets | JSON endpoints return typed payloads and never HTML | route tests and `check:no-ui` |
 | S12a | S12 | E | any completed S packets | weekend closeout table with commit SHAs, evidence ids, blockers | docs diffcheck |
 | S12b | S12 | E | S10b/S10c | human model/capability summary says what is proven, weak, or unknown | docs plus benchmark report |
+| D0 | Dashboard | G | none | `/debug` route safety and dashboard automation kickoff docs | dashboard typecheck/check/build |
+| D1 | Dashboard | G | S0,S2,S11a | attendee profile shell with AP/GP summary using server read models or fixtures | dashboard tests and browser screenshot |
+| D2 | Dashboard | G | S4,S11a | Soul proposal and AP funding flow | dashboard tests with mocked contracts |
+| D3 | Dashboard | G | S2,S6,S8,S11a | resident detail pages show goal, AP, GP, model, endpoint, SPARK, evidence, and Library strategy | dashboard tests and browser screenshot |
+| D4 | Dashboard | G | S3 | AP-for-GP trade/inbox flow | dashboard tests with mocked exchange states |
+| D5 | Dashboard | G | S6,S7 | Storyteller feed and operator review panel | dashboard tests with grounded fixture |
+| D6 | Dashboard | G | S5 | NCRI and print queue views | dashboard tests with pricing/redemption fixtures |
+| D7 | Dashboard | G | gateway/client auth contract | authenticated world/spectator route | browser canvas smoke |
+| D8 | Dashboard | G | any completed D packets | dashboard release QA, screenshots, and demo script update | screenshots + checklist update |
 
 ### Capability QA Packets
 

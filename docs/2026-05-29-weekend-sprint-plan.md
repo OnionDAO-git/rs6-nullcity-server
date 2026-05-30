@@ -190,12 +190,19 @@ Evidence needed:
 
 These belong in `../rs6-nullcity-residents-dashboard`, not this server repo. Server agents may add JSON contracts/endpoints only.
 
-- Soul proposal and AP funding view.
-- Human AP and GP summary.
-- Printer cost / redemption view.
-- NCRI registry and proof view.
-- Storyteller public feed.
-- Resident detail surface showing goal, AP, GP, NCRIs, model, spark, and recent evidence.
+Dashboard automation is part of the sprint because the dashboard is the main human UI. Claim `D*` packets in the dashboard repo, not by adding UI here.
+
+| Packet | Dashboard repo work | Server dependency |
+|---|---|---|
+| D0 | Keep current operations UI safe under `/debug`; preserve spectator/admin flows. | Existing gateway/BFF contracts. |
+| D1 | City shell/profile with AP and GP summary. | AP/GP JSON contracts from S11/S0/S2. |
+| D2 | Soul proposal and AP funding view. | Soul proposal JSON contracts from S4/S11. |
+| D3 | Resident public/detail pages showing goal, AP, GP, model, endpoint, SPARK module, recent evidence, and Library strategy. | Resident read models, capabilities, and Library timelines. |
+| D4 | Inbox/AP grants and AP-for-GP trade flow. | S3 exchange endpoint plus patron/inbox APIs. |
+| D5 | Storyteller feed and operator review panel. | S6 digest, S7 dispatch JSON. |
+| D6 | NCRI/print queue views. | S5 NCRI contracts and GP pricing policy. |
+| D7 | Authenticated game/spectator route. | Gateway/client contracts. |
+| D8 | Dashboard release QA: browser screenshots, mobile checks, and demo script updates. | Stable server endpoints and sample fixtures. |
 
 ## Weekend Timeline
 
@@ -240,6 +247,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S10a benchmark report shape | Makes every later behavior claim comparable. | benchmark agent |
 | S6a Storyteller digest fixture | Gives the Storyteller lane a model-free, deterministic base. | storyteller agent |
 | S11a dashboard contract sketch | Lets dashboard agents prepare without server UI work. | contracts agent |
+| D0 dashboard route safety | Keeps the main UI usable while server agents build JSON contracts. | dashboard agent |
 | CQA0 capability triage | Turns the capabilities doc into a ranked queue of real proof/fix work. | QA agent |
 
 ### Wave 1: Build The Two Economies And The Digest Base
@@ -254,6 +262,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S8a AP/GP resident knowledge | Keeps residents from talking nonsense about the economy. | prompt/knowledge agent |
 | S8c goal hierarchy + Library strategy | Keeps residents pursuing practical AP/GP steps before aspirational goals. | prompt/knowledge agent |
 | CQA6/CQA9 GP earning + AP/GP behavior | Proves the simple loop before richer quest work. | capability QA agent |
+| D1/D3 dashboard AP/GP + resident detail | Makes the verified loop visible to humans. | dashboard agent |
 
 ### Wave 2: Close The Gameplay Loop
 
@@ -264,6 +273,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S9a/S9b saved goal state | Lets completed binary goals enter the Library as canon. | goal/library agent |
 | S10b/S10c model twins | Tests whether paid/smarter models improve actual resident outcomes. | benchmark agent |
 | CQA3-CQA8 normal-life proofs | Proves gear, trade, combat survival, memory, and cross-resident awareness outside happy paths. | capability QA agents |
+| D2/D4 proposal + trade UI | Lets humans fund Souls and interact through AP-for-GP once server contracts exist. | dashboard agent |
 
 ### Wave 3: Sunday Closeout
 
@@ -274,6 +284,7 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | S11b dashboard JSON endpoints | Gives dashboard repo the final data contracts. | API contract agent |
 | S12a/S12b human state report | Lets James explain what works, what is proven, and what is blocked. | release/docs agent |
 | CQA10/CQA11 one-hour audit + model twins | Gives James a credible answer to "what can residents really do?" | QA/benchmark agent |
+| D5-D8 public feed, print queue, world route, dashboard QA | Turns proven server behavior into the attendee experience. | dashboard agent |
 
 ### Standing Capability QA Lane
 
@@ -309,6 +320,7 @@ Top capability probes:
 - Do not call paid models from cron or unattended loops without a named model profile, cap, and artifact path.
 - Do not update `docs/resident-capabilities.md` from hope. Use benchmark ids, live logs, tests, or explicit "not proven" notes.
 - Do not build human-facing UI in this repo. Dashboard work belongs in `../rs6-nullcity-residents-dashboard`.
+- Dashboard agents should update dashboard `AGENTS.md`/`spec/09-implementation-roadmap.md` and keep server changes limited to `docs/city-dashboard-integration.md` or JSON route contracts.
 
 ## Meeting Decisions Needed
 
