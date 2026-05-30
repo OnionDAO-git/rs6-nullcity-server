@@ -39,7 +39,7 @@ describe('buildCityEventDigest', () => {
         expect(d.notable).toEqual([]);
         expect(d.goals).toBeUndefined();
         expect(d.countsByKind.ap_grant).toBe(0);
-        expect(Object.keys(d.countsByKind)).toHaveLength(10);
+        expect(Object.keys(d.countsByKind)).toHaveLength(12);
     });
 
     it('counts events by kind', () => {
@@ -173,5 +173,21 @@ describe('buildCityEventDigest', () => {
         expect(d.totalEvents).toBe(1);
         expect(d.residents).toEqual([]);
         expect(d.countsByKind.gp_observed).toBe(1);
+    });
+
+    it('counts ncri_gift and ncri_admin_transfer but does NOT surface them as notable', () => {
+        const d = buildCityEventDigest(
+            [
+                ev('ncri_gift', { residentName: 'res:hans', ncriId: 'ncri-7', cityUserId: 'user-bob' }),
+                ev('ncri_admin_transfer', { ncriId: 'ncri-8', cityUserId: 'user-bob' }),
+                ev('ncri_redemption', { residentName: 'res:hans', ncriId: 'ncri-9' }),
+            ],
+            { generatedAt: GEN },
+        );
+        expect(d.countsByKind.ncri_gift).toBe(1);
+        expect(d.countsByKind.ncri_admin_transfer).toBe(1);
+        expect(d.countsByKind.ncri_redemption).toBe(1);
+        // notable only contains the redemption — gifts + admin transfers are intentionally quiet.
+        expect(d.notable.map(n => n.kind)).toEqual(['ncri_redemption']);
     });
 });

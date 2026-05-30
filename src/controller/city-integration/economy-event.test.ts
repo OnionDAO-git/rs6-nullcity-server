@@ -104,12 +104,12 @@ describe('EconomyEventLog', () => {
         expect(log.filter({ residentName: 'res:hans', kind: 'gp_earned' })).toHaveLength(1);
     });
 
-    it('exposes all 10 economy event kinds', () => {
-        expect(ECONOMY_EVENT_KINDS).toHaveLength(10);
+    it('exposes all 12 economy event kinds', () => {
+        expect(ECONOMY_EVENT_KINDS).toHaveLength(12);
         for (const kind of ECONOMY_EVENT_KINDS) {
             const ev = log.append({ kind, note: `${kind} sample` });
             expect(ev.kind).toBe(kind);
         }
-        expect(log.readAll()).toHaveLength(10);
+        expect(log.readAll()).toHaveLength(12);
     });
 });

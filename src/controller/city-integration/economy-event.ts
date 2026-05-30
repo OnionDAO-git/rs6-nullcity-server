@@ -28,6 +28,8 @@ export const ECONOMY_EVENT_KINDS = [
     'ap_gp_exchange',
     'ncri_sale',
     'ncri_redemption',
+    'ncri_gift',
+    'ncri_admin_transfer',
 ] as const;
 
 export type EconomyEventKind = (typeof ECONOMY_EVENT_KINDS)[number];

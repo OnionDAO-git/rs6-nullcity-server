@@ -22,7 +22,17 @@ import { LibraryUpdater } from '../evidence';
 import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
-const transferNcriSchema = z.object({ newOwner: z.string().min(1) }).strict();
+// `reason` distinguishes a sale (money/AP changed hands) from a gift or admin
+// transfer so the Storyteller substrate never narrates a giveaway as a sale.
+// See F1 in `docs/audit/2026-05-30-substrate-burst-audit.md` /
+// issue `QA-20260530-011`. Optional + defaults to `'sale'` only to preserve
+// HTTP back-compat; new clients should pass an explicit reason.
+const transferNcriSchema = z
+    .object({
+        newOwner: z.string().min(1),
+        reason: z.enum(['sale', 'gift', 'admin_transfer']).optional(),
+    })
+    .strict();
 const markGoalAchievedSchema = z
     .object({
         evidence: z.string().min(1),
@@ -506,7 +516,10 @@ export class CityIntegrationService {
 
     transferNcri(id: string, input: unknown): NcriRecord {
         const parsed = parseOrThrow(transferNcriSchema, input);
-        return this.withNcriErrors(() => this.ncriRegistry.transfer(id, parsed.newOwner));
+        // Default to `'sale'` for HTTP back-compat; the registry default applies the
+        // same fallback. Callers SHOULD pass `reason` explicitly so the digest
+        // distinguishes sales from gifts / admin transfers.
+        return this.withNcriErrors(() => this.ncriRegistry.transfer(id, parsed.newOwner, { reason: parsed.reason ?? 'sale' }));
     }
 
     redeemNcri(id: string): NcriRecord {

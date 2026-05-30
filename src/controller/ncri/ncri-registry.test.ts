@@ -419,6 +419,44 @@ describe('NcriRegistry EconomyEventLog emission', () => {
         expect(sales[0].refId).toBe(id);
     });
 
+    it('emits ncri_sale when reason="sale" is passed explicitly', () => {
+        const id = createApprovedNcri('user-orig');
+        registry.transfer(id, 'user-new', { reason: 'sale' });
+        const events = log.readAll();
+        expect(events.filter(e => e.kind === 'ncri_sale')).toHaveLength(1);
+        expect(events.filter(e => e.kind === 'ncri_gift')).toHaveLength(0);
+        expect(events.filter(e => e.kind === 'ncri_admin_transfer')).toHaveLength(0);
+    });
+
+    it('emits ncri_gift (not ncri_sale) when reason="gift"', () => {
+        const id = createApprovedNcri('user-orig');
+        registry.transfer(id, 'user-new', { reason: 'gift' });
+        const events = log.readAll();
+        expect(events.filter(e => e.kind === 'ncri_sale')).toHaveLength(0);
+        const gifts = events.filter(e => e.kind === 'ncri_gift');
+        expect(gifts).toHaveLength(1);
+        expect(gifts[0]).toMatchObject({
+            kind: 'ncri_gift',
+            ncriId: id,
+            cityUserId: 'user-new',
+        });
+        expect(gifts[0].refId).toBe(id);
+    });
+
+    it('emits ncri_admin_transfer (not ncri_sale) when reason="admin_transfer"', () => {
+        const id = createApprovedNcri('admin');
+        registry.transfer(id, 'user-bob', { reason: 'admin_transfer' });
+        const events = log.readAll();
+        expect(events.filter(e => e.kind === 'ncri_sale')).toHaveLength(0);
+        const admin = events.filter(e => e.kind === 'ncri_admin_transfer');
+        expect(admin).toHaveLength(1);
+        expect(admin[0]).toMatchObject({
+            kind: 'ncri_admin_transfer',
+            ncriId: id,
+            cityUserId: 'user-bob',
+        });
+    });
+
     it('emits ncri_redemption on redeem', () => {
         const id = createApprovedNcri('user-orig');
         registry.redeem(id);

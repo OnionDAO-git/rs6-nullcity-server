@@ -74,6 +74,24 @@ export const createNcriSchema = z.object({
 
 export type CreateNcriInput = z.infer<typeof createNcriSchema>;
 
+/**
+ * Reason that an NCRI changes hands. Drives which EconomyEvent kind is
+ * emitted so the Storyteller substrate never narrates a gift as a sale.
+ *
+ * - `sale`           → `ncri_sale` (money/AP changed hands; default for back-compat)
+ * - `gift`           → `ncri_gift` (resident-to-resident or resident-to-user gift)
+ * - `admin_transfer` → `ncri_admin_transfer` (admin assignment, e.g. CIC giveaway)
+ *
+ * See {@link NcriRegistry.transfer}, F1 in
+ * `docs/audit/2026-05-30-substrate-burst-audit.md`, and issue `QA-20260530-011`.
+ */
+export type NcriTransferReason = 'sale' | 'gift' | 'admin_transfer';
+
+export interface TransferNcriOptions {
+    /** Defaults to `'sale'` for backward compatibility with pre-S-AUDIT-FIX-1 callers. */
+    reason?: NcriTransferReason;
+}
+
 export class NcriRegistryError extends Error {
     constructor(
         public readonly code: string,
@@ -126,11 +144,24 @@ export class NcriRegistry {
         return updated;
     }
 
-    /** Transfer ownership to a new city user. Requires approved + available. */
-    transfer(id: string, newOwner: string): NcriRecord {
+    /**
+     * Transfer ownership to a new city user. Requires approved + available.
+     *
+     * `options.reason` decides which EconomyEvent kind is emitted:
+     *   - `'sale'` (default) → `ncri_sale`
+     *   - `'gift'`           → `ncri_gift`
+     *   - `'admin_transfer'` → `ncri_admin_transfer`
+     *
+     * The default is `'sale'` strictly for backward compatibility with pre-S-AUDIT-FIX-1
+     * callers; production call sites should pass an explicit reason so the Storyteller
+     * substrate never narrates a gift as a sale (see F1 in
+     * `docs/audit/2026-05-30-substrate-burst-audit.md` / issue `QA-20260530-011`).
+     */
+    transfer(id: string, newOwner: string, options: TransferNcriOptions = {}): NcriRecord {
         if (!newOwner || newOwner.trim().length === 0) {
             throw new NcriRegistryError('invalid_owner', 'newOwner must be a non-empty string');
         }
+        const reason: NcriTransferReason = options.reason ?? 'sale';
         const record = this.requireRecord(id);
         if (record.approvalStatus !== 'approved') {
             throw new NcriRegistryError('not_approved', `cannot transfer NCRI '${id}' with approvalStatus '${record.approvalStatus}'`);
@@ -143,17 +174,18 @@ export class NcriRegistry {
         this.writeRecord(updated);
 
         if (this.economyEventLog && updated.owner !== record.owner) {
-            // Treat an ownership change on an approved+available NCRI as a sale
-            // (the most common transfer path in Null City). cityUserId is the new
-            // owner; residentName is not tracked on the NCRI record itself.
+            // Map caller-supplied reason → event kind + summary verb so the digest +
+            // Storyteller never have to second-guess whether money changed hands.
+            const kind = reasonToEventKind(reason);
+            const verb = reasonToVerb(reason);
             this.economyEventLog.append({
-                kind: 'ncri_sale',
+                kind,
                 ncriId: updated.id,
                 refId: updated.id,
                 residentName: record.sourceResidentName ?? residentOwner(record.owner),
                 cityUserId: updated.owner,
                 ts: updated.updatedAt,
-                note: `NCRI ${updated.displayName} (${updated.id}) transferred to ${updated.owner}`,
+                note: `NCRI ${updated.displayName} (${updated.id}) ${verb} to ${updated.owner}`,
             });
         }
         return updated;
@@ -240,4 +272,28 @@ export class NcriRegistry {
 
 function residentOwner(owner: string): string | undefined {
     return /^res:[a-z0-9_-]{1,20}$/.test(owner) ? owner : undefined;
+}
+
+function reasonToEventKind(reason: NcriTransferReason): 'ncri_sale' | 'ncri_gift' | 'ncri_admin_transfer' {
+    switch (reason) {
+        case 'gift':
+            return 'ncri_gift';
+        case 'admin_transfer':
+            return 'ncri_admin_transfer';
+        case 'sale':
+        default:
+            return 'ncri_sale';
+    }
+}
+
+function reasonToVerb(reason: NcriTransferReason): string {
+    switch (reason) {
+        case 'gift':
+            return 'gifted';
+        case 'admin_transfer':
+            return 'admin-transferred';
+        case 'sale':
+        default:
+            return 'transferred';
+    }
 }
