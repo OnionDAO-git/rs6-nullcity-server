@@ -189,12 +189,83 @@ describe('StorytellerModelClient.run — error handling', () => {
             default: { timeoutMs: 10_000 },
         };
         const { digest } = buildFixtureDigest();
+        const knownRefs = new Set(
+            [
+                ...digest.apEvents,
+                ...digest.gpEvents,
+                ...digest.exchangeEvents,
+                ...digest.ncriEvents,
+                ...digest.goalEvents,
+                ...digest.stuckEvents,
+                ...digest.miscEvents,
+            ].map(event => event.ref),
+        );
 
         const client = new StorytellerModelClient(noopEndpoints);
         const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
 
         expect(dispatch.needsReview).toBe(true);
         expect(dispatch.reviewReasons).toEqual(expect.arrayContaining([expect.stringContaining('nooped')]));
+        expect(dispatch.reviewReasons?.some(reason => reason.includes('death or fade'))).toBe(false);
+        expect(dispatch.publicTitle).not.toBe('(no title generated)');
+        expect(dispatch.publicBody).not.toBe('(no body generated)');
+        expect(dispatch.publicBody).toMatch(/AP|GP|NCRI|resident/i);
+        expect(dispatch.publicBullets.length).toBeGreaterThan(0);
+        expect(dispatch.eventRefsUsed.length).toBeGreaterThan(0);
+        expect(dispatch.eventRefsUsed.every(ref => knownRefs.has(ref))).toBe(true);
+    });
+
+    it('prefers meaningful exchange evidence over zero-GP observation noise in nooped fallback copy', async () => {
+        const noopEndpoints: Record<string, LlmEndpointConfig> = {
+            default: { timeoutMs: 10_000 },
+        };
+        const { digest, refs } = buildFixtureDigest();
+        const zeroGpEvents = Array.from({ length: 5 }, (_, index) => ({
+            ref: `zero-gp-${index}`,
+            kind: 'gp_observed' as const,
+            residentName: `res:quiet-${index}`,
+            ts: `2026-05-29T05:50:0${index}.000Z`,
+            note: 'observed 0 GP in item 995',
+            importance: 'high' as const,
+            evidence: { itemId: 995, amount: 0 },
+        }));
+        const noisyDigest = {
+            ...digest,
+            gpEvents: [...zeroGpEvents, ...digest.gpEvents],
+            topEvents: [...zeroGpEvents, digest.exchangeEvents[0]],
+        };
+
+        const client = new StorytellerModelClient(noopEndpoints);
+        const dispatch = await client.run(noisyDigest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.eventRefsUsed).toContain(refs.exchange);
+        expect(dispatch.publicBody).toContain('traded 200 GP for 50 AP');
+        expect(dispatch.publicBullets.filter(bullet => bullet.includes('observed 0 GP'))).toHaveLength(0);
+    });
+
+    it('redacts human and patron handles in nooped fallback public copy', async () => {
+        const noopEndpoints: Record<string, LlmEndpointConfig> = {
+            default: { timeoutMs: 10_000 },
+        };
+        const { digest } = buildFixtureDigest();
+        const sensitiveNcriEvent = {
+            ...digest.ncriEvents[0],
+            note: 'NCRI Kindling Relic transferred to human:event-demo by patron:james.',
+        };
+        const sensitiveDigest = {
+            ...digest,
+            ncriEvents: [sensitiveNcriEvent],
+            topEvents: [sensitiveNcriEvent],
+        };
+
+        const client = new StorytellerModelClient(noopEndpoints);
+        const dispatch = await client.run(sensitiveDigest, DEFAULT_STORYTELLER_CONFIG);
+        const publicText = [dispatch.publicTitle, dispatch.publicBody, ...dispatch.publicBullets].join(' ');
+
+        expect(publicText).not.toContain('human:event-demo');
+        expect(publicText).not.toContain('patron:james');
+        expect(publicText).toContain('a human');
+        expect(publicText).toContain('a patron');
     });
 
     it('returns needsReview dispatch when model returns empty JSON object', async () => {

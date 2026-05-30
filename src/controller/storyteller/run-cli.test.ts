@@ -54,7 +54,16 @@ describe('storyteller:run CLI digest sources', () => {
         expect(result.dispatch.modelProfile).toBe('default');
         expect(result.dispatch.needsReview).toBe(true);
         expect(result.dispatch.reviewReasons?.some(reason => reason.includes('nooped'))).toBe(true);
-        expect(fs.existsSync(path.join(outputDir, 'newer-digest', 'dispatch.json'))).toBe(true);
+        expect(result.dispatch.publicTitle).not.toBe('(no title generated)');
+        expect(result.dispatch.publicBody).not.toBe('(no body generated)');
+        expect(result.dispatch.publicBullets.length).toBeGreaterThan(0);
+        expect(result.dispatch.eventRefsUsed.length).toBeGreaterThan(0);
+
+        const dispatchPath = path.join(outputDir, 'newer-digest', 'dispatch.json');
+        expect(fs.existsSync(dispatchPath)).toBe(true);
+        const written = JSON.parse(fs.readFileSync(dispatchPath, 'utf-8')) as { publicTitle: string; publicBody: string };
+        expect(written.publicTitle).toBe(result.dispatch.publicTitle);
+        expect(written.publicBody).toBe(result.dispatch.publicBody);
     });
 
     it('runs over a named persisted digest id', async () => {
