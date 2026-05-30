@@ -483,7 +483,73 @@ describe('CityIntegrationService', () => {
         expect(residents.residents.map(row => row.residentName).sort()).toEqual(['res:peer', 'res:test']);
     });
 
-    it('exposes approved-available NCRI listings and heartbeat liveness metadata', async () => {
+    it('exposes only explicitly-listed NCRIs in economyListings (not all approved)', async () => {
+        fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
+
+        // Approved but NOT listed for sale — must not appear in marketplace.
+        const approvedOnly = service.createNcri({
+            itemId: 4151,
+            displayName: 'Abyssal Whip of the City',
+            lore: 'A champion relic.',
+            owner: 'res:test',
+        });
+        service.approveNcri(approvedOnly.id, {});
+
+        // Approved AND explicitly listed for sale with pricing.
+        const forSale = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire-starter.',
+            owner: 'res:test',
+        });
+        service.approveNcri(forSale.id, {});
+        service.listNcriForSale(forSale.id, { apPrice: 150, gpRedemptionCost: 500 });
+
+        // Redeemed — must not appear.
+        const redeemed = service.createNcri({
+            itemId: 995,
+            displayName: 'Coins of Memory',
+            lore: 'Already redeemed proof.',
+            owner: 'res:test',
+        });
+        service.approveNcri(redeemed.id, {});
+        service.redeemNcri(redeemed.id);
+
+        const listings = service.economyListings();
+        expect(listings.asOf).toBe('2026-05-27T12:00:00.000Z');
+        expect(listings.listings).toHaveLength(1);
+        expect(listings.listings[0]).toMatchObject({
+            ncriId: forSale.id,
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            approvalStatus: 'approved',
+            redemptionStatus: 'available',
+            listed: true,
+            apPrice: 150,
+            gpRedemptionCost: 500,
+        });
+    });
+
+    it('listNcriForSale returns record + pricing; delistNcri removes from marketplace', () => {
+        const ncri = service.createNcri({
+            itemId: 4151,
+            displayName: 'Whip',
+            lore: 'Rare.',
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        const { record, pricing } = service.listNcriForSale(ncri.id, { apPrice: 200, gpRedemptionCost: 1000 });
+        expect(record.saleStatus).toBe('listed');
+        expect(pricing.apPrice).toBe(200);
+        expect(pricing.gpRedemptionCost).toBe(1000);
+        expect(service.economyListings().listings).toHaveLength(1);
+
+        const delisted = service.delistNcri(ncri.id);
+        expect(delisted.saleStatus).toBe('delisted');
+        expect(service.economyListings().listings).toHaveLength(0);
+    });
+
+    it('economyListings heartbeat still works alongside NCRI listing changes', async () => {
         fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
 
         const listed = service.createNcri({
@@ -503,21 +569,6 @@ describe('CityIntegrationService', () => {
         });
         service.approveNcri(redeemed.id, {});
         service.redeemNcri(redeemed.id);
-
-        const listings = service.economyListings();
-        expect(listings.asOf).toBe('2026-05-27T12:00:00.000Z');
-        expect(listings.listings).toEqual([
-            expect.objectContaining({
-                ncriId: listed.id,
-                itemId: 4151,
-                displayName: 'Abyssal Whip of the City',
-                owner: 'user:buyer',
-                sourceResidentName: 'res:test',
-                approvalStatus: 'approved',
-                redemptionStatus: 'available',
-                listed: true,
-            }),
-        ]);
 
         const heartbeat = service.economyHeartbeat();
         expect(heartbeat).toMatchObject({

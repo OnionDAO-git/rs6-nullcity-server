@@ -18,6 +18,7 @@ import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
 import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
+import { NcriPricingStore, setPricingSchema, type NcriPricing } from '../ncri/ncri-pricing-store';
 import {
     buildLiveEconomySnapshot,
     type LiveEconomyHeartbeat,
@@ -29,6 +30,9 @@ import { LibraryUpdater } from '../evidence';
 import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
+// S-NCRI-1: listing an NCRI for sale requires pricing. Re-uses the setPricingSchema
+// from NcriPricingStore so the shape is validated once.
+const listNcriForSaleSchema = setPricingSchema;
 // `reason` distinguishes a sale (money/AP changed hands) from a gift or admin
 // transfer so the Storyteller substrate never narrates a giveaway as a sale.
 // See F1 in `docs/audit/2026-05-30-substrate-burst-audit.md` /
@@ -198,6 +202,7 @@ export class CityIntegrationService {
     private readonly exchangeStore: ApGpExchangeStore;
     private readonly proposalStore: SoulProposalStore;
     private readonly ncriRegistry: NcriRegistry;
+    private readonly ncriPricingStore: NcriPricingStore;
     private readonly economyEventLog: EconomyEventLog;
     private readonly now: () => Date;
 
@@ -208,6 +213,7 @@ export class CityIntegrationService {
         this.exchangeStore = new ApGpExchangeStore(options.memoryRoot, this.economyEventLog);
         this.proposalStore = new SoulProposalStore(options.memoryRoot, this.now);
         this.ncriRegistry = new NcriRegistry(options.memoryRoot, this.now, this.economyEventLog);
+        this.ncriPricingStore = new NcriPricingStore(options.memoryRoot, this.now);
     }
 
     /**
@@ -534,6 +540,28 @@ export class CityIntegrationService {
     }
 
     /**
+     * List an approved NCRI for sale on the marketplace.
+     * Persists a pricing row and transitions saleStatus → listed.
+     * Returns the updated NcriRecord plus the active pricing.
+     */
+    listNcriForSale(id: string, input: unknown): { record: NcriRecord; pricing: NcriPricing } {
+        const parsed = parseOrThrow(listNcriForSaleSchema, input);
+        return this.withNcriErrors(() => {
+            const pricing = this.ncriPricingStore.setPrice(id, parsed);
+            const record = this.ncriRegistry.listForSale(id);
+            return { record, pricing };
+        });
+    }
+
+    /**
+     * Remove an NCRI from the marketplace without completing a sale.
+     * Idempotent: safe to call on already-delisted or unlisted NCRIs.
+     */
+    delistNcri(id: string): NcriRecord {
+        return this.withNcriErrors(() => this.ncriRegistry.delistFromSale(id));
+    }
+
+    /**
      * Birth a resident from an approved SoulProposal.
      *
      * Only proposals in `approved` status can be birthed. The method is
@@ -825,11 +853,15 @@ export class CityIntegrationService {
 
     economyListings(): { asOf: string; listings: LiveEconomyListingSummary[] } {
         const asOf = this.now().toISOString();
+        const pricingMap = this.ncriPricingStore.allLatest();
         const listings = this.ncriRegistry
             .list()
-            .filter(record => record.approvalStatus === 'approved' && record.redemptionStatus === 'available')
-            .map(
-                (record): LiveEconomyListingSummary => ({
+            .filter(
+                record => record.approvalStatus === 'approved' && record.redemptionStatus === 'available' && record.saleStatus === 'listed',
+            )
+            .map((record): LiveEconomyListingSummary => {
+                const pricing = pricingMap.get(record.id);
+                return {
                     ncriId: record.id,
                     itemId: record.itemId,
                     displayName: record.displayName,
@@ -837,11 +869,13 @@ export class CityIntegrationService {
                     sourceResidentName: record.sourceResidentName,
                     approvalStatus: 'approved',
                     redemptionStatus: 'available',
+                    listed: true,
+                    apPrice: pricing?.apPrice,
+                    gpRedemptionCost: pricing?.gpRedemptionCost,
                     createdAt: record.createdAt,
                     updatedAt: record.updatedAt,
-                    listed: true,
-                }),
-            )
+                };
+            })
             .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 
         return { asOf, listings };

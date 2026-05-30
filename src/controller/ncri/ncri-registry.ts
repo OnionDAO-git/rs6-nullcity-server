@@ -17,6 +17,13 @@ import type { EconomyEventLog } from '../city-integration/economy-event';
 
 export type NcriApprovalStatus = 'pending' | 'approved';
 export type NcriRedemptionStatus = 'available' | 'redeemed';
+/**
+ * Sale lifecycle state. Independent of approval/redemption status.
+ * - `unlisted` (default): approved but not yet offered for sale.
+ * - `listed`: actively offered for AP purchase on the marketplace.
+ * - `delisted`: was listed, then withdrawn without a sale completing.
+ */
+export type NcriSaleStatus = 'unlisted' | 'listed' | 'delisted';
 
 export interface NcriRecord {
     schemaVersion: 1;
@@ -34,6 +41,8 @@ export interface NcriRecord {
     sourceResidentName?: string;
     approvalStatus: NcriApprovalStatus;
     redemptionStatus: NcriRedemptionStatus;
+    /** Sale lifecycle. Defaults to `'unlisted'` for records created before S-NCRI-1. */
+    saleStatus: NcriSaleStatus;
     adminNotes?: string;
     createdAt: string;
     updatedAt: string;
@@ -56,6 +65,7 @@ const ncriRecordSchema = z.object({
         .optional(),
     approvalStatus: z.enum(['pending', 'approved']),
     redemptionStatus: z.enum(['available', 'redeemed']),
+    saleStatus: z.enum(['unlisted', 'listed', 'delisted']).default('unlisted'),
     adminNotes: z.string().optional(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
@@ -126,6 +136,7 @@ export class NcriRegistry {
             sourceResidentName: residentOwner(parsed.owner),
             approvalStatus: 'pending',
             redemptionStatus: 'available',
+            saleStatus: 'unlisted',
             createdAt: ts,
             updatedAt: ts,
         };
@@ -140,6 +151,43 @@ export class NcriRegistry {
         }
         const ts = this.now().toISOString();
         const updated: NcriRecord = { ...record, approvalStatus: 'approved', adminNotes, updatedAt: ts };
+        this.writeRecord(updated);
+        return updated;
+    }
+
+    /**
+     * Mark an approved NCRI as listed for sale on the marketplace.
+     * Idempotent: listing an already-listed NCRI returns it unchanged.
+     * Requires `approvalStatus === 'approved'` and `redemptionStatus === 'available'`.
+     */
+    listForSale(id: string): NcriRecord {
+        const record = this.requireRecord(id);
+        if (record.approvalStatus !== 'approved') {
+            throw new NcriRegistryError('not_approved', `cannot list NCRI '${id}' for sale: approvalStatus is '${record.approvalStatus}'`);
+        }
+        if (record.redemptionStatus === 'redeemed') {
+            throw new NcriRegistryError('already_redeemed', `cannot list NCRI '${id}' for sale: already redeemed`);
+        }
+        if (record.saleStatus === 'listed') {
+            return record;
+        }
+        const ts = this.now().toISOString();
+        const updated: NcriRecord = { ...record, saleStatus: 'listed', updatedAt: ts };
+        this.writeRecord(updated);
+        return updated;
+    }
+
+    /**
+     * Remove an NCRI from the marketplace. Safe to call on already-delisted
+     * or unlisted NCRIs (returns the record unchanged).
+     */
+    delistFromSale(id: string): NcriRecord {
+        const record = this.requireRecord(id);
+        if (record.saleStatus !== 'listed') {
+            return record;
+        }
+        const ts = this.now().toISOString();
+        const updated: NcriRecord = { ...record, saleStatus: 'delisted', updatedAt: ts };
         this.writeRecord(updated);
         return updated;
     }

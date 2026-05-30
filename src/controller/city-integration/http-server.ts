@@ -178,10 +178,10 @@ async function handle(
         return;
     }
 
-    const ncriMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/ncri/([^/]+)(?:/(approve|transfer|redeem))?$`));
+    const ncriMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/ncri/([^/]+)(?:/(approve|transfer|redeem|list|delist))?$`));
     if (ncriMatch) {
         const ncriId = decodeURIComponent(ncriMatch[1]);
-        const action = ncriMatch[2] as 'approve' | 'transfer' | 'redeem' | undefined;
+        const action = ncriMatch[2] as 'approve' | 'transfer' | 'redeem' | 'list' | 'delist' | undefined;
         if (request.method === 'GET' && action === undefined) {
             writeJson(response, 200, options.service.getNcri(ncriId));
             return;
@@ -196,6 +196,14 @@ async function handle(
         }
         if (request.method === 'POST' && action === 'redeem') {
             writeJson(response, 200, options.service.redeemNcri(ncriId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'list') {
+            writeJson(response, 200, options.service.listNcriForSale(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'delist') {
+            writeJson(response, 200, options.service.delistNcri(ncriId));
             return;
         }
         writeJson(response, 405, { error: `Method ${request.method} not allowed` });

@@ -84,9 +84,14 @@ export interface LiveEconomyListingSummary {
     sourceResidentName?: string;
     approvalStatus: 'approved';
     redemptionStatus: 'available';
+    /** True only when the NCRI has been explicitly listed via POST /ncri/:id/list. */
+    listed: boolean;
+    /** AP the human pays to acquire this NCRI. Present when listed === true. */
+    apPrice?: number;
+    /** Real RuneScape GP (coin item 995) the human pays to redeem the physical print. */
+    gpRedemptionCost?: number;
     createdAt: string;
     updatedAt: string;
-    listed: true;
 }
 
 export interface LiveEconomyHeartbeat {

@@ -503,3 +503,136 @@ describe('NcriRegistry EconomyEventLog emission', () => {
         expect(log.readAll().filter(e => e.kind === 'ncri_sale')).toHaveLength(0);
     });
 });
+
+// ---------------------------------------------------------------------------
+// listForSale / delistFromSale (S-NCRI-1)
+// ---------------------------------------------------------------------------
+
+describe('NcriRegistry.listForSale', () => {
+    function makeApprovedRegistry() {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-list-'));
+        const registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T20:00:00.000Z'));
+        const rec = registry.create({
+            itemId: 995,
+            displayName: 'Coins of the City',
+            lore: 'Standard RuneScape coins with Null City lore.',
+            printable: false,
+            owner: 'city',
+        });
+        registry.approve(rec.id);
+        return { registry, id: rec.id };
+    }
+
+    it('transitions saleStatus from unlisted to listed', () => {
+        const { registry, id } = makeApprovedRegistry();
+        const record = registry.listForSale(id);
+        expect(record.saleStatus).toBe('listed');
+    });
+
+    it('is idempotent — listing an already-listed NCRI returns it unchanged', () => {
+        const { registry, id } = makeApprovedRegistry();
+        registry.listForSale(id);
+        const record = registry.listForSale(id);
+        expect(record.saleStatus).toBe('listed');
+    });
+
+    it('persists the listed state to disk', () => {
+        const { registry, id } = makeApprovedRegistry();
+        registry.listForSale(id);
+        const loaded = registry.get(id);
+        expect(loaded?.saleStatus).toBe('listed');
+    });
+
+    it('rejects listing a pending (not yet approved) NCRI', () => {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-list-'));
+        const registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T20:00:00.000Z'));
+        const rec = registry.create({
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            lore: 'Very rare.',
+            printable: true,
+            owner: 'res:duke',
+        });
+        expect(() => registry.listForSale(rec.id)).toThrow(NcriRegistryError);
+    });
+
+    it('rejects listing a redeemed NCRI', () => {
+        const { registry, id } = makeApprovedRegistry();
+        registry.redeem(id);
+        expect(() => registry.listForSale(id)).toThrow(NcriRegistryError);
+    });
+
+    it('throws not_found for an unknown id', () => {
+        const { registry } = makeApprovedRegistry();
+        expect(() => registry.listForSale('ncri-does-not-exist')).toThrow(NcriRegistryError);
+    });
+
+    it('new records start with saleStatus unlisted', () => {
+        const { registry } = makeApprovedRegistry();
+        const rec = registry.create({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'Lights things on fire.',
+            printable: false,
+            owner: 'city',
+        });
+        expect(rec.saleStatus).toBe('unlisted');
+    });
+});
+
+describe('NcriRegistry.delistFromSale', () => {
+    function makeListedRegistry() {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-delist-'));
+        const registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T20:00:00.000Z'));
+        const rec = registry.create({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'For sale.',
+            printable: false,
+            owner: 'city',
+        });
+        registry.approve(rec.id);
+        registry.listForSale(rec.id);
+        return { registry, id: rec.id };
+    }
+
+    it('transitions saleStatus from listed to delisted', () => {
+        const { registry, id } = makeListedRegistry();
+        const record = registry.delistFromSale(id);
+        expect(record.saleStatus).toBe('delisted');
+    });
+
+    it('persists the delisted state to disk', () => {
+        const { registry, id } = makeListedRegistry();
+        registry.delistFromSale(id);
+        const loaded = registry.get(id);
+        expect(loaded?.saleStatus).toBe('delisted');
+    });
+
+    it('is safe to call on an unlisted NCRI (no-op)', () => {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-delist-'));
+        const registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T20:00:00.000Z'));
+        const rec = registry.create({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'Not listed.',
+            printable: false,
+            owner: 'city',
+        });
+        registry.approve(rec.id);
+        const result = registry.delistFromSale(rec.id);
+        expect(result.saleStatus).toBe('unlisted');
+    });
+
+    it('is safe to call on an already-delisted NCRI (no-op)', () => {
+        const { registry, id } = makeListedRegistry();
+        registry.delistFromSale(id);
+        const result = registry.delistFromSale(id);
+        expect(result.saleStatus).toBe('delisted');
+    });
+
+    it('throws not_found for an unknown id', () => {
+        const { registry } = makeListedRegistry();
+        expect(() => registry.delistFromSale('ncri-does-not-exist')).toThrow(NcriRegistryError);
+    });
+});

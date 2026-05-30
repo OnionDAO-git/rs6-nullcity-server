@@ -323,6 +323,12 @@ describe('CityIntegration HTTP server', () => {
         const ncriId = (createdNcri.payload as { id: string }).id;
         const approvedNcri = await requestJson('POST', `${started.url}/ncri/${ncriId}/approve`, token, {});
         expect(approvedNcri.status).toBe(200);
+        // S-NCRI-1: must explicitly list the NCRI with pricing before it appears in marketplace.
+        const listedNcri = await requestJson('POST', `${started.url}/ncri/${ncriId}/list`, token, {
+            apPrice: 150,
+            gpRedemptionCost: 500,
+        });
+        expect(listedNcri.status).toBe(200);
         const transferredNcri = await requestJson('POST', `${started.url}/ncri/${ncriId}/transfer`, token, {
             newOwner: 'user:buyer',
             reason: 'sale',
@@ -385,6 +391,8 @@ describe('CityIntegration HTTP server', () => {
                     owner: 'user:buyer',
                     sourceResidentName: 'res:test',
                     listed: true,
+                    apPrice: 150,
+                    gpRedemptionCost: 500,
                 },
             ],
         });
@@ -635,6 +643,78 @@ describe('CityIntegration HTTP server', () => {
         const redeemedAgain = await requestJson('POST', `${base}/ncri/${ncriId}/redeem`, token);
         expect(redeemedAgain.status).toBe(200);
         expect(redeemedAgain.payload).toMatchObject({ id: ncriId, redemptionStatus: 'redeemed' });
+    });
+
+    it('NCRI list/delist routes (S-NCRI-1): approve → list-for-sale → marketplace → delist', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const base = started.url;
+
+        // Create and approve
+        const created = await requestJson('POST', `${base}/ncri`, token, {
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            owner: 'res:test',
+        });
+        expect(created.status).toBe(201);
+        const ncriId = (created.payload as { id: string }).id;
+
+        await requestJson('POST', `${base}/ncri/${ncriId}/approve`, token, {});
+
+        // List for sale with pricing
+        const listed = await requestJson('POST', `${base}/ncri/${ncriId}/list`, token, {
+            apPrice: 150,
+            gpRedemptionCost: 500,
+        });
+        expect(listed.status).toBe(200);
+        expect(listed.payload).toMatchObject({
+            record: expect.objectContaining({ id: ncriId, saleStatus: 'listed' }),
+            pricing: expect.objectContaining({ apPrice: 150, gpRedemptionCost: 500 }),
+        });
+
+        // Economy listings now shows the NCRI with pricing
+        const listings = await requestJson('GET', `${base}/economy/listings`, token);
+        expect(listings.status).toBe(200);
+        const items = (listings.payload as { listings: { ncriId: string; apPrice?: number }[] }).listings;
+        const found = items.find(l => l.ncriId === ncriId);
+        expect(found).toBeDefined();
+        expect(found?.apPrice).toBe(150);
+
+        // Delist removes it from marketplace
+        const delisted = await requestJson('POST', `${base}/ncri/${ncriId}/delist`, token);
+        expect(delisted.status).toBe(200);
+        expect(delisted.payload).toMatchObject({ id: ncriId, saleStatus: 'delisted' });
+
+        const listingsAfter = await requestJson('GET', `${base}/economy/listings`, token);
+        const itemsAfter = (listingsAfter.payload as { listings: { ncriId: string }[] }).listings;
+        expect(itemsAfter.find(l => l.ncriId === ncriId)).toBeUndefined();
+    });
+
+    it('NCRI list rejects unapproved NCRI with 409', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const base = started.url;
+
+        const created = await requestJson('POST', `${base}/ncri`, token, {
+            itemId: 4151,
+            displayName: 'Whip',
+            lore: 'Rare.',
+            owner: 'res:test',
+        });
+        const ncriId = (created.payload as { id: string }).id;
+
+        const result = await requestJson('POST', `${base}/ncri/${ncriId}/list`, token, {
+            apPrice: 100,
+            gpRedemptionCost: 200,
+        });
+        expect(result.status).toBe(409);
     });
 
     it('GoalContract routes (S9a): create → list → get → achieve lifecycle', async () => {
