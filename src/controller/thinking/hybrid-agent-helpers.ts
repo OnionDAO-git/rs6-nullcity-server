@@ -131,6 +131,7 @@ import {
     buildResidentNeedsContext,
     selectCandidateGoals,
     benchmarkGoalForTask,
+    gpPickupGoal,
 } from '../spark/runescape-brain-planner';
 import { currentTier } from '../spark/needs-hierarchy';
 import { pickPhrase } from '../soul/phrasebook';
@@ -2428,22 +2429,49 @@ export function ensureBenchmarkGoal(ctx: HelperContext): void {
     // (see `goalPoolForBenchmark` for the source provenance + tag taxonomy),
     // and `selectCandidateGoals` re-orders by `currentTier(needsContext)`.
     //
-    // Conservative wire-up: we only override the benchmark when the tier
-    // computes to `'survive'` (ap <= apFloor + AP_SURVIVE_BUFFER). At higher
-    // tiers we keep the benchmark verbatim — the planner does not yet have
-    // a live GP snapshot, so EARN-tier overrides would be based on a stale
-    // `gpEstimate=0` default and would deprive every benchmark resident of
-    // their soul-aligned goal. A future packet that plumbs live GP through
-    // can broaden this to honor EARN as well.
+    // S-GOAL-1 extension: when the soul has a `frontmatter.orientationGoal`
+    // ("north star"), the goal pool gains an orientation candidate and the
+    // ranker bonus biases candidates that match the orientation (by id or
+    // by tier-tag). At higher tiers (PURSUE / EARN / REFLECT) the
+    // orientation candidate can win, replacing the generic benchmark with
+    // the soul's chosen direction. Survival still wins in survive band
+    // because the ranker's survive-tier alignment bonus dwarfs the
+    // orientation bonus.
+    //
+    // Conservative wire-up for residents WITHOUT orientation: we only
+    // override the benchmark when the tier computes to `'survive'`. The
+    // planner does not yet have a live GP snapshot, so EARN-tier overrides
+    // for non-oriented residents would be based on a stale `gpEstimate=0`
+    // default. Oriented residents opt in to the broader ranker behavior
+    // by declaring `orientationGoal` in their soul YAML.
     const cognition = ctx.cognition();
+    const orientationGoal = ctx.options.soul.frontmatter.orientationGoal;
     const needsContext = buildResidentNeedsContext({
         attention: ctx.options.state.attention,
         attentionFloor: ctx.options.soul.frontmatter.attentionProfile?.floor,
         hasActiveGoal: Boolean(cognition.activeGoal),
+        orientationGoal,
     });
     let goal = benchmark;
-    if (currentTier(needsContext) === 'survive') {
-        const pool = goalPoolForBenchmark(benchmarkTask, ctx.options.state.tick);
+    const tier = currentTier(needsContext);
+    const shouldRank = tier === 'survive' || Boolean(orientationGoal);
+    if (shouldRank) {
+        // Pool composition rules:
+        //   - survive band (any soul): include the survival fallback so a
+        //     low-AP resident's survive-aligned tag can win.
+        //   - non-survive band WITH orientation: drop the survival fallback
+        //     so the orientation candidate's id-match bonus is not
+        //     out-scored by the survival candidate's tier-alignment under
+        //     the stale `gpEstimate=0` default (which falsely puts every
+        //     resident in EARN tier until live GP is plumbed). When AP
+        //     drops back into the survive band the pool reverts to
+        //     including survival via the tier check above.
+        const pool =
+            orientationGoal && tier !== 'survive'
+                ? goalPoolForBenchmark(benchmarkTask, ctx.options.state.tick, { orientationGoal }).filter(
+                      c => c.id !== gpPickupGoal(ctx.options.state.tick).id,
+                  )
+                : goalPoolForBenchmark(benchmarkTask, ctx.options.state.tick, { orientationGoal });
         const ranked = selectCandidateGoals(pool, { needsContext });
         const winner = ranked[0];
         if (winner) {

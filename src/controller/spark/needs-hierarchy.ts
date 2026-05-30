@@ -44,6 +44,15 @@ export interface ResidentNeedsContext {
     apFloor: number;
     gpEstimate: number;
     hasActiveGoal: boolean;
+    /**
+     * Optional soul-level "north star" orientation (S-GOAL-1). When set,
+     * downstream consumers (planner candidate-pool builders, prompt
+     * envelope builders) can forward it to the ranker so candidates
+     * matching the orientation receive the ORIENTATION-aligned bonus.
+     * Defaulted from `soul.orientationGoal` in the planner's
+     * `buildResidentNeedsContext` helper.
+     */
+    orientationGoal?: OrientationGoal;
 }
 
 /**

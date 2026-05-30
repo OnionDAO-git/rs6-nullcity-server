@@ -6516,6 +6516,107 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeGoal?.id).toBe('catch-starter-fish');
     });
 
+    // --- S-GOAL-1 orientation goal wiring (S-GOAL-1) ---------------------
+    // These two tests are the live proof that soul.orientationGoal biases
+    // ensureBenchmarkGoal beyond the F3 survive-only behavior. With a
+    // pursue-tier orientation set, healthy-AP residents pick the
+    // orientation candidate over the generic benchmark. Low-AP residents
+    // still pick the survival candidate — orientation never overrides
+    // survival.
+    //
+    // Live-verify recipe: configure a hot-stack resident with
+    // `soul.frontmatter.orientationGoal = { id: 'master-woodcutting',
+    // description: '...', tier: 'pursue' }` and any benchmarkTask. Trigger
+    // `think()` with healthy AP — `state.cognition.activeGoal.id` should
+    // be 'master-woodcutting'. Drain AP below floor+5 and re-trigger —
+    // should flip to 'collect-visible-gp' (survival wins).
+
+    it('healthy-AP resident with pursue orientation picks the orientation candidate over the benchmark', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.attention = 200; // well above floor+buffer
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const orientedSoul = soul();
+        orientedSoul.frontmatter.attentionProfile = {
+            startingAttention: 100,
+            decayCurve: 'standard',
+            floor: 10,
+        };
+        orientedSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        // The north-star: orient toward woodcutting mastery. The
+        // benchmark task remains starter-fishing-5m so we can see the
+        // override land — without orientation, ensureBenchmarkGoal would
+        // pick catch-starter-fish at this AP.
+        orientedSoul.frontmatter.orientationGoal = {
+            id: 'master-woodcutting',
+            description: 'Master woodcutting and supply the city with logs.',
+            tier: 'pursue',
+        };
+        const agent = hybridAgent(llm, state, orientedSoul);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3000, 3000),
+                    inventory: [],
+                },
+            }),
+        );
+
+        // Orientation candidate (master-woodcutting) wins thanks to
+        // ORIENTATION_ID_MATCH_SCORE on top of pursue tier-alignment.
+        expect(state.cognition?.activeGoal?.id).toBe('master-woodcutting');
+    });
+
+    it('low-AP resident with pursue orientation still picks the survival candidate — survival overrides orientation', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        // floor=10, buffer=5 → ap=12 sits in survive band.
+        state.attention = 12;
+        state.cognition = {
+            lastPresenceBeaconTick: 0,
+            lastGoalShareTick: 0,
+        };
+        const orientedSoul = soul();
+        orientedSoul.frontmatter.attentionProfile = {
+            startingAttention: 100,
+            decayCurve: 'standard',
+            floor: 10,
+        };
+        orientedSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        orientedSoul.frontmatter.orientationGoal = {
+            id: 'master-woodcutting',
+            description: 'Master woodcutting and supply the city with logs.',
+            tier: 'pursue',
+        };
+        const agent = hybridAgent(llm, state, orientedSoul);
+
+        await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3000, 3000),
+                    inventory: [],
+                },
+            }),
+        );
+
+        // Survive tier: the survival candidate (collect-visible-gp) has
+        // 'survive' tag → +10 alignment. Orientation candidate has
+        // 'pursue' tag → -1 misaligned + 6 id-match = +5. Survival wins.
+        expect(state.cognition?.activeGoal?.id).toBe('collect-visible-gp');
+    });
+
     it('seeds fishing-cooking as an active benchmark goal without initial Brain drift', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();

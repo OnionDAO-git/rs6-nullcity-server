@@ -570,3 +570,80 @@ describe('buildResidentNeedsContext (S-AUDIT-FIX-3 context builder)', () => {
         expect(ctx.gpEstimate).toBe(250);
     });
 });
+
+// ---- S-GOAL-1 planner wiring: orientation flow through the candidate pool ----
+
+describe('goalPoolForBenchmark — orientation candidate (S-GOAL-1)', () => {
+    it('adds an orientation candidate when soul.orientationGoal is provided', () => {
+        const pool = goalPoolForBenchmark('starter-fishing-5m', 0, {
+            orientationGoal: {
+                id: 'master-woodcutting',
+                description: 'Master woodcutting and supply the city with logs.',
+                tier: 'pursue',
+            },
+        });
+        const ids = pool.map(c => c.id);
+        expect(ids).toContain('catch-starter-fish');
+        expect(ids).toContain('collect-visible-gp');
+        expect(ids).toContain('master-woodcutting');
+        const orientation = pool.find(c => c.id === 'master-woodcutting');
+        // Orientation candidate inherits its tier as a tag so the ranker
+        // can dual-credit it (tier-tag alignment + orientation bonus).
+        expect(orientation?.tags).toContain('pursue');
+    });
+
+    it('does not duplicate the orientation candidate when its id already exists in the pool', () => {
+        // Orientation id matches the benchmark id; pool should keep one entry.
+        const pool = goalPoolForBenchmark('starter-fishing-5m', 0, {
+            orientationGoal: {
+                id: 'catch-starter-fish',
+                description: 'Catch fish like a pro.',
+                tier: 'pursue',
+            },
+        });
+        const ids = pool.map(c => c.id);
+        expect(ids.filter(id => id === 'catch-starter-fish')).toHaveLength(1);
+    });
+
+    it('back-compat: returns the F3 two-source pool when no orientation provided', () => {
+        const pool = goalPoolForBenchmark('starter-fishing-5m', 0);
+        const ids = pool.map(c => c.id);
+        expect(ids).toEqual(['catch-starter-fish', 'collect-visible-gp']);
+    });
+
+    it('skips orientation candidate when benchmark goal is unknown (nothing to seed)', () => {
+        // An unknown benchmark returns []; orientation alone cannot rescue
+        // the pool because the helper's job is to enumerate benchmark-vs-
+        // alternatives, not to be the only source.
+        const pool = goalPoolForBenchmark('unknown-task', 0, {
+            orientationGoal: { id: 'x', description: 'y', tier: 'pursue' },
+        });
+        expect(pool).toEqual([]);
+    });
+});
+
+describe('buildResidentNeedsContext — propagates orientation (S-GOAL-1)', () => {
+    it('forwards the soul orientationGoal through the needsContext', () => {
+        const ctx = buildResidentNeedsContext({
+            attention: 100,
+            attentionFloor: 10,
+            hasActiveGoal: true,
+            orientationGoal: {
+                id: 'master-woodcutting',
+                description: 'Master woodcutting and supply the city with logs.',
+                tier: 'pursue',
+            },
+        });
+        expect(ctx.orientationGoal?.id).toBe('master-woodcutting');
+        expect(ctx.orientationGoal?.tier).toBe('pursue');
+    });
+
+    it('defaults orientationGoal to undefined when soul has no orientation', () => {
+        const ctx = buildResidentNeedsContext({
+            attention: 100,
+            attentionFloor: 10,
+            hasActiveGoal: true,
+        });
+        expect(ctx.orientationGoal).toBeUndefined();
+    });
+});

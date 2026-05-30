@@ -19,7 +19,7 @@
 import { z } from 'zod';
 import type { ActiveGoalState } from '../memory/runtime-state';
 import { rankCandidateGoals } from './needs-hierarchy';
-import type { GoalCandidate, ResidentNeedsContext } from './needs-hierarchy';
+import type { GoalCandidate, OrientationGoal, ResidentNeedsContext } from './needs-hierarchy';
 
 // --- Brain completion Zod schemas (moved verbatim from the monolith). ---
 
@@ -550,7 +550,13 @@ export function selectCandidateGoals(
     if (!options.needsContext || candidates.length === 0) {
         return candidates;
     }
-    const ranked = rankCandidateGoals(candidates, options.needsContext);
+    // S-GOAL-1: forward the soul orientation (carried inside needsContext)
+    // into the ranker so orientation-aligned candidates get the bonus
+    // alongside their tier-alignment score. When the soul has no
+    // orientation this is a no-op and behavior matches the F3 wiring.
+    const ranked = rankCandidateGoals(candidates, options.needsContext, {
+        orientation: options.needsContext.orientationGoal,
+    });
     const byId = new Map(candidates.map(c => [c.id, c]));
     const result: GoalCandidate[] = [];
     for (const entry of ranked) {
@@ -594,8 +600,30 @@ export function selectCandidateGoals(
  *   - benchmark goal: ['pursue'] — Soul-aligned, the "what I wanted to do"
  *   - GP pickup    : ['earn', 'survive', 'gp'] — funds AP via exchange,
  *                    so doubles as a survive action when AP is low
+ *
+ * S-GOAL-1 extension: when `options.orientationGoal` is provided, a
+ * third "orientation candidate" is appended to the pool with the
+ * orientation tier as its tag. This gives the ranker a soul-directed
+ * candidate that can win at higher tiers (PURSUE / EARN / REFLECT)
+ * even when the benchmark would otherwise dominate. The orientation
+ * candidate is omitted when its id collides with an existing pool
+ * entry (the existing entry already covers it).
  */
-export function goalPoolForBenchmark(taskId: unknown, tick: number): ReadonlyArray<GoalCandidate & { goal: ActiveGoalState }> {
+export interface GoalPoolForBenchmarkOptions {
+    /**
+     * Soul-level orientation goal — when present the planner pool grows
+     * by one entry so the needs-hierarchy ranker can pick the soul's
+     * north-star direction over the generic benchmark at higher tiers.
+     * Must come from `soul.orientationGoal`. See S-GOAL-1.
+     */
+    orientationGoal?: OrientationGoal;
+}
+
+export function goalPoolForBenchmark(
+    taskId: unknown,
+    tick: number,
+    options: GoalPoolForBenchmarkOptions = {},
+): ReadonlyArray<GoalCandidate & { goal: ActiveGoalState }> {
     const benchmark = benchmarkGoalForTask(taskId, tick);
     if (!benchmark) {
         return [];
@@ -607,6 +635,23 @@ export function goalPoolForBenchmark(taskId: unknown, tick: number): ReadonlyArr
     // same goal twice with different tags and pick non-deterministically.
     if (benchmark.id !== survival.id) {
         pool.push({ id: survival.id, tags: ['earn', 'survive', 'gp'], goal: survival });
+    }
+    const orientation = options.orientationGoal;
+    if (orientation && !pool.some(c => c.id === orientation.id)) {
+        // Build a stand-in ActiveGoalState from the orientation. This is
+        // the planner-facing materialization of the soul's north-star
+        // goal: it carries the orientation id + description verbatim so
+        // downstream code (memory, prompts, dashboards) can render it.
+        const orientationGoal: ActiveGoalState = {
+            id: orientation.id,
+            description: orientation.description ?? orientation.id,
+            createdAtTick: tick,
+        };
+        // The tier hint becomes a tag so the ranker's tier-alignment
+        // scoring AND the orientation bonus both fire for this candidate
+        // (dual credit) when the resident is in the matching tier.
+        const tags: string[] = orientation.tier ? [orientation.tier] : [];
+        pool.push({ id: orientation.id, tags, goal: orientationGoal });
     }
     return pool;
 }
@@ -628,6 +673,14 @@ export interface BuildResidentNeedsContextInput {
      * choice that keeps the ranker in EARN until real GP flows.
      */
     gpEstimate?: number;
+    /**
+     * Optional soul-level "north star" orientation goal (S-GOAL-1).
+     * Forwarded verbatim into the returned `ResidentNeedsContext` so
+     * downstream consumers (the planner pool builder + the ranker) can
+     * apply the orientation bias. Pulled from `soul.orientationGoal` in
+     * the helper that wires this into `ensureBenchmarkGoal`.
+     */
+    orientationGoal?: OrientationGoal;
 }
 
 /**
@@ -640,5 +693,6 @@ export function buildResidentNeedsContext(input: BuildResidentNeedsContextInput)
         apFloor: input.attentionFloor ?? 0,
         gpEstimate: input.gpEstimate ?? 0,
         hasActiveGoal: input.hasActiveGoal,
+        orientationGoal: input.orientationGoal,
     };
 }
