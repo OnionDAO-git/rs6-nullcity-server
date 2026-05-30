@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { RuntimeState } from '../memory/runtime-state';
+import { runCityDigest } from './cli';
+import { EconomyEventLog } from './economy-event';
 import { CityIntegrationError, CityIntegrationService, type CityRuntime } from './service';
 import { SoulProposalStore } from './soul-proposals';
 
@@ -282,6 +284,58 @@ describe('CityIntegrationService', () => {
         expect(result.exchangeId).toBe('apgp:res:test:exch-ok');
         expect(gold).toBe(100);
         expect(runtime.state.attention).toBe(60);
+    });
+
+    it('emits service AP/GP activity into the EconomyEventLog for city:digest', async () => {
+        gold = 200;
+        await service.creditAttention('res:test', {
+            idempotencyKey: 'topup-1',
+            amount: 25,
+            cityUserId: 'user-1',
+            sourceType: 'patron_topup',
+            sourceId: 'gift-1',
+        });
+        await service.inspectGold('res:test');
+        await service.burnGold('res:test', {
+            idempotencyKey: 'burn-1',
+            amount: 30,
+            cityUserId: 'user-1',
+            sourceType: 'city_trade',
+            sourceId: 'trade-1',
+        });
+        await service.exchangeApForGp('res:test', {
+            idempotencyKey: 'exch-digest',
+            apAmount: 40,
+            gpAmount: 50,
+            cityUserId: 'user-1',
+        });
+
+        const events = new EconomyEventLog(root).readAll();
+        expect(events.map(event => event.kind)).toEqual(['ap_topup', 'gp_observed', 'gp_traded', 'ap_gp_exchange']);
+        expect(events[0]).toMatchObject({ kind: 'ap_topup', residentName: 'res:test', cityUserId: 'user-1', apDelta: 25 });
+        expect(events[1]).toMatchObject({ kind: 'gp_observed', residentName: 'res:test', gpDelta: 0 });
+        expect(events[2]).toMatchObject({ kind: 'gp_traded', residentName: 'res:test', cityUserId: 'user-1', gpDelta: -30 });
+        expect(events[3]).toMatchObject({
+            kind: 'ap_gp_exchange',
+            residentName: 'res:test',
+            cityUserId: 'user-1',
+            apDelta: 40,
+            gpDelta: -50,
+        });
+
+        const digest = JSON.parse(runCityDigest({ memoryRoot: root }, { now: () => new Date('2026-05-27T12:01:00.000Z') }));
+        expect(digest).toMatchObject({
+            totalEvents: 4,
+            countsByKind: {
+                ap_topup: 1,
+                gp_observed: 1,
+                gp_traded: 1,
+                ap_gp_exchange: 1,
+            },
+            apGrantedTotal: 65,
+            gpTradedTotal: 30,
+            residents: [{ residentName: 'res:test', apGranted: 65, gpTraded: 30, eventCount: 4 }],
+        });
     });
 
     it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {

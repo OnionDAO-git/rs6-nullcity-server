@@ -152,4 +152,42 @@ describe('CityIntegration HTTP server', () => {
         });
         expect(gold).toBe(100);
     });
+
+    it('GET /economy/digest returns AP and GP service activity for dashboard/storyteller readers', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        await requestJson('POST', `${started.url}/residents/res%3Atest/attention-grants`, token, {
+            idempotencyKey: 'topup-1',
+            amount: 15,
+            cityUserId: 'user-1',
+            sourceType: 'patron_topup',
+        });
+        await requestJson('GET', `${started.url}/residents/res%3Atest/wealth`, token);
+        await requestJson('POST', `${started.url}/residents/res%3Atest/gold-burns`, token, {
+            idempotencyKey: 'burn-1',
+            amount: 20,
+            cityUserId: 'user-1',
+            sourceType: 'city_trade',
+        });
+
+        const response = await requestJson('GET', `${started.url}/economy/digest`, token);
+
+        expect(response.status).toBe(200);
+        expect(response.payload).toMatchObject({
+            schemaVersion: 1,
+            totalEvents: 3,
+            countsByKind: {
+                ap_topup: 1,
+                gp_observed: 1,
+                gp_traded: 1,
+            },
+            apGrantedTotal: 15,
+            gpTradedTotal: 20,
+            residents: [{ residentName: 'res:test', apGranted: 15, gpTraded: 20, eventCount: 3 }],
+        });
+    });
 });

@@ -64,6 +64,11 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/digest`) {
+        writeJson(response, 200, options.service.economyDigest(readDigestQuery(url)));
+        return;
+    }
+
     const match = path.match(
         new RegExp(
             `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,
@@ -145,6 +150,15 @@ function writeJson(response: ServerResponse, status: number, payload: unknown): 
 
 function normalizePath(value: string): string {
     return value.startsWith('/') ? value : `/${value}`;
+}
+
+function readDigestQuery(url: URL): { since?: string; until?: string } {
+    const since = url.searchParams.get('since') ?? undefined;
+    const until = url.searchParams.get('until') ?? undefined;
+    return {
+        ...(since !== undefined ? { since } : {}),
+        ...(until !== undefined ? { until } : {}),
+    };
 }
 
 function escapeRegExp(value: string): string {

@@ -197,7 +197,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S5a | Open | - | - | - | - | - | - |
 | S5b | Open | - | - | - | - | - | - |
 | S6a | Open | - | - | - | - | - | - |
-| S6b | Open | - | - | - | - | - | - |
+| S6b | In Review | codex | 2026-05-29 | src/controller/city-integration/{service.ts,service.test.ts,http-server.ts,http-server.test.ts}; docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md; docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md; docs/agent-status.md | pending | test:service+http-server+city-integration digest suite; cmd:check:no-ui; cmd:build; cmd:fin | CityIntegrationService now emits live AP/GP events to EconomyEventLog, city:digest reads service events, and GET /api/nullcity/economy/digest exposes the JSON read model; no UI |
 | S7a | Open | - | - | - | - | - | - |
 | S7b | Open | - | - | - | - | - | - |
 | S8a | Open | - | - | - | - | - | - |

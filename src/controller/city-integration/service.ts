@@ -13,6 +13,9 @@ import {
     makeExchangeId,
     type ApGpExchangeRecord,
 } from './ap-gp-exchange';
+import { buildCityEventDigest, type CityEventDigest } from './city-event-digest';
+import { EconomyEventLog } from './economy-event';
+import { GoalContractStore } from './goal-contract';
 import { SoulProposalStore } from './soul-proposals';
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
@@ -60,6 +63,7 @@ export interface CityIntegrationOptions {
     inventory: CityIntegrationInventoryAuthority;
     birth: CityIntegrationBirthAuthority;
     now?: () => Date;
+    economyEventLog?: EconomyEventLog;
 }
 
 export const birthResidentRequestSchema = z
@@ -119,13 +123,15 @@ export class CityIntegrationService {
     private readonly store: CityIntegrationStore;
     private readonly exchangeStore: ApGpExchangeStore;
     private readonly proposalStore: SoulProposalStore;
+    private readonly economyEventLog: EconomyEventLog;
     private readonly now: () => Date;
 
     constructor(private readonly options: CityIntegrationOptions) {
-        this.store = new CityIntegrationStore(options.memoryRoot);
-        this.exchangeStore = new ApGpExchangeStore(options.memoryRoot);
-        this.proposalStore = new SoulProposalStore(options.memoryRoot);
         this.now = options.now ?? (() => new Date());
+        this.economyEventLog = options.economyEventLog ?? new EconomyEventLog(options.memoryRoot, this.now);
+        this.store = new CityIntegrationStore(options.memoryRoot);
+        this.exchangeStore = new ApGpExchangeStore(options.memoryRoot, this.economyEventLog);
+        this.proposalStore = new SoulProposalStore(options.memoryRoot);
     }
 
     /**
@@ -329,6 +335,7 @@ export class CityIntegrationService {
         const request = parseOrThrow(attentionGrantRequestSchema, input);
         return this.idempotent('credit_attention', request.idempotencyKey, { residentName, ...request }, async () => {
             const runtime = this.requireRuntime(residentName);
+            const ts = this.now().toISOString();
             const before = runtime.getState().attention;
             runtime.incrementAttention(request.amount);
             const after = runtime.getState().attention;
@@ -341,7 +348,7 @@ export class CityIntegrationService {
             };
             this.appendLibraryEvent(residentName, {
                 schemaVersion: 1,
-                ts: this.now().toISOString(),
+                ts,
                 tick: runtime.getState().tick,
                 sessionId: 'external',
                 kind: 'city_attention_credit',
@@ -355,6 +362,15 @@ export class CityIntegrationService {
                 lifeIndex: this.readLifeIndex(residentName),
                 significanceReasons: ['city:attention_credit'],
             });
+            this.economyEventLog.append({
+                ts,
+                kind: 'ap_topup',
+                residentName,
+                cityUserId: request.cityUserId,
+                apDelta: request.amount,
+                refId: request.sourceId ?? request.idempotencyKey,
+                note: request.note ?? `credited ${request.amount} AP from ${request.sourceType ?? 'city_attention_credit'}`,
+            });
             return result;
         });
     }
@@ -362,9 +378,10 @@ export class CityIntegrationService {
     async inspectGold(resident: string): Promise<unknown> {
         const residentName = parseResident(resident);
         const result = await this.options.inventory.inspectResidentGold(residentName);
+        const ts = this.now().toISOString();
         this.appendLibraryEvent(residentName, {
             schemaVersion: 1,
-            ts: this.now().toISOString(),
+            ts,
             tick: this.options.getRuntime(residentName)?.getState().tick ?? 0,
             sessionId: 'external',
             kind: 'city_gold_observed',
@@ -372,6 +389,14 @@ export class CityIntegrationService {
             amount: result.amount,
             lifeIndex: this.readLifeIndex(residentName),
             significanceReasons: ['city:gold_observed'],
+        });
+        this.economyEventLog.append({
+            ts,
+            kind: 'gp_observed',
+            residentName,
+            gpDelta: 0,
+            refId: `inspect:${residentName}:${ts}`,
+            note: `observed ${result.amount} GP in item ${result.itemId}`,
         });
         this.audit('inspect_gold', undefined, residentName, 'completed', undefined, result);
         return { ok: true, ...result };
@@ -382,6 +407,7 @@ export class CityIntegrationService {
         const request = parseOrThrow(goldBurnRequestSchema, input);
         return this.idempotent('burn_gold', request.idempotencyKey, { residentName, ...request }, async () => {
             try {
+                const ts = this.now().toISOString();
                 const burned = await this.options.inventory.burnResidentGold(residentName, request.amount);
                 const result = {
                     ok: true,
@@ -392,7 +418,7 @@ export class CityIntegrationService {
                 };
                 this.appendLibraryEvent(residentName, {
                     schemaVersion: 1,
-                    ts: this.now().toISOString(),
+                    ts,
                     tick: this.options.getRuntime(residentName)?.getState().tick ?? 0,
                     sessionId: 'external',
                     kind: 'city_gold_burn',
@@ -403,6 +429,15 @@ export class CityIntegrationService {
                     sourceId: request.sourceId,
                     lifeIndex: this.readLifeIndex(residentName),
                     significanceReasons: ['city:gold_burn'],
+                });
+                this.economyEventLog.append({
+                    ts,
+                    kind: 'gp_traded',
+                    residentName,
+                    cityUserId: request.cityUserId,
+                    gpDelta: -burned.burnedAmount,
+                    refId: request.sourceId ?? request.idempotencyKey,
+                    note: `burned ${burned.burnedAmount} GP from item ${burned.itemId}`,
                 });
                 return result;
             } catch (error) {
@@ -488,6 +523,16 @@ export class CityIntegrationService {
         const runtime = this.options.getRuntime(residentName);
         const index = this.readLibrary(residentName).index;
         return { ok: true, resident: residentName, deceased: runtime?.getState().deceased, libraryState: index?.currentState };
+    }
+
+    economyDigest(options: { since?: string; until?: string } = {}): CityEventDigest {
+        const goals = new GoalContractStore(this.options.memoryRoot);
+        return buildCityEventDigest(this.economyEventLog.readAll(), {
+            generatedAt: this.now().toISOString(),
+            ...(options.since !== undefined ? { windowStart: options.since } : {}),
+            ...(options.until !== undefined ? { windowEnd: options.until } : {}),
+            goals: goals.list(),
+        });
     }
 
     private async idempotent<TResult extends Record<string, unknown>>(
