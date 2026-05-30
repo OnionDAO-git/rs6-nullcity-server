@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { RuntimeState } from '../memory/runtime-state';
+import { residentSlug, type RuntimeState } from '../memory/runtime-state';
 import { runCityDigest } from './cli';
 import { EconomyEventLog } from './economy-event';
 import { CityIntegrationError, CityIntegrationService, type CityRuntime } from './service';
@@ -421,6 +421,66 @@ describe('CityIntegrationService', () => {
                 code: 'storyteller_not_found',
             }),
         );
+    });
+
+    it('builds live economy rollups and redacts private human handles for dashboard readers', async () => {
+        writeRuntimeState(root, 'res:peer', 33);
+        await service.creditAttention('res:test', {
+            idempotencyKey: 'eco-live-topup',
+            amount: 20,
+            cityUserId: 'user:alice',
+            note: 'Gift from user:alice via @alice',
+        });
+        await service.burnGold('res:test', {
+            idempotencyKey: 'eco-live-burn',
+            amount: 15,
+            cityUserId: 'user:alice',
+        });
+        await service.createSoulProposal({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Earn 100 GP',
+            apThreshold: 100,
+            proposerCityUserId: 'user:alice',
+        });
+
+        const live = service.economyLive({ limit: 10, residentLimit: 5 });
+        expect(live.city).toMatchObject({
+            residentCount: 2,
+            activeResidentCount: 1,
+            attentionTotal: 63,
+            attentionDelta: 20,
+            gpNetDelta: -15,
+        });
+        expect(live.countsByKind).toMatchObject({
+            ap_topup: 1,
+            gp_traded: 1,
+        });
+        expect(live.pendingProposals).toHaveLength(1);
+        expect(live.residents).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ residentName: 'res:test', attentionBalance: 30, online: true }),
+                expect.objectContaining({ residentName: 'res:peer', attentionBalance: 33, online: false }),
+            ]),
+        );
+
+        const topupEvent = live.recentEvents.find(event => event.kind === 'ap_topup');
+        expect(topupEvent).toBeDefined();
+        expect(topupEvent?.cityUserId).toBe('<patron #1>');
+        expect(topupEvent?.note).toContain('<patron #1>');
+        expect(topupEvent?.note).toContain('<patron #2>');
+        expect(topupEvent?.note).not.toContain('user:alice');
+        expect(topupEvent?.note).not.toContain('@alice');
+
+        const totals = service.economyTotals();
+        expect(totals.city).toEqual(live.city);
+        expect(totals.topResidentsByAttention[0]).toMatchObject({ residentName: 'res:peer', attentionBalance: 33 });
+
+        const events = service.economyEvents({ limit: 1 });
+        expect(events.recentEvents).toHaveLength(1);
+
+        const residents = service.economyResidents();
+        expect(residents.residents.map(row => row.residentName).sort()).toEqual(['res:peer', 'res:test']);
     });
 
     it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {
@@ -892,4 +952,22 @@ function soulMarkdown(name: string): string {
         '',
         'Born from a city proposal.',
     ].join('\n');
+}
+
+function writeRuntimeState(memoryRoot: string, resident: string, attention: number): void {
+    const runtimeState = {
+        resident,
+        attention,
+        tick: 0,
+        legacy: { kind: 'endurer', progress: {}, complete: false },
+        budgets: {
+            minuteStartedAt: '2026-05-27T00:00:00.000Z',
+            dayStartedAt: '2026-05-27T00:00:00.000Z',
+            requestsThisMinute: 0,
+            requestsToday: 0,
+        },
+    } satisfies Partial<RuntimeState>;
+    const filePath = path.join(memoryRoot, residentSlug(resident), 'runtime-state.json');
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${JSON.stringify(runtimeState, null, 2)}\n`);
 }

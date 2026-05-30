@@ -2,7 +2,7 @@ import fs from 'fs';
 import http from 'http';
 import os from 'os';
 import path from 'path';
-import type { RuntimeState } from '../memory/runtime-state';
+import { residentSlug, type RuntimeState } from '../memory/runtime-state';
 import { closeCityIntegrationHttpServer, startCityIntegrationHttpServer } from './http-server';
 import { type CityRuntime, CityIntegrationService } from './service';
 
@@ -36,7 +36,7 @@ function requestJson(
     url: string,
     token: string,
     body?: unknown,
-): Promise<{ status: number; payload: unknown; contentType?: string }> {
+): Promise<{ status: number; payload: unknown; contentType?: string; cacheControl?: string }> {
     const target = new URL(url);
     const payload = body === undefined ? undefined : JSON.stringify(body);
     return new Promise((resolve, reject) => {
@@ -60,6 +60,7 @@ function requestJson(
                         status: res.statusCode ?? 0,
                         payload: text ? JSON.parse(text) : {},
                         contentType: res.headers['content-type'],
+                        cacheControl: res.headers['cache-control'],
                     });
                 });
             },
@@ -214,6 +215,81 @@ describe('CityIntegration HTTP server', () => {
             gpTradedTotal: 20,
             residents: [{ residentName: 'res:test', apGranted: 15, gpTraded: 20, eventCount: 3 }],
         });
+    });
+
+    it('GET /economy/live|totals|events|residents returns JSON rollups with redacted handles', async () => {
+        writeRuntimeState(root, 'res:peer', 40);
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        await requestJson('POST', `${started.url}/residents/res%3Atest/attention-grants`, token, {
+            idempotencyKey: 'eco-live-topup',
+            amount: 20,
+            cityUserId: 'user:alice',
+            note: 'Gift from user:alice via @alice',
+        });
+        await requestJson('POST', `${started.url}/residents/res%3Atest/gold-burns`, token, {
+            idempotencyKey: 'eco-live-burn',
+            amount: 10,
+            cityUserId: 'user:alice',
+        });
+        await requestJson('POST', `${started.url}/proposals`, token, {
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Earn 100 GP',
+            apThreshold: 100,
+            proposerCityUserId: 'user:alice',
+        });
+
+        const live = await requestJson('GET', `${started.url}/economy/live?limit=5&residentLimit=3`, token);
+        expect(live.status).toBe(200);
+        expect(live.contentType).toMatch(/application\/json/);
+        expect(live.cacheControl).toBe('max-age=2');
+        expect(live.payload).toMatchObject({
+            city: {
+                residentCount: 2,
+                activeResidentCount: 1,
+                attentionTotal: 70,
+                attentionDelta: 20,
+                gpNetDelta: -10,
+            },
+            countsByKind: {
+                ap_topup: 1,
+                gp_traded: 1,
+            },
+        });
+        const livePayload = live.payload as {
+            recentEvents: Array<{ kind: string; cityUserId?: string; note?: string }>;
+            pendingProposals: Array<{ residentName: string }>;
+        };
+        const topup = livePayload.recentEvents.find(event => event.kind === 'ap_topup');
+        expect(topup?.cityUserId).toBe('<patron #1>');
+        expect(topup?.note).not.toContain('user:alice');
+        expect(topup?.note).not.toContain('@alice');
+        expect(livePayload.pendingProposals).toEqual(expect.arrayContaining([expect.objectContaining({ residentName: 'res:test' })]));
+
+        const totals = await requestJson('GET', `${started.url}/economy/totals`, token);
+        expect(totals.status).toBe(200);
+        expect(totals.payload).toMatchObject({
+            city: {
+                residentCount: 2,
+                attentionTotal: 70,
+            },
+        });
+
+        const events = await requestJson('GET', `${started.url}/economy/events?limit=1`, token);
+        expect(events.status).toBe(200);
+        expect((events.payload as { recentEvents: unknown[] }).recentEvents).toHaveLength(1);
+
+        const residents = await requestJson('GET', `${started.url}/economy/residents`, token);
+        expect(residents.status).toBe(200);
+        expect((residents.payload as { residents: Array<{ residentName: string }> }).residents.map(r => r.residentName).sort()).toEqual([
+            'res:peer',
+            'res:test',
+        ]);
     });
 
     it('GET /storyteller/latest returns the newest digest/dispatch payload for dashboard bridges', async () => {
@@ -520,4 +596,22 @@ function soulMarkdown(name: string): string {
         '',
         'Born from a Soul proposal.',
     ].join('\n');
+}
+
+function writeRuntimeState(memoryRoot: string, resident: string, attention: number): void {
+    const runtimeState = {
+        resident,
+        attention,
+        tick: 0,
+        legacy: { kind: 'endurer', progress: {}, complete: false },
+        budgets: {
+            minuteStartedAt: '2026-05-27T00:00:00.000Z',
+            dayStartedAt: '2026-05-27T00:00:00.000Z',
+            requestsThisMinute: 0,
+            requestsToday: 0,
+        },
+    } satisfies Partial<RuntimeState>;
+    const filePath = path.join(memoryRoot, residentSlug(resident), 'runtime-state.json');
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${JSON.stringify(runtimeState, null, 2)}\n`);
 }

@@ -69,6 +69,26 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/live`) {
+        writeJson(response, 200, options.service.economyLive(readLiveEconomyQuery(url)), { 'Cache-Control': 'max-age=2' });
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/totals`) {
+        writeJson(response, 200, options.service.economyTotals(readLiveEconomyQuery(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/events`) {
+        writeJson(response, 200, options.service.economyEvents(readLiveEconomyQuery(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/residents`) {
+        writeJson(response, 200, options.service.economyResidents(readLiveEconomyQuery(url)));
+        return;
+    }
+
     if (request.method === 'GET' && path === `${pathPrefix}/storyteller/latest`) {
         writeJson(response, 200, options.service.storytellerLatest());
         return;
@@ -246,8 +266,8 @@ function writeError(response: ServerResponse, error: unknown): void {
     writeJson(response, 500, { error: error instanceof Error ? error.message : 'city integration request failed' });
 }
 
-function writeJson(response: ServerResponse, status: number, payload: unknown): void {
-    response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+function writeJson(response: ServerResponse, status: number, payload: unknown, headers: Record<string, string> = {}): void {
+    response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
     response.end(JSON.stringify(payload));
 }
 
@@ -262,6 +282,23 @@ function readDigestQuery(url: URL): { since?: string; until?: string } {
         ...(since !== undefined ? { since } : {}),
         ...(until !== undefined ? { until } : {}),
     };
+}
+
+function readLiveEconomyQuery(url: URL): { since?: string; limit?: number; residentLimit?: number } {
+    const since = url.searchParams.get('since') ?? undefined;
+    const limit = parsePositiveInt(url.searchParams.get('limit'));
+    const residentLimit = parsePositiveInt(url.searchParams.get('residentLimit'));
+    return {
+        ...(since !== undefined ? { since } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(residentLimit !== undefined ? { residentLimit } : {}),
+    };
+}
+
+function parsePositiveInt(value: string | null): number | undefined {
+    if (value === null) return undefined;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function escapeRegExp(value: string): string {

@@ -18,6 +18,7 @@ import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
 import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
+import { buildLiveEconomySnapshot, type LiveEconomyQuery, type LiveEconomySnapshot } from './live-economy';
 import { LibraryUpdater } from '../evidence';
 import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
@@ -765,6 +766,55 @@ export class CityIntegrationService {
             ...(options.until !== undefined ? { windowEnd: options.until } : {}),
             goals: goals.list(),
         });
+    }
+
+    economyLive(query: LiveEconomyQuery = {}): LiveEconomySnapshot {
+        return buildLiveEconomySnapshot({
+            memoryRoot: this.options.memoryRoot,
+            now: this.now,
+            events: this.economyEventLog.readAll(),
+            proposals: this.proposalStore.list(),
+            query,
+            isResidentOnline: residentName => Boolean(this.options.getRuntime(residentName)),
+            getOnlineAttention: residentName => this.options.getRuntime(residentName)?.getState().attention,
+        });
+    }
+
+    economyTotals(
+        query: LiveEconomyQuery = {},
+    ): Pick<LiveEconomySnapshot, 'asOf' | 'window' | 'city' | 'countsByKind' | 'topResidentsByAttention' | 'pendingProposals'> {
+        const live = this.economyLive(query);
+        return {
+            asOf: live.asOf,
+            window: live.window,
+            city: live.city,
+            countsByKind: live.countsByKind,
+            topResidentsByAttention: live.topResidentsByAttention,
+            pendingProposals: live.pendingProposals,
+        };
+    }
+
+    economyEvents(query: LiveEconomyQuery = {}): Pick<LiveEconomySnapshot, 'asOf' | 'window' | 'countsByKind' | 'recentEvents'> {
+        const live = this.economyLive(query);
+        return {
+            asOf: live.asOf,
+            window: live.window,
+            countsByKind: live.countsByKind,
+            recentEvents: live.recentEvents,
+        };
+    }
+
+    economyResidents(
+        query: LiveEconomyQuery = {},
+    ): Pick<LiveEconomySnapshot, 'asOf' | 'window' | 'city' | 'residents' | 'topResidentsByAttention'> {
+        const live = this.economyLive(query);
+        return {
+            asOf: live.asOf,
+            window: live.window,
+            city: live.city,
+            residents: live.residents,
+            topResidentsByAttention: live.topResidentsByAttention,
+        };
     }
 
     storytellerLatest(): CityStorytellerLatestSummary {

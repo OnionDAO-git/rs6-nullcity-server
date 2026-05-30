@@ -35,6 +35,10 @@ Routes:
 - `POST /api/nullcity/ncri/:id/transfer`: transfer NCRI ownership (requires approved + available).
 - `POST /api/nullcity/ncri/:id/redeem`: mark NCRI as redeemed (idempotent).
 - `GET /api/nullcity/economy/digest`: current AP/GP/NCRI/exchange economy digest for dashboard/Storyteller.
+- `GET /api/nullcity/economy/live`: city-wide live AP/GP rollup with residents/events/proposals (cacheable JSON).
+- `GET /api/nullcity/economy/totals`: live AP/GP totals and top resident balances.
+- `GET /api/nullcity/economy/events`: live redacted event tail.
+- `GET /api/nullcity/economy/residents`: live per-resident AP/GP summary.
 - `GET /api/nullcity/storyteller/latest`: latest grounded digest+dispatch artifact summary for dashboard read models.
 
 Idempotency and audit records are persisted under `memory.dir/city-integration/`.
@@ -379,6 +383,53 @@ A `409` never mutates inventory. The caller can retry with a lower amount or a n
 - `notable` events include high-GP transactions (≥ 100 GP by default) and NCRI redemptions.
 
 The dashboard D5 Storyteller feed should consume this endpoint; the CLI `npm run storyteller:dry-run -- --memory-root <path>` builds the full narrative-layer `StorytellerDigest` from this data (no model call). `npm run storyteller:run` adds a model-backed narrative on top.
+
+## Economy Live View (S-ECON-VIEW-1)
+
+These routes provide a polling-friendly live AP/GP read model for dashboard packet D9 and viewer surfaces.
+
+### GET `/api/nullcity/economy/live`
+
+Returns the complete live snapshot (`city`, `countsByKind`, `topResidentsByAttention`, `residents`, `recentEvents`, `pendingProposals`) with:
+
+- `Cache-Control: max-age=2`
+- redacted human handles (`user:*`, `city-user:*`, `@mentions`) in `recentEvents`
+- default 15-minute window, max 1-hour lookback
+
+**Optional query params:**
+
+| Param | Type | Meaning |
+|---|---|---|
+| `since` | ISO 8601 string | Window start (clamped to at most 1 hour old). |
+| `limit` | positive int | Max `recentEvents` returned (default 20, max 200). |
+| `residentLimit` | positive int | Max `topResidentsByAttention` rows (default 10, max 100). |
+
+### GET `/api/nullcity/economy/totals`
+
+Same window semantics as `/economy/live`, but returns only aggregate sections:
+
+- `asOf`, `window`
+- `city`
+- `countsByKind`
+- `topResidentsByAttention`
+- `pendingProposals`
+
+### GET `/api/nullcity/economy/events`
+
+Same window semantics as `/economy/live`, but returns:
+
+- `asOf`, `window`
+- `countsByKind`
+- `recentEvents` (redacted)
+
+### GET `/api/nullcity/economy/residents`
+
+Same window semantics as `/economy/live`, but returns:
+
+- `asOf`, `window`
+- `city`
+- `residents` (all known residents from runtime state + economy events + proposal queue)
+- `topResidentsByAttention`
 
 ## Resident Routes (S11a)
 

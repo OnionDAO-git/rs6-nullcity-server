@@ -842,12 +842,13 @@ Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into th
   - Issue: `QA-20260530-007`.
   - Deliverable: a Soul with aspirational `goal` + `orientationHints` biases planner toward orientation when survival/GP needs are met; emits `orientation_progress`/`orientation_stalled` library events; operator-only goal edits.
 
-- `[ ]` **S17: Economy Live View (city-wide JSON contract for OnionDAO viewer).**
+- `[>]` **S17: Economy Live View (city-wide JSON contract for OnionDAO viewer).**
   - Spec: `docs/superpowers/specs/2026-05-30-economy-live-view-design.md`.
   - Files: `src/controller/city-integration/http-server.ts`, new `src/controller/city-integration/live-economy.ts`, `docs/city-dashboard-integration.md`.
   - Packets: `S-ECON-VIEW-1` (roll-up + `/totals` + `/events` + `/residents`, cloud), `S-ECON-VIEW-2` (`/listings` + `/heartbeat` + docs, cloud), `S-ECON-VIEW-3` (SSE stream + feature flag, cloud substrate / live latency proof).
   - Issue: `QA-20260530-008`.
   - Deliverable: `GET /api/nullcity/economy/live` returns a redacted city-wide snapshot of AP/GP totals, top residents, active listings, pending proposals, and recent events; powers dashboard packet D9.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-ECON-VIEW-1`): shipped `/api/nullcity/economy/{live,totals,events,residents}` plus redacted live event tail, AP/GP windowed rollups, pending proposal summary, and cache header (`max-age=2`) on `/live`. Added `live-economy.ts` read model, service facade methods, route tests, and contract docs.
 
 ## Recently Completed
 
