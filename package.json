@@ -44,6 +44,7 @@
         "patron:bulk-register": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --bulk-register",
         "storyteller:dry-run": "ts-node -r tsconfig-paths/register src/controller/storyteller/cli.ts",
         "storyteller:run": "ts-node -r tsconfig-paths/register src/controller/storyteller/run-cli.ts",
+        "storyteller:overseer": "ts-node -r tsconfig-paths/register src/controller/storyteller/overseer-cli.ts",
         "city:digest": "ts-node -r tsconfig-paths/register src/controller/city-integration/cli.ts",
         "controller:knowledge:review": "npm run build && node dist/controller/knowledge/review-suggestions.js",
         "simulation": "npm run build && npm run build:simulation && node dist/simulation/index.js",

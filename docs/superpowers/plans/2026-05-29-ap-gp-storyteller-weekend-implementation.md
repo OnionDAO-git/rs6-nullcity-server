@@ -543,6 +543,7 @@ Steps:
 - [x] Add `npm run storyteller:run -- --fixture --model-profile <profile>`.
 - [x] Add `npm run storyteller:run -- --latest|--digest-id <id>` so model-backed/nooped narration can use live dry-run artifacts.
 - [x] Record token usage, latency, model profile, and cost estimate when available.
+- [x] Add `npm run storyteller:overseer -- --tick` for no-paid dry-run cadence bookkeeping with append-only ledger, duplicate fingerprint holds, empty-digest skip, and unresolved-ref guard (S-STORY-1).
 
 Acceptance:
 

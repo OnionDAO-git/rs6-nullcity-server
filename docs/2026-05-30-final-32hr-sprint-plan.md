@@ -40,13 +40,13 @@ Every open packet, classified by whether it blocks the demo flow above.
 | **Dashboard D1 viewer profile (AP/GP visible)** | Viewer can scan a QR code → personal page → see Shards/AP, standing tier, letters. | Dashboard repo: HD-016 C/D closed (`/patron/?human=<h>` HTML page), needs final dress-rehearsal. | "First-experience" anchor for attendees. |
 | **At least 3 heroes reliably saying things** | Hans / Father Aereck / Wise Old Man (or any 3) emit a soul-distinctive line within 30s. | HD-008 attention floor + HD-032/033 mitigated. | Heroes carry the visible-alive signal even when Brain returns empty (87.5% per HD-033 F20a). |
 | **Wall ticker projection readable** | Public projection shows redacted recent letters; readable from 5+ feet. | D6 + D6-page shipped. | Visual centerpiece. Needs a paper test (per pending task #164) in the venue. |
-| **At least one Storyteller dispatch per ~10-30 min** | `/storyteller/latest` returns a grounded body with no unsupported claims. | S7b shipped fallback + paid run; S-STORY-1 overseer is queued but **NOT required** for demo if maintainer runs `storyteller:run --latest` manually on a 20-min cron. | Manual cron suffices for one event. S-STORY-1 is a NICE-TO-HAVE. |
+| **At least one Storyteller dispatch per ~10-30 min** | `/storyteller/latest` returns a grounded body with no unsupported claims. | S7b shipped fallback + paid run; S-STORY-1 shipped a no-paid `storyteller:overseer -- --tick` ledger/dedupe wrapper. | Manual or overseer tick suffices for dry-run cadence; S-STORY-2 still needed for canon/review publish queues. |
 
 ### NICE-TO-HAVE-FOR-DEMO (visible polish; deficient demo without is still usable)
 
 | Packet | Why nice | Status |
 |---|---|---|
-| **S-STORY-1 overseer (continuous mode)** | Removes the manual `storyteller:run` step at the venue. | Unclaimed; QA-20260530-004. |
+| **S-STORY-1 overseer (continuous mode)** | Removes repeated manual dry-run bookkeeping and prevents duplicate Storyteller windows. | In Review; no-paid tick + ledger/dedupe landed. QA-20260530-004 now points to S-STORY-2/3 for cost cap, canon/review, persona/watch. |
 | **S-NCRI-1 listing + pricing** | Lets viewers SEE a marketplace, not just abstract NCRIs. | Claude STARTING at 20:13 (in flight per `agent-status.md`). |
 | **S-NCRI-2 atomic AP-debit + ownership transfer** | First time a viewer can ACTUALLY buy an NCRI in a live demo. | Blocked by S-NCRI-1. |
 | **D10 dashboard NCRI marketplace** | The buy button. | Dashboard repo; depends on S-NCRI-1/2. |
