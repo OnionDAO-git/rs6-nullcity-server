@@ -53,6 +53,13 @@ describe('parseCityDigestArgs', () => {
             expect((err as CityDigestCliError).code).toBe('help');
         }
     });
+
+    it('parses --strict flag', () => {
+        expect(parseCityDigestArgs(['--memory-root', '/tmp/mem', '--strict'])).toEqual({
+            memoryRoot: '/tmp/mem',
+            strict: true,
+        });
+    });
 });
 
 describe('runCityDigest', () => {
@@ -140,6 +147,58 @@ describe('runCityDigest', () => {
         const json = runCityDigest({ memoryRoot }, { now: () => new Date('2026-05-30T01:00:00.000Z') });
         // Indented JSON; parseable; first line begins with `{`.
         expect(json.startsWith('{')).toBe(true);
+        expect(JSON.parse(json).schemaVersion).toBe(1);
+    });
+
+    // --- path safety tests (S-AUDIT-FIX-5) ---
+
+    it('throws memory_root_not_found when memoryRoot does not exist', () => {
+        const missing = path.join(os.tmpdir(), `city-digest-cli-missing-${Date.now()}`);
+        let caught: unknown;
+        try {
+            runCityDigest({ memoryRoot: missing });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(CityDigestCliError);
+        expect((caught as CityDigestCliError).code).toBe('memory_root_not_found');
+        expect((caught as CityDigestCliError).message).toContain(missing);
+    });
+
+    it('warns via options.warn when city-integration/ subdir is absent', () => {
+        const warns: string[] = [];
+        const json = runCityDigest({ memoryRoot }, { now: () => new Date('2026-05-30T01:00:00.000Z'), warn: m => warns.push(m) });
+        expect(JSON.parse(json).totalEvents).toBe(0);
+        expect(warns.length).toBeGreaterThan(0);
+        expect(warns[0]).toContain('city-integration');
+    });
+
+    it('does not warn when city-integration/ subdir already exists', () => {
+        const log = new EconomyEventLog(memoryRoot);
+        log.append({ kind: 'ap_grant', residentName: 'res:agent', apDelta: 10, refId: 'r-seed' });
+        const warns: string[] = [];
+        runCityDigest({ memoryRoot }, { now: () => new Date('2026-05-30T01:00:00.000Z'), warn: m => warns.push(m) });
+        expect(warns).toHaveLength(0);
+    });
+
+    it('throws unsafe_path when strict=true and memory-root contains .. component', () => {
+        let caught: unknown;
+        try {
+            runCityDigest({ memoryRoot: '/tmp/../etc', strict: true });
+        } catch (err) {
+            caught = err;
+        }
+        expect(caught).toBeInstanceOf(CityDigestCliError);
+        expect((caught as CityDigestCliError).code).toBe('unsafe_path');
+        expect((caught as CityDigestCliError).message).toContain('..');
+    });
+
+    it('allows strict=true on a clean absolute path', () => {
+        const warns: string[] = [];
+        const json = runCityDigest(
+            { memoryRoot, strict: true },
+            { now: () => new Date('2026-05-30T01:00:00.000Z'), warn: m => warns.push(m) },
+        );
         expect(JSON.parse(json).schemaVersion).toBe(1);
     });
 });
