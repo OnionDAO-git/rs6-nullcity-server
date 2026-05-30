@@ -28,6 +28,7 @@ const GP_MOVE_CLAIM =
 const NCRI_CLAIM = /\bNCRI\b/i;
 const QUEST_COMPLETE_CLAIM = /\b(?:completed?|finished)\b.{0,50}\b(?:quest|goal)\b|\b(?:quest|goal)\b.{0,50}\b(?:completed?|finished)\b/i;
 const AP_GRANT_CLAIM = /\b(?:granted|credited|received|sent)\s+(?:\d+\s+)?AP\b|\bAP\s+(?:was\s+)?(?:granted|credited|received)\b/i;
+const RESIDENT_BIRTH_CLAIM = /\b(?:new resident|resident(?:s)?(?:\s+\w+){0,3}\s+born|soul(?:s)?\s+born|birth of (?:a|new) resident)\b/i;
 
 function publicText(dispatch: StorytellerDispatch): string {
     return [dispatch.publicTitle, dispatch.publicBody, ...dispatch.publicBullets].join(' ');
@@ -98,6 +99,20 @@ export function verifyDispatch(dispatch: StorytellerDispatch, digest: CityEventD
     const hasApGrantEvidence = digest.apEvents.some(e => e.kind === 'ap_granted');
     if (AP_GRANT_CLAIM.test(text) && !hasApGrantEvidence) {
         warnings.push('public text claims AP was granted but no ap_granted events in digest');
+    }
+
+    // 8. Unsupported resident birth claim
+    const hasResidentBirthEvidence = [
+        ...digest.apEvents,
+        ...digest.gpEvents,
+        ...digest.exchangeEvents,
+        ...digest.ncriEvents,
+        ...digest.goalEvents,
+        ...digest.stuckEvents,
+        ...digest.miscEvents,
+    ].some(e => e.kind === 'soul_born');
+    if (RESIDENT_BIRTH_CLAIM.test(text) && !hasResidentBirthEvidence) {
+        warnings.push('public text claims resident birth but no soul_born events in digest');
     }
 
     return { passed: warnings.length === 0, warnings };

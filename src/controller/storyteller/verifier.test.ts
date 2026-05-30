@@ -288,6 +288,24 @@ describe('verifyDispatch — unsupported AP grant', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Unsupported resident birth claims
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — unsupported resident birth claims', () => {
+    it('warns when publicBody claims a resident was born but no soul_born events', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'A new resident was born in the city.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('resident birth'))).toBe(true);
+    });
+
+    it('passes when soul_born evidence exists in digest events', () => {
+        const digest = makeEmptyDigest();
+        digest.miscEvents = [makeEvent('born-1', 'soul_born', 'high')];
+        const result = verifyDispatch(makeDispatch({ publicBody: 'A new resident was born in the city.' }), digest);
+        expect(result.warnings.some(w => w.includes('resident birth'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // applyVerifierResult
 // ---------------------------------------------------------------------------
 

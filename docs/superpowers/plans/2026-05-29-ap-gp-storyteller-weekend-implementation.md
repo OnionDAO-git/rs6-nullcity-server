@@ -198,7 +198,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S5b | Open | - | - | - | - | - | - |
 | S6a | Open | - | - | - | - | - | - |
 | S6b | In Review | codex | 2026-05-29 | src/controller/city-integration/{service.ts,service.test.ts,http-server.ts,http-server.test.ts}; docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md; docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md; docs/agent-status.md | 96b86a06 | test:service+http-server+city-integration digest suite; cmd:check:no-ui; cmd:build; cmd:fin | CityIntegrationService now emits live AP/GP events to EconomyEventLog, city:digest reads service events, and GET /api/nullcity/economy/digest exposes the JSON read model; no UI |
-| S7a | Open | - | - | - | - | - | - |
+| S7a | In Review | codex | 2026-05-30 | src/controller/storyteller/{verifier.ts,verifier.test.ts}; docs/{superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md,superpowers/plans/2026-05-20-runescape-agent-roadmap.md,agent-status.md} | pending | test:src/controller/storyteller/verifier.test.ts; test:src/controller/storyteller; cmd:check:no-ui; cmd:build | - |
 | S7b | Open | - | - | - | - | - | - |
 | S8a | Open | - | - | - | - | - | - |
 | S8b | Open | - | - | - | - | - | - |
@@ -533,7 +533,7 @@ Acceptance:
 
 Steps:
 
-- [ ] Write verifier tests rejecting unknown event refs, unredacted private handles, unsupported deaths, unsupported AP grants, unsupported GP movement, unsupported NCRIs, and unsupported quest completions.
+- [x] Write verifier tests rejecting unknown event refs, unredacted private handles, unsupported deaths, unsupported births, unsupported AP grants, unsupported GP movement, unsupported NCRIs, and unsupported quest completions.
 - [ ] Build prompt requiring JSON with `publicTitle`, `publicBody`, `publicBullets`, `operatorSummary`, `operatorWarnings`, `eventRefsUsed`.
 - [ ] Wire model profile selection through existing inference config.
 - [ ] Add `npm run storyteller:run -- --fixture --model-profile <profile>`.

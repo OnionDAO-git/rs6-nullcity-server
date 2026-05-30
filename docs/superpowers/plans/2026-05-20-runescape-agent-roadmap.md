@@ -764,6 +764,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Files: `src/controller/storyteller/*`, `src/controller/llm/*`, `src/controller/config.ts`, `config/controller.yml.example`, tests beside each file.
   - Deliverable: after S6 digest evidence and at least one AP/GP loop proof exist, manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
   - Verification: fixture runs across at least two model profiles; verifier rejection tests; cost/token metadata recorded.
+  - 2026-05-30 (`agents/wip`, codex, packet `S7a`): verifier coverage now explicitly blocks unsupported resident-birth narration (`soul_born`) in public dispatch text. Added red/green tests in `src/controller/storyteller/verifier.test.ts` and claim guard in `src/controller/storyteller/verifier.ts`; focused storyteller tests, `check:no-ui`, and build passed.
 
 - `[>]` **S8: Resident AP/GP knowledge, goal hierarchy, and behavior hooks.**
   - Files: `docs/runescape-skill/economy.md`, `src/controller/knowledge/knowledge-retriever.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`, `src/controller/spark/runescape-body-routines.ts`, focused tests.
