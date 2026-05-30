@@ -17,6 +17,7 @@
  *   STORYTELLER_LLM_BASE_URL   e.g. http://localhost:11434
  *   STORYTELLER_LLM_API_KEY    optional Bearer token
  *   STORYTELLER_LLM_MODEL      e.g. llama3, qwen2.5-7b
+ *   STORYTELLER_DAILY_COST_CAP_USD  required when STORYTELLER_LLM_BASE_URL is set
  *
  * Flags:
  *   --fixture                  Use the canonical fixture digest
@@ -24,12 +25,14 @@
  *   --digest-id <id>           Use a specific persisted digest id from --output-dir
  *   --model-profile <name>     Endpoint/profile key (default: "default")
  *   --output-dir <path>        Where to write artifacts (default: data/controller/storyteller)
+ *   --daily-cost-cap-usd <usd> Required when STORYTELLER_LLM_BASE_URL is set; overrides env cap
  */
 import path from 'path';
 import type { LlmEndpointConfig } from '../config';
 import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
 import { StorytellerModelClient } from './model-client';
+import { preflightStorytellerPaidModelBudget, StorytellerOverseerCliError } from './overseer';
 import type { CityEventDigest, StorytellerDispatch } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
 
@@ -40,6 +43,7 @@ export interface StorytellerRunArgs {
     modelProfile: string;
     outputDir: string;
     digestId?: string;
+    dailyCostCapUsd?: number;
 }
 
 export interface StorytellerRunOptions {
@@ -71,6 +75,7 @@ export function parseStorytellerRunArgs(
     let digestId: string | undefined;
     let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'default';
     let outputDir = path.join('data', 'controller', 'storyteller');
+    let dailyCostCapUsd = parseOptionalDailyCostCap(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
 
     const claimSource = (nextSource: StorytellerRunSource): void => {
         if (source !== 'none') {
@@ -99,6 +104,10 @@ export function parseStorytellerRunArgs(
             if (!next) throw new StorytellerRunCliError('missing_value', '--output-dir requires a path');
             outputDir = next;
             i++;
+        } else if (flag === '--daily-cost-cap-usd') {
+            if (!next) throw new StorytellerRunCliError('missing_value', '--daily-cost-cap-usd requires a number');
+            dailyCostCapUsd = parseRequiredDailyCostCap(next, '--daily-cost-cap-usd');
+            i++;
         } else if (flag === '--help' || flag === '-h') {
             throw new StorytellerRunCliError('help', usage());
         } else {
@@ -108,6 +117,7 @@ export function parseStorytellerRunArgs(
 
     const parsed: StorytellerRunArgs = { source, modelProfile, outputDir };
     if (digestId !== undefined) parsed.digestId = digestId;
+    if (dailyCostCapUsd !== undefined) parsed.dailyCostCapUsd = dailyCostCapUsd;
     return parsed;
 }
 
@@ -167,6 +177,9 @@ export async function runStoryteller(args: StorytellerRunArgs, options: Storytel
     const env = options.env ?? process.env;
     const store = new StorytellerStore(args.outputDir);
     const digest = readDigestForRun(args, store);
+    if (hasConfiguredModelEndpoint(env)) {
+        runPaidModelBudgetPreflight(args, options);
+    }
     const endpoints = buildEndpoints(args.modelProfile, env);
     const config = { ...DEFAULT_STORYTELLER_CONFIG, modelProfile: args.modelProfile };
     const client = new StorytellerModelClient(endpoints);
@@ -187,9 +200,45 @@ function usage(): string {
         '  npm run storyteller:run -- --fixture [--model-profile <name>] [--output-dir <path>]',
         '  npm run storyteller:run -- --latest [--model-profile <name>] [--output-dir <path>]',
         '  npm run storyteller:run -- --digest-id <id> [--model-profile <name>] [--output-dir <path>]',
+        '                                        [--daily-cost-cap-usd <usd>]',
         '',
         'Runs the Storyteller model over one digest. Without STORYTELLER_LLM_BASE_URL it writes a nooped dispatch for review.',
+        'When STORYTELLER_LLM_BASE_URL is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
     ].join('\n');
+}
+
+function parseOptionalDailyCostCap(value: string | undefined, label: string): number | undefined {
+    if (value === undefined || value.trim() === '') {
+        return undefined;
+    }
+    return parseRequiredDailyCostCap(value, label);
+}
+
+function parseRequiredDailyCostCap(value: string, label: string): number {
+    const parsed = Number.parseFloat(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new StorytellerRunCliError('invalid_cost_cap', `${label} must be a non-negative number`);
+    }
+    return parsed;
+}
+
+function hasConfiguredModelEndpoint(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
+    return !!env.STORYTELLER_LLM_BASE_URL;
+}
+
+function runPaidModelBudgetPreflight(args: StorytellerRunArgs, options: StorytellerRunOptions): void {
+    try {
+        preflightStorytellerPaidModelBudget({
+            outputDir: args.outputDir,
+            dailyCostCapUsd: args.dailyCostCapUsd,
+            now: options.now,
+        });
+    } catch (err) {
+        if (err instanceof StorytellerOverseerCliError) {
+            throw new StorytellerRunCliError(err.code, err.message);
+        }
+        throw err;
+    }
 }
 
 async function main(): Promise<void> {

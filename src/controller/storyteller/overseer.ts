@@ -53,6 +53,18 @@ export interface StorytellerOverseerTickResult {
     digest: CityEventDigest | null;
 }
 
+export interface StorytellerPaidBudgetPreflightArgs {
+    outputDir: string;
+    dailyCostCapUsd?: number;
+    now?: Date | (() => Date);
+}
+
+export interface StorytellerPaidBudgetPreflightResult {
+    capUsd: number;
+    spentTodayUsd: number;
+    remainingUsd: number;
+}
+
 const DEFAULT_DEDUP_WINDOW_MS = 30 * 60_000;
 
 export class StorytellerOverseerCliError extends Error {
@@ -291,6 +303,31 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
     return { row, digest };
 }
 
+export function preflightStorytellerPaidModelBudget(args: StorytellerPaidBudgetPreflightArgs): StorytellerPaidBudgetPreflightResult {
+    const capUsd = asFiniteNonNegativeNumber(args.dailyCostCapUsd);
+    if (capUsd === undefined) {
+        throw new StorytellerOverseerCliError(
+            'missing_cost_cap',
+            'paid Storyteller model runs require --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD',
+        );
+    }
+
+    const now = resolvePreflightNow(args.now);
+    const spentTodayUsd = dailySpentUsd(new OverseerLedger(args.outputDir).readAll(), now);
+    if (spentTodayUsd >= capUsd) {
+        throw new StorytellerOverseerCliError(
+            'daily_cost_cap_exceeded',
+            `daily Storyteller cost cap already spent (${spentTodayUsd.toFixed(6)} >= ${capUsd.toFixed(6)})`,
+        );
+    }
+
+    return {
+        capUsd,
+        remainingUsd: capUsd - spentTodayUsd,
+        spentTodayUsd,
+    };
+}
+
 export function usage(): string {
     return [
         'Usage:',
@@ -451,6 +488,16 @@ function writeDispatchQueueArtifact(
 
 function asFiniteNonNegativeNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function resolvePreflightNow(now: Date | (() => Date) | undefined): Date {
+    if (now instanceof Date) {
+        return now;
+    }
+    if (typeof now === 'function') {
+        return now();
+    }
+    return new Date();
 }
 
 function dailySpentUsd(rows: StorytellerOverseerLedgerRow[], now: Date): number {

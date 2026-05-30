@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { buildFixtureDigest } from './digest-builder';
+import { OverseerLedger } from './overseer';
 import { StorytellerStore } from './store';
 import { parseStorytellerRunArgs, runStoryteller, StorytellerRunCliError } from './run-cli';
 
@@ -28,6 +29,26 @@ describe('storyteller:run CLI digest sources', () => {
             digestId: 'live-20260530060000',
             modelProfile: 'default',
             outputDir: path.join('data', 'controller', 'storyteller'),
+        });
+    });
+
+    it('parses daily cost caps from flag and environment for paid Storyteller runs', () => {
+        expect(
+            parseStorytellerRunArgs(['--latest'], {
+                STORYTELLER_DAILY_COST_CAP_USD: '0.25',
+            }),
+        ).toMatchObject({
+            source: 'latest',
+            dailyCostCapUsd: 0.25,
+        });
+
+        expect(
+            parseStorytellerRunArgs(['--latest', '--daily-cost-cap-usd', '0.10'], {
+                STORYTELLER_DAILY_COST_CAP_USD: '0.25',
+            }),
+        ).toMatchObject({
+            source: 'latest',
+            dailyCostCapUsd: 0.1,
         });
     });
 
@@ -79,5 +100,71 @@ describe('storyteller:run CLI digest sources', () => {
         expect(result.digest.digestId).toBe('named-live-digest');
         expect(result.dispatch.digestId).toBe('named-live-digest');
         expect(fs.existsSync(path.join(outputDir, 'named-live-digest', 'dispatch.json'))).toBe(true);
+    });
+
+    it('blocks configured model endpoints when daily cost cap is missing', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'paid-digest' });
+        const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+        await expect(
+            runStoryteller(
+                { source: 'digest-id', digestId: 'paid-digest', outputDir, modelProfile: 'storyteller-smart' },
+                {
+                    env: {
+                        STORYTELLER_LLM_BASE_URL: 'http://paid-model.invalid',
+                        STORYTELLER_LLM_MODEL: 'paid-storyteller',
+                    },
+                    now: () => new Date('2026-05-30T20:30:00.000Z'),
+                },
+            ),
+        ).rejects.toMatchObject({ code: 'missing_cost_cap' });
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(fs.existsSync(path.join(outputDir, 'paid-digest', 'dispatch.json'))).toBe(false);
+        fetchSpy.mockRestore();
+    });
+
+    it('blocks configured model endpoints before fetch when daily cost cap is already spent', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'spent-digest' });
+        new OverseerLedger(outputDir).append({
+            schemaVersion: 1,
+            rowId: 'prior-paid-row',
+            createdAt: '2026-05-30T19:40:00.000Z',
+            digestId: 'prior-digest',
+            fingerprint: 'fp-prior',
+            decision: 'published_canon',
+            reason: 'published',
+            eventRefs: ['gp:1'],
+            artifactDir: path.join(outputDir, 'canon', 'prior-digest'),
+            estimatedCostUsd: 0.25,
+        });
+        const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+        await expect(
+            runStoryteller(
+                {
+                    source: 'digest-id',
+                    digestId: 'spent-digest',
+                    outputDir,
+                    modelProfile: 'storyteller-smart',
+                    dailyCostCapUsd: 0.25,
+                },
+                {
+                    env: {
+                        STORYTELLER_LLM_BASE_URL: 'http://paid-model.invalid',
+                        STORYTELLER_LLM_MODEL: 'paid-storyteller',
+                    },
+                    now: () => new Date('2026-05-30T20:30:00.000Z'),
+                },
+            ),
+        ).rejects.toMatchObject({ code: 'daily_cost_cap_exceeded' });
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(fs.existsSync(path.join(outputDir, 'spent-digest', 'dispatch.json'))).toBe(false);
+        fetchSpy.mockRestore();
     });
 });

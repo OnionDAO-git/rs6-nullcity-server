@@ -3,7 +3,13 @@ import os from 'os';
 import path from 'path';
 import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
-import { OverseerLedger, parseStorytellerOverseerArgs, runStorytellerOverseerTick, StorytellerOverseerCliError } from './overseer';
+import {
+    OverseerLedger,
+    parseStorytellerOverseerArgs,
+    preflightStorytellerPaidModelBudget,
+    runStorytellerOverseerTick,
+    StorytellerOverseerCliError,
+} from './overseer';
 import type { CityEventDigest, StorytellerDispatch } from './types';
 
 function tempOutputDir(): string {
@@ -264,6 +270,51 @@ describe('runStorytellerOverseerTick', () => {
         expect(result.row.reason).toContain('daily cost cap');
         expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(false);
         expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'dispatch.json'))).toBe(false);
+    });
+});
+
+describe('preflightStorytellerPaidModelBudget', () => {
+    it('blocks paid model runs before dispatch generation when cap is missing or already spent', () => {
+        const outputDir = tempOutputDir();
+        new OverseerLedger(outputDir).append({
+            schemaVersion: 1,
+            rowId: 'prior-row',
+            createdAt: '2026-05-30T19:40:00.000Z',
+            digestId: 'prior-digest',
+            fingerprint: 'fp-prior',
+            decision: 'published_canon',
+            reason: 'published',
+            eventRefs: ['gp:1'],
+            artifactDir: path.join(outputDir, 'canon', 'prior-digest'),
+            estimatedCostUsd: 0.25,
+        });
+
+        expect(() =>
+            preflightStorytellerPaidModelBudget({
+                outputDir,
+                now: new Date('2026-05-30T20:00:00.000Z'),
+            }),
+        ).toThrow(StorytellerOverseerCliError);
+
+        expect(() =>
+            preflightStorytellerPaidModelBudget({
+                outputDir,
+                dailyCostCapUsd: 0.25,
+                now: new Date('2026-05-30T20:00:00.000Z'),
+            }),
+        ).toThrow(StorytellerOverseerCliError);
+
+        expect(
+            preflightStorytellerPaidModelBudget({
+                outputDir,
+                dailyCostCapUsd: 0.3,
+                now: new Date('2026-05-30T20:00:00.000Z'),
+            }),
+        ).toEqual({
+            capUsd: 0.3,
+            remainingUsd: 0.04999999999999999,
+            spentTodayUsd: 0.25,
+        });
     });
 });
 
