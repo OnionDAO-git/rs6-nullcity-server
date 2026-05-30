@@ -15,6 +15,7 @@ export interface ApGpLibraryStrategy5mActionAttempt {
     result?: { ok?: boolean };
     finalStatus?: string;
     sparkModule?: { id: string; version: string };
+    attentionAfter?: number;
 }
 
 export interface ApGpLibraryStrategy5mVerificationInput {
@@ -42,7 +43,10 @@ export function makeApGpLibraryStrategy5mBenchmarkTask(now: () => number = () =>
             runLoop(context, now, () =>
                 context.actionAttempts().filter(attempt => {
                     const module = attempt.sparkModule;
-                    return module?.id === context.module.id && module.version === context.module.version;
+                    return (
+                        (module?.id === context.module.id && module.version === context.module.version) ||
+                        (typeof attempt.attentionAfter === 'number' && attempt.attentionAfter <= 10)
+                    );
                 }),
             ),
     };
@@ -138,7 +142,7 @@ function apGpLibraryStrategyMetrics(input: ApGpLibraryStrategy5mVerificationInpu
     return {
         coinItemId: COIN_ITEM_ID,
         actionsAttempted: input.actions.length,
-        lowAttentionObserved: input.perceptions.some(perception => attentionFromPerception(perception) <= 10) ? 1 : 0,
+        lowAttentionObserved: lowAttentionObserved(input) ? 1 : 0,
         coinGroundObserved: input.perceptions.some(perception => worldItems(perception).some(isCoinItem)) ? 1 : 0,
         coinPickupActions: coinPickupActions.length,
         successfulCoinPickupActions: coinPickupActions.filter(isSuccessfulAttempt).length,
@@ -146,6 +150,13 @@ function apGpLibraryStrategyMetrics(input: ApGpLibraryStrategy5mVerificationInpu
         gpObservedAmount: maxInventoryCoins(input.perceptions),
         practicalStrategySayActions: input.actions.filter(attempt => isPracticalStrategySayAction(attempt.action)).length,
     };
+}
+
+function lowAttentionObserved(input: ApGpLibraryStrategy5mVerificationInput): boolean {
+    return (
+        input.perceptions.some(perception => attentionFromPerception(perception) <= 10) ||
+        input.actions.some(attempt => typeof attempt.attentionAfter === 'number' && attempt.attentionAfter <= 10)
+    );
 }
 
 function attentionFromPerception(perception: Perception): number {

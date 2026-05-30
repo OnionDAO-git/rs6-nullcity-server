@@ -39,7 +39,7 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
         floor: 0,
     },
     'ap-gp-library-strategy-5m': {
-        startingAttention: 12,
+        startingAttention: 18,
         decayCurve: 'steep',
         floor: 0,
     },
@@ -52,6 +52,7 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
 
 const AP_TOPUP_RESUME_5M_TASK_ID = 'ap-topup-resume-5m';
 const AP_TOPUP_RESUME_AMOUNT = 3000;
+const AP_GP_LIBRARY_STRATEGY_5M_TASK_ID = 'ap-gp-library-strategy-5m';
 
 export interface ResidentRuntimeBenchmarkDriverOptions {
     config: ControllerConfig;
@@ -322,7 +323,7 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
                     kind: 'hybrid-agent',
                     commandPrefix: 'agent',
                     brainEveryTicks: 180,
-                    bodyEveryTicks: 8,
+                    bodyEveryTicks: context.task.id === AP_GP_LIBRARY_STRATEGY_5M_TASK_ID ? 1 : 8,
                     shareGoalsEveryTicks: 60,
                     returnToAnchorEveryTicks: 600,
                     returnToAnchorRadius: 12,

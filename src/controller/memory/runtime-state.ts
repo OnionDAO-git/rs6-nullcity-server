@@ -60,6 +60,7 @@ export interface CognitiveState {
     lastRoutineLoopBreakTick?: number;
     lastExplorationReportTick?: number;
     lastScoutingSkillOpportunityTick?: number;
+    lastApGpStrategySayTick?: number;
     pickupCooldowns?: Record<string, number>;
     explorationCooldowns?: Record<string, number>;
     targetFailureCooldowns?: Record<string, number>;

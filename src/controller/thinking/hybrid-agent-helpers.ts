@@ -79,6 +79,7 @@ import {
     isPickupOnCooldown,
     isOwnedByAnotherActor,
     isStaleSelfOwnedLog,
+    COIN_ITEM_IDS,
 } from '../spark/runescape-body-routines';
 export { distance };
 import {
@@ -2544,6 +2545,13 @@ export function goalRoutineOverride(
         }
     }
 
+    if (isApGpLibraryStrategyGoal(goal)) {
+        const strategyAction = apGpLibraryStrategyGoalAction(ctx, perception);
+        if (strategyAction) {
+            return strategyAction;
+        }
+    }
+
     const fireGoalLike = !isStarterFishingGoal(goal) && /fire|burn|logs|tinderbox|light/i.test(goalText);
     if (fireGoalLike) {
         const fireAction = firemakingAction(perception);
@@ -2585,6 +2593,62 @@ export function goalRoutineOverride(
 
     const woodcutting = levelOneWoodcuttingAction(perception);
     return woodcutting ? { action: woodcutting, cause: woodcutting.cause || 'woodcutting_level1_routine' } : undefined;
+}
+
+function isApGpLibraryStrategyGoal(goal: ActiveGoalState): boolean {
+    return goal.id === 'ap-gp-library-strategy';
+}
+
+function apGpLibraryStrategyGoalAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+): { action: AgentAction; cause: string } | undefined {
+    const pickup = opportunisticPickupAction(
+        perception,
+        ctx.options.state.resident,
+        ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE,
+        undefined,
+        ctx.options.state.tick,
+        undefined,
+        ctx.cognition().targetFailureCooldowns,
+    );
+    if (pickup) {
+        return { action: pickup, cause: pickup.cause || 'opportunistic_pickup' };
+    }
+
+    const carriedGp = carriedGpAmount(perception.resident?.inventory);
+    if (carriedGp <= 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    if (
+        typeof cognition.lastApGpStrategySayTick === 'number' &&
+        tick - cognition.lastApGpStrategySayTick < (ctx.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS)
+    ) {
+        return undefined;
+    }
+
+    cognition.lastApGpStrategySayTick = tick;
+    return {
+        action: {
+            kind: 'say',
+            text: `AP is low, so I secured ${carriedGp} GP first. Library strategy: keep Attention alive, gather coins, then spend GP toward the Soul goal.`,
+            cause: 'ap_gp_library_strategy',
+        },
+        cause: 'ap_gp_library_strategy',
+    };
+}
+
+function carriedGpAmount(inventory: Array<Item | null> | undefined): number {
+    return (inventory || []).reduce((total, item) => {
+        if (!item) {
+            return total;
+        }
+        const isCoin = COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '');
+        return isCoin ? total + (Number.isFinite(item.amount) ? item.amount : 1) : total;
+    }, 0);
 }
 
 export function stabilizedMoveAction(

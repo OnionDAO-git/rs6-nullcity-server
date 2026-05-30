@@ -1763,6 +1763,137 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('opportunistic_pickup');
     });
 
+    it('runs urgent body work under critical AP instead of waiting for the normal cadence', async () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 25, position: { x: 3218, y: 3200, level: 0 } };
+        const llm = scriptedLlm([]);
+        const agentSoul = soul();
+        agentSoul.frontmatter.behavior = {
+            kind: 'hybrid-agent',
+            commandPrefix: 'agent',
+            bodyEveryTicks: 8,
+        };
+        const state = runtimeState();
+        state.attention = 8;
+        state.tick = 3;
+        state.cognition = {
+            activeGoal: {
+                id: 'ap-gp-library-strategy',
+                description: 'Find a way to make 100 GP/hour, stay alive on AP, and write the strategy into the Library.',
+                steps: [
+                    'If AP is low, secure attention support or a safe survival action first',
+                    'Collect or preserve real RuneScape GP coins (item 995) with evidence',
+                    'Say and memo one concrete Library strategy note from what worked',
+                ],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 3,
+        };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 4,
+                resident: residentAt(3218, 3200),
+                worldItems: [coins],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
+        expect(result.cause).toBe('opportunistic_pickup');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('narrates an AP/GP Library strategy once real GP is secured under critical AP', async () => {
+        const llm = scriptedLlm([]);
+        const agentSoul = soul();
+        agentSoul.frontmatter.behavior = {
+            kind: 'hybrid-agent',
+            commandPrefix: 'agent',
+            bodyEveryTicks: 8,
+        };
+        const state = runtimeState();
+        state.attention = 8;
+        state.tick = 4;
+        state.cognition = {
+            activeGoal: {
+                id: 'ap-gp-library-strategy',
+                description: 'Find a way to make 100 GP/hour, stay alive on AP, and write the strategy into the Library.',
+                steps: [
+                    'If AP is low, secure attention support or a safe survival action first',
+                    'Collect or preserve real RuneScape GP coins (item 995) with evidence',
+                    'Say and memo one concrete Library strategy note from what worked',
+                ],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 4,
+        };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                resident: {
+                    ...residentAt(3218, 3200),
+                    inventory: [{ itemId: 995, key: 'rs:coins', amount: 25 }],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: expect.stringMatching(/AP|Attention/i),
+                cause: 'ap_gp_library_strategy',
+            },
+        ]);
+        const text = String((result.actions[0] as Record<string, unknown> | undefined)?.text || '');
+        expect(text).toMatch(/GP|coin/i);
+        expect(text).toMatch(/Library|strategy|goal/i);
+        expect(result.cause).toBe('ap_gp_library_strategy');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('retries AP/GP survival coin pickup even when a previous urgent attempt was cooldowned', async () => {
+        const coins = { itemId: 995, key: 'rs:coins', amount: 25, position: { x: 3218, y: 3200, level: 0 } };
+        const llm = scriptedLlm([]);
+        const agentSoul = soul();
+        agentSoul.frontmatter.behavior = {
+            kind: 'hybrid-agent',
+            commandPrefix: 'agent',
+            bodyEveryTicks: 8,
+        };
+        const state = runtimeState();
+        state.attention = 8;
+        state.tick = 4;
+        state.cognition = {
+            activeGoal: {
+                id: 'ap-gp-library-strategy',
+                description: 'Find a way to make 100 GP/hour, stay alive on AP, and write the strategy into the Library.',
+                steps: ['Collect real RuneScape GP coins (item 995) before spending AP on anything else'],
+                createdAtTick: 1,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 3,
+            pickupCooldowns: { '995:rs:coins:3218,3200,0': 3 },
+            explorationCooldowns: { 'item:995:rs:coins:3218,3200,0': 3 },
+        };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                resident: residentAt(3218, 3200),
+                worldItems: [coins],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'interact', target: coins, option: 'pick-up', cause: 'opportunistic_pickup' }]);
+        expect(result.cause).toBe('opportunistic_pickup');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('does not chase firemaking logs beside an active fire as opportunistic loot', async () => {
         const logs = { itemId: 1511, key: 'rs:logs', amount: 1, position: { x: 3218, y: 3201, level: 0 } };
         const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3201, level: 0 }, orientation: 0 };

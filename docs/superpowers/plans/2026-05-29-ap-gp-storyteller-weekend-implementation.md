@@ -202,7 +202,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S7b | Open | - | - | - | - | - | - |
 | S8a | Open | - | - | - | - | - | - |
 | S8b | Open | - | - | - | - | - | - |
-| S8c | Blocked | codex | 2026-05-29 | docs/runescape-skill/economy.md; src/controller/knowledge/{knowledge-retriever.ts,knowledge-retriever.test.ts,game-skill-context.test.ts}; src/controller/thinking/{hybrid-agent-prompts.ts,hybrid-agent-prompts.test.ts}; src/controller/spark/{runescape-brain-planner.ts,runescape-brain-planner.test.ts}; src/controller/benchmarks/{cli.ts,cli.test.ts,autonomous-runtime.ts,tasks/ap-gp-library-strategy-5m.ts,tasks/ap-gp-library-strategy-5m.test.ts} | - | test:knowledge-retriever.test.ts; test:game-skill-context.test.ts; test:hybrid-agent-prompts.test.ts; test:runescape-brain-planner.test.ts; test:ap-gp-library-strategy-5m.test.ts; test:benchmarks/cli.test.ts; cmd:controller:bench --dry-run ap-gp-library-strategy-5m | benchmark:EPERM loopback connect (127.0.0.1:43595) on two live attempts (2026-05-29 08:07 and 13:07 CDT) |
+| S8c | In Review | codex | 2026-05-29 | docs/runescape-skill/economy.md; src/controller/knowledge/{knowledge-retriever.ts,knowledge-retriever.test.ts,game-skill-context.test.ts}; src/controller/thinking/{hybrid-agent-prompts.ts,hybrid-agent-prompts.test.ts,hybrid-agent-thinking-module.ts,hybrid-agent-thinking-module.test.ts,hybrid-agent-helpers.ts}; src/controller/memory/runtime-state.ts; src/controller/spark/{runescape-brain-planner.ts,runescape-brain-planner.test.ts}; src/controller/benchmarks/{cli.ts,cli.test.ts,autonomous-runtime.ts,autonomous-runtime.test.ts,tasks/ap-gp-library-strategy-5m.ts,tasks/ap-gp-library-strategy-5m.test.ts} | pending | test:focused benchmark/knowledge/thinking suite 469 passed; cmd:controller:bench ap-gp-library-strategy-5m autonomous; benchmark:bench_20260530030614_ap_gp_library_strategy_5m score=1 | next: ordinary named-resident AP/GP/Library planning soak plus repeatable GP/hour route |
 | S9a | Open | - | - | - | - | - | - |
 | S9b | Open | - | - | - | - | - | - |
 | S10a | In Review | codex | 2026-05-29 | src/controller/benchmarks/report.ts; src/controller/benchmarks/report.test.ts; docs/model-benchmarking.md | faac035d | test:src/controller/benchmarks/report.test.ts; cmd:npm run benchmark:report | - |
@@ -223,7 +223,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA8 | Open | - | - | - | - | - | - |
 | CQA9 | Open | - | - | - | - | - | - |
 | CQA10 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; docs/resident-capabilities.md; docs/issue-register.md | pending | doc:docs/capability-evidence/2026-05-29-cqa10-normal-life-audit.md; issue:QA-20260529-006 | one-hour audit captured but shows 0 ordinary equip/trade actions; follow-up CQA3/CQA4/CQA5 needed |
-| CQA11 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md; docs/resident-capabilities.md; docs/issue-register.md | pending | cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-2026-05-27; cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27; doc:docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md | AP/GP hierarchy live proof still blocked by sandbox loopback `EPERM`; combat remains model-sensitive and needs CQA5 fix pass |
+| CQA11 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md; docs/resident-capabilities.md; docs/issue-register.md | pending | cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-2026-05-27; cmd:npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27; benchmark:bench_20260530030614_ap_gp_library_strategy_5m; doc:docs/capability-evidence/2026-05-29-cqa11-model-intelligence-twins.md | AP/GP hierarchy has local live proof now; combat remains model-sensitive and needs CQA5 rerun pass |
 | D0 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | - |
 | D1 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S0/S2/S11 contracts |
 | D2 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S4/S11 contracts |
@@ -562,12 +562,12 @@ Acceptance:
 
 Steps:
 
-- [ ] Add economy knowledge entries: AP sustains residents; GP is real coins; humans may trade AP for GP/items/NCRIs; residents must not claim GP without evidence.
-- [ ] Add goal hierarchy knowledge entries: survive on AP, earn/preserve GP, pursue the Soul goal, write useful discoveries to the Library.
-- [ ] Write retrieval tests for low AP, GP, coin, printer, AP-for-GP queries, and Library strategy lookup.
-- [ ] Write prompt tests proving AP/GP rules and the goal hierarchy appear when resident has low AP, no GP, GP-related events, or a broad Soul goal.
-- [ ] Add behavior tests for resident-with-GP, resident-without-GP, low-AP exchange opportunity, and "aspirational goal with no resources chooses a practical GP/AP step first."
-- [ ] Add or run a benchmark where a resident with a Soul goal like "find a way to make 100 GP/hour and write the strategy into the Library" plans a concrete GP route and records a Library strategy finding.
+- [x] Add economy knowledge entries: AP sustains residents; GP is real coins; humans may trade AP for GP/items/NCRIs; residents must not claim GP without evidence.
+- [x] Add goal hierarchy knowledge entries: survive on AP, earn/preserve GP, pursue the Soul goal, write useful discoveries to the Library.
+- [x] Write retrieval tests for low AP, GP, coin, printer, AP-for-GP queries, and Library strategy lookup.
+- [x] Write prompt tests proving AP/GP rules and the goal hierarchy appear when resident has low AP, no GP, GP-related events, or a broad Soul goal.
+- [>] Add behavior tests for resident-with-GP, resident-without-GP, low-AP exchange opportunity, and "aspirational goal with no resources chooses a practical GP/AP step first." S8c now proves urgent AP/GP Library behavior; exchange-specific variants remain in S3/S10 follow-up work.
+- [x] Add or run a benchmark where a resident with a Soul goal like "find a way to make 100 GP/hour and write the strategy into the Library" plans a concrete GP route and records a Library strategy finding.
 
 Acceptance:
 

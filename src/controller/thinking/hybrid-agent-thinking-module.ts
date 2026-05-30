@@ -66,6 +66,7 @@ const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const WORLD_TICK_RESET_DRIFT = 60;
+const CRITICAL_ATTENTION_BODY_THRESHOLD = 10;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     private nextThinkId = 0;
@@ -427,6 +428,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private shouldRunBody(): boolean {
+        if (this.activeGoal() && this.options.state.attention <= CRITICAL_ATTENTION_BODY_THRESHOLD) {
+            return true;
+        }
         return (
             this.options.state.tick - (this.cognition().lastBodyTick || 0) >= (this.behavior().bodyEveryTicks ?? DEFAULT_BODY_EVERY_TICKS)
         );
