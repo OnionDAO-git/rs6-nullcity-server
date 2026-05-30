@@ -4617,6 +4617,61 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('refuses AP-for-GP exchange commands when no RuneScape GP coins are carried', async () => {
+        const codex = player('codex', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    inventory: [{ itemId: 1511, key: 'rs:logs', amount: 3 }],
+                },
+                players: [codex],
+                events: [chatFromCodex('agent trade AP for GP', 3219, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I cannot promise GP right now because I do not carry RuneScape coins. I can gather coins first or ask for AP support.',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_trade_exchange_no_gp');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('proposes a safe AP-for-GP exchange command when RuneScape GP coins are carried', async () => {
+        const codex = player('codex', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    attention: 8,
+                    inventory: [{ itemId: 995, key: 'rs:coins', amount: 120 }],
+                },
+                players: [codex],
+                events: [chatFromCodex('agent trade AP for GP', 3219, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'AP is low. I can safely trade up to 120 GP coins for AP through a trusted exchange.',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_trade_exchange_proposal');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('approaches the speaking player before sending a direct trade request when too far away', async () => {
         const codex = player('codex', 3225, 3201);
         const llm = scriptedLlm([]);

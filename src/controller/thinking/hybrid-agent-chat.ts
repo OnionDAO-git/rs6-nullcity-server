@@ -71,6 +71,7 @@ export const CHAT_REPLIES_PER_WINDOW = 3;
 export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
 export const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 export const FOOD_KEY_PATTERN = /(shrimp|bread|fish|meat)/i;
+export const LOW_AP_EXCHANGE_THRESHOLD = 10;
 
 export type ChatContext = HelperContext;
 
@@ -899,6 +900,33 @@ export async function directChatAction(
 
     if (isTradeIntent(command, chat.normalizedText)) {
         resumeManualPause(ctx);
+        if (isApGpExchangeIntent(command, chat.normalizedText)) {
+            const coinAmount = carriedGpCoinAmount(perception);
+            if (coinAmount <= 0) {
+                return {
+                    action: {
+                        kind: 'say',
+                        text: 'I cannot promise GP right now because I do not carry RuneScape coins. I can gather coins first or ask for AP support.',
+                    },
+                    cause: 'direct_chat_trade_exchange_no_gp',
+                };
+            }
+
+            const residentRecord = isRecord(perception.resident) ? (perception.resident as Record<string, unknown>) : undefined;
+            const residentAttention =
+                typeof residentRecord?.attention === 'number' ? residentRecord.attention : ctx.options.state.attention;
+            const lowAp = residentAttention <= LOW_AP_EXCHANGE_THRESHOLD;
+            return {
+                action: {
+                    kind: 'say',
+                    text: lowAp
+                        ? `AP is low. I can safely trade up to ${coinAmount} GP coins for AP through a trusted exchange.`
+                        : `I carry ${coinAmount} GP coins and can trade some for AP through a trusted exchange.`,
+                },
+                cause: 'direct_chat_trade_exchange_proposal',
+            };
+        }
+
         const action = tradeRequestOrApproach(perception, chat.from, 'direct_chat_trade');
         if (action?.kind === 'move_to') {
             rememberPendingDirectTrade(ctx, chat.from);
@@ -1191,6 +1219,15 @@ export function isTradeIntent(command: string, fullText: string): boolean {
     return /^(trade|trade me|start trade|request trade)\b/.test(command) || /\b(trade me|start trade|request trade)\b/.test(fullText);
 }
 
+export function isApGpExchangeIntent(command: string, fullText: string): boolean {
+    const combined = `${command} ${fullText}`;
+    return (
+        /\b(ap|attention)\b/.test(combined) &&
+        /\b(gp|coin|coins|gold)\b/.test(combined) &&
+        /\b(trade|exchange|swap|buy|sell)\b/.test(combined)
+    );
+}
+
 export function tradeOfferIntent(command: string): string | undefined {
     const match = command.match(/^offer(?:\s+(.+))?/);
     if (!match) {
@@ -1301,6 +1338,18 @@ export function safeTradeOfferSlot(inventory: Array<Item | null>, query?: string
         findSlot(inventory, item => !isEssentialTool(item) && FOOD_KEY_PATTERN.test(item.key || '')) ??
         findSlot(inventory, item => !isEssentialTool(item))
     );
+}
+
+export function carriedGpCoinAmount(perception: HybridPerception): number {
+    return (perception.resident?.inventory || []).reduce((total, item) => {
+        if (!item) {
+            return total;
+        }
+        if (item.itemId === 995 || /coins?/i.test(item.key || '')) {
+            return total + item.amount;
+        }
+        return total;
+    }, 0);
 }
 
 export function isEssentialTool(item: Item): boolean {
