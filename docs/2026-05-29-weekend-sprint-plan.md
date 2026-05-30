@@ -490,6 +490,17 @@ These were listed in the sprint plan as "Meeting Decisions Needed" and have not 
 | S10b/S10c | Model twins for GP and goal-planning tasks | Needs live RuneScape stack and paid model profile; run after June 1 event |
 | S12b | Human model/capability summary write-up | Can follow from this closeout; best done after S10b/S10c results |
 | CQA1 | Cook's Assistant from empty inventory (natural sourcing) | Deferred; needs natural ingredient route (bank/shop/spawn) beyond AP/GP loop priority |
+| S-AUDIT-FIX-1 | P0 — NCRI sale heuristic mislabels admin gifts as sales (audit F1, QA-20260530-004) | Add transferReason discriminator to NcriRegistry.transfer and emit ncri_sale only for true sales |
+| S-AUDIT-FIX-2 | P0 — deriveExchangeStatus mis-classifies non-GP failures as failed_gp (audit F2, QA-20260530-005) | Tighten ap-gp-exchange.ts:112; introduce failed_setup status for non-GP failure reasons |
+| S-AUDIT-FIX-3 | P1 — selectCandidateGoals is dead code; needs-hierarchy capability claim overstated (audit F3, QA-20260530-006) | Wire seam into hybrid-agent-helpers goal selection + add live low-AP reorder benchmark, or downgrade claim |
+| S-AUDIT-FIX-4 | P1 — ApLedger refId collides across residents and across restarts (audit F4, QA-20260530-007) | Suffix refId with residentName+ts or switch to crypto.randomUUID; assert distinct refIds in test |
+| S-AUDIT-FIX-5 | P1 — city:digest CLI accepts any path with no sanitization (audit F5, QA-20260530-008) | Add memory-root existence + city-integration subdir check in runCityDigest; optional --strict |
+| S-AUDIT-FIX-6 | P1 — EconomyEventLog has no concurrent-writer protection (audit F6, QA-20260530-009) | Document PIPE_BUF assumption + add concurrent-appender test; lockfile if multi-controller lands |
+| S-AUDIT-FIX-7 | P1 — economy-events.jsonl re-read in full on every dashboard poll (audit F7, QA-20260530-010) | Add EconomyEventLog.tail(n) helper; switch dashboard readRecentEconomyEvents to use it |
+| S-AUDIT-FIX-8 | P2 — digest window bounds inclusive-inclusive; EconomyEventLog.filter only has sinceTs (audit F8/F12) | Pick half-open convention; add untilTs to filter; boundary tests both ends |
+| S-AUDIT-FIX-9 | P2 — GoalContractStore.list re-reads every JSON; dashboard recentEventLimit cap not documented (audit F9/F13) | mtime-aware cache; docstring on recentEventLimit |
+| S-AUDIT-FIX-10 | P2 — attachEconomyEventLog silently replaces with no guard (audit F10) | Add `replace: boolean = false`; warn or throw on re-attach unless allowed |
+| S-AUDIT-FIX-11 | P2 — ap_fade event carries apDelta:0, hides last AP burn in totals (audit F11) | Drop apDelta from ap_fade or set to balance-before-fade; document on event-kind reference |
 
 ### Demo Script (Simple Loop)
 
