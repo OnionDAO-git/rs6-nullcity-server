@@ -26,6 +26,12 @@ class FakeRuntime implements CityRuntime {
         this.state.attention += amount;
     }
 
+    decrementAttention(amount: number): number {
+        const before = this.state.attention;
+        this.state.attention = Math.max(0, this.state.attention - amount);
+        return before - this.state.attention;
+    }
+
     getState(): RuntimeState {
         return this.state;
     }
@@ -119,6 +125,98 @@ describe('CityIntegrationService', () => {
             tick: 7,
             lifeIndex: 1,
             significanceReasons: ['city:attention_credit'],
+        });
+    });
+
+    describe('adminDrainAttention (S-OBS-DRAIN-1)', () => {
+        it('drains AP via runtime.decrementAttention and reports before/after + actualDrain', async () => {
+            runtime.state.attention = 22000;
+            const result = await service.adminDrainAttention('res:test', {
+                amount: 21995,
+                reason: 'live-verify F3 needs-hierarchy',
+            });
+            expect(result).toMatchObject({
+                ok: true,
+                resident: 'res:test',
+                attentionBefore: 22000,
+                attentionAfter: 5,
+                requestedDrain: 21995,
+                actualDrain: 21995,
+                reason: 'live-verify F3 needs-hierarchy',
+            });
+            expect(runtime.state.attention).toBe(5);
+        });
+
+        it('clamps the drain at 0 and reports actualDrain accordingly', async () => {
+            runtime.state.attention = 100;
+            const result = await service.adminDrainAttention('res:test', {
+                amount: 500,
+                reason: 'over-drain',
+            });
+            expect(result).toMatchObject({
+                attentionBefore: 100,
+                attentionAfter: 0,
+                requestedDrain: 500,
+                actualDrain: 100,
+            });
+            expect(runtime.state.attention).toBe(0);
+        });
+
+        it('emits an ap_decay economy event with the reason as note and negative apDelta', async () => {
+            runtime.state.attention = 200;
+            await service.adminDrainAttention('res:test', { amount: 150, reason: 'qa drain' });
+            const log = new EconomyEventLog(root);
+            const events = log.readAll();
+            const drainEvent = events.find(e => e.kind === 'ap_decay');
+            expect(drainEvent).toBeDefined();
+            expect(drainEvent).toMatchObject({
+                kind: 'ap_decay',
+                residentName: 'res:test',
+                apDelta: -150,
+                note: 'qa drain',
+            });
+        });
+
+        it('emits a city_attention_drain library timeline event with admin metadata', async () => {
+            runtime.state.attention = 80;
+            await service.adminDrainAttention('res:test', { amount: 30, reason: 'docs example' });
+            const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+            const event = JSON.parse(fs.readFileSync(timelinePath, 'utf8').trim());
+            expect(event).toMatchObject({
+                kind: 'city_attention_drain',
+                requestedDrain: 30,
+                actualDrain: 30,
+                attentionBefore: 80,
+                attentionAfter: 50,
+                tick: 7,
+                reason: 'docs example',
+                lifeIndex: 1,
+                significanceReasons: ['city:admin_attention_drain'],
+            });
+        });
+
+        it('rejects non-positive drain amounts', async () => {
+            await expect(service.adminDrainAttention('res:test', { amount: 0, reason: 'zero' })).rejects.toBeInstanceOf(
+                CityIntegrationError,
+            );
+            await expect(service.adminDrainAttention('res:test', { amount: -5, reason: 'neg' })).rejects.toBeInstanceOf(
+                CityIntegrationError,
+            );
+            await expect(service.adminDrainAttention('res:test', { amount: 1.5, reason: 'frac' })).rejects.toBeInstanceOf(
+                CityIntegrationError,
+            );
+        });
+
+        it('requires a non-empty reason string', async () => {
+            await expect(service.adminDrainAttention('res:test', { amount: 5, reason: '' })).rejects.toBeInstanceOf(CityIntegrationError);
+            await expect(service.adminDrainAttention('res:test', { amount: 5 })).rejects.toBeInstanceOf(CityIntegrationError);
+        });
+
+        it('returns 404-shaped error when resident has no live runtime', async () => {
+            await expect(service.adminDrainAttention('res:not-found', { amount: 5, reason: 'missing' })).rejects.toMatchObject({
+                status: 404,
+                code: 'resident_not_found',
+            });
         });
     });
 

@@ -260,6 +260,22 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         return this.evidence;
     }
 
+    /**
+     * Admin-only on-demand AP drain (S-OBS-DRAIN-1). Drops AP by `amount`
+     * (clamped at 0) so an operator can push a resident into the SURVIVE band
+     * of the needs-hierarchy ranker to live-verify F3 behavior on-demand. Does
+     * NOT mark the resident deceased — that path is reserved for the per-tick
+     * `attention_exhausted` flow inside `handlePerception`. Returns the actual
+     * amount drained (so the caller can distinguish a 22000 → 0 over-drain
+     * from a 22000 → 5 precise drain).
+     */
+    decrementAttention(amount: number): number {
+        const before = this.state.attention;
+        this.state.attention = Math.max(0, this.state.attention - amount);
+        this.options.stateStore.save(this.state);
+        return before - this.state.attention;
+    }
+
     incrementAttention(amount: number): void {
         const attentionBefore = this.state.attention;
         const wasAttentionExhausted = this.state.deceased?.cause === 'attention_exhausted';

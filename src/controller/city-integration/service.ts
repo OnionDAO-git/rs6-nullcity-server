@@ -75,6 +75,16 @@ export class CityIntegrationError extends Error {
 
 export interface CityRuntime {
     incrementAttention(amount: number): void;
+    /**
+     * Admin-only counterpart to {@link incrementAttention} — drops AP without
+     * going through tick-decay or patron-spend paths. Returns the actual
+     * amount drained (clamped at 0 so a request larger than the current
+     * balance reports `actualDrain = balanceBeforeDrain`). Used by
+     * {@link CityIntegrationService.adminDrainAttention} so an operator can
+     * push a resident into the SURVIVE band on-demand to live-verify the
+     * needs-hierarchy ranker (S-OBS-DRAIN-1 / F3).
+     */
+    decrementAttention?(amount: number): number;
     getState(): RuntimeState;
     getPosition?(): { x: number; y: number; level: number } | undefined;
     onEvent(event: PerceptionEvent): void;
@@ -156,6 +166,24 @@ const attentionGrantRequestSchema = z
         sourceType: z.string().min(1).optional(),
         sourceId: z.string().min(1).optional(),
         note: z.string().max(500).optional(),
+    })
+    .strict();
+
+// S-OBS-DRAIN-1: admin-only on-demand AP drain. Kept separate from
+// `attentionGrantRequestSchema` (which is intentionally positive-only for
+// normal user/patron grants) so the normal grant surface stays simple and
+// the drain path is always explicit. A `reason` is required so every
+// admin drain leaves a self-documenting trail in the economy JSONL.
+// `note: ap_decay` is reused as the EconomyEvent kind — the runtime per-tick
+// decay already uses that kind, so digests/dashboards do not need a new
+// taxonomy. The drain is NOT idempotency-keyed: an operator may want to drain
+// AP repeatedly with the same payload to push a resident further down the
+// needs-hierarchy on-demand, and admin-only access keeps the blast radius
+// scoped to the operator stack.
+const adminDrainAttentionRequestSchema = z
+    .object({
+        amount: z.number().int().positive(),
+        reason: z.string().min(1).max(500),
     })
     .strict();
 
@@ -640,6 +668,78 @@ export class CityIntegrationService {
             });
             return result;
         });
+    }
+
+    /**
+     * Admin-only on-demand AP drain (S-OBS-DRAIN-1). Drops a resident's AP by
+     * `amount` (clamped at 0) so the operator can live-verify behaviors that
+     * only trigger in the SURVIVE band of the needs-hierarchy ranker (F3,
+     * S-AUDIT-FIX-3, QA-LIVE-1 V1). Distinct from {@link creditAttention} —
+     * the user/patron grant schema stays positive-only and this admin path is
+     * the only HTTP route that can decrease AP. The route should be gated to
+     * local-only operator access (no public exposure).
+     *
+     * Emits:
+     *   - a `city_attention_drain` library timeline event (auditable per-resident)
+     *   - an `ap_decay` economy event with `apDelta = -actualDrain` and
+     *     `note: reason` (so digests/dashboards surface it in the same
+     *     channel as the per-tick decay).
+     */
+    async adminDrainAttention(resident: string, input: unknown): Promise<unknown> {
+        const residentName = parseResident(resident);
+        const request = parseOrThrow(adminDrainAttentionRequestSchema, input);
+        const runtime = this.requireRuntime(residentName);
+        const ts = this.now().toISOString();
+        const before = runtime.getState().attention;
+        let actualDrain: number;
+        if (typeof runtime.decrementAttention === 'function') {
+            actualDrain = runtime.decrementAttention(request.amount);
+        } else {
+            // Fallback for hosts whose CityRuntime does not implement the
+            // optional decrementAttention. Negative incrementAttention is
+            // tolerated by ResidentRuntime via addAttention's max(0, ...)
+            // clamp, but reaching this branch in production indicates a
+            // missing wire-up — log it via audit so it does not silently
+            // diverge from the expected drain path.
+            runtime.incrementAttention(-request.amount);
+            actualDrain = Math.min(request.amount, before);
+        }
+        const after = runtime.getState().attention;
+        const result = {
+            ok: true,
+            resident: residentName,
+            attentionBefore: before,
+            attentionAfter: after,
+            requestedDrain: request.amount,
+            actualDrain,
+            reason: request.reason,
+        };
+        this.appendLibraryEvent(residentName, {
+            schemaVersion: 1,
+            ts,
+            tick: runtime.getState().tick,
+            sessionId: 'external',
+            kind: 'city_attention_drain',
+            requestedDrain: request.amount,
+            actualDrain,
+            attentionBefore: before,
+            attentionAfter: after,
+            reason: request.reason,
+            lifeIndex: this.readLifeIndex(residentName),
+            significanceReasons: ['city:admin_attention_drain'],
+        });
+        if (actualDrain > 0) {
+            this.economyEventLog.append({
+                ts,
+                kind: 'ap_decay',
+                residentName,
+                apDelta: -actualDrain,
+                refId: `admin_drain:${residentName}:${ts}`,
+                note: request.reason,
+            });
+        }
+        this.audit('admin_drain_attention', undefined, residentName, 'completed', undefined, result);
+        return result;
     }
 
     async inspectGold(resident: string): Promise<unknown> {

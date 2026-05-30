@@ -210,6 +210,24 @@ async function handle(
         return;
     }
 
+    // S-OBS-DRAIN-1: admin-only AP drain route. Kept on a separate
+    // `/admin/residents/:id/ap-drain` path so the normal user-facing
+    // `/residents/:id/attention-grants` surface stays positive-only.
+    // Auth is the same operator bearer token already enforced at the top of
+    // the handler (controller is local-only by config), but the explicit
+    // `admin/` path segment + dedicated service method + `ap_decay` economy
+    // event make it trivially auditable in the JSONL stream and the audit log.
+    const adminDrainMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/admin/residents/([^/]+)/ap-drain$`));
+    if (adminDrainMatch) {
+        if (request.method !== 'POST') {
+            writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+            return;
+        }
+        const resident = decodeURIComponent(adminDrainMatch[1]);
+        writeJson(response, 200, await options.service.adminDrainAttention(resident, await readJson(request)));
+        return;
+    }
+
     const match = path.match(
         new RegExp(
             `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|ap-gp-exchanges|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,

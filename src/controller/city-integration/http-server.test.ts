@@ -24,6 +24,12 @@ class FakeRuntime implements CityRuntime {
         this.state.attention += amount;
     }
 
+    decrementAttention(amount: number): number {
+        const before = this.state.attention;
+        this.state.attention = Math.max(0, this.state.attention - amount);
+        return before - this.state.attention;
+    }
+
     getState(): RuntimeState {
         return this.state;
     }
@@ -138,6 +144,58 @@ describe('CityIntegration HTTP server', () => {
             attentionAfter: 35,
             creditedAmount: 25,
         });
+    });
+
+    it('POST /admin/residents/:id/ap-drain drains AP and returns before/after (S-OBS-DRAIN-1)', async () => {
+        runtime.state.attention = 22000;
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/admin/residents/res%3Atest/ap-drain`, token, {
+            amount: 21995,
+            reason: 'live-verify F3',
+        });
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/application\/json/);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            resident: 'res:test',
+            attentionBefore: 22000,
+            attentionAfter: 5,
+            requestedDrain: 21995,
+            actualDrain: 21995,
+            reason: 'live-verify F3',
+        });
+        expect(runtime.state.attention).toBe(5);
+    });
+
+    it('POST /admin/residents/:id/ap-drain rejects GET method with 405', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/admin/residents/res%3Atest/ap-drain`, token);
+        expect(response.status).toBe(405);
+    });
+
+    it('POST /admin/residents/:id/ap-drain returns 401 without operator bearer token', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/admin/residents/res%3Atest/ap-drain`, 'wrong-token', {
+            amount: 5,
+            reason: 'no auth',
+        });
+        expect(response.status).toBe(401);
+        expect(runtime.state.attention).toBe(10);
     });
 
     it('GET /wealth returns real RuneScape coin item 995 state', async () => {
