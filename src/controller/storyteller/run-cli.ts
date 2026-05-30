@@ -8,6 +8,8 @@
  *
  * Usage:
  *   npm run storyteller:run -- --fixture
+ *   npm run storyteller:run -- --latest
+ *   npm run storyteller:run -- --digest-id live-20260530060000
  *   npm run storyteller:run -- --fixture --model-profile storyteller-v1
  *   npm run storyteller:run -- --fixture --output-dir data/controller/storyteller
  *
@@ -18,6 +20,8 @@
  *
  * Flags:
  *   --fixture                  Use the canonical fixture digest
+ *   --latest                   Use latest digest.json from --output-dir
+ *   --digest-id <id>           Use a specific persisted digest id from --output-dir
  *   --model-profile <name>     Endpoint/profile key (default: "default")
  *   --output-dir <path>        Where to write artifacts (default: data/controller/storyteller)
  */
@@ -26,30 +30,94 @@ import type { LlmEndpointConfig } from '../config';
 import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
 import { StorytellerModelClient } from './model-client';
+import type { CityEventDigest, StorytellerDispatch } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
 
-function parseArgs(argv: string[]): { fixture: boolean; modelProfile: string; outputDir: string } {
-    let fixture = false;
-    let modelProfile = process.env.STORYTELLER_MODEL_PROFILE ?? 'default';
+export type StorytellerRunSource = 'none' | 'fixture' | 'latest' | 'digest-id';
+
+export interface StorytellerRunArgs {
+    source: StorytellerRunSource;
+    modelProfile: string;
+    outputDir: string;
+    digestId?: string;
+}
+
+export interface StorytellerRunOptions {
+    env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+    now?: () => Date;
+}
+
+export interface StorytellerRunResult {
+    digest: CityEventDigest;
+    dispatch: StorytellerDispatch;
+    artifactDir: string;
+}
+
+export class StorytellerRunCliError extends Error {
+    constructor(
+        public readonly code: string,
+        message = code,
+    ) {
+        super(message);
+        this.name = 'StorytellerRunCliError';
+    }
+}
+
+export function parseStorytellerRunArgs(
+    argv: string[],
+    env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): StorytellerRunArgs {
+    let source: StorytellerRunSource = 'none';
+    let digestId: string | undefined;
+    let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'default';
     let outputDir = path.join('data', 'controller', 'storyteller');
 
+    const claimSource = (nextSource: StorytellerRunSource): void => {
+        if (source !== 'none') {
+            throw new StorytellerRunCliError('conflicting_sources', 'use exactly one of --fixture, --latest, or --digest-id');
+        }
+        source = nextSource;
+    };
+
     for (let i = 0; i < argv.length; i++) {
-        if (argv[i] === '--fixture') {
-            fixture = true;
-        } else if (argv[i] === '--model-profile' && argv[i + 1]) {
-            modelProfile = argv[++i];
-        } else if (argv[i] === '--output-dir' && argv[i + 1]) {
-            outputDir = argv[++i];
+        const flag = argv[i];
+        const next = argv[i + 1];
+        if (flag === '--fixture') {
+            claimSource('fixture');
+        } else if (flag === '--latest') {
+            claimSource('latest');
+        } else if (flag === '--digest-id') {
+            if (!next) throw new StorytellerRunCliError('missing_value', '--digest-id requires a value');
+            claimSource('digest-id');
+            digestId = next;
+            i++;
+        } else if (flag === '--model-profile') {
+            if (!next) throw new StorytellerRunCliError('missing_value', '--model-profile requires a value');
+            modelProfile = next;
+            i++;
+        } else if (flag === '--output-dir') {
+            if (!next) throw new StorytellerRunCliError('missing_value', '--output-dir requires a path');
+            outputDir = next;
+            i++;
+        } else if (flag === '--help' || flag === '-h') {
+            throw new StorytellerRunCliError('help', usage());
+        } else {
+            throw new StorytellerRunCliError('unknown_flag', `unknown flag: ${flag}`);
         }
     }
 
-    return { fixture, modelProfile, outputDir };
+    const parsed: StorytellerRunArgs = { source, modelProfile, outputDir };
+    if (digestId !== undefined) parsed.digestId = digestId;
+    return parsed;
 }
 
-function buildEndpoints(modelProfile: string): Record<string, LlmEndpointConfig> {
-    const baseUrl = process.env.STORYTELLER_LLM_BASE_URL;
-    const apiKey = process.env.STORYTELLER_LLM_API_KEY ?? undefined;
-    const model = process.env.STORYTELLER_LLM_MODEL ?? 'llama3';
+function buildEndpoints(
+    modelProfile: string,
+    env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): Record<string, LlmEndpointConfig> {
+    const baseUrl = env.STORYTELLER_LLM_BASE_URL;
+    const apiKey = env.STORYTELLER_LLM_API_KEY ?? undefined;
+    const model = env.STORYTELLER_LLM_MODEL ?? 'llama3';
 
     const endpoints: Record<string, LlmEndpointConfig> = {};
 
@@ -71,34 +139,96 @@ function buildEndpoints(modelProfile: string): Record<string, LlmEndpointConfig>
     return endpoints;
 }
 
-async function main(): Promise<void> {
-    const { fixture, modelProfile, outputDir } = parseArgs(process.argv.slice(2));
-
-    if (!fixture) {
-        console.error('Error: --fixture is required. Live digest reading is not implemented yet.');
-        console.error('Usage: npm run storyteller:run -- --fixture [--model-profile <name>]');
-        process.exit(1);
+function readDigestForRun(args: StorytellerRunArgs, store: StorytellerStore): CityEventDigest {
+    if (args.source === 'fixture') {
+        return buildFixtureDigest().digest;
     }
+    if (args.source === 'latest') {
+        const digest = store.readLatestDigest();
+        if (!digest) {
+            throw new StorytellerRunCliError('digest_not_found', `no digest.json files found in ${args.outputDir}`);
+        }
+        return digest;
+    }
+    if (args.source === 'digest-id') {
+        if (!args.digestId) {
+            throw new StorytellerRunCliError('missing_value', '--digest-id requires a value');
+        }
+        const digest = store.readDigest(args.digestId);
+        if (!digest) {
+            throw new StorytellerRunCliError('digest_not_found', `digest '${args.digestId}' not found in ${args.outputDir}`);
+        }
+        return digest;
+    }
+    throw new StorytellerRunCliError('missing_source', 'use exactly one of --fixture, --latest, or --digest-id');
+}
 
-    console.log(`[storyteller:run] Building fixture digest...`);
-    const { digest } = buildFixtureDigest();
-
-    const store = new StorytellerStore(outputDir);
-    const endpoints = buildEndpoints(modelProfile);
-    const config = { ...DEFAULT_STORYTELLER_CONFIG, modelProfile };
+export async function runStoryteller(args: StorytellerRunArgs, options: StorytellerRunOptions = {}): Promise<StorytellerRunResult> {
+    const env = options.env ?? process.env;
+    const store = new StorytellerStore(args.outputDir);
+    const digest = readDigestForRun(args, store);
+    const endpoints = buildEndpoints(args.modelProfile, env);
+    const config = { ...DEFAULT_STORYTELLER_CONFIG, modelProfile: args.modelProfile };
     const client = new StorytellerModelClient(endpoints);
-
-    const hasEndpoint = !!process.env.STORYTELLER_LLM_BASE_URL;
-    console.log(`[storyteller:run] Model profile: "${modelProfile}"${hasEndpoint ? '' : ' (no STORYTELLER_LLM_BASE_URL set — will noop)'}`);
-    console.log(`[storyteller:run] Digest: ${digest.digestId}`);
-    console.log(`[storyteller:run] Calling model...`);
-
-    const dispatch = await client.run(digest, config, { modelProfile });
-
+    const dispatch = await client.run(digest, config, { modelProfile: args.modelProfile });
     store.writeDigest(digest);
     store.writeDispatch(dispatch);
 
-    console.log(`[storyteller:run] Artifacts written to: ${path.join(outputDir, digest.digestId, '')}`);
+    return {
+        digest,
+        dispatch,
+        artifactDir: path.join(args.outputDir, digest.digestId, ''),
+    };
+}
+
+function usage(): string {
+    return [
+        'Usage:',
+        '  npm run storyteller:run -- --fixture [--model-profile <name>] [--output-dir <path>]',
+        '  npm run storyteller:run -- --latest [--model-profile <name>] [--output-dir <path>]',
+        '  npm run storyteller:run -- --digest-id <id> [--model-profile <name>] [--output-dir <path>]',
+        '',
+        'Runs the Storyteller model over one digest. Without STORYTELLER_LLM_BASE_URL it writes a nooped dispatch for review.',
+    ].join('\n');
+}
+
+async function main(): Promise<void> {
+    let args: StorytellerRunArgs;
+    try {
+        args = parseStorytellerRunArgs(process.argv.slice(2));
+    } catch (err) {
+        if (err instanceof StorytellerRunCliError) {
+            if (err.code === 'help') {
+                process.stdout.write(`${err.message}\n`);
+                process.exit(0);
+            }
+            process.stderr.write(`Error: ${err.message}\n\n${usage()}\n`);
+            process.exit(1);
+        }
+        throw err;
+    }
+
+    const hasEndpoint = !!process.env.STORYTELLER_LLM_BASE_URL;
+    console.log(`[storyteller:run] Digest source: ${args.source}${args.digestId ? ` (${args.digestId})` : ''}`);
+    console.log(
+        `[storyteller:run] Model profile: "${args.modelProfile}"${hasEndpoint ? '' : ' (no STORYTELLER_LLM_BASE_URL set — will noop)'}`,
+    );
+    console.log(`[storyteller:run] Calling model...`);
+
+    let result: StorytellerRunResult;
+    try {
+        result = await runStoryteller(args);
+    } catch (err) {
+        if (err instanceof StorytellerRunCliError) {
+            process.stderr.write(`Error: ${err.message}\n\n${usage()}\n`);
+            process.exit(1);
+        }
+        throw err;
+    }
+
+    const { dispatch } = result;
+    console.log(`[storyteller:run] Digest: ${result.digest.digestId}`);
+    console.log(`[storyteller:run] Artifacts written to: ${result.artifactDir}`);
     console.log('');
     console.log(`Title:   ${dispatch.publicTitle}`);
     console.log(`Body:    ${dispatch.publicBody}`);
@@ -114,11 +244,13 @@ async function main(): Promise<void> {
         for (const r of dispatch.reviewReasons) console.log(`  - ${r}`);
     }
     console.log(
-        `Model: ${modelProfile} | Latency: ${dispatch.latencyMs}ms | Tokens in/out: ${dispatch.inputTokens ?? '?'}/${dispatch.outputTokens ?? '?'} | Cost: ${dispatch.estimatedCostUsd !== null ? `$${dispatch.estimatedCostUsd.toFixed(6)}` : 'unknown'} USD`,
+        `Model: ${args.modelProfile} | Latency: ${dispatch.latencyMs}ms | Tokens in/out: ${dispatch.inputTokens ?? '?'}/${dispatch.outputTokens ?? '?'} | Cost: ${dispatch.estimatedCostUsd !== null ? `$${dispatch.estimatedCostUsd.toFixed(6)}` : 'unknown'} USD`,
     );
 }
 
-main().catch(err => {
-    console.error('[storyteller:run] Fatal error:', err);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch(err => {
+        console.error('[storyteller:run] Fatal error:', err);
+        process.exit(1);
+    });
+}
