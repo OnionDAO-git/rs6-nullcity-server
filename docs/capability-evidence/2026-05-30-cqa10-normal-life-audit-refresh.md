@@ -8,63 +8,70 @@ Date: 2026-05-30
 ## Scope
 
 Repeat the one-hour ordinary controller-life audit after CQA3/CQA4/CQA5 follow-up work and compare whether higher-order behaviors are now visible outside benchmark harnesses.
+Also replace the prior ad-hoc process with a reproducible CLI artifact generator.
 
 Window audited:
 
-- UTC: `2026-05-30T11:09:16.234Z` -> `2026-05-30T12:09:16.234Z`
-- America/Chicago (CDT): `2026-05-30 06:09:16` -> `2026-05-30 07:09:16`
+- UTC: `2026-05-30T11:59:25.832Z` -> `2026-05-30T12:59:25.832Z`
+- America/Chicago (CDT): `2026-05-30 06:59:25` -> `2026-05-30 07:59:25`
 
 Source files:
 
 - `data/controller/logs/res:*/actions/*.jsonl` (excluding `res:bmk_*`)
 - `data/controller/memory/library/res-*/timeline.jsonl`
 
+Generated artifact:
+
+- `data/benchmarks/capability-qa-2026-05-30/normal_life_audit_20260530T143812Z.json`
+
 ## Coverage summary
 
 - Active ordinary residents in window: `23`
-- Total action attempts: `2457`
-- Successful action submissions (`result.ok=true`): `2434`
-- Failed submissions: `23`
-- Action success rate: `99.06%`
+- Total action attempts: `2356`
+- Successful action submissions (`result.ok=true`): `2336`
+- Failed submissions: `20`
+- Action success rate: `99.151%`
 
 ## Top action kinds (one-hour window)
 
 | Kind | Count |
 |---|---:|
-| `move_to` | 1388 |
-| `say` | 817 |
-| `interact` | 150 |
+| `move_to` | 1318 |
+| `say` | 786 |
+| `interact` | 135 |
 | `use_item_on_item` | 71 |
-| `use_item_on` | 11 |
-| `eat` | 11 |
-| `equip` | 8 |
+| `use_item_on` | 15 |
+| `eat` | 14 |
+| `equip` | 6 |
+| `trade_request` | 4 |
+| `trade_decline` | 3 |
 | `attack` | 1 |
 
 ## Top causes (one-hour window)
 
 | Cause | Count |
 |---|---:|
-| `idle_initiative` | 1145 |
-| `stuck_pre_inference_explore` | 239 |
-| `explore_patrol` | 224 |
-| `woodcutting_level1_routine` | 118 |
-| `none` | 102 |
-| `faction_landmark_return` | 94 |
+| `idle_initiative` | 1040 |
+| `stuck_pre_inference_explore` | 253 |
+| `explore_patrol` | 220 |
+| `none` | 112 |
+| `woodcutting_level1_routine` | 109 |
+| `faction_landmark_return` | 88 |
 | `firemaking_fallback` | 71 |
-| `faction_ledger_audit_work` | 51 |
-| `starter_fishing_seek_spot` | 49 |
-| `faction_bureau_witness_work` | 47 |
-| `faction_foundry_fuel_work` | 45 |
-| `stuck_move_recovery` | 41 |
+| `faction_ledger_audit_work` | 47 |
+| `starter_fishing_seek_spot` | 44 |
+| `faction_bureau_witness_work` | 41 |
+| `faction_foundry_fuel_work` | 41 |
+| `stuck_move_recovery` | 39 |
 
 ## Timeline histogram (one-hour window)
 
 | Timeline kind | Count |
 |---|---:|
-| `say` | 816 |
-| `stuck_detected` | 734 |
-| `stuck_recovered` | 557 |
-| `first_xp` | 47 |
+| `say` | 786 |
+| `stuck_detected` | 660 |
+| `stuck_recovered` | 570 |
+| `first_xp` | 28 |
 
 Not observed in this window: `logout`, `death`, `city_attention_credit`, `city_gold_observed`, `city_gold_burn`, `city_ap_gp_exchange`, `trade_completed`, `trade_cancelled`, `level_up`, `quest_complete`.
 
@@ -72,27 +79,28 @@ Not observed in this window: `logout`, `death`, `city_attention_credit`, `city_g
 
 - Residents with measurable `attention_after`: `23`
 - Residents with net AP drop in window: `13`
-- Aggregate drop across dropping residents: `12427`
+- Aggregate drop across dropping residents: `11527`
 
 Top AP drops:
 
-- `res:qa-woodcutter`: `30638.5 -> 29665` (`-973.5`)
-- `res:qa-forager`: `32468 -> 31501` (`-967`)
-- `res:qa-scout`: `31049 -> 30086.5` (`-962.5`)
-- `res:qa-banker`: `32458.5 -> 31497` (`-961.5`)
-- `res:qa-survivor`: `31043 -> 30083` (`-960`)
+- `res:agent`: `60089.5 -> 59186` (`-903.5`)
+- `res:qa-woodcutter`: `30057.5 -> 29156.5` (`-901`)
+- `res:qa-social`: `30099.5 -> 29199.5` (`-900`)
+- `res:qa-banker`: `31877.5 -> 30984` (`-893.5`)
+- `res:qa-scout`: `30470.5 -> 29578.5` (`-892`)
 
 ## Delta vs prior CQA10 audit (2026-05-29)
 
-1. Ordinary one-hour liveness remains strong (`99.06%` submit success with all 23 residents active).
-2. Equip behavior now appears in ordinary life (`equip=8`) instead of `0`, matching CQA3-live evidence that named residents can equip useful gear outside benchmark harnesses.
-3. Trade and combat remain sparse in this sampled hour (`trade_completed=0`, `trade_cancelled=0`, `attack=1`), so ordinary-loop depth is still below the CQA4/CQA5 target confidence.
-4. Stuck churn remains high and still dominates non-idle moments.
+1. Ordinary one-hour liveness remains strong (`99.151%` submit success with all 23 residents active).
+2. Ordinary trade intent now appears without soak harness control (`trade_request=4`, `trade_decline=3` in action logs), but completion/cancel timeline events are still absent in this hour (`trade_completed=0`, `trade_cancelled=0`).
+3. Combat remains sparse in ordinary life (`attack=1`) and still needs named long-run recurrence alongside CQA5 bounded proof.
+4. Stuck churn remains high (`stuck_detected=660`, `stuck_recovered=570`) and still dominates non-idle moments.
+5. CQA10 is now reproducible by CLI artifact rather than ad-hoc scripts.
 
 ## Repro commands
 
 ```bash
-node <ad-hoc JSONL audit script over data/controller/logs and data/controller/memory/library>
+npm run controller:normal-life-audit -- --end 2026-05-30T12:59:25.832Z
 ```
 
-The ad-hoc script output for this run is captured in the CQA10 working notes and summarized above.
+This writes a timestamped JSON artifact under `data/benchmarks/capability-qa-YYYY-MM-DD/`.

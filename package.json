@@ -25,6 +25,7 @@
         "controller:revive": "ts-node -r tsconfig-paths/register src/controller/admin/revive-cli.ts",
         "controller:trade-soak": "ts-node -r tsconfig-paths/register src/controller/admin/named-trade-soak.ts",
         "controller:equip-soak": "ts-node -r tsconfig-paths/register src/controller/admin/named-equip-soak.ts",
+        "controller:normal-life-audit": "ts-node -r tsconfig-paths/register src/controller/admin/normal-life-audit.ts",
         "controller:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/live-smoke.ts",
         "inference:canary": "ts-node -r tsconfig-paths/register src/controller/admin/inference-canary-smoke.ts",
         "patron:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/patron-loop-smoke.ts",
