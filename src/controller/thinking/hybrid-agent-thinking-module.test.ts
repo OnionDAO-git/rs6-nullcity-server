@@ -7352,7 +7352,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('deduplicates low_health_stranded speech across beacon intervals', async () => {
+    it('emits a heal-wait action when low_health_stranded speech is deduped', async () => {
         // Beacon fires (lastPresenceBeaconTick gap >= interval) but lastLowHealthSpeechTick is recent.
         // Same custom anchor as the "speaks once" test to ensure anchorLooksLikeCombatArea is true.
         const llm = scriptedLlm([]);
@@ -7389,10 +7389,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        // Beacon consumed but no speech (dedup window = interval * 10 = 200 ticks, gap = 11 < 200).
-        expect(result.cause).toBe('low_health_stranded');
-        expect(result.actions).toEqual([]);
-        expect(result.nooped).toBe(true);
+        // Beacon consumed but speech is deduped (dedup window = interval * 10 = 200 ticks, gap = 11 < 200).
+        expect(result.cause).toBe('low_health_heal_wait');
+        expect(result.actions).toEqual([{ kind: 'noop', cause: 'low_health_heal_wait' }]);
+        expect(result.nooped).toBe(false);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

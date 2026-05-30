@@ -516,7 +516,11 @@ export function lowHealthHoldPositionAction(
     const speechDedup = interval * 10;
     const lastSpeech = cognition.lastLowHealthSpeechTick;
     if (lastSpeech !== undefined && tick - lastSpeech < speechDedup) {
-        return { actions: [], cause, nooped: true };
+        return {
+            actions: [{ kind: 'noop', cause: 'low_health_heal_wait' }],
+            cause: 'low_health_heal_wait',
+            nooped: false,
+        };
     }
 
     cognition.lastLowHealthSpeechTick = tick;
