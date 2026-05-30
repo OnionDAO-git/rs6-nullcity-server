@@ -80,6 +80,36 @@ export interface CityIntegrationOptions {
     economyEventLog?: EconomyEventLog;
 }
 
+export interface CityStorytellerDispatchSummary {
+    dispatchId: string;
+    generatedAt?: string;
+    modelProfile?: string;
+    needsReview: boolean;
+    warningCount: number;
+    publicTitle?: string;
+    publicBody?: string;
+    publicBullets: string[];
+    operatorSummary?: string;
+    operatorWarnings: string[];
+    reviewReasons: string[];
+    eventRefCount: number;
+    eventRefsUsed: string[];
+    estimatedCostUsd?: number | null;
+}
+
+export interface CityStorytellerLatestSummary {
+    ok: true;
+    runId: string;
+    digestId: string;
+    builtAt?: string;
+    windowStart?: string;
+    windowEnd?: string;
+    topEventCount: number;
+    residentCount: number;
+    summary?: string;
+    dispatch?: CityStorytellerDispatchSummary;
+}
+
 export const birthResidentRequestSchema = z
     .object({
         proposalId: z.string().min(1),
@@ -702,6 +732,49 @@ export class CityIntegrationService {
         });
     }
 
+    storytellerLatest(): CityStorytellerLatestSummary {
+        const storytellerRoot = path.join(path.dirname(this.options.memoryRoot), 'storyteller');
+        if (!fs.existsSync(storytellerRoot)) {
+            throw new CityIntegrationError(404, 'storyteller_not_found');
+        }
+
+        const runs = fs
+            .readdirSync(storytellerRoot, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .map(entry => this.readStorytellerRun(path.join(storytellerRoot, entry.name), entry.name))
+            .filter((run): run is CityStorytellerLatestSummary => Boolean(run));
+
+        if (!runs.length) {
+            throw new CityIntegrationError(404, 'storyteller_not_found');
+        }
+
+        runs.sort((left, right) => storytellerLatestStampMs(right) - storytellerLatestStampMs(left));
+        return runs[0];
+    }
+
+    private readStorytellerRun(runRoot: string, runId: string): CityStorytellerLatestSummary | undefined {
+        const digest = asObject(readJson(path.join(runRoot, 'digest.json')));
+        if (!digest) return undefined;
+
+        const digestId = asNonEmptyString(digest['digestId']) || runId;
+        const topEvents = asArray(digest['topEvents']);
+        const residents = asArray(digest['residents']);
+        const dispatch = asObject(readJson(path.join(runRoot, 'dispatch.json')));
+
+        return {
+            ok: true,
+            runId,
+            digestId,
+            builtAt: asOptionalString(digest['builtAt']),
+            windowStart: asOptionalString(digest['windowStart']),
+            windowEnd: asOptionalString(digest['windowEnd']),
+            topEventCount: topEvents.length,
+            residentCount: residents.length,
+            summary: asOptionalString(digest['summary']),
+            ...(dispatch ? { dispatch: storytellerDispatchSummary(dispatch, runId) } : {}),
+        };
+    }
+
     private async idempotent<TResult extends Record<string, unknown>>(
         command: string,
         idempotencyKey: string,
@@ -903,6 +976,68 @@ function readJson(filePath: string): unknown | undefined {
     } catch {
         return undefined;
     }
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+    return Array.isArray(value) ? value : [];
+}
+
+function asNonEmptyString(value: unknown): string | undefined {
+    return typeof value === 'string' && value ? value : undefined;
+}
+
+function asOptionalString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+}
+
+function asStringArray(value: unknown): string[] {
+    return asArray(value).flatMap(item => (typeof item === 'string' ? [item] : []));
+}
+
+function asOptionalNumber(value: unknown): number | null | undefined {
+    if (value === null) return null;
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function storytellerDispatchSummary(digest: Record<string, unknown>, runId: string): CityStorytellerDispatchSummary {
+    const operatorWarnings = asStringArray(digest['operatorWarnings']);
+    const reviewReasons = asStringArray(digest['reviewReasons']);
+    const eventRefsUsed = asStringArray(digest['eventRefsUsed']);
+    return {
+        dispatchId: asNonEmptyString(digest['dispatchId']) || `${runId}:dispatch`,
+        generatedAt: asOptionalString(digest['generatedAt']),
+        modelProfile: asOptionalString(digest['modelProfile']),
+        needsReview: Boolean(digest['needsReview']),
+        warningCount: operatorWarnings.length + reviewReasons.length,
+        publicTitle: asOptionalString(digest['publicTitle']),
+        publicBody: asOptionalString(digest['publicBody']),
+        publicBullets: asStringArray(digest['publicBullets']),
+        operatorSummary: asOptionalString(digest['operatorSummary']),
+        operatorWarnings,
+        reviewReasons,
+        eventRefCount: eventRefsUsed.length,
+        eventRefsUsed,
+        estimatedCostUsd: asOptionalNumber(digest['estimatedCostUsd']),
+    };
+}
+
+function storytellerLatestStampMs(run: Pick<CityStorytellerLatestSummary, 'dispatch' | 'builtAt' | 'windowEnd' | 'windowStart'>): number {
+    const candidates = [
+        run.dispatch?.generatedAt,
+        run.builtAt,
+        run.windowEnd,
+        run.windowStart,
+    ];
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        const parsed = Date.parse(candidate);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return Number.NEGATIVE_INFINITY;
 }
 
 function readJsonLines(filePath: string): Array<Record<string, unknown>> {

@@ -35,6 +35,7 @@ Routes:
 - `POST /api/nullcity/ncri/:id/transfer`: transfer NCRI ownership (requires approved + available).
 - `POST /api/nullcity/ncri/:id/redeem`: mark NCRI as redeemed (idempotent).
 - `GET /api/nullcity/economy/digest`: current AP/GP/NCRI/exchange economy digest for dashboard/Storyteller.
+- `GET /api/nullcity/storyteller/latest`: latest grounded digest+dispatch artifact summary for dashboard read models.
 
 Idempotency and audit records are persisted under `memory.dir/city-integration/`.
 
@@ -488,13 +489,51 @@ Deliver an attendee inbox message to a live resident. The resident receives it a
 
 **Error 404** — resident not online. The dashboard should poll `/public-snapshot` to confirm online status before delivering a message.
 
-## Storyteller Dispatch (S11a — CLI only, no HTTP endpoint)
+## Storyteller Dispatch (S11b — latest endpoint + CLI runs)
 
-The Storyteller does not expose an HTTP endpoint in this repo. All dispatch is CLI-driven to avoid unattended paid-model calls:
+Storyteller generation remains CLI-driven to avoid unattended paid-model calls:
 
 - `npm run storyteller:dry-run -- --memory-root <path>` — deterministic digest from live AP/GP/NCRI/goal evidence; no model call.
 - `npm run storyteller:dry-run -- --fixture` — deterministic digest from test fixtures; no model call.
 - `npm run storyteller:run -- --latest` — model-backed narration from the most recent dry-run digest.
 - `npm run storyteller:run -- --digest-id <id>` — model-backed narration from a specific digest artifact.
 
-Artifacts are written to `data/controller/storyteller/<run-id>/digest.json` and `dispatch.json`. The dashboard D5 panel should poll the server file path or a static JSON mount — no live endpoint exists yet. Post-event, S11b may add a `GET /api/nullcity/storyteller/latest` route if the dashboard requires it.
+Artifacts are written to `data/controller/storyteller/<run-id>/digest.json` and `dispatch.json`.
+
+For dashboard bridges, the controller HTTP API now exposes:
+
+- `GET /api/nullcity/storyteller/latest`
+
+Returns the newest run by `dispatch.generatedAt` fallback `digest.builtAt/windowEnd/windowStart`:
+
+```json
+{
+  "ok": true,
+  "runId": "run-2026-05-30T120500Z",
+  "digestId": "digest-2026-05-30T120000Z",
+  "builtAt": "2026-05-30T12:00:00.000Z",
+  "windowStart": "2026-05-30T11:45:00.000Z",
+  "windowEnd": "2026-05-30T12:00:00.000Z",
+  "topEventCount": 9,
+  "residentCount": 5,
+  "summary": "Residents traded GP and requested AP support.",
+  "dispatch": {
+    "dispatchId": "dispatch-2026-05-30T120500Z",
+    "generatedAt": "2026-05-30T12:05:00.000Z",
+    "modelProfile": "haiku",
+    "needsReview": false,
+    "warningCount": 0,
+    "publicTitle": "City pulse",
+    "publicBody": "Residents sustained AP and traded GP with grounded evidence.",
+    "publicBullets": ["..."],
+    "operatorSummary": "No unsupported claims detected.",
+    "operatorWarnings": [],
+    "reviewReasons": [],
+    "eventRefCount": 6,
+    "eventRefsUsed": ["event:..."],
+    "estimatedCostUsd": null
+  }
+}
+```
+
+If no storyteller artifacts exist yet, the route returns `404 { "error": "storyteller_not_found" }`.

@@ -209,7 +209,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S10b | Open | - | - | - | - | - | - |
 | S10c | Open | - | - | - | - | - | - |
 | S11a | Open | - | - | - | - | - | - |
-| S11b | Open | - | - | - | - | - | - |
+| S11b | In Review | codex | 2026-05-30 | src/controller/city-integration/{service.ts,service.test.ts,http-server.ts,http-server.test.ts}; docs/city-dashboard-integration.md | pending | test:src/controller/city-integration/service.test.ts; cmd:check:no-ui; cmd:typecheck; cmd:build | adds `GET /api/nullcity/storyteller/latest` digest+dispatch bridge; http-server suite blocked by sandbox listen EPERM |
 | S12a | Open | - | - | - | - | - | - |
 | S12b | Open | - | - | - | - | - | - |
 | CQA0 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa0-triage.md; docs/issue-register.md | - | doc:docs/capability-evidence/2026-05-29-cqa0-triage.md; issue:QA-20260529-009 | - |

@@ -216,6 +216,71 @@ describe('CityIntegration HTTP server', () => {
         });
     });
 
+    it('GET /storyteller/latest returns the newest digest/dispatch payload for dashboard bridges', async () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        const firstRunRoot = path.join(storytellerRoot, 'run-older');
+        const secondRunRoot = path.join(storytellerRoot, 'run-latest');
+        fs.mkdirSync(firstRunRoot, { recursive: true });
+        fs.mkdirSync(secondRunRoot, { recursive: true });
+        fs.writeFileSync(
+            path.join(firstRunRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-older',
+                builtAt: '2026-05-27T11:00:00.000Z',
+                topEvents: [{ ref: 'old-1' }],
+                residents: [{ residentName: 'res:test' }],
+                summary: 'older digest',
+            }),
+        );
+        fs.writeFileSync(
+            path.join(secondRunRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-latest',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                topEvents: [{ ref: 'new-1' }, { ref: 'new-2' }],
+                residents: [{ residentName: 'res:test' }, { residentName: 'res:peer' }],
+                summary: 'latest digest',
+            }),
+        );
+        fs.writeFileSync(
+            path.join(secondRunRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-latest',
+                generatedAt: '2026-05-27T12:05:00.000Z',
+                modelProfile: 'haiku',
+                needsReview: true,
+                operatorWarnings: ['unsupported claim'],
+                reviewReasons: ['missing event ref'],
+                eventRefsUsed: ['event:1'],
+                publicBullets: ['bullet 1'],
+            }),
+        );
+
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/storyteller/latest`, token);
+        expect(response.status).toBe(200);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            runId: 'run-latest',
+            digestId: 'digest-latest',
+            topEventCount: 2,
+            residentCount: 2,
+            summary: 'latest digest',
+            dispatch: {
+                dispatchId: 'dispatch-latest',
+                modelProfile: 'haiku',
+                needsReview: true,
+                warningCount: 2,
+                eventRefCount: 1,
+            },
+        });
+    });
+
     it('exposes Soul proposal create/list/get/fund/approve/reject/birth routes for dashboard funding flows', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),

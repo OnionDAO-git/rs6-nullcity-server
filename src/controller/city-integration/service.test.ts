@@ -338,6 +338,91 @@ describe('CityIntegrationService', () => {
         });
     });
 
+    it('storytellerLatest returns newest digest/dispatch payload for dashboard bridge readers', () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        const olderRoot = path.join(storytellerRoot, 'run-older');
+        const latestRoot = path.join(storytellerRoot, 'run-latest');
+        fs.mkdirSync(olderRoot, { recursive: true });
+        fs.mkdirSync(latestRoot, { recursive: true });
+        fs.writeFileSync(
+            path.join(olderRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-older',
+                builtAt: '2026-05-27T11:00:00.000Z',
+                topEvents: [{ ref: 'old-1' }],
+                residents: [{ residentName: 'res:test' }],
+                summary: 'older',
+            }),
+        );
+        fs.writeFileSync(
+            path.join(latestRoot, 'digest.json'),
+            JSON.stringify({
+                digestId: 'digest-latest',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                topEvents: [{ ref: 'new-1' }, { ref: 'new-2' }],
+                residents: [{ residentName: 'res:test' }, { residentName: 'res:peer' }],
+                summary: 'latest',
+            }),
+        );
+        fs.writeFileSync(
+            path.join(latestRoot, 'dispatch.json'),
+            JSON.stringify({
+                dispatchId: 'dispatch-latest',
+                generatedAt: '2026-05-27T12:05:00.000Z',
+                modelProfile: 'haiku',
+                needsReview: true,
+                operatorWarnings: ['unsupported claim'],
+                reviewReasons: ['missing event ref'],
+                eventRefsUsed: ['event:1'],
+                publicBullets: ['bullet 1'],
+            }),
+        );
+
+        const latest = service.storytellerLatest();
+        expect(latest).toMatchObject({
+            ok: true,
+            runId: 'run-latest',
+            digestId: 'digest-latest',
+            topEventCount: 2,
+            residentCount: 2,
+            summary: 'latest',
+            dispatch: {
+                dispatchId: 'dispatch-latest',
+                modelProfile: 'haiku',
+                needsReview: true,
+                warningCount: 2,
+                eventRefCount: 1,
+            },
+        });
+    });
+
+    it('storytellerLatest throws storyteller_not_found when no storyteller artifacts are present', () => {
+        const isolatedMemoryRoot = fs.mkdtempSync(path.join(root, 'isolated-memory-'));
+        const isolatedService = new CityIntegrationService({
+            memoryRoot: isolatedMemoryRoot,
+            now: () => new Date('2026-05-27T12:00:00.000Z'),
+            getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+            inventory: {
+                inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                burnResidentGold: async (resident, amount) => {
+                    if (gold < amount) throw new Error('EINSUFFICIENT_GOLD');
+                    gold -= amount;
+                    return { resident, itemId: 995, burnedAmount: amount, remainingAmount: gold };
+                },
+            },
+            birth: {
+                birthResident: async input => ({ resident: input.residentName, created: true, connected: true }),
+            },
+        });
+
+        expect(() => isolatedService.storytellerLatest()).toThrow(
+            expect.objectContaining({
+                status: 404,
+                code: 'storyteller_not_found',
+            }),
+        );
+    });
+
     it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {
         gold = 200;
         const serviceWithoutRuntime = new CityIntegrationService({

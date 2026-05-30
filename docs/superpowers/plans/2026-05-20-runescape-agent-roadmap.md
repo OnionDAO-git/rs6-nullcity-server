@@ -794,10 +794,11 @@ Safe public module facade building blocks are implemented, but the public member
   - Verification: benchmark artifacts include resident id, model profile, endpoint, task id, success/failure, duration, and failure cause.
   - 2026-05-29 (`agents/wip`, codex): packet `S10a` report-row shape landed in `src/controller/benchmarks/report.ts` with resident+endpoint+model grouping and failure-cause markdown column; verified by focused `report.test.ts`, `check:no-ui`, `fin`, and `build`. `S10b/S10c` still open.
 
-- `[ ]` **S11: Dashboard contract handoff, server JSON only.**
+- `[>]` **S11: Dashboard contract handoff, server JSON only.**
   - Files: `docs/city-dashboard-integration.md`, `src/controller/city-integration/http-server.ts`, `src/controller/city-integration/*.test.ts`.
   - Deliverable: document JSON contracts the dashboard needs for AP, GP, Soul proposals, NCRIs, Storyteller dispatches, and saved state. Do not add HTML/CSS/UI to this repo.
   - Verification: contract examples validate in tests; `npm run check:no-ui` passes.
+  - 2026-05-30 (`agents/wip`, codex, packet `S11b`): added `GET /api/nullcity/storyteller/latest` in city-integration HTTP service so dashboard bridges can fetch the newest grounded digest/dispatch summary (including review/warning counts and event-ref counts) without direct filesystem coupling. `service.test.ts`, `check:no-ui`, `typecheck`, and `build` passed; `http-server.test.ts` remains sandbox-blocked by loopback `listen EPERM`.
 
 - `[ ]` **S12: Weekend closeout and human-readable state.**
   - Files: `HUMANS.md`, `docs/resident-capabilities.md`, `docs/model-benchmarking.md`, `docs/2026-05-29-weekend-sprint-plan.md`, `docs/agent-status.md`.

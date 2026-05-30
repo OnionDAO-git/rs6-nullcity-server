@@ -69,6 +69,11 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/latest`) {
+        writeJson(response, 200, options.service.storytellerLatest());
+        return;
+    }
+
     if (request.method === 'POST' && path === `${pathPrefix}/proposals`) {
         writeJson(response, 200, await options.service.createSoulProposal(await readJson(request)));
         return;
