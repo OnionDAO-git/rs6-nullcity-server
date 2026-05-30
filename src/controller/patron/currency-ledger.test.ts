@@ -132,4 +132,79 @@ describe('CurrencyLedger', () => {
             expect(ledger.snapshot()).toEqual(snapshot);
         });
     });
+
+    // S0b: prove patron-currency.json files written before the AP rename (when the
+    // currency was called "Shards") still load without a migration step.
+    // The persistence schema uses generic keys (schemaVersion/balances/history) so
+    // "Shards" only ever appeared in human-facing display strings and reason texts,
+    // not in field names — making the format forward-compatible with zero migration.
+    describe('S0b legacy Shards snapshot backward compatibility', () => {
+        it('loads a legacy patron-currency.json with Shards in reason strings without error', () => {
+            const legacySnapshot: CurrencyLedgerSnapshot = {
+                schemaVersion: 1,
+                balances: { james: 15, alice: 7 },
+                history: {
+                    james: [
+                        { kind: 'credit', amount: 10, reason: 'Shards workshop-attendance', ts: '2026-05-20T12:00:00.000Z' },
+                        { kind: 'credit', amount: 5, reason: '5 Shards for referral (legacy)', ts: '2026-05-21T09:00:00.000Z' },
+                    ],
+                    alice: [{ kind: 'credit', amount: 7, reason: 'Shard check-in reward', ts: '2026-05-22T08:00:00.000Z' }],
+                },
+            };
+
+            const ledger = CurrencyLedger.fromSnapshot(legacySnapshot);
+
+            expect(ledger.balance('james')).toBe(15);
+            expect(ledger.balance('alice')).toBe(7);
+            // History is preserved verbatim — old reason strings are not rewritten
+            expect(ledger.history('james')).toHaveLength(2);
+            expect(ledger.history('james')[0].reason).toBe('Shards workshop-attendance');
+            expect(ledger.history('alice')[0].reason).toBe('Shard check-in reward');
+        });
+
+        it('Zod schema parses a legacy snapshot containing Shards reason text without error', () => {
+            const legacySnapshot = {
+                schemaVersion: 1 as const,
+                balances: { alice: 3 },
+                history: {
+                    alice: [{ kind: 'credit' as const, amount: 3, reason: 'Shards daily check-in', ts: '2026-05-22T08:00:00.000Z' }],
+                },
+            };
+
+            expect(() => currencyLedgerSnapshotSchema.parse(legacySnapshot)).not.toThrow();
+            const parsed = currencyLedgerSnapshotSchema.parse(legacySnapshot);
+            expect(parsed.balances.alice).toBe(3);
+            expect(parsed.history.alice[0].reason).toBe('Shards daily check-in');
+        });
+
+        it('new operations on a legacy ledger use AP terminology in error messages', () => {
+            const legacySnapshot: CurrencyLedgerSnapshot = {
+                schemaVersion: 1,
+                balances: { james: 5 },
+                history: {
+                    james: [{ kind: 'credit', amount: 5, reason: 'Shards workshop-attendance', ts: '2026-05-20T12:00:00.000Z' }],
+                },
+            };
+
+            const ledger = CurrencyLedger.fromSnapshot(legacySnapshot);
+
+            // InsufficientBalanceError message now references AP, not Shards
+            expect(() => ledger.debit('james', 100, { reason: 'too-much' })).toThrow(InsufficientBalanceError);
+            expect(() => ledger.debit('james', 100, { reason: 'too-much' })).toThrow(/AP/);
+        });
+
+        it('round-trips a legacy snapshot back to identical JSON — no silent migration', () => {
+            const legacySnapshot: CurrencyLedgerSnapshot = {
+                schemaVersion: 1,
+                balances: { bob: 12 },
+                history: {
+                    bob: [{ kind: 'credit', amount: 12, reason: 'Shard referral bonus', ts: '2026-05-19T10:00:00.000Z' }],
+                },
+            };
+
+            const ledger = CurrencyLedger.fromSnapshot(legacySnapshot);
+            // snapshot() must reproduce the exact same structure — Shards reason text preserved
+            expect(ledger.snapshot()).toEqual(legacySnapshot);
+        });
+    });
 });
