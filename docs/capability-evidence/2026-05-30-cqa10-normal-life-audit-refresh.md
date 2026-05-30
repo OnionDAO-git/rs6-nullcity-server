@@ -24,6 +24,10 @@ Generated artifact:
 
 - `data/benchmarks/capability-qa-2026-05-30/normal_life_audit_20260530T143812Z.json`
 
+Freshness rerun artifact:
+
+- `data/benchmarks/capability-qa-2026-05-30/normal_life_audit_20260530T163610Z.json`
+
 ## Coverage summary
 
 - Active ordinary residents in window: `23`
@@ -97,10 +101,31 @@ Top AP drops:
 4. Stuck churn remains high (`stuck_detected=660`, `stuck_recovered=570`) and still dominates non-idle moments.
 5. CQA10 is now reproducible by CLI artifact rather than ad-hoc scripts.
 
+## Freshness rerun (latest wall-clock hour)
+
+To keep CQA10 evidence current, a second audit was run without pinning `--end`, covering the most recent one-hour wall-clock window at run time:
+
+- UTC: `2026-05-30T15:36:10.259Z` -> `2026-05-30T16:36:10.259Z`
+- America/Chicago (CDT): `2026-05-30 10:36:10` -> `2026-05-30 11:36:10`
+- Artifact: `data/benchmarks/capability-qa-2026-05-30/normal_life_audit_20260530T163610Z.json`
+
+Observed result:
+
+- Active ordinary residents: `0`
+- Action attempts: `0`
+- Timeline moments: `0`
+- AP-drop coverage: `0` residents
+
+Interpretation:
+
+- This is a real readiness signal, not a pass. The latest one-hour window had no live controller traffic, so ordinary-life evidence is currently stale.
+- Capability confidence should continue to cite the earlier non-idle window (`normal_life_audit_20260530T143812Z.json`) until CQA10 is rerun against a hot stack with non-zero resident activity.
+
 ## Repro commands
 
 ```bash
 npm run controller:normal-life-audit -- --end 2026-05-30T12:59:25.832Z
+npm run controller:normal-life-audit
 ```
 
 This writes a timestamped JSON artifact under `data/benchmarks/capability-qa-YYYY-MM-DD/`.
