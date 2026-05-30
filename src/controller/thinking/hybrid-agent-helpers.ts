@@ -504,7 +504,11 @@ export function lowHealthHoldPositionAction(
             interval,
         })
     ) {
-        return { actions: [], cause, nooped: true };
+        return {
+            actions: [{ kind: 'noop', cause: 'low_health_heal_wait' }],
+            cause,
+            nooped: false,
+        };
     }
 
     // Consume the presence beacon slot to prevent unrelated goal-sharing while stranded.

@@ -4625,8 +4625,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([]);
+        expect(result.actions).toEqual([{ kind: 'noop', cause: 'low_health_heal_wait' }]);
         expect(result.cause).toBe('low_health_stranded');
+        expect(result.nooped).toBe(false);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -7269,9 +7270,9 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([]);
+        expect(result.actions).toEqual([{ kind: 'noop', cause: 'low_health_heal_wait' }]);
         expect(result.cause).toBe('low_health_hold_position');
-        expect(result.nooped).toBe(true);
+        expect(result.nooped).toBe(false);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -7391,6 +7392,47 @@ describe('HybridAgentThinkingModule', () => {
 
         // Beacon consumed but speech is deduped (dedup window = interval * 10 = 200 ticks, gap = 11 < 200).
         expect(result.cause).toBe('low_health_heal_wait');
+        expect(result.actions).toEqual([{ kind: 'noop', cause: 'low_health_heal_wait' }]);
+        expect(result.nooped).toBe(false);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('emits a heal-wait action when low_health_stranded beacon is not due', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 110,
+            lastGoalShareTick: 110,
+        };
+        const agentSoul = soul();
+        const behavior = agentSoul.frontmatter.behavior;
+        if (!behavior || behavior.kind !== 'hybrid-agent') {
+            throw new Error('Expected hybrid-agent test soul');
+        }
+        agentSoul.frontmatter.behavior = { ...behavior, visibilityAnchor: { x: 3254, y: 3230, level: 0 } };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3222, 3218),
+                    hp: { current: 1, max: 10 },
+                    inventory: [null],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.cause).toBe('low_health_stranded');
         expect(result.actions).toEqual([{ kind: 'noop', cause: 'low_health_heal_wait' }]);
         expect(result.nooped).toBe(false);
         expect(llm.complete).not.toHaveBeenCalled();
