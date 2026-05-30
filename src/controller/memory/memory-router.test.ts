@@ -77,4 +77,30 @@ describe('MemoryRouter durable facts', () => {
             }),
         ]);
     });
+
+    it('extracts cross-resident fire lore events into durable world-event facts', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'world_event',
+            loreKind: 'fire_lit',
+            source: 'res:duke',
+            sourcePosition: { x: 3243, y: 3209, level: 0 },
+            payload: { fireObjectId: 26185 },
+        });
+
+        expect(facts).toEqual([
+            expect.objectContaining({
+                path: 'facts/world-events.md',
+                content: expect.stringContaining('Observed res:duke lit a fire at 3243,3209,0.'),
+            }),
+        ]);
+    });
+
+    it('ignores malformed world events when lore kind or source is missing', () => {
+        expect(
+            router.routeDurableFacts('res:hans', {
+                kind: 'world_event',
+                payload: { text: 'something happened' },
+            }),
+        ).toEqual([]);
+    });
 });

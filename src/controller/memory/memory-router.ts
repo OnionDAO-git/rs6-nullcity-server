@@ -103,6 +103,16 @@ export class MemoryRouter {
             });
         }
 
+        if (kind === 'world_event') {
+            const fact = renderWorldEventFact(event);
+            if (fact) {
+                writes.push({
+                    path: 'facts/world-events.md',
+                    content: `- ${timestamp} ${fact}\n`,
+                });
+            }
+        }
+
         return writes;
     }
 }
@@ -173,6 +183,26 @@ function renderPatronFact(event: Record<string, unknown>): string {
         return `Patron ${handle} witnessed this resident${place}.`;
     }
     return `Patron ${handle} sponsored this resident.`;
+}
+
+function renderWorldEventFact(event: Record<string, unknown>): string | undefined {
+    const loreKind = typeof event.loreKind === 'string' ? cleanText(event.loreKind) : '';
+    const source = typeof event.source === 'string' ? cleanText(event.source) : '';
+    if (!loreKind || !source) {
+        return undefined;
+    }
+
+    const sourcePosition = firstRecord(event.sourcePosition);
+    const position = positionText(sourcePosition);
+    const payload = firstRecord(event.payload);
+    const payloadText = payload && typeof payload.text === 'string' ? cleanText(payload.text) : undefined;
+
+    if (loreKind === 'fire_lit') {
+        return `Observed ${source} lit a fire${position ? ` at ${position}` : ''}.`;
+    }
+
+    const detail = payloadText ? `: "${payloadText}"` : '';
+    return `Observed world event ${loreKind} from ${source}${position ? ` at ${position}` : ''}${detail}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
