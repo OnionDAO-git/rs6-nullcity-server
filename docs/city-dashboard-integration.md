@@ -13,6 +13,12 @@ Every request must send `Authorization: Bearer <token>`.
 
 Routes:
 
+- `POST /api/nullcity/proposals`: create a Soul proposal.
+- `GET /api/nullcity/proposals`: list Soul proposals.
+- `GET /api/nullcity/proposals/:id`: fetch one Soul proposal.
+- `POST /api/nullcity/proposals/:id/fund`: add AP funding to a proposal.
+- `POST /api/nullcity/proposals/:id/approve`: admin-approve a threshold-crossed proposal.
+- `POST /api/nullcity/proposals/:id/reject`: admin-reject a proposal.
 - `POST /api/nullcity/residents`: birth a resident from a funded proposal payload.
 - `POST /api/nullcity/residents/:id/attention-grants`: credit resident attention with `idempotencyKey`.
 - `GET /api/nullcity/residents/:id/wealth`: inspect resident RuneScape gold, item `995`.
@@ -24,11 +30,11 @@ Routes:
 
 Idempotency and audit records are persisted under `memory.dir/city-integration/`.
 
-## Soul Proposal Routes (S4a — substrate ready, HTTP wiring PENDING)
+## Soul Proposal Routes (S4a — JSON routes ready)
 
-Soul proposals live in `memory.dir/city-integration/proposals/<id>.json`. The `SoulProposalStore` class handles persistence and state transitions. HTTP routes exposing these are planned for S4b.
+Soul proposals live in `memory.dir/city-integration/proposals/<id>.json`. The `SoulProposalStore` class handles persistence and state transitions. The city integration service and HTTP server expose the dashboard JSON contract for proposal creation, AP funding, admin approval, rejection, listing, and lookup. Resident materialization from an approved proposal remains the S4b birth-integration step.
 
-**Planned routes (dashboard contract):**
+**Routes (dashboard contract):**
 
 - `POST /api/nullcity/proposals` — create a proposal
   - Body: `{ residentName, soulMarkdown, goalText, binaryCompletionCondition?, apThreshold, proposerCityUserId, proposerDisplayName? }`

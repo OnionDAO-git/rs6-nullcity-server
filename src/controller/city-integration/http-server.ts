@@ -69,6 +69,40 @@ async function handle(
         return;
     }
 
+    if (request.method === 'POST' && path === `${pathPrefix}/proposals`) {
+        writeJson(response, 200, await options.service.createSoulProposal(await readJson(request)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/proposals`) {
+        writeJson(response, 200, await options.service.listSoulProposals());
+        return;
+    }
+
+    const proposalMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/proposals/([^/]+)(?:/(fund|approve|reject))?$`));
+    if (proposalMatch) {
+        const proposalId = decodeURIComponent(proposalMatch[1]);
+        const action = proposalMatch[2];
+        if (request.method === 'GET' && action === undefined) {
+            writeJson(response, 200, await options.service.getSoulProposal(proposalId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'fund') {
+            writeJson(response, 200, await options.service.fundSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'approve') {
+            writeJson(response, 200, await options.service.approveSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'reject') {
+            writeJson(response, 200, await options.service.rejectSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
     const match = path.match(
         new RegExp(
             `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,

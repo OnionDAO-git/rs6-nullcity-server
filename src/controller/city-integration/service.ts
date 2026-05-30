@@ -16,7 +16,7 @@ import {
 import { buildCityEventDigest, type CityEventDigest } from './city-event-digest';
 import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
-import { SoulProposalStore } from './soul-proposals';
+import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
 const idempotencyKeySchema = z.string().min(1).max(200);
@@ -115,6 +115,19 @@ const messageDeliveryRequestSchema = z
     })
     .strict();
 
+const fundSoulProposalRequestSchema = z
+    .object({
+        amount: z.number().int().positive(),
+        cityUserId: z.string().min(1),
+    })
+    .strict();
+
+const reviewSoulProposalRequestSchema = z
+    .object({
+        adminNotes: z.string().max(1000).optional(),
+    })
+    .strict();
+
 export type AttentionGrantRequest = z.infer<typeof attentionGrantRequestSchema>;
 export type GoldBurnRequest = z.infer<typeof goldBurnRequestSchema>;
 export type MessageDeliveryRequest = z.infer<typeof messageDeliveryRequestSchema>;
@@ -131,7 +144,7 @@ export class CityIntegrationService {
         this.economyEventLog = options.economyEventLog ?? new EconomyEventLog(options.memoryRoot, this.now);
         this.store = new CityIntegrationStore(options.memoryRoot);
         this.exchangeStore = new ApGpExchangeStore(options.memoryRoot, this.economyEventLog);
-        this.proposalStore = new SoulProposalStore(options.memoryRoot);
+        this.proposalStore = new SoulProposalStore(options.memoryRoot, this.now);
     }
 
     /**
@@ -292,6 +305,41 @@ export class CityIntegrationService {
             });
             return result;
         });
+    }
+
+    async createSoulProposal(input: unknown): Promise<SoulProposal> {
+        const request = parseOrThrow(createSoulProposalSchema, input);
+        validateSoulMarkdown(request.residentName, request.soulMarkdown);
+        return this.withSoulProposalErrors(() => this.proposalStore.create(request));
+    }
+
+    async listSoulProposals(): Promise<SoulProposal[]> {
+        return this.withSoulProposalErrors(() => this.proposalStore.list());
+    }
+
+    async getSoulProposal(proposalId: string): Promise<SoulProposal> {
+        return this.withSoulProposalErrors(() => {
+            const proposal = this.proposalStore.get(proposalId);
+            if (!proposal) {
+                throw new SoulProposalError('not_found', `proposal '${proposalId}' not found`);
+            }
+            return proposal;
+        });
+    }
+
+    async fundSoulProposal(proposalId: string, input: unknown): Promise<SoulProposal> {
+        const request = parseOrThrow(fundSoulProposalRequestSchema, input);
+        return this.withSoulProposalErrors(() => this.proposalStore.fund(proposalId, request.amount, request.cityUserId));
+    }
+
+    async approveSoulProposal(proposalId: string, input: unknown): Promise<SoulProposal> {
+        const request = parseOrThrow(reviewSoulProposalRequestSchema, input);
+        return this.withSoulProposalErrors(() => this.proposalStore.approve(proposalId, request.adminNotes));
+    }
+
+    async rejectSoulProposal(proposalId: string, input: unknown): Promise<SoulProposal> {
+        const request = parseOrThrow(reviewSoulProposalRequestSchema, input);
+        return this.withSoulProposalErrors(() => this.proposalStore.reject(proposalId, request.adminNotes));
     }
 
     /**
@@ -629,10 +677,31 @@ export class CityIntegrationService {
             error,
         });
     }
+
+    private async withSoulProposalErrors<T>(fn: () => T): Promise<T> {
+        try {
+            return fn();
+        } catch (error) {
+            if (error instanceof SoulProposalError) {
+                throw mapSoulProposalError(error);
+            }
+            throw error;
+        }
+    }
 }
 
 function parseResident(value: string): string {
     return parseOrThrow(residentNameSchema, value);
+}
+
+function mapSoulProposalError(error: SoulProposalError): CityIntegrationError {
+    if (error.code === 'not_found') {
+        return new CityIntegrationError(404, 'proposal_not_found', error.message);
+    }
+    if (error.code === 'invalid_amount') {
+        return new CityIntegrationError(400, error.code, error.message);
+    }
+    return new CityIntegrationError(409, error.code, error.message);
 }
 
 function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown): T {

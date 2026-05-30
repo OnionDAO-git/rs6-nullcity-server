@@ -190,4 +190,95 @@ describe('CityIntegration HTTP server', () => {
             residents: [{ residentName: 'res:test', apGranted: 15, gpTraded: 20, eventCount: 3 }],
         });
     });
+
+    it('exposes Soul proposal create/list/get/fund/approve/reject routes for dashboard funding flows', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const created = await requestJson('POST', `${started.url}/proposals`, token, {
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Earn 100 GP and write the route into the Library',
+            binaryCompletionCondition: 'goal:gp-route-written',
+            apThreshold: 100,
+            proposerCityUserId: 'user:alice',
+            proposerDisplayName: 'Alice',
+        });
+        expect(created.status).toBe(200);
+        expect(created.payload).toMatchObject({
+            residentName: 'res:test',
+            status: 'proposed',
+            apFunded: 0,
+            apThreshold: 100,
+        });
+        const proposalId = (created.payload as { id: string }).id;
+
+        const listed = await requestJson('GET', `${started.url}/proposals`, token);
+        expect(listed.status).toBe(200);
+        expect(listed.payload).toMatchObject([{ id: proposalId, residentName: 'res:test' }]);
+
+        const funded = await requestJson('POST', `${started.url}/proposals/${proposalId}/fund`, token, {
+            amount: 100,
+            cityUserId: 'user:bob',
+        });
+        expect(funded.status).toBe(200);
+        expect(funded.payload).toMatchObject({ id: proposalId, status: 'threshold_crossed', apFunded: 100 });
+
+        const approved = await requestJson('POST', `${started.url}/proposals/${proposalId}/approve`, token, {
+            adminNotes: 'Approved for birth queue smoke',
+        });
+        expect(approved.status).toBe(200);
+        expect(approved.payload).toMatchObject({ id: proposalId, status: 'approved', adminNotes: 'Approved for birth queue smoke' });
+
+        const fetched = await requestJson('GET', `${started.url}/proposals/${proposalId}`, token);
+        expect(fetched.status).toBe(200);
+        expect(fetched.payload).toMatchObject({ id: proposalId, status: 'approved' });
+
+        const rejectedCreate = await requestJson('POST', `${started.url}/proposals`, token, {
+            residentName: 'res:spare',
+            soulMarkdown: soulMarkdown('res:spare'),
+            goalText: 'Find a quiet route',
+            apThreshold: 10,
+            proposerCityUserId: 'user:carol',
+        });
+        const rejectedId = (rejectedCreate.payload as { id: string }).id;
+        const rejected = await requestJson('POST', `${started.url}/proposals/${rejectedId}/reject`, token, {
+            adminNotes: 'duplicate',
+        });
+        expect(rejected.status).toBe(200);
+        expect(rejected.payload).toMatchObject({ id: rejectedId, status: 'rejected', adminNotes: 'duplicate' });
+    });
+
+    it('returns 404 for an unknown Soul proposal', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/proposals/no-such-id`, token);
+        expect(response.status).toBe(404);
+        expect(response.payload).toMatchObject({ error: 'proposal_not_found' });
+    });
 });
+
+function soulMarkdown(name: string): string {
+    return [
+        '---',
+        `name: ${name}`,
+        'archetype: endurer',
+        'goals:',
+        '  - learn the city',
+        'attentionProfile:',
+        '  startingAttention: 100',
+        '  decayCurve: standard',
+        '---',
+        '',
+        `# ${name}`,
+        '',
+        'Born from a Soul proposal.',
+    ].join('\n');
+}

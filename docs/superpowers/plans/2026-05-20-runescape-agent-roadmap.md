@@ -748,6 +748,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Files: `src/controller/city-integration/service.ts`, `src/controller/city-integration/store.ts`, `src/controller/soul/soul-schema.ts`, `src/controller/controller-host.ts`, new `src/controller/city-integration/soul-proposals.ts`, tests beside each file.
   - Deliverable: humans/admins can create a Soul proposal, fund it with AP, cross a threshold, and birth a resident from validated SOUL markdown.
   - Verification: file-backed proposal replay test; idempotent birth test; live smoke where born resident appears in controller state and Library timeline.
+  - 2026-05-30 (`agents/wip`, codex, packet `S4a`): exposed the existing file-backed SoulProposal queue through `CityIntegrationService` and internal JSON routes (`/api/nullcity/proposals`, `/:id`, `/:id/fund`, `/:id/approve`, `/:id/reject`) for dashboard D2. Focused service and HTTP tests cover proposal create/list/get/fund/threshold/approve/reject and safe 404 mapping. S4b still needs approved-proposal birth materialization and live controller smoke.
 
 - `[ ]` **S5: NCRI registry MVP.**
   - Files: new `src/controller/ncri/ncri-registry.ts`, `src/controller/ncri/ncri-registry.test.ts`, `src/controller/city-integration/service.ts`, `src/controller/evidence/library-updater.ts`.

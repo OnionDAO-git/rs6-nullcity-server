@@ -453,6 +453,82 @@ describe('CityIntegrationService', () => {
         });
     });
 
+    // ── soul proposal queue ──────────────────────────────────────────────────
+
+    it('soul proposals: create, list, fund, approve, reject, and get through the service facade', async () => {
+        const first = await service.createSoulProposal({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Earn 100 GP and write the route into the Library',
+            binaryCompletionCondition: 'goal:gp-route-written',
+            apThreshold: 100,
+            proposerCityUserId: 'user:alice',
+            proposerDisplayName: 'Alice',
+        });
+        const second = await service.createSoulProposal({
+            residentName: 'res:second',
+            soulMarkdown: soulMarkdown('res:second'),
+            goalText: 'Learn the Lumbridge paths',
+            apThreshold: 25,
+            proposerCityUserId: 'user:bob',
+        });
+
+        expect(first).toMatchObject({
+            residentName: 'res:test',
+            status: 'proposed',
+            apFunded: 0,
+            apThreshold: 100,
+            proposerCityUserId: 'user:alice',
+            createdAt: '2026-05-27T12:00:00.000Z',
+            updatedAt: '2026-05-27T12:00:00.000Z',
+        });
+        expect((await service.listSoulProposals()).map(proposal => proposal.id).sort()).toEqual([first.id, second.id].sort());
+
+        const funding = await service.fundSoulProposal(first.id, { amount: 40, cityUserId: 'user:bob' });
+        expect(funding).toMatchObject({ id: first.id, status: 'funding', apFunded: 40 });
+
+        const threshold = await service.fundSoulProposal(first.id, { amount: 60, cityUserId: 'user:carol' });
+        expect(threshold).toMatchObject({ id: first.id, status: 'threshold_crossed', apFunded: 100 });
+
+        const approved = await service.approveSoulProposal(first.id, { adminNotes: 'Born for weekend testing' });
+        expect(approved).toMatchObject({ id: first.id, status: 'approved', adminNotes: 'Born for weekend testing' });
+        expect(await service.getSoulProposal(first.id)).toMatchObject({ id: first.id, status: 'approved' });
+
+        const rejected = await service.rejectSoulProposal(second.id, { adminNotes: 'Duplicate idea' });
+        expect(rejected).toMatchObject({ id: second.id, status: 'rejected', adminNotes: 'Duplicate idea' });
+    });
+
+    it('soul proposals: maps store errors to dashboard-safe HTTP-style errors', async () => {
+        await expect(service.getSoulProposal('missing')).rejects.toMatchObject({ status: 404, code: 'proposal_not_found' });
+
+        const proposal = await service.createSoulProposal({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Earn 100 GP',
+            apThreshold: 100,
+            proposerCityUserId: 'user:alice',
+        });
+
+        await expect(service.approveSoulProposal(proposal.id, {})).rejects.toMatchObject({
+            status: 409,
+            code: 'invalid_status_for_approve',
+        });
+    });
+
+    it('soul proposals: rejects mismatched SOUL markdown before persisting', async () => {
+        await expect(
+            service.createSoulProposal({
+                residentName: 'res:test',
+                soulMarkdown: soulMarkdown('res:other'),
+                goalText: 'Earn 100 GP',
+                apThreshold: 100,
+                proposerCityUserId: 'user:alice',
+            }),
+        ).rejects.toMatchObject({ status: 400, code: 'resident_name_mismatch' });
+
+        expect(await service.listSoulProposals()).toEqual([]);
+    });
+
     // ── birthFromProposal ─────────────────────────────────────────────────────
 
     it('birthFromProposal: rejects if proposal not found', async () => {
