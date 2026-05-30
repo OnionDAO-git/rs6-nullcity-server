@@ -64,6 +64,34 @@ export function dominantFaction(affinity: FactionAffinity | undefined): FactionN
     return best;
 }
 
+/**
+ * Soul-level "north star" goal that biases the needs-hierarchy ranker
+ * beyond just survive-tier (S-GOAL-1; see
+ * `docs/superpowers/specs/2026-05-30-goal-as-orientation-design.md`).
+ *
+ * The orientation goal never overrides survival — when the resident's AP
+ * is in the SURVIVE band the ranker still picks survive-aligned candidates.
+ * At higher tiers, candidates whose tag set matches `tier` (or whose `id`
+ * matches the orientation `id`) receive a small ORIENTATION-aligned bonus
+ * that lets the soul's long-term direction win otherwise-flat ties.
+ *
+ * The bonus is intentionally smaller than the tier-alignment bonus so a
+ * misaligned-but-survive-tagged goal still beats an orientation-tagged one
+ * during a survive band. See `ORIENTATION_ALIGNED_SCORE` in
+ * `src/controller/spark/needs-hierarchy.ts`.
+ *
+ * Tier may be omitted; when present it must be one of the non-survive
+ * tiers — orientation is not a survive override.
+ */
+export interface SoulOrientationGoal {
+    /** Stable identifier matched against candidate goal ids. */
+    id: string;
+    /** Free-text description; surfaced to prompts + dashboards. */
+    description: string;
+    /** Optional tier hint to bias same-tier candidates beyond survive. */
+    tier?: 'earn' | 'pursue' | 'reflect';
+}
+
 export interface HeroProfile {
     tier: HeroTier;
     /** Human-recognisable name shown in dashboard + portrait + letters. */
@@ -156,6 +184,11 @@ export interface SoulFrontmatter {
      * deceased. Falls back to the deceased themselves when none are alive.
      */
     siblings?: string[];
+    /**
+     * Optional "north star" orientation that biases candidate ranking
+     * (S-GOAL-1). See `SoulOrientationGoal` for semantics.
+     */
+    orientationGoal?: SoulOrientationGoal;
 }
 
 export interface Soul {
@@ -386,6 +419,18 @@ export const soulFrontmatterSchema = z
             .optional(),
         factionId: z.string().min(1).optional(),
         siblings: z.array(z.string().min(1)).optional(),
+        // S-GOAL-1: optional soul-level "north star" orientation goal.
+        orientationGoal: z
+            .object({
+                id: z.string().min(1),
+                description: z.string().min(1),
+                // Survive is deliberately rejected: orientation never
+                // overrides survival. The needs-hierarchy ranker handles
+                // survive separately via currentTier(needsContext).
+                tier: z.enum(['earn', 'pursue', 'reflect']).optional(),
+            })
+            .strict()
+            .optional(),
     })
     .strict();
 

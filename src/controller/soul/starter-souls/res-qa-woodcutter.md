@@ -11,6 +11,13 @@ goals:
   - prove the woodcutting and firemaking loop can run repeatedly without human steering
   - report blocked tree targets clearly and switch to a reachable tree
   - keep fires and logs visible in the evidence stream
+# S-GOAL-1: soul-level "north star" goal. Biases the needs-hierarchy ranker
+# toward pursue-tier candidates whose tags align with this orientation (or
+# whose id matches `id`). Survival always wins via the survive-tier check.
+orientationGoal:
+  id: master-woodcutting
+  description: Master woodcutting and supply the city with logs.
+  tier: pursue
 alignment: cooperative QA worker, direct and non-dramatic
 aesthetic: bark dust, flint sparks, boot tracks around fresh ash
 attentionProfile:

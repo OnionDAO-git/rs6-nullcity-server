@@ -265,3 +265,108 @@ describe('rankCandidateGoals', () => {
         expect(ranked[0]?.id).toBe('beg-attention');
     });
 });
+
+// ---- orientation bias (S-GOAL-1) ---------------------------------------
+
+describe('rankCandidateGoals — orientation bias (S-GOAL-1)', () => {
+    // The orientation bias is the soul-level "north star" lever. When a
+    // candidate either (a) matches the orientation's `id` or (b) shares its
+    // `tier`, the ranker awards ORIENTATION_ALIGNED_SCORE on top of the
+    // normal tier-alignment score. The bonus is intentionally smaller than
+    // the survive-tier bonus so SURVIVE always wins when in survive band.
+
+    it('orientation id-match wins a tie between two equally aligned candidates', () => {
+        // Both candidates are pursue-tagged so both score ALIGNED at the
+        // pursue tier. With an orientation pointing at 'master-woodcutting',
+        // the matching id should win even though the other entry was
+        // listed first (stable-sort tie-break would otherwise pick it).
+        const ctx = ctxOf({ ap: 100, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'finish-quest', tags: ['pursue'] },
+                { id: 'master-woodcutting', tags: ['pursue'] },
+            ],
+            ctx,
+            { orientation: { id: 'master-woodcutting', description: 'be a woodcutter', tier: 'pursue' } },
+        );
+        expect(ranked[0]?.id).toBe('master-woodcutting');
+    });
+
+    it('orientation tier-match bumps same-tier candidates above different-tier candidates that would otherwise tie', () => {
+        // No tagged candidates win the pursue alignment, so all score
+        // neutral. The orientation { tier: 'pursue' } should bias the
+        // pursue-tagged candidate up.
+        const ctx = ctxOf({ ap: 100, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'wander', tags: ['reflect'] },
+                { id: 'finish-quest', tags: ['pursue'] },
+            ],
+            ctx,
+            { orientation: { id: 'something-else', description: 'unrelated id', tier: 'pursue' } },
+        );
+        expect(ranked[0]?.id).toBe('finish-quest');
+    });
+
+    it('survive overrides orientation: a survive-tagged goal still wins in survive band', () => {
+        // Even with a pursue orientation, AP at the floor flips currentTier
+        // to 'survive' and the survive-tagged goal must win. The orientation
+        // bonus (smaller than tier alignment) cannot leapfrog survive.
+        const ctx = ctxOf({ ap: 5, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'master-woodcutting', tags: ['pursue'] },
+                { id: 'eat-shrimp', tags: ['survive', 'eat'] },
+            ],
+            ctx,
+            { orientation: { id: 'master-woodcutting', description: 'be a woodcutter', tier: 'pursue' } },
+        );
+        expect(ranked[0]?.id).toBe('eat-shrimp');
+    });
+
+    it('no orientation → behavior unchanged (back-compat with F3 wiring)', () => {
+        // Without an orientation, the ranker output must be byte-equivalent
+        // to the un-orientation call. This guards every existing call site.
+        const ctx = ctxOf({ ap: 100, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const goals = [
+            { id: 'pursue-quest', tags: ['pursue'] },
+            { id: 'sell-logs', tags: ['gp', 'earn'] },
+        ];
+        const without = rankCandidateGoals(goals, ctx);
+        const withEmpty = rankCandidateGoals(goals, ctx, {});
+        const withUndefined = rankCandidateGoals(goals, ctx, { orientation: undefined });
+        expect(withEmpty).toEqual(without);
+        expect(withUndefined).toEqual(without);
+    });
+
+    it('orientation with no tier still applies id-match bonus', () => {
+        // tier is optional; if omitted only the id-match path can bias.
+        const ctx = ctxOf({ ap: 100, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'finish-quest', tags: ['pursue'] },
+                { id: 'master-woodcutting', tags: ['pursue'] },
+            ],
+            ctx,
+            { orientation: { id: 'master-woodcutting', description: 'be a woodcutter' } },
+        );
+        expect(ranked[0]?.id).toBe('master-woodcutting');
+    });
+
+    it('orientation bonus is smaller than tier-alignment bonus (does not flip alignment ranking)', () => {
+        // Aligned-with-current-tier should still beat misaligned-but-oriented.
+        // In pursue tier: pursue-tagged + no-orientation > earn-tagged + orientation.
+        const ctx = ctxOf({ ap: 100, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'sell-logs', tags: ['gp', 'earn'] },
+                { id: 'finish-quest', tags: ['pursue'] },
+            ],
+            ctx,
+            { orientation: { id: 'sell-logs', description: 'earn things', tier: 'earn' } },
+        );
+        // finish-quest scores ALIGNED (pursue). sell-logs scores MISALIGNED
+        // + ORIENTATION_ALIGNED — but ALIGNED > MISALIGNED+ORIENTATION.
+        expect(ranked[0]?.id).toBe('finish-quest');
+    });
+});

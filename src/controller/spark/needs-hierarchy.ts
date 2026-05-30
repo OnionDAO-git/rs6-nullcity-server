@@ -135,6 +135,44 @@ const NEUTRAL_SCORE = 0;
 const MISALIGNED_PENALTY = -1;
 
 /**
+ * Bonus awarded when a candidate matches the soul-level orientation
+ * (S-GOAL-1). Intentionally smaller than `ALIGNED_SCORE` so the
+ * tier-alignment ranking remains dominant: orientation breaks ties and
+ * biases neutral candidates, but never flips an aligned/misaligned
+ * decision (and never overrides survive — that path runs through
+ * `currentTier(ctx) === 'survive'` and the survive-aligned tag matches
+ * dwarf any orientation bonus).
+ *
+ * Tuned to 5 for the tier-match path: half of `ALIGNED_SCORE`. A
+ * pursue-aligned non-orientation candidate (score 10) still beats an
+ * earn-aligned orientation candidate in pursue tier (MISALIGNED penalty
+ * -1 + 5 orientation = +4, below 10). The math holds: the orientation
+ * bonus reorders within the same tier-alignment band but does not cross
+ * bands.
+ *
+ * The id-match bonus is intentionally one point higher than the
+ * tier-match bonus so an exact id match wins a tie against other
+ * candidates that only match the orientation's tier. This is the "I
+ * literally am the north-star goal" precedence over "I share the same
+ * need tier as the north star".
+ */
+export const ORIENTATION_ALIGNED_SCORE = 5;
+export const ORIENTATION_ID_MATCH_SCORE = 6;
+
+/**
+ * Soul-level orientation goal supplied to the ranker (S-GOAL-1). Mirrors
+ * the `SoulOrientationGoal` schema in `src/controller/soul/soul-schema.ts`
+ * — duplicated here as a local type so this module stays import-free of
+ * the soul layer (the soul layer can import from here; the reverse would
+ * create a cycle through the planner).
+ */
+export interface OrientationGoal {
+    id: string;
+    description?: string;
+    tier?: NeedsTier;
+}
+
+/**
  * Score a single candidate against the active tier. Aligned tags get the
  * full alignment score, untagged goals get the neutral score, and tags
  * matching a *different* tier get a small penalty so survive-tagged goals
@@ -175,21 +213,69 @@ function scoreGoal(goal: GoalCandidate, tier: NeedsTier): number {
 }
 
 /**
+ * Additive S-GOAL-1 bonus: candidates that match the soul-level
+ * orientation get `ORIENTATION_ALIGNED_SCORE` added on top of their
+ * tier-alignment score. A candidate matches the orientation when EITHER
+ *   (a) its `id` equals `orientation.id`, OR
+ *   (b) one of its `tags` (case-insensitive) equals `orientation.tier`.
+ *
+ * The id-match path is the "this is literally the goal I'm oriented
+ * toward" case. The tier-match path is the "this candidate lives in the
+ * same need-tier my soul cares about" softer bias. Either suffices.
+ */
+function orientationBonus(goal: GoalCandidate, orientation: OrientationGoal | undefined): number {
+    if (!orientation) {
+        return 0;
+    }
+    if (goal.id === orientation.id) {
+        return ORIENTATION_ID_MATCH_SCORE;
+    }
+    if (orientation.tier && goal.tags) {
+        for (const tag of goal.tags) {
+            if (tag.toLowerCase() === orientation.tier) {
+                return ORIENTATION_ALIGNED_SCORE;
+            }
+        }
+    }
+    return 0;
+}
+
+export interface RankCandidateGoalsOptions {
+    /**
+     * Soul-level "north star" orientation that biases the ranker beyond
+     * just survive-tier. See {@link OrientationGoal} and the S-GOAL-1
+     * design spec `docs/superpowers/specs/2026-05-30-goal-as-orientation-design.md`.
+     */
+    orientation?: OrientationGoal;
+}
+
+/**
  * Rank candidate goals against the active needs tier. Stable sort by score
  * descending (ties keep original input order). Pure: same input -> same
  * output. Does not mutate `goals`.
+ *
+ * When `options.orientation` is provided, candidates that match the
+ * orientation (by id or by tier-tag) receive an `ORIENTATION_ALIGNED_SCORE`
+ * bonus on top of their tier-alignment score. Survival still wins when in
+ * survive band because survive-aligned tags score higher than any
+ * orientation bonus can lift a pursue/earn/reflect candidate to.
  */
-export function rankCandidateGoals(goals: ReadonlyArray<GoalCandidate>, ctx: ResidentNeedsContext): Array<RankedGoal> {
+export function rankCandidateGoals(
+    goals: ReadonlyArray<GoalCandidate>,
+    ctx: ResidentNeedsContext,
+    options: RankCandidateGoalsOptions = {},
+): Array<RankedGoal> {
     if (goals.length === 0) {
         return [];
     }
     const tier = currentTier(ctx);
+    const orientation = options.orientation;
     // Decorate with original index so we can implement a stable sort
     // independently of the JS engine's sort stability guarantees.
     const decorated = goals.map((goal, idx) => ({
         goal,
         idx,
-        score: scoreGoal(goal, tier),
+        score: scoreGoal(goal, tier) + orientationBonus(goal, orientation),
     }));
     decorated.sort((a, b) => {
         if (b.score !== a.score) {
