@@ -196,6 +196,30 @@ Issued two AP-GP exchange POSTs after the grant: one against `res:qa-trader`, on
 
 This is filed below as **QA-20260530-018**.
 
+### Containment shipped (S-DEMO-P0-1, commit 78eae74c)
+
+After diagnosing the failure path through the audit log (intermittent: same `res:agent` burn succeeded at 20:35:45 but failed at 20:20:38; same `res:qa-trader` inspect succeeded at 18:21:39 but timed out at 20:19:29) and tracing the synchronous server-side handlers in `src/server/agent/gateway.ts`, the root cause is most likely **game-server worldTick saturation** (LLM brain calls + multi-resident pathfinding) starving the WS message handler past the controller's 10s `requestTimeoutMs`. A secondary, self-inflicted bug was also confirmed: when `parseClientMessage` throws (schema validation failure) the gateway sent an error frame without `request_id`, so the controller's pending promise dangled until its 10s timer fired.
+
+Containment in three pieces:
+
+1. `GatewayClient.inventoryRequestTimeoutMs` (default 30s, was 10s) for `inspectResidentGold` + `burnResidentGold` — absorbs tick-saturation spikes without changing snappy defaults for other verbs.
+2. `AgentGateway` per-message processing-time logger — emits `AgentGateway slow message kind=... id=... elapsedMs=...` whenever a handler runs >1000ms, so future tick-blocking surfaces with a clear log line.
+3. `AgentGateway` parse-failure path now recovers the request id via best-effort `JSON.parse` (helper at `src/server/agent/protocol/recover-request-id.ts`) and echoes it on the error frame — the controller resolves the pending promise immediately rather than waiting for the timeout.
+
+**Verify recipe after the controller is rebuilt and restarted:**
+
+```bash
+curl -s -X POST -H "Authorization: Bearer operator-token" \
+     -H "Content-Type: application/json" \
+     -d '{"apAmount":20,"gpAmount":10,"idempotencyKey":"qa-postfix-1"}' \
+     http://127.0.0.1:43611/api/nullcity/residents/res:qa-trader/ap-gp-exchanges
+# expect status:"complete" with gpEvidence.burnedAmount:10
+```
+
+If timeouts still occur post-fix, the per-message slow-handler warning (controller stderr / game-server logs) will name the kind + elapsedMs so the actual tick-saturation source becomes pinpointable. The deeper upstream fix (bounding LLM brain calls under the 600ms tick budget) is filed as a POST-DEMO follow-up; this containment widens the inventory window enough to make the demo path reliable.
+
+Tests +8 (6 `recoverRequestId` + 2 `GatewayClient.inventoryRequestTimeoutMs`); `fin` 2979/2979 PASS; `check:no-ui` PASS.
+
 ### Response excerpt (failed exchange #2)
 
 ```json
