@@ -751,10 +751,11 @@ Safe public module facade building blocks are implemented, but the public member
   - 2026-05-30 (`agents/wip`, codex, packet `S4a`): exposed the existing file-backed SoulProposal queue through `CityIntegrationService` and internal JSON routes (`/api/nullcity/proposals`, `/:id`, `/:id/fund`, `/:id/approve`, `/:id/reject`) for dashboard D2. Focused service and HTTP tests cover proposal create/list/get/fund/threshold/approve/reject and safe 404 mapping. S4b still needs approved-proposal birth materialization and live controller smoke.
   - 2026-05-30 (`agents/wip`, codex, packet `S4b`): added `POST /api/nullcity/proposals/:id/birth` to the city HTTP contract, wired to existing `CityIntegrationService.birthFromProposal()` so approved proposals materialize residents idempotently and transition proposal status to `born`. Focused `service.test.ts` + `http-server.test.ts`, `check:no-ui`, and `build` passed in this sandbox; full-suite `fin` remains constrained by loopback `EPERM` on unrelated network-binding suites.
 
-- `[ ]` **S5: NCRI registry MVP.**
+- `[>]` **S5: NCRI registry MVP.**
   - Files: new `src/controller/ncri/ncri-registry.ts`, `src/controller/ncri/ncri-registry.test.ts`, `src/controller/city-integration/service.ts`, `src/controller/evidence/library-updater.ts`.
   - Deliverable: after AP-for-GP proof exists, admin-approved NCRI records bind Null City metadata to real RuneScape item ids, track owner and redemption state, and emit Library events. Before S3 is green, keep this to schema/fixture design.
   - Verification: registry persistence tests, duplicate-redemption rejection, event evidence present for Storyteller digest.
+  - 2026-05-30 (`agents/wip`, codex, packet `S5b`): resident-originated NCRI records now preserve `sourceResidentName` and emit that resident on sale/redemption economy events so Storyteller canon does not attribute resident sales to `unknown`. Proof artifact `s5b-ncri-proof-20260530T0920` contains 2 NCRI events for `res:duke`; `storyteller:run -- --digest-id ...` wrote a reviewable nooped dispatch without paid-model spend. Ordinary resident-obtained NCRI exchange remains pending.
 
 - `[x]` **S6: Storyteller digest/store/CLI dry run.**
   - Files: new `src/controller/storyteller/*`, `src/controller/storyteller/*.test.ts`, `package.json`, `docs/2026-05-28-storyteller-design.md`.

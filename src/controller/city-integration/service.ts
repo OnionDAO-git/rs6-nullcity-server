@@ -1026,12 +1026,7 @@ function storytellerDispatchSummary(digest: Record<string, unknown>, runId: stri
 }
 
 function storytellerLatestStampMs(run: Pick<CityStorytellerLatestSummary, 'dispatch' | 'builtAt' | 'windowEnd' | 'windowStart'>): number {
-    const candidates = [
-        run.dispatch?.generatedAt,
-        run.builtAt,
-        run.windowEnd,
-        run.windowStart,
-    ];
+    const candidates = [run.dispatch?.generatedAt, run.builtAt, run.windowEnd, run.windowStart];
     for (const candidate of candidates) {
         if (!candidate) continue;
         const parsed = Date.parse(candidate);

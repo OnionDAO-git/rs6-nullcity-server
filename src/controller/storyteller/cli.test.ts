@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import { EconomyEventLog } from '../city-integration/economy-event';
 import { GoalContractStore } from '../city-integration/goal-contract';
+import { NcriRegistry } from '../ncri/ncri-registry';
 import { parseStorytellerDryRunArgs, runStorytellerDryRun, StorytellerDryRunCliError } from './cli';
 
 describe('storyteller:dry-run CLI live source', () => {
@@ -112,5 +113,55 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(result.summary).toContain('Goal events');
         expect(fs.existsSync(path.join(outputDir, 'live-test-digest', 'digest.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'live-test-digest', 'summary.txt'))).toBe(true);
+    });
+
+    it('attributes resident-owned NCRI transfers to the selling resident in dry-run artifacts', () => {
+        let nowMs = Date.parse('2026-05-30T00:01:00.000Z');
+        const now = () => new Date(nowMs);
+        const log = new EconomyEventLog(memoryRoot, now);
+        const registry = new NcriRegistry(memoryRoot, now, log);
+        const record = registry.create({
+            itemId: 590,
+            displayName: 'Kindling Relic',
+            lore: 'A starter spark carried out of Lumbridge.',
+            owner: 'res:duke',
+            printable: true,
+            propertyTags: ['kindling', 'printable'],
+            printAssetRef: 'prints/kindling-relic.3mf',
+        });
+
+        nowMs = Date.parse('2026-05-30T00:02:00.000Z');
+        registry.approve(record.id, 'approved for S5b dry-run proof');
+        nowMs = Date.parse('2026-05-30T00:03:00.000Z');
+        registry.transfer(record.id, 'human:event-demo');
+        nowMs = Date.parse('2026-05-30T00:04:00.000Z');
+        registry.redeem(record.id);
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T00:00:00.000Z',
+                until: '2026-05-30T00:10:00.000Z',
+                digestId: 'live-ncri-digest',
+            },
+            { now: () => new Date('2026-05-30T00:10:00.000Z') },
+        );
+
+        expect(result.digest.residents.map(resident => resident.residentName)).toContain('res:duke');
+        expect(result.digest.ncriEvents).toHaveLength(2);
+        expect(result.digest.ncriEvents[0]).toMatchObject({
+            kind: 'ncri_created',
+            residentName: 'res:duke',
+            evidence: { ncriId: record.id, cityUserId: 'human:event-demo' },
+        });
+        expect(result.digest.ncriEvents[1]).toMatchObject({
+            kind: 'ncri_redeemed',
+            residentName: 'res:duke',
+            evidence: { ncriId: record.id, cityUserId: 'human:event-demo' },
+        });
+        expect(result.digest.topEvents.map(event => event.ref)).toEqual(result.digest.ncriEvents.map(event => event.ref));
+        expect(result.summary).toContain('NCRI events: 2');
     });
 });

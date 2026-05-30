@@ -30,6 +30,8 @@ export interface NcriRecord {
     printAssetRef?: string;
     /** cityUserId of the current owner. */
     owner: string;
+    /** Resident that originated or sold the NCRI when known. */
+    sourceResidentName?: string;
     approvalStatus: NcriApprovalStatus;
     redemptionStatus: NcriRedemptionStatus;
     adminNotes?: string;
@@ -48,6 +50,10 @@ const ncriRecordSchema = z.object({
     printable: z.boolean(),
     printAssetRef: z.string().min(1).optional(),
     owner: z.string().min(1),
+    sourceResidentName: z
+        .string()
+        .regex(/^res:[a-z0-9_-]{1,20}$/)
+        .optional(),
     approvalStatus: z.enum(['pending', 'approved']),
     redemptionStatus: z.enum(['available', 'redeemed']),
     adminNotes: z.string().optional(),
@@ -99,6 +105,7 @@ export class NcriRegistry {
             printable: parsed.printable ?? false,
             printAssetRef: parsed.printAssetRef,
             owner: parsed.owner,
+            sourceResidentName: residentOwner(parsed.owner),
             approvalStatus: 'pending',
             redemptionStatus: 'available',
             createdAt: ts,
@@ -143,6 +150,7 @@ export class NcriRegistry {
                 kind: 'ncri_sale',
                 ncriId: updated.id,
                 refId: updated.id,
+                residentName: record.sourceResidentName ?? residentOwner(record.owner),
                 cityUserId: updated.owner,
                 ts: updated.updatedAt,
                 note: `NCRI ${updated.displayName} (${updated.id}) transferred to ${updated.owner}`,
@@ -169,6 +177,7 @@ export class NcriRegistry {
                 kind: 'ncri_redemption',
                 ncriId: updated.id,
                 refId: updated.id,
+                residentName: updated.sourceResidentName ?? residentOwner(updated.owner),
                 cityUserId: updated.owner,
                 ts: updated.redeemedAt ?? updated.updatedAt,
                 note: `NCRI ${updated.displayName} (${updated.id}) redeemed by ${updated.owner}`,
@@ -227,4 +236,8 @@ export class NcriRegistry {
     private ncriDir(): string {
         return path.join(this.memoryRoot, 'city-integration', 'ncri');
     }
+}
+
+function residentOwner(owner: string): string | undefined {
+    return /^res:[a-z0-9_-]{1,20}$/.test(owner) ? owner : undefined;
 }

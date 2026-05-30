@@ -1,0 +1,19 @@
+{
+    "schemaVersion": 1,
+    "dispatchId": "dispatch-s5b-ncri-proof-20260530T0920-1780150821285",
+    "digestId": "s5b-ncri-proof-20260530T0920",
+    "generatedAt": "2026-05-30T14:20:21.285Z",
+    "modelProfile": "default",
+    "latencyMs": 0,
+    "estimatedCostUsd": null,
+    "inputTokens": null,
+    "outputTokens": null,
+    "publicTitle": "(no title generated)",
+    "publicBody": "(no body generated)",
+    "publicBullets": [],
+    "operatorSummary": "(no summary)",
+    "operatorWarnings": [],
+    "eventRefsUsed": [],
+    "needsReview": true,
+    "reviewReasons": ["model call was nooped (unknown)"]
+}
