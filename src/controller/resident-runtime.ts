@@ -342,14 +342,16 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const observerPos = (perception as { resident?: { position?: { x: number; y: number; level: number } } })?.resident?.position;
             const drainedLoreEvents = this.loreBusInbox.drain(observerPos);
             for (const event of drainedLoreEvents) {
-                this.pendingEvents.push({
+                const worldEvent = {
                     kind: 'world_event',
                     loreKind: event.kind,
                     source: event.source,
                     payload: event.payload,
                     sourcePosition: event.sourcePosition,
                     ts: event.ts,
-                });
+                } as PerceptionEvent;
+                this.pendingEvents.push(worldEvent);
+                this.persistEventMemory(worldEvent);
             }
         }
 
@@ -891,6 +893,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 }
             }
         }
+        this.persistEventMemory(event);
+    }
+
+    private persistEventMemory(event: PerceptionEvent): void {
         const routed = this.memoryRouter.routeEvent(this.name, event);
         if (routed) {
             this.options.memory.write(this.name, routed.path, routed.content);

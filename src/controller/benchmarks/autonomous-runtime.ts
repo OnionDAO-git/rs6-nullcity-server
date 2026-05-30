@@ -7,6 +7,7 @@ import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 import { createDefaultGameSkillEntries } from '../knowledge/game-skill-entries';
 import { GameSkillService } from '../knowledge/game-skill-context';
 import { KnowledgeSuggestionStore } from '../knowledge/suggestions';
+import { LoreBus } from '../lore/lore-bus';
 import { LlmClient } from '../llm/llm-client';
 import { ActionLog } from '../logging/action-log';
 import { InferenceLog } from '../logging/inference-log';
@@ -62,6 +63,7 @@ const AP_GP_LIBRARY_STRATEGY_5M_TASK_ID = 'ap-gp-library-strategy-5m';
 const AP_GP_EXCHANGE_5M_TASK_ID = 'ap-gp-exchange-5m';
 const AP_GP_EXCHANGE_BENCH_GP_AMOUNT = 25;
 const AP_GP_EXCHANGE_BENCH_AP_AMOUNT = 50;
+const WORLD_EVENT_REACTION_5M_TASK_ID = 'world-event-reaction-5m';
 
 export interface ResidentRuntimeBenchmarkDriverOptions {
     config: ControllerConfig;
@@ -78,16 +80,20 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
     private perceptionListener?: (residentId: string, perception: Perception) => void;
     private eventListener?: (residentId: string, event: PerceptionEvent) => void;
     private readonly inFlightPerceptions = new Set<Promise<void>>();
+    private loreBus?: LoreBus;
     private apTopupInjected = false;
     private apGpExchangeInjected = false;
+    private worldEventInjected = false;
 
     constructor(private readonly options: ResidentRuntimeBenchmarkDriverOptions) {}
 
     async start(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
         this.apTopupInjected = false;
         this.apGpExchangeInjected = false;
+        this.worldEventInjected = false;
         this.context = context;
         this.runDirs = createRunDirs(context);
+        this.loreBus = new LoreBus();
         const seededMemories = seedBenchmarkMemories(this.runDirs.memory, context.resident, context.task.memorySeeds || []);
         if (seededMemories > 0) {
             context.recordSummary(`Seeded ${seededMemories} benchmark Library memories.`);
@@ -104,6 +110,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             gameSkill: this.gameSkill,
             sparkModules: this.options.sparkModules,
             evidence: this.createEvidence(context),
+            loreBus: this.loreBus,
         });
         this.bindGatewayEvents(context);
         context.recordSummary(`Started autonomous ResidentRuntime for ${context.module.id}@${context.module.version}.`);
@@ -126,6 +133,8 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         this.gameSkill = undefined;
         this.apTopupInjected = false;
         this.apGpExchangeInjected = false;
+        this.worldEventInjected = false;
+        this.loreBus = undefined;
     }
 
     private createEvidence(context: BenchmarkAutonomousRuntimeContext): ResidentRuntimeEvidence {
@@ -187,6 +196,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             if (!matchesResident(residentId, context.resident) || !this.runtime) {
                 return;
             }
+            this.injectWorldEventReactionProof(context);
             const task = this.runtime
                 .onPerception(perception)
                 .then(() => this.injectApTopupAfterFade(context))
@@ -342,6 +352,25 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             });
             context.recordSummary(`Benchmark AP-for-GP exchange failed: ${errorMessage(error)}`);
         }
+    }
+
+    private injectWorldEventReactionProof(context: BenchmarkAutonomousRuntimeContext): void {
+        if (context.task.id !== WORLD_EVENT_REACTION_5M_TASK_ID || this.worldEventInjected || !this.loreBus || !this.runDirs) {
+            return;
+        }
+        this.loreBus.publish({
+            kind: 'fire_lit',
+            source: 'res:duke',
+            visibility: { sourceCoord: [3226, 3230, 0], radiusTiles: 12 },
+            payload: {
+                fireObjectId: 26185,
+                position: { x: 3226, y: 3230, level: 0 },
+                text: 'res:duke lit a fire beside the benchmark resident.',
+            },
+        });
+        context.recordArtifactPath?.(path.join(this.runDirs.memory, residentSlug(context.resident), 'facts/world-events.md'));
+        context.recordSummary('Injected LoreBus fire_lit world_event from res:duke near the benchmark resident.');
+        this.worldEventInjected = true;
     }
 
     private unbindGatewayEvents(): void {

@@ -36,6 +36,7 @@ import { STARTER_GP_PICKUP_3M_TASK_ID, makeStarterGpPickup3mBenchmarkTask } from
 import { STARTER_MINING_5M_TASK_ID, makeStarterMining5mBenchmarkTask } from './tasks/starter-mining-5m';
 import { TRADING_GIVING_5M_TASK_ID, makeTradingGiving5mBenchmarkTask } from './tasks/trading-giving-5m';
 import { WOODCUTTING_FIREMAKING_10M_TASK_ID, makeWoodcuttingFiremaking10mBenchmarkTask } from './tasks/woodcutting-firemaking-10m';
+import { WORLD_EVENT_REACTION_5M_TASK_ID, makeWorldEventReaction5mBenchmarkTask } from './tasks/world-event-reaction-5m';
 
 export interface BenchmarkCliOptions {
     taskId: string;
@@ -72,6 +73,7 @@ const CORE_TASK_IDS = [
     COMBAT_PRAYER_10M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     MEMORY_ROUTE_RECALL_5M_TASK_ID,
+    WORLD_EVENT_REACTION_5M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
     AP_DECAY_ASK_5M_TASK_ID,
     AP_TOPUP_RESUME_5M_TASK_ID,
@@ -302,6 +304,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === MEMORY_ROUTE_RECALL_5M_TASK_ID) {
         return makeMemoryRouteRecall5mBenchmarkTask();
+    }
+    if (taskId === WORLD_EVENT_REACTION_5M_TASK_ID) {
+        return makeWorldEventReaction5mBenchmarkTask();
     }
     if (taskId === TRADING_GIVING_5M_TASK_ID) {
         return makeTradingGiving5mBenchmarkTask();

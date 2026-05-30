@@ -311,6 +311,17 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"memory-route-recall-5m","version":"0.1.0"');
     });
 
+    it('can dry-run the world-event-reaction benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'world-event-reaction-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"world-event-reaction-5m","version":"0.1.0"');
+    });
+
     it('can dry-run the trading-giving benchmark task', async () => {
         const writes: string[] = [];
 
@@ -473,7 +484,7 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(22);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(23);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
         expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-start-3m"');
         expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-complete-5m"');
@@ -484,10 +495,11 @@ describe('benchmark CLI', () => {
         expect(output).toContain('"benchmark":{"taskId":"ap-gp-library-strategy-5m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-topup-resume-5m"');
         expect(output).toContain('"benchmark":{"taskId":"memory-route-recall-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"world-event-reaction-5m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":22');
-        expect(output).toContain('"passed":22');
-        expect(output).toContain('"averageScore":0.9772727272727273');
+        expect(output).toContain('"total":23');
+        expect(output).toContain('"passed":23');
+        expect(output).toContain('"averageScore":0.9782608695652174');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);

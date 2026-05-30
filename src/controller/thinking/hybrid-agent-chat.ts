@@ -1512,6 +1512,10 @@ export function memoryRecallFallback(memories: string[]): string | undefined {
     if (route) {
         return route;
     }
+    const worldEvent = worldEventMemoryRecallFallback(lines);
+    if (worldEvent) {
+        return worldEvent;
+    }
 
     const gift = lines.find(line => /patron gift from/i.test(line));
     const promise = lines.find(line => /\b(promise|promised|shrimp|codex)\b/i.test(line));
@@ -1572,6 +1576,28 @@ function routeMemoryRecallFallback(lines: string[]): string | undefined {
     }
 
     return `I remember this route: ${cleaned}.`;
+}
+
+function worldEventMemoryRecallFallback(lines: string[]): string | undefined {
+    const fireLine = lines.find(line => /\bobserved\s+.+\blit a fire\b/i.test(line));
+    if (!fireLine) {
+        return undefined;
+    }
+
+    const cleaned = fireLine
+        .replace(/^Fact memory \([^)]*\):\s*/i, '')
+        .replace(/^[-*]\s+\d{4}-\d{2}-\d{2}T[^\s]+\s+/i, '')
+        .replace(/^world_event:\s*/i, '')
+        .replace(/^observed\s+/i, '')
+        .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.!?]+$/g, '')
+        .trim();
+    if (!cleaned) {
+        return undefined;
+    }
+
+    return `I remember ${cleaned}.`;
 }
 
 function routeStepPhrase(step: string): string {

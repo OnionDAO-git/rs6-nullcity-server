@@ -3665,6 +3665,69 @@ describe('ResidentRuntime modules', () => {
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
 
+    it('persists drained LoreBus world events as durable memory facts', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-world-event-memory-'));
+        const bus = new LoreBus({ now: () => new Date('2026-05-30T11:00:00.000Z') });
+        const memoryStore = {
+            ensureResident: jest.fn(() => memoryDir),
+            retrieve: jest.fn(() => []),
+            write: jest.fn(),
+        } as unknown as MemoryStore;
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+            getLatestPerception: jest.fn(() => undefined),
+        } as unknown as ResidentBody;
+        const thinking = thinkingModule();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: memoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            loreBus: bus,
+        });
+
+        bus.publish({
+            kind: 'fire_lit',
+            source: 'res:duke',
+            visibility: { sourceCoord: [3201, 3200, 0], radiusTiles: 10 },
+            payload: { fireObjectId: 26185, position: { x: 3201, y: 3200, level: 0 } },
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 } },
+            events: [],
+        });
+
+        expect(memoryStore.write).toHaveBeenCalledWith(
+            'res:pip',
+            'facts/world-events.md',
+            expect.stringContaining('Observed res:duke lit a fire at 3201,3200,0.'),
+        );
+        expect(body.observePerception).toHaveBeenCalledWith(
+            expect.objectContaining({
+                events: expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'world_event',
+                        loreKind: 'fire_lit',
+                        source: 'res:duke',
+                    }),
+                ]),
+            }),
+        );
+
+        runtime.stop();
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
     it('emits a fire_lit moment to the trajectory file when a fire is newly observed nearby', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-fire-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-fire-evidence-'));

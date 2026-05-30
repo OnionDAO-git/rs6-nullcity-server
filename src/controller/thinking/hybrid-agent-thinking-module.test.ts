@@ -3696,6 +3696,39 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('answers addressed world-event memory questions from durable LoreBus facts', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(
+            llm,
+            state,
+            soul(),
+            memory(['Fact memory (world-events.md): - 2026-05-30T10:56:01.115Z Observed res:duke lit a fire at 3243,3209,0.']),
+        );
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent, what did res:duke do nearby?', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I remember res:duke lit a fire at 3243,3209,0.',
+                voiceSource: 'scripted',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_memory_recall');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('asks for clarification on unknown addressed commands without waiting for Body inference', async () => {
         const llm = scriptedLlm([]);
         const agent = hybridAgent(llm, runtimeState());
