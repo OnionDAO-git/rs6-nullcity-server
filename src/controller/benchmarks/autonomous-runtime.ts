@@ -44,6 +44,11 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
         decayCurve: 'steep',
         floor: 0,
     },
+    'ap-gp-honesty-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
     'ap-topup-resume-5m': {
         startingAttention: 12,
         decayCurve: 'steep',
