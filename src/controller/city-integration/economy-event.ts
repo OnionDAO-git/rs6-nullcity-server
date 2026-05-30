@@ -159,6 +159,75 @@ export class EconomyEventLog {
         });
     }
 
+    /**
+     * Returns the last `n` valid events by reading at most `n * MAX_LINE_BYTES` bytes
+     * from the end of the file. Far cheaper than `readAll()` when only the most recent
+     * events are needed (e.g. heartbeat). Malformed lines are silently skipped, so the
+     * result may contain fewer than `n` entries.
+     */
+    tail(n: number): EconomyEvent[] {
+        if (n <= 0) return [];
+        const filePath = this.logPath();
+        if (!fs.existsSync(filePath)) return [];
+        const fileSize = fs.statSync(filePath).size;
+        if (fileSize === 0) return [];
+
+        // Each JSONL line is assumed < 4 KB (PIPE_BUF atomicity bound, see QA-20260530-016).
+        const MAX_LINE_BYTES = 4096;
+        const readSize = Math.min(n * MAX_LINE_BYTES, fileSize);
+        const offset = fileSize - readSize;
+
+        const fd = fs.openSync(filePath, 'r');
+        try {
+            const buf = Buffer.alloc(readSize);
+            fs.readSync(fd, buf, 0, readSize, offset);
+            const chunk = buf.toString('utf8');
+            const lines = chunk.split('\n');
+            // When we didn't start at byte 0 the first element may be a partial line.
+            const startIdx = offset > 0 ? 1 : 0;
+            const candidateLines = lines.slice(startIdx).filter(line => line.trim().length > 0);
+            const tailLines = candidateLines.slice(-n);
+            const events: EconomyEvent[] = [];
+            for (const line of tailLines) {
+                try {
+                    events.push(economyEventSchema.parse(JSON.parse(line)));
+                } catch {
+                    // skip malformed lines
+                }
+            }
+            return events;
+        } finally {
+            fs.closeSync(fd);
+        }
+    }
+
+    /**
+     * Counts non-empty lines in the log file without parsing JSON. Includes malformed
+     * lines. Returns 0 when the file does not exist. Used by callers that need an event
+     * count for monitoring/heartbeat without paying the full `readAll()` cost.
+     */
+    lineCount(): number {
+        const filePath = this.logPath();
+        if (!fs.existsSync(filePath)) return 0;
+        let count = 0;
+        const CHUNK = 65536;
+        const fd = fs.openSync(filePath, 'r');
+        try {
+            const buf = Buffer.alloc(CHUNK);
+            let pos = 0;
+            let bytesRead: number;
+            while ((bytesRead = fs.readSync(fd, buf, 0, CHUNK, pos)) > 0) {
+                for (let i = 0; i < bytesRead; i++) {
+                    if (buf[i] === 0x0a) count++;
+                }
+                pos += bytesRead;
+            }
+        } finally {
+            fs.closeSync(fd);
+        }
+        return count;
+    }
+
     private logPath(): string {
         return path.join(this.memoryRoot, 'city-integration', 'economy-events.jsonl');
     }

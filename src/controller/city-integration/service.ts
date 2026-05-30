@@ -850,8 +850,9 @@ export class CityIntegrationService {
     economyHeartbeat(): LiveEconomyHeartbeat {
         const nowIso = this.now().toISOString();
         const live = this.economyLive({ limit: 1, residentLimit: 1 });
-        const allEvents = this.economyEventLog.readAll();
-        const lastEvent = allEvents.length ? allEvents[allEvents.length - 1] : undefined;
+        // Use tail(1) + lineCount() to avoid a second full readAll() per heartbeat poll.
+        const lastEvents = this.economyEventLog.tail(1);
+        const lastEvent = lastEvents.length ? lastEvents[0] : undefined;
         const activeResidentCount = live.residents.filter(resident => resident.online || resident.activeInWindow).length;
         let lastDigestBuiltAt: string | undefined;
         const degradedFlags: string[] = [];
@@ -877,7 +878,7 @@ export class CityIntegrationService {
             controllerUptimeSec: Math.max(0, Math.floor(process.uptime())),
             residentCount: live.city.residentCount,
             activeResidentCount,
-            economyEventCount: allEvents.length,
+            economyEventCount: this.economyEventLog.lineCount(),
             lastEconomyEventTs: lastEvent?.ts,
             lastEconomyEventKind: lastEvent?.kind,
             lastDigestBuiltAt,

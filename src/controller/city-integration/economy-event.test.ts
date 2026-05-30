@@ -112,4 +112,82 @@ describe('EconomyEventLog', () => {
         }
         expect(log.readAll()).toHaveLength(12);
     });
+
+    describe('tail(n)', () => {
+        it('returns empty when n is zero', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5 });
+            expect(log.tail(0)).toEqual([]);
+        });
+
+        it('returns empty when file does not exist', () => {
+            expect(log.tail(5)).toEqual([]);
+        });
+
+        it('returns all events when n exceeds total count', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5 });
+            log.append({ kind: 'gp_earned', residentName: 'res:pip', gpDelta: 100 });
+            const events = log.tail(10);
+            expect(events).toHaveLength(2);
+            expect(events.map(e => e.kind)).toEqual(['ap_grant', 'gp_earned']);
+        });
+
+        it('returns only the last n events when log has more', () => {
+            for (let i = 0; i < 5; i++) {
+                log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: i + 1 });
+            }
+            const events = log.tail(2);
+            expect(events).toHaveLength(2);
+            expect(events[0].apDelta).toBe(4);
+            expect(events[1].apDelta).toBe(5);
+        });
+
+        it('tail(1) returns only the most recent event', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 10 });
+            log.append({ kind: 'gp_earned', residentName: 'res:pip', gpDelta: 200 });
+            log.append({ kind: 'ap_topup', residentName: 'res:hans', apDelta: 50 });
+            const events = log.tail(1);
+            expect(events).toHaveLength(1);
+            expect(events[0].kind).toBe('ap_topup');
+        });
+
+        it('skips a malformed line at the end of the file', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5 });
+            log.append({ kind: 'gp_earned', residentName: 'res:hans', gpDelta: 100 });
+            const filePath = path.join(root, 'city-integration', 'economy-events.jsonl');
+            fs.appendFileSync(filePath, 'not-valid-json\n');
+            // tail(3) reads the last 3 lines; the bad line is skipped; 2 valid events returned
+            const events = log.tail(3);
+            expect(events).toHaveLength(2);
+            expect(events.map(e => e.kind)).toEqual(['ap_grant', 'gp_earned']);
+        });
+
+        it('preserves append order (oldest first) in the returned slice', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 1 });
+            log.append({ kind: 'ap_decay', residentName: 'res:hans', apDelta: -1 });
+            log.append({ kind: 'gp_earned', residentName: 'res:hans', gpDelta: 50 });
+            const events = log.tail(2);
+            expect(events[0].kind).toBe('ap_decay');
+            expect(events[1].kind).toBe('gp_earned');
+        });
+    });
+
+    describe('lineCount()', () => {
+        it('returns 0 when file does not exist', () => {
+            expect(log.lineCount()).toBe(0);
+        });
+
+        it('returns the number of appended events', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5 });
+            log.append({ kind: 'gp_earned', residentName: 'res:hans', gpDelta: 100 });
+            log.append({ kind: 'ap_topup', residentName: 'res:pip', apDelta: 20 });
+            expect(log.lineCount()).toBe(3);
+        });
+
+        it('counts lines including malformed ones', () => {
+            log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5 });
+            const filePath = path.join(root, 'city-integration', 'economy-events.jsonl');
+            fs.appendFileSync(filePath, 'malformed\n');
+            expect(log.lineCount()).toBe(2);
+        });
+    });
 });
