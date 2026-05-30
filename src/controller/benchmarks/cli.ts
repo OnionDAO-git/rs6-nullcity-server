@@ -12,6 +12,7 @@ import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
 import { AP_DECAY_ASK_5M_TASK_ID, makeApDecayAsk5mBenchmarkTask } from './tasks/ap-decay-ask-5m';
 import { AP_GP_EXCHANGE_5M_TASK_ID, makeApGpExchange5mBenchmarkTask } from './tasks/ap-gp-exchange-5m';
+import { AP_GP_HONESTY_5M_TASK_ID, makeApGpHonesty5mBenchmarkTask } from './tasks/ap-gp-honesty-5m';
 import { AP_GP_LIBRARY_STRATEGY_5M_TASK_ID, makeApGpLibraryStrategy5mBenchmarkTask } from './tasks/ap-gp-library-strategy-5m';
 import { AP_TOPUP_RESUME_5M_TASK_ID, makeApTopupResume5mBenchmarkTask } from './tasks/ap-topup-resume-5m';
 import { BURY_BONES_PRAYER_3M_TASK_ID, makeBuryBonesPrayer3mBenchmarkTask } from './tasks/bury-bones-prayer-3m';
@@ -75,6 +76,7 @@ const CORE_TASK_IDS = [
     AP_DECAY_ASK_5M_TASK_ID,
     AP_TOPUP_RESUME_5M_TASK_ID,
     AP_GP_EXCHANGE_5M_TASK_ID,
+    AP_GP_HONESTY_5M_TASK_ID,
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
@@ -306,6 +308,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === AP_GP_EXCHANGE_5M_TASK_ID) {
         return makeApGpExchange5mBenchmarkTask();
+    }
+    if (taskId === AP_GP_HONESTY_5M_TASK_ID) {
+        return makeApGpHonesty5mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }
