@@ -286,6 +286,46 @@ This board is the human-readable dispatch layer. The exact packet definitions li
 | CQA10/CQA11 one-hour audit + model twins | Gives James a credible answer to "what can residents really do?" | QA/benchmark agent |
 | D5-D8 public feed, print queue, world route, dashboard QA | Turns proven server behavior into the attendee experience. | dashboard agent |
 
+### Wave 4: Post-Closeout Design-Driven Backlog (added 2026-05-30, D-WEEKEND-DESIGN)
+
+These packets come from the design specs `docs/superpowers/specs/2026-05-30-*.md`. Each spec ships 3-4 sub-packets; most of the substrate work is cloud-doable. Pick the lowest-numbered open packet in a chain first (`-1` before `-2`). Many of these unblock the simple-loop demo polish without needing a live RuneScape stack.
+
+**Cloud-doable (no hot stack required):**
+
+| Packet | Spec | Why it matters | Good first owner |
+|---|---|---|---|
+| S-STORY-1 | `2026-05-30-storyteller-overseer-design.md` | Continuous-mode wrapper around `storyteller:run`; dedup, dry-run loop, ledger. Cron-friendly. | storyteller agent |
+| S-STORY-2 | same | Cost cap + canon/review publish surface; dashboard can show approved vs pending dispatches. | storyteller agent |
+| S-NCRI-1 | `2026-05-30-ncri-sale-lifecycle-design.md` | `listed` state + `NcriPricingStore` + marketplace JSON; first step to make NCRIs purchasable. | economy agent |
+| S-NCRI-2 | same | Atomic AP-debit + ownership transfer + `ncri_sale` event with rollback. Closes the simple loop's value edge. | economy agent |
+| S-NCRI-3 | same | Redemption substrate + print-queue contract (substrate only; print run is live). | economy agent |
+| S-NCRI-4 | same | Seed first 3 NCRI fixtures + admin CLI + dry-run sale demo. | NCRI agent |
+| S-MEM-1 | `2026-05-30-resident-memory-system-design.md` | ResidentMemoryService facade + formalize qmd facts; per-resident isolation tests. | memory agent |
+| S-MEM-2 | same | mem0 local + prompt envelope "Memory" block (substrate cloud; live recall live). | memory agent |
+| S-MEM-4 | same | Retention/summarization policy with stub LLM; cloud-doable. | memory agent |
+| S-GOAL-1 | `2026-05-30-goal-as-orientation-design.md` | SoulOrientation schema + envelope block; backward-compat for old souls. | gameplay agent |
+| S-GOAL-2 | same | OrientationScorer + `orientation_progress`/`orientation_stalled` events. | gameplay agent |
+| S-GOAL-4 | same | Operator nudge + goal-edit CLI with audit. | admin agent |
+| S-ECON-VIEW-1 | `2026-05-30-economy-live-view-design.md` | `/live`, `/totals`, `/events`, `/residents` JSON routes; powers OnionDAO viewer dashboard. | API contract agent |
+| S-ECON-VIEW-2 | same | `/listings` + `/heartbeat` + dashboard contract doc. | API contract agent |
+| S-ECON-VIEW-3 | same | SSE stream substrate behind feature flag. | API contract agent |
+
+**Live-only (needs hot stack or paid endpoint):**
+
+| Packet | Spec | Why it needs hot stack | Good first owner |
+|---|---|---|---|
+| S-STORY-3 | storyteller-overseer | Real paid dispatch with persona; needs configured paid profile + cost cap. | storyteller/LLM agent |
+| S-MEM-3 | resident-memory | Brain-driven `rememberFact` decisions; needs live benchmark `memory-write-recall-10m`. | gameplay/memory agent |
+| S-GOAL-3 | goal-as-orientation | Module-preference bias; needs live benchmark `orientation-bias-10m`. | gameplay agent |
+
+**Dashboard-only (in `../rs6-nullcity-residents-dashboard`):**
+
+| Packet | Spec | Why it matters | Owner |
+|---|---|---|---|
+| D9 | economy-live-view | OnionDAO viewer surface; consumes S-ECON-VIEW-1/2/3. | dashboard agent |
+| D10 | ncri-sale-lifecycle | NCRI marketplace + browse/buy + print-queue admin views. | dashboard agent |
+| D11 | storyteller-overseer | Canon vs review queue UI + operator approval gate. | dashboard agent |
+
 ### Standing Capability QA Lane
 
 One autonomous agent should continuously work from `docs/resident-capabilities.md`.

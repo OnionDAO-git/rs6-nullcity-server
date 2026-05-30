@@ -810,6 +810,45 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: by Sunday night, humans can read what shipped, what was proven live, how many residents are safe, which models worked, and what remains blocked.
   - Verification: docs-only `git diff --check`; every completed S task has a roadmap verification note and pushed commit.
 
+### Post-Closeout Design-Driven Backlog (added 2026-05-30, D-WEEKEND-DESIGN)
+
+Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into the packets below. Pick the lowest-numbered open packet in a chain first. Most substrate work is cloud-doable; live-only packets are tagged.
+
+- `[ ]` **S13: Storyteller Overseer (continuous-mode wrapper).**
+  - Spec: `docs/superpowers/specs/2026-05-30-storyteller-overseer-design.md`.
+  - Files: new `src/controller/storyteller/overseer.ts`, new `OverseerLedger`, `config/controller.yml.example`, `package.json` (new CLI scripts), `docs/city-dashboard-integration.md`.
+  - Packets: `S-STORY-1` (skeleton + dry-run loop, cloud), `S-STORY-2` (cost cap + canon/review publish surface, cloud), `S-STORY-3` (persona + watch-mode paid run, **needs hot stack + paid profile**).
+  - Issue: `QA-20260530-004`.
+  - Deliverable: cron-friendly Overseer wraps the one-shot `storyteller:run`, owns dedup, cost cap, persona, and operator approval gate; `canon/` vs `review/` JSON surfaces feed the dashboard.
+
+- `[ ]` **S14: NCRI Sale Lifecycle (purchasable closing edge of the simple loop).**
+  - Spec: `docs/superpowers/specs/2026-05-30-ncri-sale-lifecycle-design.md`.
+  - Files: `src/controller/ncri/ncri-registry.ts`, new `src/controller/ncri/pricing-store.ts`, new `src/controller/ncri/sale-flow.ts`, `src/controller/city-integration/http-server.ts`, `src/controller/evidence/library-updater.ts`, `docs/city-dashboard-integration.md`.
+  - Packets: `S-NCRI-1` (listing + pricing, cloud), `S-NCRI-2` (atomic sale + rollback, cloud), `S-NCRI-3` (redemption + print-queue contract, cloud substrate / live print), `S-NCRI-4` (seed first 3 NCRIs + admin CLI, cloud).
+  - Issue: `QA-20260530-005`.
+  - Deliverable: NCRIs move through `draft → approved → listed → sold → awaiting_redemption → redeemed` with atomic AP debit, real GP-burn redemption evidence, and audit JSONL.
+
+- `[ ]` **S15: Resident Memory System (mem0 + qmd + MCP-snippet hybrid).**
+  - Spec: `docs/superpowers/specs/2026-05-30-resident-memory-system-design.md`.
+  - Files: new `src/controller/memory/resident-memory.ts`, `src/controller/memory/facts-store.ts`, new `src/controller/memory/semantic-memory.ts`, `src/controller/mcp/server.ts` (new memory tools), `src/controller/thinking/hybrid-agent-prompts.ts` (envelope block), `docs/resident-capabilities.md`.
+  - Packets: `S-MEM-1` (ResidentMemoryService facade + formalize qmd, cloud), `S-MEM-2` (mem0 local + envelope block, cloud substrate / live recall), `S-MEM-3` (Brain-driven remember decisions + MCP tools, **needs hot stack**), `S-MEM-4` (retention/summarization with stub LLM, cloud).
+  - Issue: `QA-20260530-006`.
+  - Deliverable: residents recall explicit facts across runtime restart; semantic memory available in prompt envelope; MCP `search_memory` callable by operator; per-resident isolation enforced.
+
+- `[ ]` **S16: Goal As Orientation (aspirational goal as compass, not completion target).**
+  - Spec: `docs/superpowers/specs/2026-05-30-goal-as-orientation-design.md`.
+  - Files: `src/controller/soul/soul-schema.ts`, new `src/controller/spark/orientation-planner.ts`, new `src/controller/spark/orientation-scorer.ts`, `src/controller/spark/runescape-brain-planner.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`.
+  - Packets: `S-GOAL-1` (soul schema + envelope block, cloud), `S-GOAL-2` (scorer + library events, cloud), `S-GOAL-3` (module-bias + live benchmark, **needs hot stack**), `S-GOAL-4` (operator nudge + goal-edit CLI, cloud).
+  - Issue: `QA-20260530-007`.
+  - Deliverable: a Soul with aspirational `goal` + `orientationHints` biases planner toward orientation when survival/GP needs are met; emits `orientation_progress`/`orientation_stalled` library events; operator-only goal edits.
+
+- `[ ]` **S17: Economy Live View (city-wide JSON contract for OnionDAO viewer).**
+  - Spec: `docs/superpowers/specs/2026-05-30-economy-live-view-design.md`.
+  - Files: `src/controller/city-integration/http-server.ts`, new `src/controller/city-integration/live-economy.ts`, `docs/city-dashboard-integration.md`.
+  - Packets: `S-ECON-VIEW-1` (roll-up + `/totals` + `/events` + `/residents`, cloud), `S-ECON-VIEW-2` (`/listings` + `/heartbeat` + docs, cloud), `S-ECON-VIEW-3` (SSE stream + feature flag, cloud substrate / live latency proof).
+  - Issue: `QA-20260530-008`.
+  - Deliverable: `GET /api/nullcity/economy/live` returns a redacted city-wide snapshot of AP/GP totals, top residents, active listings, pending proposals, and recent events; powers dashboard packet D9.
+
 ## Recently Completed
 
 - `[x]` Workstream C1-C3, C5, and D1 created the first benchmark/schema/CLI and dashboard module-visibility loop.
