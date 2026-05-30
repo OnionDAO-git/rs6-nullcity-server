@@ -196,7 +196,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S7b | Open | - | - | - | - | - | - |
 | S8a | Open | - | - | - | - | - | - |
 | S8b | Open | - | - | - | - | - | - |
-| S8c | Blocked | codex | 2026-05-29 | docs/runescape-skill/economy.md; src/controller/knowledge/{knowledge-retriever.ts,knowledge-retriever.test.ts,game-skill-context.test.ts}; src/controller/thinking/{hybrid-agent-prompts.ts,hybrid-agent-prompts.test.ts}; src/controller/spark/{runescape-brain-planner.ts,runescape-brain-planner.test.ts}; src/controller/benchmarks/{cli.ts,cli.test.ts,autonomous-runtime.ts,tasks/ap-gp-library-strategy-5m.ts,tasks/ap-gp-library-strategy-5m.test.ts} | - | test:knowledge-retriever.test.ts; test:game-skill-context.test.ts; test:hybrid-agent-prompts.test.ts; test:runescape-brain-planner.test.ts; test:ap-gp-library-strategy-5m.test.ts; test:benchmarks/cli.test.ts; cmd:controller:bench --dry-run ap-gp-library-strategy-5m | benchmark:EPERM loopback connect (127.0.0.1:43595) |
+| S8c | Blocked | codex | 2026-05-29 | docs/runescape-skill/economy.md; src/controller/knowledge/{knowledge-retriever.ts,knowledge-retriever.test.ts,game-skill-context.test.ts}; src/controller/thinking/{hybrid-agent-prompts.ts,hybrid-agent-prompts.test.ts}; src/controller/spark/{runescape-brain-planner.ts,runescape-brain-planner.test.ts}; src/controller/benchmarks/{cli.ts,cli.test.ts,autonomous-runtime.ts,tasks/ap-gp-library-strategy-5m.ts,tasks/ap-gp-library-strategy-5m.test.ts} | - | test:knowledge-retriever.test.ts; test:game-skill-context.test.ts; test:hybrid-agent-prompts.test.ts; test:runescape-brain-planner.test.ts; test:ap-gp-library-strategy-5m.test.ts; test:benchmarks/cli.test.ts; cmd:controller:bench --dry-run ap-gp-library-strategy-5m | benchmark:EPERM loopback connect (127.0.0.1:43595) on two live attempts (2026-05-29 08:07 and 13:07 CDT) |
 | S9a | Open | - | - | - | - | - | - |
 | S9b | Open | - | - | - | - | - | - |
 | S10a | In Review | codex | 2026-05-29 | src/controller/benchmarks/report.ts; src/controller/benchmarks/report.test.ts; docs/model-benchmarking.md | faac035d | test:src/controller/benchmarks/report.test.ts; cmd:npm run benchmark:report | - |
@@ -213,7 +213,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | CQA4 | Open | - | - | - | - | - | - |
 | CQA5 | Open | - | - | - | - | - | issue:QA-20260529-004 |
 | CQA6 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa6-gp-coin-995-verification.md; docs/issue-register.md | 96745f95 | benchmark:bench_20260529065910_starter_gp_pickup_3m; benchmark:bench_20260529070519_starter_gp_pickup_3m | - |
-| CQA7 | Open | - | - | - | - | - | - |
+| CQA7 | In Review | codex | 2026-05-29 | docs/capability-evidence/2026-05-29-cqa7-memory-route-recall.md; docs/resident-capabilities.md; docs/issue-register.md | pending | doc:docs/capability-evidence/2026-05-29-cqa7-memory-route-recall.md; live-log:res:agent:2026-05-24; live-log:res:hans:2026-05-26; live-log:res:pip:2026-05-24; issue:QA-20260529-012 | delayed route-recall benchmark artifact still missing; one malformed structured-dump recall response found in `res:bmk_memory_01x6ig8r` |
 | CQA8 | Open | - | - | - | - | - | - |
 | CQA9 | Open | - | - | - | - | - | - |
 | CQA10 | Open | - | - | - | - | - | issue:QA-20260529-006 |
