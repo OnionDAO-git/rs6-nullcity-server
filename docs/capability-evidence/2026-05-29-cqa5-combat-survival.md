@@ -19,6 +19,9 @@ Changed files:
 
 - `src/controller/benchmarks/tasks/combat-prayer-10m.ts`
 - `src/controller/benchmarks/tasks/combat-prayer-10m.test.ts`
+- `src/controller/admin/named-combat-soak.ts`
+- `src/controller/admin/named-combat-soak.test.ts`
+- `package.json`
 
 ## Verification
 
@@ -81,8 +84,40 @@ Using existing triplet artifacts in `data/benchmarks/model-intelligence-paid-202
 
 This indicates part of prior loop-failure surface was verifier strictness rather than pure resident survival failure. The post-fix live reruns also show the local standard module can complete the full safe combat -> bones -> Prayer chain when the benchmark does not abort too early.
 
+## Named-resident soak substrate
+
+On 2026-05-30 I added `npm run controller:combat-soak`, a reusable named-resident operator soak for ordinary controller life. It attaches to a named resident, creates a nearby command peer, asks the resident to attack a safe target, and verifies ordinary action-log evidence rather than benchmark-submitted actions.
+
+Verifier coverage:
+
+```bash
+npm test -- --runInBand src/controller/admin/named-combat-soak.test.ts
+```
+
+Result: PASS (`8/8`).
+
+The verifier requires:
+
+- a command peer prompt,
+- at least one ordinary safe `attack` action against a low-risk target such as a goblin,
+- combat event evidence or repeated safe attacks,
+- no unsafe target attack,
+- no death event.
+
+It records bones/prayer evidence when present but does not require a bones drop in a short operator soak.
+
+Live attempt:
+
+```bash
+npm run controller:combat-soak -- --duration-ms=45000 --poll-ms=500 --resident res:qa-survivor --target goblin
+```
+
+Result: BLOCKED because the local controller gateway was not running: `connect ECONNREFUSED 127.0.0.1:43595`.
+
+This means CQA5 now has the named-soak tool ready, but still does not have fresh ordinary named-resident combat proof from today's running stack.
+
 ## Conclusion
 
 `CQA5` now has local live proof for the basic safe combat -> combat-supplied bones -> pickup -> bury -> Prayer XP chain: `2/2` post-fix autonomous loopback reruns passed with no deaths or unsafe targets. This upgrades the capability from "blocked" to "in review / partially proven."
 
-Keep `QA-20260529-004` open until a longer named-resident combat soak and/or model triplet rerun proves reliability outside this bounded benchmark. The remaining risk is not "can the resident do the loop at all"; it is whether hard combat remains stable under ordinary long-running goals, varied targets, and weaker model profiles.
+Keep `QA-20260529-004` open until `controller:combat-soak` passes against a running controller and/or a model triplet rerun proves reliability outside this bounded benchmark. The remaining risk is not "can the resident do the loop at all"; it is whether hard combat remains stable under ordinary long-running goals, varied targets, and weaker model profiles.

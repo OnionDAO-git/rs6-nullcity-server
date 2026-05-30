@@ -1,12 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import {
-    collectNormalLifeAudit,
-    parseNormalLifeAuditArgs,
-    runNormalLifeAuditCli,
-    type NormalLifeAuditReport,
-} from './normal-life-audit';
+import { collectNormalLifeAudit, parseNormalLifeAuditArgs, runNormalLifeAuditCli, type NormalLifeAuditReport } from './normal-life-audit';
 
 describe('normal life audit', () => {
     it('parses defaults with a one-hour window ending at now', () => {
@@ -28,26 +23,19 @@ describe('normal life audit', () => {
         fs.mkdirSync(logsRoot, { recursive: true });
         fs.mkdirSync(libraryRoot, { recursive: true });
 
-        writeJsonl(
-            path.join(logsRoot, 'res:qa-alpha', 'actions', '2026-05-30.jsonl'),
-            [
-                action('2026-05-30T11:59:59.000Z', 'move_to', 'idle_initiative', true, 120),
-                action('2026-05-30T12:10:00.000Z', 'move_to', 'idle_initiative', true, 100),
-                action('2026-05-30T12:20:00.000Z', 'say', 'idle_initiative', false, 95),
-                action('2026-05-30T12:50:00.000Z', 'trade_request', 'direct_chat_trade', true, 90),
-            ],
-        );
-        writeJsonl(
-            path.join(logsRoot, 'res:qa-beta', 'actions', '2026-05-30.jsonl'),
-            [
-                action('2026-05-30T12:15:00.000Z', 'move_to', 'explore_patrol', true, 50),
-                action('2026-05-30T12:55:00.000Z', 'say', 'none', true, 55),
-            ],
-        );
-        writeJsonl(
-            path.join(logsRoot, 'res:bmk_ignore', 'actions', '2026-05-30.jsonl'),
-            [action('2026-05-30T12:30:00.000Z', 'attack', 'benchmark', true, 1)],
-        );
+        writeJsonl(path.join(logsRoot, 'res:qa-alpha', 'actions', '2026-05-30.jsonl'), [
+            action('2026-05-30T11:59:59.000Z', 'move_to', 'idle_initiative', true, 120),
+            action('2026-05-30T12:10:00.000Z', 'move_to', 'idle_initiative', true, 100),
+            action('2026-05-30T12:20:00.000Z', 'say', 'idle_initiative', false, 95),
+            action('2026-05-30T12:50:00.000Z', 'trade_request', 'direct_chat_trade', true, 90),
+        ]);
+        writeJsonl(path.join(logsRoot, 'res:qa-beta', 'actions', '2026-05-30.jsonl'), [
+            action('2026-05-30T12:15:00.000Z', 'move_to', 'explore_patrol', true, 50),
+            action('2026-05-30T12:55:00.000Z', 'say', 'none', true, 55),
+        ]);
+        writeJsonl(path.join(logsRoot, 'res:bmk_ignore', 'actions', '2026-05-30.jsonl'), [
+            action('2026-05-30T12:30:00.000Z', 'attack', 'benchmark', true, 1),
+        ]);
 
         writeJsonl(path.join(libraryRoot, 'res-qa-alpha', 'timeline.jsonl'), [
             timeline('2026-05-30T12:11:00.000Z', 'stuck_detected'),

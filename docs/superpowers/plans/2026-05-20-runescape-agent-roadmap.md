@@ -793,6 +793,7 @@ Safe public module facade building blocks are implemented, but the public member
   - Files: `src/controller/benchmarks/tasks/*`, `src/controller/benchmarks/report.ts`, `docs/resident-capabilities.md`, `docs/model-intelligence-benchmark-results-2026-05-27.md`.
   - Deliverable: one command can run/report AP decay, GP earning, AP-for-GP exchange, NCRI transfer, goal-planning, bounded completion, and Storyteller fixture benchmarks, with model/endpoint fields preserved.
   - Verification: benchmark artifacts include resident id, model profile, endpoint, task id, success/failure, duration, and failure cause.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA5-live`): added `npm run controller:combat-soak`, a named-resident safe-combat soak verifier/CLI for ordinary controller logs. Focused verifier tests pass; first live attempt was blocked because the controller gateway was down (`ECONNREFUSED 127.0.0.1:43595`), so combat remains open until the soak passes on a hot stack.
   - 2026-05-29 (`agents/wip`, codex): packet `S10a` report-row shape landed in `src/controller/benchmarks/report.ts` with resident+endpoint+model grouping and failure-cause markdown column; verified by focused `report.test.ts`, `check:no-ui`, `fin`, and `build`. `S10b/S10c` still open.
 
 - `[>]` **S11: Dashboard contract handoff, server JSON only.**

@@ -79,9 +79,7 @@ export function parseNormalLifeAuditArgs(argv: string[], now: Date = new Date())
     const options: NormalLifeAuditOptions = {
         logsRoot: process.env.CONTROLLER_LOGS_ROOT || path.join('data', 'controller', 'logs'),
         libraryRoot: process.env.CONTROLLER_LIBRARY_ROOT || path.join('data', 'controller', 'memory', 'library'),
-        outputDir:
-            process.env.CONTROLLER_NORMAL_LIFE_AUDIT_OUTPUT_DIR ||
-            path.join('data', 'benchmarks', `capability-qa-${isoDate(now)}`),
+        outputDir: process.env.CONTROLLER_NORMAL_LIFE_AUDIT_OUTPUT_DIR || path.join('data', 'benchmarks', `capability-qa-${isoDate(now)}`),
         windowEnd: now,
         windowStart: new Date(now.getTime() - DEFAULT_DURATION_MS),
         durationMs: readPositiveInt(process.env.CONTROLLER_NORMAL_LIFE_AUDIT_DURATION_MS, DEFAULT_DURATION_MS),
@@ -296,7 +294,9 @@ export async function runNormalLifeAuditCli(argv: string[], runtime: NormalLifeA
         const artifactPath = path.join(options.outputDir, `${report.runId}.json`);
         fs.writeFileSync(artifactPath, JSON.stringify(report, null, 2) + '\n', 'utf8');
 
-        stdout(`[normal-life-audit] window=${report.windowStart}..${report.windowEnd} residents=${report.activeResidents} actions=${report.totalActionAttempts} success=${report.actionSuccessRate}%\n`);
+        stdout(
+            `[normal-life-audit] window=${report.windowStart}..${report.windowEnd} residents=${report.activeResidents} actions=${report.totalActionAttempts} success=${report.actionSuccessRate}%\n`,
+        );
         stdout(`[normal-life-audit] artifact=${artifactPath}\n`);
         return 0;
     } catch (error) {
@@ -406,7 +406,10 @@ function sortedCounts(map: Map<string, number>, limit: number): Array<[string, n
 }
 
 function timestampCompact(value: Date): string {
-    return value.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    return value
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace(/\.\d{3}Z$/, 'Z');
 }
 
 function recordField(record: Record<string, unknown> | undefined, key: string): Record<string, unknown> | undefined {
