@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawn } from 'child_process';
 import { ECONOMY_EVENT_KINDS, EconomyEventLog } from './economy-event';
 
 describe('EconomyEventLog', () => {
@@ -35,6 +36,11 @@ describe('EconomyEventLog', () => {
     it('supports signed deltas (decay is negative)', () => {
         const ev = log.append({ kind: 'ap_decay', residentName: 'res:hans', apDelta: -3 });
         expect(ev.apDelta).toBe(-3);
+    });
+
+    it('rejects append lines that exceed atomic JSONL byte safety bounds', () => {
+        const hugeNote = 'x'.repeat(5000);
+        expect(() => log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 1, note: hugeNote })).toThrow(/atomic/i);
     });
 
     it('persists as JSONL and replays across instances', () => {
@@ -189,5 +195,55 @@ describe('EconomyEventLog', () => {
             fs.appendFileSync(filePath, 'malformed\n');
             expect(log.lineCount()).toBe(2);
         });
+    });
+
+    it('keeps every JSONL line parseable under concurrent appenders', async () => {
+        const workerCount = 4;
+        const writesPerWorker = 40;
+        const filePath = path.join(root, 'city-integration', 'economy-events.jsonl');
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+
+        const workerScript = `
+            const fs = require('fs');
+            const filePath = process.argv[1];
+            const workerId = Number(process.argv[2]);
+            const writes = Number(process.argv[3]);
+            for (let i = 0; i < writes; i++) {
+              const event = {
+                schemaVersion: 1,
+                id: \`w\${workerId}-\${i}\`,
+                ts: '2026-05-29T12:00:00.000Z',
+                kind: 'ap_grant',
+                residentName: 'res:hans',
+                apDelta: 1,
+                note: \`worker-\${workerId}-\${i}\`,
+              };
+              fs.appendFileSync(filePath, JSON.stringify(event) + '\\n');
+            }
+        `;
+
+        await Promise.all(
+            Array.from(
+                { length: workerCount },
+                (_, index) =>
+                    new Promise<void>((resolve, reject) => {
+                        const child = spawn(process.execPath, ['-e', workerScript, filePath, String(index), String(writesPerWorker)], {
+                            stdio: 'ignore',
+                        });
+                        child.once('error', reject);
+                        child.once('close', code => {
+                            if (code !== 0) {
+                                reject(new Error(`worker ${index} exited with code ${String(code)}`));
+                                return;
+                            }
+                            resolve();
+                        });
+                    }),
+            ),
+        );
+
+        const events = log.readAll();
+        expect(events).toHaveLength(workerCount * writesPerWorker);
+        expect(log.lineCount()).toBe(workerCount * writesPerWorker);
     });
 });

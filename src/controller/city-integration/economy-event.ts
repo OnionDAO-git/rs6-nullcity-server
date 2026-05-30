@@ -79,6 +79,12 @@ const economyEventInputSchema = economyEventSchema.omit({ schemaVersion: true, i
     ts: z.string().min(1).optional(),
 });
 
+/**
+ * Max bytes per JSONL append line. Keeping each write <= PIPE_BUF helps preserve
+ * per-line atomicity assumptions when multiple processes append concurrently.
+ */
+const ECONOMY_EVENT_ATOMIC_APPEND_MAX_BYTES = 4096;
+
 export interface EconomyEventFilter {
     residentName?: string;
     cityUserId?: string;
@@ -116,7 +122,12 @@ export class EconomyEventLog {
         const validated = economyEventSchema.parse(event);
         const filePath = this.logPath();
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
-        fs.appendFileSync(filePath, `${JSON.stringify(validated)}\n`);
+        const line = `${JSON.stringify(validated)}\n`;
+        const lineBytes = Buffer.byteLength(line, 'utf8');
+        if (lineBytes > ECONOMY_EVENT_ATOMIC_APPEND_MAX_BYTES) {
+            throw new Error(`economy_event_atomic_append_exceeded: ${lineBytes} > ${ECONOMY_EVENT_ATOMIC_APPEND_MAX_BYTES}`);
+        }
+        fs.appendFileSync(filePath, line);
         return validated;
     }
 
@@ -172,9 +183,7 @@ export class EconomyEventLog {
         const fileSize = fs.statSync(filePath).size;
         if (fileSize === 0) return [];
 
-        // Each JSONL line is assumed < 4 KB (PIPE_BUF atomicity bound, see QA-20260530-016).
-        const MAX_LINE_BYTES = 4096;
-        const readSize = Math.min(n * MAX_LINE_BYTES, fileSize);
+        const readSize = Math.min(n * ECONOMY_EVENT_ATOMIC_APPEND_MAX_BYTES, fileSize);
         const offset = fileSize - readSize;
 
         const fd = fs.openSync(filePath, 'r');
