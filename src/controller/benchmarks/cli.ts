@@ -29,6 +29,7 @@ import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './
 import { LEVEL_UP_FIREMAKING_3M_TASK_ID, makeLevelUpFiremaking3mBenchmarkTask } from './tasks/level-up-firemaking-3m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
+import { MEMORY_ROUTE_RECALL_5M_TASK_ID, makeMemoryRouteRecall5mBenchmarkTask } from './tasks/memory-route-recall-5m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
 import { STARTER_GP_PICKUP_3M_TASK_ID, makeStarterGpPickup3mBenchmarkTask } from './tasks/starter-gp-pickup-3m';
 import { STARTER_MINING_5M_TASK_ID, makeStarterMining5mBenchmarkTask } from './tasks/starter-mining-5m';
@@ -69,6 +70,7 @@ const CORE_TASK_IDS = [
     BURY_BONES_PRAYER_3M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
+    MEMORY_ROUTE_RECALL_5M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
     AP_DECAY_ASK_5M_TASK_ID,
     AP_TOPUP_RESUME_5M_TASK_ID,
@@ -295,6 +297,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === MEMORY_RECALL_3M_TASK_ID) {
         return makeMemoryRecall3mBenchmarkTask();
+    }
+    if (taskId === MEMORY_ROUTE_RECALL_5M_TASK_ID) {
+        return makeMemoryRouteRecall5mBenchmarkTask();
     }
     if (taskId === TRADING_GIVING_5M_TASK_ID) {
         return makeTradingGiving5mBenchmarkTask();
