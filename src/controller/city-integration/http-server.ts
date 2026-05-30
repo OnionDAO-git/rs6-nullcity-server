@@ -107,6 +107,32 @@ async function handle(
         return;
     }
 
+    if (request.method === 'POST' && path === `${pathPrefix}/goals`) {
+        writeJson(response, 201, options.service.createGoalContract(await readJson(request)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/goals`) {
+        writeJson(response, 200, options.service.listGoalContracts());
+        return;
+    }
+
+    const goalMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/goals/([^/]+)(?:/(achieve))?$`));
+    if (goalMatch) {
+        const goalId = decodeURIComponent(goalMatch[1]);
+        const action = goalMatch[2];
+        if (request.method === 'GET' && action === undefined) {
+            writeJson(response, 200, options.service.getGoalContract(goalId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'achieve') {
+            writeJson(response, 200, options.service.markGoalAchieved(goalId, await readJson(request)));
+            return;
+        }
+        writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
     if (request.method === 'POST' && path === `${pathPrefix}/ncri`) {
         writeJson(response, 201, options.service.createNcri(await readJson(request)));
         return;

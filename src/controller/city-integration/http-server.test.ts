@@ -360,6 +360,58 @@ describe('CityIntegration HTTP server', () => {
         expect(redeemedAgain.status).toBe(200);
         expect(redeemedAgain.payload).toMatchObject({ id: ncriId, redemptionStatus: 'redeemed' });
     });
+
+    it('GoalContract routes (S9a): create → list → get → achieve lifecycle', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const base = started.url;
+
+        // Create
+        const created = await requestJson('POST', `${base}/goals`, token, {
+            residentName: 'res:test',
+            goalText: 'Find a reliable way to make 100 GP/hour and write the strategy into the Library',
+            completion: { condition: 'gp_hour >= 100', evidenceSource: 'runtime:bank-balance' },
+        });
+        expect(created.status).toBe(201);
+        expect(created.contentType).toMatch(/application\/json/);
+        expect(created.payload).toMatchObject({ status: 'active', residentName: 'res:test' });
+        const goalId = (created.payload as { id: string }).id;
+
+        // List
+        const list = await requestJson('GET', `${base}/goals`, token);
+        expect(list.status).toBe(200);
+        expect((list.payload as { id: string }[]).some(g => g.id === goalId)).toBe(true);
+
+        // Get
+        const got = await requestJson('GET', `${base}/goals/${goalId}`, token);
+        expect(got.status).toBe(200);
+        expect(got.payload).toMatchObject({ id: goalId, status: 'active' });
+
+        // Get unknown → 404
+        const missing = await requestJson('GET', `${base}/goals/no-such-id`, token);
+        expect(missing.status).toBe(404);
+        expect(missing.payload).toMatchObject({ error: 'not_found' });
+
+        // Achieve
+        const achieved = await requestJson('POST', `${base}/goals/${goalId}/achieve`, token, {
+            evidence: 'runtime:bank-balance',
+            tick: 50,
+            apAtCompletion: 75,
+            gpAtCompletion: 120,
+        });
+        expect(achieved.status).toBe(200);
+        expect(achieved.payload).toMatchObject({ id: goalId, status: 'achieved' });
+
+        // Idempotent achieve: second call still returns 200 with achieved status
+        const achievedAgain = await requestJson('POST', `${base}/goals/${goalId}/achieve`, token, {
+            evidence: 'runtime:bank-balance',
+        });
+        expect(achievedAgain.status).toBe(200);
+        expect(achievedAgain.payload).toMatchObject({ id: goalId, status: 'achieved' });
+    });
 });
 
 function soulMarkdown(name: string): string {

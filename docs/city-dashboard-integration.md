@@ -159,3 +159,37 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
 NCRI Library events appear in the resident's `timeline.jsonl` so the Storyteller digest can cite them. The `CityEventDigest.ncriEvents` field carries these events (see `src/controller/storyteller/types.ts`).
 
 **Important:** NCRI `itemId` is a real RuneScape item id (positive integer). No GP ledger is created by this module; GP pricing for sale/redeem lives in the exchange layer (S3). A `printable: true` NCRI requires a physical print fulfillment step outside this repo.
+
+## Goal Contracts (S9a)
+
+Resident binary goals. When a goal is marked `achieved`, the service writes a durable `goal_achieved` event to the resident's Library timeline.
+
+### Routes
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| `POST` | `/api/nullcity/goals` | `{ residentName, goalText, completion? }` | `GoalContract` |
+| `GET` | `/api/nullcity/goals` | — | `GoalContract[]` |
+| `GET` | `/api/nullcity/goals/:id` | — | `GoalContract` |
+| `POST` | `/api/nullcity/goals/:id/achieve` | `{ evidence, tick?, apAtCompletion?, gpAtCompletion? }` | `GoalContract` |
+
+### GoalContract payload
+
+```json
+{
+  "schemaVersion": 1,
+  "id": "uuid",
+  "residentName": "res:agent",
+  "goalText": "Find a reliable way to make 100 GP/hour and write the strategy into the Library",
+  "completion": { "condition": "gp_hour >= 100", "evidenceSource": "runtime:bank-balance" },
+  "status": "active | achieved | abandoned",
+  "createdAt": "ISO8601",
+  "updatedAt": "ISO8601",
+  "achievedAt": "ISO8601",
+  "achievedEvidence": "runtime:bank-balance"
+}
+```
+
+`POST /goals/:id/achieve` is idempotent: a second call with the same id returns the existing achieved record without writing a duplicate Library event.
+
+The `goal_achieved` Library timeline event is a `resolve`-phase arc event visible in `inferStoryArc` and the `CityEventDigest.goalEvents` bucket (via `goalContractsToDigestGoalEvents`). The Storyteller verifier checks for `goal_completed` evidence before narrating a goal completion in public canon.

@@ -18,9 +18,19 @@ import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
 import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
+import { LibraryUpdater } from '../evidence';
+import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
 const transferNcriSchema = z.object({ newOwner: z.string().min(1) }).strict();
+const markGoalAchievedSchema = z
+    .object({
+        evidence: z.string().min(1),
+        tick: z.number().int().nonnegative().optional(),
+        apAtCompletion: z.number().nonnegative().optional(),
+        gpAtCompletion: z.number().nonnegative().int().optional(),
+    })
+    .strict();
 
 const residentNameSchema = z.string().regex(/^res:[a-z0-9_-]{1,20}$/);
 const idempotencyKeySchema = z.string().min(1).max(200);
@@ -346,6 +356,74 @@ export class CityIntegrationService {
     async rejectSoulProposal(proposalId: string, input: unknown): Promise<SoulProposal> {
         const request = parseOrThrow(reviewSoulProposalRequestSchema, input);
         return this.withSoulProposalErrors(() => this.proposalStore.reject(proposalId, request.adminNotes));
+    }
+
+    // -------------------------------------------------------------------------
+    // GoalContract routes (S9a) — resident binary goal completion → Library.
+    // -------------------------------------------------------------------------
+
+    createGoalContract(input: unknown): GoalContract {
+        const parsed = parseOrThrow(createGoalContractSchema, input);
+        return this.withGoalErrors(() => new GoalContractStore(this.options.memoryRoot).create(parsed));
+    }
+
+    listGoalContracts(): GoalContract[] {
+        return new GoalContractStore(this.options.memoryRoot).list();
+    }
+
+    getGoalContract(id: string): GoalContract {
+        return this.withGoalErrors(() => {
+            const goal = new GoalContractStore(this.options.memoryRoot).get(id);
+            if (!goal) throw new GoalContractError('not_found', `goal '${id}' not found`);
+            return goal;
+        });
+    }
+
+    /**
+     * Mark a GoalContract achieved and write a saved-state Library moment.
+     *
+     * Idempotent: if the goal is already `achieved`, returns it without
+     * writing a duplicate Library event. Only fires `goal_achieved` on the
+     * first transition from `active` → `achieved`, per S9a requirements.
+     */
+    markGoalAchieved(id: string, input: unknown): GoalContract {
+        const body = parseOrThrow(markGoalAchievedSchema, input);
+        const store = new GoalContractStore(this.options.memoryRoot, this.now);
+        return this.withGoalErrors(() => {
+            const existing = store.get(id);
+            if (!existing) throw new GoalContractError('not_found', `goal '${id}' not found`);
+
+            const wasAlreadyAchieved = existing.status === 'achieved';
+            const goal = store.markAchieved(id, body.evidence);
+
+            if (!wasAlreadyAchieved) {
+                const library = new LibraryUpdater(goal.residentName, this.options.memoryRoot, { now: this.now });
+                library.observeGoalAchieved({
+                    kind: 'goal_achieved',
+                    ts: goal.achievedAt ?? this.now().toISOString(),
+                    tick: body.tick ?? 0,
+                    goalId: goal.id,
+                    goalText: goal.goalText,
+                    evidence: body.evidence,
+                    apAtCompletion: body.apAtCompletion,
+                    gpAtCompletion: body.gpAtCompletion,
+                });
+            }
+
+            return goal;
+        });
+    }
+
+    private withGoalErrors<T>(fn: () => T): T {
+        try {
+            return fn();
+        } catch (error) {
+            if (error instanceof GoalContractError) {
+                const status = error.code === 'not_found' ? 404 : 409;
+                throw new CityIntegrationError(status, error.code, error.message);
+            }
+            throw error;
+        }
     }
 
     // -------------------------------------------------------------------------

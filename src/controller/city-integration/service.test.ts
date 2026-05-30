@@ -679,6 +679,116 @@ describe('CityIntegrationService', () => {
         const result = await service.birthFromProposal(proposal.id);
         expect(result).toMatchObject({ fundedAttention: 200 });
     });
+
+    describe('GoalContract methods (S9a)', () => {
+        it('createGoalContract returns a goal with active status', () => {
+            const goal = service.createGoalContract({
+                residentName: 'res:test',
+                goalText: 'Find a reliable way to make 100 GP/hour and write the strategy into the Library',
+            });
+            expect(goal.status).toBe('active');
+            expect(goal.residentName).toBe('res:test');
+            expect(goal.id).toBeTruthy();
+        });
+
+        it('createGoalContract rejects invalid input', () => {
+            expect(() => service.createGoalContract({ residentName: 'not-valid', goalText: 'ok' })).toThrow();
+        });
+
+        it('listGoalContracts returns all stored goals', () => {
+            service.createGoalContract({ residentName: 'res:test', goalText: 'Goal A' });
+            service.createGoalContract({ residentName: 'res:test', goalText: 'Goal B' });
+            const list = service.listGoalContracts();
+            expect(list).toHaveLength(2);
+        });
+
+        it('getGoalContract returns the goal by id', () => {
+            const created = service.createGoalContract({ residentName: 'res:test', goalText: 'Find 100 GP route' });
+            const fetched = service.getGoalContract(created.id);
+            expect(fetched.id).toBe(created.id);
+            expect(fetched.goalText).toBe('Find 100 GP route');
+        });
+
+        it('getGoalContract throws 404 for unknown id', () => {
+            expect(() => service.getGoalContract('does-not-exist')).toThrow();
+        });
+
+        it('markGoalAchieved updates goal status to achieved AND writes Library goal_achieved event', () => {
+            const goal = service.createGoalContract({
+                residentName: 'res:test',
+                goalText: 'Make 100 GP/hour',
+                completion: { condition: 'gp_hour >= 100', evidenceSource: 'runtime:bank-balance' },
+            });
+
+            const achieved = service.markGoalAchieved(goal.id, {
+                evidence: 'runtime:bank-balance',
+                tick: 42,
+                apAtCompletion: 80,
+                gpAtCompletion: 150,
+            });
+
+            expect(achieved.status).toBe('achieved');
+            expect(achieved.achievedEvidence).toBe('runtime:bank-balance');
+
+            // Library timeline must have a goal_achieved event.
+            const libraryDir = path.join(root, 'library', 'res-test');
+            const timeline = fs
+                .readFileSync(path.join(libraryDir, 'timeline.jsonl'), 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map((l: string) => JSON.parse(l) as Record<string, unknown>);
+            const goalEvent = timeline.find((e: Record<string, unknown>) => e.kind === 'goal_achieved');
+            expect(goalEvent).toBeDefined();
+            expect(goalEvent?.goalId).toBe(goal.id);
+            expect(goalEvent?.goalText).toBe('Make 100 GP/hour');
+            expect(goalEvent?.evidence).toBe('runtime:bank-balance');
+            expect(goalEvent?.apAtCompletion).toBe(80);
+            expect(goalEvent?.gpAtCompletion).toBe(150);
+            expect(goalEvent?.tick).toBe(42);
+        });
+
+        it('markGoalAchieved is idempotent: second call does not write a duplicate Library event', () => {
+            const goal = service.createGoalContract({ residentName: 'res:test', goalText: 'Mine ore' });
+            service.markGoalAchieved(goal.id, { evidence: 'runtime:bank-balance' });
+            service.markGoalAchieved(goal.id, { evidence: 'runtime:bank-balance' });
+
+            const libraryDir = path.join(root, 'library', 'res-test');
+            const timeline = fs
+                .readFileSync(path.join(libraryDir, 'timeline.jsonl'), 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map((l: string) => JSON.parse(l) as Record<string, unknown>);
+            const goalEvents = timeline.filter((e: Record<string, unknown>) => e.kind === 'goal_achieved');
+            expect(goalEvents).toHaveLength(1);
+        });
+
+        it('markGoalAchieved throws on empty evidence', () => {
+            const goal = service.createGoalContract({ residentName: 'res:test', goalText: 'Mine ore' });
+            expect(() => service.markGoalAchieved(goal.id, { evidence: '   ' })).toThrow();
+        });
+
+        it('markGoalAchieved throws 404 for unknown goal id', () => {
+            expect(() => service.markGoalAchieved('no-such-id', { evidence: 'ev' })).toThrow();
+        });
+
+        it('markGoalAchieved without optional AP/GP context still records goal_achieved', () => {
+            const goal = service.createGoalContract({ residentName: 'res:test', goalText: 'Learn Lumbridge' });
+            service.markGoalAchieved(goal.id, { evidence: 'library:strategy#1' });
+
+            const libraryDir = path.join(root, 'library', 'res-test');
+            const timeline = fs
+                .readFileSync(path.join(libraryDir, 'timeline.jsonl'), 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map((l: string) => JSON.parse(l) as Record<string, unknown>);
+            const goalEvent = timeline.find((e: Record<string, unknown>) => e.kind === 'goal_achieved');
+            expect(goalEvent?.apAtCompletion).toBeUndefined();
+            expect(goalEvent?.gpAtCompletion).toBeUndefined();
+        });
+    });
 });
 
 function soulMarkdown(name: string): string {
