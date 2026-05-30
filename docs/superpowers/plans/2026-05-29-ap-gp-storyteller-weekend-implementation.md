@@ -232,7 +232,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | D5 | In Review | codex | 2026-05-30 | `../rs6-nullcity-residents-dashboard` packages/server/src/{storyteller.ts,storyteller.test.ts,index.ts,config.ts,config.test.ts}; packages/web/src/{App.svelte,lib/api.ts,app.css} | dashboard:7b1db56+401d657+be2734d+37d94ec | test:bun test 12/12 focused plus storyteller 4/4; cmd:bun run typecheck; cmd:bun run check; cmd:bun run build; browser:http://127.0.0.1:5174/story shows grounded event cards, dispatch body/bullets, operator review warnings/reasons/refs, coin-995/NCRI labels, and no raw human ids | next: S4 soul birth or D2 proposal funding; paid-model dispatch remains opt-in only |
 | D6 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | S5 NCRI contracts |
 | D7 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | gateway/client auth contract |
-| D8 | Open | dashboard repo | - | `../rs6-nullcity-residents-dashboard` | - | - | stable endpoints/fixtures |
+| D8 | In Review | codex | 2026-05-30 | `../rs6-nullcity-residents-dashboard` packages/web/src/{lib/release-readiness.ts,lib/release-readiness.test.ts,App.svelte,app.css} | dashboard:31d0f8f | test:bun test 155/155; cmd:bun run typecheck; cmd:bun run check; cmd:bun run build; browser:http://127.0.0.1:5174/ shows Operator Readiness panel | dev browser smoke had no live controller attached, panel correctly blocked instead of claiming healthy |
 
 | Packet | Parent | Lane | Depends on | Deliverable | Proof |
 |---|---|---|---|---|---|
