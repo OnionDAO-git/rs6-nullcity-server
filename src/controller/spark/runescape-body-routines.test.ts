@@ -1834,6 +1834,31 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
     });
 
+    it('attacks a visible Lumbridge man fallback instead of route-looping forever', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [man] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'attack', target: man, cause: 'combat_attack_safe_target' });
+    });
+
+    it('prefers a visible goblin over a Lumbridge man fallback', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const goblin = combatNpc('Goblin', 3222, 3220);
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [man, goblin] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' });
+    });
+
     it('equips useful carried gear before starting combat', () => {
         const chicken = combatNpc('Chicken', 3220, 3220);
         const action = combatTrainingAction(
@@ -1875,7 +1900,7 @@ describe('combatTrainingAction', () => {
         });
     });
 
-    it('seeks a fixed waypoint when no safe target is in sight and resident is far away', () => {
+    it('seeks the Lumbridge goblin field when no safe combat target is in sight', () => {
         const action = combatTrainingAction(
             perception({
                 resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
@@ -1884,7 +1909,7 @@ describe('combatTrainingAction', () => {
         );
         expect(action).toEqual({
             kind: 'move_to',
-            target: { x: 3222, y: 3218, level: 0 },
+            target: { x: 3249, y: 3238, level: 0 },
             range: 6,
             cause: 'combat_seek_safe_target',
         });

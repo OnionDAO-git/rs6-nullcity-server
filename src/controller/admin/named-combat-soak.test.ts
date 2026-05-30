@@ -53,6 +53,43 @@ describe('named combat soak verifier', () => {
         expect(outcome.summaries[0]).toContain('no bones/prayer proof');
     });
 
+    it('counts Lumbridge men as safe fallback combat proof', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            entries: [log({ kind: 'attack', target: safeNpc('Man'), cause: 'combat_attack_safe_target' })],
+            events: [{ kind: 'hit', amount: 1 }],
+            commandSubmitted: 1,
+            perceptionCount: 2,
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics.safeAttackActions).toBe(1);
+        expect(outcome.metrics.unsafeAttackActions).toBe(0);
+    });
+
+    it('does not count failed safe-target submissions as successful combat proof', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            entries: [
+                log({ kind: 'attack', target: safeNpc('Goblin'), cause: 'direct_chat_attack' }, { ok: false, reason: 'target_not_found' }),
+            ],
+            events: [],
+            commandSubmitted: 1,
+            perceptionCount: 2,
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('No ordinary safe attack');
+        expect(outcome.metrics).toMatchObject({
+            attackActions: 1,
+            safeAttackActions: 0,
+            failedAttackActions: 1,
+            combatEvidence: 0,
+        });
+    });
+
     it('fails if the resident attacks an unsafe target', () => {
         const outcome = verifyNamedCombatSoakEvidence({
             resident: 'res:qa-survivor',
@@ -82,6 +119,24 @@ describe('named combat soak verifier', () => {
         expect(outcome.failureReason).toContain('No ordinary safe attack');
     });
 
+    it('distinguishes low-health refusal from missing combat proof', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            entries: [log({ kind: 'say', text: 'My health is too low to fight right now.' })],
+            events: [],
+            commandSubmitted: 1,
+            perceptionCount: 2,
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('refused combat while low on health');
+        expect(outcome.metrics).toMatchObject({
+            lowHealthRefusals: 1,
+            safeAttackActions: 0,
+        });
+    });
+
     it('fails if a death event appears after combat starts', () => {
         const outcome = verifyNamedCombatSoakEvidence({
             resident: 'res:qa-survivor',
@@ -100,7 +155,7 @@ describe('named combat soak verifier', () => {
         expect(parseNamedCombatSoakArgs([], new Date('2026-05-30T15:52:00.000Z'))).toMatchObject({
             resident: 'res:qa-survivor',
             commandPeer: 'res:codex-cqa5-155200',
-            commandPrefix: 'combat',
+            commandPrefix: 'survive',
             targetName: 'goblin',
             configPath: 'controller.yml',
             outputDir: 'data/benchmarks/capability-qa-2026-05-30',
@@ -135,12 +190,12 @@ describe('named combat soak verifier', () => {
     });
 });
 
-function log(action: Record<string, unknown>): NamedCombatSoakLogEntry {
+function log(action: Record<string, unknown>, result: Record<string, unknown> = { ok: true }): NamedCombatSoakLogEntry {
     return {
         t: '2026-05-30T15:52:00.000Z',
         source: 'thinking',
         action,
-        result: { ok: true },
+        result,
     };
 }
 

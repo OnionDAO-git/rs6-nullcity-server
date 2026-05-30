@@ -56,7 +56,7 @@ export interface NamedCombatSoakRuntime {
 
 const DEFAULT_DURATION_MS = 120_000;
 const DEFAULT_POLL_MS = 500;
-const SAFE_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin)\b/i;
+const SAFE_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin|man|woman)\b/i;
 const UNSAFE_TARGET_PATTERN = /\b(player|guard|dragon|demon|wizard|king|black knight|dark wizard)\b/i;
 
 export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date()): NamedCombatSoakOptions {
@@ -64,7 +64,7 @@ export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date())
     const options: NamedCombatSoakOptions = {
         resident: process.env.CONTROLLER_COMBAT_SOAK_RESIDENT || 'res:qa-survivor',
         commandPeer: process.env.CONTROLLER_COMBAT_SOAK_COMMAND_PEER || `res:codex-cqa5-${defaultPeerSuffix}`,
-        commandPrefix: process.env.CONTROLLER_COMBAT_SOAK_PREFIX || 'combat',
+        commandPrefix: process.env.CONTROLLER_COMBAT_SOAK_PREFIX || 'survive',
         targetName: process.env.CONTROLLER_COMBAT_SOAK_TARGET || 'goblin',
         configPath: process.env.CONTROLLER_CONFIG || 'controller.yml',
         outputDir: process.env.CONTROLLER_COMBAT_SOAK_OUTPUT_DIR || path.join('data', 'benchmarks', `capability-qa-${isoDate(now)}`),
@@ -138,6 +138,9 @@ export function verifyNamedCombatSoakEvidence(input: NamedCombatSoakVerification
         return failed('Unsafe combat target was attacked by the named resident', metrics);
     }
     if (metrics.safeAttackActions === 0) {
+        if (metrics.lowHealthRefusals > 0) {
+            return failed('Resident refused combat while low on health before a safe attack', metrics);
+        }
         return failed('No ordinary safe attack appeared in the named resident action log', metrics);
     }
     if (metrics.combatEvidence === 0) {
@@ -239,7 +242,10 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
         });
         commandSubmitted += 1;
 
-        await waitFor(() => attackCountFromLog(actionLogPath, baselineSize) >= 1, options, 'resident attack action');
+        const sawSuccessfulAttack = await waitForResult(() => successfulSafeAttackCountFromLog(actionLogPath, baselineSize) >= 1, options);
+        if (!sawSuccessfulAttack) {
+            stdout(`[combat-soak] no successful safe attack before ${options.durationMs}ms; writing diagnostic artifact\n`);
+        }
         await sleep(options.pollMs * 2);
 
         const entries = readActionLogEntriesSince(actionLogPath, baselineSize);
@@ -282,7 +288,7 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
 
 function namedCombatSoakMetrics(input: NamedCombatSoakVerificationInput): Record<string, number> {
     const attackEntries = input.entries.filter(entry => entry.action?.kind === 'attack');
-    const safeAttacks = attackEntries.filter(entry => isSafeAttack(entry.action));
+    const safeAttacks = attackEntries.filter(isSuccessfulSafeAttackEntry);
     const unsafeAttacks = attackEntries.filter(entry => !isSafeAttack(entry.action));
     const events = input.events;
     return {
@@ -290,14 +296,33 @@ function namedCombatSoakMetrics(input: NamedCombatSoakVerificationInput): Record
         commandSubmitted: input.commandSubmitted,
         perceptionCount: input.perceptionCount,
         attackActions: attackEntries.length,
+        failedAttackActions: attackEntries.filter(entry => !isSuccessfulActionResult(entry.result)).length,
         safeAttackActions: safeAttacks.length,
         unsafeAttackActions: unsafeAttacks.length,
+        lowHealthRefusals: input.entries.filter(isLowHealthRefusal).length,
         combatEvidence: hasCombatEvidence(events) || safeAttacks.length > 1 ? 1 : 0,
         bonesEvidence: events.some(isBonesEvent) || input.entries.some(isBonesAction) ? 1 : 0,
         prayerEvidence: events.some(isPrayerEvent) || input.entries.some(isBuryAction) ? 1 : 0,
-        survivalActions: input.entries.filter(entry => entry.action?.kind === 'eat' || entry.action?.cause === 'combat_retreat').length,
+        survivalActions: input.entries.filter(entry => entry.action?.kind === 'eat' || isSurvivalCause(entry.action?.cause)).length,
         deathEvents: events.filter(isDeathEvent).length,
     };
+}
+
+function isSuccessfulSafeAttackEntry(entry: NamedCombatSoakLogEntry): boolean {
+    return isSafeAttack(entry.action) && isSuccessfulActionResult(entry.result);
+}
+
+function isSuccessfulActionResult(result: Record<string, unknown> | undefined): boolean {
+    return result?.ok === true;
+}
+
+function isLowHealthRefusal(entry: NamedCombatSoakLogEntry): boolean {
+    const action = entry.action;
+    return action?.kind === 'say' && /(health is too low|low health|too weak|hurt)/i.test(String(action.text || action.cause || ''));
+}
+
+function isSurvivalCause(cause: unknown): boolean {
+    return typeof cause === 'string' && /^(combat_retreat|low_health_)/.test(cause);
 }
 
 function isSafeAttack(action: Record<string, unknown> | undefined): boolean {
@@ -390,19 +415,26 @@ function readActionLogEntriesSince(filePath: string, baselineSize: number): Name
         .filter((entry): entry is NamedCombatSoakLogEntry => Boolean(entry));
 }
 
-function attackCountFromLog(filePath: string, baselineSize: number): number {
-    return readActionLogEntriesSince(filePath, baselineSize).filter(entry => entry.action?.kind === 'attack').length;
+function successfulSafeAttackCountFromLog(filePath: string, baselineSize: number): number {
+    return readActionLogEntriesSince(filePath, baselineSize).filter(isSuccessfulSafeAttackEntry).length;
 }
 
 async function waitFor(predicate: () => boolean, options: NamedCombatSoakOptions, label: string): Promise<void> {
+    const matched = await waitForResult(predicate, options);
+    if (!matched) {
+        throw new Error(`Timed out waiting for ${label}`);
+    }
+}
+
+async function waitForResult(predicate: () => boolean, options: NamedCombatSoakOptions): Promise<boolean> {
     const started = Date.now();
     while (Date.now() - started < options.durationMs) {
         if (predicate()) {
-            return;
+            return true;
         }
         await sleep(options.pollMs);
     }
-    throw new Error(`Timed out waiting for ${label}`);
+    return false;
 }
 
 function writeArtifact(outputDir: string, artifact: Record<string, unknown>): string {

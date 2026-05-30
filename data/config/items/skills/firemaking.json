@@ -4,6 +4,11 @@
         "tradable": true,
         "weight": 0.035
     },
+    "rs:ashes": {
+        "game_id": 592,
+        "tradable": true,
+        "weight": 0.056
+    },
     "rs:normal_pyre_ships": {
         "game_id": 3438
     },

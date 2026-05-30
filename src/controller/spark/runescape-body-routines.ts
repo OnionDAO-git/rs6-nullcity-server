@@ -215,11 +215,14 @@ export const EXPLORATION_PATROL_MAX_DISTANCE = 12;
 /** Range (in tiles) within which a prayer-training waypoint is considered reached. */
 export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
 
-/** Fixed waypoints the prayer/combat routines walk between when no safe target is in sight. */
+/** Fixed waypoints the prayer routine walks between when no safe bone source is in sight. */
 export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
     { x: 3222, y: 3218, level: 0 },
     { x: 3249, y: 3238, level: 0 },
 ];
+
+/** Fixed waypoints the combat routine uses when no safe target is in sight. */
+export const COMBAT_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [{ x: 3249, y: 3238, level: 0 }];
 
 /** Safe low-traffic recovery spots to wait for healing or food after unsafe combat. */
 export const LOW_HEALTH_RECOVERY_WAYPOINTS: ReadonlyArray<BodyPos> = [{ x: 3222, y: 3218, level: 0 }];
@@ -1157,6 +1160,11 @@ export function nearestPrayerTrainingWaypoint(here: BodyPos): BodyPos {
     return [...PRAYER_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
 }
 
+/** Returns the nearest fixed combat-training waypoint to the given position. */
+export function nearestCombatTrainingWaypoint(here: BodyPos): BodyPos {
+    return [...COMBAT_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
 /** Lower number = higher-priority NPC kill choice for prayer (bone) sourcing. */
 export function boneSourcePriority(actor: BodyActor): number {
     const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
@@ -1335,7 +1343,7 @@ export function combatTrainingAction(
 
     const target = safeCombatTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
-        const waypoint = nearestPrayerTrainingWaypoint(here);
+        const waypoint = nearestCombatTrainingWaypoint(here);
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
             ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
             : undefined;

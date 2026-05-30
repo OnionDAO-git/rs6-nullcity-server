@@ -46,6 +46,13 @@ describe('item configuration', () => {
         expect(config.items['rs:burnt_shrimp']).toMatchObject({ gameId: 7954 });
     });
 
+    it('registers ashes so firemaking residue does not flood the game log', async () => {
+        const config = await loadItemConfigurations('data/config/items/');
+
+        expect(config.itemIds[592]).toBe('rs:ashes');
+        expect(config.items['rs:ashes']).toMatchObject({ gameId: 592 });
+    });
+
     it("registers Cook's Assistant ingredients used by resident quest benchmarks", async () => {
         const config = await loadItemConfigurations('data/config/items/');
 

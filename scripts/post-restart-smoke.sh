@@ -13,6 +13,9 @@ red()    { echo "${R}[RED]${N}    $*"; RED_COUNT=$((RED_COUNT+1)); }
 yellow() { echo "${Y}[YELLOW]${N} $*"; YEL_COUNT=$((YEL_COUNT+1)); }
 green()  { echo "${G}[GREEN]${N}  $*"; }
 section(){ echo; echo "${B}== $* ==${N}"; }
+curl_quick() {
+  curl --connect-timeout 2 --max-time "${CURL_MAX_TIME:-8}" -fs "$@"
+}
 
 HEROES=(res-hans res-father-aereck res-wise-old-man res-duke-horacio res-pip res-thrand)
 hero_floor() {
@@ -47,16 +50,16 @@ else
 fi
 
 section "2. Letters HTTP server bound (:$PORT)"
-if curl -fs "$BASE/v1/health" >/dev/null 2>&1; then
+if curl_quick "$BASE/v1/health" >/dev/null 2>&1; then
   green "v1/health 200 OK"
-elif curl -fs "$BASE/v1/inbox?human=health-check" >/dev/null 2>&1; then
-  green "v1/inbox responded (no v1/health, fallback OK)"
+elif CURL_MAX_TIME=4 curl_quick "$BASE/v1/inbox?human=health-check" >/dev/null 2>&1; then
+  green "v1/inbox responded (v1/health slow/unavailable, fallback OK)"
 else
   red "Controller restarted without --letters-http-port=${PORT} (HD-026)"
 fi
 
 section "3. Wall snapshot redaction"
-SNAP=$(curl -fs "$BASE/v1/wall/snapshot" 2>/dev/null || true)
+SNAP=$(CURL_MAX_TIME=6 curl_quick "$BASE/v1/wall/snapshot" 2>/dev/null || true)
 if [[ -z "$SNAP" ]]; then
   yellow "could not fetch /v1/wall/snapshot (skipping redaction check)"
 else

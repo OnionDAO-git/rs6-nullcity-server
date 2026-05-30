@@ -240,10 +240,12 @@ describe('runescape-workflows actor predicates', () => {
             expect(isSafeCombatTarget(actor({ name: 'Goblin' }))).toBe(true);
         });
 
-        it('rejects humanoid NPCs that bone-sources allow but combat does NOT', () => {
-            // Behavior parity: SAFE_BONE_SOURCE_PATTERN admits man/woman/spider; the
-            // narrower SAFE_COMBAT_TARGET_PATTERN does not.
-            expect(isSafeCombatTarget(actor({ name: 'Man' }))).toBe(false);
+        it('allows Lumbridge humanoid NPCs as fallback starter combat targets', () => {
+            expect(isSafeCombatTarget(actor({ name: 'Man' }))).toBe(true);
+            expect(isSafeCombatTarget(actor({ name: 'Woman' }))).toBe(true);
+        });
+
+        it('rejects higher-risk bone-source NPCs that starter combat should not chase', () => {
             expect(isSafeCombatTarget(actor({ name: 'Spider' }))).toBe(false);
         });
 

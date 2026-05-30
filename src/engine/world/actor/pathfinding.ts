@@ -173,7 +173,7 @@ export class Pathfinding {
         const highestX = position.x + searchRadius;
         const highestY = position.y + searchRadius;
 
-        if (destinationX < lowestX || destinationX > highestX || destinationY < lowestY || destinationY > highestY) {
+        if (destinationX < lowestX || destinationX >= highestX || destinationY < lowestY || destinationY >= highestY) {
             throw new Error(`Out of range.`);
         }
 
