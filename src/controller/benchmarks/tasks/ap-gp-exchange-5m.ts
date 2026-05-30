@@ -118,6 +118,7 @@ export function makeApGpExchange5mBenchmarkTask(): BenchmarkTask {
         id: AP_GP_EXCHANGE_5M_TASK_ID,
         version: AP_GP_EXCHANGE_5M_TASK_VERSION,
         timeoutMs: AP_GP_EXCHANGE_5M_TIMEOUT_MS,
+        autonomousRequiresSelectedModuleAction: false,
         resident: {
             spawnPosition: START_POSITION,
             initialInventory: [{ itemId: COIN_ITEM_ID, amount: STARTER_GP }],

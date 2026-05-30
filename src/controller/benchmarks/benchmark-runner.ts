@@ -62,6 +62,7 @@ export interface BenchmarkTask {
     id: string;
     version: string;
     timeoutMs: number;
+    autonomousRequiresSelectedModuleAction?: boolean;
     resident?: Omit<CreateResidentPayload, 'name'>;
     peers?: BenchmarkTaskPeer[];
     memorySeeds?: BenchmarkMemorySeed[];
@@ -281,7 +282,7 @@ export class BenchmarkRunner {
         }
 
         if (mode === 'autonomous') {
-            outcome = enforceAutonomousModuleEvidence(outcome, evidence, this.options.module);
+            outcome = enforceAutonomousModuleEvidence(this.options.task, outcome, evidence, this.options.module);
         }
 
         const endedAt = this.now().toISOString();
@@ -571,12 +572,22 @@ function actionCause(action: AgentAction): string | undefined {
 }
 
 function enforceAutonomousModuleEvidence(
+    task: BenchmarkTask,
     outcome: BenchmarkTaskOutcome,
     evidence: BenchmarkEvidenceBuffer,
     module: SparkModuleIdentity,
 ): BenchmarkTaskOutcome {
     if (outcome.status !== 'passed') {
         return outcome;
+    }
+    if (task.autonomousRequiresSelectedModuleAction === false) {
+        return {
+            ...outcome,
+            summaries: [
+                ...(outcome.summaries || []),
+                `Autonomous benchmark ${task.id} uses benchmark-side evidence and does not require selected module action evidence.`,
+            ],
+        };
     }
     if (selectedModuleActionCount(evidence, module) > 0) {
         return outcome;

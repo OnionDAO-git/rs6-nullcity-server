@@ -43,6 +43,11 @@ describe('makeApGpExchange5mBenchmarkTask', () => {
         expect(typeof task.runAutonomous).toBe('function');
     });
 
+    it('declares itself as a controlled economy proof instead of a selected-module body-action task', () => {
+        const task = makeApGpExchange5mBenchmarkTask();
+        expect(task.autonomousRequiresSelectedModuleAction).toBe(false);
+    });
+
     it('scripted run returns a failed outcome (requires autonomous mode)', async () => {
         const task = makeApGpExchange5mBenchmarkTask();
         const outcome = await task.run({} as Parameters<typeof task.run>[0]);

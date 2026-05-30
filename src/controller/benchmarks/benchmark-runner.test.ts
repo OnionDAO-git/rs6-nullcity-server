@@ -252,6 +252,40 @@ describe('BenchmarkRunner', () => {
         expect(artifact.metrics.actionsAttempted).toBe(2);
     });
 
+    it('allows explicit benchmark-side autonomous proof tasks to pass without selected module action evidence', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const autonomousRuntime = {
+            start: jest.fn(async context => {
+                context.recordActionAttempt({
+                    requestId: 'controlled-economy-action',
+                    action: { kind: 'city_exchange_ap_gp', cause: 'benchmark:ap-gp-exchange-5m', gpAmount: 25, apAmount: 50 },
+                    result: { ok: true, status: 'complete' },
+                    source: 'benchmark',
+                });
+            }),
+            stop: jest.fn(async () => undefined),
+        };
+        const task: BenchmarkTask = {
+            id: 'ap-gp-exchange-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            autonomousRequiresSelectedModuleAction: false,
+            run: async () => ({ status: 'passed', score: 1 }),
+            runAutonomous: async () => ({ status: 'passed', score: 1 }),
+        };
+
+        const artifact = await runner(gateway, task, { mode: 'autonomous', autonomousRuntime }).run();
+
+        expect(artifact.status).toBe('passed');
+        expect(artifact.score).toBe(1);
+        expect(artifact.failureReason).toBeUndefined();
+        expect(artifact.metrics.selectedModuleActions).toBe(0);
+        expect(artifact.metrics.untaggedActions).toBe(1);
+        expect(artifact.evidence.summaries).toContain(
+            'Autonomous benchmark ap-gp-exchange-5m uses benchmark-side evidence and does not require selected module action evidence.',
+        );
+    });
+
     it('passes autonomous selected-module actions without inference evidence and records the inference metric', async () => {
         const gateway = new MockBenchmarkGateway();
         const module = { id: 'onion.runescape.standard', version: '0.1.0' };
