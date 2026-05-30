@@ -229,6 +229,24 @@ describe('NervousSystem', () => {
         });
     });
     describe('requestAttentionReaction (M3)', () => {
+        it('acknowledges AP top-up events with a visible resume line', () => {
+            const state = runtimeState(42);
+            state.attention = 3000;
+            const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(42),
+                events: [{ kind: 'attention_topup', amount: 3000, attentionAfter: 3000 }],
+            });
+
+            expect(reaction?.action).toMatchObject({
+                kind: 'say',
+                cause: 'nervous:attention-topup-resume',
+            });
+            expect((reaction?.action as { text?: string })?.text).toMatch(/AP|resum/i);
+            expect(reaction?.suppressThinking).toBe(false);
+        });
+
         it('appeals for attention when attention is below floor + buffer', () => {
             const state = runtimeState(100);
             state.attention = 4000;

@@ -156,7 +156,7 @@ function apTopupResumeMetrics(input: ApTopupResume5mVerificationInput): Record<s
     const transitions = attentionTransitions(input.actions);
     const firstTopUpIndex = transitions.firstTopUpIndex;
     const resumeAfterTopUpActions =
-        firstTopUpIndex === -1 ? 0 : input.actions.slice(firstTopUpIndex + 1).filter(attempt => attempt.action.kind !== 'logout').length;
+        firstTopUpIndex === -1 ? 0 : input.actions.slice(firstTopUpIndex + 1).filter(isVisibleResumeAction).length;
 
     return {
         actionsAttempted: input.actions.length,
@@ -177,12 +177,20 @@ function attentionTransitions(actions: ApTopupResume5mActionAttempt[]): { topUpJ
     let topUpJumps = 0;
     let firstTopUpIndex = -1;
     let previous: number | undefined;
+    let explicitTopUpSeen = false;
     for (let i = 0; i < actions.length; i += 1) {
         const current = actions[i].attentionAfter;
+        if (isBenchmarkTopUp(actions[i].action) && typeof current === 'number' && current > 0) {
+            explicitTopUpSeen = true;
+            topUpJumps += 1;
+            if (firstTopUpIndex === -1) {
+                firstTopUpIndex = i;
+            }
+        }
         if (typeof current !== 'number') {
             continue;
         }
-        if (typeof previous === 'number' && previous <= 0 && current > 0) {
+        if (!explicitTopUpSeen && typeof previous === 'number' && previous <= 0 && current > 0) {
             topUpJumps += 1;
             if (firstTopUpIndex === -1) {
                 firstTopUpIndex = i;
@@ -191,6 +199,17 @@ function attentionTransitions(actions: ApTopupResume5mActionAttempt[]): { topUpJ
         previous = current;
     }
     return { topUpJumps, firstTopUpIndex };
+}
+
+function isBenchmarkTopUp(action: AgentAction): boolean {
+    return action.kind === 'ap_topup' || action.kind === 'attention_topup';
+}
+
+function isVisibleResumeAction(attempt: ApTopupResume5mActionAttempt): boolean {
+    if (attempt.action.kind === 'logout' || isBenchmarkTopUp(attempt.action)) {
+        return false;
+    }
+    return attempt.finalStatus === 'success' || attempt.finalStatus === 'accepted';
 }
 
 function observedAttentionValues(input: ApTopupResume5mVerificationInput): number[] {

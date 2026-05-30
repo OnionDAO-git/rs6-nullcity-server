@@ -69,6 +69,50 @@ describe('ap-topup-resume-5m benchmark task', () => {
             expect(outcome.failureReason).toContain('no resumed non-logout action');
             expect(outcome.metrics).toMatchObject({ topUpJumps: 1, resumeAfterTopUpActions: 0 });
         });
+
+        it('accepts benchmark AP top-up evidence even when gateway logout evidence lands after the top-up record', () => {
+            const outcome = verifyApTopupResume5m({
+                elapsedMs: 85_000,
+                actions: [
+                    attempt({ kind: 'say', text: 'I need AP.', cause: 'nervous:request-attention' }, 'success', 10),
+                    attempt({ kind: 'ap_topup', cause: 'benchmark:ap-topup-resume-5m', amount: 3000 }, 'success', 3000),
+                    attempt({ kind: 'logout', cause: 'attention_exhausted' }, 'failure', 0),
+                    attempt({ kind: 'say', text: 'AP received; resuming.', cause: 'nervous:attention-topup-resume' }, 'success', 2999),
+                ],
+                perceptions: [],
+                events: [{ kind: 'attention_exhausted' }],
+            });
+
+            expect(outcome).toMatchObject({
+                status: 'passed',
+                score: 1,
+                metrics: {
+                    topUpJumps: 1,
+                    resumeAfterTopUpActions: 1,
+                },
+            });
+        });
+
+        it('does not count a body-blocked resume line as visible resumed work', () => {
+            const outcome = verifyApTopupResume5m({
+                elapsedMs: 85_000,
+                actions: [
+                    attempt({ kind: 'say', text: 'I need AP.', cause: 'nervous:request-attention' }, 'success', 10),
+                    attempt({ kind: 'ap_topup', cause: 'benchmark:ap-topup-resume-5m', amount: 3000 }, 'success', 3000),
+                    attempt({ kind: 'say', text: 'AP received; resuming.', cause: 'nervous:attention-topup-resume' }, 'blocked', 2999),
+                    attempt({ kind: 'logout', cause: 'attention_exhausted' }, 'failure', 0),
+                ],
+                perceptions: [],
+                events: [{ kind: 'attention_exhausted' }],
+            });
+
+            expect(outcome.status).toBe('failed');
+            expect(outcome.failureReason).toContain('no resumed non-logout action');
+            expect(outcome.metrics).toMatchObject({
+                topUpJumps: 1,
+                resumeAfterTopUpActions: 0,
+            });
+        });
     });
 
     describe('makeApTopupResume5mBenchmarkTask', () => {

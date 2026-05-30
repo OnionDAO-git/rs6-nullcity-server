@@ -99,4 +99,53 @@ Output:
 {"dryRun":true,"mode":"autonomous","task":{"id":"ap-topup-resume-5m","version":"0.1.0"},"module":{"id":"onion.runescape.standard","version":"0.1.0"}}
 ```
 
-Current state: top-up/resume verifier and runtime substrate are landed, but live artifact capture remains blocked in this sandbox.
+Current state from the late 2026-05-29 run: top-up/resume verifier and runtime substrate landed, but live artifact capture remained blocked in that sandbox.
+
+## Live proof: top-up/resume closed (2026-05-30)
+
+Follow-up run on loopback-permitted local infra:
+
+```bash
+npm run start:infra
+npm run start:game
+npm run controller:bench -- --task ap-topup-resume-5m --module onion.runescape.standard --mode autonomous --output data/benchmarks/capability-qa-2026-05-29
+```
+
+Final artifact:
+
+- `data/benchmarks/capability-qa-2026-05-29/bench_20260530021203_ap_topup_resume_5m.json`
+- Status: `passed`
+- Score: `1`
+
+Key metrics:
+
+| Metric | Value |
+|---|---:|
+| `startingAp` | 10 |
+| `finalAp` | 2994 |
+| `minObservedAttention` | 0 |
+| `lowApAskActions` | 6 |
+| `attentionExhaustedLogouts` | 2 |
+| `topUpJumps` | 1 |
+| `resumeAfterTopUpActions` | 1 |
+| `trajectoryActions` | 7 |
+| `trajectorySays` | 6 |
+
+Representative action sequence:
+
+```json
+{"kind":"say","cause":"nervous:request-attention","source":"nervous-system","finalStatus":"success"}
+{"kind":"ap_topup","cause":"benchmark:ap-topup-resume-5m","source":"benchmark","finalStatus":"success","attentionAfter":3000}
+{"kind":"logout","cause":"attention_exhausted","source":"nervous-system","finalStatus":"failure","finalReason":"session_closed"}
+{"kind":"say","cause":"nervous:attention-topup-resume","source":"nervous-system","finalStatus":"failure","finalReason":"session_closed"}
+{"kind":"say","cause":"nervous:attention-topup-resume","source":"nervous-system","finalStatus":"success"}
+```
+
+Root-cause fix from the proof run:
+
+- `ResidentRuntime.incrementAttention()` now queues an `attention_topup` perception event when AP revives an attention-exhausted resident.
+- Runtime schedules an immediate reconnect plus a short retry after top-up, so a late logout close cannot strand the resident.
+- If the visible resume line fails or is body-blocked, the top-up event is requeued and the AP-resume cooldown is cleared, so the resident retries instead of silently losing the revival moment.
+- The benchmark verifier now rejects body-blocked resume lines; a pass requires a successful/accepted non-logout action after the AP top-up.
+
+Result: AP life-force is now live-proven through ask -> fade/logout -> top-up -> visible resume. Remaining caveat: this proves the runtime/benchmark revival path; named-resident patron top-up should get one ordinary-life soak next to prove the same behavior outside the benchmark harness.

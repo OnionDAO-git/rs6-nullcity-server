@@ -42,6 +42,7 @@ const FINAL_TESTAMENT_PHRASES = [
     'If these are my last hours, I want it known — I was here, and I cared.',
     'I may not last much longer. Let the record show: I stood my ground.',
 ] as const;
+const ATTENTION_TOPUP_ACK_COOLDOWN_TICKS = 20;
 const RESTART_COOLDOWN_COMPAT_WINDOW_TICKS = 1_000;
 
 const LOW_HEALTH_RULE: NervousRule = {
@@ -70,6 +71,11 @@ export class NervousSystem {
         const patronAsk = this.patronAskReaction(perception);
         if (patronAsk) {
             return patronAsk;
+        }
+
+        const attentionTopUp = this.attentionTopUpReaction(perception);
+        if (attentionTopUp) {
+            return attentionTopUp;
         }
 
         if (this.options.patronRegistry && Array.isArray(perception.events)) {
@@ -138,6 +144,44 @@ export class NervousSystem {
         }
 
         return this.requestAttentionReaction(perception);
+    }
+
+    private attentionTopUpReaction(perception: Perception): NervousReaction | undefined {
+        if (!Array.isArray(perception.events)) {
+            return undefined;
+        }
+        const topUpEvent = perception.events.find(event => event.kind === 'attention_topup');
+        if (!topUpEvent || this.options.state.attention <= 0) {
+            return undefined;
+        }
+
+        const tick = cooldownTick(this.options.state, perception);
+        const cooldownKey = 'attention-topup:resume-ack';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] || 0;
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns || {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + ATTENTION_TOPUP_ACK_COOLDOWN_TICKS;
+
+        const amount = typeof topUpEvent.amount === 'number' ? Math.max(0, Math.trunc(topUpEvent.amount)) : undefined;
+        const amountText = amount ? ` ${amount} AP` : ' AP';
+        const message = `AP received:${amountText}. I am back on my feet and resuming my work.`;
+        const rule: NervousRule = {
+            id: 'attention-topup-resume',
+            priority: 93,
+            condition: { kind: 'always' },
+            action: { kind: 'say', text: message },
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { kind: 'say', text: message, cause: 'nervous:attention-topup-resume' },
+            suppressThinking: false,
+            interruptThinking: false,
+        };
     }
 
     private patronAskReaction(perception: Perception): NervousReaction | undefined {

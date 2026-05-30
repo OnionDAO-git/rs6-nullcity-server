@@ -211,9 +211,24 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
             nearby: { worldItems: [] },
             events: [],
         });
-        await Promise.resolve();
+        await flushPromises();
 
         expect(runtime.incrementAttention).toHaveBeenCalledWith(3000);
+        expect(gateway.connectResident).toHaveBeenCalledWith({
+            name: context.resident,
+            observe: true,
+            control: true,
+            onDisconnect: 'idle',
+        });
+        expect(context.recordActionAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                action: { kind: 'ap_topup', cause: 'benchmark:ap-topup-resume-5m', amount: 3000 },
+                source: 'benchmark',
+                finalStatus: 'success',
+                attentionAfter: 3000,
+            }),
+        );
+        expect(context.recordSummary).toHaveBeenCalledWith(expect.stringContaining('Reconnected resident after AP top-up'));
         expect(context.recordSummary).toHaveBeenCalledWith(expect.stringContaining('Injected AP top-up (3000)'));
 
         gateway.emit('perception', context.resident, {
@@ -221,7 +236,7 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
             nearby: { worldItems: [] },
             events: [],
         });
-        await Promise.resolve();
+        await flushPromises();
         expect(runtime.incrementAttention).toHaveBeenCalledTimes(1);
 
         await driver.stop('test_complete');
@@ -229,6 +244,8 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
 });
 
 class FakeGateway extends EventEmitter {
+    connectResident = jest.fn(async () => undefined);
+
     off(eventName: string, listener: (...args: unknown[]) => void): this {
         return this.removeListener(eventName, listener);
     }
@@ -260,4 +277,8 @@ function config(): ControllerConfig {
         knowledge: { dir: '/tmp/knowledge', enableSuggestions: false, emitStdout: false, storageMode: 'ephemeral' },
         llm: { endpoints: {}, profiles: {} },
     };
+}
+
+function flushPromises(): Promise<void> {
+    return new Promise(resolve => setImmediate(resolve));
 }

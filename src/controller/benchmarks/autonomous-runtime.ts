@@ -191,7 +191,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         this.options.gateway.on('event', this.eventListener);
     }
 
-    private injectApTopupAfterFade(context: BenchmarkAutonomousRuntimeContext): void {
+    private async injectApTopupAfterFade(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
         if (context.task.id !== AP_TOPUP_RESUME_5M_TASK_ID || this.apTopupInjected || !this.runtime) {
             return;
         }
@@ -207,9 +207,27 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         if (!faded) {
             return;
         }
+        const attentionAfterTopUp = Math.max(0, state.attention + AP_TOPUP_RESUME_AMOUNT);
         runtime.incrementAttention(AP_TOPUP_RESUME_AMOUNT);
         this.apTopupInjected = true;
+        context.recordActionAttempt({
+            action: { kind: 'ap_topup', cause: 'benchmark:ap-topup-resume-5m', amount: AP_TOPUP_RESUME_AMOUNT },
+            source: 'benchmark',
+            finalStatus: 'success',
+            attentionAfter: attentionAfterTopUp,
+        });
         context.recordSummary(`Injected AP top-up (${AP_TOPUP_RESUME_AMOUNT}) after fade for benchmark resume proof.`);
+        try {
+            await this.options.gateway.connectResident({
+                name: context.resident,
+                observe: true,
+                control: true,
+                onDisconnect: 'idle',
+            });
+            context.recordSummary('Reconnected resident after AP top-up for benchmark resume proof.');
+        } catch (error) {
+            context.recordSummary(`AP top-up injected, but reconnect failed: ${errorMessage(error)}`);
+        }
     }
 
     private unbindGatewayEvents(): void {

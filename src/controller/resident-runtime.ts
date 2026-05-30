@@ -38,7 +38,7 @@ import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
 import type { MemoryStore } from './memory/memory-store';
 import { type RuntimeState, RuntimeStateStore, addAttention, markDeceased } from './memory/runtime-state';
-import { NervousSystem } from './nervous-system';
+import { NervousSystem, type NervousReaction } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import { type Soul, dominantFaction } from './soul/soul-schema';
@@ -76,6 +76,9 @@ const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
 const MOVE_EFFECT_TIMEOUT_MAX_MS = 30_000;
 const STARTER_FISHING_EFFECT_TIMEOUT_MS = 45_000;
 const THINKING_VISIBILITY_DELAY_MS = 1_000;
+const ATTENTION_TOPUP_RECONNECT_RETRY_MS = 750;
+const ATTENTION_TOPUP_RESUME_RULE_ID = 'attention-topup-resume';
+const ATTENTION_TOPUP_RESUME_COOLDOWN_KEY = 'attention-topup:resume-ack';
 
 export interface ResidentRuntimeGameSkill {
     buildContext(input: GameSkillContextInput): GameSkillContext;
@@ -258,7 +261,31 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     incrementAttention(amount: number): void {
+        const attentionBefore = this.state.attention;
+        const wasAttentionExhausted = this.state.deceased?.cause === 'attention_exhausted';
         addAttention(this.state, amount);
+        if (wasAttentionExhausted && this.state.attention > 0) {
+            this.pendingEvents.push({
+                kind: 'attention_topup',
+                amount,
+                attentionBefore,
+                attentionAfter: this.state.attention,
+                ts: new Date().toISOString(),
+            });
+            if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
+                this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
+            }
+            this.state.stuckSince = undefined;
+            if (this.state.cognition?.activeMove) {
+                this.state.cognition.activeMove = undefined;
+            }
+            this.evidence?.library?.observeRevival({
+                ts: new Date().toISOString(),
+                tick: this.state.tick,
+                cause: 'attention_topup',
+            });
+            this.scheduleAttentionTopupReconnect();
+        }
         this.options.stateStore.save(this.state);
     }
 
@@ -381,6 +408,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     this.history.push(decisionPerception);
                     this.body.observePerception(decisionPerception);
 
+                    this.preemptForNervousReaction(reaction);
                     const attempt = await this.submitActionWithWatchdog({
                         producer: 'nervous-system',
                         action: reaction.action,
@@ -395,6 +423,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         ...this.evidenceCallbacks(),
                     });
                     this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+                    this.requeueAttentionTopupIfResumeFailed(reaction, decisionPerception, attempt);
 
                     resolve({
                         perception,
@@ -421,6 +450,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 this.history.push(decisionPerception);
                 this.body.observePerception(decisionPerception);
 
+                this.preemptForNervousReaction(reaction);
                 const attempt = await this.submitActionWithWatchdog({
                     producer: 'nervous-system',
                     action: reaction.action,
@@ -435,6 +465,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     ...this.evidenceCallbacks(),
                 });
                 this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+                this.requeueAttentionTopupIfResumeFailed(reaction, decisionPerception, attempt);
                 if (reaction.suppressThinking) {
                     return;
                 }
@@ -668,6 +699,55 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         if (this.state.cognition?.activeMove) {
             this.state.cognition.activeMove = undefined;
         }
+    }
+
+    private preemptForNervousReaction(reaction: NervousReaction): void {
+        if (reaction.rule.id !== ATTENTION_TOPUP_RESUME_RULE_ID) {
+            return;
+        }
+        this.actionCoordinator.cancelCurrent('attention_topup_resume');
+    }
+
+    private requeueAttentionTopupIfResumeFailed(reaction: NervousReaction, decisionPerception: Perception, attempt: ActionAttempt): void {
+        if (reaction.rule.id !== ATTENTION_TOPUP_RESUME_RULE_ID) {
+            return;
+        }
+        if (attempt.finalStatus === 'success' || attempt.finalStatus === 'accepted') {
+            return;
+        }
+        const topUpEvent = (Array.isArray(decisionPerception.events) ? decisionPerception.events : [])
+            .filter(event => event.kind === 'attention_topup')
+            .at(-1);
+        if (!topUpEvent) {
+            return;
+        }
+        this.state.hookCooldowns = this.state.hookCooldowns || {};
+        delete this.state.hookCooldowns[ATTENTION_TOPUP_RESUME_COOLDOWN_KEY];
+        this.pendingEvents.push(topUpEvent);
+        if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
+            this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
+        }
+    }
+
+    private scheduleAttentionTopupReconnect(): void {
+        const gateway = this.options.gateway as {
+            connectResident?: (payload: { name: string; observe: boolean; control: boolean; onDisconnect: 'idle' }) => Promise<unknown>;
+        };
+        if (typeof gateway.connectResident !== 'function') {
+            return;
+        }
+        const reconnect = () => {
+            gateway.connectResident?.({ name: this.name, observe: true, control: true, onDisconnect: 'idle' }).catch(error =>
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    cause: 'attention_topup_reconnect_failed',
+                    error: error instanceof Error ? error.message : String(error),
+                }),
+            );
+        };
+        reconnect();
+        const retry = setTimeout(reconnect, ATTENTION_TOPUP_RECONNECT_RETRY_MS);
+        retry.unref?.();
     }
 
     private async submitAttentionLogout(perception: Perception): Promise<void> {

@@ -3056,9 +3056,10 @@ describe('ResidentRuntime modules', () => {
         };
         const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
 
+        const gateway = { connectResident: jest.fn(async () => ({})) } as unknown as GatewayClient;
         const runtime = new ResidentRuntime({
             soul: soul('res:pip'),
-            gateway: {} as GatewayClient,
+            gateway,
             memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
             stateStore,
             llm: {} as LlmClient,
@@ -3071,6 +3072,12 @@ describe('ResidentRuntime modules', () => {
 
         expect(state.attention).toBe(20);
         expect(state.deceased).toBeUndefined();
+        expect(gateway.connectResident).toHaveBeenCalledWith({
+            name: 'res:pip',
+            observe: true,
+            control: true,
+            onDisconnect: 'idle',
+        });
         expect(stateStore.save).toHaveBeenCalledWith(state);
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
