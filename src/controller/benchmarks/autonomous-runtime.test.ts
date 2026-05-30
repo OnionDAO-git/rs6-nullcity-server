@@ -265,10 +265,77 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
 
         await driver.stop('test_complete');
     });
+
+    it('injects one AP-for-GP exchange proof event for ap-gp-exchange-5m using real coin burn evidence', async () => {
+        const gateway = new FakeGateway();
+        gateway.inspectResidentGold.mockResolvedValue({ resident: 'res:bmk_fire', itemId: 995, amount: 125 });
+        gateway.burnResidentGold.mockResolvedValue({ resident: 'res:bmk_fire', itemId: 995, burnedAmount: 25, remainingAmount: 100 });
+        const context = benchmarkContext({
+            task: { id: 'ap-gp-exchange-5m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },
+        });
+        const runtime = {
+            onPerception: jest.fn(async () => undefined),
+            onEvent: jest.fn(),
+            stop: jest.fn(),
+            getState: jest.fn(() => ({ attention: 8, tick: 42 })),
+            incrementAttention: jest.fn(),
+        };
+        (ResidentRuntime as jest.Mock).mockImplementationOnce(() => runtime);
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: gateway as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        gateway.emit('perception', context.resident, {
+            resident: { position: { x: 3222, y: 3218, level: 0 }, inventory: [], attention: 8 },
+            nearby: { worldItems: [] },
+            events: [],
+        });
+        await flushPromises();
+
+        expect(gateway.inspectResidentGold).toHaveBeenCalledWith(context.resident);
+        expect(gateway.burnResidentGold).toHaveBeenCalledWith(context.resident, 25);
+        expect(runtime.incrementAttention).toHaveBeenCalledWith(50);
+        expect(context.recordActionAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                action: expect.objectContaining({ kind: 'city_exchange_ap_gp', gpAmount: 25, apAmount: 50 }),
+                source: 'benchmark',
+                finalStatus: 'success',
+                result: expect.objectContaining({
+                    ok: true,
+                    status: 'complete',
+                    gpEvidence: expect.objectContaining({ itemId: 995, burnedAmount: 25 }),
+                    apEvidence: expect.objectContaining({ creditedAmount: 50 }),
+                }),
+            }),
+        );
+        expect(context.recordSummary).toHaveBeenCalledWith(expect.stringContaining('Executed benchmark AP-for-GP exchange'));
+
+        gateway.emit('perception', context.resident, {
+            resident: { position: { x: 3222, y: 3218, level: 0 }, inventory: [], attention: 8 },
+            nearby: { worldItems: [] },
+            events: [],
+        });
+        await flushPromises();
+        expect(gateway.burnResidentGold).toHaveBeenCalledTimes(1);
+
+        await driver.stop('test_complete');
+    });
 });
 
 class FakeGateway extends EventEmitter {
     connectResident = jest.fn(async () => undefined);
+    inspectResidentGold = jest.fn(async () => ({ resident: 'res:bmk_fire', itemId: 995 as const, amount: 125 }));
+    burnResidentGold = jest.fn(async () => ({
+        resident: 'res:bmk_fire',
+        itemId: 995 as const,
+        burnedAmount: 25,
+        remainingAmount: 100,
+    }));
 
     off(eventName: string, listener: (...args: unknown[]) => void): this {
         return this.removeListener(eventName, listener);

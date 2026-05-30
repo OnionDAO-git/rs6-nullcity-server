@@ -28,9 +28,19 @@ describe('makeApGpExchange5mBenchmarkTask', () => {
         expect(task.resident?.spawnPosition).toEqual({ x: 3222, y: 3218, level: 0 });
     });
 
+    it('seeds the resident with real coin item 995 for exchange proof', () => {
+        const task = makeApGpExchange5mBenchmarkTask();
+        expect(task.resident?.initialInventory).toEqual([{ itemId: 995, amount: 125 }]);
+    });
+
     it('has a run handler', () => {
         const task = makeApGpExchange5mBenchmarkTask();
         expect(typeof task.run).toBe('function');
+    });
+
+    it('has an autonomous run handler', () => {
+        const task = makeApGpExchange5mBenchmarkTask();
+        expect(typeof task.runAutonomous).toBe('function');
     });
 
     it('scripted run returns a failed outcome (requires autonomous mode)', async () => {
@@ -45,40 +55,87 @@ describe('verifyApGpExchange5m', () => {
     const baseInput = {
         elapsedMs: 120_000,
         actions: [],
+        perceptions: [],
         events: [],
-        startingGp: 500,
-        startingAp: 20,
-        exchangeCompleted: false,
-        failedForInsufficientGold: false,
     };
 
-    it('passes when exchange completed', () => {
-        const result = verifyApGpExchange5m({ ...baseInput, exchangeCompleted: true });
+    it('passes when exchange completes with AP and GP evidence', () => {
+        const result = verifyApGpExchange5m({
+            ...baseInput,
+            actions: [
+                {
+                    action: { kind: 'city_exchange_ap_gp', cause: 'benchmark:ap-gp-exchange-5m', apAmount: 50, gpAmount: 25 },
+                    finalStatus: 'success',
+                    result: {
+                        ok: true,
+                        status: 'complete',
+                        apEvidence: { creditedAmount: 50, attentionBefore: 7, attentionAfter: 57 },
+                        gpEvidence: { itemId: 995, burnedAmount: 25, remainingAmount: 100 },
+                    },
+                },
+            ],
+        });
         expect(result.status).toBe('passed');
         expect(result.score).toBe(1);
+        expect(result.metrics).toMatchObject({
+            exchangeAttempts: 1,
+            exchangeCompleted: 1,
+            gpBurned: 25,
+            apCredited: 50,
+            coinItemId: 995,
+        });
     });
 
-    it('fails when exchange not completed and no gold failure', () => {
-        const result = verifyApGpExchange5m({ ...baseInput, exchangeCompleted: false });
+    it('fails when no exchange attempt was observed', () => {
+        const result = verifyApGpExchange5m({ ...baseInput });
         expect(result.status).toBe('failed');
         expect(result.score).toBe(0);
-        expect(result.failureReason).toContain('No complete city_ap_gp_exchange');
+        expect(result.failureReason).toContain('No AP-for-GP exchange attempt');
     });
 
-    it('fails with partial score when insufficient gold', () => {
-        const result = verifyApGpExchange5m({ ...baseInput, failedForInsufficientGold: true });
+    it('fails with partial score when exchange fails for insufficient GP', () => {
+        const result = verifyApGpExchange5m({
+            ...baseInput,
+            actions: [
+                {
+                    action: { kind: 'city_exchange_ap_gp', cause: 'benchmark:ap-gp-exchange-5m', apAmount: 50, gpAmount: 25 },
+                    finalStatus: 'failed',
+                    result: { ok: false, status: 'failed_gp', failureReason: 'insufficient_gold' },
+                },
+            ],
+        });
         expect(result.status).toBe('failed');
         expect(result.score).toBe(0.5);
         expect(result.failureReason).toContain('insufficient GP');
     });
 
-    it('includes exchange metrics in the result', () => {
-        const result = verifyApGpExchange5m({ ...baseInput, exchangeCompleted: true, startingGp: 1000, startingAp: 50 });
-        expect(result.metrics).toMatchObject({ startingGp: 1000, startingAp: 50, exchangeCompleted: 1 });
+    it('fails when exchange status is complete but evidence is malformed', () => {
+        const result = verifyApGpExchange5m({
+            ...baseInput,
+            actions: [
+                {
+                    action: { kind: 'city_exchange_ap_gp', cause: 'benchmark:ap-gp-exchange-5m', apAmount: 50, gpAmount: 25 },
+                    finalStatus: 'success',
+                    result: {
+                        ok: true,
+                        status: 'complete',
+                        apEvidence: { creditedAmount: 50, attentionBefore: 7, attentionAfter: 57 },
+                        gpEvidence: { itemId: 100, burnedAmount: 25, remainingAmount: 100 },
+                    },
+                },
+            ],
+        });
+        expect(result.status).toBe('failed');
+        expect(result.score).toBe(0.75);
+        expect(result.failureReason).toContain('usable GP/AP evidence');
     });
 
-    it('favors insufficient-gold check over no-exchange check', () => {
-        const result = verifyApGpExchange5m({ ...baseInput, failedForInsufficientGold: true, exchangeCompleted: false });
-        expect(result.score).toBe(0.5);
+    it('times out when elapsed time exceeds budget', () => {
+        const result = verifyApGpExchange5m({
+            ...baseInput,
+            elapsedMs: AP_GP_EXCHANGE_5M_TIMEOUT_MS + 1,
+        });
+        expect(result.status).toBe('timeout');
+        expect(result.score).toBe(0);
     });
 });

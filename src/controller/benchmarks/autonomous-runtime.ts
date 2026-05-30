@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from '../config';
+import { CityIntegrationService } from '../city-integration/service';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 import { createDefaultGameSkillEntries } from '../knowledge/game-skill-entries';
 import { GameSkillService } from '../knowledge/game-skill-context';
@@ -53,6 +54,9 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
 const AP_TOPUP_RESUME_5M_TASK_ID = 'ap-topup-resume-5m';
 const AP_TOPUP_RESUME_AMOUNT = 3000;
 const AP_GP_LIBRARY_STRATEGY_5M_TASK_ID = 'ap-gp-library-strategy-5m';
+const AP_GP_EXCHANGE_5M_TASK_ID = 'ap-gp-exchange-5m';
+const AP_GP_EXCHANGE_BENCH_GP_AMOUNT = 25;
+const AP_GP_EXCHANGE_BENCH_AP_AMOUNT = 50;
 
 export interface ResidentRuntimeBenchmarkDriverOptions {
     config: ControllerConfig;
@@ -70,11 +74,13 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
     private eventListener?: (residentId: string, event: PerceptionEvent) => void;
     private readonly inFlightPerceptions = new Set<Promise<void>>();
     private apTopupInjected = false;
+    private apGpExchangeInjected = false;
 
     constructor(private readonly options: ResidentRuntimeBenchmarkDriverOptions) {}
 
     async start(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
         this.apTopupInjected = false;
+        this.apGpExchangeInjected = false;
         this.context = context;
         this.runDirs = createRunDirs(context);
         const seededMemories = seedBenchmarkMemories(this.runDirs.memory, context.resident, context.task.memorySeeds || []);
@@ -114,6 +120,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         this.context = undefined;
         this.gameSkill = undefined;
         this.apTopupInjected = false;
+        this.apGpExchangeInjected = false;
     }
 
     private createEvidence(context: BenchmarkAutonomousRuntimeContext): ResidentRuntimeEvidence {
@@ -178,6 +185,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             const task = this.runtime
                 .onPerception(perception)
                 .then(() => this.injectApTopupAfterFade(context))
+                .then(() => this.injectApGpExchangeProof(context))
                 .catch(error => context.recordSummary(`Autonomous runtime perception error: ${errorMessage(error)}`));
             this.inFlightPerceptions.add(task);
             task.finally(() => this.inFlightPerceptions.delete(task));
@@ -228,6 +236,106 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             context.recordSummary('Reconnected resident after AP top-up for benchmark resume proof.');
         } catch (error) {
             context.recordSummary(`AP top-up injected, but reconnect failed: ${errorMessage(error)}`);
+        }
+    }
+
+    private async injectApGpExchangeProof(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
+        if (context.task.id !== AP_GP_EXCHANGE_5M_TASK_ID || this.apGpExchangeInjected || !this.runtime || !this.runDirs) {
+            return;
+        }
+        const runtime = this.runtime as unknown as {
+            getState?: () => { attention: number; tick: number };
+            incrementAttention?: (amount: number) => void;
+        };
+        const gateway = this.options.gateway as unknown as {
+            inspectResidentGold?: (resident: string) => Promise<{ resident: string; itemId: 995; amount: number }>;
+            burnResidentGold?: (
+                resident: string,
+                amount: number,
+            ) => Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>;
+        };
+        if (
+            typeof runtime.getState !== 'function' ||
+            typeof runtime.incrementAttention !== 'function' ||
+            typeof gateway.inspectResidentGold !== 'function' ||
+            typeof gateway.burnResidentGold !== 'function'
+        ) {
+            return;
+        }
+
+        const before = await gateway.inspectResidentGold(context.resident);
+        if (before.amount <= 0) {
+            return;
+        }
+
+        const gpAmount = Math.min(AP_GP_EXCHANGE_BENCH_GP_AMOUNT, before.amount);
+        const idempotencyKey = `bench-${context.task.id}-${Date.now()}`;
+        const service = new CityIntegrationService({
+            memoryRoot: this.runDirs.memory,
+            getRuntime: resident => (resident === context.resident ? (runtime as never) : undefined),
+            inventory: {
+                inspectResidentGold: resident => gateway.inspectResidentGold!(resident),
+                burnResidentGold: (resident, amount) => gateway.burnResidentGold!(resident, amount),
+            },
+            birth: {
+                birthResident: async input => ({
+                    resident: input.residentName,
+                    created: false,
+                    connected: false,
+                }),
+            },
+        });
+
+        try {
+            const record = await service.exchangeApForGp(context.resident, {
+                idempotencyKey,
+                apAmount: AP_GP_EXCHANGE_BENCH_AP_AMOUNT,
+                gpAmount,
+                cityUserId: 'benchmark',
+                sourceType: 'benchmark',
+                sourceId: context.task.id,
+            });
+            this.apGpExchangeInjected = true;
+            context.recordActionAttempt({
+                action: {
+                    kind: 'city_exchange_ap_gp',
+                    cause: 'benchmark:ap-gp-exchange-5m',
+                    apAmount: AP_GP_EXCHANGE_BENCH_AP_AMOUNT,
+                    gpAmount,
+                },
+                result: {
+                    ok: record.status === 'complete',
+                    status: record.status,
+                    exchangeId: record.exchangeId,
+                    apEvidence: record.apEvidence,
+                    gpEvidence: record.gpEvidence,
+                    failureReason: record.failureReason,
+                },
+                source: 'benchmark',
+                finalStatus: record.status === 'complete' ? 'success' : 'failure',
+            });
+            context.recordSummary(
+                `Executed benchmark AP-for-GP exchange (${gpAmount} GP -> ${AP_GP_EXCHANGE_BENCH_AP_AMOUNT} AP) with status=${record.status}.`,
+            );
+        } catch (error) {
+            this.apGpExchangeInjected = true;
+            context.recordActionAttempt({
+                action: {
+                    kind: 'city_exchange_ap_gp',
+                    cause: 'benchmark:ap-gp-exchange-5m',
+                    apAmount: AP_GP_EXCHANGE_BENCH_AP_AMOUNT,
+                    gpAmount,
+                },
+                result: {
+                    ok: false,
+                    status: 'error',
+                    error: errorMessage(error),
+                },
+                source: 'benchmark',
+                finalStatus: 'failure',
+                finalReason: errorMessage(error),
+            });
+            context.recordSummary(`Benchmark AP-for-GP exchange failed: ${errorMessage(error)}`);
         }
     }
 
