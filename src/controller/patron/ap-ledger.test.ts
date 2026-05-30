@@ -275,7 +275,7 @@ describe('ApLedger EconomyEventLog emission', () => {
             apDelta: 100,
             cityUserId: 'user-1',
         });
-        expect(events[0].refId).toMatch(/^apledger:\d+$/);
+        expect(events[0].refId).toMatch(/^apledger:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     });
 
     it('emits ap_decay on decay append (negative apDelta)', () => {
@@ -342,6 +342,46 @@ describe('ApLedger EconomyEventLog emission', () => {
         const events = log.readAll();
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({ kind: 'ap_grant', apDelta: 20 });
+    });
+
+    it('refIds from two different residents are distinct (no cross-resident collision)', () => {
+        const logA = new EconomyEventLog(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'));
+        const ledgerA = ApLedger.empty(logA, { residentName: 'res:alice' });
+        const ledgerB = ApLedger.empty(logA, { residentName: 'res:bob' });
+
+        const ts = '2026-05-30T01:00:00.000Z';
+        ledgerA.append({ kind: 'grant', amount: 50, source: 'city:birth', ts });
+        ledgerB.append({ kind: 'grant', amount: 75, source: 'city:birth', ts });
+
+        const events = logA.readAll();
+        expect(events).toHaveLength(2);
+        expect(events[0].refId).not.toBe(events[1].refId);
+    });
+
+    it('refIds from two separate ledger instances at index 0 are distinct (no restart collision)', () => {
+        const logB = new EconomyEventLog(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'));
+        const ts = '2026-05-30T01:00:00.000Z';
+
+        const ledger1 = ApLedger.empty(logB, { residentName: 'res:duke' });
+        ledger1.append({ kind: 'grant', amount: 100, source: 'city:birth', ts });
+
+        const ledger2 = ApLedger.empty(logB, { residentName: 'res:duke' });
+        ledger2.append({ kind: 'grant', amount: 100, source: 'city:birth', ts });
+
+        const events = logB.readAll();
+        expect(events).toHaveLength(2);
+        expect(events[0].refId).not.toBe(events[1].refId);
+    });
+
+    it('consecutive events on the same ledger have distinct refIds', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        const ts = '2026-05-30T01:00:00.000Z';
+        ledger.append({ kind: 'grant', amount: 100, source: 'city:birth', ts });
+        ledger.append({ kind: 'top_up', amount: 50, source: 'patron:alice', ts });
+
+        const events = log.readAll();
+        expect(events).toHaveLength(2);
+        expect(events[0].refId).not.toBe(events[1].refId);
     });
 });
 

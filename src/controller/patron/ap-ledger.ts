@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import type { EconomyEventLog } from '../city-integration/economy-event';
 
@@ -221,7 +222,7 @@ export class ApLedger {
         if (!residentName) {
             return;
         }
-        const refId = `apledger:${this.events_.length - 1}`;
+        const refId = `apledger:${randomUUID()}`;
         switch (event.kind) {
             case 'grant':
                 log.append({
