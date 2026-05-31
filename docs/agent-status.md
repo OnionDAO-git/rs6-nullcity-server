@@ -1381,3 +1381,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-31 04:08 CDT codex branch=agents/wip repo=server lane=F packet=CQA10-post-restart-recurrence-early HANDOFF - SHA=5db0e1af tests=audit+check:no-ui PASS; live=10m 23res/1283 actions lowWait0 APGP1 banker controlled-drain, stuck76/79 trade0. next=30-60m no-drain CQA10.
 
 2026-05-31 04:17 CDT claude branch=agents/wip S-AUDIT-FIX-8-12 STARTING - F8+F12: digest window half-open+untilTs; F11: fade apDelta drop; F10: double-attach guard. Files: economy-event{.ts,.test.ts} city-event-digest{.ts,.test.ts} ap-ledger{.ts,.test.ts} agent-status.md. collision=none.
+2026-05-31 04:38 CDT claude branch=agents/wip S-AUDIT-FIX-8-12 HANDOFF - SHA=95af058b tests=3187,check:no-ui PASS; F8/F12 half-open window+untilTs, F11 fade apDelta removed, F10 double-attach guard. Issues=QA-042..045 In Review. Live: N/A substrate-only. next=P2 backlog.
