@@ -117,7 +117,7 @@ Verified end-to-end this sprint (E14-E19 + weekend sprint 2026-05-29..31):
 
 ## Known residual gaps (not blockers)
 
-- **F19c / HD-033 F20a — MITIGATED by S-INFER-3/4/5 + qwopus switch**: default brain model is now qwopus3.5-27b-v3@q4_k_s (was Qwen3). Post-S-INFER-4 live audit: **92.7% usable brain decisions** (was ~0% on Qwen3). S-INFER-5 made the brain fully uninterruptible; post-S-INFER-5 re-audit still pending. Run `npm run controller:inference-audit` post-restart to confirm; target ≥ 0.80. Reflex + identity beacon layer still carries demo if inference degrades.
+- **F19c / HD-033 F20a — RESOLVED by S-INFER-3/4/5/6 + qwopus switch**: default brain model is now qwopus3.5-27b-v3@q4_k_s (was Qwen3). **Post-S-GATEWAY-TIMEOUT-2 live audit: 98.3% usable brain decisions** (was ~0% on Qwen3, 92.7% after S-INFER-4, 98.3% confirmed after gateway fix). S-INFER-5 made the brain fully uninterruptible by nervous reflexes; S-INFER-6 closed the last spark-level cancel path (only `took_damage`/`death_seen`/`attention_empty` now abort). Run `npm run controller:inference-audit` post-restart to confirm; target ≥ 0.80. Reflex + identity beacon layer still carries demo if inference degrades.
 - **F19d / Codex F6**: `res:thrand` is the quietest hero — separate idle_initiative no-hook pulse shipped.
 - **F9a**: CLOSED — phase-gated suffix ships 4 distinct hero speech shapes per interval.
 - **HD-015**: dashboard surfaces AP/GP balances, standing, patron letters, Event Readiness rollup, Storyteller feed, NCRI marketplace, and resident goal/action evidence.
@@ -152,19 +152,24 @@ Verified end-to-end this sprint (E14-E19 + weekend sprint 2026-05-29..31):
 
 - Controller healthy after `c651ac6c`; all 23 residents alive; tests 1998/1998; smoke `READY WITH WARNINGS` (patrons[] empty).
 
-## Live state update — 2026-05-31 (cloud agent cron)
+## Live state update — 2026-05-31 (cloud agent cron, final pre-freeze)
 
 Major changes since 2026-05-25:
-- **Tests**: `npm run fin` now passes **3462/3462** (was 1998) — 1464 new tests across economy, inference, memory, goals, NCRI, Storyteller, stuck-churn, trade, and combat-survival work.
+- **Tests**: `npm run fin` passes **3479/3479** (was 1998) — 1481 new tests across economy, inference, memory, goals, NCRI, Storyteller, stuck-churn, trade, combat-survival, and knowledge work.
 - **AP/GP loop**: self-initiated exchange wired (`S-EXCHANGE-INIT-2`), organic loop demo-visible (~10-15 min with goblin drops calibrated to 20 GP/kill via `S-GP-CALIBRATION-1`), no-floor trigger at 3000 AP (`S-AP-CYCLE-1`), hero surplus exchange (`S-AP-CYCLE-2`).
 - **Storyteller**: `/api/nullcity/storyteller/{latest,canon,review}` routes live; `npm run storyteller:overseer -- --tick` seeds dry-run dispatches; paid LLM dispatch gated.
 - **NCRI marketplace**: S-NCRI-1/2/3/4 shipped full lifecycle (list, buy, redeem-intent, redeem-complete, print-queue); seed via `npm run ncri:seed`.
 - **Memory**: `FactsStore` + `ResidentMemoryService` formalized; `npm run controller:memory-recall-soak` proves `res:agent` named recall.
-- **Inference hardening (S-INFER-1..5 + model switch)**: S-INFER-1/2 parse salvage; **S-INFER-3** prompt-budget trimmer (perception 12K→5K chars, survival spine foregrounded over floor objects); **S-INFER-4/5** loosened limits (max_tokens 4096, perMinute 60, no-interrupt window 20s, brain fully uninterruptible). Default brain model switched **Qwen3 → qwopus3.5-27b-v3@q4_k_s** + timeout 20s→75s (commit c7bf5678). Post-S-INFER-4 live audit: **92.7% usable brain decisions** (`inference_health_audit_20260531T205034Z.json`). Post-S-INFER-5 re-audit pending (restart 16:05 CDT 2026-05-31, expect ~95%+). Run `npm run controller:inference-audit` to confirm post-restart.
-- **Stuck churn**: S-STUCK-CHURN-1 raised progress threshold to 45 ticks; S-SOCIAL-KEEPALIVE-1/S-TRADER-TRADE-1/S-AGENT-VISIBLE-CADENCE-1/S-TICK-PROGRESS-WEDGE-1/S-HERO-CADENCE-1 added visible-speech progress seams; global stuck churn reduced meaningfully.
+- **Inference hardening (S-INFER-1..6 + model switch, all COMPLETE)**: S-INFER-1/2 parse salvage; **S-INFER-3** prompt-budget trimmer (perception 12K→5K chars, survival spine foregrounded over floor objects); **S-INFER-4/5** loosened limits (max_tokens 4096, perMinute 60, no-interrupt window 20s, brain fully uninterruptible); **S-INFER-6** survival-only abort gate (only `took_damage`/`death_seen`/`attention_empty` abort in-flight Brain — `trade_request`/`addressed_by_chat`/`new_actor` preserve). Default brain model switched **Qwen3 → qwopus3.5-27b-v3@q4_k_s** + timeout 20s→75s (commit c7bf5678). 4 hero souls (Hans/Aereck/Wise/Duke) carry explicit `spacetower_qwopus_q4` endpoint (S-HERO-ENDPOINT-1). **Post-S-GATEWAY-TIMEOUT-2 live audit: 98.3% usable brain decisions** (was 0% on Qwen3, 92.7% after S-INFER-4, confirmed 98.3% after gateway fix + clean audit window). Run `npm run controller:inference-audit` to confirm post-restart; target ≥ 0.80.
+- **Gateway fix** (`S-GATEWAY-TIMEOUT-2` / `1b962a29`): sync socket.send failure was leaking pending/action slots causing cascading `submit_action`/`list_residents` timeouts. Fixed; post-fix smoke `READY_WITH_WARNINGS` (warm-up action gaps only).
+- **RuneScape wiki enabled** (`S-WIKI-1` / `12753da2`): 22 real `docs/runescape-skill/` pages now loaded as RAG source. Prompt budget verified bounded (worst-case injected knowledge ≤2.6KB, enables wiki shrinks or holds brain section size). Set `knowledge.runebenchWikiDir=./docs/runescape-skill` in LIVE `controller.yml` (untracked — requires restart to activate; steward should restart on ≥`12753da2`).
+- **Wren flood debounced** (`S-WREN-DECLINE-FLOOD-1` / `1510251f`): memory trade declines now have 120s cooldown + no-interrupt; stops gateway pressure from repeated witness/trade-decline floods.
+- **Detour progress classification** (`S-MOVE-DETOUR-1` / `5e047568`): same-plane `move_to` detours no longer count as effect timeouts when the resident actually moved (just not in a straight line toward target).
+- **Hero cadence** (`S-HERO-CADENCE-1` / `a609d9b7`): memory-only hybrid hero turns now add `due visible cadence`; heroes reliably emit visible says within 60s smoke windows (4 actions / 4 results / 0 timeouts for Hans in 60s live test).
+- **Stuck churn**: S-STUCK-CHURN-1 raised progress threshold to 45 ticks; S-SOCIAL-KEEPALIVE-1/S-TRADER-TRADE-1/S-AGENT-VISIBLE-CADENCE-1/S-TICK-PROGRESS-WEDGE-1 added visible-speech progress seams; global stuck churn reduced meaningfully.
 - **Combat survival**: QA004/QA023/QA026-QA038 — food-exhaustion guard, raw-fish/cook/eat/re-engage chain, route hardening; 20m post-restart audit holds `low_health_heal_wait=0` across 2677 actions.
 - **Goal orientation**: S-GOAL-1/2/3/4 shipped; residents with soul `orientationGoal` bias toward that north star; admin CLIs `resident:goal-edit` + `resident:nudge`.
-- **Code freeze**: `agents/wip` enters code freeze at **18:00 CDT 2026-05-31** (today). Docs-only after that.
-- **Next action**: dress rehearsal per the T-24 checklist above, then patron-registry load (HD-011) before doors.
+- **Code freeze**: `agents/wip` entered code freeze at **18:00 CDT 2026-05-31**. Docs-only after that. S-INFER-7 (brain debounce, spark.ts) is in-flight from the local claude agent AFTER freeze — steward should review before merging.
+- **Next action**: dress rehearsal per the T-24 checklist above, then patron-registry load (HD-011) before doors. Restart controller on HEAD ≥`21a1d43d` to pick up all inference + gateway + wiki fixes.
 
 See `docs/2026-05-30-final-32hr-sprint-plan.md` for the authoritative 32-hour critical path.
