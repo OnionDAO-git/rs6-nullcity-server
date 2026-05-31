@@ -524,7 +524,7 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(25);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(26);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
         expect(output).toContain('"benchmark":{"taskId":"earn-gp-via-combat-5m"');
         expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-start-3m"');
@@ -540,9 +540,9 @@ describe('benchmark CLI', () => {
         expect(output).toContain('"benchmark":{"taskId":"memory-route-recall-5m"');
         expect(output).toContain('"benchmark":{"taskId":"world-event-reaction-5m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":25');
-        expect(output).toContain('"passed":25');
-        expect(output).toContain('"averageScore":0.98');
+        expect(output).toContain('"total":26');
+        expect(output).toContain('"passed":26');
+        expect(output).toContain('"averageScore":0.9807692307692307');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);
