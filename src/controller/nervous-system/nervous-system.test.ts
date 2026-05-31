@@ -408,7 +408,7 @@ describe('NervousSystem', () => {
 
         it('self-funds no-floor residents before AP reaches the last-second appeal threshold', () => {
             const state = runtimeState(100);
-            state.attention = 181;
+            state.attention = 2999;
             const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
 
             const reaction = sys.react({
@@ -420,15 +420,15 @@ describe('NervousSystem', () => {
             expect(reaction?.action).toMatchObject({
                 kind: 'city_exchange_ap_gp',
                 cause: 'nervous:self-initiated-ap-gp-exchange',
-                gpAmount: 160,
-                apAmount: 320,
+                gpAmount: 250,
+                apAmount: 500,
                 idempotencyKey: 'self-ap-gp:res:agent:100',
             });
         });
 
         it('does not self-fund no-floor residents at the runway threshold', () => {
             const state = runtimeState(100);
-            state.attention = 300;
+            state.attention = 3000;
             const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
 
             const reaction = sys.react({

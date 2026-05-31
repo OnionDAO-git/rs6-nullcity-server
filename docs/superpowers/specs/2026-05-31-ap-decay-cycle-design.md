@@ -2,7 +2,7 @@
 
 Spec date: 2026-05-31.
 Owner: unclaimed.
-Status: **Design only — no code change. Schedule after 2026-06-02 (post-Chicago).**
+Status: **Option A implemented by S-AP-CYCLE-1 on 2026-05-31. Hero/floor surplus top-up remains open.**
 Packet id: `S-AP-CYCLE-DESIGN-1`
 Issue: `QA-20260531-054`
 
@@ -69,7 +69,7 @@ Recommended demo script: drain `res:qa-guide` (already proven organic exchanger)
 
 ## Fix options (post-Chicago, choose one)
 
-### Option A — Raise the no-floor exchange threshold (lowest risk)
+### Option A — Raise the no-floor exchange threshold (implemented)
 Change `SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD` from 300 → ~3000 and
 `SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP` from 500 → 3500.
 
@@ -79,9 +79,11 @@ Effect: no-floor residents with GP self-fund any time their AP drops below 3000 
 Tradeoff: heroes with floor=5000 still never trigger (threshold for floor residents = floor+20 = 5020,
 but they're clamped at 5000). Heroes need Option B or C to participate.
 
-Files: `src/controller/spark/self-initiated-ap-gp-exchange.ts` (constants only).
-Test changes: `self-initiated-ap-gp-exchange.test.ts` thresholds.
+Files: `src/controller/spark/self-initiated-ap-gp-exchange.ts`, plus `normal-life-audit` proximity fields.
+Test changes: `self-initiated-ap-gp-exchange.test.ts`, `nervous-system.test.ts`, `normal-life-audit.test.ts`.
 Risk: low.
+
+Implementation note: each exchange is still capped by `SELF_INITIATED_EXCHANGE_MAX_GP = 250`, so a resident can buy at most `500 AP` per self-funding action even though the target runway is now `3500 AP`.
 
 ### Option B — Per-tick AP decay scaled to make exchange visible within ~30 min (medium risk)
 Keep threshold at 300 but raise the standard `decayByCurve.standard` from 1 → 5.
@@ -121,7 +123,7 @@ Probably post-event infrastructure decision with the maintainer.
 
 ## Recommended packet
 
-**S-AP-CYCLE-1** (post-Chicago, schedule 2026-06-02+):
+**S-AP-CYCLE-1** (implemented 2026-05-31):
 1. Implement **Option A** (raise no-floor threshold to 3000) — easiest, provable with a 30m
    unconditioned audit.
 2. Add a `residentsApproachingExchangeThreshold` audit field to `normal-life-audit.ts` so the

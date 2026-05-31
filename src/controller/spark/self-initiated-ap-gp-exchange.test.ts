@@ -60,9 +60,9 @@ describe('selfInitiatedApGpExchangeAction', () => {
         });
         expect(action).toBeDefined();
         const record = action as unknown as { gpAmount: number; apAmount: number };
-        expect(record.gpAmount).toBe(Math.ceil((SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - 15) / SELF_INITIATED_EXCHANGE_AP_PER_GP));
+        expect(record.gpAmount).toBe(SELF_INITIATED_EXCHANGE_MAX_GP);
         expect(record.apAmount).toBe(record.gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP);
-        expect(SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP).toBe(500);
+        expect(SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP).toBe(3500);
         expect(SELF_INITIATED_EXCHANGE_MAX_GP).toBe(250);
         expect(SELF_INITIATED_EXCHANGE_AP_PER_GP).toBe(2);
     });
@@ -133,19 +133,19 @@ describe('selfInitiatedApGpExchangeAction', () => {
             perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 40 }] } },
         });
         expect(quiet).toBeUndefined();
-        expect(SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD).toBe(300);
+        expect(SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD).toBe(3000);
     });
 
     it('buys the missing runway for a no-floor resident under AP pressure', () => {
         const action = selfInitiatedApGpExchangeAction({
-            attention: 181,
+            attention: 2999,
             attentionFloor: 0,
             perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 1000 }] } },
         });
 
         expect(action).toBeDefined();
         const record = action as unknown as { gpAmount: number; apAmount: number };
-        expect(record.gpAmount).toBe(Math.ceil((SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - 181) / SELF_INITIATED_EXCHANGE_AP_PER_GP));
+        expect(record.gpAmount).toBe(SELF_INITIATED_EXCHANGE_MAX_GP);
         expect(record.apAmount).toBe(record.gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP);
     });
 

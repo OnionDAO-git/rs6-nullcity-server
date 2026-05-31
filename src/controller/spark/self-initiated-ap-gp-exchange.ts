@@ -39,13 +39,13 @@ export const SELF_INITIATED_EXCHANGE_AP_PER_GP = 2;
 export const SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER = 20;
 
 /** AP threshold for residents with no declared attention floor. */
-export const SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD = 300;
+export const SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD = 3000;
 
 /** Minimum GP the resident must hold before self-initiating an exchange. */
 export const SELF_INITIATED_EXCHANGE_MIN_GP = 10;
 
 /** Target AP runway above the declared floor after a self-initiated exchange. */
-export const SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP = 500;
+export const SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP = 3500;
 
 /** Maximum GP burned in a single self-initiated exchange (keeps rich residents from overspending). */
 export const SELF_INITIATED_EXCHANGE_MAX_GP = 250;

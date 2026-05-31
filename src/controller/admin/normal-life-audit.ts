@@ -84,6 +84,8 @@ export interface NormalLifeAuditGpRunwayResident {
     resident: string;
     apLast: number;
     gp: number;
+    exchangeThresholdAp: number;
+    apUntilExchangeThreshold: number;
     requestAttentionActions: number;
     lastGpObservedAt: string;
 }
@@ -101,6 +103,7 @@ export interface NormalLifeAuditEconomySummary {
     latestGpByResident: NormalLifeAuditGpObservation[];
     lowApWithGpResidents: NormalLifeAuditGpRunwayResident[];
     aboveRunwayThresholdWithGpResidents: NormalLifeAuditGpRunwayResident[];
+    residentsApproachingExchangeThreshold: NormalLifeAuditGpRunwayResident[];
     requestAttentionWithGpResidents: NormalLifeAuditGpRunwayResident[];
 }
 
@@ -407,6 +410,7 @@ export function collectNormalLifeAudit(options: {
         residentSlices: residentSliceReports,
         windowStart: options.windowStart,
         windowEnd: options.windowEnd,
+        maxTopRows,
     });
 
     return {
@@ -698,6 +702,7 @@ function buildEconomySummary(options: {
     residentSlices: NormalLifeAuditResidentSlice[];
     windowStart: Date;
     windowEnd: Date;
+    maxTopRows: number;
 }): NormalLifeAuditEconomySummary {
     const allRows = readJsonl(options.economyEventsPath);
     const rows = allRows.filter(row => {
@@ -784,6 +789,7 @@ function buildEconomySummary(options: {
     const aboveRunwayThresholdWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
         return slice.apLast !== undefined && slice.apLast >= SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD;
     });
+    const residentsApproachingExchangeThreshold = aboveRunwayThresholdWithGpResidents.slice(0, options.maxTopRows);
     const requestAttentionWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
         return (slice.trackedCauseCounts['nervous:request-attention'] || 0) > 0;
     });
@@ -801,6 +807,7 @@ function buildEconomySummary(options: {
         latestGpByResident,
         lowApWithGpResidents,
         aboveRunwayThresholdWithGpResidents,
+        residentsApproachingExchangeThreshold,
         requestAttentionWithGpResidents,
     };
 }
@@ -819,6 +826,8 @@ function buildRunwayResidents(
                 resident: slice.resident,
                 apLast: slice.apLast,
                 gp: gp.gp,
+                exchangeThresholdAp: SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD,
+                apUntilExchangeThreshold: Math.max(0, round3(slice.apLast - SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD)),
                 requestAttentionActions: slice.trackedCauseCounts['nervous:request-attention'] || 0,
                 lastGpObservedAt: gp.observedAt,
             };

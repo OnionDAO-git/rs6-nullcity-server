@@ -348,7 +348,7 @@ describe('normal life audit', () => {
             action('2026-05-31T12:01:00.000Z', 'say', 'nervous:request-attention', true, 250),
         ]);
         writeJsonl(path.join(logsRoot, 'res:qa-beta', 'actions', '2026-05-31.jsonl'), [
-            action('2026-05-31T12:01:00.000Z', 'say', 'idle_initiative', true, 600),
+            action('2026-05-31T12:01:00.000Z', 'say', 'idle_initiative', true, 3200),
         ]);
         writeJsonl(path.join(logsRoot, 'res:qa-gamma', 'actions', '2026-05-31.jsonl'), [
             action('2026-05-31T12:01:00.000Z', 'say', 'nervous:request-attention', true, 200),
@@ -427,7 +427,7 @@ describe('normal life audit', () => {
             controlledApGpExchangeEvents: 2,
             organicSelfInitiatedApGpExchangeEvents: 1,
             adminDrainEvents: 2,
-            attentionRunwayThresholdAp: 300,
+            attentionRunwayThresholdAp: 3000,
             minimumExchangeGp: 10,
         });
         expect(report.economySummary.latestGpByResident).toEqual([
@@ -440,6 +440,8 @@ describe('normal life audit', () => {
                 resident: 'res:qa-gamma',
                 apLast: 200,
                 gp: 200,
+                exchangeThresholdAp: 3000,
+                apUntilExchangeThreshold: 0,
                 requestAttentionActions: 1,
                 lastGpObservedAt: '2026-05-31T11:59:00.000Z',
             },
@@ -447,6 +449,8 @@ describe('normal life audit', () => {
                 resident: 'res:qa-alpha',
                 apLast: 250,
                 gp: 100,
+                exchangeThresholdAp: 3000,
+                apUntilExchangeThreshold: 0,
                 requestAttentionActions: 1,
                 lastGpObservedAt: '2026-05-31T12:02:00.000Z',
             },
@@ -456,6 +460,8 @@ describe('normal life audit', () => {
                 resident: 'res:qa-gamma',
                 apLast: 200,
                 gp: 200,
+                exchangeThresholdAp: 3000,
+                apUntilExchangeThreshold: 0,
                 requestAttentionActions: 1,
                 lastGpObservedAt: '2026-05-31T11:59:00.000Z',
             },
@@ -463,6 +469,8 @@ describe('normal life audit', () => {
                 resident: 'res:qa-alpha',
                 apLast: 250,
                 gp: 100,
+                exchangeThresholdAp: 3000,
+                apUntilExchangeThreshold: 0,
                 requestAttentionActions: 1,
                 lastGpObservedAt: '2026-05-31T12:02:00.000Z',
             },
@@ -470,8 +478,21 @@ describe('normal life audit', () => {
         expect(report.economySummary.aboveRunwayThresholdWithGpResidents).toEqual([
             {
                 resident: 'res:qa-beta',
-                apLast: 600,
+                apLast: 3200,
                 gp: 75,
+                exchangeThresholdAp: 3000,
+                apUntilExchangeThreshold: 200,
+                requestAttentionActions: 0,
+                lastGpObservedAt: '2026-05-31T12:04:00.000Z',
+            },
+        ]);
+        expect(report.economySummary.residentsApproachingExchangeThreshold).toEqual([
+            {
+                resident: 'res:qa-beta',
+                apLast: 3200,
+                gp: 75,
+                exchangeThresholdAp: 3000,
+                apUntilExchangeThreshold: 200,
                 requestAttentionActions: 0,
                 lastGpObservedAt: '2026-05-31T12:04:00.000Z',
             },
