@@ -2008,7 +2008,7 @@ describe('combatTrainingAction', () => {
         });
     });
 
-    it('seeks the Lumbridge goblin field when no safe combat target is in sight', () => {
+    it('seeks the nearest starter combat area when no safe combat target is in sight', () => {
         const action = combatTrainingAction(
             perception({
                 resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
@@ -2017,7 +2017,22 @@ describe('combatTrainingAction', () => {
         );
         expect(action).toEqual({
             kind: 'move_to',
-            target: { x: 3249, y: 3238, level: 0 },
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('seeks the Lumbridge courtyard from the RuneScape Guide area instead of the eastern fallback', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3227, y: 3238, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
             range: 6,
             cause: 'combat_seek_safe_target',
         });
@@ -2034,7 +2049,12 @@ describe('combatTrainingAction', () => {
             20,
             { 'target:3249,3238,0': 19 },
         );
-        expect(action).toBeUndefined();
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'combat_seek_safe_target',
+        });
     });
 
     it('returns undefined when resident has no position', () => {

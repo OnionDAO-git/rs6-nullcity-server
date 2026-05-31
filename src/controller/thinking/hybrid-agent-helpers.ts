@@ -328,12 +328,13 @@ export function combatReaction(ctx: HelperContext, perception: HybridPerception)
     }
 
     const visibleAggressors = getVisibleAggressors(perception);
+    const recentAttacker = latestCombatAttacker(perception);
     let target: Actor | undefined;
     if (visibleAggressors.length > 0) {
         const here = perception.resident?.position;
         target = here ? selectPreferredAggressor(visibleAggressors, here) : visibleAggressors[0];
     } else {
-        target = latestCombatAttacker(perception) || perception.resident?.combatTarget || undefined;
+        target = recentAttacker || perception.resident?.combatTarget || undefined;
     }
 
     if (!target) {
@@ -341,6 +342,12 @@ export function combatReaction(ctx: HelperContext, perception: HybridPerception)
     }
 
     const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+    const onlyStaleCombatTarget =
+        !inCombat && visibleAggressors.length === 0 && !recentAttacker && target === perception.resident?.combatTarget;
+    if (onlyStaleCombatTarget && isLowHealth(perception) && foodSlot === undefined) {
+        return undefined;
+    }
+
     let action: AgentAction;
     if (target.kind === 'player') {
         action = {

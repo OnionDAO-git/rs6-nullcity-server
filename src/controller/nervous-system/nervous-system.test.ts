@@ -197,7 +197,7 @@ describe('NervousSystem', () => {
             events: [],
         });
 
-        expect(reaction?.action?.cause).not.toBe('nervous:eat-when-low-health');
+        expect(reaction).toBeUndefined();
     });
 
     it('still treats cooked starter fish as edible emergency food', () => {

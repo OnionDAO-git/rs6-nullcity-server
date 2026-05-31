@@ -4406,7 +4406,13 @@ describe('HybridAgentThinkingModule', () => {
             range: 6,
             cause: 'combat_seek_safe_target',
         });
-        expect(result.cause).not.toBe('combat_seek_safe_target');
+        expect(result.actions).toContainEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'combat_seek_safe_target',
+        });
+        expect(result.cause).toBe('combat_seek_safe_target');
     });
 
     it('loots useful drops before attacking the next safe combat target', async () => {
@@ -4713,8 +4719,10 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([
             {
-                kind: 'say',
-                text: 'I will look for a safe low-level creature to fight at 3234,3236. Goal: Train combat on safe low-level NPCs and stop when hurt.',
+                kind: 'move_to',
+                target: { x: 3222, y: 3218, level: 0 },
+                range: 6,
+                cause: 'combat_seek_safe_target',
             },
         ]);
         expect(result.cause).toBe('direct_chat_train_combat');
@@ -7816,6 +7824,126 @@ describe('HybridAgentThinkingModule', () => {
             },
         ]);
         expect(result.cause).toBe('low_health_cook_food');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('prepares food instead of retreating from a stale combat target after combat drops', async () => {
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3201, level: 0 }, orientation: 0 };
+        const staleTarget = npc('Man', 3221, 3218);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    combatTarget: staleTarget,
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 317, key: 'rs:raw_shrimp', amount: 1 }],
+                    inCombat: false,
+                },
+                objects: [fire],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'use_item_on',
+                itemSlot: 0,
+                target: fire,
+                cause: 'low_health_cook_food',
+            },
+        ]);
+        expect(result.cause).toBe('low_health_cook_food');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('prepares food while busy from prior fishing when low on health and carrying raw fish', async () => {
+        const fire = { objectId: objectIds.fire, position: { x: 3218, y: 3201, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    busy: true,
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 317, key: 'rs:raw_shrimp', amount: 1 }],
+                    inCombat: false,
+                },
+                objects: [fire],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'use_item_on',
+                itemSlot: 0,
+                target: fire,
+                cause: 'low_health_cook_food',
+            },
+        ]);
+        expect(result.cause).toBe('low_health_cook_food');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not route repeated low-health recovery moves while busy', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3222, 3218),
+                    busy: true,
+                    hp: { current: 3, max: 10 },
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('resident_busy');
+        expect(result.nooped).toBe(true);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

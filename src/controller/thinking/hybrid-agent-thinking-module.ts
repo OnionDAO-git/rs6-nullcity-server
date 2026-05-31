@@ -161,13 +161,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return this.result([proactiveTrade.action], proactiveTrade.cause, 0, false);
             }
 
-            if ((perception as HybridPerception).resident?.busy) {
-                return { actions: [], cause: 'resident_busy', nooped: true };
-            }
-
+            const residentBusy = (perception as HybridPerception).resident?.busy === true;
             const lowHealthRecovery = lowHealthRecoveryAction(this, perception as HybridPerception);
             if (lowHealthRecovery) {
+                if (residentBusy && lowHealthRecovery.action.kind === 'move_to') {
+                    return { actions: [], cause: 'resident_busy', nooped: true };
+                }
                 return this.result([lowHealthRecovery.action], lowHealthRecovery.cause, 0, false);
+            }
+
+            if (residentBusy) {
+                return { actions: [], cause: 'resident_busy', nooped: true };
             }
 
             const lowHealthHold = lowHealthHoldPositionAction(this, perception as HybridPerception);

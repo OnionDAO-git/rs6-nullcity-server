@@ -222,7 +222,10 @@ export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
 ];
 
 /** Fixed waypoints the combat routine uses when no safe target is in sight. */
-export const COMBAT_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [{ x: 3249, y: 3238, level: 0 }];
+export const COMBAT_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
+    { x: 3222, y: 3218, level: 0 },
+    { x: 3249, y: 3238, level: 0 },
+];
 
 /** Safe low-traffic recovery spots to wait for healing or food after unsafe combat. */
 export const LOW_HEALTH_RECOVERY_WAYPOINTS: ReadonlyArray<BodyPos> = [{ x: 3222, y: 3218, level: 0 }];
