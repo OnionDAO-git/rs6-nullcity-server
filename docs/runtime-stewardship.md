@@ -1,6 +1,6 @@
 # Null City Runtime Stewardship
 
-Last updated: 2026-05-31 14:10 CDT
+Last updated: 2026-05-31 14:20 CDT
 
 This file is the coordination point for running processes on James's machine.
 
@@ -15,8 +15,24 @@ Codex in James's active desktop thread owns runtime restarts until this note is 
 - Controller HTTP letters/wall API: `http://127.0.0.1:43596`
 - Controller MCP/control API: `http://127.0.0.1:43610`
 - City control API: `http://127.0.0.1:43611`
+- Game gateway: `127.0.0.1:43594`
+- Agent gateway: `127.0.0.1:43595`
+- Update server: `127.0.0.1:43592`
+- Login server: `127.0.0.1:43591`
 - Dashboard BFF: `http://127.0.0.1:8787`
 - Dashboard web dev server: `http://127.0.0.1:5174`
+
+Codex currently runs these in named `screen` sessions because detached child processes launched from Codex can be cleaned up when a tool call exits.
+
+- `nullcity-infra-codex`
+- `nullcity-game-codex`
+- `nullcity-controller-codex`
+- `nullcity-dashboard-server-codex`
+- `nullcity-dashboard-web-codex`
+
+Inspect with `screen -ls`. Attach with `screen -r <name>`, detach with `Ctrl-a d`.
+
+Latest log paths are written to `/tmp/nullcity-runtime/*.log`.
 
 ## Agent restart request protocol
 
@@ -63,7 +79,7 @@ Verification:
 
 ```bash
 curl -fsS http://127.0.0.1:43596/v1/wall/snapshot >/dev/null
-curl -fsS http://127.0.0.1:43611/v1/city/heartbeat >/dev/null
+curl -fsS -H 'Authorization: Bearer operator-token' http://127.0.0.1:43611/api/nullcity/economy/heartbeat >/dev/null
 curl -fsS http://127.0.0.1:8787/api/overview >/dev/null
 curl -fsS http://127.0.0.1:5174/ >/dev/null
 ```
