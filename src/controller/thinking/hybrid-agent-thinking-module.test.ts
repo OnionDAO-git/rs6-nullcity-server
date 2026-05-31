@@ -661,6 +661,37 @@ describe('HybridAgentThinkingModule', () => {
         expect((result as any).planChange).toEqual({ id: 'scout-lumbridge', steps: 2 });
     });
 
+    it('writes Brain remember output as durable qmd facts', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    goal: {
+                        id: 'remember-cook',
+                        description: 'Remember what the Cook asked me to gather.',
+                        steps: ['write the quest fact'],
+                    },
+                    rememberFact: {
+                        topic: 'quests',
+                        fact: 'Cook asked for an egg, flour, and milk.',
+                        reason: 'NPC dialogue gave concrete quest requirements',
+                    },
+                }),
+            },
+        ]);
+        const memoryStore = memory();
+        const agent = hybridAgent(llm, runtimeState(), soul(), memoryStore);
+
+        const result = await agent.think(perception({ tick: 10 }));
+
+        expect(memoryStore.rememberFact).toHaveBeenCalledWith(
+            'res:agent',
+            'quests',
+            'Cook asked for an egg, flour, and milk.',
+            'NPC dialogue gave concrete quest requirements',
+        );
+        expect((result as any).memoUpdates).toBe(1);
+    });
+
     it('clears stale committed movement when the Brain switches goals', async () => {
         const llm = scriptedLlm([
             {
@@ -10567,6 +10598,7 @@ function memory(retrieved: string[] = []): MemoryStore {
         ensureResident: jest.fn(() => '/tmp/agent-memory'),
         retrieve: jest.fn(() => retrieved),
         write: jest.fn(),
+        rememberFact: jest.fn(),
         upsertIndexPatch: jest.fn(),
     } as unknown as MemoryStore;
 }

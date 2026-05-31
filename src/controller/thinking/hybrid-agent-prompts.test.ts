@@ -130,9 +130,10 @@ describe('hybrid agent prompts', () => {
         });
 
         expect(prompt).toContain('"memo"');
+        expect(prompt).toContain('"rememberFact"');
         expect(prompt).toContain('events/YYYY-MM-DD.md');
         expect(prompt).toContain('first-person memory');
-        expect(prompt).toContain('Only include memo');
+        expect(prompt).toContain('Only include memo or rememberFact');
     });
 
     it('includes AP/GP/Library hierarchy guardrails in the Brain prompt', () => {

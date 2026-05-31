@@ -149,6 +149,17 @@ export class MemoryStore {
         this.write(resident, memo.path, `${memo.text.trim()}\n`, memo.mode || 'append');
     }
 
+    rememberFact(resident: string, topic: string, fact: string, reason?: string) {
+        const stored = this.facts.rememberFact({ resident, topic, fact, reason });
+        this.telemetry?.logWrite({
+            resident,
+            relativePath: stored.path,
+            content: stored.text,
+            mode: 'append',
+        });
+        return stored;
+    }
+
     loadHooks(resident: string): { hooks: HookDefinition[]; variables: ProposedVariable[] } {
         return readHooksMd(this.ensureResident(resident));
     }

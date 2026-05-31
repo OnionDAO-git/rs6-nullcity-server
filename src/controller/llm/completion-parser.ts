@@ -11,6 +11,12 @@ export interface MemoWrite {
     mode?: 'append' | 'replace';
 }
 
+export interface RememberFactWrite {
+    topic: string;
+    fact: string;
+    reason?: string;
+}
+
 export interface IndexPatch {
     append?: string[];
 }
@@ -32,6 +38,7 @@ export interface ParsedCompletion {
     cause?: string;
     plan?: Plan | null;
     memo?: MemoWrite[];
+    rememberFact?: RememberFactWrite[];
     indexPatch?: IndexPatch;
     proposeHook?: HookDefinition[];
     retireHook?: string[];
@@ -49,6 +56,12 @@ const memoSchema = z.object({
         .refine(value => !value.startsWith('/') && !value.split(/[\\/]/).includes('..'), 'memo path must stay inside memory dir'),
     text: z.string().min(1).max(4000),
     mode: z.enum(['append', 'replace']).optional(),
+});
+
+const rememberSchema = z.object({
+    topic: z.string().min(1).max(80).refine(isSafeRememberTopic, 'remember topic must be a simple memory topic'),
+    fact: z.string().min(1).max(500),
+    reason: z.string().min(1).max(160).optional(),
 });
 
 const hookSchema = z.object({
@@ -89,6 +102,7 @@ export const completionSchema = z.object({
     actions: z.array(agentActionSchema).max(8).default([]),
     plan: planSchema.nullable().optional(),
     memo: z.union([memoSchema, z.array(memoSchema).max(8)]).optional(),
+    rememberFact: z.union([rememberSchema, z.array(rememberSchema).max(8)]).optional(),
     indexPatch: z.object({ append: z.array(z.string().min(1).max(300)).max(12).optional() }).optional(),
     proposeHook: z.union([hookSchema, z.array(hookSchema).max(8)]).optional(),
     retireHook: z.union([z.string().min(1).max(80), z.array(z.string().min(1).max(80)).max(8)]).optional(),
@@ -121,6 +135,7 @@ export function parseCompletion(text: string): ParsedCompletion {
                 : [data.proposeNervousRule]
             : undefined;
         const memos = data.memo ? (Array.isArray(data.memo) ? data.memo : [data.memo]) : undefined;
+        const rememberFact = data.rememberFact ? (Array.isArray(data.rememberFact) ? data.rememberFact : [data.rememberFact]) : undefined;
         const retireHook = data.retireHook ? (Array.isArray(data.retireHook) ? data.retireHook : [data.retireHook]) : undefined;
         const retireNervousRule = data.retireNervousRule
             ? Array.isArray(data.retireNervousRule)
@@ -133,6 +148,7 @@ export function parseCompletion(text: string): ParsedCompletion {
             cause: data.cause,
             plan: data.plan,
             memo: memos,
+            rememberFact,
             indexPatch: data.indexPatch,
             proposeHook: hooks?.map(hook => clampHookPriority({ ...hook, source: 'memory' } as HookDefinition, 80)),
             retireHook,
@@ -143,6 +159,20 @@ export function parseCompletion(text: string): ParsedCompletion {
     } catch (error) {
         return { ok: false, actions: [], cause: 'completion_parse_failed', error: error instanceof Error ? error.message : String(error) };
     }
+}
+
+function isSafeRememberTopic(value: string): boolean {
+    const topic = value.trim();
+    return (
+        topic.length > 0 &&
+        topic !== '.' &&
+        topic !== '..' &&
+        !topic.includes('/') &&
+        !topic.includes('\\') &&
+        !topic.includes('\0') &&
+        !topic.includes('..') &&
+        !topic.startsWith('.')
+    );
 }
 
 function extractJson(text: string): unknown {

@@ -2745,6 +2745,9 @@ export function applyBrainSideEffects(ctx: HelperContext, text: string): { memoU
     for (const memo of parsed.memo || []) {
         ctx.options.memory.write(ctx.options.soul.frontmatter.name, memo.path, memo.text, memo.mode || 'append');
     }
+    for (const fact of parsed.rememberFact || []) {
+        ctx.options.memory.rememberFact(ctx.options.soul.frontmatter.name, fact.topic, fact.fact, fact.reason);
+    }
     if (parsed.indexPatch?.append?.length) {
         ctx.options.memory.upsertIndexPatch(ctx.options.soul.frontmatter.name, parsed.indexPatch.append.join('\n'));
     }
@@ -2754,7 +2757,7 @@ export function applyBrainSideEffects(ctx: HelperContext, text: string): { memoU
     if (parsed.proposeNervousRule?.length) {
         upsertNervousRulesMd(memoryDir, { rules: parsed.proposeNervousRule });
     }
-    return { memoUpdates: parsed.memo?.length || 0 };
+    return { memoUpdates: (parsed.memo?.length || 0) + (parsed.rememberFact?.length || 0) };
 }
 
 export function goalRoutineOverride(

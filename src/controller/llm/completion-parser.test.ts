@@ -30,8 +30,36 @@ describe('parseCompletion', () => {
         expect(parsed.proposeVariables?.[0]?.id).toBe('wariness');
     });
 
+    it('accepts explicit durable rememberFact writes', () => {
+        const parsed = parseCompletion(
+            JSON.stringify({
+                rememberFact: [
+                    {
+                        topic: 'quests',
+                        fact: 'Cook asked for an egg, flour, and milk.',
+                        reason: 'NPC dialogue gave concrete quest requirements',
+                    },
+                ],
+            }),
+        );
+
+        expect(parsed.ok).toBe(true);
+        expect(parsed.rememberFact?.[0]).toEqual({
+            topic: 'quests',
+            fact: 'Cook asked for an egg, flour, and milk.',
+            reason: 'NPC dialogue gave concrete quest requirements',
+        });
+    });
+
     it('rejects memo path traversal', () => {
         const parsed = parseCompletion(JSON.stringify({ memo: { path: '../outside.md', text: 'bad' } }));
+
+        expect(parsed.ok).toBe(false);
+        expect(parsed.cause).toBe('completion_parse_failed');
+    });
+
+    it('rejects unsafe rememberFact topics', () => {
+        const parsed = parseCompletion(JSON.stringify({ rememberFact: { topic: '../secrets', fact: 'bad' } }));
 
         expect(parsed.ok).toBe(false);
         expect(parsed.cause).toBe('completion_parse_failed');
