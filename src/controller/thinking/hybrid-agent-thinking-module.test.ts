@@ -1,7 +1,9 @@
+import path from 'path';
 import { objectIds } from '@engine/world/config/object-ids';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
+import { SoulLoader } from '../soul/soul-loader';
 import type { Soul } from '../soul/soul-schema';
 import { STARTER_FISHING_SPOT_DISCOVERY_RANGE, explorationPatrolCooldownKey } from '../spark/runescape-body-routines';
 import { starterGpHarvestGoal } from '../spark/runescape-brain-planner';
@@ -19,6 +21,90 @@ describe('S-INFER-8: brain inference timeout is a generous server-broken alarm, 
         expect(CHAT_BRAIN_TIMEOUT_MS).toBe(240_000);
         expect(HELPERS_BRAIN_TIMEOUT_MS).toBe(240_000);
         expect(MODULE_BRAIN_TIMEOUT_MS).toBe(240_000);
+    });
+});
+
+describe('S-INFER-9: cohort routes the Brain to q8 (spark) and the Body to q4 (tower)', () => {
+    // The deliberate-planner + fast-executor split: the rare, cadenced Brain runs
+    // the smarter/slower q8 model (thinking ON, generous 240s ceiling) while the
+    // fast every-few-seconds Body runs the q4 model (thinking OFF, tight timeout).
+    // endpointFor(profile) = profile?.endpoint || soul.model?.endpoint || 'default',
+    // so the per-soul behavior.brain.endpoint / behavior.body.endpoint route the
+    // two tiers to SEPARATE endpoints without touching the shared `default`.
+    // The hybrid-agent cohort — these run the real deliberate-planner Brain (q8)
+    // + fast-executor Body (q4) split via behavior.brain/body.endpoint.
+    const HYBRID_COHORT = [
+        'res:agent',
+        'res:qa-woodcutter',
+        'res:qa-cook',
+        'res:qa-survivor',
+        'res:qa-guardian',
+        'res:qa-trader',
+        'res:qa-banker',
+        'res:qa-social',
+        'res:qa-scout',
+    ] as const;
+
+    function moduleFor(name: string): HybridAgentThinkingModule {
+        const loader = new SoulLoader(path.join(__dirname, '..', 'soul', 'starter-souls'));
+        const loaded = loader.load(name);
+        return new HybridAgentThinkingModule({
+            soul: loaded,
+            state: runtimeState(),
+            memory: memory(),
+            llm: scriptedLlm([]) as unknown as LlmClient,
+        });
+    }
+
+    it.each(HYBRID_COHORT)('routes %s Brain → brain_q8 endpoint and Body → body_q4 endpoint', name => {
+        const agent = moduleFor(name);
+        const behavior = agent.behavior();
+
+        expect(agent.endpointFor(behavior.brain)).toBe('brain_q8');
+        expect(agent.endpointFor(behavior.body)).toBe('body_q4');
+    });
+
+    it.each(HYBRID_COHORT)('keeps %s Brain thinking ON + the generous 240s ceiling and Body thinking OFF', name => {
+        const agent = moduleFor(name);
+        const behavior = agent.behavior();
+
+        // Brain: deliberate planner — thinking ON, generous server-broken ceiling.
+        expect(behavior.brain?.thinking ?? true).toBe(true);
+        expect(agent.timeoutFor(behavior.brain, MODULE_BRAIN_TIMEOUT_MS)).toBe(240_000);
+        // Body: fast executor — thinking OFF, short fail-fast timeout (not the brain's 240s).
+        expect(behavior.body?.thinking ?? false).toBe(false);
+        const bodyTimeout = agent.timeoutFor(behavior.body, 10_000);
+        expect(bodyTimeout).toBeLessThanOrEqual(30_000);
+    });
+
+    it('routes the res:hans hero single thinking-off tier to the fast body_q4 endpoint', () => {
+        // res:hans is a hook-driven hero (model.thinking:false, no behavior.brain/body
+        // deliberative loop) — it does NOT run a slow q8 deliberative Brain. Its single
+        // model tier routes to the FAST q4 (tower) via soul-level model.endpoint so the
+        // hero stays snappy at the embassy. endpointFor(undefined-profile) falls back to
+        // soul.model?.endpoint.
+        const agent = moduleFor('res:hans');
+        const behavior = agent.behavior();
+
+        expect(behavior.brain).toBeUndefined();
+        expect(behavior.body).toBeUndefined();
+        expect(agent.options.soul.frontmatter.model?.thinking).toBe(false);
+        expect(agent.endpointFor(behavior.body)).toBe('body_q4');
+    });
+
+    it('resolves the Body endpoint independently of the Brain endpoint (slow brain cannot reroute the body)', () => {
+        // The Body request (runBody) builds its endpoint from behavior.body alone —
+        // there is no cross-reference to behavior.brain — so a slow q8 brain on a
+        // different host never changes where the q4 body fires.
+        const agent = moduleFor('res:agent');
+        const behavior = agent.behavior();
+
+        // Mutate the brain profile; the body endpoint must NOT move.
+        const brainEndpointBefore = agent.endpointFor(behavior.brain);
+        (behavior.brain as { endpoint?: string }).endpoint = 'some_other_host';
+
+        expect(agent.endpointFor(behavior.body)).toBe('body_q4');
+        expect(brainEndpointBefore).toBe('brain_q8');
     });
 });
 

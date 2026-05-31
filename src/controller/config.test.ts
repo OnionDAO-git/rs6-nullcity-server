@@ -140,10 +140,12 @@ describe('controller config', () => {
     it('ships a tracked inference canary config for the loaded owned-hardware models', () => {
         const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.inference-canary.yml'));
 
+        // S-QWOPUS-CONFIG-1 (Codex) migrated the canary default off the non-serving
+        // qwen and onto qwopus q4; assertion updated to match config/controller.inference-canary.yml.
         expect(config.llm.endpoints.default).toMatchObject({
             baseUrl: 'http://inf.nullcity.ai:1234',
-            model: 'qwen/qwen3.6-27b',
-            timeoutMs: 60000,
+            model: 'qwopus3.5-27b-v3@q4_k_s',
+            timeoutMs: 75000,
         });
         expect(config.llm.endpoints.spacetower_qwopus_q4).toMatchObject({
             baseUrl: 'http://spacetower.nullcity.ai:8100',

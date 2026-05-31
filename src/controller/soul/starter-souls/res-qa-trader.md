@@ -51,9 +51,13 @@ behavior:
   returnToAnchorEveryTicks: 420
   returnToAnchorRadius: 12
   brain:
+    # S-INFER-9: deliberate planner → smarter/slower qwopus q8 (spark host).
+    endpoint: brain_q8
     thinking: true
     temperature: 0.6
   body:
+    # S-INFER-9: fast every-few-seconds executor → qwopus q4 (tower host).
+    endpoint: body_q4
     thinking: false
     temperature: 0.1
 nervousSystem:
