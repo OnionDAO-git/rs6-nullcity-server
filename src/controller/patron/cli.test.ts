@@ -82,6 +82,12 @@ describe('Patron CLI', () => {
             });
         });
 
+        it('accepts legacy --shards as an alias for --amount', () => {
+            const parsed = parsePatronCliArgs(['--grant', '--human', 'james', '--shards', '10']);
+            expect(parsed.amount).toBe(10);
+            expect(parsed.action).toBe('grant');
+        });
+
         it('parses --ask options correctly', () => {
             const parsed = parsePatronCliArgs(['--ask', '--human', 'james', '--resident', 'pip', '--text', 'What did the fire teach you?']);
             expect(parsed).toEqual({
@@ -367,6 +373,17 @@ describe('Patron CLI', () => {
                     filePath: 'file.txt',
                     configPath: 'controller.env.yml',
                 });
+            });
+
+            it('accepts CONTROLLER_PATRON_SHARDS when CONTROLLER_PATRON_AMOUNT is unset', () => {
+                process.env.CONTROLLER_PATRON_ACTION = 'grant';
+                process.env.CONTROLLER_PATRON_HUMAN = 'james';
+                process.env.CONTROLLER_PATRON_SHARDS = '7';
+
+                const parsed = parsePatronCliArgs([]);
+                expect(parsed.action).toBe('grant');
+                expect(parsed.humanId).toBe('james');
+                expect(parsed.amount).toBe(7);
             });
         });
     });

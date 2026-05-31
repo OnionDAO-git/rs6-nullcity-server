@@ -136,7 +136,11 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
     const options: PatronCliOptions = {
         action,
         humanId: process.env.CONTROLLER_PATRON_HUMAN || '',
-        amount: process.env.CONTROLLER_PATRON_AMOUNT ? Number(process.env.CONTROLLER_PATRON_AMOUNT) : 0,
+        amount: process.env.CONTROLLER_PATRON_AMOUNT
+            ? Number(process.env.CONTROLLER_PATRON_AMOUNT)
+            : process.env.CONTROLLER_PATRON_SHARDS
+              ? Number(process.env.CONTROLLER_PATRON_SHARDS)
+              : 0,
         residentName: process.env.CONTROLLER_PATRON_RESIDENT || '',
         text: process.env.CONTROLLER_PATRON_TEXT || '',
         artifact: process.env.CONTROLLER_PATRON_ARTIFACT || '',
@@ -215,6 +219,13 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             i += 1;
         } else if (arg.startsWith('--amount=')) {
             options.amount = Number(arg.slice('--amount='.length));
+        } else if (arg === '--shards') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--shards requires a value');
+            options.amount = Number(next);
+            i += 1;
+        } else if (arg.startsWith('--shards=')) {
+            options.amount = Number(arg.slice('--shards='.length));
         } else if (arg === '--resident') {
             const next = argv[i + 1];
             if (!next) throw new Error('--resident requires a value');
