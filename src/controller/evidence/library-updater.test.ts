@@ -511,6 +511,112 @@ describe('LibraryUpdater — observeGoalAchieved', () => {
     });
 });
 
+describe('LibraryUpdater — observeOrientationProgress', () => {
+    it('appends orientation_progress to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationProgress({
+            kind: 'orientation_progress',
+            ts: '2026-05-31T06:00:00.000Z',
+            tick: 77,
+            orientationGoalId: 'master-woodcutting',
+            orientationGoalDescription: 'Become a master woodcutter',
+            reason: 'goal_id_match',
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'orientation_progress',
+                ts: '2026-05-31T06:00:00.000Z',
+                tick: 77,
+                orientationGoalId: 'master-woodcutting',
+                orientationGoalDescription: 'Become a master woodcutter',
+                reason: 'goal_id_match',
+                lifeIndex: 1,
+                significanceReasons: ['orientation:progress'],
+            }),
+        ]);
+    });
+
+    it('records orientation_progress with action_tag_match reason', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationProgress({
+            kind: 'orientation_progress',
+            ts: '2026-05-31T07:00:00.000Z',
+            tick: 120,
+            orientationGoalId: 'kill-kbd',
+            orientationGoalDescription: 'Kill the King Black Dragon someday',
+            reason: 'action_tag_match',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toEqual(
+            expect.objectContaining({
+                kind: 'orientation_progress',
+                reason: 'action_tag_match',
+                orientationGoalId: 'kill-kbd',
+                significanceReasons: ['orientation:progress'],
+            }),
+        );
+    });
+});
+
+describe('LibraryUpdater — observeOrientationStalled', () => {
+    it('appends orientation_stalled to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationStalled({
+            kind: 'orientation_stalled',
+            ts: '2026-05-31T08:00:00.000Z',
+            tick: 200,
+            orientationGoalId: 'master-woodcutting',
+            orientationGoalDescription: 'Become a master woodcutter',
+            nonProgressTicks: 100,
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'orientation_stalled',
+                ts: '2026-05-31T08:00:00.000Z',
+                tick: 200,
+                orientationGoalId: 'master-woodcutting',
+                orientationGoalDescription: 'Become a master woodcutter',
+                nonProgressTicks: 100,
+                lifeIndex: 1,
+                significanceReasons: ['orientation:stalled'],
+            }),
+        ]);
+    });
+
+    it('progress then stall appear in correct timeline order with correct lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationProgress({
+            kind: 'orientation_progress',
+            ts: '2026-05-31T08:00:00.000Z',
+            tick: 10,
+            orientationGoalId: 'kill-kbd',
+            orientationGoalDescription: 'Kill the King Black Dragon someday',
+            reason: 'goal_id_match',
+        });
+        updater.observeOrientationStalled({
+            kind: 'orientation_stalled',
+            ts: '2026-05-31T08:01:40.000Z',
+            tick: 110,
+            orientationGoalId: 'kill-kbd',
+            orientationGoalDescription: 'Kill the King Black Dragon someday',
+            nonProgressTicks: 100,
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toEqual(expect.objectContaining({ kind: 'orientation_progress', tick: 10, lifeIndex: 1 }));
+        expect(timeline[1]).toEqual(expect.objectContaining({ kind: 'orientation_stalled', tick: 110, nonProgressTicks: 100, lifeIndex: 1 }));
+    });
+});
+
 function testUpdater(): { updater: LibraryUpdater; root: string } {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'library-updater-'));
     return { updater: new LibraryUpdater('res:agent', root), root };

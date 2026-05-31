@@ -4,6 +4,7 @@ import { residentSlug } from '../memory/runtime-state';
 import { renderPortrait, type PortraitIndex, type PortraitRenderOptions } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
+import type { OrientationProgressLibraryEvent, OrientationStalledLibraryEvent } from '../spark/orientation-scorer';
 
 export interface NcriLibraryEvent {
     kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
@@ -252,6 +253,55 @@ export class LibraryUpdater {
             gpAtCompletion: event.gpAtCompletion,
             lifeIndex: index.lives,
             significanceReasons: ['goal:achieved'],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record orientation progress as a durable Library timeline moment (S-GOAL-2).
+     * Only call when `scoreOrientationAction` returns `progressDetected: true`.
+     * The Storyteller digest can query `orientation_progress` events to narrate
+     * advancement toward the resident's north-star goal without invention.
+     */
+    observeOrientationProgress(event: OrientationProgressLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_progress',
+            orientationGoalId: event.orientationGoalId,
+            orientationGoalDescription: event.orientationGoalDescription,
+            reason: event.reason,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:progress'],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record orientation stall as a durable Library timeline moment (S-GOAL-2).
+     * Only call when `OrientationStallTracker.record` returns `newStall: true`.
+     * Emitted at most once per stall episode; resets when progress is detected.
+     * Surfaces to the operator dashboard as a signal that the resident may need
+     * a goal nudge (operator action; residents cannot rewrite their own goal).
+     */
+    observeOrientationStalled(event: OrientationStalledLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_stalled',
+            orientationGoalId: event.orientationGoalId,
+            orientationGoalDescription: event.orientationGoalDescription,
+            nonProgressTicks: event.nonProgressTicks,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:stalled'],
         });
         this.touchIndex(index);
         this.schedulePortraitRegeneration();
