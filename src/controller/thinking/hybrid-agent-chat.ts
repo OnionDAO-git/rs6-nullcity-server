@@ -118,7 +118,7 @@ export function resumeManualPause(ctx: ChatContext): void {
 
 export function currentFollowTarget(ctx: ChatContext): { name?: string; id?: string; kind?: string } | undefined {
     const target = ctx.cognition().followTarget;
-    if (target?.paused) {
+    if (target?.paused && (target.name || target.id || ctx.cognition().manualPauseSinceTick !== undefined)) {
         return undefined;
     }
     if (target?.name || target?.id) {
@@ -616,7 +616,9 @@ export async function directChatAction(
     if (isStopFollowingIntent(command, chat.normalizedText)) {
         const target = currentFollowTarget(ctx);
         ctx.clearGoalMomentum();
-        cognition.followTarget = { paused: true, setAtTick: ctx.options.state.tick };
+        cognition.followTarget = target
+            ? { ...target, paused: true, setAtTick: ctx.options.state.tick }
+            : { paused: true, setAtTick: ctx.options.state.tick };
         if (isFollowGoal(cognition.activeGoal)) {
             cognition.activeGoal = undefined;
         }

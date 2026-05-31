@@ -32,14 +32,14 @@ initialInventory:
 legacy:
   kind: mentor
   parameters:
-    benchmarkTask: explore-report-5m
+    benchmarkTask: trading-giving-5m
 modules:
   - id: onion.runescape.standard
     enabled: true
 behavior:
   kind: hybrid-agent
   followPlayer: codex
-  followRadius: 3
+  followRadius: 1
   commandPrefix: trade
   brainEveryTicks: 300
   bodyEveryTicks: 6

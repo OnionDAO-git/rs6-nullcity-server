@@ -150,6 +150,7 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
                 expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'trade' }),
             );
+            expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('trading-giving-5m');
             expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(
                 expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'bank' }),

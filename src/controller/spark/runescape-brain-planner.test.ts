@@ -41,6 +41,7 @@ import {
     starterFishingCookingGoal,
     starterFishingGoal,
     starterGpHarvestGoal,
+    tradingGoal,
     woodcuttingGoal,
 } from './runescape-brain-planner';
 
@@ -308,6 +309,17 @@ describe('goal factories', () => {
         expect(g.createdAtTick).toBe(11);
     });
 
+    it('tradingGoal builds a follow-shaped trade tester goal', () => {
+        const g = tradingGoal('Codex', 11);
+        expect(g.id).toBe('trade-with-codex');
+        expect(g.description).toContain('Codex');
+        expect(g.description.toLowerCase()).toContain('trade');
+        expect(g.steps?.join(' ').toLowerCase()).toContain('offer safe spare supplies');
+        expect(g.ttlTicks).toBe(900);
+        expect(g.createdAtTick).toBe(11);
+        expect(isFollowGoal(g)).toBe(true);
+    });
+
     it("followGoal falls back to 'target' for empty input", () => {
         const g = followGoal('', 0);
         expect(g.id).toBe('follow-target');
@@ -397,6 +409,13 @@ describe('benchmarkGoalForTask', () => {
     it("returns explorationGoal for 'explore-report-5m'", () => {
         const g = benchmarkGoalForTask('explore-report-5m', 0);
         expect(g?.id).toBe('scout-nearby-area');
+    });
+
+    it("returns a trade tester goal for 'trading-giving-5m'", () => {
+        const g = benchmarkGoalForTask('trading-giving-5m', 0);
+        expect(g?.id).toBe('trade-with-codex');
+        expect(g?.description).toMatch(/trade|Codex/i);
+        expect(isFollowGoal(g)).toBe(true);
     });
 
     it("returns AP/GP hierarchy goal for 'ap-gp-library-strategy-5m'", () => {

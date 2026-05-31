@@ -163,6 +163,8 @@ export const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 export const MOVE_COMMIT_TICKS = 24;
 export const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
 export const SOCIAL_KEEPALIVE_EVERY_TICKS = 36;
+export const TRADE_KEEPALIVE_EVERY_TICKS = 60;
+export const TRADE_STARTER_OFFER_COOLDOWN_TICKS = 120;
 const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
 const COOKS_ASSISTANT_DIALOGUE_SEQUENCE: AgentAction[] = [
     { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
@@ -277,7 +279,7 @@ export function tradeReaction(ctx: HelperContext, perception: HybridPerception):
 
 export function currentFollowTarget(ctx: HelperContext): { name?: string; id?: string; kind?: string } | undefined {
     const target = ctx.cognition().followTarget;
-    if (target?.paused) {
+    if (target?.paused && (target.name || target.id || ctx.cognition().manualPauseSinceTick !== undefined)) {
         return undefined;
     }
     if (target?.name || target?.id) {
@@ -646,6 +648,72 @@ export function socialKeepaliveAction(
         text: cleanSpeech('No tester visible. Say "social help" for follow, status, wait, stop, trade, or where I am.'),
         cause: 'social_keepalive',
     };
+}
+
+export function tradeStarterAction(ctx: HelperContext, perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+    if (ctx.commandPrefix() !== 'trade') {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    if (cognition.manualPauseSinceTick !== undefined || cognition.waitResumeTick !== undefined) {
+        return undefined;
+    }
+    if (perception.resident?.activeTrade || perception.resident?.inCombat || isLowHealth(perception)) {
+        return undefined;
+    }
+    if (safeTradeOfferSlot(perception.resident?.inventory || []) === undefined) {
+        return undefined;
+    }
+
+    const tick = ctx.options.state.tick;
+    const targetState = currentFollowTarget(ctx);
+    if (!targetState?.name && !targetState?.id) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.players || []).find(player => {
+        return (targetState.id && player.id === targetState.id) || (targetState.name && actorMatchesName(player, targetState.name));
+    });
+    if (target) {
+        const cooldownKey = `trade-starter-offer:${actorName(target).toLowerCase()}`;
+        const cooldowns = (ctx.options.state.hookCooldowns ||= {});
+        if (tick < (cooldowns[cooldownKey] || 0)) {
+            return undefined;
+        }
+
+        const action = tradeRequestOrApproach(perception, target, 'trade_starter_offer');
+        if (!action || ctx.isRepeatedAction(action)) {
+            return undefined;
+        }
+        if (action.kind === 'trade_request') {
+            cooldowns[cooldownKey] = tick + TRADE_STARTER_OFFER_COOLDOWN_TICKS;
+        }
+
+        ctx.rememberBodyAction(action);
+        const here = perception.resident?.position;
+        if (action.kind === 'move_to' && here) {
+            ctx.rememberActiveMove(action, here);
+        } else {
+            cognition.activeMove = undefined;
+        }
+        return { action, cause: action.cause || 'trade_starter_offer' };
+    }
+
+    const last = cognition.lastTradeKeepaliveTick;
+    if (typeof last === 'number' && tick - last < TRADE_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    const action: AgentAction = {
+        kind: 'say',
+        text: 'I have starter supplies ready. Say "trade trade me" to trade, or "trade inventory" to inspect them.',
+        cause: 'trade_keepalive',
+    };
+    cognition.lastTradeKeepaliveTick = tick;
+    cognition.activeMove = undefined;
+    ctx.rememberBodyAction(action);
+    return { action, cause: 'trade_keepalive' };
 }
 
 export function statusSpeech(

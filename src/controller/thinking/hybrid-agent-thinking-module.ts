@@ -49,6 +49,7 @@ import {
     suppressRepeatedActions,
     pendingDirectTradeAction,
     proactiveTradeAction,
+    tradeStarterAction,
 } from './hybrid-agent-helpers';
 
 export interface HybridAgentThinkingModuleOptions {
@@ -182,6 +183,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const combatNarration = combatNarrationAction(this);
             if (combatNarration) {
                 return this.result([combatNarration.action], combatNarration.cause, 0, false);
+            }
+
+            const starterTrade = tradeStarterAction(this, perception as HybridPerception);
+            if (starterTrade) {
+                return this.result([starterTrade.action], starterTrade.cause, 0, false);
             }
 
             const activeFollow = activeFollowAction(this, perception as HybridPerception);

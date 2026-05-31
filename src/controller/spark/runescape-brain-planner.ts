@@ -348,6 +348,24 @@ export function followGoal(targetName: string, tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical QA trade goal that keeps the resident near a tester. */
+export function tradingGoal(targetName: string, tick: number): ActiveGoalState {
+    const target = cleanTarget(targetName) || 'target';
+    return {
+        id: `trade-with-${goalId(target) || 'target'}`,
+        description: `Follow ${target}, stay close enough to trade, and offer safe spare starter supplies.`,
+        steps: [
+            `Watch for ${target} nearby`,
+            'Move within trade range when they are visible',
+            'Offer safe spare supplies such as logs or food when a trade opens',
+            'Report inventory or blockers when no trade can start',
+        ],
+        success: `A safe trade with ${target} is requested, completed, or clearly blocked.`,
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
+}
+
 const FACTION_LANDMARK_WORK: Record<string, { description: string; steps: string[]; success: string }> = {
     foundry: {
         description: 'Work the faction landmark by gathering forge fuel and turning nearby materials into useful heat.',
@@ -428,6 +446,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     }
     if (taskId === 'explore-report-5m') {
         return explorationGoal(tick);
+    }
+    if (taskId === 'trading-giving-5m') {
+        return tradingGoal('Codex', tick);
     }
     if (taskId === 'goal-follow-through-5m') {
         return goalFollowThroughGoal(tick);

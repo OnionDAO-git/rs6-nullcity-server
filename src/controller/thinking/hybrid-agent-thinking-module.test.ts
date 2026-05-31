@@ -3820,6 +3820,37 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('uses the configured follow player when an anonymous paused target would otherwise suppress QA follow', async () => {
+        const codex = player('codex', 3225, 3213);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'follow-codex',
+                description: 'Follow codex and stay close enough to be seen.',
+                createdAtTick: 1,
+            },
+            followTarget: { paused: true, setAtTick: 1 },
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(llm, state, socialSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                players: [codex],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3225, y: 3213, level: 0 }, range: 2, cause: 'follow_player_active' },
+        ]);
+        expect(result.cause).toBe('follow_player_active');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('stays in follow/listen mode instead of letting Brain announce an unrelated skilling goal', async () => {
         const codex = { id: 'resident:res:bmk_codex', kind: 'resident', name: 'Codex', position: { x: 3225, y: 3230, level: 0 } };
         const llm = scriptedLlm([
@@ -3955,8 +3986,47 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'say', text: 'I will stop following codex.' }]);
         expect(result.cause).toBe('direct_chat_stop_following');
-        expect(state.cognition?.followTarget).toMatchObject({ paused: true });
+        expect(state.cognition?.followTarget).toMatchObject({ name: 'codex', paused: true });
         expect(state.cognition?.activeGoal).toBeUndefined();
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not immediately resume trader starter offers after a stop-following command', async () => {
+        const codex = player('codex', 3200, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state, traderSoul());
+
+        const stop = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3200, 3200),
+                players: [codex],
+                events: [chatFromCodex('trade stop following', 3200, 3201)],
+            }),
+        );
+
+        expect(stop.cause).toBe('direct_chat_stop_following');
+        expect(state.cognition?.followTarget).toEqual(expect.objectContaining({ name: 'codex', paused: true }));
+
+        const next = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    inventory: [
+                        { itemId: 1511, key: 'rs:logs', amount: 5 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    ],
+                },
+                players: [codex],
+            }),
+        );
+
+        expect(next.cause).not.toBe('trade_starter_offer');
+        expect(next.cause).not.toBe('follow_player_active');
+        expect(next.actions).not.toContainEqual(expect.objectContaining({ kind: 'trade_request' }));
+        expect(next.actions).not.toContainEqual(expect.objectContaining({ cause: 'follow_player_active' }));
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -4897,6 +4967,52 @@ describe('HybridAgentThinkingModule', () => {
         expect(request.actions).toEqual([{ kind: 'trade_request', target: codex, cause: 'direct_chat_trade' }]);
         expect(request.cause).toBe('direct_chat_trade');
         expect(state.cognition?.pendingDirectTrade).toBeUndefined();
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('seeds the trader benchmark as a trade hold instead of an exploration patrol when no tester is visible', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = { lastBodyTick: 1 };
+        const agent = hybridAgent(llm, state, traderSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3227, 3230),
+            }),
+        );
+
+        expect(state.cognition?.activeGoal).toEqual(
+            expect.objectContaining({
+                id: 'trade-with-codex',
+                description: expect.stringContaining('trade'),
+            }),
+        );
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('follow_listen_hold');
+        expect(result.nooped).toBe(true);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('moves the trader toward Codex under the seeded trade benchmark when the tester is visible', async () => {
+        const codex = player('codex', 3229, 3230);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = { lastBodyTick: 1 };
+        const agent = hybridAgent(llm, state, traderSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3227, 3230),
+                players: [codex],
+            }),
+        );
+
+        expect(state.cognition?.activeGoal?.id).toBe('trade-with-codex');
+        expect(result.actions).toEqual([{ kind: 'move_to', target: codex.position, range: 1, cause: 'follow_player_active' }]);
+        expect(result.cause).toBe('follow_player_active');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -7563,6 +7679,74 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('lets the trade QA resident advertise starter trades before idle scouting becomes stuck recovery', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:qa-trader';
+        state.stuckSince = 80;
+        state.cognition = {
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastTradeKeepaliveTick: 60,
+        } as any;
+        const agent = hybridAgent(llm, state, traderSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    inventory: [
+                        { itemId: 1511, key: 'rs:logs', amount: 5 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    ],
+                },
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I have starter supplies ready. Say "trade trade me" to trade, or "trade inventory" to inspect them.',
+                cause: 'trade_keepalive',
+            },
+        ]);
+        expect(result.cause).toBe('trade_keepalive');
+        expect(state.cognition?.lastTradeKeepaliveTick).toBe(121);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('proactively requests a starter trade from the configured tester when adjacent and stocked', async () => {
+        const codex = player('codex', 3200, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:qa-trader';
+        state.cognition = {
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+        };
+        const agent = hybridAgent(llm, state, traderSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3200, 3200),
+                    inventory: [
+                        { itemId: 1511, key: 'rs:logs', amount: 5 },
+                        { itemId: 590, key: 'rs:tinderbox', amount: 1 },
+                    ],
+                },
+                players: [codex],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'trade_request', target: codex, cause: 'trade_starter_offer' }]);
+        expect(result.cause).toBe('trade_starter_offer');
+        expect(state.hookCooldowns?.['trade-starter-offer:codex']).toBe(241);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('eats carried food before non-combat goal beacons when low on health', async () => {
         const llm = scriptedLlm([]);
         const state = runtimeState();
@@ -10025,6 +10209,38 @@ function socialSoul(): Soul {
                 bodyEveryTicks: 1,
                 shareGoalsEveryTicks: 80,
                 visibilityAnchor: { x: 3200, y: 3200, level: 0 },
+                returnToAnchorEveryTicks: 10,
+                returnToAnchorRadius: 6,
+            },
+        },
+    };
+}
+
+function traderSoul(): Soul {
+    const base = soul();
+    return {
+        ...base,
+        sourcePath: '/tmp/res-qa-trader.md',
+        body: '# QA Trader\n\nStay close to Codex when visible and make trade readiness obvious without wandering into scouting loops.',
+        frontmatter: {
+            ...base.frontmatter,
+            name: 'res:qa-trader',
+            display: 'QA Trader',
+            legacy: {
+                kind: 'mentor',
+                parameters: {
+                    benchmarkTask: 'trading-giving-5m',
+                },
+            },
+            behavior: {
+                kind: 'hybrid-agent',
+                followPlayer: 'codex',
+                followRadius: 1,
+                commandPrefix: 'trade',
+                brainEveryTicks: 50,
+                bodyEveryTicks: 1,
+                shareGoalsEveryTicks: 90,
+                visibilityAnchor: { x: 3227, y: 3230, level: 0 },
                 returnToAnchorEveryTicks: 10,
                 returnToAnchorRadius: 6,
             },
