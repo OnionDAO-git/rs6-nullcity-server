@@ -580,7 +580,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         const tick = typeof compressedPerception.tick === 'number' ? compressedPerception.tick : this.state.tick;
                         const requestId = `gate:${tick}:${action.kind}`;
                         this.recordEvidence(trajectory => {
-                            const line = trajectory.recordAction(action, requestId);
+                            const line = trajectory.recordAction(action, requestId, this.state.cognition?.activeGoal?.id);
                             this.evidence?.library?.observeTrajectory(line);
                             trajectory.recordActionResult(requestId, {
                                 status: 'failure',
@@ -986,7 +986,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             onAckReady: attempt => {
                 const requestId = attempt.requestId || attempt.attemptId;
                 this.recordEvidence(trajectory => {
-                    const line = trajectory.recordAction(attempt.action, requestId);
+                    const line = trajectory.recordAction(attempt.action, requestId, this.state.cognition?.activeGoal?.id);
                     this.evidence?.library?.observeTrajectory(line);
                 });
             },
@@ -1678,7 +1678,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 metadata: input.metadata,
             };
             this.recordEvidence(trajectory => {
-                const line = trajectory.recordAction(action, failAttempt.attemptId);
+                const line = trajectory.recordAction(action, failAttempt.attemptId, this.state.cognition?.activeGoal?.id);
                 this.evidence?.library?.observeTrajectory(line);
                 trajectory.recordActionResult(failAttempt.attemptId, {
                     status: 'failure',
@@ -1715,7 +1715,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         this.options.stateStore.save(this.state);
 
         this.recordEvidence(trajectory => {
-            const line = trajectory.recordAction(action, attemptId);
+            const line = trajectory.recordAction(action, attemptId, this.state.cognition?.activeGoal?.id);
             this.evidence?.library?.observeTrajectory(line);
         });
 

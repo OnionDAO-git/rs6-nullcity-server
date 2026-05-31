@@ -85,6 +85,38 @@ describe('TrajectoryBuilder', () => {
         );
     });
 
+    it('tags the action line with the active goal id when provided (causation)', () => {
+        const { builder, session } = testBuilder();
+        builder.beginTick(4, { tick: 4 });
+
+        builder.recordAction({ kind: 'move', target: { x: 1, y: 2, level: 0 } } as never, 'request-2', 'goal:firemaking-7');
+
+        const lines = readJsonl(session.trajectoryPath);
+        expect(lines).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'action',
+                    requestId: 'request-2',
+                    goalId: 'goal:firemaking-7',
+                }),
+            ]),
+        );
+    });
+
+    it('omits goalId from the action line when no active goal is supplied', () => {
+        const { builder, session } = testBuilder();
+        builder.beginTick(5, { tick: 5 });
+
+        builder.recordAction({ kind: 'say', text: 'hi' }, 'request-3');
+
+        const sayLine = readJsonl(session.trajectoryPath).find((l: { kind: string }) => l.kind === 'say') as Record<
+            string,
+            unknown
+        >;
+        expect(sayLine).toBeDefined();
+        expect('goalId' in sayLine).toBe(false);
+    });
+
     it('requires an active evidence session before recording lines', () => {
         const store = new EvidenceStore('res:agent', fs.mkdtempSync(path.join(os.tmpdir(), 'trajectory-no-session-')));
         const builder = new TrajectoryBuilder(store);
