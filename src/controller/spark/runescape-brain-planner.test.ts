@@ -35,6 +35,7 @@ import {
     isWoodcuttingTrainingGoal,
     miningGoal,
     parseBrainCompletion,
+    parseBrainCompletionDetailed,
     summarizeGoalForSpeech,
     prayerGoal,
     starterCookingGoal,
@@ -138,6 +139,79 @@ describe('parseBrainCompletion', () => {
         const result = parseBrainCompletion('{"say":"Hi.","extra":"value"}');
         expect(result.say).toBe('Hi.');
         expect((result as Record<string, unknown>).extra).toBeUndefined();
+    });
+});
+
+describe('parseBrainCompletionDetailed (S-INFER-1 robust superset)', () => {
+    it('parses clean JSON identically to parseBrainCompletion and classifies clean', () => {
+        const text = '{"goal":{"id":"make-fire","description":"Light a fire."},"say":"On it."}';
+        const detailed = parseBrainCompletionDetailed(text);
+        expect(detailed.completion).toEqual(parseBrainCompletion(text));
+        expect(detailed.classification).toBe('clean');
+    });
+
+    it('recovers JSON wrapped in a <think> block that contains braces', () => {
+        const text = '<think>maybe {"goal":"wrong"} hmm</think>\n{"say":"hi"}';
+        const detailed = parseBrainCompletionDetailed(text);
+        expect(detailed.completion.say).toBe('hi');
+        expect(detailed.classification).toBe('recovered_after_think_strip');
+    });
+
+    it('classifies a truncated unclosed <think> with no answer as think_only_no_answer and returns {}', () => {
+        const text = '<think>Let me reason about the best goal here, I think the player should';
+        const detailed = parseBrainCompletionDetailed(text);
+        expect(detailed.completion).toEqual({});
+        expect(detailed.classification).toBe('think_only_no_answer');
+    });
+
+    it('recovers JSON from a ```json fenced block', () => {
+        const detailed = parseBrainCompletionDetailed('```json\n{"say":"hi"}\n```');
+        expect(detailed.completion.say).toBe('hi');
+        expect(detailed.classification).toBe('recovered_from_fence');
+    });
+
+    it('recovers JSON from prose-prefixed output', () => {
+        const detailed = parseBrainCompletionDetailed('Sure! {"goal":{"description":"fish"}}');
+        expect(detailed.completion.goal?.description).toBe('fish');
+    });
+
+    it('recovers JSON with a trailing comma via lenient reparse', () => {
+        const detailed = parseBrainCompletionDetailed('{"say":"hi",}');
+        expect(detailed.completion.say).toBe('hi');
+        expect(detailed.classification).toBe('recovered_trailing_comma');
+    });
+
+    it('classifies whitespace-only as truly_empty and returns {}', () => {
+        const detailed = parseBrainCompletionDetailed('   ');
+        expect(detailed.completion).toEqual({});
+        expect(detailed.classification).toBe('truly_empty');
+    });
+
+    it('treats unknown-key-only JSON like the strict path: empty completion, clean', () => {
+        // brainCompletionSchema strips unknown keys (all fields optional), so
+        // {"foo":1} validates to {} — matching parseBrainCompletion exactly.
+        const detailed = parseBrainCompletionDetailed('{"foo":1}');
+        expect(detailed.completion).toEqual(parseBrainCompletion('{"foo":1}'));
+        expect(detailed.completion).toEqual({});
+        expect(detailed.classification).toBe('clean');
+    });
+
+    it('reports schema_mismatch when a present field violates the schema (goal.description="")', () => {
+        const detailed = parseBrainCompletionDetailed('{"goal":{"description":""}}');
+        expect(detailed.completion).toEqual({});
+        expect(detailed.classification).toBe('schema_mismatch');
+    });
+
+    it('conservatively recovers a bare quoted speech line into {say}', () => {
+        const detailed = parseBrainCompletionDetailed('"On my way to the fishing spot."');
+        expect(detailed.completion.say).toBe('On my way to the fishing spot.');
+        expect(detailed.completion.goal).toBeUndefined();
+        expect(detailed.classification).toBe('salvaged_lenient');
+    });
+
+    it('never fabricates a goal from a bare speech line', () => {
+        const detailed = parseBrainCompletionDetailed('"I will go chop a tree."');
+        expect(detailed.completion.goal).toBeUndefined();
     });
 });
 

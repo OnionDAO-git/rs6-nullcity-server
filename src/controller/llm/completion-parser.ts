@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { parseJsonWithSalvage, type SalvageClassification } from './json-salvage';
 import { type HookDefinition, clampHookPriority } from '../spark/hooks';
 import { type Plan, planSchema } from '../spark/plan';
 import { type NervousRule, clampNervousRulePriority } from '../nervous-system/rules';
@@ -36,6 +37,13 @@ export interface ParsedCompletion {
     ok: boolean;
     actions: AgentAction[];
     cause?: string;
+    /**
+     * S-INFER-1: how the raw completion text was parsed/salvaged. Lets the
+     * SPARK orchestrator record WHY an empty completion was empty
+     * (think_only_no_answer / schema_mismatch / truly_empty / a recovery)
+     * instead of the historical blanket `empty_completion`.
+     */
+    parseClass?: SalvageClassification;
     plan?: Plan | null;
     memo?: MemoWrite[];
     rememberFact?: RememberFactWrite[];
@@ -113,21 +121,34 @@ export const completionSchema = z.object({
 
 export function parseCompletion(text: string): ParsedCompletion {
     if (!text.trim()) {
-        return { ok: true, actions: [] };
+        return { ok: true, actions: [], parseClass: 'truly_empty' };
     }
 
     try {
-        const parsed = completionSchema.safeParse(extractJson(text));
-        if (!parsed.success) {
-            return {
-                ok: false,
-                actions: [],
-                cause: 'completion_parse_failed',
-                error: parsed.error.issues.map(issue => `${issue.path.join('.') || '<root>'}: ${issue.message}`).join('; '),
-            };
+        // S-INFER-1: robust salvage replaces the greedy first-{-to-last-}
+        // slice. It strips <think> blocks, extracts code fences, walks
+        // balanced braces, and tolerates trailing commas — recovering the
+        // Qwen3 thinking-mode output the old path silently discarded.
+        const salvage = parseJsonWithSalvage(text, completionSchema);
+        if (!salvage.value) {
+            if (salvage.classification === 'schema_mismatch') {
+                // Valid JSON of the wrong shape: a genuine parse failure
+                // (e.g. path-traversal memo). Preserve the historical
+                // `completion_parse_failed` contract for callers/telemetry.
+                return {
+                    ok: false,
+                    actions: [],
+                    cause: 'completion_parse_failed',
+                    parseClass: salvage.classification,
+                    error: describeSchemaMismatch(salvage.candidates),
+                };
+            }
+            // No usable JSON at all (think-only / empty). Treat as a benign
+            // empty completion (actions default to []), tagging the reason.
+            return { ok: true, actions: [], parseClass: salvage.classification };
         }
 
-        const data = parsed.data;
+        const data = salvage.value;
         const hooks = data.proposeHook ? (Array.isArray(data.proposeHook) ? data.proposeHook : [data.proposeHook]) : undefined;
         const nervousRules = data.proposeNervousRule
             ? Array.isArray(data.proposeNervousRule)
@@ -146,6 +167,7 @@ export function parseCompletion(text: string): ParsedCompletion {
             ok: true,
             actions: data.actions,
             cause: data.cause,
+            parseClass: salvage.classification,
             plan: data.plan,
             memo: memos,
             rememberFact,
@@ -175,17 +197,24 @@ function isSafeRememberTopic(value: string): boolean {
     );
 }
 
-function extractJson(text: string): unknown {
-    const trimmed = text.trim();
-    if (trimmed.startsWith('{')) {
-        return JSON.parse(trimmed);
+/**
+ * Build a human-readable parse-failure message from the salvaged candidate
+ * object strings (those that parsed as JSON but failed the schema). Mirrors
+ * the historical `parsed.error.issues` summary so telemetry/logs keep their
+ * descriptive shape after the move to balanced-brace salvage.
+ */
+function describeSchemaMismatch(candidates: string[]): string {
+    for (let i = candidates.length - 1; i >= 0; i--) {
+        let json: unknown;
+        try {
+            json = JSON.parse(candidates[i]);
+        } catch {
+            continue;
+        }
+        const result = completionSchema.safeParse(json);
+        if (!result.success) {
+            return result.error.issues.map(issue => `${issue.path.join('.') || '<root>'}: ${issue.message}`).join('; ');
+        }
     }
-
-    const first = trimmed.indexOf('{');
-    const last = trimmed.lastIndexOf('}');
-    if (first >= 0 && last > first) {
-        return JSON.parse(trimmed.slice(first, last + 1));
-    }
-
-    return JSON.parse(trimmed);
+    return 'completion did not match schema';
 }

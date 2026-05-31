@@ -91,10 +91,13 @@ describe('Spark evidence integration', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('emits end_tick reason=parse_failed when LLM returns non-JSON', async () => {
+    it('emits end_tick reason=parse_failed when LLM returns valid JSON of the wrong shape', async () => {
+        // S-INFER-1: a genuine parse failure is now JSON-that-fails-schema
+        // (e.g. an unsafe memo path), not plain prose. The robust salvage
+        // path reserves `parse_failed` for schema_mismatch.
         const { builder, trajectoryPath } = evidence();
         const llm = {
-            complete: jest.fn(async () => ({ text: 'this is not JSON at all', nooped: false })),
+            complete: jest.fn(async () => ({ text: JSON.stringify({ memo: { path: '../escape.md', text: 'bad' } }), nooped: false })),
         } as unknown as LlmClient;
         const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
 
@@ -103,6 +106,63 @@ describe('Spark evidence integration', () => {
         const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
         expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'parse_failed' });
         expect(llm.complete).toHaveBeenCalled();
+    });
+
+    it('treats non-JSON prose as a classified empty completion, not a hard parse failure (S-INFER-1)', async () => {
+        // Previously plain prose threw inside extractJson and surfaced as
+        // parse_failed. The salvage path classifies it as truly_empty so the
+        // tick completes normally with the ordinary empty_completion cause.
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: 'this is not JSON at all', nooped: false })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('empty_completion');
+        const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
+        expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'tick_complete' });
+    });
+
+    it('records a think-only completion with a precise empty_completion_think_only_no_answer cause (S-INFER-1)', async () => {
+        // Real Qwen3 thinking-mode failure (HD-033 / F20a): the model emits a
+        // (here truncated) <think> block and never produces a JSON answer.
+        // The classification surfaces the real reason instead of a blanket
+        // empty_completion.
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: '<think>Let me reason about what to do next, I think the player', nooped: true })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('empty_completion_think_only_no_answer');
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'decision', cause: 'empty_completion_think_only_no_answer', actionKinds: [] }),
+            ]),
+        );
+    });
+
+    it('recovers a think-wrapped JSON action completion that the old greedy parser discarded (S-INFER-1)', async () => {
+        // The answer is real but wrapped in a <think> block whose reasoning
+        // contains braces — exactly the shape the greedy first-{-to-last-}
+        // slice corrupted. Salvage strips the think block and runs the action.
+        const { builder } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: '<think>maybe {"say":"wrong"} hmm</think>\n{"cause":"chat_reply","actions":[{"kind":"say","text":"I am awake."}]}',
+                nooped: false,
+            })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am awake.' }]);
+        expect(result.cause).toBe('chat_reply');
     });
 
     it('emits end_tick reason=plan_continuation when an active plan advances on a subsequent tick', async () => {

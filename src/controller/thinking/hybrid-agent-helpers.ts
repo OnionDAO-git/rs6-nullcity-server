@@ -129,7 +129,7 @@ import {
     isStandaloneFiremakingGoal,
     isFollowGoal,
     factionLandmarkWorkGoal,
-    parseBrainCompletion,
+    parseBrainCompletionDetailed,
     goalId,
     goalPoolForBenchmark,
     buildResidentNeedsContext,
@@ -3305,7 +3305,15 @@ export async function runBrain(
         };
     }
 
-    const parsed = parseBrainCompletion(response.text);
+    const detailed = parseBrainCompletionDetailed(response.text);
+    const parsed = detailed.completion;
+    // S-INFER-1: when the Brain produced no usable goal/say, surface WHY via
+    // the salvage classification instead of a blanket 'brain_goal' noop, so
+    // live action logs reveal the real breakdown (think_only_no_answer vs
+    // schema_mismatch vs truly_empty vs a salvaged recovery). Only the
+    // genuinely-empty branches below consult this; recovered completions keep
+    // their existing 'brain_goal' cause.
+    const emptyBrainCause = `brain_${detailed.classification}`;
     const sideEffects = applyBrainSideEffects(ctx, response.text);
     ctx.cognition().lastBrainTick = ctx.options.state.tick;
     ctx.cognition().brainBackoffUntilTick = undefined;
@@ -3341,8 +3349,13 @@ export async function runBrain(
         };
     }
 
+    // No say emitted. If a goal WAS set this is a normal brain_goal beat; if
+    // nothing usable was parsed, report the precise salvage classification so
+    // the controller's decision log distinguishes think_only_no_answer /
+    // schema_mismatch / truly_empty / salvaged_lenient instead of guessing.
+    const fallbackCause = parsed.goal ? parsed.cause || 'brain_goal' : parsed.cause || emptyBrainCause;
     return {
-        cause: parsed.cause || 'brain_goal',
+        cause: fallbackCause,
         envelopeTokens: estimateTokens(prompt),
         nooped: response.nooped && !parsed.goal,
         memoUpdates: sideEffects.memoUpdates,

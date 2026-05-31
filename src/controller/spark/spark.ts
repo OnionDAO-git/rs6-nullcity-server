@@ -326,7 +326,14 @@ export class Spark {
                     actionsAlreadySpent = true;
                     endReason = 'idle_initiative';
                 } else {
-                    decisionCause = 'empty_completion';
+                    // S-INFER-1: record WHY the completion was empty using the
+                    // salvage classification, so live action logs reveal the
+                    // real breakdown (Qwen3 think_only_no_answer vs
+                    // schema_mismatch vs truly_empty) instead of a blanket
+                    // `empty_completion`. Genuinely-empty completions keep the
+                    // bare `empty_completion` cause so existing telemetry/tests
+                    // do not break.
+                    decisionCause = emptyCompletionCause(parsed.parseClass);
                 }
             }
             decisionCause ??= inferUnnamedCompletionCause(parsed, actions);
@@ -533,6 +540,27 @@ function isEmptyParsedCompletion(parsed: ParsedCompletion, actions: AgentAction[
         !parsed.retireNervousRule?.length &&
         !parsed.proposeVariables?.length
     );
+}
+
+/**
+ * S-INFER-1: map a salvage parse-classification onto the SPARK decisionCause
+ * for an otherwise-empty completion. `truly_empty` (and an unset class, for
+ * back-compat with callers/parsers that do not yet set it) stays the bare
+ * `empty_completion` so existing telemetry/tests keep working; every other
+ * class is suffixed so the live action logs distinguish the real reason
+ * (e.g. `empty_completion_think_only_no_answer`,
+ * `empty_completion_schema_mismatch`).
+ */
+function emptyCompletionCause(parseClass: ParsedCompletion['parseClass']): string {
+    // `clean` (e.g. a well-formed `{}` with no actions) and `truly_empty`
+    // (and an unset class) are the ordinary empty completion — keep the bare
+    // cause so existing telemetry/tests stay stable. Only the salvage /
+    // failure classes that previously hid behind `empty_completion` get a
+    // suffix so the live breakdown is visible.
+    if (!parseClass || parseClass === 'clean' || parseClass === 'truly_empty') {
+        return 'empty_completion';
+    }
+    return `empty_completion_${parseClass}`;
 }
 
 function inferUnnamedCompletionCause(parsed: ParsedCompletion, actions: AgentAction[]): string {

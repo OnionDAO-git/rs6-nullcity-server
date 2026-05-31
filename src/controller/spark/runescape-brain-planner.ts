@@ -18,6 +18,7 @@
 
 import { z } from 'zod';
 import type { ActiveGoalState } from '../memory/runtime-state';
+import { parseJsonWithSalvage, type SalvageClassification } from '../llm/json-salvage';
 import { rankCandidateGoals } from './needs-hierarchy';
 import type { GoalCandidate, OrientationGoal, ResidentNeedsContext } from './needs-hierarchy';
 
@@ -107,6 +108,68 @@ export function parseBrainCompletion(text: string): BrainCompletion {
         return {};
     }
     return parsed.data;
+}
+
+// --- S-INFER-1: robust salvage path -------------------------------------
+//
+// `parseBrainCompletion` above is preserved byte-identical (its greedy
+// `extractJson` and throw-on-no-JSON behaviour are still contract-tested).
+// Real Qwen3 thinking-mode output (HD-033 / F20a) wraps the answer in
+// `<think>...</think>`, fences it in ```json```, prefixes prose, or leaves a
+// trailing comma — all of which the greedy path silently discards as
+// `empty_completion`. `parseBrainCompletionDetailed` is the robust SUPERSET:
+// it salvages those shapes and reports WHY a completion produced (or failed
+// to produce) a usable Brain decision so the live action logs reveal the
+// real breakdown instead of a blanket `empty_completion`.
+
+/** Parse classification returned alongside a Brain completion. Mirrors `SalvageClassification`. */
+export type BrainCompletionClassification = SalvageClassification;
+
+/** Result of the robust Brain completion parse: the (possibly recovered) completion + why. */
+export interface DetailedBrainCompletion {
+    completion: BrainCompletion;
+    classification: BrainCompletionClassification;
+}
+
+/** A bare quoted-string-only completion the model sometimes emits instead of an object. */
+const BARE_SAY_RE = /^\s*["“']([^"”'\n]{1,200})["”']\s*$/;
+
+/**
+ * Robustly parse a Brain LLM completion. Never throws. Strips `<think>`
+ * blocks (closed + truncated-open), extracts fenced JSON, walks balanced
+ * braces, tolerates trailing commas, and — as a conservative last resort —
+ * recovers a bare quoted speech string into `{ say }`. Returns the parsed
+ * (possibly empty) `BrainCompletion` plus a precise classification.
+ *
+ * This is a strict superset of `parseBrainCompletion`: any text the greedy
+ * path parsed into a schema-valid object is still parsed identically here
+ * (classification `clean`), and previously-discarded text is now salvaged or
+ * precisely classified.
+ */
+export function parseBrainCompletionDetailed(text: string): DetailedBrainCompletion {
+    const result = parseJsonWithSalvage(text, brainCompletionSchema);
+    if (result.value) {
+        return { completion: result.value, classification: result.classification };
+    }
+
+    // Conservative lenient field recovery: the model occasionally returns a
+    // bare quoted speech line (e.g. `"On my way."`) with no JSON object. Only
+    // recover a `say` — never fabricate a goal. Skipped when think text was
+    // the only content (truncated mid-thought has no real answer).
+    if (result.classification === 'truly_empty') {
+        const stripped = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        const open = stripped.search(/<think>/i);
+        const usable = open >= 0 ? stripped.slice(0, open) : stripped;
+        const bare = usable.match(BARE_SAY_RE);
+        if (bare) {
+            const say = cleanSpeech(bare[1]);
+            if (say) {
+                return { completion: { say }, classification: 'salvaged_lenient' };
+            }
+        }
+    }
+
+    return { completion: {}, classification: result.classification };
 }
 
 // --- String / speech helpers (moved verbatim from the monolith). ---
