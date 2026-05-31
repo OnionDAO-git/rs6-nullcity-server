@@ -8,6 +8,7 @@ export type InferenceHealthStatus =
     | 'empty_completion'
     | 'unexpected_completion'
     | 'cancelled'
+    | 'health_timeout'
     | 'error';
 
 export interface InferenceHealthResult {

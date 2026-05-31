@@ -24,6 +24,44 @@ function get(url: string, headers: Record<string, string> = {}): Promise<{ statu
     });
 }
 
+function getOrTimeout(
+    url: string,
+    timeoutMs: number,
+): Promise<{ timedOut: true } | { timedOut: false; status: number; body: string; contentType?: string }> {
+    return new Promise(resolve => {
+        let settled = false;
+        const request = http.get(url, response => {
+            const chunks: Buffer[] = [];
+            response.on('data', chunk => chunks.push(chunk));
+            response.on('end', () => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timer);
+                resolve({
+                    timedOut: false,
+                    status: response.statusCode ?? 0,
+                    body: Buffer.concat(chunks).toString('utf8'),
+                    contentType: response.headers['content-type'],
+                });
+            });
+        });
+        request.on('error', () => {
+            // A destroyed request after the client-side timeout is expected.
+        });
+        const timer = setTimeout(() => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            request.destroy();
+            resolve({ timedOut: true });
+        }, timeoutMs);
+        request.end();
+    });
+}
+
 describe('letters HTTP server (EVENT-D2a)', () => {
     let tmp: string;
     let store: LettersStore;
@@ -451,6 +489,32 @@ describe('letters HTTP server (EVENT-D2a)', () => {
                 ok: false,
                 controller: 'ok',
                 inference: { ok: false, status: 'error', error: 'probe exploded' },
+            });
+        });
+
+        it('returns quickly when the health probe never settles', async () => {
+            server = await startLettersHttpServer({
+                store,
+                port: 0,
+                healthTimeoutMs: 15,
+                health: async () => new Promise(() => undefined),
+            });
+
+            const response = await getOrTimeout(server.url.replace('/v1/inbox', '/v1/health'), 100);
+
+            expect(response).toMatchObject({ timedOut: false, status: 503 });
+            if (response.timedOut) {
+                throw new Error('health route did not respond before the client timeout');
+            }
+            expect(JSON.parse(response.body)).toMatchObject({
+                ok: false,
+                controller: 'ok',
+                inference: {
+                    ok: false,
+                    status: 'health_timeout',
+                    endpoint: 'letters-http',
+                    error: 'health probe timed out after 15ms',
+                },
             });
         });
 

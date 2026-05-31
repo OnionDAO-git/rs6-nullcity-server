@@ -3,7 +3,7 @@ import { CityIntegrationService } from './city-integration/service';
 import { assertProductionControllerConfig, loadControllerConfig, parseControllerArgs, sanitizedControllerConfigSummary } from './config';
 import { ControllerHost } from './controller-host';
 import { acquireControllerLock } from './controller-lock';
-import { closeLettersHttpServer, startLettersHttpServer } from './letters/letters-http-server';
+import { closeLettersHttpServer, DEFAULT_HEALTH_TIMEOUT_MS, startLettersHttpServer } from './letters/letters-http-server';
 import { runInferenceHealthProbe } from './llm/inference-health';
 import { LlmClient } from './llm/llm-client';
 import { closeControllerMcpHttpServer, startControllerMcpHttpServer } from './mcp/http-server';
@@ -68,7 +68,8 @@ async function main(): Promise<void> {
                 residentIds: config.residents,
                 soulsDir: config.souls.dir,
                 wallRedact: args.lettersHttpWallRedact,
-                health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints }),
+                health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints, timeoutMs: DEFAULT_HEALTH_TIMEOUT_MS }),
+                healthTimeoutMs: DEFAULT_HEALTH_TIMEOUT_MS,
                 patronMemoryRoot: config.memory.dir,
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
