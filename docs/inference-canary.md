@@ -6,11 +6,11 @@ Null City keeps the currently serving owned inference route as `default` and add
 
 - `default`: `http://spacetower.nullcity.ai:8100`, model `qwopus3.5-27b-v3`, timeout `240000`, `forceThinking: false`, `maxTokens: 512`.
 - `spacetower_qwopus_q4`: `http://spacetower.nullcity.ai:8100`, model `qwopus3.5-27b-v3`, `forceThinking: false`, `maxTokens: 512`.
-- `inf_qwopus_q4`: `http://inf.nullcity.ai:1234`, model `qwopus3.5-27b-v3`, timeout `240000`, `forceThinking: false`, `maxTokens: 512`; kept for explicit diagnostics.
+- `inf_qwopus_q4`: `http://inf.nullcity.ai:1234`, model `qwopus3.5-27b-v3`, timeout `240000`, `forceThinking: false`, `maxTokens: 512`; kept for explicit diagnostics and load comparison.
 
-Do not assume cross-loaded model combinations exist on both machines. As of 2026-05-31, the exact model id `qwopus3.5-27b-v3@q4_k_s` is listed by both owned servers but rejects even tiny bounded probes with `Context size has been exceeded`. The unsuffixed serving alias `qwopus3.5-27b-v3` succeeds on both boxes. Qwen is serving on `inf.nullcity.ai:1234` but remains a benchmark route, not the live default.
+Do not assume cross-loaded model combinations exist on both machines. Probe the exact model id you plan to use, and make the probe representative. On 2026-05-31, `qwopus3.5-27b-v3@q4_k_s` accepted small and roughly 3K-token bounded JSON probes on both owned boxes, but deploying that exact id to the live controller produced repeated `400 Bad Request` failures on full resident prompts. The unsuffixed `qwopus3.5-27b-v3` alias is slower on Spacetower, but it is the robust live route until a full-envelope resident canary proves the exact id safe. Qwen is serving on `inf.nullcity.ai:1234` but remains a benchmark route, not the live default.
 
-The `forceThinking: false` and `maxTokens: 512` values are endpoint compatibility guards, not SOUL design changes. Direct probes on 2026-05-31 showed Spacetower q4 accepts resident-sized prompts only when reasoning is disabled and completion output is bounded; the client caps oversized resident requests at the endpoint ceiling.
+The `forceThinking: false` and `maxTokens: 512` values are endpoint compatibility guards, not SOUL design changes. Direct probes on 2026-05-31 showed q4 serves resident-sized prompts quickly with those guards; the client caps oversized resident requests at the endpoint ceiling.
 
 ## Safe Default
 
@@ -30,7 +30,7 @@ Probe all configured combinations:
 npm run inference:canary -- --config config/controller.inference-canary.yml --all
 ```
 
-`--all` is expected to fail while `inf_qwopus_q4` is unhealthy; that is useful diagnostic evidence, not a reason to move live residents back to `inf`.
+`--all` is useful diagnostic evidence. A failure usually means a model id, host, or serving alias drifted; do not move live residents between machines without a fresh bounded probe.
 
 JSON output for notes or comparison scripts:
 

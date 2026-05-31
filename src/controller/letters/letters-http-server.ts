@@ -29,7 +29,7 @@ import { buildWallSnapshot, readGraveyardEntries, readLibraryEntries, redactWall
 export const DEFAULT_LETTERS_PATH = '/v1/inbox';
 export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 export const DEFAULT_HEALTH_PATH = '/v1/health';
-export const DEFAULT_HEALTH_TIMEOUT_MS = 4_000;
+export const DEFAULT_HEALTH_TIMEOUT_MS = 30_000;
 export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
 export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
 export const DEFAULT_PATRON_CHECKIN_PATH = '/v1/patron/checkin';

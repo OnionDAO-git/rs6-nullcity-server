@@ -140,9 +140,8 @@ describe('controller config', () => {
     it('ships a tracked inference canary config for the loaded owned-hardware models', () => {
         const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.inference-canary.yml'));
 
-        // S-INFER-8-DEPLOY-AUDIT-1 keeps the canary on the owned qwopus route,
-        // but uses the serving alias because the exact @q4_k_s id is listed yet
-        // rejects even tiny probes on both owned boxes.
+        // S-INFER-8-DEPLOY-AUDIT-1 keeps the canary on the robust owned qwopus alias,
+        // with endpoint guards that prevent serving drift from melting resident prompts.
         expect(config.llm.endpoints.default).toMatchObject({
             baseUrl: 'http://spacetower.nullcity.ai:8100',
             model: 'qwopus3.5-27b-v3',

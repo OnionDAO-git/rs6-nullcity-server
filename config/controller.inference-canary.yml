@@ -39,9 +39,10 @@ inference:
 
 llm:
   endpoints:
-    # Serving demo baseline. The exact quantized id qwopus3.5-27b-v3@q4_k_s
-    # is listed on both owned boxes but currently rejects even tiny probes with
-    # "Context size has been exceeded"; the unsuffixed serving alias works.
+    # Serving demo baseline. The exact q4 id can pass small/3K bounded probes,
+    # but the live controller's full resident prompts produced 400s in minutes.
+    # Use the unsuffixed serving alias for robust resident traffic until a
+    # full-envelope resident canary proves the exact id safe.
     default:
       baseUrl: http://spacetower.nullcity.ai:8100
       model: qwopus3.5-27b-v3
@@ -57,7 +58,7 @@ llm:
       maxTokens: 512
       forceThinking: false
     # Keep the inf host named for explicit diagnostics/benchmarking, but do not
-    # use it as default while it returns context-size 400s on tiny probes.
+    # use it as default unless the operator wants to spread load to the other box.
     inf_qwopus_q4:
       baseUrl: http://inf.nullcity.ai:1234
       model: qwopus3.5-27b-v3

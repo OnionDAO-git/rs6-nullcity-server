@@ -4,7 +4,12 @@ import os from 'os';
 import path from 'path';
 import { LettersStore } from '../patron/letters-store';
 import { PatronStore } from '../patron/patron-store';
-import { closeLettersHttpServer, type LettersHttpAuthOptions, startLettersHttpServer } from './letters-http-server';
+import {
+    closeLettersHttpServer,
+    DEFAULT_HEALTH_TIMEOUT_MS,
+    type LettersHttpAuthOptions,
+    startLettersHttpServer,
+} from './letters-http-server';
 
 function get(url: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string; contentType?: string }> {
     return new Promise((resolve, reject) => {
@@ -424,6 +429,10 @@ describe('letters HTTP server (EVENT-D2a)', () => {
     });
 
     describe('GET /v1/health (O4)', () => {
+        it('uses a default timeout large enough for owned qwopus health probes', () => {
+            expect(DEFAULT_HEALTH_TIMEOUT_MS).toBeGreaterThanOrEqual(30_000);
+        });
+
         it('returns 404 when no health probe is configured', async () => {
             server = await startLettersHttpServer({ store, port: 0 });
             const response = await get(server.url.replace('/v1/inbox', '/v1/health'));
