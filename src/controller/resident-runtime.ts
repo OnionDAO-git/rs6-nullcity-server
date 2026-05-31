@@ -66,10 +66,20 @@ import { whisperInboxFor, type WhisperInbox } from './lore/whisper';
 import { loreBusInboxFor, type LoreBusInbox } from './lore/lore-bus-inbox';
 
 const MAX_PENDING_EVENTS = 50;
-const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
-const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
-const SAY_ACTION_WATCHDOG_MS = 10_000;
-const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
+// S-INFER-8: the thinking watchdog is a GENEROUS last-resort backstop for an
+// "inference server is broken" condition — NOT a thinking bound. Real q4 qwopus
+// full-envelope deliberation runs ~40s; the previous 45s watchdog was the REAL
+// guillotine cutting legitimate thinking (it fired before the request timeout).
+// It is now set slightly ABOVE the 240s brain request timeout so the cleaner
+// request-timeout signal fires first; this watchdog only fires if even that fails.
+// A watchdog firing is a RARE anomaly → investigate the inference server (see
+// src/controller/llm/inference-health.ts degradedFlags). Do NOT lower it to
+// throttle thinking. The fast ACTION watchdogs below stay tight — they guard fast
+// action EXECUTION (ack/say/effect), not deliberation.
+export const DEFAULT_THINKING_WATCHDOG_MS = 250_000;
+export const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
+export const SAY_ACTION_WATCHDOG_MS = 10_000;
+export const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
 const MOVE_EFFECT_TIMEOUT_MIN_MS = 5_000;
 const MOVE_EFFECT_TIMEOUT_PER_TILE_MS = 1_200;
 const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
@@ -820,6 +830,16 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             timer = setTimeout(() => {
                 this.thinking.stop('thinking_watchdog_timeout');
                 const fallback = this.thinking.onWatchdogTimeout?.(perception, gameSkillContext);
+                // S-INFER-8: the watchdog is a generous last-resort backstop ABOVE the
+                // 240s brain request timeout. Real q4 qwopus thinking is ~40s, so reaching
+                // this is a RARE anomaly — log it LOUD as a degraded-inference ALARM, not a
+                // routine event. The real fast "server dead" detector is the health probe in
+                // src/controller/llm/inference-health.ts (degradedFlags); investigate there.
+                console.warn(
+                    `[inference-alarm] ${this.name}: thinking_watchdog_timeout after ${timeoutMs}ms — ` +
+                        'the inference server may be degraded (real q4 thinking is ~40s; this backstop is 250s). ' +
+                        'Investigate the inference server (see src/controller/llm/inference-health.ts degradedFlags).',
+                );
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'thinking_watchdog_timeout',

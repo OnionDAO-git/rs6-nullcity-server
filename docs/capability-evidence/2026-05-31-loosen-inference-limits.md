@@ -454,3 +454,36 @@ Stable-window `npm run controller:inference-audit` (window 21:51–22:21Z, 23 re
 - survival: 10 active residents, `degradedFlags=[]`, zero deaths/logouts/ap_fades
 
 **Arc closed:** qwen3.6-27b non-serving (0% usable, S-INFER-AB-1) → switched brain+body to qwopus3.5-27b (S-INFER model switch) → raised brain timeout 20s→75s (qwopus p50 ~40s) → max_tokens 1536→4096 → made brain uninterruptible by non-survival reflexes/hooks (S-INFER-4/5/6) → in-flight debounce (S-INFER-7) → resolved restart-contention (one stable steward-owned controller). From 0.3% → **89.1% usable** in a clean window. Residents think (qwopus, thinking ON), the Body executes (thinking OFF), the Nervous System protects without aborting the Brain. Survival reflexes + AP self-trade keep residents alive. HD-053 records the qwopus-only model policy.
+
+## S-INFER-8 (2026-05-31 evening) — brain timeout + watchdog are GENEROUS server-broken ALARMS, not a guillotine on real thinking
+
+**Maintainer intent (verbatim):** "the timeout should be for 'the inference server failed' which should raise alarm bells and not even close to cutting off a real thinking session — I'd hate for timeouts to break real resident thinking on goals."
+
+### Finding — the 45s watchdog was the REAL guillotine
+The brain **request** timeout was 75s (`DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS` in `hybrid-agent-chat.ts`, `hybrid-agent-helpers.ts`, `hybrid-agent-thinking-module.ts`). But the **thinking watchdog** in `resident-runtime.ts` was only **45s** (`DEFAULT_THINKING_WATCHDOG_MS = 45_000`). The watchdog fires from `thinkWithWatchdog()` via `setTimeout` and calls `thinking.stop('thinking_watchdog_timeout')` — so it fires BEFORE the 75s request timeout. A legitimate full-envelope q4 qwopus brain call runs **~40s**; the 45s watchdog left almost no margin and would cut real deliberations the moment they ran slightly long (and would unconditionally cut the future longer-thinking deliberative planner). **The 45s watchdog — not the 75s request timeout — was the guillotine on legitimate thinking.**
+
+### Fix — alarm-shaped, generous ceilings (NOT thinking bounds)
+- **Brain request timeout 75s → 240s** in all three `DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS` files. ~6x a real ~40s deliberation; headroom for the deliberative planner.
+- **Thinking watchdog 45s → 250s** (`DEFAULT_THINKING_WATCHDOG_MS`), set slightly ABOVE the 240s request timeout so the request timeout is the cleaner first signal and the watchdog is a pure last-resort backstop. A legitimate ~40s — or even ~150s — deliberation is no longer cut.
+- **Body timeout UNTOUCHED** (`DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000`) — the Body runs thinking-OFF / fast; a stuck body call SHOULD time out fast. The fast **action** watchdogs (`ACK_ONLY_ACTION_WATCHDOG_MS=15_000`, `SAY_ACTION_WATCHDOG_MS=10_000`, `ACTION_EFFECT_WATCHDOG_GRACE_MS=10_000`) are UNTOUCHED — they guard fast action EXECUTION, not deliberation.
+- **Endpoint `timeoutMs` 75000 → 240000** in the LIVE untracked `controller.yml` (`llm.endpoints.default`) so the HTTP client layer never cuts earlier than the request timeout. (Gitignored local config — NOT committed; steward picks it up on the next deploy.)
+- **Loud alarm logging:** both the thinking watchdog firing (`resident-runtime.ts`) AND the brain `request_timeout` path (`hybrid-agent-helpers.ts`) now `console.warn` a `[inference-alarm] … the inference server may be degraded` message pointing at `src/controller/llm/inference-health.ts` (`degradedFlags`) — the real fast "server dead" detector. A brain timeout is now a RARE "investigate the server" event, not routine.
+- **Model UNCHANGED** (qwopus q4, thinking ON).
+
+### Proof (unit test, deploy-independent)
+- `DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS === 240_000` asserted in all three files; `DEFAULT_THINKING_WATCHDOG_MS === 250_000` (> 240_000) asserted.
+- A simulated ~40s AND ~150s brain deliberation is NOT cut by the watchdog (fake-timers: `thinking.stop('thinking_watchdog_timeout')` never called, no `thinking_watchdog_timeout` inference log) — the previous 45s cut is gone.
+- Fast action watchdogs (ack/say/action-effect) asserted unchanged (15s/10s/10s).
+- The watchdog-fires path emits the loud anomaly `console.warn` (spy assertion).
+- Existing brain-timeout assertions updated 75s → 240s; existing watchdog-recovery tests still green.
+
+### Live impact — PENDING DEPLOY
+Cancel-rate / cut-rate impact is **not** claimed live by this packet. After deploy + warm window: audit → expect **timeout/watchdog cancels → 0**, usable-brain-rate up; and a brain timeout firing now means **investigate the inference server** (check `inference-health.ts` degradedFlags), not "throttle thinking."
+
+```bash
+npm run controller:inference-audit   # expect: broken.timeout=0, usable-brain-rate ~90%+
+# histogram a hero trajectory for watchdog/timeout cuts (expect ~0):
+grep -oE 'thinking_watchdog_timeout|request_timeout|brain inference request_timeout' <trajectory> | sort | uniq -c
+# any [inference-alarm] line in the controller log now = a RARE server-degraded signal to investigate:
+grep -n 'inference-alarm' <controller.log>
+```

@@ -64,7 +64,11 @@ export interface HybridAgentThinkingModuleOptions {
 
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
-const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 75_000;
+// S-INFER-8: generous "inference server is broken" ALARM ceiling (~6x a real q4
+// ~40s deliberation), NOT a thinking bound. A brain timeout firing is a RARE
+// anomaly → investigate the inference server (src/controller/llm/inference-health.ts
+// degradedFlags). Body timeout stays modest (body runs thinking-OFF / fast).
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const REPEAT_ACTION_BACKOFF_TICKS = 30;

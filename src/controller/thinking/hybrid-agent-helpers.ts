@@ -3248,7 +3248,14 @@ export function observeCompletedLocalGoal(ctx: HelperContext, perception: Hybrid
     cognition.lastGoalShareTick = undefined;
 }
 
-const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 75_000;
+// S-INFER-8: the brain request timeout is a GENEROUS "inference server is broken"
+// ALARM ceiling, NOT a thinking bound. Real q4 qwopus full-envelope thinking is
+// ~40s; 240s is ~6x that, with headroom for the future deliberative planner. A
+// brain timeout firing is a RARE anomaly meaning "investigate the inference
+// server" (see src/controller/llm/inference-health.ts degradedFlags), not routine.
+// Do NOT lower this to throttle thinking. The Body timeout stays modest (body runs
+// thinking-OFF / fast) so a genuinely stuck body call still times out quickly.
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 
 /**
@@ -3322,6 +3329,19 @@ export async function runBrain(
         priority: 5,
         ...(ctx.modelFor(behavior.brain) ? { model: ctx.modelFor(behavior.brain) } : {}),
     });
+    if (response.cancelledBy === 'request_timeout') {
+        // S-INFER-8: the brain REQUEST timeout (240s) is a generous "inference server
+        // is broken" alarm, NOT a thinking bound — real q4 qwopus thinking is ~40s, so
+        // hitting 240s is a RARE anomaly. Log it LOUD as a degraded-inference signal,
+        // not routine. The real fast "server dead" detector is the health probe in
+        // src/controller/llm/inference-health.ts (degradedFlags); investigate there.
+        const brainTimeoutMs = ctx.timeoutFor(behavior.brain, DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS);
+        console.warn(
+            `[inference-alarm] brain inference request_timeout after ${brainTimeoutMs ?? DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS}ms — ` +
+                'the inference server may be degraded (real q4 thinking is ~40s; this ceiling is 240s). ' +
+                'Investigate the inference server (see src/controller/llm/inference-health.ts degradedFlags).',
+        );
+    }
     const cancellation = ctx.cancelledResult(thinkId || 0, perception as HybridPerception);
     if (cancellation) {
         return {

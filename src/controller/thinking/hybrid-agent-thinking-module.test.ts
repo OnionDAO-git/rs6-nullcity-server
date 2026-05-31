@@ -6,9 +6,21 @@ import type { Soul } from '../soul/soul-schema';
 import { STARTER_FISHING_SPOT_DISCOVERY_RANGE, explorationPatrolCooldownKey } from '../spark/runescape-body-routines';
 import { starterGpHarvestGoal } from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
-import { latestAddressedChat } from './hybrid-agent-chat';
-import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
+import { DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS as CHAT_BRAIN_TIMEOUT_MS, latestAddressedChat } from './hybrid-agent-chat';
+import { DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS as HELPERS_BRAIN_TIMEOUT_MS } from './hybrid-agent-helpers';
+import { DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS as MODULE_BRAIN_TIMEOUT_MS, HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
 import { PatronRegistry } from '../patron/patron-registry';
+
+describe('S-INFER-8: brain inference timeout is a generous server-broken alarm, not a thinking bound', () => {
+    it('sets DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS to 240_000 in all three brain-timeout sites', () => {
+        // ~6x a real q4 qwopus ~40s deliberation, with headroom for the future
+        // deliberative planner. NOT a thinking bound — a brain timeout firing means
+        // "investigate the inference server" (see src/controller/llm/inference-health.ts).
+        expect(CHAT_BRAIN_TIMEOUT_MS).toBe(240_000);
+        expect(HELPERS_BRAIN_TIMEOUT_MS).toBe(240_000);
+        expect(MODULE_BRAIN_TIMEOUT_MS).toBe(240_000);
+    });
+});
 
 describe('HybridAgentThinkingModule', () => {
     it('passes abort signals to inference and aborts the active completion when stopped', async () => {
@@ -604,10 +616,12 @@ describe('HybridAgentThinkingModule', () => {
         const brainRequest = llm.complete.mock.calls[0][0];
         const bodyRequest = llm.complete.mock.calls[1][0];
         expect(brainRequest.thinking).toBe(true);
-        // Brain timeout default is 75_000 (maintainer commit c7bf5678 raised it
-        // 20s → 75s to fit qwopus p50 ~40s). Asserting the shipped value here so
-        // this test reflects the deliberation window the slow brain actually gets.
-        expect(brainRequest.timeoutMs).toBe(75_000);
+        // Brain timeout is a GENEROUS "inference server is broken" ALARM ceiling,
+        // not a thinking bound (S-INFER-8). Real q4 qwopus thinking is ~40s; the
+        // request timeout sits at 240s (~6x) so a legitimate deliberation — and the
+        // future longer-thinking deliberative planner — is never cut. A brain timeout
+        // firing now means: investigate the inference server (see inference-health.ts).
+        expect(brainRequest.timeoutMs).toBe(240_000);
         // S-INFER-2 (D1) / S-INFER-4 (B): the THINKING brain call must carry an
         // explicit, generous completion-token ceiling so reasoning + the final
         // JSON answer both fit. Raised 1536 → 4096 because qwopus spends most of
@@ -10073,8 +10087,9 @@ describe('HybridAgentThinkingModule', () => {
             expect(result.chat_reply_emitted).toBe(true);
             expect(result.chat_reply_kind).toBe('small_talk');
             expect(result.voiceSource).toBe('inference');
-            // Brain timeout default raised 20s → 75s (maintainer c7bf5678) for qwopus.
-            expect(llm.complete.mock.calls[0]?.[0].timeoutMs).toBe(75_000);
+            // Brain timeout is a generous 240s "server broken" alarm ceiling (S-INFER-8),
+            // not a thinking bound (real q4 qwopus ~40s).
+            expect(llm.complete.mock.calls[0]?.[0].timeoutMs).toBe(240_000);
         });
 
         it('F2-T1b: Small talk prompt includes recent Library memories so the resident can answer recall questions.', async () => {

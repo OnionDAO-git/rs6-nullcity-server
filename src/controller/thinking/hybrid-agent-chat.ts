@@ -69,7 +69,10 @@ import {
 // --- Shared Constants ---
 export const WINDOW_TICKS = 10;
 export const CHAT_REPLIES_PER_WINDOW = 3;
-export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 75_000;
+// S-INFER-8: generous "inference server is broken" ALARM ceiling, NOT a thinking
+// bound. Real q4 qwopus thinking is ~40s; 240s is ~6x headroom. A brain timeout
+// firing = investigate the inference server (src/controller/llm/inference-health.ts).
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000;
 export const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 export const FOOD_KEY_PATTERN = /(shrimp|bread|fish|meat)/i;
 export const LOW_AP_EXCHANGE_THRESHOLD = 10;

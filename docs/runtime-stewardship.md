@@ -46,6 +46,14 @@ larger heap and restarts it after a crash. Rebuild before restarting it so
 - **Inference boxes should serve qwopus-only** (Dev action): dedicating VRAM to qwopus keeps it hot and cuts its ~40s latency under 19–25 concurrent residents. See HD-053.
 - Future model mix — a fast small model for the high-frequency Body + a stronger model (Haiku/Claude) for the rare deep Planner — is tracked in `docs/superpowers/plans/2026-06-01-resident-intelligence-roadmap.md` and HD-052.
 
+## Inference timeouts (S-INFER-8)
+
+- **The brain request timeout (240s) and thinking watchdog (250s) are GENEROUS "inference server is broken" ALARMS, NOT thinking bounds.** Real q4 qwopus full-envelope thinking is ~40s; these ceilings are ~6x that, with headroom for the future longer-thinking deliberative planner.
+- **A brain timeout / watchdog firing is a RARE event that means: investigate the inference server.** It is logged LOUD (`[inference-alarm] … the inference server may be degraded`). The real fast "server dead" detector is the health probe in `src/controller/llm/inference-health.ts` (`degradedFlags`) — check that.
+- **Do NOT lower these to throttle thinking.** Before S-INFER-8 the watchdog was 45s and the request timeout 75s — the 45s watchdog fired BEFORE the request timeout and cut legitimate ~40s deliberations (the live guillotine). The watchdog now sits slightly ABOVE the request timeout (250 > 240) so the cleaner request-timeout signal fires first; the watchdog is a pure last-resort backstop.
+- Constants: `DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000` (`hybrid-agent-chat.ts`, `hybrid-agent-helpers.ts`, `hybrid-agent-thinking-module.ts`); `DEFAULT_THINKING_WATCHDOG_MS = 250_000` (`resident-runtime.ts`). The `llm.endpoints.default.timeoutMs` in `controller.yml` must be `>= 240000` so the HTTP layer does not cut earlier.
+- The **Body** timeout (`DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000`) and the fast **action** watchdogs (ack 15s / say 10s / action-effect grace 10s) stay tight — they guard fast action EXECUTION, not deliberation. A stuck body/action call SHOULD time out fast.
+
 ## Active resident cohort
 
 The local controller is intentionally capped to a small active cohort while the

@@ -14,7 +14,11 @@ import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
 import { LettersStore } from './patron/letters-store';
 import {
+    ACK_ONLY_ACTION_WATCHDOG_MS,
+    ACTION_EFFECT_WATCHDOG_GRACE_MS,
+    DEFAULT_THINKING_WATCHDOG_MS,
     ResidentRuntime,
+    SAY_ACTION_WATCHDOG_MS,
     actionEffectTimeoutMs,
     type ResidentRuntimeEvidence,
     type ResidentRuntimeFactionStockpile,
@@ -22,7 +26,7 @@ import {
 } from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
-import type { ThinkingModule } from './thinking';
+import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import { loadControllerConfig } from './config';
 import { LoreBus } from './lore/lore-bus';
@@ -1376,6 +1380,138 @@ describe('ResidentRuntime modules', () => {
             expect.objectContaining({ cause: 'thinking_watchdog_timeout', timeoutMs: 5 }),
         );
         expect(thinking.think).toHaveBeenCalledTimes(2);
+    });
+
+    describe('S-INFER-8: timeout/watchdog are generous failure alarms, not thinking bounds', () => {
+        it('sets the thinking watchdog to a generous 250s last-resort backstop (above the 240s request timeout)', () => {
+            // Real q4 qwopus full-envelope brain runs ~40s; the previous 45s watchdog
+            // was the REAL guillotine cutting legitimate thinking. The watchdog is now a
+            // pure last-resort backstop ABOVE the 240s request timeout so the cleaner
+            // request-timeout signal fires first.
+            expect(DEFAULT_THINKING_WATCHDOG_MS).toBe(250_000);
+            expect(DEFAULT_THINKING_WATCHDOG_MS).toBeGreaterThan(240_000);
+        });
+
+        it('leaves the fast action watchdogs (ack/say/action-effect) tight and unchanged', () => {
+            // These guard fast action EXECUTION, not deliberation — keep them tight.
+            expect(ACK_ONLY_ACTION_WATCHDOG_MS).toBe(15_000);
+            expect(SAY_ACTION_WATCHDOG_MS).toBe(10_000);
+            expect(ACTION_EFFECT_WATCHDOG_GRACE_MS).toBe(10_000);
+        });
+
+        it.each([40_000, 150_000])(
+            'does NOT cut a legitimate ~%dms brain deliberation (the old 45s watchdog cut is gone)',
+            async simulatedThinkMs => {
+                jest.useFakeTimers();
+                try {
+                    const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-long-think-'));
+                    const state = stateFor('res:pip');
+                    let resolveThink: ((value: ThoughtResult) => void) | undefined;
+                    const thinking: ThinkingModule = {
+                        think: jest.fn(
+                            () =>
+                                new Promise<ThoughtResult>(resolve => {
+                                    resolveThink = resolve;
+                                }),
+                        ),
+                        considerInterrupt: jest.fn(() => false),
+                        stop: jest.fn(),
+                    };
+                    const body = {
+                        observePerception: jest.fn(),
+                        observeEvent: jest.fn(),
+                        submit: jest.fn(async () => ({ ok: true })),
+                    } as unknown as ResidentBody;
+                    const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+                    const runtime = new ResidentRuntime({
+                        soul: soul('res:pip'),
+                        gateway: {} as GatewayClient,
+                        memory: {
+                            ensureResident: jest.fn(() => memoryDir),
+                            retrieve: jest.fn(() => []),
+                            write: jest.fn(),
+                        } as unknown as MemoryStore,
+                        stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                        llm: {} as LlmClient,
+                        actionLog: {} as ActionLog,
+                        inferenceLog,
+                        thinking,
+                        body,
+                        // No watchdog override → uses DEFAULT_THINKING_WATCHDOG_MS (250s).
+                    });
+
+                    const pending = runtime.onPerception({ tick: 1, events: [] });
+
+                    // Advance virtual time PAST the old 45s guillotine and a long (~150s)
+                    // deliberation, but still under the 250s backstop.
+                    jest.advanceTimersByTime(simulatedThinkMs);
+
+                    // The watchdog must NOT have fired: no stop, no watchdog inference log.
+                    expect(thinking.stop).not.toHaveBeenCalledWith('thinking_watchdog_timeout');
+                    expect(inferenceLog.append).not.toHaveBeenCalledWith(
+                        'res:pip',
+                        expect.objectContaining({ cause: 'thinking_watchdog_timeout' }),
+                    );
+
+                    // The brain finally returns; the deliberation completes normally.
+                    resolveThink?.({ actions: [], cause: 'deliberated', nooped: true });
+                    await Promise.resolve();
+                    await pending;
+
+                    expect(thinking.stop).not.toHaveBeenCalledWith('thinking_watchdog_timeout');
+                } finally {
+                    jest.useRealTimers();
+                }
+            },
+        );
+
+        it('emits a LOUD alarm log when the thinking watchdog actually fires (rare = investigate the inference server)', async () => {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-watchdog-alarm-'));
+            const state = stateFor('res:pip');
+            const thinking: ThinkingModule = {
+                think: jest
+                    .fn()
+                    .mockImplementationOnce(() => new Promise(() => undefined))
+                    .mockResolvedValueOnce({ actions: [], cause: 'recovered', nooped: true }),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true })),
+            } as unknown as ResidentBody;
+            const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+            try {
+                const runtime = new ResidentRuntime({
+                    soul: soul('res:pip'),
+                    gateway: {} as GatewayClient,
+                    memory: {
+                        ensureResident: jest.fn(() => memoryDir),
+                        retrieve: jest.fn(() => []),
+                        write: jest.fn(),
+                    } as unknown as MemoryStore,
+                    stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                    llm: {} as LlmClient,
+                    actionLog: {} as ActionLog,
+                    inferenceLog,
+                    thinking,
+                    body,
+                    watchdog: { thinkingMs: 5 },
+                });
+
+                await runtime.onPerception({ tick: 1, events: [] });
+
+                expect(warnSpy).toHaveBeenCalled();
+                const loud = warnSpy.mock.calls.map(args => args.join(' ')).join('\n');
+                expect(loud).toMatch(/inference server may be degraded|thinking_watchdog_timeout/i);
+            } finally {
+                warnSpy.mockRestore();
+            }
+        });
     });
 
     it('uses a module watchdog fallback decision when thinking times out', async () => {
