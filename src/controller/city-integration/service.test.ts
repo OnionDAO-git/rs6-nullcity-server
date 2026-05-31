@@ -860,6 +860,154 @@ describe('CityIntegrationService', () => {
         });
     });
 
+    it('redeemNcriIntent moves a sold NCRI into the print queue', async () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            printable: true,
+            printAssetRef: 'prints/tinderbox.glb',
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 150, gpRedemptionCost: 500 });
+        await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-redeem-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+        });
+
+        const intent = service.redeemNcriIntent(ncri.id, { cityUserId: 'city-user:alice', sourceId: 'redeem-intent-1' });
+
+        expect(intent.record).toMatchObject({ id: ncri.id, owner: 'city-user:alice', saleStatus: 'awaiting_redemption' });
+        expect(intent.printQueueEntry).toMatchObject({
+            ncriId: ncri.id,
+            displayName: 'Tinderbox of the Flame',
+            cityUserId: 'city-user:alice',
+            status: 'awaiting_redemption',
+            gpRedemptionCost: 500,
+            printable: true,
+            printAssetRef: 'prints/tinderbox.glb',
+        });
+        expect(service.ncriPrintQueue({ status: 'awaiting_redemption' }).items).toEqual([intent.printQueueEntry]);
+        const audit = fs
+            .readFileSync(path.join(root, 'city-integration', 'ncri', 'audit.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line));
+        expect(audit).toContainEqual(
+            expect.objectContaining({
+                transition: 'redeem_intent',
+                ncriId: ncri.id,
+                cityUserId: 'city-user:alice',
+                fromSaleStatus: 'sold',
+                toSaleStatus: 'awaiting_redemption',
+                sourceId: 'redeem-intent-1',
+            }),
+        );
+    });
+
+    it('completeNcriRedemption burns the configured GP cost before marking the NCRI redeemed', async () => {
+        gold = 750;
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            printable: true,
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 150, gpRedemptionCost: 500 });
+        await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-redeem-2',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+        });
+        service.redeemNcriIntent(ncri.id, { cityUserId: 'city-user:alice' });
+
+        const result = await service.completeNcriRedemption(ncri.id, {
+            idempotencyKey: 'redeem-complete-1',
+            cityUserId: 'city-user:alice',
+            gpAmount: 500,
+            sourceId: 'print-job-1',
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            ncriId: ncri.id,
+            cityUserId: 'city-user:alice',
+            gpAmount: 500,
+            gpEvidence: { itemId: 995, burnedAmount: 500, remainingAmount: 250 },
+            record: expect.objectContaining({ redemptionStatus: 'redeemed', saleStatus: 'redeemed' }),
+        });
+        expect(gold).toBe(250);
+        expect(burnCalls).toBe(1);
+        const events = new EconomyEventLog(root, () => new Date('2026-05-27T12:00:00.000Z')).readAll();
+        expect(events.some(event => event.kind === 'gp_traded' && event.gpDelta === -500 && event.refId === 'print-job-1')).toBe(true);
+        expect(events.some(event => event.kind === 'ncri_redemption' && event.ncriId === ncri.id)).toBe(true);
+        const audit = fs
+            .readFileSync(path.join(root, 'city-integration', 'ncri', 'audit.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line));
+        expect(audit).toContainEqual(
+            expect.objectContaining({
+                transition: 'redeem_complete',
+                ncriId: ncri.id,
+                cityUserId: 'city-user:alice',
+                fromSaleStatus: 'awaiting_redemption',
+                toSaleStatus: 'redeemed',
+                fromRedemptionStatus: 'available',
+                toRedemptionStatus: 'redeemed',
+                sourceId: 'print-job-1',
+                idempotencyKey: 'redeem-complete-1',
+                gpEvidence: { itemId: 995, burnedAmount: 500, remainingAmount: 250 },
+            }),
+        );
+    });
+
+    it('completeNcriRedemption maps pre-intent registry failures to CityIntegrationError', async () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'Sold, but not in print fulfilment yet.',
+            printable: true,
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 150, gpRedemptionCost: 500 });
+        await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-redeem-mapping',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+        });
+
+        await expect(
+            service.completeNcriRedemption(ncri.id, {
+                idempotencyKey: 'redeem-complete-mapping',
+                cityUserId: 'city-user:alice',
+                gpAmount: 500,
+            }),
+        ).rejects.toMatchObject({
+            status: 409,
+            code: 'not_awaiting_redemption',
+        });
+    });
+
+    it('ncriPrintQueue excludes redeemed NCRIs that never entered the sale redemption queue', () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'Admin redeemed metadata, not a print order.',
+            printable: true,
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.redeemNcri(ncri.id);
+
+        expect(service.ncriPrintQueue({ status: 'redeemed' }).items).toEqual([]);
+    });
+
     it('economyListings heartbeat still works alongside NCRI listing changes', async () => {
         fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
 

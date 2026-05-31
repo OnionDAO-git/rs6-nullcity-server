@@ -23,8 +23,10 @@ export type NcriRedemptionStatus = 'available' | 'redeemed';
  * - `listed`: actively offered for AP purchase on the marketplace.
  * - `delisted`: was listed, then withdrawn without a sale completing.
  * - `sold`: was listed and ownership changed via a sale.
+ * - `awaiting_redemption`: buyer has committed to print redemption; fulfilment pending.
+ * - `redeemed`: physical/digital fulfilment completed.
  */
-export type NcriSaleStatus = 'unlisted' | 'listed' | 'delisted' | 'sold';
+export type NcriSaleStatus = 'unlisted' | 'listed' | 'delisted' | 'sold' | 'awaiting_redemption' | 'redeemed';
 
 export interface NcriRecord {
     schemaVersion: 1;
@@ -66,7 +68,7 @@ const ncriRecordSchema = z.object({
         .optional(),
     approvalStatus: z.enum(['pending', 'approved']),
     redemptionStatus: z.enum(['available', 'redeemed']),
-    saleStatus: z.enum(['unlisted', 'listed', 'delisted', 'sold']).default('unlisted'),
+    saleStatus: z.enum(['unlisted', 'listed', 'delisted', 'sold', 'awaiting_redemption', 'redeemed']).default('unlisted'),
     adminNotes: z.string().optional(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
@@ -201,6 +203,30 @@ export class NcriRegistry {
     }
 
     /**
+     * Record buyer intent to redeem a sold NCRI through the print queue.
+     * Idempotent once an item is already awaiting fulfilment.
+     */
+    markRedemptionIntent(id: string): NcriRecord {
+        const record = this.requireRecord(id);
+        if (record.saleStatus === 'awaiting_redemption') {
+            return record;
+        }
+        if (record.redemptionStatus === 'redeemed' || record.saleStatus === 'redeemed') {
+            throw new NcriRegistryError('already_redeemed', `cannot mark redemption intent for NCRI '${id}': already redeemed`);
+        }
+        if (record.saleStatus !== 'sold') {
+            throw new NcriRegistryError(
+                'not_sold',
+                `cannot mark redemption intent for NCRI '${id}' with saleStatus '${record.saleStatus}'`,
+            );
+        }
+        const ts = this.now().toISOString();
+        const updated: NcriRecord = { ...record, saleStatus: 'awaiting_redemption', updatedAt: ts };
+        this.writeRecord(updated);
+        return updated;
+    }
+
+    /**
      * Transfer ownership to a new city user. Requires approved + available.
      *
      * `options.reason` decides which EconomyEvent kind is emitted:
@@ -228,7 +254,8 @@ export class NcriRegistry {
         }
         const ts = this.now().toISOString();
         const ownershipChanged = newOwner !== record.owner;
-        const nextSaleStatus: NcriSaleStatus = reason === 'sale' && ownershipChanged && record.saleStatus === 'listed' ? 'sold' : record.saleStatus;
+        const nextSaleStatus: NcriSaleStatus =
+            reason === 'sale' && ownershipChanged && record.saleStatus === 'listed' ? 'sold' : record.saleStatus;
         const updated: NcriRecord = { ...record, owner: newOwner, saleStatus: nextSaleStatus, updatedAt: ts };
         this.writeRecord(updated);
 
@@ -272,7 +299,13 @@ export class NcriRegistry {
             return record;
         }
         const ts = this.now().toISOString();
-        const updated: NcriRecord = { ...record, redemptionStatus: 'redeemed', redeemedAt: ts, updatedAt: ts };
+        const updated: NcriRecord = {
+            ...record,
+            redemptionStatus: 'redeemed',
+            saleStatus: record.saleStatus === 'awaiting_redemption' ? 'redeemed' : record.saleStatus,
+            redeemedAt: ts,
+            updatedAt: ts,
+        };
         this.writeRecord(updated);
 
         if (this.economyEventLog) {

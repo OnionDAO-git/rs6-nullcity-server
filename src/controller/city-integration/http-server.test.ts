@@ -445,18 +445,7 @@ describe('CityIntegration HTTP server', () => {
 
         const listings = await requestJson('GET', `${started.url}/economy/listings`, token);
         expect(listings.status).toBe(200);
-        expect(listings.payload).toMatchObject({
-            listings: [
-                {
-                    ncriId,
-                    owner: 'user:buyer',
-                    sourceResidentName: 'res:test',
-                    listed: true,
-                    apPrice: 150,
-                    gpRedemptionCost: 500,
-                },
-            ],
-        });
+        expect(listings.payload).toMatchObject({ listings: [] });
 
         fs.rmSync(path.join(path.dirname(root), 'storyteller'), { recursive: true, force: true });
 
@@ -943,6 +932,78 @@ describe('CityIntegration HTTP server', () => {
         const listings = await requestJson('GET', `${base}/economy/listings`, token);
         const items = (listings.payload as { listings: { ncriId: string }[] }).listings;
         expect(items.find(item => item.ncriId === ncriId)).toBeUndefined();
+    });
+
+    it('NCRI redemption routes (S-NCRI-3): sold → awaiting print queue → redeemed with GP burn', async () => {
+        gold = 750;
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const base = started.url;
+
+        const created = await requestJson('POST', `${base}/ncri`, token, {
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            printable: true,
+            printAssetRef: 'prints/tinderbox.glb',
+            owner: 'res:test',
+        });
+        const ncriId = (created.payload as { id: string }).id;
+        await requestJson('POST', `${base}/ncri/${ncriId}/approve`, token, {});
+        await requestJson('POST', `${base}/ncri/${ncriId}/list`, token, { apPrice: 150, gpRedemptionCost: 500 });
+        await requestJson('POST', `${base}/ncri/${ncriId}/buy`, token, {
+            idempotencyKey: 'buy-http-redeem-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+        });
+
+        const intent = await requestJson('POST', `${base}/ncri/${ncriId}/redeem-intent`, token, {
+            cityUserId: 'city-user:alice',
+            sourceId: 'intent-http-1',
+        });
+        expect(intent.status).toBe(200);
+        expect(intent.payload).toMatchObject({
+            ok: true,
+            ncriId,
+            cityUserId: 'city-user:alice',
+            record: expect.objectContaining({ saleStatus: 'awaiting_redemption' }),
+            printQueueEntry: expect.objectContaining({
+                ncriId,
+                status: 'awaiting_redemption',
+                gpRedemptionCost: 500,
+                printAssetRef: 'prints/tinderbox.glb',
+            }),
+        });
+
+        const queue = await requestJson('GET', `${base}/ncri/print-queue?status=awaiting_redemption`, token);
+        expect(queue.status).toBe(200);
+        expect(queue.payload).toMatchObject({
+            items: [expect.objectContaining({ ncriId, status: 'awaiting_redemption', cityUserId: 'city-user:alice' })],
+        });
+
+        const completed = await requestJson('POST', `${base}/ncri/${ncriId}/redeem-complete`, token, {
+            idempotencyKey: 'redeem-http-1',
+            cityUserId: 'city-user:alice',
+            gpAmount: 500,
+            sourceId: 'print-job-http-1',
+        });
+        expect(completed.status).toBe(200);
+        expect(completed.payload).toMatchObject({
+            ok: true,
+            ncriId,
+            gpEvidence: { itemId: 995, burnedAmount: 500, remainingAmount: 250 },
+            record: expect.objectContaining({ redemptionStatus: 'redeemed', saleStatus: 'redeemed' }),
+        });
+        expect(gold).toBe(250);
+
+        const redeemedQueue = await requestJson('GET', `${base}/ncri/print-queue?status=redeemed`, token);
+        expect(redeemedQueue.status).toBe(200);
+        expect(redeemedQueue.payload).toMatchObject({
+            items: [expect.objectContaining({ ncriId, status: 'redeemed', cityUserId: 'city-user:alice' })],
+        });
     });
 
     it('GoalContract routes (S9a): create → list → get → achieve lifecycle', async () => {

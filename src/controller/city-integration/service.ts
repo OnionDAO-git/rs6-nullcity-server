@@ -65,6 +65,21 @@ const buyNcriSchema = z
         sourceId: z.string().min(1).optional(),
     })
     .strict();
+const redeemNcriIntentSchema = z
+    .object({
+        cityUserId: z.string().min(1),
+        sourceId: z.string().min(1).optional(),
+    })
+    .strict();
+const completeNcriRedemptionSchema = z
+    .object({
+        idempotencyKey: idempotencyKeySchema,
+        cityUserId: z.string().min(1),
+        gpAmount: z.number().int().nonnegative(),
+        residentName: residentNameSchema.optional(),
+        sourceId: z.string().min(1).optional(),
+    })
+    .strict();
 const positionSchema = z.object({ x: z.number().int(), y: z.number().int(), level: z.number().int().min(0).optional() });
 const initialItemSchema = z.union([
     z.number().int().positive(),
@@ -241,6 +256,22 @@ const reviewSoulProposalRequestSchema = z
 export type AttentionGrantRequest = z.infer<typeof attentionGrantRequestSchema>;
 export type GoldBurnRequest = z.infer<typeof goldBurnRequestSchema>;
 export type MessageDeliveryRequest = z.infer<typeof messageDeliveryRequestSchema>;
+
+export interface NcriPrintQueueEntry {
+    ncriId: string;
+    itemId: number;
+    displayName: string;
+    cityUserId: string;
+    owner: string;
+    sourceResidentName?: string;
+    status: 'awaiting_redemption' | 'redeemed';
+    gpRedemptionCost?: number;
+    printable: boolean;
+    printAssetRef?: string;
+    createdAt: string;
+    updatedAt: string;
+    redeemedAt?: string;
+}
 
 export class CityIntegrationService {
     private readonly store: CityIntegrationStore;
@@ -681,6 +712,177 @@ export class CityIntegrationService {
                 };
             }),
         );
+    }
+
+    redeemNcriIntent(
+        id: string,
+        input: unknown,
+    ): {
+        ok: true;
+        ncriId: string;
+        cityUserId: string;
+        record: NcriRecord;
+        printQueueEntry: NcriPrintQueueEntry;
+        sourceId?: string;
+    } {
+        const request = parseOrThrow(redeemNcriIntentSchema, input);
+        return this.withNcriErrors(() => {
+            const record = this.ncriRegistry.get(id);
+            if (!record) throw new NcriRegistryError('not_found', `NCRI '${id}' not found`);
+            if (record.owner !== request.cityUserId) {
+                throw new CityIntegrationError(409, 'owner_mismatch', `NCRI '${id}' is owned by '${record.owner}'`);
+            }
+            const pricing = this.ncriPricingStore.latestPrice(id);
+            if (!pricing) throw new NcriRegistryError('pricing_missing', `NCRI '${id}' has no active pricing`);
+            const awaiting = this.ncriRegistry.markRedemptionIntent(id);
+            this.auditNcriTransition({
+                transition: 'redeem_intent',
+                ncriId: id,
+                cityUserId: request.cityUserId,
+                fromSaleStatus: record.saleStatus,
+                toSaleStatus: awaiting.saleStatus,
+                fromRedemptionStatus: record.redemptionStatus,
+                toRedemptionStatus: awaiting.redemptionStatus,
+                sourceId: request.sourceId,
+            });
+            return {
+                ok: true as const,
+                ncriId: id,
+                cityUserId: request.cityUserId,
+                record: awaiting,
+                printQueueEntry: toPrintQueueEntry(awaiting, pricing),
+                ...(request.sourceId ? { sourceId: request.sourceId } : {}),
+            };
+        });
+    }
+
+    async completeNcriRedemption(
+        id: string,
+        input: unknown,
+    ): Promise<{
+        ok: true;
+        ncriId: string;
+        cityUserId: string;
+        residentName: string;
+        gpAmount: number;
+        gpEvidence: { itemId: 995; burnedAmount: number; remainingAmount: number };
+        record: NcriRecord;
+        sourceId?: string;
+        idempotent?: boolean;
+    }> {
+        const request = parseOrThrow(completeNcriRedemptionSchema, input);
+        const payload = { ncriId: id, ...request };
+        return this.idempotent('redeem_ncri', request.idempotencyKey, payload, async () =>
+            this.withNcriErrorsAsync(async () => {
+                const record = this.ncriRegistry.get(id);
+                if (!record) throw new NcriRegistryError('not_found', `NCRI '${id}' not found`);
+                if (record.owner !== request.cityUserId) {
+                    throw new CityIntegrationError(409, 'owner_mismatch', `NCRI '${id}' is owned by '${record.owner}'`);
+                }
+                if (record.saleStatus !== 'awaiting_redemption') {
+                    throw new NcriRegistryError(
+                        'not_awaiting_redemption',
+                        `cannot complete redemption for NCRI '${id}' with saleStatus '${record.saleStatus}'`,
+                    );
+                }
+                const pricing = this.ncriPricingStore.latestPrice(id);
+                if (!pricing) throw new NcriRegistryError('pricing_missing', `NCRI '${id}' has no active pricing`);
+                if (pricing.gpRedemptionCost !== request.gpAmount) {
+                    throw new CityIntegrationError(
+                        409,
+                        'gp_cost_mismatch',
+                        `NCRI '${id}' GP redemption cost changed (${pricing.gpRedemptionCost} expected, got ${request.gpAmount})`,
+                    );
+                }
+                const residentName = request.residentName ?? record.sourceResidentName;
+                if (!residentName) {
+                    throw new CityIntegrationError(409, 'redemption_resident_missing', `NCRI '${id}' has no source resident to burn GP`);
+                }
+                let burned: { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number };
+                try {
+                    burned = await this.options.inventory.burnResidentGold(residentName, request.gpAmount);
+                } catch (error) {
+                    if (error instanceof Error && error.message.includes('EINSUFFICIENT_GOLD')) {
+                        throw new CityIntegrationError(409, 'insufficient_gold');
+                    }
+                    throw error;
+                }
+                const ts = this.now().toISOString();
+                this.appendLibraryEvent(residentName, {
+                    schemaVersion: 1,
+                    ts,
+                    tick: this.options.getRuntime(residentName)?.getState().tick ?? 0,
+                    sessionId: 'external',
+                    kind: 'city_ncri_redemption',
+                    ncriId: id,
+                    cityUserId: request.cityUserId,
+                    itemId: burned.itemId,
+                    gpAmount: burned.burnedAmount,
+                    sourceId: request.sourceId,
+                    lifeIndex: this.readLifeIndex(residentName),
+                    significanceReasons: ['city:ncri_redemption'],
+                });
+                this.economyEventLog.append({
+                    ts,
+                    kind: 'gp_traded',
+                    residentName,
+                    cityUserId: request.cityUserId,
+                    gpDelta: -burned.burnedAmount,
+                    ncriId: id,
+                    refId: request.sourceId ?? request.idempotencyKey,
+                    note: `burned ${burned.burnedAmount} GP to redeem NCRI ${id}`,
+                });
+                const redeemed = this.ncriRegistry.redeem(id);
+                const gpEvidence = {
+                    itemId: burned.itemId,
+                    burnedAmount: burned.burnedAmount,
+                    remainingAmount: burned.remainingAmount,
+                };
+                this.auditNcriTransition({
+                    transition: 'redeem_complete',
+                    ncriId: id,
+                    cityUserId: request.cityUserId,
+                    residentName,
+                    fromSaleStatus: record.saleStatus,
+                    toSaleStatus: redeemed.saleStatus,
+                    fromRedemptionStatus: record.redemptionStatus,
+                    toRedemptionStatus: redeemed.redemptionStatus,
+                    sourceId: request.sourceId,
+                    idempotencyKey: request.idempotencyKey,
+                    gpEvidence,
+                });
+                return {
+                    ok: true as const,
+                    ncriId: id,
+                    cityUserId: request.cityUserId,
+                    residentName,
+                    gpAmount: request.gpAmount,
+                    gpEvidence,
+                    record: redeemed,
+                    ...(request.sourceId ? { sourceId: request.sourceId } : {}),
+                };
+            }),
+        );
+    }
+
+    ncriPrintQueue(query: { status?: 'awaiting_redemption' | 'redeemed' | 'all' } = {}): { asOf: string; items: NcriPrintQueueEntry[] } {
+        const status = query.status ?? 'awaiting_redemption';
+        const pricingMap = this.ncriPricingStore.allLatest();
+        const items = this.ncriRegistry
+            .list()
+            .flatMap(record => {
+                const entryStatus =
+                    record.saleStatus === 'redeemed'
+                        ? 'redeemed'
+                        : record.saleStatus === 'awaiting_redemption'
+                          ? 'awaiting_redemption'
+                          : undefined;
+                if (!entryStatus) return [];
+                if (status !== 'all' && entryStatus !== status) return [];
+                return [toPrintQueueEntry(record, pricingMap.get(record.id), entryStatus)];
+            })
+            .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+        return { asOf: this.now().toISOString(), items };
     }
 
     /**
@@ -1282,6 +1484,21 @@ export class CityIntegrationService {
         });
     }
 
+    private auditNcriTransition(entry: Record<string, unknown>): void {
+        const filePath = path.join(this.options.memoryRoot, 'city-integration', 'ncri', 'audit.jsonl');
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.appendFileSync(
+            filePath,
+            `${JSON.stringify(
+                pruneUndefined({
+                    schemaVersion: 1,
+                    ts: this.now().toISOString(),
+                    ...entry,
+                }),
+            )}\n`,
+        );
+    }
+
     private async withSoulProposalErrors<T>(fn: () => T): Promise<T> {
         try {
             return fn();
@@ -1296,6 +1513,17 @@ export class CityIntegrationService {
     private withNcriErrors<T>(fn: () => T): T {
         try {
             return fn();
+        } catch (error) {
+            if (error instanceof NcriRegistryError) {
+                throw mapNcriError(error);
+            }
+            throw error;
+        }
+    }
+
+    private async withNcriErrorsAsync<T>(fn: () => Promise<T>): Promise<T> {
+        try {
+            return await fn();
         } catch (error) {
             if (error instanceof NcriRegistryError) {
                 throw mapNcriError(error);
@@ -1324,6 +1552,28 @@ function mapNcriError(error: NcriRegistryError): CityIntegrationError {
     if (error.code === 'invalid_owner') return new CityIntegrationError(400, error.code, error.message);
     if (error.code === 'event_append_failed') return new CityIntegrationError(500, error.code, error.message);
     return new CityIntegrationError(409, error.code, error.message);
+}
+
+function toPrintQueueEntry(
+    record: NcriRecord,
+    pricing?: NcriPricing,
+    status: 'awaiting_redemption' | 'redeemed' = record.redemptionStatus === 'redeemed' ? 'redeemed' : 'awaiting_redemption',
+): NcriPrintQueueEntry {
+    return pruneUndefined({
+        ncriId: record.id,
+        itemId: record.itemId,
+        displayName: record.displayName,
+        cityUserId: record.owner,
+        owner: record.owner,
+        sourceResidentName: record.sourceResidentName,
+        status,
+        gpRedemptionCost: pricing?.gpRedemptionCost,
+        printable: record.printable,
+        printAssetRef: record.printAssetRef,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        redeemedAt: record.redeemedAt,
+    }) as unknown as NcriPrintQueueEntry;
 }
 
 function parseOrThrow<T>(schema: z.ZodType<T>, value: unknown): T {

@@ -35,7 +35,10 @@ Routes:
 - `POST /api/nullcity/ncri/:id/approve`: admin-approve a pending NCRI.
 - `POST /api/nullcity/ncri/:id/transfer`: transfer NCRI ownership (requires approved + available).
 - `POST /api/nullcity/ncri/:id/buy`: idempotent listed-sale purchase with AP price-match guard.
+- `POST /api/nullcity/ncri/:id/redeem-intent`: move a sold NCRI into the dashboard print queue.
+- `POST /api/nullcity/ncri/:id/redeem-complete`: burn GP item `995` and complete print redemption.
 - `POST /api/nullcity/ncri/:id/redeem`: mark NCRI as redeemed (idempotent).
+- `GET /api/nullcity/ncri/print-queue`: read print queue entries (`status=awaiting_redemption|redeemed|all`).
 - `GET /api/nullcity/economy/digest`: current AP/GP/NCRI/exchange economy digest for dashboard/Storyteller.
 - `GET /api/nullcity/economy/live`: city-wide live AP/GP rollup with residents/events/proposals (cacheable JSON).
 - `GET /api/nullcity/economy/totals`: live AP/GP totals and top resident balances.
@@ -116,7 +119,7 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
 
 **Approval lifecycle:** `pending` → `approved` (admin gate)
 **Redemption lifecycle:** `available` → `redeemed` (idempotent)
-**Sale lifecycle:** `unlisted` → `listed` → `sold` (or `delisted`)
+**Sale lifecycle:** `unlisted` → `listed` → `sold` → `awaiting_redemption` → `redeemed` (or `delisted`)
 **Owner transitions:** allowed when `approvalStatus = 'approved'` and `redemptionStatus = 'available'`
 
 **Routes (dashboard contract):**
@@ -134,6 +137,18 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
   - Body: `{ idempotencyKey, cityUserId, apPrice, sourceId? }`
   - Response: `{ ok, ncriId, buyerCityUserId, previousOwner, apPrice, gpRedemptionCost, record, idempotent? }`
   - Rejects when the NCRI is not listed, is already redeemed, or the submitted AP price is stale.
+- `POST /api/nullcity/ncri/:id/redeem-intent` — move a sold NCRI into the dashboard print queue
+  - Body: `{ cityUserId, sourceId? }`
+  - Response: `{ ok, ncriId, cityUserId, record, printQueueEntry, sourceId? }`
+  - Rejects when the caller does not own the sold NCRI or the NCRI has no active pricing.
+- `POST /api/nullcity/ncri/:id/redeem-complete` — burn real RuneScape GP item `995` and complete print redemption
+  - Body: `{ idempotencyKey, cityUserId, gpAmount, residentName?, sourceId? }`
+  - `gpAmount` must equal the active `gpRedemptionCost`; by default the GP is burned from the NCRI source resident.
+  - Response: `{ ok, ncriId, cityUserId, residentName, gpAmount, gpEvidence, record, sourceId?, idempotent? }`
+- Redemption intent and completion append transition evidence to `memory.dir/city-integration/ncri/audit.jsonl`; completion also persists idempotency/audit records under `memory.dir/city-integration/`.
+- `GET /api/nullcity/ncri/print-queue?status=awaiting_redemption|redeemed|all` — dashboard/print-bridge queue
+  - Response: `{ asOf, items }`
+  - Each item includes `{ ncriId, itemId, displayName, cityUserId, status, gpRedemptionCost?, printable, printAssetRef?, createdAt, updatedAt, redeemedAt? }`.
 - `POST /api/nullcity/ncri/:id/redeem` — mark redeemed (idempotent)
   - Body: `{}`
   - Response: updated `NcriRecord` (`redemptionStatus: "redeemed"`)
@@ -157,6 +172,7 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
   "owner": "user:alice",
   "approvalStatus": "approved",
   "redemptionStatus": "available",
+  "saleStatus": "awaiting_redemption",
   "adminNotes": "First NCRI minted for the June 1 event.",
   "createdAt": "2026-05-29T17:00:00.000Z",
   "updatedAt": "2026-05-29T17:05:00.000Z",
@@ -174,7 +190,7 @@ NCRI (Null City RuneScape Item) records live in `memory.dir/city-integration/ncr
 
 NCRI Library events appear in the resident's `timeline.jsonl` so the Storyteller digest can cite them. The `CityEventDigest.ncriEvents` field carries these events (see `src/controller/storyteller/types.ts`).
 
-**Important:** NCRI `itemId` is a real RuneScape item id (positive integer). No GP ledger is created by this module; GP pricing for sale/redeem lives in the exchange layer (S3). A `printable: true` NCRI requires a physical print fulfillment step outside this repo.
+**Important:** NCRI `itemId` is a real RuneScape item id (positive integer). `redeem-complete` burns real GP item `995` through the city inventory authority before marking the NCRI redeemed. The physical print UI still lives in the dashboard repo; this server owns the queue contract and audit evidence.
 
 ## Goal Contracts (S9a)
 
@@ -498,7 +514,7 @@ Same window semantics as `/economy/live`, but returns:
 
 ### GET `/api/nullcity/economy/listings`
 
-Returns approved, not-yet-redeemed NCRIs as active listings for dashboard economy/operator panels.
+Returns active marketplace NCRIs (`saleStatus=listed`, approved and not redeemed) for dashboard economy/operator panels. Sold or redemption-queue NCRIs leave this marketplace route and appear through `/api/nullcity/ncri/print-queue` instead.
 Only `saleStatus === "listed"` entries are returned; `sold` and `delisted` records are excluded.
 
 - `asOf`

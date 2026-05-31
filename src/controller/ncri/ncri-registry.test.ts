@@ -283,6 +283,7 @@ describe('NcriRegistry.redeem', () => {
         const redeemed = registry.redeem(record.id);
 
         expect(redeemed.redemptionStatus).toBe('redeemed');
+        expect(redeemed.saleStatus).toBe('unlisted');
     });
 
     it('throws not_found for unknown id', () => {
@@ -698,5 +699,58 @@ describe('NcriRegistry.delistFromSale', () => {
     it('throws not_found for an unknown id', () => {
         const { registry } = makeListedRegistry();
         expect(() => registry.delistFromSale('ncri-does-not-exist')).toThrow(NcriRegistryError);
+    });
+});
+
+describe('NcriRegistry redemption lifecycle (S-NCRI-3)', () => {
+    function makeSoldRegistry() {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-redemption-'));
+        const registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T21:00:00.000Z'));
+        const rec = registry.create({
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            printable: true,
+            owner: 'res:test',
+        });
+        registry.approve(rec.id);
+        registry.listForSale(rec.id);
+        registry.transfer(rec.id, 'city-user:alice', { reason: 'sale', sale: { apPrice: 150, gpRedemptionCost: 500 } });
+        return { registry, id: rec.id };
+    }
+
+    it('moves a sold NCRI into awaiting_redemption for the print queue', () => {
+        const { registry, id } = makeSoldRegistry();
+
+        const awaiting = registry.markRedemptionIntent(id);
+
+        expect(awaiting.saleStatus).toBe('awaiting_redemption');
+        expect(awaiting.redemptionStatus).toBe('available');
+        expect(registry.get(id)?.saleStatus).toBe('awaiting_redemption');
+    });
+
+    it('marks the sale lifecycle redeemed when an awaiting NCRI is redeemed', () => {
+        const { registry, id } = makeSoldRegistry();
+        registry.markRedemptionIntent(id);
+
+        const redeemed = registry.redeem(id);
+
+        expect(redeemed.redemptionStatus).toBe('redeemed');
+        expect(redeemed.saleStatus).toBe('redeemed');
+    });
+
+    it('rejects redemption intent before an NCRI is sold', () => {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ncri-redemption-'));
+        const registry = new NcriRegistry(memoryRoot, () => new Date('2026-05-30T21:00:00.000Z'));
+        const rec = registry.create({
+            itemId: 590,
+            displayName: 'Tinderbox',
+            lore: 'Not sold yet.',
+            printable: true,
+            owner: 'res:test',
+        });
+        registry.approve(rec.id);
+
+        expect(() => registry.markRedemptionIntent(rec.id)).toThrow(NcriRegistryError);
     });
 });
