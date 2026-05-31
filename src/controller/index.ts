@@ -100,6 +100,8 @@ async function main(): Promise<void> {
                 host: args.cityHttpHost,
                 pathPrefix: args.cityHttpPathPrefix,
                 bearerToken: args.cityHttpToken,
+                enableEconomyStream: readEnvBoolean(process.env.CONTROLLER_CITY_ECONOMY_STREAM, false),
+                economyStreamIntervalMs: readOptionalPositiveInt(process.env.CONTROLLER_CITY_ECONOMY_STREAM_INTERVAL_MS),
             });
             process.stderr.write(`[controller] city integration HTTP listening at ${cityHttpServer.url}\n`);
         }
@@ -155,4 +157,18 @@ main().catch(error => {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.stack || error.message : String(error);
+}
+
+function readEnvBoolean(value: string | undefined, fallback: boolean): boolean {
+    if (value === undefined) return fallback;
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function readOptionalPositiveInt(value: string | undefined): number | undefined {
+    if (!value) return undefined;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }

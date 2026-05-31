@@ -1059,6 +1059,30 @@ describe('CityIntegrationService', () => {
         expect(heartbeat.degradedFlags).not.toContain('no_active_residents');
     });
 
+    it('economyStreamSnapshot returns heartbeat + live payload for SSE consumers', async () => {
+        await service.creditAttention('res:test', {
+            idempotencyKey: 'eco-stream-topup',
+            amount: 20,
+            cityUserId: 'user:alice',
+        });
+
+        const snapshot = service.economyStreamSnapshot({ limit: 1, residentLimit: 1 });
+
+        expect(snapshot.asOf).toBe(snapshot.heartbeat.asOf);
+        expect(snapshot.heartbeat).toMatchObject({
+            residentCount: 1,
+            activeResidentCount: 1,
+            economyEventCount: 1,
+            lastEconomyEventKind: 'ap_topup',
+        });
+        expect(snapshot.live.city).toMatchObject({
+            residentCount: 1,
+            activeResidentCount: 1,
+            attentionDelta: 20,
+        });
+        expect(snapshot.live.recentEvents).toHaveLength(1);
+    });
+
     it('exchangeApForGp: records failed_ap when GP burn succeeds but runtime is missing', async () => {
         gold = 200;
         const serviceWithoutRuntime = new CityIntegrationService({

@@ -115,6 +115,12 @@ export interface CityRuntime {
     onEvent(event: PerceptionEvent): void;
 }
 
+export interface LiveEconomyStreamSnapshot {
+    asOf: string;
+    heartbeat: LiveEconomyHeartbeat;
+    live: LiveEconomySnapshot;
+}
+
 export interface CityIntegrationInventoryAuthority {
     inspectResidentGold(resident: string): Promise<{ resident: string; itemId: 995; amount: number }>;
     burnResidentGold(
@@ -1313,6 +1319,16 @@ export class CityIntegrationService {
             lastEconomyEventKind: lastEvent?.kind,
             lastDigestBuiltAt,
             degradedFlags,
+        };
+    }
+
+    economyStreamSnapshot(query: LiveEconomyQuery = {}): LiveEconomyStreamSnapshot {
+        const live = this.economyLive(query);
+        const heartbeat = this.economyHeartbeat();
+        return {
+            asOf: heartbeat.asOf,
+            heartbeat,
+            live,
         };
     }
 

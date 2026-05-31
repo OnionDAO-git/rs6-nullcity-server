@@ -79,6 +79,49 @@ function requestJson(
     });
 }
 
+function requestSseSnapshot(
+    url: string,
+    token: string,
+): Promise<{ status: number; contentType?: string; retryMs?: number; event?: string; payload?: unknown }> {
+    const target = new URL(url);
+    return new Promise((resolve, reject) => {
+        const req = http.request(
+            {
+                method: 'GET',
+                hostname: target.hostname,
+                port: Number(target.port),
+                path: `${target.pathname}${target.search}`,
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+            },
+            res => {
+                const chunks: Buffer[] = [];
+                res.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+                res.on('end', () => {
+                    const text = Buffer.concat(chunks).toString('utf8');
+                    const lines = text
+                        .split('\n')
+                        .map(line => line.trim())
+                        .filter(Boolean);
+                    const retryLine = lines.find(line => line.startsWith('retry:'));
+                    const eventLine = lines.find(line => line.startsWith('event:'));
+                    const dataLine = lines.find(line => line.startsWith('data:'));
+                    resolve({
+                        status: res.statusCode ?? 0,
+                        contentType: res.headers['content-type'],
+                        ...(retryLine ? { retryMs: Number.parseInt(retryLine.slice('retry:'.length).trim(), 10) } : {}),
+                        ...(eventLine ? { event: eventLine.slice('event:'.length).trim() } : {}),
+                        ...(dataLine ? { payload: JSON.parse(dataLine.slice('data:'.length).trim()) } : {}),
+                    });
+                });
+            },
+        );
+        req.on('error', reject);
+        req.end();
+    });
+}
+
 describe('CityIntegration HTTP server', () => {
     let tempRoot: string;
     let root: string;
@@ -458,6 +501,56 @@ describe('CityIntegration HTTP server', () => {
             degradedFlags: ['storyteller_missing'],
             lastEconomyEventKind: 'ncri_sale',
         });
+    });
+
+    it('GET /economy/stream returns 404 unless feature flag is enabled', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+        const response = await requestJson('GET', `${started.url}/economy/stream?once=1`, token);
+        expect(response.status).toBe(404);
+    });
+
+    it('GET /economy/stream emits SSE economy snapshots when enabled', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+            enableEconomyStream: true,
+            economyStreamIntervalMs: 1500,
+        });
+
+        await requestJson('POST', `${started.url}/residents/res%3Atest/attention-grants`, token, {
+            idempotencyKey: 'stream-topup',
+            amount: 25,
+            cityUserId: 'user:alice',
+            sourceType: 'patron_topup',
+        });
+
+        const response = await requestSseSnapshot(`${started.url}/economy/stream?once=1&limit=1&residentLimit=1`, token);
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/text\/event-stream/);
+        expect(response.retryMs).toBe(1500);
+        expect(response.event).toBe('economy_snapshot');
+        expect(response.payload).toMatchObject({
+            heartbeat: {
+                residentCount: 1,
+                activeResidentCount: 1,
+                economyEventCount: 1,
+                lastEconomyEventKind: 'ap_topup',
+            },
+            live: {
+                city: {
+                    residentCount: 1,
+                    activeResidentCount: 1,
+                    attentionDelta: 25,
+                },
+            },
+        });
+        const payload = response.payload as { live: { recentEvents: unknown[] } };
+        expect(payload.live.recentEvents).toHaveLength(1);
     });
 
     it('GET /storyteller/latest returns the newest digest/dispatch payload for dashboard bridges', async () => {

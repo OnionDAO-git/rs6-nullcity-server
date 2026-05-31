@@ -8,6 +8,8 @@ export interface CityIntegrationHttpOptions {
     host?: string;
     pathPrefix?: string;
     bearerToken: string;
+    enableEconomyStream?: boolean;
+    economyStreamIntervalMs?: number;
 }
 
 export interface StartedCityIntegrationHttpServer {
@@ -16,6 +18,9 @@ export interface StartedCityIntegrationHttpServer {
 }
 
 const DEFAULT_CITY_PATH_PREFIX = '/api/nullcity';
+const DEFAULT_ECONOMY_STREAM_INTERVAL_MS = 2000;
+const MIN_ECONOMY_STREAM_INTERVAL_MS = 250;
+const MAX_ECONOMY_STREAM_INTERVAL_MS = 10000;
 
 export async function startCityIntegrationHttpServer(options: CityIntegrationHttpOptions): Promise<StartedCityIntegrationHttpServer> {
     const bindHost = options.host || '127.0.0.1';
@@ -96,6 +101,16 @@ async function handle(
 
     if (request.method === 'GET' && path === `${pathPrefix}/economy/heartbeat`) {
         writeJson(response, 200, options.service.economyHeartbeat(), { 'Cache-Control': 'max-age=2' });
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/stream`) {
+        if (!options.enableEconomyStream) {
+            writeJson(response, 404, { error: 'Not Found' });
+            return;
+        }
+        const stream = readEconomyStreamQuery(url, options.economyStreamIntervalMs);
+        streamEconomy(response, options.service, stream.query, stream.intervalMs, stream.once);
         return;
     }
 
@@ -363,6 +378,50 @@ function writeJson(response: ServerResponse, status: number, payload: unknown, h
     response.end(JSON.stringify(payload));
 }
 
+function streamEconomy(
+    response: ServerResponse,
+    service: CityIntegrationService,
+    query: { since?: string; limit?: number; residentLimit?: number },
+    intervalMs: number,
+    once: boolean,
+): void {
+    response.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    response.write(`retry: ${intervalMs}\n`);
+    let closed = false;
+    let interval: NodeJS.Timeout | undefined;
+    const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (interval) {
+            clearInterval(interval);
+            interval = undefined;
+        }
+    };
+
+    const emitSnapshot = () => {
+        if (closed) return;
+        const snapshot = service.economyStreamSnapshot(query);
+        response.write(`event: economy_snapshot\n`);
+        response.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+    };
+
+    emitSnapshot();
+    if (once) {
+        cleanup();
+        response.end();
+        return;
+    }
+
+    interval = setInterval(emitSnapshot, intervalMs);
+    response.on('close', cleanup);
+    response.on('error', cleanup);
+}
+
 function normalizePath(value: string): string {
     return value.startsWith('/') ? value : `/${value}`;
 }
@@ -385,6 +444,18 @@ function readLiveEconomyQuery(url: URL): { since?: string; limit?: number; resid
         ...(limit !== undefined ? { limit } : {}),
         ...(residentLimit !== undefined ? { residentLimit } : {}),
     };
+}
+
+function readEconomyStreamQuery(
+    url: URL,
+    defaultIntervalMs: number | undefined,
+): { query: { since?: string; limit?: number; residentLimit?: number }; intervalMs: number; once: boolean } {
+    const query = readLiveEconomyQuery(url);
+    const parsedInterval = parsePositiveInt(url.searchParams.get('intervalMs'));
+    const seededDefault = defaultIntervalMs ?? DEFAULT_ECONOMY_STREAM_INTERVAL_MS;
+    const intervalMs = Math.min(MAX_ECONOMY_STREAM_INTERVAL_MS, Math.max(MIN_ECONOMY_STREAM_INTERVAL_MS, parsedInterval ?? seededDefault));
+    const once = url.searchParams.get('once') === '1';
+    return { query, intervalMs, once };
 }
 
 function readListLimit(url: URL): number {

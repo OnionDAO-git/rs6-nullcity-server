@@ -46,6 +46,7 @@ Routes:
 - `GET /api/nullcity/economy/residents`: live per-resident AP/GP summary.
 - `GET /api/nullcity/economy/listings`: active NCRI listings (`saleStatus=listed`, approved + available).
 - `GET /api/nullcity/economy/heartbeat`: live liveness/readiness signal for economy/dashboard polling.
+- `GET /api/nullcity/economy/stream`: optional SSE snapshot stream for near-live economy views (feature-flagged).
 - `GET /api/nullcity/storyteller/latest`: latest grounded digest+dispatch artifact summary for dashboard read models.
 - `GET /api/nullcity/storyteller/canon`: published Storyteller canon queue snapshots.
 - `GET /api/nullcity/storyteller/review`: review-required Storyteller queue snapshots.
@@ -476,6 +477,11 @@ The dashboard D5 Storyteller feed should consume this endpoint; the CLI `npm run
 
 These routes provide a polling-friendly live AP/GP read model for dashboard packet D9 and viewer surfaces.
 
+To enable the optional SSE extension (`S-ECON-VIEW-3`), set:
+
+- `CONTROLLER_CITY_ECONOMY_STREAM=true`
+- optional `CONTROLLER_CITY_ECONOMY_STREAM_INTERVAL_MS=<positive integer ms>` (defaults to `2000`, clamped to `250..10000`)
+
 ### GET `/api/nullcity/economy/live`
 
 Returns the complete live snapshot (`city`, `countsByKind`, `topResidentsByAttention`, `residents`, `recentEvents`, `pendingProposals`) with:
@@ -547,6 +553,23 @@ Returns a compact liveness/readiness snapshot for dashboard polling loops.
   - `degradedFlags[]` (`no_economy_events`, `no_active_residents`, `storyteller_missing`)
 
 This route is read-only and does not mutate controller/runtime state.
+
+### GET `/api/nullcity/economy/stream`
+
+Feature-flagged SSE feed for near-live dashboard economy rendering.
+
+- Available only when `CONTROLLER_CITY_ECONOMY_STREAM=true`; otherwise returns `404`.
+- Optional query params:
+  - same as `/economy/live`: `since`, `limit`, `residentLimit`
+  - `intervalMs`: requested retry/push interval in ms (clamped to `250..10000`)
+  - `once=1`: emit one frame and close (useful for smoke tests)
+
+SSE frame:
+
+- `event: economy_snapshot`
+- `data: { asOf, heartbeat, live }`
+
+`heartbeat` matches `/economy/heartbeat`, and `live` matches `/economy/live`.
 
 ## Resident Routes (S11a)
 
