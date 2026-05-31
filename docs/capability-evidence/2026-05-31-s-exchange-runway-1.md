@@ -67,3 +67,21 @@ Results:
 ## Next Verification
 
 Restart the controller on a build containing this commit, then rerun a 30-60m CQA10 normal-life audit. Expected improvement: at least one GP-backed no-floor resident should emit `nervous:self-initiated-ap-gp-exchange`, `city_exchange_ap_gp`, `city_gold_burn`, and `city_attention_credit` without a directed benchmark.
+
+## Post-Restart Live Proof
+
+After `b186fc5a` was built and the controller was restarted onto `dist/` (`local-21004`, city API uptime reset at `2026-05-31T08:55:15Z`), `res:qa-banker` was used for a bounded operator-drain proof:
+
+1. Wealth precheck showed `res:qa-banker` held `125` GP item `995`.
+2. Admin AP drain pushed it from `1273.5 AP` to `223.5 AP`.
+3. On tick `470`, the nervous system emitted `city_exchange_ap_gp` with cause `nervous:self-initiated-ap-gp-exchange`.
+4. Action result succeeded: `attentionBefore=223`, `attentionAfter=473`, `burnedAmount=125`, `remainingAmount=0`.
+5. Economy event recorded `ap_gp_exchange` for `res:qa-banker` at `2026-05-31T08:59:00.527Z`, `apDelta=250`, `gpDelta=-125`, `cityUserId=resident:self`.
+
+Evidence refs:
+
+- `data/controller/memory/res-qa-banker/evidence/trajectory/20260531T085509Z-local-21004-res-qa-banker-1780217709478.jsonl`: lines around tick `470`.
+- `data/controller/memory/city-integration/economy-events.jsonl`: event id `df3a7818-b0a8-41a0-b814-a647bc27b3eb`.
+- `GET /api/nullcity/residents/res%3Aqa-banker/wealth` after exchange returned `amount=0`.
+
+This proves the rebuilt runtime actually uses the new no-floor threshold. The broader unconditioned CQA10 recurrence window remains open because this proof used an operator AP drain to create the low-AP condition.
