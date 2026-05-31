@@ -60,6 +60,11 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
         decayCurve: 'steep',
         floor: 5000,
     },
+    'self-initiated-ap-gp-recurrence-10m': {
+        startingAttention: 5015,
+        decayCurve: 'steep',
+        floor: 5000,
+    },
 };
 
 const AP_TOPUP_RESUME_5M_TASK_ID = 'ap-topup-resume-5m';

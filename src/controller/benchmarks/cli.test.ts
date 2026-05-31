@@ -535,7 +535,7 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(27);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(28);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
         expect(output).toContain('"benchmark":{"taskId":"earn-gp-via-combat-5m"');
         expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-start-3m"');
@@ -545,15 +545,16 @@ describe('benchmark CLI', () => {
         expect(output).toContain('"benchmark":{"taskId":"starter-gp-pickup-3m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-gp-exchange-5m"');
         expect(output).toContain('"benchmark":{"taskId":"self-initiated-ap-gp-exchange-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"self-initiated-ap-gp-recurrence-10m"');
         expect(output).toContain('"benchmark":{"taskId":"low-health-cook-eat-reengage-5m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-gp-library-strategy-5m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-topup-resume-5m"');
         expect(output).toContain('"benchmark":{"taskId":"memory-route-recall-5m"');
         expect(output).toContain('"benchmark":{"taskId":"world-event-reaction-5m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":27');
-        expect(output).toContain('"passed":27');
-        expect(output).toContain('"averageScore":0.9814814814814815');
+        expect(output).toContain('"total":28');
+        expect(output).toContain('"passed":28');
+        expect(output).toContain('"averageScore":0.9821428571428571');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);

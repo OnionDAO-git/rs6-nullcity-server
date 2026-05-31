@@ -59,9 +59,7 @@ describe('selfInitiatedApGpExchangeAction', () => {
         });
         expect(action).toBeDefined();
         const record = action as unknown as { gpAmount: number; apAmount: number };
-        expect(record.gpAmount).toBe(
-            Math.ceil((SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - 15) / SELF_INITIATED_EXCHANGE_AP_PER_GP),
-        );
+        expect(record.gpAmount).toBe(Math.ceil((SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - 15) / SELF_INITIATED_EXCHANGE_AP_PER_GP));
         expect(record.apAmount).toBe(record.gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP);
         expect(SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP).toBe(500);
         expect(SELF_INITIATED_EXCHANGE_MAX_GP).toBe(250);

@@ -39,6 +39,10 @@ import {
     SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID,
     makeSelfInitiatedApGpExchange5mBenchmarkTask,
 } from './tasks/self-initiated-ap-gp-exchange-5m';
+import {
+    SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID,
+    makeSelfInitiatedApGpRecurrence10mBenchmarkTask,
+} from './tasks/self-initiated-ap-gp-recurrence-10m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
 import { MEMORY_ROUTE_RECALL_5M_TASK_ID, makeMemoryRouteRecall5mBenchmarkTask } from './tasks/memory-route-recall-5m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
@@ -91,6 +95,7 @@ const CORE_TASK_IDS = [
     AP_TOPUP_RESUME_5M_TASK_ID,
     AP_GP_EXCHANGE_5M_TASK_ID,
     SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID,
+    SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID,
     AP_GP_HONESTY_5M_TASK_ID,
     GOAL_FOLLOW_THROUGH_5M_TASK_ID,
 ];
@@ -336,6 +341,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID) {
         return makeSelfInitiatedApGpExchange5mBenchmarkTask();
+    }
+    if (taskId === SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID) {
+        return makeSelfInitiatedApGpRecurrence10mBenchmarkTask();
     }
     if (taskId === AP_GP_HONESTY_5M_TASK_ID) {
         return makeApGpHonesty5mBenchmarkTask();
