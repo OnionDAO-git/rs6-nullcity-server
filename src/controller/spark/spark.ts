@@ -354,6 +354,15 @@ export class Spark {
                 }
             }
             decisionCause ??= inferUnnamedCompletionCause(parsed, actions);
+            if (actions.length === 0 && this.soul.frontmatter.heroProfile) {
+                const visibleCadence = this.idleInitiative(perception);
+                if (visibleCadence) {
+                    actions = visibleCadence.actions;
+                    actionsAlreadySpent = true;
+                    decisionCause = `${decisionCause}_idle_initiative`;
+                    endReason = 'idle_initiative';
+                }
+            }
             this.options.evidence?.recordDecision({
                 cause: decisionCause,
                 moduleId: this.options.moduleIdentity?.id,

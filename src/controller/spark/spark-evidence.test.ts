@@ -536,6 +536,50 @@ describe('Spark evidence integration', () => {
         }
     });
 
+    it('keeps a hero visible when a due brain turn only writes memory', async () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-05-25T05:15:31.000Z'));
+        try {
+            const { builder, trajectoryPath } = evidence();
+            const llm = {
+                complete: jest.fn(async () => ({
+                    text: JSON.stringify({
+                        memo: { path: 'journal.md', text: 'I noticed the courtyard growing quiet.' },
+                    }),
+                    nooped: false,
+                })),
+            } as unknown as LlmClient;
+            const state = runtimeState();
+            state.tick = 130;
+            state.lastIdleInitiativeTick = 120;
+            state.lastIdleInitiativeAt = new Date(Date.now() - 31_000).toISOString();
+            const store = memory();
+            const spark = new Spark(heroSoul(), state, store, llm, { evidence: builder });
+
+            const result = await spark.tick({ tick: 131, events: [] });
+
+            expect(store.write).toHaveBeenCalledWith('res:hans', 'journal.md', 'I noticed the courtyard growing quiet.', 'append');
+            expect(result.cause).toBe('completion_memory_update_idle_initiative');
+            expect(result.actions).toEqual([
+                { kind: 'say', text: 'Still here as Hans; watching the area.', cause: 'idle_initiative' },
+                { kind: 'move_to', target: { x: 3221, y: 3217, level: 0 }, range: 1, cause: 'idle_initiative' },
+            ]);
+            expect(readJsonl(trajectoryPath)).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'decision',
+                        cause: 'completion_memory_update_idle_initiative',
+                        actionKinds: ['say', 'move_to'],
+                        memoUpdates: 1,
+                    }),
+                    expect.objectContaining({ kind: 'say', text: 'Still here as Hans; watching the area.' }),
+                    expect.objectContaining({ kind: 'action', actionKind: 'move_to', cause: 'idle_initiative' }),
+                ]),
+            );
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     it('keeps hero visible cadence below the inert-loop smoke threshold', async () => {
         jest.useFakeTimers().setSystemTime(new Date('2026-05-25T05:15:13.000Z'));
         try {
