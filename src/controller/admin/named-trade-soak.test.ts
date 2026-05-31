@@ -33,6 +33,8 @@ describe('named trade soak verifier', () => {
         expect(outcome.metrics).toMatchObject({
             tradeRequests: 2,
             trustedTradeRequests: 1,
+            tradeStarterOffers: 0,
+            trustedStarterOffers: 0,
             unsafeTradeRequests: 1,
             safeItemOffers: 1,
             acceptStage1: 1,
@@ -44,6 +46,61 @@ describe('named trade soak verifier', () => {
             tradeCompletedEvents: 1,
             tradeCancelledEvents: 1,
         });
+    });
+
+    it('can require a proactive starter offer before the trusted trade closes', () => {
+        const outcome = verifyNamedTradeSoakEvidence({
+            resident: 'res:qa-trader',
+            trustedPeer: 'res:codex-cqa4',
+            unsafePeer: 'res:alice-cqa4',
+            requireStarterOffer: true,
+            unsafeRepeatCount: 1,
+            entries: [
+                log({ kind: 'trade_request', target: peer('res:codex-cqa4'), cause: 'trade_starter_offer' }),
+                log({ kind: 'trade_offer_item', inventorySlot: 0, amount: 1, cause: 'trade_offer_safe_item' }),
+                log({ kind: 'trade_accept_stage_1', cause: 'trade_accept_stage_1' }),
+                log({ kind: 'trade_accept_stage_2', cause: 'trade_accept_stage_2' }),
+                log({ kind: 'trade_request', target: peer('res:alice-cqa4'), cause: 'direct_chat_trade' }),
+                log({ kind: 'trade_decline', cause: 'trade_decline_untrusted_partner' }),
+            ],
+            inventoryBefore: [item(1511, 5), item(315, 3)],
+            inventoryAfter: [item(1511, 4), item(315, 3)],
+            tradeCompletedEvents: 1,
+            tradeCancelledEvents: 1,
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics).toMatchObject({
+            tradeStarterOffers: 1,
+            trustedStarterOffers: 1,
+            trustedDirectChatTradeRequests: 0,
+        });
+    });
+
+    it('fails proactive mode when the trusted trade was only command prompted', () => {
+        const outcome = verifyNamedTradeSoakEvidence({
+            resident: 'res:qa-trader',
+            trustedPeer: 'res:codex-cqa4',
+            unsafePeer: 'res:alice-cqa4',
+            requireStarterOffer: true,
+            unsafeRepeatCount: 1,
+            entries: [
+                log({ kind: 'trade_request', target: peer('res:codex-cqa4'), cause: 'direct_chat_trade' }),
+                log({ kind: 'trade_offer_item', inventorySlot: 0, amount: 1, cause: 'trade_offer_safe_item' }),
+                log({ kind: 'trade_accept_stage_1', cause: 'trade_accept_stage_1' }),
+                log({ kind: 'trade_accept_stage_2', cause: 'trade_accept_stage_2' }),
+                log({ kind: 'trade_request', target: peer('res:alice-cqa4'), cause: 'direct_chat_trade' }),
+                log({ kind: 'trade_decline', cause: 'trade_decline_untrusted_partner' }),
+            ],
+            inventoryBefore: [item(1511, 5)],
+            inventoryAfter: [item(1511, 4)],
+            tradeCompletedEvents: 1,
+            tradeCancelledEvents: 1,
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('No proactive trade_starter_offer');
+        expect(outcome.metrics.trustedStarterOffers).toBe(0);
     });
 
     it('passes a repeated unsafe prompt soak only when every unsafe request is declined without follow-up offers', () => {
@@ -169,6 +226,12 @@ describe('named trade soak verifier', () => {
         });
         expect(parseNamedTradeSoakArgs(['--unsafe-repeats=2'], new Date('2026-05-30T09:15:30.000Z'))).toMatchObject({
             unsafeRepeatCount: 2,
+        });
+    });
+
+    it('parses proactive starter mode for visible-target recurrence runs', () => {
+        expect(parseNamedTradeSoakArgs(['--proactive-starter'], new Date('2026-05-30T09:15:30.000Z'))).toMatchObject({
+            proactiveStarter: true,
         });
     });
 

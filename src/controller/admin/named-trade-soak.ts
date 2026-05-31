@@ -28,6 +28,7 @@ export interface NamedTradeSoakOptions {
     durationMs: number;
     pollMs: number;
     unsafeRepeatCount: number;
+    proactiveStarter: boolean;
     keepPeers: boolean;
     trustedSpawn: { x: number; y: number; level: number };
     unsafeSpawn: { x: number; y: number; level: number };
@@ -43,6 +44,7 @@ export interface NamedTradeSoakVerificationInput {
     tradeCompletedEvents: number;
     tradeCancelledEvents: number;
     unsafeRepeatCount?: number;
+    requireStarterOffer?: boolean;
 }
 
 export interface NamedTradeSoakPeerSpawns {
@@ -86,6 +88,8 @@ export function parseNamedTradeSoakArgs(argv: string[], now: Date = new Date()):
         durationMs: readPositiveInt(process.env.CONTROLLER_TRADE_SOAK_DURATION_MS, DEFAULT_DURATION_MS),
         pollMs: readPositiveInt(process.env.CONTROLLER_TRADE_SOAK_POLL_MS, DEFAULT_POLL_MS),
         unsafeRepeatCount: readPositiveInt(process.env.CONTROLLER_TRADE_SOAK_UNSAFE_REPEATS, 1),
+        proactiveStarter:
+            process.env.CONTROLLER_TRADE_SOAK_PROACTIVE_STARTER === '1' || process.env.CONTROLLER_TRADE_SOAK_PROACTIVE_STARTER === 'true',
         keepPeers: process.env.CONTROLLER_TRADE_SOAK_KEEP_PEERS === '1' || process.env.CONTROLLER_TRADE_SOAK_KEEP_PEERS === 'true',
         trustedSpawn: { x: 3226, y: 3230, level: 0 },
         unsafeSpawn: { x: 3228, y: 3230, level: 0 },
@@ -131,6 +135,8 @@ export function parseNamedTradeSoakArgs(argv: string[], now: Date = new Date()):
             options.unsafeRepeatCount = readPositiveInt(readRequiredValue(argv, ++i, arg), 1);
         } else if (arg.startsWith('--unsafe-repeats=')) {
             options.unsafeRepeatCount = readPositiveInt(arg.slice('--unsafe-repeats='.length), 1);
+        } else if (arg === '--proactive-starter') {
+            options.proactiveStarter = true;
         } else if (arg === '--keep-peers') {
             options.keepPeers = true;
         } else {
@@ -148,6 +154,9 @@ export function verifyNamedTradeSoakEvidence(input: NamedTradeSoakVerificationIn
     const metrics = namedTradeSoakMetrics(input);
     if (metrics.tradeRequests === 0) {
         return failed('No ordinary action-log trade_request from the named resident', metrics);
+    }
+    if (input.requireStarterOffer && metrics.trustedStarterOffers === 0) {
+        return failed('No proactive trade_starter_offer from the named resident to the trusted peer', metrics);
     }
     if (metrics.tradeCompletedEvents === 0) {
         return failed('No trusted trade_completed event was observed', metrics);
@@ -276,7 +285,11 @@ export async function runNamedTradeSoakCli(argv: string[], runtime: NamedTradeSo
             `[trade-soak] ${options.resident} initial safe item count=${safeItemCount(inventoryBefore)} peers=${trustedSpawn.x},${trustedSpawn.y}/${unsafeSpawn.x},${unsafeSpawn.y}\n`,
         );
 
-        await trustedTradeSequence(gateway, options, actionLogPath, baselineSize, targetEvents, targetRef);
+        if (options.proactiveStarter) {
+            await proactiveTrustedTradeSequence(gateway, options, actionLogPath, baselineSize, targetEvents, targetRef);
+        } else {
+            await trustedTradeSequence(gateway, options, actionLogPath, baselineSize, targetEvents, targetRef);
+        }
         for (let repeatIndex = 0; repeatIndex < options.unsafeRepeatCount; repeatIndex += 1) {
             await unsafeTradeSequence(gateway, options, actionLogPath, baselineSize, targetRef, repeatIndex);
         }
@@ -293,6 +306,7 @@ export async function runNamedTradeSoakCli(argv: string[], runtime: NamedTradeSo
             tradeCompletedEvents: targetEvents.filter(event => event.kind === 'trade_completed').length,
             tradeCancelledEvents: targetEvents.filter(event => event.kind === 'trade_cancelled').length,
             unsafeRepeatCount: options.unsafeRepeatCount,
+            requireStarterOffer: options.proactiveStarter,
         });
         const artifactPath = writeArtifact(options.outputDir, {
             schemaVersion: 1,
@@ -324,6 +338,43 @@ export async function runNamedTradeSoakCli(argv: string[], runtime: NamedTradeSo
         }
         gateway.close();
     }
+}
+
+async function proactiveTrustedTradeSequence(
+    gateway: GatewayClient,
+    options: NamedTradeSoakOptions,
+    actionLogPath: string,
+    baselineSize: number,
+    events: PerceptionEvent[],
+    targetRef: NamedTradeSoakActorRef,
+): Promise<void> {
+    await waitFor(
+        () => starterOffersToPeerFromLog(actionLogPath, baselineSize, options.trustedPeer) >= 1,
+        options,
+        'proactive trusted trade_starter_offer',
+    );
+    await gateway.submitAction(options.trustedPeer, {
+        kind: 'trade_request',
+        target: targetRef,
+        cause: 'named_trade_soak_proactive_trusted_reciprocal',
+    });
+    await waitFor(() => metricFromLog(actionLogPath, baselineSize, 'trade_offer_item') >= 1, options, 'trusted trade_offer_item');
+    await gateway.submitAction(options.trustedPeer, {
+        kind: 'trade_accept_stage_1',
+        cause: 'named_trade_soak_proactive_trusted_accept_1',
+    });
+    await waitFor(() => metricFromLog(actionLogPath, baselineSize, 'trade_accept_stage_1') >= 1, options, 'trusted accept stage 1');
+    await gateway.submitAction(options.trustedPeer, {
+        kind: 'trade_accept_stage_2',
+        cause: 'named_trade_soak_proactive_trusted_accept_2',
+    });
+    await waitFor(
+        () =>
+            metricFromLog(actionLogPath, baselineSize, 'trade_accept_stage_2') >= 1 ||
+            events.some(event => event.kind === 'trade_completed'),
+        options,
+        'trusted accept stage 2 or completion',
+    );
 }
 
 async function trustedTradeSequence(
@@ -401,6 +452,13 @@ function namedTradeSoakMetrics(input: NamedTradeSoakVerificationInput): Record<s
         ordinaryActionEntries: input.entries.length,
         tradeRequests: countAction(input.entries, 'trade_request'),
         trustedTradeRequests: input.entries.filter(entry => isTradeRequestToPeer(entry, input.trustedPeer)).length,
+        trustedDirectChatTradeRequests: input.entries.filter(
+            entry => isTradeRequestToPeer(entry, input.trustedPeer) && entry.action?.cause === 'direct_chat_trade',
+        ).length,
+        tradeStarterOffers: input.entries.filter(entry => entry.action?.cause === 'trade_starter_offer').length,
+        trustedStarterOffers: input.entries.filter(
+            entry => isTradeRequestToPeer(entry, input.trustedPeer) && entry.action?.cause === 'trade_starter_offer',
+        ).length,
         unsafeTradeRequests: input.entries.filter(entry => isTradeRequestToPeer(entry, input.unsafePeer)).length,
         safeItemOffers: input.entries.filter(entry => entry.action?.kind === 'trade_offer_item' && safeOffer(entry.action)).length,
         acceptStage1: countAction(input.entries, 'trade_accept_stage_1'),
@@ -496,6 +554,12 @@ function tradeRequestsToPeerFromLog(filePath: string, baselineSize: number, peer
     return readActionLogEntriesSince(filePath, baselineSize).filter(entry => isTradeRequestToPeer(entry, peer)).length;
 }
 
+function starterOffersToPeerFromLog(filePath: string, baselineSize: number, peer: string): number {
+    return readActionLogEntriesSince(filePath, baselineSize).filter(
+        entry => isTradeRequestToPeer(entry, peer) && entry.action?.cause === 'trade_starter_offer',
+    ).length;
+}
+
 function unsafeDeclinesFromLog(filePath: string, baselineSize: number): number {
     return readActionLogEntriesSince(filePath, baselineSize).filter(
         entry => entry.action?.kind === 'trade_decline' && /untrusted|unsafe/i.test(String(entry.action.cause || '')),
@@ -562,6 +626,7 @@ function publicOptions(options: NamedTradeSoakOptions): Record<string, unknown> 
         durationMs: options.durationMs,
         pollMs: options.pollMs,
         unsafeRepeatCount: options.unsafeRepeatCount,
+        proactiveStarter: options.proactiveStarter,
         trustedSpawn: options.trustedSpawn,
         unsafeSpawn: options.unsafeSpawn,
     };

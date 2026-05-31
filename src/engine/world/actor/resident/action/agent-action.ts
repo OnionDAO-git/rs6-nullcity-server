@@ -123,7 +123,7 @@ export const ActorRefSchema = z.object({
     name: z.string().optional(),
     position: PosSchema.required({ level: true }),
     hpFraction: z.number().min(0).max(1).optional(),
-    combatLevel: z.number().int().nonnegative().optional(),
+    combatLevel: z.number().nonnegative().optional(),
 });
 
 export const ItemRefSchema = z.object({

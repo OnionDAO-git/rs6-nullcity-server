@@ -214,6 +214,9 @@ export class OutboundPacketHandler {
     }
 
     public setWorldItem(worldItem: WorldItem, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(175);
@@ -225,6 +228,9 @@ export class OutboundPacketHandler {
     }
 
     public removeWorldItem(worldItem: WorldItem, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(74);
@@ -235,6 +241,9 @@ export class OutboundPacketHandler {
     }
 
     public setLocationObject(locationObject: LandscapeObject, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(241);
@@ -246,6 +255,9 @@ export class OutboundPacketHandler {
     }
 
     public removeLocationObject(locationObject: LandscapeObject, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(143);
@@ -259,12 +271,24 @@ export class OutboundPacketHandler {
         const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
         const offsetX = position.x - loadedMapArea.baseTileX;
         const offsetY = position.y - loadedMapArea.baseTileY;
+        if (!this.isReferenceOffsetEncodable(offsetX, offsetY)) {
+            return;
+        }
 
         const packet = new Packet(254);
         packet.put(offsetY);
         packet.put(offsetX);
 
         this.queue(packet);
+    }
+
+    private canReferencePosition(position: Position): boolean {
+        const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
+        return this.isReferenceOffsetEncodable(position.x - loadedMapArea.baseTileX, position.y - loadedMapArea.baseTileY);
+    }
+
+    private isReferenceOffsetEncodable(offsetX: number, offsetY: number): boolean {
+        return offsetX >= 0 && offsetX <= 255 && offsetY >= 0 && offsetY <= 255;
     }
 
     // Text dialogs = 356, 359, 363, 368, 374
