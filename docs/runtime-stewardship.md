@@ -34,6 +34,11 @@ Inspect with `screen -ls`. Attach with `screen -r <name>`, detach with `Ctrl-a d
 
 Latest log paths are written to `/tmp/nullcity-runtime/*.log`.
 
+The runtime game session should use the supervised game runner, not the dev
+nodemon runner. The supervised runner starts the compiled game server with a
+larger heap and restarts it after a crash. Rebuild before restarting it so
+`dist/` matches the checked-out source.
+
 ## Agent restart request protocol
 
 If an autonomous agent needs a process restarted, it should append a single line to `docs/agent-status.md`:
@@ -73,6 +78,14 @@ Dashboard:
 ```bash
 cd /Users/james/Code/OnionDAO/rs6-nullcity-residents-dashboard
 bun run dev
+```
+
+Game:
+
+```bash
+cd /Users/james/Code/OnionDAO/rs6-nullcity-server
+npm run build
+NODE_MAX_OLD_SPACE=4096 npm run start:game:supervised
 ```
 
 Verification:

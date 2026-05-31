@@ -5,7 +5,8 @@
     "main": "dist/index.js",
     "scripts": {
         "start": "npm run build && concurrently \"npm run build:watch\" \"npm run start:infra\" \"npm run start:game\"",
-        "start:game": "nodemon --config nodemon.json --delay 5000ms --max-old-space-size=2048 dist/server/runner.js -- -game",
+        "start:game": "nodemon --config nodemon.json --delay 5000ms --max-old-space-size=4096 dist/server/runner.js -- -game",
+        "start:game:supervised": "bash scripts/runtime/start-game-supervised.sh",
         "start:game:dev": "npm run build && concurrently \"npm run build:watch\" \"npm run start:game\"",
         "start:login": "node --max-old-space-size=1024 dist/server/runner.js -- -login",
         "start:update": "node --max-old-space-size=1024 dist/server/runner.js -- -update",

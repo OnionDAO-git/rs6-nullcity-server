@@ -265,7 +265,11 @@ export class GatewayClient extends EventEmitter {
             this.pending.set(requestId, { resolve, reject, timeout });
         });
 
-        socket.send(encodeMessage(makeRequest(type, requestId, payload)));
+        try {
+            socket.send(encodeMessage(makeRequest(type, requestId, payload)));
+        } catch (error) {
+            this.rejectPendingRequest(requestId, asError(error));
+        }
         return promise.then(value => ({ requestId, value }));
     }
 
@@ -278,12 +282,19 @@ export class GatewayClient extends EventEmitter {
                     timeout = undefined;
                 }
                 this.activeActionSlots += 1;
-                operation()
-                    .then(resolve, reject)
-                    .finally(() => {
-                        this.activeActionSlots = Math.max(0, this.activeActionSlots - 1);
-                        this.drainActionQueue();
-                    });
+                let operationPromise: Promise<T>;
+                try {
+                    operationPromise = operation();
+                } catch (error) {
+                    this.activeActionSlots = Math.max(0, this.activeActionSlots - 1);
+                    this.drainActionQueue();
+                    reject(asError(error));
+                    return;
+                }
+                operationPromise.then(resolve, reject).finally(() => {
+                    this.activeActionSlots = Math.max(0, this.activeActionSlots - 1);
+                    this.drainActionQueue();
+                });
             };
 
             if (this.activeActionSlots < this.maxConcurrentActions()) {
@@ -428,6 +439,16 @@ export class GatewayClient extends EventEmitter {
         const delay = this.backoff.nextDelayMs();
         setTimeout(() => this.openSocket().catch(error => this.emit('error', error)), delay);
     }
+
+    private rejectPendingRequest(requestId: string, error: Error): void {
+        const pending = this.pending.get(requestId);
+        if (!pending) {
+            return;
+        }
+        this.pending.delete(requestId);
+        clearTimeout(pending.timeout);
+        pending.reject(error);
+    }
 }
 
 function readResident(value: unknown): ResidentSummary {
@@ -445,4 +466,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringifyRequestId(value: unknown): string | undefined {
     return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
+}
+
+function asError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
 }
