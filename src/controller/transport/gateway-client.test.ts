@@ -165,7 +165,17 @@ describe('GatewayClient', () => {
                 socket.send(JSON.stringify({ v: 1, id: hello.id, kind: 'ok', payload: { ok: true } }));
                 socket.once('message', submitRaw => {
                     const submit = JSON.parse(submitRaw.toString()) as { id?: string | number };
-                    socket.send(JSON.stringify({ v: 1, id: submit.id, kind: 'ok', payload: { ok: true } }));
+                    socket.send(
+                        JSON.stringify({
+                            v: 1,
+                            id: submit.id,
+                            kind: 'ok',
+                            payload: {
+                                ok: true,
+                                result: { ok: true, status: 'queued', cause: 'queued', requestId: submit.id },
+                            },
+                        }),
+                    );
                     socket.send(
                         JSON.stringify({
                             v: 1,
@@ -198,7 +208,7 @@ describe('GatewayClient', () => {
 
         expect(submitted).toEqual({
             requestId: expect.any(String),
-            ackResult: { ok: true },
+            ackResult: { ok: true, status: 'queued', cause: 'queued', requestId: submitted.requestId },
         });
         await expect(actionResult).resolves.toEqual({
             requestId: submitted.requestId,

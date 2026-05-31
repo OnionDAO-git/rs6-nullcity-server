@@ -1,6 +1,7 @@
 import http from 'http';
 import type { OutboundRsPacketFrame } from '@engine/net/outbound-packet-handler';
 import { activeWorld } from '@engine/world';
+import type { ActionResult } from '@engine/world/actor/resident/action/agent-action';
 import type { Player } from '@engine/world/actor/player/player';
 import { PerceptionBuilder } from '@engine/world/actor/resident/perception/perception-builder';
 import type { Resident } from '@engine/world/actor/resident/resident';
@@ -312,7 +313,13 @@ export class AgentGateway {
                 if (this.registry.controllerFor(message.payload.name) !== controllerId) {
                     throw new Error('ECONTROL_REQUIRED');
                 }
-                const result = await this.sessionFor(resident).submitActionAndWait(message.payload.action, message.id);
+                this.sessionFor(resident).submitAction(message.payload.action, message.id);
+                const result = {
+                    ok: true,
+                    status: 'queued',
+                    cause: 'queued',
+                    requestId: message.id,
+                } as unknown as ActionResult;
                 send(frame('ok', { ok: true, result }, message.id));
                 return;
             }
