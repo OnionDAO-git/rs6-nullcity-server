@@ -48,6 +48,7 @@ const HEALTH_PROBE_PROMPT = [
     'Return only compact JSON exactly like {"health":"ok","probe":"nullcity-inference-health"}.',
     'No markdown, no explanation, no extra keys.',
 ].join('\n');
+const HEALTH_PROBE_MAX_TOKENS = 128;
 
 export async function runInferenceHealthProbe(options: InferenceHealthProbeOptions): Promise<InferenceHealthResult> {
     const requestedEndpoint = options.endpoint || 'default';
@@ -202,6 +203,8 @@ async function postHealthCompletion(request: InferenceHealthCompletionRequest): 
             temperature: request.temperature,
             reasoning: { enabled: request.thinking },
             chat_template_kwargs: { enable_thinking: request.thinking },
+            max_tokens: HEALTH_PROBE_MAX_TOKENS,
+            max_completion_tokens: HEALTH_PROBE_MAX_TOKENS,
             response_format: responseFormatBody(request.config.responseFormat),
         }),
         signal: request.signal,

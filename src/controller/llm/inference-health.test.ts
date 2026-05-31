@@ -251,6 +251,49 @@ describe('runInferenceHealthProbe', () => {
             costUsd: 0.00012,
         });
     });
+
+    it('bounds the direct health probe completion for local qwopus compatibility', async () => {
+        const fetchMock = jest.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
+            const body = JSON.parse(String(init?.body));
+            expect(body.response_format).toMatchObject({ type: 'json_schema' });
+            expect(body.reasoning).toEqual({ enabled: false });
+            expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+            expect(body.max_tokens).toBe(128);
+            expect(body.max_completion_tokens).toBe(128);
+            return new Response(
+                JSON.stringify({
+                    model: 'qwopus3.5-27b-v3@q4_k_s',
+                    choices: [
+                        {
+                            message: {
+                                content: '',
+                                reasoning_content: '{"health":"ok","probe":"nullcity-inference-health"}',
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 9, completion_tokens: 6 },
+                }),
+                { status: 200 },
+            );
+        });
+        global.fetch = fetchMock;
+
+        const result = await runInferenceHealthProbe({
+            endpoints: {
+                default: {
+                    baseUrl: 'http://inf.nullcity.ai:1234',
+                    model: 'qwopus3.5-27b-v3@q4_k_s',
+                    timeoutMs: 60000,
+                },
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            status: 'ok',
+            model: 'qwopus3.5-27b-v3@q4_k_s',
+        });
+    });
 });
 
 function fakeClock(...values: number[]): () => number {
