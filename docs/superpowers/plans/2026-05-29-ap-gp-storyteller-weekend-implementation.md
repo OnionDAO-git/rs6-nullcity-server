@@ -204,7 +204,7 @@ Use this board for packet-level status. Parent S-task markers remain in the road
 | S8a | Open | - | - | - | - | - | - |
 | S8b | In Review | codex | 2026-05-30 | src/controller/thinking/{hybrid-agent-chat.ts,hybrid-agent-thinking-module.test.ts} | pending | test:hybrid-agent-thinking-module AP/GP trade honesty subset; test:hybrid-agent-thinking-module trade regressions; cmd:check:no-ui | Live benchmark proof still recommended (`CQA9`) to show the same AP/GP honesty in ordinary autonomous loops |
 | S8c | Verified | codex | 2026-05-29 | docs/runescape-skill/economy.md; src/controller/knowledge/{knowledge-retriever.ts,knowledge-retriever.test.ts,game-skill-context.test.ts}; src/controller/thinking/{hybrid-agent-prompts.ts,hybrid-agent-prompts.test.ts,hybrid-agent-thinking-module.ts,hybrid-agent-thinking-module.test.ts,hybrid-agent-helpers.ts}; src/controller/memory/runtime-state.ts; src/controller/spark/{runescape-brain-planner.ts,runescape-brain-planner.test.ts}; src/controller/benchmarks/{cli.ts,cli.test.ts,autonomous-runtime.ts,autonomous-runtime.test.ts,tasks/ap-gp-library-strategy-5m.ts,tasks/ap-gp-library-strategy-5m.test.ts} | pending | test:focused benchmark/knowledge/thinking suite 469 passed; cmd:controller:bench ap-gp-library-strategy-5m autonomous; benchmark:bench_20260530030614_ap_gp_library_strategy_5m score=1; issue:QA-20260529-008(closed) | QA Marshal verified core AP/GP-first strategy proof; ordinary named-resident AP/GP/Library planning soak plus repeatable GP/hour route remain confidence bumps |
-| S9a | Open | - | - | - | - | - | - |
+| S9a | In Review | codex | 2026-05-31 | src/controller/city-integration/service.test.ts; src/controller/evidence/story-arc.test.ts; docs/{resident-capabilities.md,superpowers/plans/2026-05-20-runescape-agent-roadmap.md,superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md} | pending | test:src/controller/city-integration/service.test.ts -- GoalContract methods (S9a); test:src/controller/evidence/story-arc.test.ts; cmd:check:no-ui; cmd:fin; cmd:build | re-verifies saved-state contract: bounded quest-complete evidence can mark a goal achieved and write one `goal_achieved` event; `quest_complete` alone does not advance story arc resolution without verified goal completion |
 | S9b | Open | - | - | - | - | - | - |
 | S10a | In Review | codex | 2026-05-29 | src/controller/benchmarks/report.ts; src/controller/benchmarks/report.test.ts; docs/model-benchmarking.md | faac035d | test:src/controller/benchmarks/report.test.ts; cmd:npm run benchmark:report | - |
 | S10b | Open | - | - | - | - | - | - |
@@ -622,10 +622,10 @@ Acceptance:
 
 Steps:
 
-- [ ] Write a failing test that a verified `goal_complete` or bounded `quest_complete` event marks goal status complete.
-- [ ] Add saved Library moment with goal, AP final state, GP/NCRI context when present, and evidence refs.
-- [ ] Re-run a bounded completion benchmark only if needed to prove the saved-state path; do not add broad new quest routing in this task.
-- [ ] Update capability matrix with saved-state proof.
+- [x] Write a failing test that a verified `goal_complete` or bounded `quest_complete` event marks goal status complete.
+- [x] Add saved Library moment with goal, AP final state, GP/NCRI context when present, and evidence refs.
+- [x] Re-run a bounded completion benchmark only if needed to prove the saved-state path; do not add broad new quest routing in this task. No benchmark rerun required for this pass: substrate contract is fully re-verified by focused S9a tests.
+- [x] Update capability matrix with saved-state proof.
 
 Acceptance:
 

@@ -1534,6 +1534,31 @@ describe('CityIntegrationService', () => {
             expect(goalEvent?.apAtCompletion).toBeUndefined();
             expect(goalEvent?.gpAtCompletion).toBeUndefined();
         });
+
+        it('markGoalAchieved accepts bounded quest-complete evidence and writes a saved-state event', () => {
+            const goal = service.createGoalContract({
+                residentName: 'res:test',
+                goalText: 'Complete Cook\'s Assistant as a bounded quest primitive',
+                completion: {
+                    condition: 'quest_complete:cooks_assistant',
+                    evidenceSource: 'library:quest_complete',
+                },
+            });
+            service.markGoalAchieved(goal.id, { evidence: 'library:quest_complete:cooks_assistant' });
+
+            const libraryDir = path.join(root, 'library', 'res-test');
+            const timeline = fs
+                .readFileSync(path.join(libraryDir, 'timeline.jsonl'), 'utf8')
+                .trim()
+                .split('\n')
+                .filter(Boolean)
+                .map((l: string) => JSON.parse(l) as Record<string, unknown>);
+            const goalEvent = timeline.find((e: Record<string, unknown>) => e.kind === 'goal_achieved');
+
+            expect(goalEvent).toBeDefined();
+            expect(goalEvent?.goalId).toBe(goal.id);
+            expect(goalEvent?.evidence).toBe('library:quest_complete:cooks_assistant');
+        });
     });
 });
 

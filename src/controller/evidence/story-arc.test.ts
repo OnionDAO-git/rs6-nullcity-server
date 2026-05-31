@@ -106,4 +106,15 @@ describe('inferStoryArc', () => {
         expect(arc.evidence.resolutionEvents).toBe(1);
         expect(arc.evidence.letterEvents).toBe(1);
     });
+
+    it('does not treat quest_complete alone as a saved-state resolution event', () => {
+        const arc = inferStoryArc([
+            { kind: 'first_xp', tick: 4, skill: 'Cooking' },
+            { kind: 'quest_complete', tick: 9, questId: 'cooks_assistant' },
+        ]);
+
+        expect(arc.phase).toBe('progress');
+        expect(arc.latestEventKind).toBe('first_xp');
+        expect(arc.evidence.resolutionEvents).toBe(0);
+    });
 });
