@@ -7579,6 +7579,7 @@ describe('HybridAgentThinkingModule', () => {
             lastBrainTick: 60,
             lastBodyTick: 120,
             lastPresenceBeaconTick: 100,
+            lastAgentKeepaliveTick: 100,
         };
         const agent = hybridAgent(llm, state);
 
@@ -7591,6 +7592,103 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('presence_beacon');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('lets res:agent keepalive beat a due presence beacon when stuck', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:agent';
+        state.stuckSince = 80;
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Practice firemaking.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 60,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 100,
+            lastAgentKeepaliveTick: 60,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'Agent online. No tester visible. Say "agent status" or "agent help" to check my goal, location, and next step.',
+                cause: 'agent_keepalive',
+            },
+        ]);
+        expect(result.cause).toBe('agent_keepalive');
+        expect(state.cognition?.lastAgentKeepaliveTick).toBe(121);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not let res:agent keepalive interrupt an active anchor return', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:agent';
+        state.stuckSince = 80;
+        state.cognition = {
+            activeMove: {
+                target: { x: 3200, y: 3200, level: 0 },
+                range: 1,
+                cause: 'return_to_visibility_anchor',
+                startedAtTick: 90,
+                lastTick: 100,
+                lastPositionKey: '3198,3200,0',
+                stationaryCount: 0,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastAgentKeepaliveTick: 60,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3198, 3200),
+            }),
+        );
+
+        expect(result.cause).not.toBe('agent_keepalive');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to' }));
+        expect(state.cognition?.lastAgentKeepaliveTick).toBe(60);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not emit res:agent keepalive while a tester is visible', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:agent';
+        state.stuckSince = 80;
+        state.cognition = {
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastAgentKeepaliveTick: 60,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+                players: [player('Codex', 3201, 3200)],
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        expect(state.cognition?.lastAgentKeepaliveTick).toBe(60);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -7666,6 +7764,61 @@ describe('HybridAgentThinkingModule', () => {
             lastSocialKeepaliveTick: 100,
         };
         const agent = hybridAgent(llm, state, socialSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('lets res:agent announce operator status before no-human idle becomes stuck recovery', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:agent';
+        state.stuckSince = 80;
+        state.cognition = {
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastAgentKeepaliveTick: 60,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'Agent online. No tester visible. Say "agent status" or "agent help" to check my goal, location, and next step.',
+                cause: 'agent_keepalive',
+            },
+        ]);
+        expect(result.cause).toBe('agent_keepalive');
+        expect(state.cognition?.lastAgentKeepaliveTick).toBe(121);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps ordinary stuck recovery active when res:agent keepalive is not due', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:agent';
+        state.stuckSince = 80;
+        state.cognition = {
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastAgentKeepaliveTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
 
         const result = await agent.think(
             perception({

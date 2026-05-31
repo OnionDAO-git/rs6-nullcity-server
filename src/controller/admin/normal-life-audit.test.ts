@@ -122,7 +122,9 @@ describe('normal life audit', () => {
             'starter_fishing_cook_catch',
             'starter_fishing_eat_cooked_fish_for_space',
             'direct_chat_trade',
+            'agent_keepalive',
         ]);
+        expect(report.trackedCauseCounts.agent_keepalive).toBe(0);
         expect(Object.keys(report.trackedTimelineCounts)).toEqual([
             'logout',
             'death',
@@ -203,6 +205,7 @@ describe('normal life audit', () => {
             action('2026-05-31T12:00:00.000Z', 'say', 'idle_initiative', true, 100),
             action('2026-05-31T12:01:00.000Z', 'say', 'idle_initiative', true, 99),
             action('2026-05-31T12:02:00.000Z', 'say', 'nervous:request-attention', true, 98),
+            action('2026-05-31T12:03:00.000Z', 'say', 'agent_keepalive', true, 97),
         ]);
 
         writeJsonl(path.join(libraryRoot, 'res-qa-alpha', 'timeline.jsonl'), [
@@ -234,6 +237,7 @@ describe('normal life audit', () => {
         expect(report.trackedActionCounts.use_item_on).toBe(1);
         expect(report.trackedCauseCounts.low_health_heal_wait).toBe(1);
         expect(report.trackedCauseCounts.combat_resupply_food).toBe(1);
+        expect(report.trackedCauseCounts.agent_keepalive).toBe(1);
         expect(report.trackedTimelineCounts.city_ap_gp_exchange).toBe(1);
         expect(report.trackedTimelineCounts.trade_completed).toBe(1);
         expect(report.trackedTimelineCounts.first_xp).toBe(1);
@@ -263,6 +267,8 @@ describe('normal life audit', () => {
         expect(alpha?.trackedTimelineCounts.trade_completed).toBe(1);
         expect(alpha?.actionAttempts).toBe(9);
         expect(alpha?.failedActionSubmissions).toBe(0);
+        const beta = report.residentSlices.find(entry => entry.resident === 'res:qa-beta');
+        expect(beta?.trackedCauseCounts.agent_keepalive).toBe(1);
     });
 
     it('attributes stuck churn to residents for targeted follow-up fixes', () => {

@@ -30,6 +30,7 @@ import {
     lowHealthRecoveryAction,
     lowHealthHoldPositionAction,
     presenceBeaconAction,
+    agentKeepaliveAction,
     activeFollowAction,
     followListenHoldAction,
     visibilityStatus,
@@ -203,6 +204,12 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const brainDue = this.shouldRunBrain();
             if (this.shouldRunBody()) {
                 if (!brainDue || typeof this.options.state.stuckSince === 'number') {
+                    const visibility = visibilityStatus(this, perception as HybridPerception);
+                    const agentKeepalive = agentKeepaliveAction(this, perception as HybridPerception, visibility);
+                    if (agentKeepalive) {
+                        return this.result([agentKeepalive], 'agent_keepalive', 0, false);
+                    }
+
                     const presenceBeacon = presenceBeaconAction(this, perception as HybridPerception);
                     if (presenceBeacon) {
                         return this.result([presenceBeacon], 'presence_beacon', 0, false);

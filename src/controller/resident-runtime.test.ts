@@ -773,64 +773,77 @@ describe('ResidentRuntime modules', () => {
         expect(state.stuckSince).toBeLessThanOrEqual(state.tick);
     });
 
-    it.each(['social_keepalive', 'trade_keepalive'] as const)('counts successful %s speech as visible runtime progress', async cause => {
-        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-memory-'));
-        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-'));
-        const resident = cause === 'trade_keepalive' ? 'res:qa-trader' : 'res:qa-social';
-        const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:20:00.000Z') });
-        const session = store.beginSession('session-visible-speech', 'soul-v1');
-        const evidence = {
-            store,
-            sessionId: session.sessionId,
-            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:20:01.000Z') }),
-        };
-        const state = stateFor(resident);
-        const line = 'No tester visible. I am staying by the trade post and waiting for a real player.';
-        const thinking: ThinkingModule = {
-            think: jest
-                .fn()
-                .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
-                .mockResolvedValueOnce({ actions: [{ kind: 'say', text: line, cause }], cause, nooped: false }),
-            considerInterrupt: jest.fn(() => false),
-            stop: jest.fn(),
-        };
-        const body = {
-            observePerception: jest.fn(),
-            observeEvent: jest.fn(),
-            submit: jest.fn(async () => ({ ok: true, requestId: 'request-social-keepalive' })),
-            getLatestEventSeq: jest.fn(() => 0),
-            waitForEvent: jest.fn(async () => ({
-                ok: true,
-                observation: {
-                    seq: 1,
-                    observedAt: Date.now(),
-                    value: { kind: 'chat', text: line, from: { name: resident } },
-                },
-            })),
-        } as unknown as ResidentBody;
+    it.each(['social_keepalive', 'trade_keepalive', 'agent_keepalive'] as const)(
+        'counts successful %s speech as visible runtime progress',
+        async cause => {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-memory-'));
+            const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-'));
+            const resident = cause === 'trade_keepalive' ? 'res:qa-trader' : cause === 'agent_keepalive' ? 'res:agent' : 'res:qa-social';
+            const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:20:00.000Z') });
+            const session = store.beginSession('session-visible-speech', 'soul-v1');
+            const evidence = {
+                store,
+                sessionId: session.sessionId,
+                trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:20:01.000Z') }),
+            };
+            const state = stateFor(resident);
+            const line = 'No tester visible. I am staying by the trade post and waiting for a real player.';
+            const thinking: ThinkingModule = {
+                think: jest
+                    .fn()
+                    .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
+                    .mockResolvedValueOnce({ actions: [{ kind: 'say', text: line, cause }], cause, nooped: false }),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true, requestId: 'request-social-keepalive' })),
+                getLatestEventSeq: jest.fn(() => 0),
+                waitForEvent: jest.fn(async () => ({
+                    ok: true,
+                    observation: {
+                        seq: 1,
+                        observedAt: Date.now(),
+                        value: { kind: 'chat', text: line, from: { name: resident } },
+                    },
+                })),
+            } as unknown as ResidentBody;
 
-        const runtime = new ResidentRuntime({
-            soul: soul(resident),
-            gateway: {} as GatewayClient,
-            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
-            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
-            llm: {} as LlmClient,
-            actionLog: {} as ActionLog,
-            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
-            thinking,
-            body,
-            evidence,
-        });
+            const runtime = new ResidentRuntime({
+                soul: soul(resident),
+                gateway: {} as GatewayClient,
+                memory: {
+                    ensureResident: jest.fn(() => memoryDir),
+                    retrieve: jest.fn(() => []),
+                    write: jest.fn(),
+                } as unknown as MemoryStore,
+                stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                llm: {} as LlmClient,
+                actionLog: {} as ActionLog,
+                inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+                thinking,
+                body,
+                evidence,
+            });
 
-        await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
-        await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
+            await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
+            await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
 
-        expect(readJsonl(session.progressPath)).toContainEqual(
-            expect.objectContaining({ kind: 'progress', tick: 46, meaningful: true, reasons: [`visible_say:${cause}`], stuckSince: null }),
-        );
-        expect(state.lastMeaningfulProgressAt).toBe(46);
-        expect(state.stuckSince).toBeUndefined();
-    });
+            expect(readJsonl(session.progressPath)).toContainEqual(
+                expect.objectContaining({
+                    kind: 'progress',
+                    tick: 46,
+                    meaningful: true,
+                    reasons: [`visible_say:${cause}`],
+                    stuckSince: null,
+                }),
+            );
+            expect(state.lastMeaningfulProgressAt).toBe(46);
+            expect(state.stuckSince).toBeUndefined();
+        },
+    );
 
     it('does not count generic successful speech as visible runtime progress', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-generic-speech-memory-'));
@@ -892,58 +905,66 @@ describe('ResidentRuntime modules', () => {
         expect(state.stuckSince).toBe(46);
     });
 
-    it('does not count failed keepalive speech as visible runtime progress', async () => {
-        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-memory-'));
-        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-'));
-        const store = new EvidenceStore('res:qa-social', evidenceRoot, { now: () => new Date('2026-05-31T12:27:00.000Z') });
-        const session = store.beginSession('session-failed-speech', 'soul-v1');
-        const evidence = {
-            store,
-            sessionId: session.sessionId,
-            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:27:01.000Z') }),
-        };
-        const state = stateFor('res:qa-social');
-        const line = 'No tester visible. I am staying by the trade post.';
-        const thinking: ThinkingModule = {
-            think: jest
-                .fn()
-                .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
-                .mockResolvedValueOnce({
-                    actions: [{ kind: 'say', text: line, cause: 'social_keepalive' }],
-                    cause: 'social_keepalive',
-                    nooped: false,
-                }),
-            considerInterrupt: jest.fn(() => false),
-            stop: jest.fn(),
-        };
-        const body = {
-            observePerception: jest.fn(),
-            observeEvent: jest.fn(),
-            submit: jest.fn(async () => ({ ok: false, requestId: 'request-failed-keepalive', reason: 'chat_blocked' })),
-            getLatestEventSeq: jest.fn(() => 0),
-            waitForEvent: jest.fn(),
-        } as unknown as ResidentBody;
+    it.each(['social_keepalive', 'agent_keepalive'] as const)(
+        'does not count failed %s speech as visible runtime progress',
+        async cause => {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-memory-'));
+            const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-'));
+            const resident = cause === 'agent_keepalive' ? 'res:agent' : 'res:qa-social';
+            const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:27:00.000Z') });
+            const session = store.beginSession('session-failed-speech', 'soul-v1');
+            const evidence = {
+                store,
+                sessionId: session.sessionId,
+                trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:27:01.000Z') }),
+            };
+            const state = stateFor(resident);
+            const line = 'No tester visible. I am staying by the trade post.';
+            const thinking: ThinkingModule = {
+                think: jest
+                    .fn()
+                    .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
+                    .mockResolvedValueOnce({
+                        actions: [{ kind: 'say', text: line, cause }],
+                        cause,
+                        nooped: false,
+                    }),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: false, requestId: 'request-failed-keepalive', reason: 'chat_blocked' })),
+                getLatestEventSeq: jest.fn(() => 0),
+                waitForEvent: jest.fn(),
+            } as unknown as ResidentBody;
 
-        const runtime = new ResidentRuntime({
-            soul: soul('res:qa-social'),
-            gateway: {} as GatewayClient,
-            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
-            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
-            llm: {} as LlmClient,
-            actionLog: {} as ActionLog,
-            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
-            thinking,
-            body,
-            evidence,
-        });
+            const runtime = new ResidentRuntime({
+                soul: soul(resident),
+                gateway: {} as GatewayClient,
+                memory: {
+                    ensureResident: jest.fn(() => memoryDir),
+                    retrieve: jest.fn(() => []),
+                    write: jest.fn(),
+                } as unknown as MemoryStore,
+                stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                llm: {} as LlmClient,
+                actionLog: {} as ActionLog,
+                inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+                thinking,
+                body,
+                evidence,
+            });
 
-        await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
-        await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
+            await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
+            await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
 
-        expect(readJsonl(session.progressPath)).not.toContainEqual(expect.objectContaining({ reasons: ['visible_say:social_keepalive'] }));
-        expect(state.lastMeaningfulProgressAt).toBe(1);
-        expect(state.stuckSince).toBe(46);
-    });
+            expect(readJsonl(session.progressPath)).not.toContainEqual(expect.objectContaining({ reasons: [`visible_say:${cause}`] }));
+            expect(state.lastMeaningfulProgressAt).toBe(1);
+            expect(state.stuckSince).toBe(46);
+        },
+    );
 
     it('updates Library of Souls story artifacts from runtime speech', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-library-memory-'));

@@ -164,6 +164,7 @@ export const MOVE_COMMIT_TICKS = 24;
 export const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
 export const SOCIAL_KEEPALIVE_EVERY_TICKS = 36;
 export const TRADE_KEEPALIVE_EVERY_TICKS = 60;
+export const AGENT_KEEPALIVE_EVERY_TICKS = 60;
 export const TRADE_STARTER_OFFER_COOLDOWN_TICKS = 120;
 const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
 const COOKS_ASSISTANT_DIALOGUE_SEQUENCE: AgentAction[] = [
@@ -647,6 +648,40 @@ export function socialKeepaliveAction(
         kind: 'say',
         text: cleanSpeech('No tester visible. Say "social help" for follow, status, wait, stop, trade, or where I am.'),
         cause: 'social_keepalive',
+    };
+}
+
+export function agentKeepaliveAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+    visibility: { anchor?: Pos; returnDue: boolean },
+): AgentAction | undefined {
+    if (ctx.commandPrefix() !== 'agent' || visibility.returnDue || typeof ctx.options.state.stuckSince !== 'number') {
+        return undefined;
+    }
+    if (ctx.cognition().activeMove) {
+        return undefined;
+    }
+    if ((perception.nearby?.players || []).length > 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    const last = cognition.lastAgentKeepaliveTick;
+    if (typeof last !== 'number') {
+        cognition.lastAgentKeepaliveTick = tick;
+        return undefined;
+    }
+    if (typeof last === 'number' && tick - last < AGENT_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    cognition.lastAgentKeepaliveTick = tick;
+    return {
+        kind: 'say',
+        text: cleanSpeech('Agent online. No tester visible. Say "agent status" or "agent help" to check my goal, location, and next step.'),
+        cause: 'agent_keepalive',
     };
 }
 
@@ -3019,6 +3054,11 @@ export function preInferenceBodyAction(
     const socialKeepalive = socialKeepaliveAction(ctx, perception, visibility);
     if (socialKeepalive) {
         return preInferenceResult(ctx, socialKeepalive, 'social_keepalive', perception, visibility);
+    }
+
+    const agentKeepalive = agentKeepaliveAction(ctx, perception, visibility);
+    if (agentKeepalive) {
+        return preInferenceResult(ctx, agentKeepalive, 'agent_keepalive', perception, visibility);
     }
 
     if (typeof ctx.options.state.stuckSince === 'number') {
