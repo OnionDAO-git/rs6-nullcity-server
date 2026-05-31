@@ -29,6 +29,8 @@ npm run -s controller:normal-life-audit -- --start 2026-05-31T09:00:30.000Z --en
 
 Artifact: `data/benchmarks/capability-qa-2026-05-31/cqa10-unconditioned-economy-recurrence/normal_life_audit_20260531T092301Z.json`
 
+Verification rerun artifact: `data/benchmarks/capability-qa-2026-05-31/cqa10-unconditioned-economy-recurrence/normal_life_audit_20260531T092910Z.json` reproduced the same window totals: 23 residents, 2385/2385 actions, `lowHealthWaits=0`, `organicSelfInitiatedApGpExchangeEvents=1`, and trade counts still `0`.
+
 ## Audit Shape Added
 
 `normal-life-audit` now writes:
