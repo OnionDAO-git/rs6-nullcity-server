@@ -103,19 +103,15 @@ Interpretation:
 - Actual attack volume was low in this window, so combat is safer but not yet rich.
 - Stuck detection/recovery is broadly paired but far too frequent for a polished world loop.
 
-## Audit Limit
+## Follow-Up Instrumentation
 
-The `normal-life-audit` artifact is useful for liveness, AP pressure, headline action mix, and tracked timeline presence/absence. It is not yet enough to fully judge recurrence quality because it is mostly top-N histograms.
+This window was rerun by CQA10 companion metrics after the audit learned non-truncated tracked maps and resident slices.
 
-Known gaps:
+Companion artifact:
 
-- Low-frequency tracked actions can disappear if they fall below `--top`.
-- AP/GP exchange quality needs linked action rows, AP/GP amounts, and resident-level recurrence.
-- Trade quality needs request/offer/accept/decline sequence and inventory deltas.
-- Combat quality needs safe-target, HP recovery, loot/bones, and per-resident cadence.
-- Stuck quality needs per-resident stuck/recovered pairing and churn ratios.
+- `data/benchmarks/capability-qa-2026-05-31/cqa10-companion-metrics/normal_life_audit_20260531T083614Z.json`
 
-Next instrumentation packet should add non-truncated tracked counts and compact resident-level slices to `src/controller/admin/normal-life-audit.ts`.
+That artifact keeps the same behavior verdict but removes the old top-N ambiguity: AP/GP exchange actions/events are explicitly `0`, trade closure is explicitly `0`, low-health waits are `0`, and per-resident `residentSlices` now show stuck, XP, AP drop, combat-resupply, cooking, and eating signals without manual side scans.
 
 ## Verdict
 
@@ -125,6 +121,6 @@ CQA10 remains open: ordinary life is active and healthier, but still does not sh
 
 Next best work:
 
-1. Add CQA10 companion metrics to `normal-life-audit`.
-2. Re-run this window or a new 30-minute soak with non-truncated tracked counts.
-3. Use those metrics to decide whether the next behavior fix is AP/GP recurrence, trade recurrence, or stuck-churn/pathing.
+1. Run a fresh 60-120 minute unconditioned soak with the companion metric shape.
+2. Use `residentSlices` to decide whether the next behavior fix is AP/GP recurrence, trade recurrence, or stuck-churn/pathing.
+3. Add a targeted benchmark/fix for whichever missing signal remains most important after that soak.

@@ -20,6 +20,40 @@ export interface ResidentApDrop {
     drop: number;
 }
 
+export type NormalLifeTrackedCounts = Record<string, number>;
+
+export interface NormalLifeAuditResidentSlice {
+    resident: string;
+    actionAttempts: number;
+    successfulActionSubmissions: number;
+    failedActionSubmissions: number;
+    apFirst?: number;
+    apLast?: number;
+    apDrop: number;
+    trackedActionCounts: NormalLifeTrackedCounts;
+    trackedCauseCounts: NormalLifeTrackedCounts;
+    trackedTimelineCounts: NormalLifeTrackedCounts;
+}
+
+export interface NormalLifeAuditRecurrenceSummary {
+    apGpExchangeActions: number;
+    apGpExchangeEvents: number;
+    tradeRequests: number;
+    tradeCompleted: number;
+    tradeCancelled: number;
+    combatActions: number;
+    eatingActions: number;
+    cookingActions: number;
+    lowHealthWaits: number;
+    combatResupplyActions: number;
+    xpEvents: number;
+    levelUps: number;
+    deaths: number;
+    logouts: number;
+    stuckDetected: number;
+    stuckRecovered: number;
+}
+
 export interface NormalLifeAuditReport {
     runId: string;
     generatedAt: string;
@@ -33,6 +67,12 @@ export interface NormalLifeAuditReport {
     actionKindCounts: Array<[string, number]>;
     causeCounts: Array<[string, number]>;
     timelineKindCounts: Array<[string, number]>;
+    trackedActionCounts: NormalLifeTrackedCounts;
+    trackedCauseCounts: NormalLifeTrackedCounts;
+    trackedTimelineCounts: NormalLifeTrackedCounts;
+    recurrenceSummary: NormalLifeAuditRecurrenceSummary;
+    residentSlices: NormalLifeAuditResidentSlice[];
+    residentSignalSummary: NormalLifeAuditResidentSlice[];
     notObservedTimelineKinds: string[];
     apSummary: {
         residentsWithAttention: number;
@@ -55,9 +95,56 @@ interface ResidentAttentionSpan {
     last: number;
 }
 
+interface ResidentSliceAccumulator {
+    resident: string;
+    actionAttempts: number;
+    successfulActionSubmissions: number;
+    failedActionSubmissions: number;
+    attention?: ResidentAttentionSpan;
+    actionKindCounts: Map<string, number>;
+    causeCounts: Map<string, number>;
+    timelineKindCounts: Map<string, number>;
+}
+
 const DEFAULT_DURATION_MS = 60 * 60 * 1000;
 const DEFAULT_MAX_TOP_ROWS = 12;
 const DEFAULT_EXCLUDE_PREFIXES = ['res:bmk_'];
+const TRACKED_ACTION_KINDS = [
+    'city_exchange_ap_gp',
+    'trade_request',
+    'trade_offer_item',
+    'trade_accept_stage_1',
+    'trade_accept_stage_2',
+    'trade_decline',
+    'trade_completed',
+    'trade_cancelled',
+    'attack',
+    'eat',
+    'interact',
+    'use_item_on',
+    'use_item_on_item',
+    'item_action',
+    'equip',
+];
+const TRACKED_CAUSES = [
+    'nervous:self-initiated-ap-gp-exchange',
+    'nervous:request-attention',
+    'low_health_heal_wait',
+    'low_health_fish_food',
+    'low_health_cook_food',
+    'low_health_eat',
+    'combat_attack_safe_target',
+    'combat_seek_safe_target',
+    'combat_resupply_food',
+    'combat_eat_before_training',
+    'combat_loot_pickup',
+    'combat_bury_looted_bones',
+    'combat_loot_or_prayer',
+    'starter_fishing_net',
+    'starter_fishing_cook_catch',
+    'starter_fishing_eat_cooked_fish_for_space',
+    'direct_chat_trade',
+];
 const TRACKED_TIMELINE_KINDS = [
     'logout',
     'death',
@@ -172,6 +259,7 @@ export function collectNormalLifeAudit(options: {
     const causeCounts = new Map<string, number>();
     const timelineKindCounts = new Map<string, number>();
     const residentAttention = new Map<string, ResidentAttentionSpan>();
+    const residentSlices = new Map<string, ResidentSliceAccumulator>();
     const activeResidents = new Set<string>();
 
     let totalActionAttempts = 0;
@@ -190,40 +278,30 @@ export function collectNormalLifeAudit(options: {
                 if (ts === undefined || !inWindow(ts, options.windowStart, options.windowEnd)) continue;
                 totalActionAttempts += 1;
                 activeResidents.add(resident);
+                const slice = ensureResidentSlice(residentSlices, resident);
+                slice.actionAttempts += 1;
 
                 const action = recordField(row, 'action');
                 const kind = stringField(action, 'kind') || 'unknown';
                 const cause = stringField(action, 'cause') || 'none';
                 bump(actionKindCounts, kind);
                 bump(causeCounts, cause);
+                bump(slice.actionKindCounts, kind);
+                bump(slice.causeCounts, cause);
 
                 const result = recordField(row, 'result');
                 if (boolField(result, 'ok') === true) {
                     successfulActionSubmissions += 1;
+                    slice.successfulActionSubmissions += 1;
                 } else {
                     failedActionSubmissions += 1;
+                    slice.failedActionSubmissions += 1;
                 }
 
                 const attentionAfter = numberField(row, 'attention_after');
                 if (attentionAfter !== undefined) {
-                    const current = residentAttention.get(resident);
-                    if (!current) {
-                        residentAttention.set(resident, {
-                            firstAt: ts,
-                            first: attentionAfter,
-                            lastAt: ts,
-                            last: attentionAfter,
-                        });
-                    } else {
-                        if (ts < current.firstAt) {
-                            current.firstAt = ts;
-                            current.first = attentionAfter;
-                        }
-                        if (ts >= current.lastAt) {
-                            current.lastAt = ts;
-                            current.last = attentionAfter;
-                        }
-                    }
+                    updateAttentionSpan(residentAttention, resident, ts, attentionAfter);
+                    slice.attention = updateAttentionSpanForValue(slice.attention, ts, attentionAfter);
                 }
             }
         }
@@ -234,6 +312,7 @@ export function collectNormalLifeAudit(options: {
             if (ts === undefined || !inWindow(ts, options.windowStart, options.windowEnd)) continue;
             const kind = stringField(row, 'kind') || 'unknown';
             bump(timelineKindCounts, kind);
+            bump(ensureResidentSlice(residentSlices, resident).timelineKindCounts, kind);
         }
     }
 
@@ -250,6 +329,8 @@ export function collectNormalLifeAudit(options: {
     const aggregateDrop = round3(drops.reduce((sum, entry) => sum + entry.drop, 0));
     const actionSuccessRate = totalActionAttempts === 0 ? 0 : round3((successfulActionSubmissions / totalActionAttempts) * 100);
 
+    const residentSliceReports = sortedResidentSlices(residentSlices);
+
     return {
         runId,
         generatedAt: generatedAt.toISOString(),
@@ -263,6 +344,12 @@ export function collectNormalLifeAudit(options: {
         actionKindCounts: sortedCounts(actionKindCounts, maxTopRows),
         causeCounts: sortedCounts(causeCounts, maxTopRows),
         timelineKindCounts: sortedCounts(timelineKindCounts, maxTopRows),
+        trackedActionCounts: trackedCounts(actionKindCounts, TRACKED_ACTION_KINDS),
+        trackedCauseCounts: trackedCounts(causeCounts, TRACKED_CAUSES),
+        trackedTimelineCounts: trackedCounts(timelineKindCounts, TRACKED_TIMELINE_KINDS),
+        recurrenceSummary: buildRecurrenceSummary(actionKindCounts, causeCounts, timelineKindCounts),
+        residentSlices: residentSliceReports,
+        residentSignalSummary: residentSliceReports,
         notObservedTimelineKinds: TRACKED_TIMELINE_KINDS.filter(kind => !timelineKindCounts.has(kind)),
         apSummary: {
             residentsWithAttention: residentAttention.size,
@@ -396,6 +483,51 @@ function bump(map: Map<string, number>, key: string): void {
     map.set(key, (map.get(key) || 0) + 1);
 }
 
+function ensureResidentSlice(slices: Map<string, ResidentSliceAccumulator>, resident: string): ResidentSliceAccumulator {
+    const current = slices.get(resident);
+    if (current) return current;
+    const created: ResidentSliceAccumulator = {
+        resident,
+        actionAttempts: 0,
+        successfulActionSubmissions: 0,
+        failedActionSubmissions: 0,
+        actionKindCounts: new Map(),
+        causeCounts: new Map(),
+        timelineKindCounts: new Map(),
+    };
+    slices.set(resident, created);
+    return created;
+}
+
+function updateAttentionSpan(spans: Map<string, ResidentAttentionSpan>, resident: string, ts: number, attentionAfter: number): void {
+    spans.set(resident, updateAttentionSpanForValue(spans.get(resident), ts, attentionAfter));
+}
+
+function updateAttentionSpanForValue(
+    current: ResidentAttentionSpan | undefined,
+    ts: number,
+    attentionAfter: number,
+): ResidentAttentionSpan {
+    if (!current) {
+        return {
+            firstAt: ts,
+            first: attentionAfter,
+            lastAt: ts,
+            last: attentionAfter,
+        };
+    }
+    const next = { ...current };
+    if (ts < next.firstAt) {
+        next.firstAt = ts;
+        next.first = attentionAfter;
+    }
+    if (ts >= next.lastAt) {
+        next.lastAt = ts;
+        next.last = attentionAfter;
+    }
+    return next;
+}
+
 function sortedCounts(map: Map<string, number>, limit: number): Array<[string, number]> {
     return [...map.entries()]
         .sort((a, b) => {
@@ -403,6 +535,64 @@ function sortedCounts(map: Map<string, number>, limit: number): Array<[string, n
             return b[1] - a[1];
         })
         .slice(0, limit);
+}
+
+function trackedCounts(map: Map<string, number>, trackedKeys: string[]): NormalLifeTrackedCounts {
+    const counts: NormalLifeTrackedCounts = {};
+    for (const key of trackedKeys) {
+        counts[key] = map.get(key) || 0;
+    }
+    return counts;
+}
+
+function buildRecurrenceSummary(
+    actionKindCounts: Map<string, number>,
+    causeCounts: Map<string, number>,
+    timelineKindCounts: Map<string, number>,
+): NormalLifeAuditRecurrenceSummary {
+    return {
+        apGpExchangeActions: actionKindCounts.get('city_exchange_ap_gp') || 0,
+        apGpExchangeEvents: timelineKindCounts.get('city_ap_gp_exchange') || 0,
+        tradeRequests: actionKindCounts.get('trade_request') || 0,
+        tradeCompleted: timelineKindCounts.get('trade_completed') || 0,
+        tradeCancelled: timelineKindCounts.get('trade_cancelled') || 0,
+        combatActions: actionKindCounts.get('attack') || 0,
+        eatingActions: actionKindCounts.get('eat') || 0,
+        cookingActions: (actionKindCounts.get('use_item_on') || 0) + (actionKindCounts.get('use_item_on_item') || 0),
+        lowHealthWaits: causeCounts.get('low_health_heal_wait') || 0,
+        combatResupplyActions: causeCounts.get('combat_resupply_food') || 0,
+        xpEvents: timelineKindCounts.get('first_xp') || 0,
+        levelUps: timelineKindCounts.get('level_up') || 0,
+        deaths: timelineKindCounts.get('death') || 0,
+        logouts: timelineKindCounts.get('logout') || 0,
+        stuckDetected: timelineKindCounts.get('stuck_detected') || 0,
+        stuckRecovered: timelineKindCounts.get('stuck_recovered') || 0,
+    };
+}
+
+function sortedResidentSlices(slices: Map<string, ResidentSliceAccumulator>): NormalLifeAuditResidentSlice[] {
+    return [...slices.values()]
+        .map(slice => {
+            const apFirst = slice.attention?.first;
+            const apLast = slice.attention?.last;
+            const apDrop = slice.attention ? Math.max(0, round3(slice.attention.first - slice.attention.last)) : 0;
+            return {
+                resident: slice.resident,
+                actionAttempts: slice.actionAttempts,
+                successfulActionSubmissions: slice.successfulActionSubmissions,
+                failedActionSubmissions: slice.failedActionSubmissions,
+                ...(apFirst !== undefined ? { apFirst } : {}),
+                ...(apLast !== undefined ? { apLast } : {}),
+                apDrop,
+                trackedActionCounts: trackedCounts(slice.actionKindCounts, TRACKED_ACTION_KINDS),
+                trackedCauseCounts: trackedCounts(slice.causeCounts, TRACKED_CAUSES),
+                trackedTimelineCounts: trackedCounts(slice.timelineKindCounts, TRACKED_TIMELINE_KINDS),
+            };
+        })
+        .sort((a, b) => {
+            if (b.actionAttempts === a.actionAttempts) return a.resident.localeCompare(b.resident);
+            return b.actionAttempts - a.actionAttempts;
+        });
 }
 
 function timestampCompact(value: Date): string {
