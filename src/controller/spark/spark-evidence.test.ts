@@ -414,6 +414,40 @@ describe('Spark evidence integration', () => {
         );
     });
 
+    it('records request timeouts before idle initiative fallbacks when hero idle reflection is due', async () => {
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: JSON.stringify({ actions: [] }),
+                nooped: true,
+                cancelledBy: 'request_timeout',
+            })),
+        } as unknown as LlmClient;
+        const state = runtimeState();
+        state.tick = 119;
+        const spark = new Spark(heroSoul(), state, memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 120, events: [] });
+
+        expect(result.cause).toBe('request_timeout');
+        expect(result.nooped).toBe(false);
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'Still here as Hans; watching the area.', cause: 'idle_initiative' },
+            { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 1, cause: 'idle_initiative' },
+        ]);
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'decision',
+                    cause: 'request_timeout',
+                    actionKinds: ['say', 'move_to'],
+                }),
+                expect.objectContaining({ kind: 'say', text: 'Still here as Hans; watching the area.' }),
+                expect.objectContaining({ kind: 'action', actionKind: 'move_to', cause: 'idle_initiative' }),
+            ]),
+        );
+    });
+
     it('records empty no-action completions with a named cause when idle initiative is cooling down', async () => {
         const { builder, trajectoryPath } = evidence();
         const llm = {

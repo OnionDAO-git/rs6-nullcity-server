@@ -319,13 +319,7 @@ export class Spark {
                 return true;
             });
             if (isEmptyParsedCompletion(parsed, actions)) {
-                const idleInitiative = this.idleInitiative(perception);
-                if (idleInitiative) {
-                    actions = idleInitiative.actions;
-                    decisionCause = 'empty_completion_idle_initiative';
-                    actionsAlreadySpent = true;
-                    endReason = 'idle_initiative';
-                } else if (response.cancelledBy) {
+                if (response.cancelledBy) {
                     // S-INFER-2 (D2 / bucket C): the completion is empty because
                     // the think was CANCELLED mid-flight (a reflex interrupt, the
                     // watchdog, attention exhaustion, or a request timeout) — NOT
@@ -334,15 +328,29 @@ export class Spark {
                     // live breakdown never folds an interrupted think into the
                     // empty_completion buckets and inflates the "no decision" rate.
                     decisionCause = cancelledDecisionCause(response.cancelledBy);
+                    const idleInitiative = this.idleInitiative(perception);
+                    if (idleInitiative) {
+                        actions = idleInitiative.actions;
+                        actionsAlreadySpent = true;
+                        endReason = 'idle_initiative';
+                    }
                 } else {
-                    // S-INFER-1: record WHY the completion was empty using the
-                    // salvage classification, so live action logs reveal the
-                    // real breakdown (Qwen3 think_only_no_answer vs
-                    // schema_mismatch vs truly_empty) instead of a blanket
-                    // `empty_completion`. Genuinely-empty completions keep the
-                    // bare `empty_completion` cause so existing telemetry/tests
-                    // do not break.
-                    decisionCause = emptyCompletionCause(parsed.parseClass);
+                    const idleInitiative = this.idleInitiative(perception);
+                    if (idleInitiative) {
+                        actions = idleInitiative.actions;
+                        decisionCause = 'empty_completion_idle_initiative';
+                        actionsAlreadySpent = true;
+                        endReason = 'idle_initiative';
+                    } else {
+                        // S-INFER-1: record WHY the completion was empty using the
+                        // salvage classification, so live action logs reveal the
+                        // real breakdown (Qwen3 think_only_no_answer vs
+                        // schema_mismatch vs truly_empty) instead of a blanket
+                        // `empty_completion`. Genuinely-empty completions keep the
+                        // bare `empty_completion` cause so existing telemetry/tests
+                        // do not break.
+                        decisionCause = emptyCompletionCause(parsed.parseClass);
+                    }
                 }
             }
             decisionCause ??= inferUnnamedCompletionCause(parsed, actions);

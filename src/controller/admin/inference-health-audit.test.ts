@@ -68,6 +68,7 @@ describe('inference health audit', () => {
             expect(classifyDecisionCause('thinking_cancelled')).toBe('thinking_cancelled');
             expect(classifyDecisionCause('thinking_watchdog_timeout')).toBe('thinking_cancelled');
             expect(classifyDecisionCause('brain_timeout_fallback')).toBe('thinking_cancelled');
+            expect(classifyDecisionCause('request_timeout')).toBe('thinking_cancelled');
 
             // schema mismatch
             expect(classifyDecisionCause('empty_completion_schema_mismatch')).toBe('schema_mismatch');
@@ -88,9 +89,9 @@ describe('inference health audit', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inference-health-'));
         const trajectoryRoot = path.join(root, 'memory');
 
-        // res:agent — 8 brain-eligible decisions covering every class:
-        //   clean x2, recovered x2, think_only x1, cancelled x1, schema x1, empty x1
-        // usable = (2 + 2) / 8 = 0.5
+        // res:agent — 9 brain-eligible decisions covering every class:
+        //   clean x2, recovered x2, think_only x1, cancelled x2, schema x1, empty x1
+        // usable = (2 + 2) / 9 = 0.4444
         writeTrajectory(trajectoryRoot, 'res:agent', [
             decision('2026-05-31T17:31:00.000Z', 'completion_action'),
             decision('2026-05-31T17:32:00.000Z', 'brain_goal', { planChange: { id: 'goal:harvest', steps: 3 } }),
@@ -98,6 +99,7 @@ describe('inference health audit', () => {
             decision('2026-05-31T17:34:00.000Z', 'empty_completion_salvaged_lenient'),
             decision('2026-05-31T17:35:00.000Z', 'empty_completion_think_only_no_answer'),
             decision('2026-05-31T17:36:00.000Z', 'thinking_cancelled'),
+            decision('2026-05-31T17:36:30.000Z', 'request_timeout'),
             decision('2026-05-31T17:37:00.000Z', 'empty_completion_schema_mismatch'),
             decision('2026-05-31T17:38:00.000Z', 'empty_completion'),
             // planning: 4 attributable actions, 3 carry a goalId
@@ -131,19 +133,19 @@ describe('inference health audit', () => {
 
         // only res:agent + res:hero counted
         expect(report.activeResidents).toBe(2);
-        expect(report.brainEligibleDecisions).toBe(12);
+        expect(report.brainEligibleDecisions).toBe(13);
 
-        // aggregate breakdown: agent(2,2,1,1,1,1) + hero(3,0,0,0,0,1)
+        // aggregate breakdown: agent(2,2,1,2,1,1) + hero(3,0,0,0,0,1)
         expect(report.breakdown).toEqual({
             clean: 5,
             recovered: 2,
             think_only_no_answer: 1,
-            thinking_cancelled: 1,
+            thinking_cancelled: 2,
             schema_mismatch: 1,
             truly_empty: 2,
         });
-        // headline: (5 + 2) / 12 = 0.5833
-        expect(report.usableBrainDecisionRate).toBe(0.5833);
+        // headline: (5 + 2) / 13 = 0.5385
+        expect(report.usableBrainDecisionRate).toBe(0.5385);
         expect(report.hasBrainSignal).toBe(true);
 
         // planning aggregate: agent 3/4 + hero 1/1 = 4/5
@@ -155,13 +157,13 @@ describe('inference health audit', () => {
 
         const agent = report.residentSlices.find(s => s.resident === 'res:agent');
         expect(agent).toBeDefined();
-        expect(agent!.brainEligibleDecisions).toBe(8);
-        expect(agent!.usableBrainDecisionRate).toBe(0.5);
+        expect(agent!.brainEligibleDecisions).toBe(9);
+        expect(agent!.usableBrainDecisionRate).toBe(0.4444);
         expect(agent!.breakdown).toEqual({
             clean: 2,
             recovered: 2,
             think_only_no_answer: 1,
-            thinking_cancelled: 1,
+            thinking_cancelled: 2,
             schema_mismatch: 1,
             truly_empty: 1,
         });

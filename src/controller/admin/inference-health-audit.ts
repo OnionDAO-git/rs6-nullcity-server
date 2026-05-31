@@ -122,6 +122,7 @@ const INFERENCE_DECISION_CAUSES = new Set([
     'candidate_fallback',
     'completion_parse_failed',
     'plan_generated',
+    'request_timeout',
     'thinking_cancelled',
     'thinking_watchdog_timeout',
     'brain_timeout_fallback',
@@ -144,7 +145,12 @@ export function classifyDecisionCause(rawCause: string | undefined): DecisionHea
         return 'truly_empty';
     }
 
-    if (cause === 'thinking_cancelled' || cause === 'thinking_watchdog_timeout' || cause === 'brain_timeout_fallback') {
+    if (
+        cause === 'thinking_cancelled' ||
+        cause === 'thinking_watchdog_timeout' ||
+        cause === 'brain_timeout_fallback' ||
+        cause === 'request_timeout'
+    ) {
         return 'thinking_cancelled';
     }
 
