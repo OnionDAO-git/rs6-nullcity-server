@@ -9839,7 +9839,8 @@ describe('HybridAgentThinkingModule', () => {
                 { kind: 'say', text: 'Alice gave me a tinderbox, and I promised Codex shrimp.', voiceSource: 'inference' },
             ]);
             const prompt = llm.complete.mock.calls[0]?.[0].prompt;
-            expect(prompt).toContain('Recent Library memories');
+            expect(prompt).toContain('Memory:');
+            expect(prompt).toContain('Persistent resident memory');
             expect(prompt).toContain('alice@onion');
             expect(prompt).toContain('promised to cook shrimp for Codex');
         });

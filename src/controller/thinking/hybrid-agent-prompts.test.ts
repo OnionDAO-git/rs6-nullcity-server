@@ -93,10 +93,10 @@ describe('hybrid agent prompts', () => {
         expect(prompt).toContain('Do not repeat the same failed action');
     });
 
-    it('injects recent Library memories into Brain and Body prompts', () => {
+    it('injects prompt-visible Memory blocks into Brain and Body prompts', () => {
         const memories = [
             'Patron gift from alice@onion: rs:tinderbox (2026-05-22 10:00:00)',
-            'say: I promised to cook shrimp for Codex. at 2026-05-22 11:00:00',
+            'Fact memory (routes.md): - 2026-05-22T11:00:00.000Z Codex taught me the Varrock west bank route.',
         ];
         const brain = buildBrainPrompt({
             soul: testSoul(),
@@ -113,9 +113,12 @@ describe('hybrid agent prompts', () => {
         });
 
         for (const prompt of [brain, body]) {
-            expect(prompt).toContain('Recent Library memories');
+            expect(prompt).toContain('Memory:');
+            expect(prompt).toContain('Persistent resident memory');
             expect(prompt).toContain('alice@onion');
-            expect(prompt).toContain('cook shrimp for Codex');
+            expect(prompt).toContain('Fact memory (routes.md)');
+            expect(prompt).toContain('Varrock west bank route');
+            expect(prompt).not.toContain('Recent Library memories');
         }
     });
 

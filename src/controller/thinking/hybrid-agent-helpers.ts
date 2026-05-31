@@ -2592,7 +2592,8 @@ export function promptMemorySection(memories: string[], role: 'brain' | 'body'):
         return '';
     }
     return [
-        'Recent Library memories and resident notes:',
+        'Memory:',
+        'Persistent resident memory: qmd facts, Library notes, patron events, route/social promises, and unfinished story threads.',
         role === 'brain'
             ? 'Use these as continuity: keep promises, remember patrons/players, and bias goal choice toward unfinished story threads.'
             : 'Use these as continuity: if you speak or act, respect recent promises, patrons, and unfinished player requests.',
