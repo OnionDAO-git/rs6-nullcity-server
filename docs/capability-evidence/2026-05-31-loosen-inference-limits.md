@@ -249,3 +249,90 @@ grep -oE 'thinking_cancelled(:[a-z_:]+)?|brain_[a-z_]+|empty_completion(_[a-z_]+
 # thinking_cancelled:interrupted_by:trade_request / :addressed_by_chat would be a
 # non-hybrid resident and is closed by the spark/hooks.ts diff-spec above.
 ```
+
+---
+
+## S-INFER-6 — the spark decision loop only lets SURVIVAL abort the in-flight Brain
+
+### The last brain-cancellation source (root-caused from live data)
+
+Live inference audit: **525/777 = 68%** of brain decisions ended
+`thinking_cancelled:interrupted_by:trade_request | addressed_by_chat`. Root
+cause: `Spark.considerInterrupt` (`src/controller/spark/spark.ts`) is the gate
+the runtime calls (`resident-runtime.ts:518`) when a brain deliberation is
+in-flight; for the `SparkThinkingModule` path it decides whether a newly-won
+hook supersedes the in-flight Brain via `abortInflight(\`interrupted_by:${winner.id}\`)`.
+With 23 social residents, non-survival hooks (`trade_request`, `addressed_by_chat`)
+fire constantly and were aborting the slow (~40s qwopus) Brain before it finished.
+
+Architecture intent (maintainer-confirmed): the Brain is a deliberate planner
+that should run to completion; only **SURVIVAL** events may abort it. The Body +
+Nervous System handle everything else in real time without killing the Brain.
+This generalizes S-INFER-4/5 (which removed `interruptThinking` at the nervous
+layer) to the spark decision loop — same principle: **only survival aborts the
+Brain.**
+
+### What was already in tree (HEAD 90c377d2, "preserve brain deliberation through reflexes")
+
+The bulk of the gate already landed before this packet:
+
+- `spark.ts` `considerInterrupt` already short-circuits on the winner's interrupt
+  flag: `if (!winner?.hook.interrupt || winner.priority < this.interruptionMargin()) return false;`
+  — non-survival winners (`interrupt:false`) never reach `abortInflight`.
+- `hooks.ts`: `addressed_by_chat` and `trade_request` were flipped
+  `interrupt: true → false`.
+- `resident-runtime.ts`: the nervous-reflex `thinking.stop` was removed.
+
+### S-INFER-6 fix (this packet)
+
+1. **`hooks.ts`** — `attention_empty` (priority 100, the dying-resident hook) had
+   **no `interrupt` flag**, so under the now-correct gate it would NOT abort an
+   in-flight Brain even though it is a survival event. Set `interrupt: true` so the
+   survival set is complete and consistent: `took_damage`, `death_seen`,
+   `attention_empty` may abort; everything else preserves the Brain.
+
+2. **Behavioral coverage (was missing)** — added
+   `src/controller/spark/spark-interrupt.test.ts`: with a real in-flight mailbox
+   request (parked `llm.complete` promise), `considerInterrupt` is probed mid-
+   deliberation:
+   - `trade_request` winner → returns `false`, in-flight Brain preserved.
+   - `addressed_by_chat` winner → returns `false`, preserved.
+   - `took_damage` winner → returns `true`, Brain aborted (survival).
+   - `death_seen` winner → returns `true`, aborted (survival).
+   - `attention_empty` winner (attention drained to 0) → returns `true`, aborted
+     (survival) — this was the red test that drove fix #1.
+   - no in-flight Brain → `false` (behavior unchanged).
+
+3. **Flag invariant** — extended `hook-evaluator.test.ts` with an S-INFER-6 test
+   asserting the full partition: survival hooks (`took_damage`, `death_seen`,
+   `attention_empty`) = `interrupt:true`; non-survival (`addressed_by_chat`,
+   `trade_request`, `new_actor_or_chunk`, `idle_reflection`) = `interrupt` false
+   or unset.
+
+The non-survival hook's own body/reflex action still proceeds via the normal
+Body/Nervous path — it simply no longer kills the Brain.
+
+### Gates
+
+`npm run check:no-ui` clean. `npm run fin` = 241 suites / 3474 tests PASS
+(typecheck + biome lint/format clean). Out-of-scope biome auto-format of
+`benchmarks/tasks/goal-follow-through-5m.ts` was reverted (not staged).
+
+### Honesty / live-verify (PENDING controller restart)
+
+Proven by unit test: **non-survival hooks (`trade_request`, `addressed_by_chat`)
+no longer abort the in-flight Brain**; **survival (`took_damage`, `death_seen`,
+`attention_empty`) still aborts**. Live cancel-rate impact is **PENDING a
+controller restart + re-audit** — this packet does NOT claim the cancel rate hit
+zero.
+
+```bash
+# restart controller on the new SHA, warm ~20 min, then re-run the inference audit
+npm run controller:inference-audit
+# expect: thinking_cancelled:interrupted_by:trade_request / :addressed_by_chat → ~0,
+# usable-brain-rate ~95%+ even under heavy social activity (23 residents).
+grep -oE 'thinking_cancelled(:[a-z_:]+)?' <trajectory> | sort | uniq -c
+# expect ZERO interrupted_by:trade_request / interrupted_by:addressed_by_chat.
+# Any residual interrupted_by:took_damage / :death_seen / :attention_empty is
+# CORRECT (survival aborts are intended).
+```

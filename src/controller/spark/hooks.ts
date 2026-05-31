@@ -27,6 +27,10 @@ export const systemHooks: HookDefinition[] = (
             id: 'attention_empty',
             priority: 100,
             condition: { kind: 'attention_lte', value: 0 },
+            // Survival: a fully-drained resident is dying. May abort the in-flight
+            // Brain (S-INFER-6: only interrupt:true hooks supersede an in-flight
+            // deliberation; trade_request/addressed_by_chat are interrupt:false).
+            interrupt: true,
         },
         {
             id: 'took_damage',

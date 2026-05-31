@@ -31,6 +31,17 @@ describe('HookEvaluator', () => {
         expect(systemHooks.find(hook => hook.id === 'took_damage')?.interrupt).toBe(true);
         expect(systemHooks.find(hook => hook.id === 'death_seen')?.interrupt).toBe(true);
     });
+
+    it('S-INFER-6: only survival hooks carry interrupt:true; everything else preserves the Brain', () => {
+        // Survival hooks may abort the in-flight Brain.
+        for (const id of ['took_damage', 'death_seen', 'attention_empty']) {
+            expect(systemHooks.find(hook => hook.id === id)?.interrupt).toBe(true);
+        }
+        // Non-survival hooks must NOT abort the in-flight Brain (interrupt false/unset).
+        for (const id of ['addressed_by_chat', 'trade_request', 'new_actor_or_chunk', 'idle_reflection']) {
+            expect(systemHooks.find(hook => hook.id === id)?.interrupt ?? false).toBe(false);
+        }
+    });
 });
 
 function stateAt(tick: number): RuntimeState {
