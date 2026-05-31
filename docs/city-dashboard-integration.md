@@ -192,6 +192,13 @@ NCRI Library events appear in the resident's `timeline.jsonl` so the Storyteller
 
 **Important:** NCRI `itemId` is a real RuneScape item id (positive integer). `redeem-complete` burns real GP item `995` through the city inventory authority before marking the NCRI redeemed. The physical print UI still lives in the dashboard repo; this server owns the queue contract and audit evidence.
 
+**Admin CLI (S-NCRI-4):**
+- `npm run ncri:seed -- --memory-root <path>` creates/approves/lists the three default starter NCRIs: Bronze Sword of First Light (`1277`), Tinderbox of the Flame (`590`), and Small Fishing Net of First Catch (`303`).
+- `npm run ncri:list -- --memory-root <path>` prints records with latest pricing.
+- `npm run ncri:approve -- --memory-root <path> --id <ncri-id> [--admin-notes <text>]` approves one record.
+- `npm run ncri:price -- --memory-root <path> --id <ncri-id> --ap-price <n> --gp-redemption-cost <n> [--set-by <admin>]` appends pricing and lists the record for sale.
+- `npm run ncri:demo-sale -- --memory-root <path> --city-user-id <id> [--fixture-id <fixture-id>]` seeds defaults if needed, buys one default NCRI, and emits an `ncri_sale` event that `npm run storyteller:dry-run -- --memory-root <path>` can digest without a model call.
+
 ## Goal Contracts (S9a)
 
 Resident binary goals. When a goal is marked `achieved`, the service writes a durable `goal_achieved` event to the resident's Library timeline.
