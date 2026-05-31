@@ -123,8 +123,10 @@ describe('normal life audit', () => {
             'starter_fishing_eat_cooked_fish_for_space',
             'direct_chat_trade',
             'agent_keepalive',
+            'hero_keepalive',
         ]);
         expect(report.trackedCauseCounts.agent_keepalive).toBe(0);
+        expect(report.trackedCauseCounts.hero_keepalive).toBe(0);
         expect(Object.keys(report.trackedTimelineCounts)).toEqual([
             'logout',
             'death',
