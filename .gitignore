@@ -9,6 +9,7 @@ node_modules
 /data/controller/memory
 /data/controller/data
 /data/controller/storyteller/live-*/
+/data/controller/storyteller/s-*/
 /data/controller/storyteller/canon/
 /data/controller/storyteller/review/
 /data/controller/storyteller/overseer-ledger.jsonl
