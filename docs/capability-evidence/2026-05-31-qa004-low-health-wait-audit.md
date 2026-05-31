@@ -134,9 +134,41 @@ Results:
 - `check:no-ui`: PASS.
 - `build`: PASS, 815 files compiled.
 
-## Remaining Risk
+## Post-Restart Quick Check
 
-The code guard is not live in the running controller until the controller is restarted onto the rebuilt `dist/` output.
+After commit `d303f627`, the controller was rebuilt and restarted onto the new `dist/` output.
+
+Verification:
+
+```bash
+npm run -s controller:smoke -- --observe-seconds 45 --allow-recent-visible
+npm run -s controller:normal-life-audit -- \
+  --start=2026-05-31T07:19:53.000Z \
+  --end=2026-05-31T07:24:53.000Z \
+  --top=20 \
+  --output-dir=data/benchmarks/capability-qa-2026-05-31/qa004-post-restart-quick-audit
+```
+
+Artifacts:
+
+- `data/benchmarks/capability-qa-2026-05-31/qa004-post-restart-quick-audit/normal_life_audit_20260531T072454Z.json`
+
+Key signals:
+
+| Signal | Value |
+|---|---:|
+| Active residents | 23 |
+| Action attempts | 615 |
+| Successful submissions | 615 |
+| `low_health_heal_wait` actions | 0 |
+| `attack` actions | 15 |
+| `eat` actions | 7 |
+| `low_health_cook_food` actions | 11 |
+| `first_xp` timeline events | 37 |
+
+The quick check is encouraging: after restart, residents were attacking, eating, and cooking for low-health recovery without re-entering the old wait flood.
+
+## Remaining Risk
 
 QA004 should remain open until a longer post-restart ordinary-life audit proves:
 
