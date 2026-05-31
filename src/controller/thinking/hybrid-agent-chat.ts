@@ -69,7 +69,7 @@ import {
 // --- Shared Constants ---
 export const WINDOW_TICKS = 10;
 export const CHAT_REPLIES_PER_WINDOW = 3;
-export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 75_000;
 export const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 export const FOOD_KEY_PATTERN = /(shrimp|bread|fish|meat)/i;
 export const LOW_AP_EXCHANGE_THRESHOLD = 10;

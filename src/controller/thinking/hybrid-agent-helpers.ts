@@ -3248,7 +3248,7 @@ export function observeCompletedLocalGoal(ctx: HelperContext, perception: Hybrid
     cognition.lastGoalShareTick = undefined;
 }
 
-const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
+const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 75_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 
 /**
