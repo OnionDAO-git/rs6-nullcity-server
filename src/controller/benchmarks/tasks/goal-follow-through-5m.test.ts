@@ -44,12 +44,7 @@ describe('verifyGoalFollowThrough5m', () => {
     });
 
     it('fails when fewer than 60% of actions are goal-attributed', () => {
-        const actions = [
-            attempt(SEED_GOAL_ID, 1),
-            attempt(undefined, 2),
-            attempt(undefined, 3),
-            attempt(undefined, 4),
-        ];
+        const actions = [attempt(SEED_GOAL_ID, 1), attempt(undefined, 2), attempt(undefined, 3), attempt(undefined, 4)];
         const outcome = verifyGoalFollowThrough5m({ elapsedMs: 1000, actions });
         expect(outcome.status).toBe('failed');
         expect(outcome.metrics?.goalAttributedActions).toBe(1);
@@ -91,11 +86,7 @@ describe('verifyGoalFollowThrough5m', () => {
     });
 
     it('fails when the final goal is unrelated to the seed', () => {
-        const actions = [
-            attempt(SEED_GOAL_ID, 1),
-            attempt(SEED_GOAL_ID, 2),
-            attempt('completely-different', 3),
-        ];
+        const actions = [attempt(SEED_GOAL_ID, 1), attempt(SEED_GOAL_ID, 2), attempt('completely-different', 3)];
         const outcome = verifyGoalFollowThrough5m({ elapsedMs: 1000, actions });
         expect(outcome.status).toBe('failed');
     });

@@ -299,12 +299,9 @@ describe('benchmark CLI', () => {
     it('can dry-run the goal-follow-through benchmark task', async () => {
         const writes: string[] = [];
 
-        const exitCode = await runBenchmarkCli(
-            ['--task', 'goal-follow-through-5m', '--module', 'onion.runescape.standard', '--dry-run'],
-            {
-                stdout: text => writes.push(text),
-            },
-        );
+        const exitCode = await runBenchmarkCli(['--task', 'goal-follow-through-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
 
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"task":{"id":"goal-follow-through-5m","version":"0.1.0"');

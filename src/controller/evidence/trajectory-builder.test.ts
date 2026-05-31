@@ -109,10 +109,7 @@ describe('TrajectoryBuilder', () => {
 
         builder.recordAction({ kind: 'say', text: 'hi' }, 'request-3');
 
-        const sayLine = readJsonl(session.trajectoryPath).find((l: { kind: string }) => l.kind === 'say') as Record<
-            string,
-            unknown
-        >;
+        const sayLine = readJsonl(session.trajectoryPath).find((l: { kind: string }) => l.kind === 'say') as Record<string, unknown>;
         expect(sayLine).toBeDefined();
         expect('goalId' in sayLine).toBe(false);
     });

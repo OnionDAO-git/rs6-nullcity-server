@@ -227,9 +227,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
      * `getState` is unavailable, so callers degrade gracefully (the goalId
      * tag is simply omitted).
      */
-    private runtimeStateSnapshot():
-        | { tick?: number; cognition?: { activeGoal?: { id?: string } } }
-        | undefined {
+    private runtimeStateSnapshot(): { tick?: number; cognition?: { activeGoal?: { id?: string } } } | undefined {
         const runtime = this.runtime as unknown as {
             getState?: () => { tick?: number; cognition?: { activeGoal?: { id?: string } } };
         };

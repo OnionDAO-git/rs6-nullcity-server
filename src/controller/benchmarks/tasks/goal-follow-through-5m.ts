@@ -188,8 +188,7 @@ export function makeGoalFollowThrough5mBenchmarkTask(now: () => number = () => D
         run: async _context => ({
             status: 'failed' as const,
             score: 0,
-            failureReason:
-                'goal-follow-through-5m requires autonomous mode with a live controller; run with --mode autonomous',
+            failureReason: 'goal-follow-through-5m requires autonomous mode with a live controller; run with --mode autonomous',
             metrics: { totalActions: 0, goalAttributedActions: 0, goalChangeCount: 0, finalGoalIsSeedOrSuccessor: 0 },
         }),
         runAutonomous: async context => observeFollowThrough(context, now),
