@@ -681,6 +681,13 @@ export interface BuildResidentNeedsContextInput {
      * the helper that wires this into `ensureBenchmarkGoal`.
      */
     orientationGoal?: OrientationGoal;
+    /**
+     * Id of the resident's current active goal (`cognition.activeGoal?.id`),
+     * forwarded verbatim into the returned `ResidentNeedsContext` so the
+     * ranker can apply goal-selection hysteresis (S-GOAL-FOLLOW-1 D2).
+     * Undefined when the resident has no active goal yet.
+     */
+    currentActiveGoalId?: string;
 }
 
 /**
@@ -694,5 +701,6 @@ export function buildResidentNeedsContext(input: BuildResidentNeedsContextInput)
         gpEstimate: input.gpEstimate ?? 0,
         hasActiveGoal: input.hasActiveGoal,
         orientationGoal: input.orientationGoal,
+        currentActiveGoalId: input.currentActiveGoalId,
     };
 }

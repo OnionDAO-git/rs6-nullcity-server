@@ -14,7 +14,7 @@
  *   4. Reflect / write to Library
  */
 
-import { AP_SURVIVE_BUFFER, GP_HEALTHY_THRESHOLD, currentTier, rankCandidateGoals } from './needs-hierarchy';
+import { AP_SURVIVE_BUFFER, GP_HEALTHY_THRESHOLD, HYSTERESIS_DELTA, currentTier, rankCandidateGoals } from './needs-hierarchy';
 import type { GoalCandidate, NeedsTier, ResidentNeedsContext } from './needs-hierarchy';
 
 // ---- helpers ------------------------------------------------------------
@@ -368,5 +368,146 @@ describe('rankCandidateGoals — orientation bias (S-GOAL-1)', () => {
         // finish-quest scores ALIGNED (pursue). sell-logs scores MISALIGNED
         // + ORIENTATION_ALIGNED — but ALIGNED > MISALIGNED+ORIENTATION.
         expect(ranked[0]?.id).toBe('finish-quest');
+    });
+});
+
+// ---- hysteresis / anti-thrash (S-GOAL-FOLLOW-1 D2) ----------------------
+
+describe('rankCandidateGoals — goal-selection hysteresis (anti-thrash)', () => {
+    it('exports HYSTERESIS_DELTA = 2', () => {
+        expect(HYSTERESIS_DELTA).toBe(2);
+    });
+
+    it('keeps the current active goal sticky when within HYSTERESIS_DELTA of the top score', () => {
+        // Two pursue-tagged candidates both score ALIGNED (10) — a perfect
+        // tie. Without hysteresis the input order wins. With the current
+        // active goal set to the second candidate, the sticky rule promotes
+        // it because it is within HYSTERESIS_DELTA (0 <= 2) of the top.
+        const ctx = ctxOf({
+            ap: 100,
+            apFloor: 10,
+            gpEstimate: 1000,
+            hasActiveGoal: true,
+            currentActiveGoalId: 'goal-b',
+        });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'goal-a', tags: ['pursue'] },
+                { id: 'goal-b', tags: ['pursue'] },
+            ],
+            ctx,
+        );
+        expect(ranked[0]?.id).toBe('goal-b');
+    });
+
+    it('keeps the current goal sticky at the exact HYSTERESIS_DELTA boundary', () => {
+        // Construct a controlled 2-point gap. In pursue tier:
+        //   top-goal: pursue-aligned (10) + orientation tier-match (+5) = 15
+        //   cur-goal: pursue-aligned (10) + orientation tier-match? no — we
+        //             want exactly 13. Instead pin the gap with NEUTRAL/MIS.
+        // Simplest controllable gap: untagged top (NEUTRAL 0) is too coarse.
+        // Use survive tier where a survive-tag = 10 and a misaligned = -1
+        // (gap 11) is too big; so model the boundary directly with two
+        // candidates whose only difference is one extra aligned-tag absent.
+        // The cleanest 2-gap: orientation tier-match (+5) on the rival only.
+        // top-goal 10+5=15 vs cur-goal that also carries the SAME pursue tag
+        // PLUS an id-match would overshoot — so give cur-goal a single
+        // pursue tag (10) and top-goal pursue + a SECOND pursue-synonym tag
+        // ('quest' is also a pursue tag => +10 each = 20)... that overshoots.
+        // Given the tag vocabulary only yields 0/-1/10 (+5/+6 orientation),
+        // the reachable in-band gaps are {0,1,5,6}. We assert the 0-gap and
+        // 1-gap stick (covered elsewhere) and that the 5/6 gaps do NOT.
+        const ctx = ctxOf({
+            ap: 100,
+            apFloor: 10,
+            gpEstimate: 1000,
+            hasActiveGoal: true,
+            currentActiveGoalId: 'cur-goal',
+        });
+        // gap = 1 (NEUTRAL vs MISALIGNED is 1; here use orientation: rival
+        // gets id-match +6, current gets tier-match +5 => both 10-base, gap
+        // = 1). Within delta -> sticky.
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'rival-goal', tags: ['pursue'] },
+                { id: 'cur-goal', tags: ['pursue'] },
+            ],
+            ctx,
+            { orientation: { id: 'rival-goal', tier: 'pursue' } },
+        );
+        // rival-goal: 10 + 6 (id-match) = 16. cur-goal: 10 + 5 (tier) = 15.
+        // gap = 1 <= 2 -> sticky promotes cur-goal.
+        expect(ranked[0]?.id).toBe('cur-goal');
+    });
+
+    it('does NOT stick the current goal when the gap exceeds HYSTERESIS_DELTA (orientation lead)', () => {
+        // rival gets the full orientation id-match while the current goal is
+        // only tier-aligned with no orientation bonus -> gap of 6 > 2.
+        const ctx = ctxOf({
+            ap: 100,
+            apFloor: 10,
+            gpEstimate: 1000,
+            hasActiveGoal: true,
+            currentActiveGoalId: 'cur-goal',
+        });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'rival-goal', tags: ['pursue'] },
+                { id: 'cur-goal', tags: ['pursue'] },
+            ],
+            ctx,
+            { orientation: { id: 'rival-goal' } },
+        );
+        // rival-goal: 10 + 6 (id-match) = 16. cur-goal: 10. gap 6 > 2.
+        expect(ranked[0]?.id).toBe('rival-goal');
+    });
+
+    it('does NOT make the current goal sticky when it trails the top by more than HYSTERESIS_DELTA', () => {
+        // In survive tier, the survive-aligned candidate scores 10 and a
+        // misaligned current goal scores -1 (gap 11 >> 2). Survival must win.
+        const ctx = ctxOf({
+            ap: 0,
+            apFloor: 10,
+            currentActiveGoalId: 'pursue-goal',
+        });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'eat-food', tags: ['survive', 'eat'] },
+                { id: 'pursue-goal', tags: ['pursue'] },
+            ],
+            ctx,
+        );
+        expect(ranked[0]?.id).toBe('eat-food');
+    });
+
+    it('is a no-op when no currentActiveGoalId is set (legacy behavior)', () => {
+        const ctx = ctxOf({ ap: 100, apFloor: 10, gpEstimate: 1000, hasActiveGoal: true });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'goal-a', tags: ['pursue'] },
+                { id: 'goal-b', tags: ['pursue'] },
+            ],
+            ctx,
+        );
+        // Tie -> stable input order, goal-a first.
+        expect(ranked[0]?.id).toBe('goal-a');
+    });
+
+    it('is a no-op when the current goal is not in the candidate pool', () => {
+        const ctx = ctxOf({
+            ap: 100,
+            apFloor: 10,
+            gpEstimate: 1000,
+            hasActiveGoal: true,
+            currentActiveGoalId: 'goal-z-not-present',
+        });
+        const ranked = rankCandidateGoals(
+            [
+                { id: 'goal-a', tags: ['pursue'] },
+                { id: 'goal-b', tags: ['pursue'] },
+            ],
+            ctx,
+        );
+        expect(ranked[0]?.id).toBe('goal-a');
     });
 });

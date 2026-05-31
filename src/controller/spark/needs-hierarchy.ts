@@ -53,6 +53,17 @@ export interface ResidentNeedsContext {
      * `buildResidentNeedsContext` helper.
      */
     orientationGoal?: OrientationGoal;
+    /**
+     * Id of the goal the resident is CURRENTLY working
+     * (`cognition.activeGoal?.id`), supplied by `ensureBenchmarkGoal`
+     * (S-GOAL-FOLLOW-1 D2). When set, the ranker applies hysteresis: a
+     * candidate whose id equals this value is preferred (made sticky) when
+     * its score is within {@link HYSTERESIS_DELTA} of the top score. This
+     * stops the resident oscillating between two near-tied goals each tick,
+     * which manifests as goal-thrash (a churn of one-action goals that never
+     * finish). When omitted the ranker behaves exactly as before.
+     */
+    currentActiveGoalId?: string;
 }
 
 /**
@@ -167,6 +178,24 @@ const MISALIGNED_PENALTY = -1;
  */
 export const ORIENTATION_ALIGNED_SCORE = 5;
 export const ORIENTATION_ID_MATCH_SCORE = 6;
+
+/**
+ * Score window within which the resident's CURRENT active goal is kept
+ * sticky over a higher-scoring rival (S-GOAL-FOLLOW-1 D2). Justification:
+ * goal-thrash happens when two candidates score within a point or two of
+ * each other and the tie-break flips tick-to-tick (e.g. an aligned
+ * benchmark goal vs. a survival fallback that briefly out-scores it on a
+ * noisy AP reading). Each flip clears goal momentum and re-seeds a fresh
+ * goal, so the resident produces a churn of one-action goals that never
+ * complete. A delta of 2 is the smallest window that absorbs the common
+ * 1-point (NEUTRAL vs MISALIGNED) and 1-orientation-point wobbles while
+ * still letting a genuinely better goal (a full ALIGNED_SCORE=10 jump, or
+ * the 5/6-point orientation bonuses) win decisively. The current goal must
+ * still be *in the candidate pool* and within the window — a goal that has
+ * dropped far down the ranking (e.g. into survive band) is correctly
+ * abandoned.
+ */
+export const HYSTERESIS_DELTA = 2;
 
 /**
  * Soul-level orientation goal supplied to the ranker (S-GOAL-1). Mirrors
@@ -292,6 +321,23 @@ export function rankCandidateGoals(
         }
         return a.idx - b.idx;
     });
+
+    // Hysteresis / anti-thrash (S-GOAL-FOLLOW-1 D2). When the resident has a
+    // current active goal AND that goal is in this ranking within
+    // HYSTERESIS_DELTA of the leader, promote it to the front so the
+    // resident keeps following the goal it already started instead of
+    // flipping to a marginally-higher rival every tick. Pure: this only
+    // reorders the already-computed `decorated` array; scores are unchanged.
+    const currentId = ctx.currentActiveGoalId;
+    if (currentId && decorated.length > 1) {
+        const topScore = decorated[0].score;
+        const currentIdx = decorated.findIndex(entry => entry.goal.id === currentId);
+        if (currentIdx > 0 && topScore - decorated[currentIdx].score <= HYSTERESIS_DELTA) {
+            const [current] = decorated.splice(currentIdx, 1);
+            decorated.unshift(current);
+        }
+    }
+
     return decorated.map(entry => ({
         id: entry.goal.id,
         tier,

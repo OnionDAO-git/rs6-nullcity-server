@@ -2487,6 +2487,10 @@ export function ensureBenchmarkGoal(ctx: HelperContext): void {
         attentionFloor: ctx.options.soul.frontmatter.attentionProfile?.floor,
         hasActiveGoal: Boolean(cognition.activeGoal),
         orientationGoal,
+        // S-GOAL-FOLLOW-1 D2: forward the resident's current active goal id
+        // so the ranker keeps it sticky when a rival candidate scores within
+        // HYSTERESIS_DELTA, preventing tick-to-tick goal thrash.
+        currentActiveGoalId: cognition.activeGoal?.id,
     });
     let goal = benchmark;
     const tier = currentTier(needsContext);

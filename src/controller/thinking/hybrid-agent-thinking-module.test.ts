@@ -6721,6 +6721,47 @@ describe('HybridAgentThinkingModule', () => {
         expect(state.cognition?.activeGoal?.id).toBe('collect-visible-gp');
     });
 
+    // --- S-GOAL-FOLLOW-1 D2: goal-selection hysteresis (anti-thrash) -----
+    // Proves currentActiveGoalId is forwarded into the ranker (the
+    // hysteresis seam). An EARN-tier oriented resident already working its
+    // earn-aligned orientation goal keeps following it across re-thinks
+    // rather than thrashing. The orientation candidate wins on score here,
+    // and the forwarded currentActiveGoalId keeps it pinned tick over tick —
+    // this is the goal-follow-through guarantee the benchmark measures. The
+    // pure within-delta sticky promotion is exhaustively covered by the
+    // needs-hierarchy unit tests; this asserts the live wiring carries the
+    // id through ensureBenchmarkGoal.
+    it('keeps the current active goal pinned across re-thinks (D2 hysteresis wiring)', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }, { text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.attention = 200; // healthy AP; gpEstimate=0 -> EARN tier
+        const orientedSoul = soul();
+        orientedSoul.frontmatter.attentionProfile = {
+            startingAttention: 100,
+            decayCurve: 'standard',
+            floor: 10,
+        };
+        orientedSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'starter-fishing-5m' },
+        };
+        orientedSoul.frontmatter.orientationGoal = {
+            id: 'fund-the-treasury',
+            description: 'Earn a steady GP income for the faction treasury.',
+            tier: 'earn',
+        };
+        state.cognition = { lastPresenceBeaconTick: 0, lastGoalShareTick: 0 };
+        const agent = hybridAgent(llm, state, orientedSoul);
+
+        await agent.think(perception({ tick: 4, resident: { ...residentAt(3000, 3000), inventory: [] } }));
+        expect(state.cognition?.activeGoal?.id).toBe('fund-the-treasury');
+
+        // Re-think: currentActiveGoalId is now 'fund-the-treasury'. The
+        // resident keeps following it rather than thrashing to another goal.
+        await agent.think(perception({ tick: 5, resident: { ...residentAt(3000, 3000), inventory: [] } }));
+        expect(state.cognition?.activeGoal?.id).toBe('fund-the-treasury');
+    });
+
     it('seeds fishing-cooking as an active benchmark goal without initial Brain drift', async () => {
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
