@@ -26,6 +26,10 @@ Concrete pattern from live logs:
 - Gateway failures now resolve the action as `failure` with the gateway reason
   (`target_not_found`, etc.) and `source="action_result"` evidence instead of falling
   through to an empty effect timeout.
+- When the gateway result wins the race, the runtime aborts the losing perception/event
+  wait so stale body waiters do not linger until their original timeout.
+- `ResidentRuntime.stop()` removes its gateway listener and clears buffered action
+  results/waiters so runtime replacement does not leak stale observers.
 - `EffectWaitResult` gained optional `finalReason` so the controller can preserve the
   server's concrete failure reason while still categorizing the effect result as a
   failure.
@@ -35,9 +39,10 @@ Concrete pattern from live logs:
 - `npm test -- --runInBand src/controller/resident-runtime.test.ts -t "gateway action_result failures"`
   - PASS. Regression covers a never-settling perception wait plus a gateway
     `actionResult` failure; trajectory records `failure/target_not_found` with
-    `gateway_action_result` evidence before the watchdog fires.
+    `gateway_action_result` evidence before the watchdog fires, and confirms the
+    losing effect wait signal is aborted.
 - `npm test -- --runInBand src/controller/resident-runtime.test.ts src/controller/actions/action-coordinator.test.ts src/controller/transport/gateway-client.test.ts`
-  - PARTIAL in this sandbox: resident-runtime and action-coordinator suites pass, while `gateway-client.test.ts` fails under loopback bind restriction (`listen EPERM 0.0.0.0`).
+  - PASS: 87/87 tests, including request-id cache eviction and listener cleanup.
 - `npm run check:no-ui`
   - PASS.
 - `npm run typecheck`
