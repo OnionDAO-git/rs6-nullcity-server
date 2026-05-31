@@ -4476,7 +4476,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('combat_bury_looted_bones');
     });
 
-    it('does not stop fighting to bury bones while already in combat', async () => {
+    it('holds the active fight instead of burying bones or issuing a duplicate attack while already in combat', async () => {
         const rat = npc('Rat', 3219, 3201);
         const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
         const state = runtimeState();
@@ -4505,11 +4505,40 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
+        expect(result.actions).toEqual([]);
+        expect(result.cause).toBe('combat_hold');
+        expect(result.nooped).toBe(true);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('still eats before continuing an active fight when hurt and carrying food', async () => {
+        const chicken = npc('Chicken', 3219, 3201);
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3218, 3201),
+                    hp: { current: 3, max: 10 },
+                    combatLevel: 10,
+                    inCombat: true,
+                    combatTarget: chicken,
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [chicken],
+                events: [{ kind: 'hit_taken', from: chicken }],
+            }),
+        );
+
         expect(result.actions).toEqual([
-            { kind: 'attack', target: rat, cause: 'combat_retaliate' },
-            { kind: 'say', text: "I've survived worse than Rat. Let's get this over with." },
+            { kind: 'eat', slot: 0, cause: 'combat_eat_before_retaliating' },
+            { kind: 'say', text: "A bit of food, and I'm ready for more." },
         ]);
-        expect(result.cause).toBe('combat_retaliate');
+        expect(result.cause).toBe('combat_eat_before_retaliating');
+        expect(llm.complete).not.toHaveBeenCalled();
     });
 
     it('eats before continuing combat training when hurt and carrying food', async () => {
@@ -8924,14 +8953,17 @@ describe('HybridAgentThinkingModule', () => {
                     hp: { current: 10, max: 10 },
                     combatLevel: 10,
                     inCombat: true,
+                    combatTarget: goblinHurt,
                 },
                 npcs: [goblinHurt],
                 events: [{ kind: 'hit_taken', from: goblinHurt }],
             }),
         );
 
-        // Should attack but NOT say any narration phrase since combatEpisodeNarrated is true
-        expect(result2.actions).toEqual([{ kind: 'attack', target: goblinHurt, cause: 'combat_retaliate' }]);
+        // Should neither re-issue the active attack nor repeat narration while already engaged.
+        expect(result2.actions).toEqual([]);
+        expect(result2.cause).toBe('combat_hold');
+        expect(result2.nooped).toBe(true);
     });
 
     it('F5-T7 (Episode Cooldown & Reset): Combat ends, then attacked again. Assert new narration emits.', async () => {

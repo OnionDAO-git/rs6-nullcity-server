@@ -366,6 +366,8 @@ export function combatReaction(ctx: HelperContext, perception: HybridPerception)
             target.combatLevel > perception.resident.combatLevel + 5)
     ) {
         action = { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' };
+    } else if (sameCombatActor(target, perception.resident?.combatTarget ?? undefined) && inCombat) {
+        return { actions: [], cause: 'combat_hold' };
     } else {
         action = { kind: 'attack', target, cause: 'combat_retaliate' };
     }
@@ -1165,6 +1167,13 @@ function selectPreferredAggressor(aggressors: Actor[], residentPos: Pos): Actor 
         return distA - distB;
     });
     return sorted[0];
+}
+
+function sameCombatActor(left: Actor | undefined, right: Actor | undefined): boolean {
+    if (!left || !right) {
+        return false;
+    }
+    return left.id === right.id;
 }
 
 function classifyCombatDecision(
