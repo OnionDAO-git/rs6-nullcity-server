@@ -316,6 +316,93 @@ describe('hybrid agent prompts', () => {
         });
     });
 
+    describe('brain prompt size budget (S-INFER-3)', () => {
+        // A dense embassy scene: 598 floor objects + 40 NPCs + 60 ground items, plus a
+        // hot chat event. This is the live shape that produced perceptionBytes:113477
+        // and request_timeout/empty brain decisions on a local thinking model.
+        function heavyPerception(): Perception {
+            const objects = Array.from({ length: 598 }, (_, i) => ({
+                objectId: 1276 + (i % 40),
+                position: { x: 3200 + (i % 30), y: 3200 + Math.floor(i / 30), level: 0 },
+                orientation: i % 4,
+            }));
+            const npcs = Array.from({ length: 40 }, (_, i) => ({
+                id: `npc:${i}`,
+                kind: 'npc',
+                name: `Goblin ${i}`,
+                position: { x: 3210 + i, y: 3215, level: 0 },
+                hpFraction: 1,
+                combatLevel: 2,
+            }));
+            const worldItems = Array.from({ length: 60 }, (_, i) => ({
+                itemId: 526 + (i % 10),
+                amount: 1,
+                position: { x: 3208 + i, y: 3220, level: 0 },
+            }));
+            return {
+                tick: 12345,
+                resident: {
+                    id: 'res:agent',
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 7, max: 10 },
+                    combatLevel: 3,
+                    inCombat: false,
+                    inventory: Array.from({ length: 28 }, (_, s) => (s < 5 ? { itemId: 1511 + s, amount: 1 } : null)),
+                },
+                nearby: { players: [], npcs, worldItems, objects },
+                events: [{ kind: 'chat', from: 'player:bob', text: 'hello there friend' }],
+            } as unknown as Perception;
+        }
+
+        it('keeps the assembled Brain prompt well under the timeout budget for a heavy scene', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({
+                    goals: ['reach the embassy', 'train firemaking to 15'],
+                    fears: ['dying alone'],
+                    loves: ['firelight'],
+                }),
+                perception: heavyPerception(),
+                commandPrefix: '::agent',
+                memories: Array.from({ length: 10 }, (_, i) => `Memory entry ${i} about routes and patrons and promises.`),
+            });
+            // The raw perception for this scene is ~110 KB; the OLD prompt was ~18 KB
+            // (12 KB of it blind-sliced floor objects). Assert the assembled prompt now
+            // fits a budget a 20s-timeout thinking model can actually ingest + answer.
+            expect(Buffer.byteLength(prompt, 'utf8')).toBeLessThan(16_000);
+        });
+
+        it('preserves the survival spine and goal in a heavy scene (trims breadth, not the spine)', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoulWith({ goals: ['reach the embassy and stay alive'] }),
+                perception: heavyPerception(),
+                commandPrefix: '::agent',
+            });
+            // Resident state survives.
+            expect(prompt).toContain('"hp"');
+            expect(prompt).toContain('"inventory"');
+            // Nearby NPCs and ground items survive (not crowded out by floor objects).
+            expect(prompt).toContain('"npcs"');
+            expect(prompt).toContain('"worldItems"');
+            // Recent chat event survives.
+            expect(prompt).toContain('hello there friend');
+            // Soul goal survives.
+            expect(prompt).toContain('reach the embassy and stay alive');
+        });
+
+        it('caps nearby floor objects so they cannot dominate the prompt', () => {
+            const prompt = buildBrainPrompt({
+                soul: testSoul(),
+                perception: heavyPerception(),
+                commandPrefix: '::agent',
+            });
+            // 598 objects in the scene; the prompt must NOT serialize all of them.
+            const objectIdMatches = prompt.match(/"objectId"/g) ?? [];
+            expect(objectIdMatches.length).toBeLessThanOrEqual(25);
+            // The brain is told the scene is denser than shown.
+            expect(prompt).toContain('elidedCount');
+        });
+    });
+
     describe('AP/GP economy knowledge injection', () => {
         it('Brain prompt includes AP life-force knowledge when gameSkill section contains it', () => {
             const prompt = buildBrainPrompt({

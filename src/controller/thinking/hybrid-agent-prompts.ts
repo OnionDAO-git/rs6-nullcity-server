@@ -3,6 +3,7 @@ import type { Soul, SoulArchetype, SoulFrontmatter } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { bodyPlaybookPrompt, brainPlaybookPrompt } from './runebench-playbook';
+import { DEFAULT_PERCEPTION_SUMMARY_BUDGET_CHARS, renderBudgetedPerception } from '../llm/prompt-budget';
 
 export interface BrainPromptInput {
     soul: Soul;
@@ -106,13 +107,35 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
 const MAX_PROMPT_MEMORIES = 6;
 const MAX_PROMPT_MEMORY_CHARS = 360;
 
+// S-INFER-3: the brain prompt's Perception section used to be a blind char-slice
+// of the upstream `compressed` blob (~110-113 KB raw for a dense embassy scene),
+// front-loaded almost entirely with floor `nearby.objects` and crowding out the
+// survival spine (resident HP/inventory, nearby NPCs/items, chat/combat events).
+// A local thinking model could not ingest+reason+answer that within its 20s
+// timeout. We now build a BOUNDED, STRUCTURED summary: the resident's own state
+// and recent events are kept intact and each nearby-entity list is capped to the
+// closest N. The old compressed string is only a fallback when the structured
+// `nearby`/`resident` fields are absent, and even then it is capped.
+const COMPRESSED_PERCEPTION_FALLBACK_CHARS = DEFAULT_PERCEPTION_SUMMARY_BUDGET_CHARS;
+
 function summarizePerception(perception: Perception): string {
-    const compressed = typeof perception.compressed === 'string' ? perception.compressed : undefined;
-    if (compressed) {
-        return compressed.slice(0, 12000);
+    if (hasStructuredPerception(perception)) {
+        return renderBudgetedPerception(perception);
     }
 
-    return JSON.stringify(perception, null, 2).slice(0, 12000);
+    const compressed = typeof perception.compressed === 'string' ? perception.compressed : undefined;
+    if (compressed) {
+        return compressed.slice(0, COMPRESSED_PERCEPTION_FALLBACK_CHARS);
+    }
+
+    return renderBudgetedPerception(perception);
+}
+
+function hasStructuredPerception(perception: Perception): boolean {
+    const record = perception as Record<string, unknown>;
+    return (
+        (typeof record.nearby === 'object' && record.nearby !== null) || (typeof record.resident === 'object' && record.resident !== null)
+    );
 }
 
 function memorySection(memories: string[] | undefined, role: 'brain' | 'body'): string {
