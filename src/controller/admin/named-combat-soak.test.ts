@@ -219,6 +219,29 @@ describe('named combat soak verifier', () => {
         });
     });
 
+    it('does not treat ordinary scout copy that mentions stopping when hurt as low-health refusal', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            entries: [
+                log({
+                    kind: 'say',
+                    text: 'I am scouting. Nearby I see 4 NPCs and 10 players at 3215,3212. Goal: Train combat on safe low-level NPCs and stop when hurt.',
+                }),
+            ],
+            events: [],
+            commandSubmitted: 1,
+            perceptionCount: 2,
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('No ordinary safe attack');
+        expect(outcome.metrics).toMatchObject({
+            lowHealthRefusals: 0,
+            safeAttackActions: 0,
+        });
+    });
+
     it('fails if a death event appears after combat starts', () => {
         const outcome = verifyNamedCombatSoakEvidence({
             resident: 'res:qa-survivor',

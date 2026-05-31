@@ -2215,12 +2215,12 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: { x: 3222, y: 3218, level: 0 },
-            range: 6,
+            range: 1,
             cause: 'combat_seek_safe_target',
         });
     });
 
-    it('seeks the Lumbridge courtyard from the RuneScape Guide area instead of the eastern fallback', () => {
+    it('seeks the combat route entry from the RuneScape Guide area when no targets are visible', () => {
         const action = combatTrainingAction(
             perception({
                 resident: { position: { x: 3227, y: 3238, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
@@ -2230,7 +2230,70 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: { x: 3222, y: 3218, level: 0 },
-            range: 6,
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('continues into the combat waypoint when loose prayer range would still hide targets', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3216, y: 3212, level: 0 }, hp: { current: 6, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('advances to the next combat waypoint when the current waypoint has no safe targets', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3222, y: 3218, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3230, y: 3226, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('uses an intermediate route step instead of a far goblin-field jump from the courtyard', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3225, y: 3223, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+            undefined,
+            20,
+            { 'target:3222,3218,0': 19 },
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3230, y: 3226, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('continues forward through combat route waypoints instead of backtracking after an intermediate step', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3230, y: 3226, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3238, y: 3230, level: 0 },
+            range: 1,
             cause: 'combat_seek_safe_target',
         });
     });
@@ -2249,7 +2312,7 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: { x: 3222, y: 3218, level: 0 },
-            range: 6,
+            range: 1,
             cause: 'combat_seek_safe_target',
         });
     });
@@ -2327,6 +2390,19 @@ describe('explorationAction', () => {
             }),
         );
         expect(action).toEqual({ kind: 'interact', target: guide, option: 'talk-to', cause: 'explore_talk_to_npc' });
+    });
+
+    it('skips defeated NPCs while choosing exploration conversation targets', () => {
+        const defeatedMan = npc('Man', 100, 100);
+        defeatedMan.hpFraction = 0;
+        const livingGuide = npc('RuneScape Guide', 105, 100);
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [defeatedMan, livingGuide] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: livingGuide.position, range: 1, cause: 'explore_talk_to_npc' });
     });
 
     it('moves toward a far-away NPC instead of talking', () => {

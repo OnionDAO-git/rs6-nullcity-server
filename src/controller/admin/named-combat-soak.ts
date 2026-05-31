@@ -372,7 +372,12 @@ function isSuccessfulActionResult(result: Record<string, unknown> | undefined): 
 
 function isLowHealthRefusal(entry: NamedCombatSoakLogEntry): boolean {
     const action = entry.action;
-    return action?.kind === 'say' && /(health is too low|low health|too weak|hurt)/i.test(String(action.text || action.cause || ''));
+    return (
+        action?.kind === 'say' &&
+        /(health is too low|low health|too (?:weak|hurt)|hurt to (?:fight|start combat|continue)|cannot fight while hurt)/i.test(
+            String(action.text || action.cause || ''),
+        )
+    );
 }
 
 function isSurvivalCause(cause: unknown): boolean {

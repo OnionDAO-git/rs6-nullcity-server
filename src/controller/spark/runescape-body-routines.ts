@@ -215,6 +215,9 @@ export const EXPLORATION_PATROL_MAX_DISTANCE = 12;
 /** Range (in tiles) within which a prayer-training waypoint is considered reached. */
 export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
 
+/** Combat needs a tighter arrival radius so residents actually reveal nearby targets. */
+export const COMBAT_TRAINING_WAYPOINT_RANGE = 1;
+
 /** Fixed waypoints the prayer routine walks between when no safe bone source is in sight. */
 export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
     { x: 3222, y: 3218, level: 0 },
@@ -224,6 +227,9 @@ export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
 /** Fixed waypoints the combat routine uses when no safe target is in sight. */
 export const COMBAT_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
     { x: 3222, y: 3218, level: 0 },
+    { x: 3230, y: 3226, level: 0 },
+    { x: 3238, y: 3230, level: 0 },
+    { x: 3245, y: 3234, level: 0 },
     { x: 3249, y: 3238, level: 0 },
 ];
 
@@ -1264,6 +1270,44 @@ function nearestAvailableTrainingWaypoint(
         .sort((a, b) => distance(here, a) - distance(here, b))[0];
 }
 
+function nearestUnreachedTrainingWaypoint(
+    here: BodyPos,
+    waypoints: ReadonlyArray<BodyPos>,
+    reachedRange: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): BodyPos | undefined {
+    return [...waypoints]
+        .filter(
+            waypoint =>
+                distance(here, waypoint) > reachedRange && !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+function nextRouteTrainingWaypoint(
+    here: BodyPos,
+    waypoints: ReadonlyArray<BodyPos>,
+    reachedRange: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): BodyPos | undefined {
+    const reachedIndex = waypoints.reduce((best, waypoint, index) => (distance(here, waypoint) <= reachedRange ? index : best), -1);
+    if (reachedIndex >= 0) {
+        const forward = waypoints
+            .slice(reachedIndex + 1)
+            .find(waypoint => !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick));
+        if (forward) {
+            return forward;
+        }
+    }
+
+    return waypoints.find(
+        waypoint =>
+            distance(here, waypoint) > reachedRange && !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick),
+    );
+}
+
 /** Lower number = higher-priority NPC kill choice for prayer (bone) sourcing. */
 export function boneSourcePriority(actor: BodyActor): number {
     const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
@@ -1445,12 +1489,15 @@ export function combatTrainingAction(
 
     const target = safeCombatTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
-        const waypoint = nearestAvailableTrainingWaypoint(here, COMBAT_TRAINING_WAYPOINTS, targetFailureCooldowns, currentTick);
-        if (!waypoint) {
-            return undefined;
-        }
-        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
-            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
+        const waypoint = nextRouteTrainingWaypoint(
+            here,
+            COMBAT_TRAINING_WAYPOINTS,
+            COMBAT_TRAINING_WAYPOINT_RANGE,
+            targetFailureCooldowns,
+            currentTick,
+        );
+        return waypoint
+            ? { kind: 'move_to', target: waypoint, range: COMBAT_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
             : undefined;
     }
 
@@ -1994,6 +2041,7 @@ export function explorationAction(
             .filter(
                 candidate =>
                     sameLevel(here, candidate.position) &&
+                    candidate.hpFraction !== 0 &&
                     !isFishingSpot(candidate) &&
                     !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
                     !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick) &&
