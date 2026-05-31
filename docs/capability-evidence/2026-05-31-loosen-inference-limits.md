@@ -336,3 +336,111 @@ grep -oE 'thinking_cancelled(:[a-z_:]+)?' <trajectory> | sort | uniq -c
 # Any residual interrupted_by:took_damage / :death_seen / :attention_empty is
 # CORRECT (survival aborts are intended).
 ```
+
+## S-INFER-7 — debounce the Brain: an in-flight deliberation is never superseded by a non-survival trigger
+
+### The 360-cancel evidence (the reason)
+
+Stable-window audit (post S-INFER-4/5/6, controller quiet): **usable-brain-rate
+~60%, `cancelled=360` (~38%)**. The hook-interrupt path was already closed
+(S-INFER-4/5/6) and for the live hybrid qwopus residents the brain can't be
+aborted by hooks at all (`HybridAgentThinkingModule.considerInterrupt()` returns
+`false`). So the residual cancels are the Brain being **re-triggered by the next
+tick/decision cycle before the previous ~40s deliberation completes** — a new
+think supersedes the in-flight one.
+
+### Supersede root cause (the site)
+
+`src/controller/llm/mailbox.ts:20` — `Mailbox.start()` **unconditionally** calls
+`this.abort('replaced_by:' + id)` before installing the new in-flight request. So
+**any new Spark `decide()` that reaches `mailbox.start()` while a deliberation is
+in-flight aborts the in-flight one** (a new think supersedes; the aborted think is
+recorded as `thinking_cancelled`). This is the literal "new think supersedes
+in-flight" supersede.
+
+Two control-flow facts bound the blast radius:
+
+- The **live hybrid Brain** (`HybridAgentThinkingModule`) is already protected at
+  the runtime level: `resident-runtime.ts:514` `if (this.deciding) { … return; }`
+  skips a NEW `think()` while one is in-flight (and `controller-host.ts:487` fires
+  `onPerception` un-awaited per tick, so overlapping ticks DO arrive — the
+  `deciding` guard is what catches them). The hybrid module also doesn't use the
+  Spark `Mailbox`, so it never self-supersedes.
+- The **SparkThinkingModule / basic-resident path** has NO such re-entry guard
+  around `mailbox.start()` — it self-supersedes. That is the residual supersede
+  this packet closes.
+
+`mailbox.ts` is in `llm/*` (out of the allowed-files scope), so the fix is placed
+at the in-scope seam: the Spark decision loop itself.
+
+### The debounce (the fix)
+
+`src/controller/spark/spark.ts`, in `tick()`, immediately **before**
+`mailbox.start()`:
+
+```ts
+// S-INFER-7: while a deliberation is already in-flight, a NEW *non-survival*
+// trigger must NOT supersede it. Skip the new think (no mailbox.start, no abort).
+if (this.mailbox.current() && !winner.hook.interrupt) {
+    endReason = 'hook_noop';
+    return { actions: [], cause: 'brain_inflight_debounced', nooped: true };
+}
+```
+
+Invariants preserved:
+
+- **Survival STILL aborts.** Survival hooks are `HookDefinition.interrupt:true`
+  (`took_damage` / `death_seen` / `attention_empty`, partition made correct in
+  S-INFER-6). They are exempt from the debounce guard (`!winner.hook.interrupt`)
+  and abort the in-flight brain via `considerInterrupt() → abortInflight()`. The
+  life-saving reflex is never blocked.
+- **The Body still runs every tick.** The debounce applies to the Brain tier only.
+  In the live hybrid path the Body runs inside the same `think()` as the Brain and
+  is governed by the runtime `deciding` re-entry guard, which this change does not
+  touch. The Spark `tick()` change only short-circuits a *redundant Brain
+  deliberation*; the first/normal decision of every tick still proceeds. (978
+  spark/thinking/runtime tests stay green — no Body starvation.)
+- **The watchdog still applies.** A brain that runs absurdly long is still stopped
+  by `watchdogFallback() → abortInflight('thinking_watchdog_timeout')`
+  (resident-runtime watchdog timeout = 75s). No hang is introduced — the debounce
+  returns a non-aborting noop synchronously; it never awaits.
+
+### Tests (TDD, `src/controller/spark/spark-debounce.test.ts`, +4)
+
+1. A second non-survival trigger (`trade_request`) during an in-flight brain does
+   NOT abort it: `firstController.signal.aborted === false`, `llm.complete` called
+   only once, the in-flight request is unchanged, and the tick returns
+   `cause: 'brain_inflight_debounced'` (RED before the fix: the tick hung because
+   `mailbox.start()` aborted + re-entered the never-resolving completion).
+2. A survival trigger (`took_damage`) during an in-flight brain STILL aborts it
+   (`considerInterrupt → true`, `signal.aborted === true`).
+3. After the in-flight brain completes, a fresh tick (past the idle-reflection
+   cooldown) starts a new brain think normally (NOT debounced).
+4. The watchdog still aborts a parked in-flight brain (`watchdogFallback`).
+
+### Gates
+
+`npm run check:no-ui` clean. `npm run fin` = 244 suites / 3484 tests PASS
+(typecheck + biome lint/format clean). testsBefore=3480 → testsAfter=3484 (+4).
+
+### Honesty / live-verify (PENDING controller restart)
+
+Proven by unit test: **a non-survival Brain trigger no longer supersedes an
+in-flight deliberation** (no `thinking.stop`, no `abortInflight`, no
+`mailbox.start`); the in-flight brain completes. **Survival still aborts; the Body
+still runs every tick; the watchdog is intact.** Live cancel-rate impact is
+**PENDING a controller restart + re-audit** — this packet does NOT claim the live
+cancel rate dropped.
+
+```bash
+# Deploy the bundled final stack (S-INFER-6 + S-WIKI-1 + S-INFER-7), warm ~20 min,
+# then re-run the inference audit ONCE in a quiet window (no back-to-back restarts).
+npm run controller:inference-audit
+# expect: cancelled → ~0, usable-brain-rate ~90%+.
+grep -oE 'thinking_cancelled(:[a-z_:]+)?|brain_inflight_debounced' <trajectory> \
+  | sort | uniq -c
+# expect: ZERO thinking_cancelled:replaced_by:* (supersede gone); a healthy count
+# of brain_inflight_debounced (the next tick correctly DEFERRED to the running
+# brain instead of cancelling it). Any residual thinking_cancelled:interrupted_by:
+# took_damage / :death_seen / :attention_empty is CORRECT (survival aborts).
+```

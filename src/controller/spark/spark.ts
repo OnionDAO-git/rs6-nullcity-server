@@ -192,6 +192,24 @@ export class Spark {
                 };
             }
 
+            // S-INFER-7: debounce the Brain. The Brain is a deliberate, infrequent
+            // planner (~40s qwopus) that must run to completion; the Body runs every
+            // tick on the current goal. While a deliberation is already in-flight, a
+            // NEW *non-survival* trigger from the next tick/decision cycle must NOT
+            // supersede it — `mailbox.start()` would otherwise abort the in-flight
+            // request (`replaced_by:`), producing a `thinking_cancelled`. Skip the new
+            // think (no mailbox.start, no abort) so the slow deliberation finishes and
+            // only the NEXT think may start after it completes. Survival hooks
+            // (HookDefinition.interrupt:true: took_damage/death_seen/attention_empty)
+            // are exempt — they abort via considerInterrupt() to preserve the
+            // life-saving reflex — and the watchdog still stops a parked brain via
+            // watchdogFallback(). Live residual before this fix: usable-brain-rate
+            // ~60%, cancelled=360 (~38%) from supersede.
+            if (this.mailbox.current() && !winner.hook.interrupt) {
+                endReason = 'hook_noop';
+                return { actions: [], cause: 'brain_inflight_debounced', nooped: true };
+            }
+
             if (this.activePlan) {
                 this.state.previousIntent = remainingIntent(this.activePlan);
                 this.activePlan = undefined;
