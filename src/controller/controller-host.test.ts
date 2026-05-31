@@ -325,6 +325,38 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('can run only the configured cohort when soul discovery is disabled', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => ['res:newcomer']),
+            load: jest.fn((name: string) => soul(name)),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const host = new ControllerHost(
+            {
+                ...config(),
+                residents: ['res:pip'],
+                souls: { ...config().souls, discoverResidents: false },
+            },
+            deps,
+        );
+
+        await host.start();
+
+        expect(gateway.createResident).toHaveBeenCalledTimes(1);
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: 'res:pip',
+            spawnPosition: undefined,
+            initialInventory: undefined,
+            initialEquipment: undefined,
+        });
+        expect(gateway.connectResident).toHaveBeenCalledWith({ name: 'res:pip', observe: true, control: true, onDisconnect: 'idle' });
+        expect(gateway.createResident).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'res:newcomer' }));
+        expect(runtimeCount(host)).toBe(1);
+
+        await host.stop();
+    });
+
     it('passes configured SPARK modules into created runtimes', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
@@ -761,7 +793,7 @@ function config(): ControllerConfig {
         residents: ['res:pip'],
         gateway: { url: 'ws://controller-host.test', controllerId: 'test-controller' },
         inference: { maxConcurrent: 1 },
-        souls: { dir: '/tmp/souls' },
+        souls: { dir: '/tmp/souls', discoverResidents: true },
         memory: { dir: '/tmp/memory', qmdBin: '' },
         logging: { dir: '/tmp/logs', fullPerceptions: false },
         knowledge: { dir: '/tmp/knowledge', enableSuggestions: true, emitStdout: false, storageMode: 'ephemeral' },

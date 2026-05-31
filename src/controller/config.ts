@@ -18,6 +18,7 @@ export interface ControllerConfig {
     };
     souls: {
         dir: string;
+        discoverResidents: boolean;
     };
     memory: {
         dir: string;
@@ -262,6 +263,7 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
         },
         souls: {
             dir: resolveFrom(baseDir, readString(readPath(source, ['souls', 'dir']), './data/souls')),
+            discoverResidents: readBoolean(readPath(source, ['souls', 'discoverResidents']), true),
         },
         memory: {
             dir: resolveFrom(baseDir, readString(readPath(source, ['memory', 'dir']), './data/memory')),
@@ -334,6 +336,7 @@ export function sanitizedControllerConfigSummary(config: ControllerConfig): stri
         `controllerId=${config.gateway.controllerId}`,
         `instanceId=${config.controller.instanceId}`,
         `residents=${config.residents.length}`,
+        `soulDiscovery=${config.souls.discoverResidents ? 'enabled' : 'disabled'}`,
         `knowledgeMode=${config.knowledge.storageMode}`,
         `suggestions=${config.knowledge.enableSuggestions ? 'enabled' : 'disabled'}`,
         `wiki=${config.knowledge.runebenchWikiDir ? 'configured' : 'disabled'}`,

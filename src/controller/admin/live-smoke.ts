@@ -391,13 +391,15 @@ export async function runLiveSmokeCli(argv: string[]): Promise<number> {
 
 function desiredResidentsFromConfig(config: ReturnType<typeof loadControllerConfig>): string[] {
     const residents = new Set(config.residents);
-    try {
-        for (const name of new SoulLoader(config.souls.dir).listResidentNames()) {
-            residents.add(name);
+    if (config.souls.discoverResidents) {
+        try {
+            for (const name of new SoulLoader(config.souls.dir).listResidentNames()) {
+                residents.add(name);
+            }
+        } catch {
+            // Fall back to configured residents; smoke should still run if an
+            // operator points at an older config without a readable SOUL dir.
         }
-    } catch {
-        // Fall back to configured residents; smoke should still run if an
-        // operator points at an older config without a readable SOUL dir.
     }
     return [...residents];
 }

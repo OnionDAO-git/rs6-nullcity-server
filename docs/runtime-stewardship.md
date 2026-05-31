@@ -1,6 +1,6 @@
 # Null City Runtime Stewardship
 
-Last updated: 2026-05-31 14:20 CDT
+Last updated: 2026-05-31 17:11 CDT
 
 This file is the coordination point for running processes on James's machine.
 
@@ -38,6 +38,37 @@ The runtime game session should use the supervised game runner, not the dev
 nodemon runner. The supervised runner starts the compiled game server with a
 larger heap and restarts it after a crash. Rebuild before restarting it so
 `dist/` matches the checked-out source.
+
+## Active resident cohort
+
+The local controller is intentionally capped to a small active cohort while the
+owned inference machines are being benchmarked. Local `controller.yml` is
+gitignored operator config, and on James's machine it currently sets
+`souls.discoverResidents: false`, so the controller runs only the residents
+listed in `residents:` instead of auto-controlling every starter soul file.
+
+Current active cohort:
+
+- `res:agent` — canonical resident / general loop
+- `res:hans` — human-facing hero and patron demo anchor
+- `res:qa-woodcutter` — woodcutting, firemaking, XP and item loops
+- `res:qa-cook` — fishing, cooking, food and eating loops
+- `res:qa-survivor` — survival, combat pressure and flee/recovery loops
+- `res:qa-guardian` — combat/prayer guard behavior
+- `res:qa-trader` — safe trade FSM and human exchange probes
+- `res:qa-banker` — AP/GP economy and banking-adjacent loops
+- `res:qa-social` — chat, commands and non-repeat name-response behavior
+- `res:qa-scout` — movement, exploration, stuck recovery and memory recall
+
+Residents outside this list are not deleted. Their soul files and Library
+history remain in the repo/data store; they are simply not controlled by the
+local runtime cohort. If the dashboard still shows them from gateway history,
+treat them as paused/offline rather than dead.
+
+To add a temporary resident for a benchmark, append it to `controller.yml`
+`residents:` and post a `RUNTIME-REQUEST target=controller` line in
+`docs/agent-status.md`. Do not re-enable broad soul discovery on the shared
+local stack unless James asks for an all-resident soak.
 
 ## Agent restart request protocol
 

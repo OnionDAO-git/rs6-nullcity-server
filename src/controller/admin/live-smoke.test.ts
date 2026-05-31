@@ -865,6 +865,23 @@ describe('live smoke CLI helpers', () => {
         logSpy.mockRestore();
     });
 
+    it('can smoke only the configured cohort when soul discovery is disabled', async () => {
+        const configPath = writeControllerConfig(['res:agent'], { discoverResidents: false });
+        writeSoul('res:mother-anvil');
+        writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
+        writeTrajectory('res:agent', [{ tick: 119, kind: 'action_result', status: 'success' }]);
+        writeResidentState('res:mother-anvil', { tick: 120, lastMeaningfulProgressAt: 119 });
+        writeTrajectory('res:mother-anvil', [{ tick: 119, kind: 'say', text: 'Hot metal will not wait.' }]);
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+        const code = await runLiveSmokeCli(['--config', configPath, '--json']);
+
+        expect(code).toBe(0);
+        const payload = JSON.parse(String(logSpy.mock.calls.at(-1)?.[0])) as { summaries: Array<{ resident: string }> };
+        expect(payload.summaries.map(summary => summary.resident)).toEqual(['res:agent']);
+        logSpy.mockRestore();
+    });
+
     function writeResidentState(resident: string, state: Record<string, unknown>): void {
         const dir = residentDir(resident);
         fs.mkdirSync(dir, { recursive: true });
@@ -877,7 +894,7 @@ describe('live smoke CLI helpers', () => {
         fs.writeFileSync(path.join(trajectoryDir, file), `${entries.map(entry => JSON.stringify(entry)).join('\n')}\n`, 'utf8');
     }
 
-    function writeControllerConfig(residents: string[]): string {
+    function writeControllerConfig(residents: string[], options: { discoverResidents?: boolean } = {}): string {
         const configPath = path.join(memoryDir, 'controller.yml');
         fs.writeFileSync(
             configPath,
@@ -886,7 +903,10 @@ describe('live smoke CLI helpers', () => {
                 residents,
                 gateway: { url: 'ws://127.0.0.1:1234', controllerId: 'test-controller' },
                 inference: { maxConcurrent: 4 },
-                souls: { dir: path.join(memoryDir, 'souls') },
+                souls: {
+                    dir: path.join(memoryDir, 'souls'),
+                    ...(options.discoverResidents === undefined ? {} : { discoverResidents: options.discoverResidents }),
+                },
                 memory: { dir: memoryDir, qmdBin: 'qmd' },
                 logging: { dir: path.join(memoryDir, 'logs'), fullPerceptions: false },
                 knowledge: {

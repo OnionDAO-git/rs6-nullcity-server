@@ -18,12 +18,35 @@ describe('controller config', () => {
         const config = loadControllerConfig(configPath);
 
         expect(config.controller.instanceId).toMatch(/^local-/);
+        expect(config.souls).toEqual({
+            dir: path.join(root, 'data/souls'),
+            discoverResidents: true,
+        });
         expect(config.knowledge).toEqual({
             dir: path.join(root, 'data/knowledge'),
             enableSuggestions: true,
             emitStdout: true,
             storageMode: 'persistent-volume',
             runebenchWikiDir: undefined,
+        });
+    });
+
+    it('can disable starter soul discovery for a configured live cohort', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
+        const configPath = path.join(root, 'controller.yml');
+        fs.writeFileSync(
+            configPath,
+            ['residents:', '  - res:agent', 'souls:', '  dir: ./src/controller/soul/starter-souls', '  discoverResidents: false'].join(
+                '\n',
+            ),
+        );
+
+        const config = loadControllerConfig(configPath);
+
+        expect(config.residents).toEqual(['res:agent']);
+        expect(config.souls).toEqual({
+            dir: path.join(root, 'src/controller/soul/starter-souls'),
+            discoverResidents: false,
         });
     });
 

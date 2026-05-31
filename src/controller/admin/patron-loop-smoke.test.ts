@@ -29,7 +29,7 @@ describe('patron loop smoke CLI', () => {
                 residents: ['res:pip'],
                 gateway: { url: 'ws://127.0.0.1:1234', controllerId: 'test-controller' },
                 inference: { maxConcurrent: 4 },
-                souls: { dir: soulsDir },
+                souls: { dir: soulsDir, discoverResidents: true },
                 memory: { dir: memoryDir, qmdBin: 'qmd' },
                 logging: { dir: path.join(tempDir, 'logs'), fullPerceptions: false },
                 knowledge: { dir: path.join(tempDir, 'knowledge'), enableSuggestions: false, emitStdout: false, storageMode: 'ephemeral' },

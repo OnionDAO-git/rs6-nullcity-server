@@ -34,7 +34,7 @@ describe('Graveyard Substrate & Allocator (Workstream N3)', () => {
 
         (loadControllerConfig as jest.Mock).mockReturnValue({
             memory: { dir: tempDir },
-            souls: { dir: soulsDir },
+            souls: { dir: soulsDir, discoverResidents: true },
         });
     });
 

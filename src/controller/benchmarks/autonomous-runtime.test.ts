@@ -486,7 +486,7 @@ function config(): ControllerConfig {
         residents: [],
         gateway: { url: 'ws://benchmark.test', controllerId: 'test-controller' },
         inference: { maxConcurrent: 1 },
-        souls: { dir: '/tmp/souls' },
+        souls: { dir: '/tmp/souls', discoverResidents: true },
         memory: { dir: '/tmp/memory', qmdBin: '' },
         logging: { dir: '/tmp/logs', fullPerceptions: false },
         knowledge: { dir: '/tmp/knowledge', enableSuggestions: false, emitStdout: false, storageMode: 'ephemeral' },

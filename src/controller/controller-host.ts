@@ -539,7 +539,7 @@ export class ControllerHost {
 
     private refreshDesiredResidents(): void {
         this.desired.clear();
-        const discovered = this.discoveredSoulResidents();
+        const discovered = this.config.souls.discoverResidents ? this.discoveredSoulResidents() : [];
         for (const name of [...this.configuredDesired, ...discovered]) {
             if (!this.paused.has(name)) {
                 this.desired.add(name);

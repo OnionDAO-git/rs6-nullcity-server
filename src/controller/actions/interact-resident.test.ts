@@ -20,7 +20,7 @@ describe('canInteract precondition validation', () => {
         tmpMemoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'test-memory-'));
 
         (loadControllerConfig as jest.Mock).mockReturnValue({
-            souls: { dir: tmpSoulsDir },
+            souls: { dir: tmpSoulsDir, discoverResidents: true },
             memory: { dir: tmpMemoryDir },
         });
     });
