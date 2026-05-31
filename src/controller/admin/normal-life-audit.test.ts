@@ -122,6 +122,9 @@ describe('normal life audit', () => {
             'starter_fishing_cook_catch',
             'starter_fishing_eat_cooked_fish_for_space',
             'direct_chat_trade',
+            'trade_starter_offer',
+            'trade_keepalive',
+            'follow_listen_hold',
             'agent_keepalive',
             'hero_keepalive',
             'faction_landmark_recovery',
@@ -204,6 +207,7 @@ describe('normal life audit', () => {
             action('2026-05-31T12:06:00.000Z', 'use_item_on', 'starter_fishing_cook_catch', true, 460),
             action('2026-05-31T12:07:00.000Z', 'move_to', 'low_health_heal_wait', true, 450),
             action('2026-05-31T12:08:00.000Z', 'move_to', 'combat_resupply_food', true, 440),
+            action('2026-05-31T12:09:00.000Z', 'trade_request', 'trade_starter_offer', true, 430),
         ]);
         writeJsonl(path.join(logsRoot, 'res:qa-beta', 'actions', '2026-05-31.jsonl'), [
             action('2026-05-31T12:00:00.000Z', 'say', 'idle_initiative', true, 100),
@@ -212,6 +216,8 @@ describe('normal life audit', () => {
             action('2026-05-31T12:03:00.000Z', 'say', 'agent_keepalive', true, 97),
             action('2026-05-31T12:04:00.000Z', 'say', 'faction_landmark_recovery', true, 96),
             action('2026-05-31T12:05:00.000Z', 'say', 'hero_keepalive', true, 95),
+            action('2026-05-31T12:06:00.000Z', 'say', 'trade_keepalive', true, 94),
+            action('2026-05-31T12:07:00.000Z', 'say', 'follow_listen_hold', true, 93),
         ]);
 
         writeJsonl(path.join(libraryRoot, 'res-qa-alpha', 'timeline.jsonl'), [
@@ -235,9 +241,9 @@ describe('normal life audit', () => {
             maxTopRows: 1,
         });
 
-        expect(report.actionKindCounts).toEqual([['say', 6]]);
+        expect(report.actionKindCounts).toEqual([['say', 8]]);
         expect(report.trackedActionCounts.city_exchange_ap_gp).toBe(1);
-        expect(report.trackedActionCounts.trade_request).toBe(1);
+        expect(report.trackedActionCounts.trade_request).toBe(2);
         expect(report.trackedActionCounts.attack).toBe(1);
         expect(report.trackedActionCounts.eat).toBe(1);
         expect(report.trackedActionCounts.use_item_on).toBe(1);
@@ -246,6 +252,9 @@ describe('normal life audit', () => {
         expect(report.trackedCauseCounts.agent_keepalive).toBe(1);
         expect(report.trackedCauseCounts.hero_keepalive).toBe(1);
         expect(report.trackedCauseCounts.faction_landmark_recovery).toBe(1);
+        expect(report.trackedCauseCounts.trade_starter_offer).toBe(1);
+        expect(report.trackedCauseCounts.trade_keepalive).toBe(1);
+        expect(report.trackedCauseCounts.follow_listen_hold).toBe(1);
         expect(report.trackedTimelineCounts.city_ap_gp_exchange).toBe(1);
         expect(report.trackedTimelineCounts.trade_completed).toBe(1);
         expect(report.trackedTimelineCounts.first_xp).toBe(1);
@@ -253,7 +262,10 @@ describe('normal life audit', () => {
         expect(report.recurrenceSummary).toMatchObject({
             apGpExchangeActions: 1,
             apGpExchangeEvents: 1,
-            tradeRequests: 1,
+            tradeRequests: 2,
+            tradeStarterOffers: 1,
+            tradeKeepaliveActions: 1,
+            followListenHolds: 1,
             tradeCompleted: 1,
             combatActions: 1,
             eatingActions: 1,
@@ -272,13 +284,16 @@ describe('normal life audit', () => {
         expect(alpha).toBeDefined();
         expect(alpha?.trackedActionCounts.city_exchange_ap_gp).toBe(1);
         expect(alpha?.trackedCauseCounts.combat_resupply_food).toBe(1);
+        expect(alpha?.trackedCauseCounts.trade_starter_offer).toBe(1);
         expect(alpha?.trackedTimelineCounts.trade_completed).toBe(1);
-        expect(alpha?.actionAttempts).toBe(9);
+        expect(alpha?.actionAttempts).toBe(10);
         expect(alpha?.failedActionSubmissions).toBe(0);
         const beta = report.residentSlices.find(entry => entry.resident === 'res:qa-beta');
         expect(beta?.trackedCauseCounts.agent_keepalive).toBe(1);
         expect(beta?.trackedCauseCounts.hero_keepalive).toBe(1);
         expect(beta?.trackedCauseCounts.faction_landmark_recovery).toBe(1);
+        expect(beta?.trackedCauseCounts.trade_keepalive).toBe(1);
+        expect(beta?.trackedCauseCounts.follow_listen_hold).toBe(1);
     });
 
     it('attributes stuck churn to residents for targeted follow-up fixes', () => {
@@ -450,6 +465,15 @@ describe('normal life audit', () => {
                 gp: 100,
                 requestAttentionActions: 1,
                 lastGpObservedAt: '2026-05-31T12:02:00.000Z',
+            },
+        ]);
+        expect(report.economySummary.aboveRunwayThresholdWithGpResidents).toEqual([
+            {
+                resident: 'res:qa-beta',
+                apLast: 600,
+                gp: 75,
+                requestAttentionActions: 0,
+                lastGpObservedAt: '2026-05-31T12:04:00.000Z',
             },
         ]);
     });

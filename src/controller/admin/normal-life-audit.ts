@@ -41,6 +41,9 @@ export interface NormalLifeAuditRecurrenceSummary {
     apGpExchangeActions: number;
     apGpExchangeEvents: number;
     tradeRequests: number;
+    tradeStarterOffers: number;
+    tradeKeepaliveActions: number;
+    followListenHolds: number;
     tradeCompleted: number;
     tradeCancelled: number;
     combatActions: number;
@@ -97,6 +100,7 @@ export interface NormalLifeAuditEconomySummary {
     minimumExchangeGp: number;
     latestGpByResident: NormalLifeAuditGpObservation[];
     lowApWithGpResidents: NormalLifeAuditGpRunwayResident[];
+    aboveRunwayThresholdWithGpResidents: NormalLifeAuditGpRunwayResident[];
     requestAttentionWithGpResidents: NormalLifeAuditGpRunwayResident[];
 }
 
@@ -193,6 +197,9 @@ const TRACKED_CAUSES = [
     'starter_fishing_cook_catch',
     'starter_fishing_eat_cooked_fish_for_space',
     'direct_chat_trade',
+    'trade_starter_offer',
+    'trade_keepalive',
+    'follow_listen_hold',
     'agent_keepalive',
     'hero_keepalive',
     'faction_landmark_recovery',
@@ -632,6 +639,9 @@ function buildRecurrenceSummary(
         apGpExchangeActions: actionKindCounts.get('city_exchange_ap_gp') || 0,
         apGpExchangeEvents: timelineKindCounts.get('city_ap_gp_exchange') || 0,
         tradeRequests: actionKindCounts.get('trade_request') || 0,
+        tradeStarterOffers: causeCounts.get('trade_starter_offer') || 0,
+        tradeKeepaliveActions: causeCounts.get('trade_keepalive') || 0,
+        followListenHolds: causeCounts.get('follow_listen_hold') || 0,
         tradeCompleted: timelineKindCounts.get('trade_completed') || 0,
         tradeCancelled: timelineKindCounts.get('trade_cancelled') || 0,
         combatActions: actionKindCounts.get('attack') || 0,
@@ -771,6 +781,9 @@ function buildEconomySummary(options: {
     const lowApWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
         return slice.apLast !== undefined && slice.apLast < SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD;
     });
+    const aboveRunwayThresholdWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
+        return slice.apLast !== undefined && slice.apLast >= SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD;
+    });
     const requestAttentionWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
         return (slice.trackedCauseCounts['nervous:request-attention'] || 0) > 0;
     });
@@ -787,6 +800,7 @@ function buildEconomySummary(options: {
         minimumExchangeGp: SELF_INITIATED_EXCHANGE_MIN_GP,
         latestGpByResident,
         lowApWithGpResidents,
+        aboveRunwayThresholdWithGpResidents,
         requestAttentionWithGpResidents,
     };
 }
