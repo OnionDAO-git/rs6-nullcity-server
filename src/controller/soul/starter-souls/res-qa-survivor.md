@@ -22,6 +22,7 @@ spawnPosition:
   y: 3231
   level: 0
 initialInventory:
+  - itemId: 303
   - itemId: 315
   - itemId: 315
   - itemId: 315

@@ -159,6 +159,12 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-forager').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
         });
 
+        it('gives the QA survivor a durable food-resupply tool for combat recovery', () => {
+            expect(loader.load('res:qa-survivor').frontmatter.initialInventory).toEqual(
+                expect.arrayContaining([expect.objectContaining({ itemId: 303 })]),
+            );
+        });
+
         it('uses only synthetic QA residents for the qwopus canary split', () => {
             expect(loader.load('res:agent').frontmatter.model?.endpoint).toBe('default');
             expect(loader.load('res:hans').frontmatter.model?.endpoint ?? 'default').toBe('default');

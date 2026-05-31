@@ -7466,6 +7466,48 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('routes a stranded combat resident with a small net toward starter fishing instead of heal-waiting forever', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs.',
+                createdAtTick: 1,
+            },
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastPresenceBeaconTick: 110,
+            lastGoalShareTick: 110,
+        };
+        const agentSoul = soul();
+        const behavior = agentSoul.frontmatter.behavior;
+        if (!behavior || behavior.kind !== 'hybrid-agent') {
+            throw new Error('Expected hybrid-agent test soul');
+        }
+        agentSoul.frontmatter.behavior = { ...behavior, visibilityAnchor: { x: 3254, y: 3230, level: 0 } };
+        const agent = hybridAgent(llm, state, agentSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: {
+                    ...residentAt(3222, 3218),
+                    hp: { current: 1, max: 10 },
+                    inventory: [{ itemId: 303, key: 'rs:small_fishing_net', amount: 1 }],
+                    inCombat: false,
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.cause).toBe('low_health_fish_food');
+        expect(result.actions).toEqual([
+            { kind: 'move_to', target: { x: 3241, y: 3242, level: 0 }, range: 7, cause: 'low_health_fish_food' },
+        ]);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('emits a heal-wait action when low_health_stranded speech is deduped', async () => {
         // Beacon fires (lastPresenceBeaconTick gap >= interval) but lastLowHealthSpeechTick is recent.
         // Same custom anchor as the "speaks once" test to ensure anchorLooksLikeCombatArea is true.

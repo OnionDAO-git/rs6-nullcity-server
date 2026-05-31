@@ -1531,6 +1531,31 @@ describe('lowHealthRecoveryAction', () => {
         });
     });
 
+    it('retreats instead of taking the fishing route when hurt, threatened, and carrying a net', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+                nearby: {
+                    npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }],
+                },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
     it('nets visible starter fish when hurt, carrying a small net, and no food is available', () => {
         const fishingSpot: BodyActor = {
             id: 'npc:fishing-spot',
@@ -1555,6 +1580,26 @@ describe('lowHealthRecoveryAction', () => {
             kind: 'interact',
             target: fishingSpot,
             option: 'net',
+            cause: 'low_health_fish_food',
+        });
+    });
+
+    it('routes toward the Lumbridge fishing spot when hurt, carrying a net, and no food source is visible', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: 7,
             cause: 'low_health_fish_food',
         });
     });

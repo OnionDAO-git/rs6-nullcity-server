@@ -141,12 +141,7 @@ interface GatewayActionResultObservation {
     observedAt: number;
 }
 
-type GatewayActionResultListener = (
-    residentId: string,
-    requestId: string | undefined,
-    result: ActionResult,
-    cause?: string,
-) => void;
+type GatewayActionResultListener = (residentId: string, requestId: string | undefined, result: ActionResult, cause?: string) => void;
 
 export class ResidentRuntime implements RoutineCapableRuntime {
     readonly name: string;

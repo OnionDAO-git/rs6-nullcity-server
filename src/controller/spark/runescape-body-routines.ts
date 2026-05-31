@@ -772,8 +772,12 @@ function nearLumbridgeStarterFishingDiscovery(here: BodyPos): boolean {
  * this only routes Lumbridge-area anglers back toward the server river
  * spot so they can rediscover a net-capable NPC instead of generic patrolling.
  */
-export function starterFishingRouteAction(perception: BodyHybridPerception): AgentAction | undefined {
-    const visibleSpotAction = starterFishingAction(perception);
+export function starterFishingRouteAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const visibleSpotAction = starterFishingAction(perception, targetFailureCooldowns, currentTick);
     if (visibleSpotAction) {
         return visibleSpotAction;
     }
@@ -1112,7 +1116,7 @@ export function lowHealthRecoveryAction(
         return actionWithCause(cookingAction, 'low_health_cook_food');
     }
 
-    const fishingAction = nearbyThreat ? undefined : starterFishingAction(perception, targetFailureCooldowns, currentTick);
+    const fishingAction = nearbyThreat ? undefined : starterFishingRouteAction(perception, targetFailureCooldowns, currentTick);
     if (fishingAction) {
         return actionWithCause(fishingAction, 'low_health_fish_food');
     }
