@@ -623,7 +623,14 @@ class MockBenchmarkGateway extends EventEmitter implements BenchmarkGateway {
     createResident = jest.fn(async () => ({ name: 'bench:make-fire-5m:run-1', online: false }));
     connectResident = jest.fn(async () => ({ name: 'bench:make-fire-5m:run-1', online: true }));
     submitActionWithRequestId = jest.fn(async () => ({ requestId: 'request-1', ackResult: { ok: true } }));
-    ensureInventoryItem = jest.fn(async () => ({ resident: 'bench:make-fire-5m:run-1', itemId: 317, requestedAmount: 1, previousAmount: 0, amount: 1, addedAmount: 1 }));
+    ensureInventoryItem = jest.fn(async () => ({
+        resident: 'bench:make-fire-5m:run-1',
+        itemId: 317,
+        requestedAmount: 1,
+        previousAmount: 0,
+        amount: 1,
+        addedAmount: 1,
+    }));
     disconnectResident = jest.fn(async () => undefined);
     deleteResident = jest.fn(async () => undefined);
 }

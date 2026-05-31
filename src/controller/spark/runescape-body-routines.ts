@@ -535,17 +535,55 @@ function isLumbridgeCastleKitchenEntryOpen(perception: BodyHybridPerception): bo
     );
 }
 
-function isVisibleCombatThreat(actor: BodyActor): boolean {
+function isVisibleCombatThreat(actor: BodyActor, perception?: BodyHybridPerception): boolean {
     const name = `${actor.key || ''} ${actor.name || ''}`;
-    const combatLevel = Number(actor.combatLevel || 0);
     const alive = actor.hpFraction === undefined || actor.hpFraction > 0;
-    return alive && (combatLevel >= 5 || /\b(goblin|spider|zombie|skeleton|guard)\b/i.test(name));
+    if (!alive) {
+        return false;
+    }
+    if (isCurrentCombatThreat(actor, perception)) {
+        return true;
+    }
+    return /\b(goblin|spider|zombie|skeleton|scorpion|wolf|bear)\b/i.test(name);
 }
 
 function hasNearbyRecoveryThreat(perception: BodyHybridPerception, here: BodyPos): boolean {
     return (perception.nearby?.npcs || []).some(
-        actor => isVisibleCombatThreat(actor) && distance(here, actor.position) <= LOW_HEALTH_RECOVERY_THREAT_RADIUS,
+        actor => isVisibleCombatThreat(actor, perception) && distance(here, actor.position) <= LOW_HEALTH_RECOVERY_THREAT_RADIUS,
     );
+}
+
+function isCurrentCombatThreat(actor: BodyActor, perception: BodyHybridPerception | undefined): boolean {
+    if (!perception) {
+        return false;
+    }
+    const actorKey = actorRefKey(actor);
+    if (!actorKey) {
+        return false;
+    }
+    const target = perception.resident?.combatTarget;
+    if (target && actorRefKey(target) === actorKey) {
+        return true;
+    }
+    return (perception.events || []).some(event => {
+        if (event.kind !== 'hit_taken') {
+            return false;
+        }
+        const from = event.from;
+        return isRecord(from) && actorRefKey(from) === actorKey;
+    });
+}
+
+function actorRefKey(actor: Pick<BodyActor, 'id' | 'key' | 'name'> | Record<string, unknown>): string | undefined {
+    const id = typeof actor.id === 'string' ? actor.id : '';
+    const key = typeof actor.key === 'string' ? actor.key : '';
+    const name = typeof actor.name === 'string' ? actor.name : '';
+    const ref = [id, key, name].filter(Boolean).join('|').toLowerCase();
+    return ref || undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**

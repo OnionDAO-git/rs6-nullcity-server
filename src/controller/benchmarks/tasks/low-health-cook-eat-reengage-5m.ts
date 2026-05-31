@@ -154,6 +154,9 @@ function selectedModuleActionAttempts(
     context: Parameters<NonNullable<BenchmarkTask['runAutonomous']>>[0],
 ): LowHealthCookEatReengage5mActionAttempt[] {
     return context.actionAttempts().filter(attempt => {
+        if (attempt.source === 'thinking') {
+            return false;
+        }
         const module = attempt.sparkModule;
         return module?.id === context.module.id && module.version === context.module.version;
     });
@@ -169,8 +172,7 @@ function startsAtLowHealth(perceptions: Perception[]): boolean {
 }
 
 function initiallyCarriesRawFish(perceptions: Perception[]): boolean {
-    const first = perceptions.at(0);
-    return first ? inventory(first).some(entry => isRawFish(entry)) : false;
+    return perceptions.some(perception => startsPerceptionAtLowHealth(perception) && inventory(perception).some(entry => isRawFish(entry)));
 }
 
 function cookedFishObserved(perceptions: Perception[]): boolean {
@@ -212,6 +214,9 @@ function isCookAction(action: AgentAction): boolean {
         const cause = action.cause || '';
         return /cook/i.test(cause) || cause === 'low_health_cook_food';
     }
+    if (action.kind === 'interact') {
+        return /cook/i.test(action.cause || '');
+    }
     return false;
 }
 
@@ -250,6 +255,11 @@ function residentHp(perception: Perception): { current: number; max: number } {
         current: numericField(hp, 'current', 0),
         max: Math.max(1, numericField(hp, 'max', 1)),
     };
+}
+
+function startsPerceptionAtLowHealth(perception: Perception): boolean {
+    const hp = residentHp(perception);
+    return hp.current > 0 && hp.max > 0 && hp.current / hp.max <= LOW_HP_FRACTION;
 }
 
 function inventory(perception: Perception): Array<Record<string, unknown>> {

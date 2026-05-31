@@ -77,6 +77,63 @@ describe('makeLowHealthCookEatReengage5mBenchmarkTask', () => {
             recoveryChain: 1,
         });
     });
+
+    it('autonomous mode does not count thinking-only attack proposals as safe reengage', async () => {
+        const submitAction = jest.fn();
+        const abortController = new AbortController();
+        abortController.abort();
+        const task = makeLowHealthCookEatReengage5mBenchmarkTask(() => 1_000);
+        const context = taskContext({
+            signal: abortController.signal,
+            submitAction,
+            actionAttempts: [
+                attempt(
+                    { kind: 'use_item_on', itemSlot: 0, target: fire(), cause: 'low_health_cook_food' },
+                    STANDARD_MODULE,
+                    { ok: true },
+                    'success',
+                    'body',
+                ),
+                attempt(
+                    { kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' },
+                    STANDARD_MODULE,
+                    { ok: true },
+                    'success',
+                    'nervous-system',
+                ),
+                attempt(
+                    { kind: 'attack', target: safeNpc('Man'), cause: 'combat_attack_safe_target' },
+                    STANDARD_MODULE,
+                    { ok: true },
+                    undefined,
+                    'thinking',
+                ),
+                attempt(
+                    { kind: 'attack', target: safeNpc('Man'), cause: 'combat_attack_safe_target' },
+                    STANDARD_MODULE,
+                    { ok: true },
+                    'timeout',
+                    'body',
+                ),
+            ],
+            perceptions: [
+                perception({
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    objects: [fire()],
+                    npcs: [safeNpc('Man')],
+                }),
+                perception({ hp: { current: 3, max: 10 }, inventory: [item(315, 'rs:shrimp')], objects: [fire()], npcs: [safeNpc('Man')] }),
+                perception({ hp: { current: 6, max: 10 }, inventory: [], objects: [fire()], npcs: [safeNpc('Man')] }),
+            ],
+            events: [],
+        });
+
+        const outcome = await task.runAutonomous?.(context);
+
+        expect(outcome?.status).not.toBe('passed');
+        expect(outcome?.metrics?.safeReengageAttacks).toBe(0);
+    });
 });
 
 describe('verifyLowHealthCookEatReengage5m', () => {
@@ -131,6 +188,76 @@ describe('verifyLowHealthCookEatReengage5m', () => {
         expect(outcome.failureReason).toContain('No ordered low-health cook/eat/reengage chain');
         expect(outcome.metrics?.safeReengageAttacks).toBe(0);
     });
+
+    it('accepts raw fish observed after the first connect-time perception race', () => {
+        const outcome = verifyLowHealthCookEatReengage5m({
+            elapsedMs: 90_000,
+            actions: [
+                attempt({ kind: 'use_item_on', itemSlot: 0, target: fire(), cause: 'low_health_cook_food' }),
+                attempt({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' }),
+                attempt({ kind: 'attack', target: safeNpc('Man'), cause: 'combat_attack_safe_target' }),
+            ],
+            perceptions: [
+                perception({ hp: { current: 3, max: 10 }, inventory: [], objects: [fire()], npcs: [safeNpc('Man')] }),
+                perception({
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    objects: [fire()],
+                    npcs: [safeNpc('Man')],
+                }),
+                perception({ hp: { current: 3, max: 10 }, inventory: [item(315, 'rs:shrimp')], objects: [fire()], npcs: [safeNpc('Man')] }),
+                perception({ hp: { current: 6, max: 10 }, inventory: [], objects: [fire()], npcs: [safeNpc('Man')] }),
+            ],
+            events: [{ kind: 'hit_dealt', damage: 1, to: safeNpc('Man') }],
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics).toMatchObject({
+            lowHealthStartObserved: 1,
+            rawFishInitiallyCarried: 1,
+            recoveryChain: 1,
+        });
+    });
+
+    it('counts successful range interaction with low-health cook cause as cooking evidence', () => {
+        const outcome = verifyLowHealthCookEatReengage5m({
+            elapsedMs: 90_000,
+            actions: [
+                attempt(
+                    { kind: 'interact', target: range(), option: 'cook', cause: 'low_health_cook_food' },
+                    STANDARD_MODULE,
+                    { ok: true },
+                    'success',
+                ),
+                attempt({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' }, STANDARD_MODULE, { ok: true }, 'success'),
+                attempt(
+                    { kind: 'attack', target: safeNpc('Man'), cause: 'combat_attack_safe_target' },
+                    STANDARD_MODULE,
+                    { ok: true },
+                    'success',
+                ),
+            ],
+            perceptions: [
+                perception({
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp')],
+                    objects: [range()],
+                    npcs: [safeNpc('Man')],
+                }),
+                perception({
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(315, 'rs:shrimp')],
+                    objects: [range()],
+                    npcs: [safeNpc('Man')],
+                }),
+                perception({ hp: { current: 6, max: 10 }, inventory: [], objects: [range()], npcs: [safeNpc('Man')] }),
+            ],
+            events: [{ kind: 'hit_dealt', damage: 1, to: safeNpc('Man') }],
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics?.successfulCookingActions).toBe(1);
+    });
 });
 
 function attempt(
@@ -138,8 +265,9 @@ function attempt(
     sparkModule?: typeof STANDARD_MODULE,
     result: ActionResult = { ok: true },
     finalStatus?: string,
-): { action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult; finalStatus?: string } {
-    return { action, sparkModule, result, finalStatus };
+    source?: string,
+): { action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult; finalStatus?: string; source?: string } {
+    return { action, sparkModule, result, finalStatus, source };
 }
 
 function perception(overrides: {
@@ -183,6 +311,10 @@ function fire(): Record<string, unknown> {
     return { objectId: 2732, key: 'rs:fire', name: 'Fire', position: { x: 3222, y: 3218, level: 0 } };
 }
 
+function range(): Record<string, unknown> {
+    return { objectId: 114, key: 'rs:range', name: 'Range', position: { x: 3221, y: 3218, level: 0 } };
+}
+
 function item(itemId: number, key: string): Record<string, unknown> {
     return { itemId, key, amount: 1 };
 }
@@ -191,7 +323,7 @@ function taskContext(overrides: {
     signal?: AbortSignal;
     submitAction: jest.Mock;
     ensureInventoryItem?: jest.Mock;
-    actionAttempts: Array<{ action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult }>;
+    actionAttempts: Array<{ action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult; source?: string }>;
     perceptions: Perception[];
     events: PerceptionEvent[];
 }): BenchmarkTaskContext {

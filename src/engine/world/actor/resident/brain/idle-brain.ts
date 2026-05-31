@@ -3,12 +3,15 @@ import type { Perception } from '@engine/world/actor/resident/perception/percept
 import type { Brain } from './brain';
 
 const foodKeyPattern = /(food|bread|cake|meat|shrimp|trout|salmon|tuna|lobster|swordfish|shark|manta|karambwan)/i;
+const rawOrBurntFoodPattern = /(^|[:_\s-])(raw|burnt)([:_\s-]|$)/i;
 
 export class IdleBrain implements Brain {
     public decide(perception: Perception): AgentAction[] {
         const hp = perception.resident.hp;
         if (hp.max > 0 && hp.current / hp.max < 0.5) {
-            const foodSlot = perception.resident.inventory.findIndex(item => item?.key && foodKeyPattern.test(item.key));
+            const foodSlot = perception.resident.inventory.findIndex(
+                item => item?.key && foodKeyPattern.test(item.key) && !rawOrBurntFoodPattern.test(item.key),
+            );
             if (foodSlot !== -1) {
                 return [{ kind: 'eat', slot: foodSlot }];
             }

@@ -12,6 +12,34 @@ describe('IdleBrain', () => {
 
         expect(brain.decide(perception({ current: 4, max: 10, inventory: [null, { key: 'bread' }] }))).toEqual([{ kind: 'eat', slot: 1 }]);
     });
+
+    it('does not eat raw cooking ingredients while waiting for the controller', () => {
+        const brain = new IdleBrain();
+
+        expect(
+            brain.decide(
+                perception({
+                    current: 4,
+                    max: 10,
+                    inventory: [{ key: 'rs:raw_shrimp' }, { key: 'rs:tinderbox' }, { key: 'rs:logs' }],
+                }),
+            ),
+        ).toEqual([]);
+    });
+
+    it('skips raw ingredients and eats the first ready food', () => {
+        const brain = new IdleBrain();
+
+        expect(
+            brain.decide(
+                perception({
+                    current: 4,
+                    max: 10,
+                    inventory: [{ key: 'rs:raw_shrimp' }, { key: 'rs:shrimp' }],
+                }),
+            ),
+        ).toEqual([{ kind: 'eat', slot: 1 }]);
+    });
 });
 
 function perception(options: {

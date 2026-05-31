@@ -1504,6 +1504,103 @@ describe('lowHealthRecoveryAction', () => {
         });
     });
 
+    it('makes a cooking fire near passive Lumbridge guards instead of waiting for natural healing', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp'), item(590, 'rs:tinderbox'), item(1511, 'rs:logs')],
+                    inCombat: false,
+                },
+                nearby: {
+                    npcs: [
+                        {
+                            id: 'npc:lumbridge-guard',
+                            kind: 'npc',
+                            key: 'rs:guard',
+                            name: 'Guard',
+                            combatLevel: 21,
+                            hpFraction: 1,
+                            position: { x: 3224, y: 3218, level: 0 },
+                        },
+                    ],
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 1,
+            targetSlot: 2,
+            cause: 'low_health_cook_food',
+        });
+    });
+
+    it('retreats from a passive-looking bystander that just hit the resident', () => {
+        const guard: BodyActor = {
+            id: 'npc:lumbridge-guard',
+            kind: 'npc',
+            key: 'rs:guard',
+            name: 'Guard',
+            combatLevel: 21,
+            hpFraction: 1,
+            position: { x: 3255, y: 3230, level: 0 },
+        };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp'), item(590, 'rs:tinderbox'), item(1511, 'rs:logs')],
+                    inCombat: true,
+                    combatTarget: guard,
+                },
+                nearby: { npcs: [guard] },
+                events: [{ kind: 'hit_taken', from: guard }],
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('does not treat anonymous hit metadata as proof a passive actor is attacking', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp'), item(590, 'rs:tinderbox'), item(1511, 'rs:logs')],
+                    inCombat: false,
+                },
+                nearby: {
+                    npcs: [
+                        {
+                            id: '',
+                            kind: 'npc',
+                            combatLevel: 21,
+                            hpFraction: 1,
+                            position: { x: 3224, y: 3218, level: 0 },
+                        },
+                    ],
+                },
+                events: [{ kind: 'hit_taken', from: {} }],
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 1,
+            targetSlot: 2,
+            cause: 'low_health_cook_food',
+        });
+    });
+
     it('retreats instead of taking a distant cooking route when hurt and threatened', () => {
         const range = { objectId: FIRE_OBJECT_ID, position: { x: 3212, y: 3215, level: 0 } };
         const action = lowHealthRecoveryAction(
