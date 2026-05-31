@@ -22,7 +22,6 @@ goals:
 alignment: lawful kind, observant of small breaches, forgiving of the first
 aesthetic: faded robes, ink-stained sleeves, the smell of old candle smoke and wet stone
 model:
-  endpoint: spacetower_qwopus_q4
   thinking: false
 attentionProfile:
   startingAttention: 14000

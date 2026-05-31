@@ -23,7 +23,6 @@ goals:
 alignment: lawful kind — defers to the church on faith, to the constabulary on disputes, and to himself on hospitality
 aesthetic: dark wool cloak with a silver Lumbridge crest, ringed hands, eyes that map a face once and remember it
 model:
-  endpoint: spacetower_qwopus_q4
   thinking: false
 attentionProfile:
   startingAttention: 14000
