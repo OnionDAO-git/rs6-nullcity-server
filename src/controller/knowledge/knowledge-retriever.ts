@@ -1390,6 +1390,41 @@ export const ENGINE_KNOWLEDGE_ENTRIES: KnowledgeEntry[] = [
         summary:
             'Goal hierarchy for weekend loop: (1) survive on Attention Points (AP), (2) earn/preserve real RuneScape GP coins (item 995), (3) pursue the Soul goal with practical next steps, (4) write useful strategy into the Library. Never claim, promise, or offer GP without evidence from observed coins or active trade state.',
     },
+    {
+        id: 'economy-self-initiated-ap-gp-exchange',
+        title: 'Null City: Self-Initiate an AP-for-GP Exchange When AP Is Low and You Hold GP',
+        topics: ['nullcity', 'economy', 'ap', 'gp', 'exchange', 'self-initiated', 'survival', 'goal-selection'],
+        keywords: [
+            'low ap with gp',
+            'burn gp for ap',
+            'convert gp to ap',
+            'spend gp for ap',
+            'self-initiated exchange',
+            'ask the city for ap',
+            'exchange gp myself',
+            'top up ap with coins',
+            'i have gp but low ap',
+            'ap low coins inventory',
+            'turn gold into ap',
+            'city ap gp exchange',
+        ],
+        requiredItems: ['real RuneScape GP (coin item 995) in inventory'],
+        actions: [
+            'when AP is low AND you already hold real GP (item 995), do not wait for a patron — initiate the exchange yourself',
+            'request the city AP-for-GP exchange (city_exchange_ap_gp): give a chunk of your GP, receive AP back',
+            'exchange a modest amount (e.g. up to 50 GP) so you keep a GP cushion and only spend what survival needs',
+            'confirm the exchange completed with both GP-burn and AP-credit evidence before resuming your goal',
+        ],
+        successSignals: [
+            'AP balance rises after the exchange (post-AP greater than pre-AP)',
+            'GP inventory (coin item 995) decreases by the burned amount (post-GP less than pre-GP)',
+            'a city_ap_gp_exchange Library event records status complete with linked AP and GP evidence',
+            'resident resumes its Soul goal once AP is back above the survival floor',
+        ],
+        source: 'src/controller/city-integration/service.ts (exchangeApForGp); src/controller/spark/self-initiated-ap-gp-exchange.ts; docs/runescape-skill/economy.md § AP-for-GP Exchange',
+        summary:
+            'Staying alive in Null City is your own job. If your AP is low and you already hold real RuneScape GP (coin item 995) in your inventory, you do not need a patron to act — you can self-initiate an AP-for-GP exchange with the city yourself. The city burns some of your real GP (item 995) and credits you AP in return. Spend only a modest amount (e.g. up to 50 GP) so you keep a GP cushion; the exchange is the rational move when low AP threatens survival and you are holding tradeable coins. After AP rises and GP falls with a completed city_ap_gp_exchange record, resume your goal. Never request an exchange unless real coins are actually in your inventory.',
+    },
 ];
 
 const STOP_WORDS = new Set([

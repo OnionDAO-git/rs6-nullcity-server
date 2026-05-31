@@ -862,5 +862,38 @@ describe('RuneScape knowledge retriever', () => {
             expect(entry!.topics).toContain('nullcity');
             expect(entry!.keywords.join(' ')).toMatch(/AP.*GP|exchange|AP for GP/i);
         });
+
+        it('retrieves the self-initiated exchange entry for a low-AP-with-GP query', () => {
+            const results = retrieveKnowledge(
+                ENGINE_KNOWLEDGE_ENTRIES,
+                'my AP is low but I have GP coins in my inventory — can I ask the city to burn GP for AP myself?',
+                { limit: 4, minScore: 1 },
+            );
+
+            const ids = results.map(r => r.entry.id);
+            expect(ids).toContain('economy-self-initiated-ap-gp-exchange');
+        });
+
+        it('self-initiated exchange entry teaches the resident to initiate without waiting for a patron', () => {
+            const entry = ENGINE_KNOWLEDGE_ENTRIES.find(e => e.id === 'economy-self-initiated-ap-gp-exchange');
+            expect(entry).toBeDefined();
+            expect(entry!.topics).toContain('nullcity');
+            expect(entry!.topics).toContain('economy');
+            // Must reference real coin item 995 so the resident only initiates with real GP evidence.
+            expect(entry!.summary).toMatch(/995/);
+            // Must describe self-initiation (the resident requests the exchange, not a patron).
+            expect(entry!.summary).toMatch(/yourself|self|initiate|without waiting|do not need a patron|don't need a patron/i);
+            // Must reference the low-AP-with-GP economic trigger.
+            expect(entry!.summary).toMatch(/low.*AP|AP.*low/i);
+            expect(entry!.summary).toMatch(/GP|gold|coins/i);
+        });
+
+        it('self-initiated exchange entry has a success signal describing a completed burn + AP credit', () => {
+            const entry = ENGINE_KNOWLEDGE_ENTRIES.find(e => e.id === 'economy-self-initiated-ap-gp-exchange');
+            expect(entry).toBeDefined();
+            const signals = (entry!.successSignals || []).join(' ');
+            expect(signals).toMatch(/AP/);
+            expect(signals).toMatch(/GP|gold|coins|995/);
+        });
     });
 });

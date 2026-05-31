@@ -282,6 +282,20 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"low-health-cook-eat-reengage-5m","version":"0.1.0"');
     });
 
+    it('can dry-run the self-initiated AP-for-GP exchange benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'self-initiated-ap-gp-exchange-5m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"self-initiated-ap-gp-exchange-5m","version":"0.1.0"');
+    });
+
     it('can dry-run the equipment-prep benchmark task', async () => {
         const writes: string[] = [];
 
@@ -519,6 +533,7 @@ describe('benchmark CLI', () => {
         expect(output).toContain('"benchmark":{"taskId":"level-up-firemaking-3m"');
         expect(output).toContain('"benchmark":{"taskId":"starter-gp-pickup-3m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-gp-exchange-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"self-initiated-ap-gp-exchange-5m"');
         expect(output).toContain('"benchmark":{"taskId":"low-health-cook-eat-reengage-5m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-gp-library-strategy-5m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-topup-resume-5m"');
