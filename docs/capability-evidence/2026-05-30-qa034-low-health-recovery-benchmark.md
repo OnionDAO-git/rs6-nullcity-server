@@ -11,6 +11,10 @@ Follow-up:
   - engine-side `IdleBrain` no longer eats raw/burnt food while waiting for controller ownership,
   - passive Lumbridge guards no longer suppress low-health cooking,
   - the benchmark ignores thinking-only attack proposals and counts live range `interact` cooking evidence.
+- 2026-05-31 `QA-20260530-037` fixed the post-recovery combat cadence found in the QA036 artifact:
+  - `combatReaction` now emits `combat_hold` instead of re-issuing `combat_retaliate` while already engaged with the same `combatTarget`,
+  - low-health eating/retreating and first-contact retaliation remain covered by focused tests.
+- 2026-05-31 `QA-20260530-038` reran the strict hot-stack benchmark after QA037 and confirmed the ordered recovery chain still passes with no attack/combat-retaliate timeouts.
 
 ## Goal
 
@@ -47,6 +51,10 @@ Add a focused benchmark task that can strictly verify the low-health recovery ch
   - `src/controller/benchmarks/tasks/low-health-cook-eat-reengage-5m.ts`
   - `src/controller/benchmarks/tasks/low-health-cook-eat-reengage-5m.test.ts`
   - Fixed the raw-food idle race, passive-threat false positive, first-perception inventory race, and two verifier false positives/mismatches found in live artifacts.
+- QA037 follow-up (2026-05-31):
+  - `src/controller/thinking/hybrid-agent-helpers.ts`
+  - `src/controller/thinking/hybrid-agent-thinking-module.test.ts`
+  - Suppressed duplicate active-target `combat_retaliate` attacks while preserving survival `eat`/`retreat` and first-contact retaliation.
 
 ## Verification
 
@@ -55,13 +63,14 @@ Focused packet tests (PASS):
 - `npm test -- --runInBand src/controller/benchmarks/tasks/low-health-cook-eat-reengage-5m.test.ts src/controller/benchmarks/cli.test.ts`
 - `npm test -- --runInBand src/controller/benchmarks/benchmark-runner.test.ts src/controller/benchmarks/tasks/low-health-cook-eat-reengage-5m.test.ts`
 - `npm test -- --runInBand src/engine/world/actor/resident/brain/idle-brain.test.ts src/controller/spark/runescape-body-routines.test.ts src/controller/benchmarks/benchmark-runner.test.ts src/controller/benchmarks/tasks/low-health-cook-eat-reengage-5m.test.ts --no-coverage`
+- `npm test -- --runInBand src/controller/thinking/hybrid-agent-thinking-module.test.ts --no-coverage`
 
 Required server gates:
 
 - `npm run check:no-ui` PASS
 - `npm run typecheck` PASS
 - `npm run build` PASS
-- `npm run fin` FAIL in sandbox-only loopback suites (`listen EPERM 0.0.0.0` in `gateway-client.test.ts`)
+- `npm run fin` PASS (`225` suites, `3154` tests)
 
 ## Live Benchmark Proof
 
@@ -90,8 +99,30 @@ Result:
   - body `attack` success with cause `combat_attack_safe_target` and effect evidence.
 - The same run also recorded one later `combat_retaliate` timeout after the pass condition; keep combat cadence/pathing under the broader combat survival issue.
 
+QA038 rerun after the `combat_hold` fix:
+
+- Command: `npm run controller:bench -- --task low-health-cook-eat-reengage-5m --module onion.runescape.standard --mode autonomous --output-dir data/benchmarks/capability-qa-2026-05-30/qa038-low-health-combat-hold-rerun`
+- PASS, score `1`
+- Artifact: `data/benchmarks/capability-qa-2026-05-30/qa038-low-health-combat-hold-rerun/bench_20260531052554_low_health_cook_eat_reengage_5m.json`
+- Resident: `res:bmk_low_hea_01j4s2vo`
+- Metrics:
+  - `lowHealthStartObserved=1`
+  - `rawFishInitiallyCarried=1`
+  - `successfulCookingActions=1`
+  - `eatActions=1`
+  - `hpImprovedAfterEat=1`
+  - `safeReengageAttacks=1`
+  - `combatEvidence=1`
+  - `cookedFishObserved=1`
+  - `recoveryChain=1`
+- Action-attempt audit:
+  - `combat_attack_safe_target` body attack succeeded with effect evidence,
+  - attack/combat-retaliate timeout count was `0`,
+  - one unrelated `continue_move` timeout remains pathing/cadence follow-up, not a duplicate attack failure.
+
 Interpretation:
 
 - Substrate/verifier is implemented, test-covered, and hot-stack-proven.
 - QA035 hardens run setup by seeding required recovery inventory after connect, which removes a known source of false negatives when live residents spawn with drifted inventory.
 - QA036 removes the false-positive paths observed in earlier hot-stack artifacts, so this strict pass requires executed body/nervous-system outcomes rather than thinking-only proposals.
+- QA037/QA038 close the duplicate post-recovery attack timeout observed in the first passing artifact. The strict low-health cook/eat/re-engage chain is now proven; remaining combat-survival work should target broader retreat/pathing cadence and ordinary long-run recurrence.
