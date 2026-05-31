@@ -53,6 +53,7 @@ const DEFAULT_CONNECT_RESIDENT_TIMEOUT_MS = 30_000;
 const DEFAULT_ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_ACTION_QUEUE_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT_ACTIONS = 4;
+const DEFAULT_MAX_EVENT_LISTENERS = 128;
 
 export interface GatewayClientEvents {
     perception: [residentId: string, perception: Perception];
@@ -97,6 +98,7 @@ export class GatewayClient extends EventEmitter {
 
     constructor(private readonly options: GatewayClientOptions) {
         super();
+        this.setMaxListeners(Math.max(this.getMaxListeners(), DEFAULT_MAX_EVENT_LISTENERS));
     }
 
     async connect(): Promise<void> {

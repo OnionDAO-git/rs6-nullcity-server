@@ -18,6 +18,17 @@ describe('GatewayClient', () => {
         server.close(() => done());
     });
 
+    it('allows live resident fan-out listeners without EventEmitter leak warnings', () => {
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            reconnect: false,
+        });
+
+        expect(client.getMaxListeners()).toBeGreaterThanOrEqual(64);
+        client.close();
+    });
+
     it('uses agent protocol frames for request and response correlation', async () => {
         const received = new Promise<unknown>(resolve => {
             server.once('connection', socket => {
