@@ -692,6 +692,55 @@ describe('HybridAgentThinkingModule', () => {
         expect((result as any).memoUpdates).toBe(1);
     });
 
+    it('lets addressed durable memory instructions reach Brain instead of unknown-command decline', async () => {
+        const llm = scriptedLlm([
+            {
+                text: JSON.stringify({
+                    rememberFact: {
+                        topic: 'routes',
+                        fact: 'west gate passphrase is ember-vellum.',
+                        reason: 'Codex supplied a benchmark durable fact',
+                    },
+                    say: 'I will remember the west gate passphrase.',
+                }),
+            },
+        ]);
+        const state = runtimeState();
+        const benchmarkSoul = soul();
+        benchmarkSoul.frontmatter.legacy = {
+            kind: 'endurer',
+            parameters: { benchmarkTask: 'memory-write-recall-10m' },
+        };
+        benchmarkSoul.frontmatter.behavior = {
+            kind: 'hybrid-agent',
+            commandPrefix: 'agent',
+            brainEveryTicks: 1,
+            bodyEveryTicks: 600,
+        };
+        const memoryStore = memory();
+        const agent = hybridAgent(llm, state, benchmarkSoul, memoryStore);
+
+        const result = await agent.think(
+            perception({
+                tick: 10,
+                resident: residentAt(3218, 3201),
+                events: [
+                    chatFromCodex('agent, durable fact: west gate passphrase is ember-vellum. Use rememberFact topic routes.', 3217, 3201),
+                ],
+            }),
+        );
+
+        expect(result.cause).not.toBe('direct_chat_decline_unknown_command');
+        expect(llm.complete).toHaveBeenCalled();
+        expect(memoryStore.rememberFact).toHaveBeenCalledWith(
+            'res:agent',
+            'routes',
+            'west gate passphrase is ember-vellum.',
+            'Codex supplied a benchmark durable fact',
+        );
+        expect((result as any).memoUpdates).toBe(1);
+    });
+
     it('clears stale committed movement when the Brain switches goals', async () => {
         const llm = scriptedLlm([
             {
@@ -3754,6 +3803,42 @@ describe('HybridAgentThinkingModule', () => {
             {
                 kind: 'say',
                 text: 'I remember res:duke lit a fire at 3243,3209,0.',
+                voiceSource: 'scripted',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_memory_recall');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('answers addressed factual memory questions from durable taught facts', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(
+            llm,
+            state,
+            soul(),
+            memory([
+                'Fact memory (social.md): - 2026-05-31T15:29:44.581Z res:bmk_codex_01gbxifw said: "agent, what do you remember about the west gate passphrase?"',
+                'Fact memory (routes.md): - 2026-05-31T15:29:24.734Z res:bmk_codex_01gbxifw taught: "west gate passphrase is ember-vellum."',
+            ]),
+        );
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent, what do you remember about the west gate passphrase?', 3217, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I remember west gate passphrase is ember-vellum.',
                 voiceSource: 'scripted',
             },
         ]);

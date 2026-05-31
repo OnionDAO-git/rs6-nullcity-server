@@ -307,6 +307,27 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
         await driver.stop('test_complete');
     });
 
+    it('gives memory-write-recall-10m urgent cognition cadence and exposes the qmd facts artifact path', async () => {
+        const context = benchmarkContext({
+            task: { id: 'memory-write-recall-10m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },
+        });
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: new FakeGateway() as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        const runtimeOptions = (ResidentRuntime as jest.Mock).mock.calls.at(-1)?.[0];
+        expect(runtimeOptions.soul.frontmatter.behavior.brainEveryTicks).toBe(1);
+        expect(runtimeOptions.soul.frontmatter.behavior.bodyEveryTicks).toBe(600);
+        expect(context.recordArtifactPath).toHaveBeenCalledWith(expect.stringContaining('facts/routes.md'));
+
+        await driver.stop('test_complete');
+    });
+
     it('injects a one-time AP top-up after attention-exhausted fade for ap-topup-resume-5m', async () => {
         const gateway = new FakeGateway();
         const context = benchmarkContext({

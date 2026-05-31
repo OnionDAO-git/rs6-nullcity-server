@@ -46,6 +46,7 @@ import {
 } from './tasks/self-initiated-ap-gp-recurrence-10m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
 import { MEMORY_ROUTE_RECALL_5M_TASK_ID, makeMemoryRouteRecall5mBenchmarkTask } from './tasks/memory-route-recall-5m';
+import { MEMORY_WRITE_RECALL_10M_TASK_ID, makeMemoryWriteRecall10mBenchmarkTask } from './tasks/memory-write-recall-10m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
 import { STARTER_GP_HARVEST_CHOICE_5M_TASK_ID, makeStarterGpHarvestChoice5mBenchmarkTask } from './tasks/starter-gp-harvest-choice-5m';
 import { STARTER_GP_PICKUP_3M_TASK_ID, makeStarterGpPickup3mBenchmarkTask } from './tasks/starter-gp-pickup-3m';
@@ -92,6 +93,7 @@ const CORE_TASK_IDS = [
     LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     MEMORY_ROUTE_RECALL_5M_TASK_ID,
+    MEMORY_WRITE_RECALL_10M_TASK_ID,
     WORLD_EVENT_REACTION_5M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
     AP_DECAY_ASK_5M_TASK_ID,
@@ -336,6 +338,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === MEMORY_ROUTE_RECALL_5M_TASK_ID) {
         return makeMemoryRouteRecall5mBenchmarkTask();
+    }
+    if (taskId === MEMORY_WRITE_RECALL_10M_TASK_ID) {
+        return makeMemoryWriteRecall10mBenchmarkTask();
     }
     if (taskId === WORLD_EVENT_REACTION_5M_TASK_ID) {
         return makeWorldEventReaction5mBenchmarkTask();

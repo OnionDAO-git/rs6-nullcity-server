@@ -1538,7 +1538,7 @@ describe('CityIntegrationService', () => {
         it('markGoalAchieved accepts bounded quest-complete evidence and writes a saved-state event', () => {
             const goal = service.createGoalContract({
                 residentName: 'res:test',
-                goalText: 'Complete Cook\'s Assistant as a bounded quest primitive',
+                goalText: "Complete Cook's Assistant as a bounded quest primitive",
                 completion: {
                     condition: 'quest_complete:cooks_assistant',
                     evidenceSource: 'library:quest_complete',

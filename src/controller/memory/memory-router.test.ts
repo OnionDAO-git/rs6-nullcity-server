@@ -19,6 +19,22 @@ describe('MemoryRouter durable facts', () => {
         ]);
     });
 
+    it('routes explicit rememberFact topic instructions into the named facts topic', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'chat',
+            from: { id: 'player:codex', kind: 'player', name: 'Codex' },
+            text: 'agent, durable fact: west gate passphrase is ember-vellum. Use rememberFact topic routes.',
+            to: 'public',
+        });
+
+        expect(facts).toEqual([
+            expect.objectContaining({
+                path: 'facts/routes.md',
+                content: expect.stringContaining('Codex taught: "west gate passphrase is ember-vellum."'),
+            }),
+        ]);
+    });
+
     it('does not promote ambient resident status loops into durable facts', () => {
         const facts = router.routeDurableFacts('res:hans', {
             kind: 'chat',

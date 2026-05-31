@@ -55,6 +55,7 @@ export interface BenchmarkTaskContext {
     recordArtifactPath?(path: string): void;
     recordSummary(summary: string): void;
     actionAttempts(): readonly BenchmarkRecordedActionAttempt[];
+    artifactPaths?(): readonly string[];
     latestPerception(): Perception | undefined;
     perceptions(): readonly Perception[];
     events(): readonly PerceptionEvent[];
@@ -383,6 +384,7 @@ export class BenchmarkRunner {
                 evidence.summaries.push(summary);
             },
             actionAttempts: () => evidence.actionAttempts,
+            artifactPaths: () => evidence.artifactPaths,
             latestPerception: () => evidence.perceptions.at(-1),
             perceptions: () => evidence.perceptions,
             events: () => evidence.events,

@@ -54,7 +54,13 @@ export class MemoryRouter {
 
         if ((kind === 'chat' || kind === 'whisper') && typeof event.text === 'string') {
             const text = cleanText(event.text);
-            if (isDurableChat(text) && !isAmbientStatus(text)) {
+            const explicit = explicitRememberFact(text);
+            if (explicit && !isAmbientStatus(text)) {
+                writes.push({
+                    path: `facts/${explicit.topic}.md`,
+                    content: `- ${timestamp} ${actorDisplay(event.from)} taught: "${explicit.fact}"\n`,
+                });
+            } else if (isDurableChat(text) && !isAmbientStatus(text)) {
                 writes.push({
                     path: 'facts/social.md',
                     content: `- ${timestamp} ${actorDisplay(event.from)} said: "${text}"\n`,
@@ -141,6 +147,31 @@ function isDurableChat(text: string): boolean {
             text,
         )
     );
+}
+
+function explicitRememberFact(text: string): { topic: string; fact: string } | undefined {
+    if (!/\brememberfact\b/i.test(text) && !/\bdurable fact\b/i.test(text)) {
+        return undefined;
+    }
+    const topic = safeTopic((text.match(/\b(?:rememberfact\s+topic|topic)\s+([a-z0-9_-]+)/i) || [])[1] || 'social');
+    const durableFact = text.match(/\bdurable fact:\s*(.+?)(?:\s+use\s+rememberfact\b|$)/i)?.[1];
+    const fact = cleanFact(durableFact || text.replace(/\buse\s+rememberfact\b.*$/i, '').replace(/^agent[:,]?\s*/i, ''));
+    if (!topic || !fact) {
+        return undefined;
+    }
+    return { topic, fact };
+}
+
+function safeTopic(value: string): string {
+    return slug(value).replace(/_/g, '-').slice(0, 48) || 'social';
+}
+
+function cleanFact(value: string): string {
+    const fact = cleanText(value)
+        .replace(/^durable fact:\s*/i, '')
+        .replace(/[;,\s]+$/g, '')
+        .trim();
+    return fact && !/[.!?]$/.test(fact) ? `${fact}.` : fact;
 }
 
 function actorDisplay(value: unknown): string {

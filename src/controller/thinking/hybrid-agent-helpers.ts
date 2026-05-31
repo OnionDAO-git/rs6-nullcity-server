@@ -2708,6 +2708,10 @@ export function ensureBenchmarkGoal(ctx: HelperContext): void {
         cognition.lastPresenceBeaconTick ??= ctx.options.state.tick;
         cognition.lastGoalShareTick ??= ctx.options.state.tick;
     }
+    if (benchmarkTask === 'memory-write-recall-10m') {
+        cognition.lastBodyTick ??= ctx.options.state.tick;
+        return;
+    }
     cognition.lastBrainTick = ctx.options.state.tick;
 }
 

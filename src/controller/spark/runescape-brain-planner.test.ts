@@ -416,6 +416,12 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('scout-nearby-area');
     });
 
+    it("returns a memory-write goal for 'memory-write-recall-10m'", () => {
+        const g = benchmarkGoalForTask('memory-write-recall-10m', 0);
+        expect(g?.id).toBe('write-and-recall-memory');
+        expect(g?.description).toMatch(/rememberFact|durable/i);
+    });
+
     it("returns a trade tester goal for 'trading-giving-5m'", () => {
         const g = benchmarkGoalForTask('trading-giving-5m', 0);
         expect(g?.id).toBe('trade-with-codex');

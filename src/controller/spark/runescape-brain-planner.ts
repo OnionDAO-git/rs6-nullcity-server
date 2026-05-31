@@ -453,6 +453,9 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'goal-follow-through-5m') {
         return goalFollowThroughGoal(tick);
     }
+    if (taskId === 'memory-write-recall-10m') {
+        return memoryWriteRecallGoal(tick);
+    }
     return undefined;
 }
 
@@ -475,6 +478,23 @@ export function goalFollowThroughGoal(tick: number): ActiveGoalState {
         ],
         success: 'Most actions this session served the same goal with minimal goal-switching.',
         ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
+/** Build the canonical Brain durable-memory write + recall benchmark goal. */
+export function memoryWriteRecallGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'write-and-recall-memory',
+        description: 'Use rememberFact to store a durable qmd fact, then answer a later recall question from Memory.',
+        steps: [
+            'Listen for the durable fact prompt from Codex',
+            'Write the fact with rememberFact under the requested topic',
+            'Wait for the delayed recall question',
+            'Answer naturally from the stored Memory fact',
+        ],
+        success: 'A durable qmd fact has been written and later recalled in public chat.',
+        ttlTicks: 900,
         createdAtTick: tick,
     };
 }

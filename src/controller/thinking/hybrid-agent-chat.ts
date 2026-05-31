@@ -581,6 +581,14 @@ export async function directChatAction(
         return clarifyingQuestionReaction(ctx, perception, commandLower);
     }
 
+    if (isDurableMemoryInstruction(command, chat.normalizedText)) {
+        cognition.tickTelemetry = {
+            chat_reply_emitted: false,
+            chat_reply_suppressed: 'memory_instruction_deferred_to_brain',
+        };
+        return undefined;
+    }
+
     let refusalReason: string | undefined;
     let missingTool: string | undefined;
 
@@ -1167,6 +1175,11 @@ export function isMemoryRecallIntent(command: string, fullText: string): boolean
     );
 }
 
+export function isDurableMemoryInstruction(command: string, fullText: string): boolean {
+    const combined = `${command} ${fullText}`.toLowerCase();
+    return /\brememberfact\b/.test(combined) || /\bdurable fact\b/.test(combined) || /\bstore\b.*\bmemory\b/.test(combined);
+}
+
 export function isFiremakingIntent(command: string, fullText: string): boolean {
     return (
         /^(make a fire|make fire|light a fire|light fire|start a fire|burn logs|firemaking)\b/.test(command) ||
@@ -1523,6 +1536,10 @@ export function memoryRecallFallback(memories: string[]): string | undefined {
     if (worldEvent) {
         return worldEvent;
     }
+    const factualMemory = factualMemoryRecallFallback(lines);
+    if (factualMemory) {
+        return factualMemory;
+    }
 
     const gift = lines.find(line => /patron gift from/i.test(line));
     const promise = lines.find(line => /\b(promise|promised|shrimp|codex)\b/i.test(line));
@@ -1601,6 +1618,32 @@ function worldEventMemoryRecallFallback(lines: string[]): string | undefined {
         .replace(/[.!?]+$/g, '')
         .trim();
     if (!cleaned) {
+        return undefined;
+    }
+
+    return `I remember ${cleaned}.`;
+}
+
+function factualMemoryRecallFallback(lines: string[]): string | undefined {
+    const factLine =
+        lines.find(line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\btaught:\s*"/i.test(line)) ||
+        lines.find(
+            line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\b(learned|remembered|found|discovered)\b/i.test(line),
+        );
+    if (!factLine) {
+        return undefined;
+    }
+
+    const quoted = factLine.match(/\btaught:\s*"([^"]+)"/i)?.[1];
+    const cleaned = (quoted || factLine)
+        .replace(/^Fact memory \([^)]*\):\s*/i, '')
+        .replace(/^[-*]\s+\d{4}-\d{2}-\d{2}T[^\s]+\s+/i, '')
+        .replace(/^[^:]+:\s*/i, '')
+        .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.!?]+$/g, '')
+        .trim();
+    if (!cleaned || looksLikeStructuredEcho(cleaned) || /\bwhat do you remember\b/i.test(cleaned)) {
         return undefined;
     }
 

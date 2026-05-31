@@ -78,6 +78,7 @@ const AP_GP_LIBRARY_STRATEGY_5M_TASK_ID = 'ap-gp-library-strategy-5m';
 const AP_GP_EXCHANGE_5M_TASK_ID = 'ap-gp-exchange-5m';
 const AP_GP_EXCHANGE_BENCH_GP_AMOUNT = 25;
 const AP_GP_EXCHANGE_BENCH_AP_AMOUNT = 50;
+const MEMORY_WRITE_RECALL_10M_TASK_ID = 'memory-write-recall-10m';
 const WORLD_EVENT_REACTION_5M_TASK_ID = 'world-event-reaction-5m';
 
 export interface ResidentRuntimeBenchmarkDriverOptions {
@@ -109,6 +110,9 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         this.context = context;
         this.runDirs = createRunDirs(context);
         this.loreBus = new LoreBus();
+        if (context.task.id === MEMORY_WRITE_RECALL_10M_TASK_ID) {
+            context.recordArtifactPath?.(path.join(this.runDirs.memory, residentSlug(context.resident), 'facts/routes.md'));
+        }
         const seededMemories = seedBenchmarkMemories(this.runDirs.memory, context.resident, context.task.memorySeeds || []);
         if (seededMemories > 0) {
             context.recordSummary(`Seeded ${seededMemories} benchmark Library memories.`);
@@ -522,8 +526,13 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
                 behavior: {
                     kind: 'hybrid-agent',
                     commandPrefix: 'agent',
-                    brainEveryTicks: 180,
-                    bodyEveryTicks: context.task.id === AP_GP_LIBRARY_STRATEGY_5M_TASK_ID ? 1 : 8,
+                    brainEveryTicks: context.task.id === MEMORY_WRITE_RECALL_10M_TASK_ID ? 1 : 180,
+                    bodyEveryTicks:
+                        context.task.id === MEMORY_WRITE_RECALL_10M_TASK_ID
+                            ? 600
+                            : context.task.id === AP_GP_LIBRARY_STRATEGY_5M_TASK_ID
+                              ? 1
+                              : 8,
                     shareGoalsEveryTicks: 60,
                     returnToAnchorEveryTicks: 600,
                     returnToAnchorRadius: 12,

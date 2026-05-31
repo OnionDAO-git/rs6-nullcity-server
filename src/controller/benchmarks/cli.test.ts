@@ -377,6 +377,17 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"memory-route-recall-5m","version":"0.1.0"');
     });
 
+    it('can dry-run the memory-write-recall benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'memory-write-recall-10m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"memory-write-recall-10m","version":"0.1.0"');
+    });
+
     it('can dry-run the world-event-reaction benchmark task', async () => {
         const writes: string[] = [];
 
@@ -550,7 +561,7 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(30);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(31);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
         expect(output).toContain('"benchmark":{"taskId":"earn-gp-via-combat-5m"');
         expect(output).toContain('"benchmark":{"taskId":"starter-gp-harvest-choice-5m"');
@@ -566,12 +577,13 @@ describe('benchmark CLI', () => {
         expect(output).toContain('"benchmark":{"taskId":"ap-gp-library-strategy-5m"');
         expect(output).toContain('"benchmark":{"taskId":"ap-topup-resume-5m"');
         expect(output).toContain('"benchmark":{"taskId":"memory-route-recall-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"memory-write-recall-10m"');
         expect(output).toContain('"benchmark":{"taskId":"world-event-reaction-5m"');
         expect(output).toContain('"benchmark":{"taskId":"orientation-bias-10m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":30');
-        expect(output).toContain('"passed":30');
-        expect(output).toContain('"averageScore":0.9833333333333333');
+        expect(output).toContain('"total":31');
+        expect(output).toContain('"passed":31');
+        expect(output).toContain('"averageScore":0.9838709677419355');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);
