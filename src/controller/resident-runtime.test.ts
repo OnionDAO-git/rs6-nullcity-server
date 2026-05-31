@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { EventEmitter } from 'events';
 import os from 'os';
 import path from 'path';
 import type { ResidentBody } from './body';
@@ -270,6 +271,217 @@ describe('ResidentRuntime modules', () => {
             'actor-key:rs:lumbridge_castle_cook': 23,
             'actor-name:cook': 23,
         });
+    });
+
+    it('records authoritative gateway action_result failures before empty effect waits time out', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-action-result-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-action-result-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-30T19:45:00.000Z') });
+        const session = store.beginSession('session-gateway-action-result', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-30T19:45:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 88;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        let effectSignal: AbortSignal | undefined;
+        let effectAbortObserved = false;
+        const staleCook = {
+            id: 'npc:85',
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x: 3206, y: 3215, level: 0 },
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'interact', target: staleCook, option: 'talk-to', cause: 'explore_talk_to_npc' }],
+                cause: 'explore_talk_to_npc',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => {
+                setImmediate(() => {
+                    gateway.emit('actionResult', 'res:pip', 'request-stale-cook', { ok: false, reason: 'target_not_found' });
+                });
+                return { ok: true, status: 'queued', requestId: 'request-stale-cook' };
+            }),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn((_predicate: unknown, options: { signal: AbortSignal }) => {
+                effectSignal = options.signal;
+                options.signal.addEventListener('abort', () => {
+                    effectAbortObserved = true;
+                });
+                return new Promise(() => undefined);
+            }),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 50 },
+        });
+
+        await runtime.onPerception({ tick: 88, resident: { position: { x: 3206, y: 3215, level: 0 } }, events: [] });
+
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-stale-cook',
+                status: 'failure',
+                reason: 'target_not_found',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'action_result',
+                        detail: expect.objectContaining({
+                            kind: 'gateway_action_result',
+                            requestId: 'request-stale-cook',
+                            result: { ok: false, reason: 'target_not_found' },
+                        }),
+                    }),
+                ],
+            }),
+        );
+        expect(effectSignal?.aborted).toBe(true);
+        expect(effectAbortObserved).toBe(true);
+    });
+
+    it('does not reuse stale gateway action_result cache when a request id repeats later', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-request-id-reuse-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-request-id-reuse-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-30T20:02:00.000Z') });
+        const session = store.beginSession('session-gateway-request-id-reuse', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-30T20:02:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 99;
+        let eventSeq = 0;
+        let submitCount = 0;
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'say', text: 'hello', cause: 'social_probe' }],
+                cause: 'social_probe',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(() => {
+                eventSeq += 1;
+            }),
+            submit: jest.fn(async () => {
+                submitCount += 1;
+                if (submitCount === 1) {
+                    setImmediate(() => {
+                        gateway.emit('actionResult', 'res:pip', 'request-reused', { ok: false, reason: 'muted' });
+                    });
+                }
+                return { ok: true, status: 'queued', requestId: 'request-reused' };
+            }),
+            getLatestEventSeq: jest.fn(() => eventSeq),
+            waitForEvent: jest.fn(async () => {
+                if (submitCount === 1) {
+                    return new Promise(() => undefined);
+                }
+                return { ok: false, reason: 'timeout' };
+            }),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 40 },
+        });
+
+        await runtime.onPerception({ tick: 99, resident: { position: { x: 3206, y: 3215, level: 0 } }, events: [] });
+        await runtime.onPerception({ tick: 100, resident: { position: { x: 3206, y: 3215, level: 0 } }, events: [] });
+
+        const actionResults = readJsonl(session.trajectoryPath).filter(
+            line => line.kind === 'action_result' && line.requestId === 'request-reused',
+        );
+        expect(actionResults).toHaveLength(2);
+        expect(actionResults[0]).toEqual(expect.objectContaining({ status: 'failure', reason: 'muted' }));
+        expect(actionResults[1]).toEqual(expect.objectContaining({ status: 'timeout', reason: 'timeout' }));
+    });
+
+    it('removes actionResult listeners on stop to avoid runtime listener leaks', () => {
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const stateStore = { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore;
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        const runtimeA = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+        expect(gateway.listenerCount('actionResult')).toBe(1);
+        runtimeA.stop();
+        expect(gateway.listenerCount('actionResult')).toBe(0);
+
+        const runtimeB = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+        expect(gateway.listenerCount('actionResult')).toBe(1);
+        runtimeB.stop();
+        expect(gateway.listenerCount('actionResult')).toBe(0);
     });
 
     it('records movement timeout distance evidence for coordinate target failures', async () => {

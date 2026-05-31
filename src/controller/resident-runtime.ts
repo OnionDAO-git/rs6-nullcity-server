@@ -134,6 +134,20 @@ interface PerceptionArrival {
     preemption?: { preempted: RoutinePreemptionReason };
 }
 
+interface GatewayActionResultObservation {
+    requestId: string;
+    result: ActionResult;
+    cause?: string;
+    observedAt: number;
+}
+
+type GatewayActionResultListener = (
+    residentId: string,
+    requestId: string | undefined,
+    result: ActionResult,
+    cause?: string,
+) => void;
+
 export class ResidentRuntime implements RoutineCapableRuntime {
     readonly name: string;
     _lastHints?: string[];
@@ -167,6 +181,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly momentLabeler?: MomentLabeler;
     private readonly whisperInbox?: WhisperInbox;
     private readonly loreBusInbox?: LoreBusInbox;
+    private readonly gatewayActionResults = new Map<string, GatewayActionResultObservation>();
+    private readonly gatewayActionResultWaiters = new Map<string, Set<(observation: GatewayActionResultObservation) => void>>();
+    private readonly gatewayActionResultListener?: GatewayActionResultListener;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
@@ -212,6 +229,14 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     submit: (action, metadata) => this.body.submit(action, metadata as Omit<BodyActionLogEntry, 'action' | 'result'>),
                 },
             });
+        if (typeof options.gateway.on === 'function') {
+            this.gatewayActionResultListener = (residentId, requestId, result, cause) => {
+                if (residentId === this.name && requestId) {
+                    this.observeGatewayActionResult(requestId, result, cause);
+                }
+            };
+            options.gateway.on('actionResult', this.gatewayActionResultListener);
+        }
         if (options.loreBus) {
             this.loreBus = options.loreBus;
             this.fireLitReflex = new FireLitReflex({ bus: options.loreBus });
@@ -1213,7 +1238,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         }
     }
 
-    private effectWaitFor(action: AgentAction): ((signal: AbortSignal) => Promise<EffectWaitResult>) | undefined {
+    private effectWaitFor(action: AgentAction): ((signal: AbortSignal, attempt: ActionAttempt) => Promise<EffectWaitResult>) | undefined {
         if (action.kind === 'move_to' && isPosition(action.target)) {
             const target = action.target;
             const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
@@ -1221,40 +1246,48 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const latestPerception = this.body.getLatestPerception();
             const startPosition = latestPerception ? perceptionPosition(latestPerception) : undefined;
             const timeoutMs = movementEffectTimeoutMs(startPosition, target);
-            return async signal => {
-                const wait = await this.body.waitForPerception(
-                    perception => positionMatches(perceptionPosition(perception), target, range),
-                    {
-                        afterSeq,
-                        timeoutMs,
-                        signal,
+            return async (signal, attempt) => {
+                return this.effectOrGatewayResult(
+                    effectSignal =>
+                        this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
+                            afterSeq,
+                            timeoutMs,
+                            signal: effectSignal,
+                        }),
+                    attempt.requestId,
+                    signal,
+                    waitResult => {
+                        const latestAfterWait = this.body.getLatestPerception();
+                        return movementWaitToEffect(waitResult, {
+                            target,
+                            range,
+                            startPosition,
+                            finalPosition: latestAfterWait ? perceptionPosition(latestAfterWait) : undefined,
+                            timeoutMs,
+                        });
                     },
                 );
-                const latestAfterWait = this.body.getLatestPerception();
-                return movementWaitToEffect(wait, {
-                    target,
-                    range,
-                    startPosition,
-                    finalPosition: latestAfterWait ? perceptionPosition(latestAfterWait) : undefined,
-                    timeoutMs,
-                });
             };
         }
 
         if (action.kind === 'say' && typeof action.text === 'string') {
             const text = action.text;
             const afterSeq = this.body.getLatestEventSeq();
-            return async signal =>
-                eventWaitToEffect(
-                    await this.body.waitForEvent(event => event.kind === 'chat' && event.text === text, {
-                        afterSeq,
-                        timeoutMs: 3000,
-                        signal,
-                    }),
-                    event => ({
-                        source: 'event',
-                        detail: { kind: 'chat_observed', text: event.text },
-                    }),
+            return async (signal, attempt) =>
+                this.effectOrGatewayResult(
+                    effectSignal =>
+                        this.body.waitForEvent(event => event.kind === 'chat' && event.text === text, {
+                            afterSeq,
+                            timeoutMs: 3000,
+                            signal: effectSignal,
+                        }),
+                    attempt.requestId,
+                    signal,
+                    wait =>
+                        eventWaitToEffect(wait, event => ({
+                            source: 'event',
+                            detail: { kind: 'chat_observed', text: event.text },
+                        })),
                 );
         }
 
@@ -1262,29 +1295,149 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const before = this.body.getLatestPerception();
             const afterSeq = this.body.getLatestPerceptionSeq();
             const timeoutMs = actionEffectTimeoutMs(action, before);
-            return async signal =>
-                perceptionWaitToEffect(
-                    await this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
-                        afterSeq,
-                        timeoutMs,
-                        signal,
-                    }),
-                    perception => ({
-                        source: 'perception',
-                        detail: {
-                            kind: 'action_effect_observed',
-                            actionKind: action.kind,
-                            changed: changedEffectSections(before, perception, action),
-                            events: eventSummaries(perception, action),
-                        },
-                    }),
+            return async (signal, attempt) =>
+                this.effectOrGatewayResult(
+                    effectSignal =>
+                        this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
+                            afterSeq,
+                            timeoutMs,
+                            signal: effectSignal,
+                        }),
+                    attempt.requestId,
+                    signal,
+                    wait =>
+                        perceptionWaitToEffect(wait, perception => ({
+                            source: 'perception',
+                            detail: {
+                                kind: 'action_effect_observed',
+                                actionKind: action.kind,
+                                changed: changedEffectSections(before, perception, action),
+                                events: eventSummaries(perception, action),
+                            },
+                        })),
                 );
         }
 
         return undefined;
     }
 
+    private async effectOrGatewayResult<TWait>(
+        waitForEffect: (signal: AbortSignal) => Promise<TWait>,
+        requestId: string | undefined,
+        signal: AbortSignal,
+        toEffect: (wait: TWait) => EffectWaitResult,
+    ): Promise<EffectWaitResult> {
+        const effectAbort = new AbortController();
+        const abortEffect = () => effectAbort.abort();
+        if (signal.aborted) {
+            effectAbort.abort();
+        } else {
+            signal.addEventListener('abort', abortEffect, { once: true });
+        }
+        const effectPromise = waitForEffect(effectAbort.signal);
+        const gatewayWatch = requestId ? this.watchGatewayActionResult(requestId, signal) : undefined;
+        try {
+            if (!gatewayWatch) {
+                return toEffect(await effectPromise);
+            }
+            const winner = await Promise.race([
+                effectPromise.then(wait => ({ kind: 'effect' as const, wait })),
+                gatewayWatch.promise.then(observation => ({ kind: 'gateway' as const, observation })),
+            ]);
+            if (winner.kind === 'gateway' && winner.observation) {
+                effectAbort.abort();
+                return gatewayActionResultToEffect(winner.observation);
+            }
+            if (winner.kind === 'gateway') {
+                effectAbort.abort();
+                return { ok: false, reason: 'aborted' };
+            }
+            return toEffect(winner.wait);
+        } finally {
+            signal.removeEventListener('abort', abortEffect);
+            gatewayWatch?.cancel();
+        }
+    }
+
+    private observeGatewayActionResult(requestId: string, result: ActionResult, cause: string | undefined): void {
+        const observation = { requestId, result, cause, observedAt: Date.now() };
+        this.gatewayActionResults.set(requestId, observation);
+        while (this.gatewayActionResults.size > 100) {
+            const oldest = this.gatewayActionResults.keys().next().value;
+            if (!oldest) {
+                break;
+            }
+            this.gatewayActionResults.delete(oldest);
+        }
+        const waiters = this.gatewayActionResultWaiters.get(requestId);
+        if (!waiters) {
+            return;
+        }
+        this.gatewayActionResults.delete(requestId);
+        this.gatewayActionResultWaiters.delete(requestId);
+        for (const waiter of waiters) {
+            waiter(observation);
+        }
+    }
+
+    private watchGatewayActionResult(
+        requestId: string,
+        signal: AbortSignal,
+    ): { promise: Promise<GatewayActionResultObservation | null>; cancel: () => void } {
+        const existing = this.gatewayActionResults.get(requestId);
+        if (existing) {
+            this.gatewayActionResults.delete(requestId);
+            return { promise: Promise.resolve(existing), cancel: () => undefined };
+        }
+        if (signal.aborted) {
+            return { promise: Promise.resolve(null), cancel: () => undefined };
+        }
+
+        let settle: (observation: GatewayActionResultObservation | null) => void = () => undefined;
+        const promise = new Promise<GatewayActionResultObservation | null>(resolve => {
+            settle = resolve;
+        });
+        const waiter = (observation: GatewayActionResultObservation) => settle(observation);
+        const abort = () => {
+            cleanup();
+            settle(null);
+        };
+        const cleanup = () => {
+            const waiters = this.gatewayActionResultWaiters.get(requestId);
+            if (waiters) {
+                waiters.delete(waiter);
+                if (waiters.size === 0) {
+                    this.gatewayActionResultWaiters.delete(requestId);
+                }
+            }
+            signal.removeEventListener('abort', abort);
+        };
+
+        const waiters = this.gatewayActionResultWaiters.get(requestId) || new Set();
+        waiters.add(waiter);
+        this.gatewayActionResultWaiters.set(requestId, waiters);
+        signal.addEventListener('abort', abort, { once: true });
+
+        return {
+            promise,
+            cancel: cleanup,
+        };
+    }
+
     stop(cause = 'runtime_stopped'): void {
+        if (this.gatewayActionResultListener) {
+            const gateway = this.options.gateway as unknown as {
+                off?: (event: string, listener: GatewayActionResultListener) => void;
+                removeListener?: (event: string, listener: GatewayActionResultListener) => void;
+            };
+            if (typeof gateway.off === 'function') {
+                gateway.off('actionResult', this.gatewayActionResultListener);
+            } else if (typeof gateway.removeListener === 'function') {
+                gateway.removeListener('actionResult', this.gatewayActionResultListener);
+            }
+        }
+        this.gatewayActionResultWaiters.clear();
+        this.gatewayActionResults.clear();
         if (this.whisperInbox) {
             this.whisperInbox.unsubscribe();
         }
@@ -2065,6 +2218,27 @@ function eventWaitToEffect(
         return { ok: false, reason: wait.reason };
     }
     return { ok: true, evidence: [evidence(wait.observation.value)] };
+}
+
+function gatewayActionResultToEffect(observation: GatewayActionResultObservation): EffectWaitResult {
+    const evidence: ActionEvidence = {
+        source: 'action_result',
+        detail: {
+            kind: 'gateway_action_result',
+            requestId: observation.requestId,
+            cause: observation.cause,
+            result: observation.result,
+        },
+    };
+    if (observation.result.ok === false) {
+        return {
+            ok: false,
+            reason: 'failure',
+            finalReason: typeof observation.result.reason === 'string' ? observation.result.reason : 'action_result_failed',
+            evidence: [evidence],
+        };
+    }
+    return { ok: true, evidence: [evidence] };
 }
 
 function perceptionPosition(perception: Perception): Position | undefined {

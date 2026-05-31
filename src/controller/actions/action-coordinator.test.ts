@@ -58,6 +58,20 @@ describe('ActionCoordinator', () => {
         expect(attempt.evidence).toEqual([]);
     });
 
+    it('preserves an explicit effect failure reason distinct from the failure bucket', async () => {
+        const submitter = fakeSubmitter(() => Promise.resolve({ ok: true, cause: 'accepted' }));
+        const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
+
+        const attempt = await coordinator.submit({
+            producer: 'active-routine',
+            action: { kind: 'interact', target: { objectId: 1278, position: { x: 1, y: 1, level: 0 } }, option: 'chop down' },
+            waitForEffect: async () => ({ ok: false, reason: 'failure', finalReason: 'target_not_found' }),
+        });
+
+        expect(attempt.finalStatus).toBe('failure');
+        expect(attempt.finalReason).toBe('target_not_found');
+    });
+
     it('records effect evidence when a waiter observes progress', async () => {
         const submitter = fakeSubmitter(() => Promise.resolve({ ok: true }));
         const coordinator = new ActionCoordinator({ resident: 'res:test', submitter });
