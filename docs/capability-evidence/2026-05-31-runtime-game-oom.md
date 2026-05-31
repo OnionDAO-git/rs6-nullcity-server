@@ -23,3 +23,14 @@ The live controller/dashboard timeout recurrence was not another QA-019 queue-si
 
 - If OOM recurs at 4 GB with bounded spectator replay, capture a heap snapshot or RSS trend and inspect world/player/session retention in the game server.
 - The controller should also surface a clearer degraded state when the game gateway is gone and should reconnect cleanly after the gateway returns.
+
+## Post-fix live validation
+
+- Commit `1b962a29` pushed the supervised runner, 4 GB dev heap, gateway send-failure cleanup, and this evidence.
+- Game restarted under `npm run start:game:supervised`; `ps` showed `node --max-old-space-size=4096 dist/server/runner.js -- -game` listening on `127.0.0.1:43595`.
+- Controller restarted on the fresh build with city API on `127.0.0.1:43611`.
+- Heartbeat returned HTTP 200 with `activeResidentCount: 23`, `residentCount: 25`, and `degradedFlags: []`.
+- Dashboard BFF `/api/overview` returned HTTP 200 with gateway connected, `23` online residents, and `23` latest inference rows.
+- `scripts/post-restart-smoke.sh` returned READY WITH WARNINGS: all 23 residents alive, all hero AP floors green, 22/23 residents had actions in the last 5 minutes (`res:qa-social` had rows but no actions in that narrow window).
+- `controller:smoke -- --observe-seconds 60 --allow-recent-visible` still exited non-zero due ordinary behavior warnings, but showed `preAckCancel=0` for all 23 residents. Remaining warnings were effect timeouts/no-visible-activity/after-submit interruptions, not gateway detach.
+- `controller:inference-audit` over the post-restart window reported usable brain rate `98.3%` (`403` clean / `410` brain decisions), no empty completions, and artifact `data/benchmarks/capability-qa-2026-05-31/inference-audit/inference_health_audit_20260531T212602Z.json`.
