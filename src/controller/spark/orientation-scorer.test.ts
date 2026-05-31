@@ -223,14 +223,14 @@ describe('OrientationScorer + StallTracker fixture stream', () => {
 
         type StreamEntry = { currentGoalId?: string; actionTags?: string[] };
         const stream: StreamEntry[] = [
-            { currentGoalId: goalId },          // tick 0: progress (goal match)
-            { currentGoalId: 'earn-gp' },       // tick 1: no progress
-            { currentGoalId: 'earn-gp' },       // tick 2: no progress
+            { currentGoalId: goalId }, // tick 0: progress (goal match)
+            { currentGoalId: 'earn-gp' }, // tick 1: no progress
+            { currentGoalId: 'earn-gp' }, // tick 2: no progress
             { actionTags: [`${goalId}:combat`] }, // tick 3: progress (tag match) — resets stall
-            { currentGoalId: 'earn-gp' },       // tick 4: no progress
-            { currentGoalId: 'earn-gp' },       // tick 5: no progress
-            { currentGoalId: 'earn-gp' },       // tick 6: no progress (3rd since last progress → stall)
-            { currentGoalId: 'earn-gp' },       // tick 7: still stalled (alreadyStalled)
+            { currentGoalId: 'earn-gp' }, // tick 4: no progress
+            { currentGoalId: 'earn-gp' }, // tick 5: no progress
+            { currentGoalId: 'earn-gp' }, // tick 6: no progress (3rd since last progress → stall)
+            { currentGoalId: 'earn-gp' }, // tick 7: still stalled (alreadyStalled)
         ];
 
         const progressEvents: OrientationProgressLibraryEvent[] = [];
@@ -308,7 +308,7 @@ describe('OrientationProgressLibraryEvent shape', () => {
         };
         expect(event.kind).toBe('orientation_progress');
         expect(typeof event.orientationGoalId).toBe('string');
-        expect(typeof event.nonProgressTicks).toBe('undefined');
+        expect('nonProgressTicks' in (event as unknown as Record<string, unknown>)).toBe(false);
     });
 });
 
@@ -324,6 +324,6 @@ describe('OrientationStalledLibraryEvent shape', () => {
         };
         expect(event.kind).toBe('orientation_stalled');
         expect(event.nonProgressTicks).toBe(100);
-        expect(typeof event.reason).toBe('undefined');
+        expect('reason' in (event as unknown as Record<string, unknown>)).toBe(false);
     });
 });

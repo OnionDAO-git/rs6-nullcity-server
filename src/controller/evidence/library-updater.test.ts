@@ -613,7 +613,9 @@ describe('LibraryUpdater — observeOrientationStalled', () => {
         const timeline = readTimeline(root);
         expect(timeline).toHaveLength(2);
         expect(timeline[0]).toEqual(expect.objectContaining({ kind: 'orientation_progress', tick: 10, lifeIndex: 1 }));
-        expect(timeline[1]).toEqual(expect.objectContaining({ kind: 'orientation_stalled', tick: 110, nonProgressTicks: 100, lifeIndex: 1 }));
+        expect(timeline[1]).toEqual(
+            expect.objectContaining({ kind: 'orientation_stalled', tick: 110, nonProgressTicks: 100, lifeIndex: 1 }),
+        );
     });
 });
 

@@ -162,6 +162,7 @@ export const REPEAT_ACTION_BACKOFF_TICKS = 30;
 export const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 export const MOVE_COMMIT_TICKS = 24;
 export const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
+export const SOCIAL_KEEPALIVE_EVERY_TICKS = 36;
 const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
 const COOKS_ASSISTANT_DIALOGUE_SEQUENCE: AgentAction[] = [
     { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
@@ -618,6 +619,33 @@ export function presenceNearbySummary(perception: HybridPerception): string | un
         countPhrase(playerCount, 'player'),
     ].filter((part): part is string => Boolean(part));
     return joinSpeechList(parts.slice(0, 3));
+}
+
+export function socialKeepaliveAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+    visibility: { anchor?: Pos; returnDue: boolean },
+): AgentAction | undefined {
+    if (ctx.commandPrefix() !== 'social' || visibility.returnDue) {
+        return undefined;
+    }
+    if ((perception.nearby?.players || []).length > 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    const last = cognition.lastSocialKeepaliveTick;
+    if (typeof last === 'number' && tick - last < SOCIAL_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    cognition.lastSocialKeepaliveTick = tick;
+    return {
+        kind: 'say',
+        text: cleanSpeech('No tester visible. Say "social help" for follow, status, wait, stop, trade, or where I am.'),
+        cause: 'social_keepalive',
+    };
 }
 
 export function statusSpeech(
@@ -2918,6 +2946,11 @@ export function preInferenceBodyAction(
     const coordinateMove = goalCoordinateMoveAction(ctx, perception);
     if (coordinateMove) {
         return preInferenceResult(ctx, coordinateMove.action, coordinateMove.cause, perception, visibility);
+    }
+
+    const socialKeepalive = socialKeepaliveAction(ctx, perception, visibility);
+    if (socialKeepalive) {
+        return preInferenceResult(ctx, socialKeepalive, 'social_keepalive', perception, visibility);
     }
 
     if (typeof ctx.options.state.stuckSince === 'number') {

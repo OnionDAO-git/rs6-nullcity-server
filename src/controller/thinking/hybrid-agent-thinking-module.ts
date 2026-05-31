@@ -196,7 +196,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             const brainDue = this.shouldRunBrain();
             if (this.shouldRunBody()) {
-                if (!brainDue) {
+                if (!brainDue || typeof this.options.state.stuckSince === 'number') {
                     const presenceBeacon = presenceBeaconAction(this, perception as HybridPerception);
                     if (presenceBeacon) {
                         return this.result([presenceBeacon], 'presence_beacon', 0, false);
