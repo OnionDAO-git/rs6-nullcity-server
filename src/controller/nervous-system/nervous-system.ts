@@ -6,6 +6,7 @@ import { readNervousRulesMd } from './rules-md';
 import { type NervousReaction, type NervousRule, clampNervousRulePriority, evaluateNervousRules } from './rules';
 import { PatronRegistry } from '../patron/patron-registry';
 import { STARTER_GP_HARVEST_GOAL_ID, starterGpHarvestGoal } from '../spark/runescape-brain-planner';
+import { RUNESCAPE_STANDARD_SPARK_MODULE_ID } from '../spark/standard-module-metadata';
 import {
     SELF_INITIATED_AP_GP_EXCHANGE_CAUSE,
     SELF_INITIATED_EXCHANGE_MIN_GP,
@@ -71,6 +72,8 @@ export class NervousSystem {
     constructor(private readonly options: NervousSystemOptions) {}
 
     react(perception: Perception): NervousReaction | undefined {
+        this.clearInexecutableStarterGpHarvestGoal();
+
         const lowHealthFood = lowHealthFoodSlot(perception);
         if (lowHealthFood !== undefined) {
             return {
@@ -450,6 +453,10 @@ export class NervousSystem {
     }
 
     private shouldSeekStarterGpHarvest(perception: Perception): boolean {
+        if (!this.canExecuteStarterGpHarvestGoal()) {
+            return false;
+        }
+
         const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
         const attention = this.options.state.attention;
         if (!Number.isFinite(attention) || attention <= 0) {
@@ -471,8 +478,30 @@ export class NervousSystem {
         return !isLowHealth(perception);
     }
 
+    private canExecuteStarterGpHarvestGoal(): boolean {
+        if (this.options.soul.frontmatter.behavior?.kind === 'hybrid-agent') {
+            return true;
+        }
+
+        return (
+            this.options.soul.frontmatter.modules?.some(
+                module => module.id === RUNESCAPE_STANDARD_SPARK_MODULE_ID && module.enabled !== false,
+            ) ?? false
+        );
+    }
+
+    private clearInexecutableStarterGpHarvestGoal(): void {
+        const goal = this.options.state.cognition?.activeGoal;
+        if (goal?.id !== STARTER_GP_HARVEST_GOAL_ID || this.canExecuteStarterGpHarvestGoal()) {
+            return;
+        }
+
+        this.options.state.cognition = { ...this.options.state.cognition, activeGoal: undefined };
+        this.options.state.cognition.lastGoalShareTick = undefined;
+    }
+
     private requestAttentionReaction(perception: Perception): NervousReaction | undefined {
-        if (this.hasActiveStarterGpHarvestGoal(perception) && !isLowHealth(perception)) {
+        if (this.canExecuteStarterGpHarvestGoal() && this.hasActiveStarterGpHarvestGoal(perception) && !isLowHealth(perception)) {
             return undefined;
         }
 

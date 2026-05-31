@@ -469,6 +469,59 @@ describe('NervousSystem', () => {
             });
         });
 
+        it('does not start a starter GP harvest for floor-protected story residents without a RuneScape behavior module', () => {
+            const state = runtimeState(100);
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:starter-gp-harvest');
+            expect(state.cognition?.activeGoal?.id).not.toBe('earn-starter-gp-via-combat');
+        });
+
+        it('does not let stale starter GP harvest goals suppress story residents from asking for attention', () => {
+            const state = runtimeState(101);
+            state.attention = 5300;
+            state.cognition = {
+                activeGoal: {
+                    id: 'earn-starter-gp-via-combat',
+                    description: 'Earn starter RuneScape GP by safely fighting low-level NPCs and looting coins.',
+                    steps: ['Attack a safe Goblin', 'Loot coin item 995'],
+                    createdAtTick: 100,
+                    ttlTicks: 600,
+                },
+            };
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(101));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect(state.cognition?.activeGoal).toBeUndefined();
+        });
+
+        it('starts a starter GP harvest for residents using the standard RuneScape module without legacy behavior', () => {
+            const state = runtimeState(100);
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: moduleSoulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:starter-gp-harvest');
+            expect(state.cognition?.activeGoal?.id).toBe('earn-starter-gp-via-combat');
+        });
+
+        it('does not start a starter GP harvest when the standard RuneScape module is disabled', () => {
+            const state = runtimeState(100);
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: moduleSoulWithFloor(5000, false), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:starter-gp-harvest');
+            expect(state.cognition?.activeGoal?.id).not.toBe('earn-starter-gp-via-combat');
+        });
+
         it('lets an active starter GP harvest continue without an attention appeal', () => {
             const state = runtimeState(101);
             state.attention = 5300;
@@ -741,6 +794,33 @@ function soulWithFloor(floor: number): Soul {
             archetype: 'mentor',
             attentionProfile: { startingAttention: 14000, decayCurve: 'standard', floor },
             behavior: { kind: 'hybrid-agent' },
+        },
+    };
+}
+
+function storySoulWithFloor(floor: number): Soul {
+    return {
+        sourcePath: '/tmp/res-story-hero.md',
+        body: '# Story hero soul',
+        frontmatter: {
+            name: 'res:hans',
+            archetype: 'mentor',
+            model: { thinking: false },
+            attentionProfile: { startingAttention: 14000, decayCurve: 'standard', floor },
+            heroProfile: { publicName: 'Hans', tier: 'hero', signatureAction: 'guards the courtyard' },
+        },
+    };
+}
+
+function moduleSoulWithFloor(floor: number, enabled = true): Soul {
+    return {
+        sourcePath: '/tmp/res-standard-module.md',
+        body: '# Standard module soul',
+        frontmatter: {
+            name: 'res:qa-standard',
+            archetype: 'achiever',
+            attentionProfile: { startingAttention: 14000, decayCurve: 'standard', floor },
+            modules: [{ id: 'onion.runescape.standard', enabled }],
         },
     };
 }

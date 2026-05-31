@@ -8,7 +8,7 @@ When a resident is low on AP but holds no GP, does it only ask humans for attent
 
 ## Result
 
-**Pass for the bounded starter loop.** Low-AP/no-GP floor residents now seed an active goal `earn-starter-gp-via-combat`, emit `nervous:starter-gp-harvest`, continue thinking, route through safe combat, and loot real RuneScape coin item `995`.
+**Pass for the bounded starter loop.** Low-AP/no-GP floor residents with runnable RuneScape behavior (legacy `hybrid-agent` or enabled `onion.runescape.standard`) now seed an active goal `earn-starter-gp-via-combat`, emit `nervous:starter-gp-harvest`, continue thinking, route through safe combat, and loot real RuneScape coin item `995`.
 
 ## Fix
 
@@ -17,6 +17,8 @@ When a resident is low on AP but holds no GP, does it only ask humans for attent
 - Preserved safety behavior:
   - Existing GP still self-funds AP before harvesting.
   - Low-health/no-food residents can still ask humans for AP even if a starter GP harvest goal is active.
+  - Authored story/ambient residents without `behavior.kind: hybrid-agent` or the `onion.runescape.standard` module do not receive combat-harvest goals they cannot execute.
+  - Stale starter-harvest goals on story/ambient residents no longer suppress the normal AP appeal.
   - The verifier requires actual coin item `995`, not merely a tradable drop.
 - Added `starter-gp-harvest-choice-5m` to benchmark CLI/core task coverage.
 - Added `nervous:starter-gp-harvest` to normal-life audit tracked causes.
@@ -61,5 +63,7 @@ Live autonomous benchmark:
 ## Interpretation
 
 This closes the immediate AP/GP runway gap for floor-protected residents: if they are low on AP and have no GP, the resident can now choose a starter GP-harvest plan instead of only making an AP appeal that suppresses thinking. No-floor residents keep the older last-second AP appeal path for now; broadening their harvest threshold needs a separate runtime-safe design so generic no-floor test/module souls are not hijacked at normal startup AP.
+
+Follow-up guard: a 60-minute ordinary-life scan showed story-only heroes had been receiving starter-GP goals but then falling back into ambient "Still here" speech because those souls do not run legacy hybrid behavior or the standard RuneScape module. The nervous-system guard now restricts starter-GP harvest to residents that can execute it, clears stale non-executable starter-GP goals, and preserves AP appeals for authored story residents while keeping the benchmark/QA residents on the practical combat GP route.
 
 This does **not** prove durable GP/hour economy yet. The next evidence should come from ordinary no-drain windows showing multiple named residents choosing starter harvest, earning fresh GP, and later self-funding AP without benchmark seeding.
