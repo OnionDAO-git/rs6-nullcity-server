@@ -8,6 +8,10 @@ node_modules
 /data/controller/logs
 /data/controller/memory
 /data/controller/data
+/data/controller/storyteller/live-*/
+/data/controller/storyteller/canon/
+/data/controller/storyteller/review/
+/data/controller/storyteller/overseer-ledger.jsonl
 /data/benchmarks/**
 !/data/benchmarks/README.md
 /data/knowledge/suggestions.*.jsonl
