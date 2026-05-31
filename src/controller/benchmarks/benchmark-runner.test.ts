@@ -459,6 +459,28 @@ describe('BenchmarkRunner', () => {
         expect(artifact.metrics.selectedModuleActions).toBe(1);
     });
 
+    it('lets setup seed inventory after the disposable resident is connected', async () => {
+        const gateway = new MockBenchmarkGateway();
+        const task: BenchmarkTask = {
+            id: 'low-health-cook-eat-reengage-5m',
+            version: '0.1.0',
+            timeoutMs: 5000,
+            setup: jest.fn(async context => {
+                await context.ensureInventoryItem?.({ itemId: 317 }, 1);
+                await context.ensureInventoryItem?.({ itemId: 590 }, 1);
+            }),
+            run: jest.fn(async () => ({ status: 'passed' as const, score: 1 })),
+        };
+
+        const artifact = await runner(gateway, task).run();
+        const residentName = expect.stringMatching(/^res:bmk_low_hea_[a-z0-9]{8}$/);
+
+        expect(gateway.ensureInventoryItem).toHaveBeenCalledWith(residentName, { itemId: 317 }, 1);
+        expect(gateway.ensureInventoryItem).toHaveBeenCalledWith(residentName, { itemId: 590 }, 1);
+        expect(gateway.submitActionWithRequestId).not.toHaveBeenCalled();
+        expect(artifact.status).toBe('passed');
+    });
+
     it('copies inference metadata into benchmark artifacts', async () => {
         const gateway = new MockBenchmarkGateway();
         const task: BenchmarkTask = {
@@ -601,6 +623,7 @@ class MockBenchmarkGateway extends EventEmitter implements BenchmarkGateway {
     createResident = jest.fn(async () => ({ name: 'bench:make-fire-5m:run-1', online: false }));
     connectResident = jest.fn(async () => ({ name: 'bench:make-fire-5m:run-1', online: true }));
     submitActionWithRequestId = jest.fn(async () => ({ requestId: 'request-1', ackResult: { ok: true } }));
+    ensureInventoryItem = jest.fn(async () => ({ resident: 'bench:make-fire-5m:run-1', itemId: 317, requestedAmount: 1, previousAmount: 0, amount: 1, addedAmount: 1 }));
     disconnectResident = jest.fn(async () => undefined);
     deleteResident = jest.fn(async () => undefined);
 }

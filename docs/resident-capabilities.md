@@ -63,6 +63,8 @@ QA032 improved the live combat recovery evidence but did **not** close the full 
 
 QA034 now adds a dedicated strict verifier task, `low-health-cook-eat-reengage-5m`, so this chain is measured explicitly in benchmark mode (task wiring + focused tests are green). A live autonomous run could not be recorded in this sandbox because gateway connect is blocked (`EPERM 127.0.0.1:43595`), so final chain proof still requires a hot-stack rerun in a loopback-capable environment.
 
+QA035 then hardens that verifier setup by seeding required recovery inventory after resident connect via gateway inventory ensure (raw shrimp + tinderbox + logs + axe), reducing false negatives from spawn-time inventory drift. Focused benchmark-runner/task tests and `check:no-ui`/`typecheck`/`build` are green; live loop still needs a loopback-capable hot-stack rerun.
+
 Current interpretation: directed starter combat is stronger than the QA031 row implies, but full low-health fish -> cook -> eat -> re-engage remains open. The next packet should target low-health nervous/body recovery ordering, especially repeated low-health food reflexes suppressing the cook/eat recovery path when perception is stale.
 
 ## Evidence Snapshot

@@ -4,6 +4,7 @@ import type { BenchmarkTask, BenchmarkTaskOutcome } from '../benchmark-runner';
 export const LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID = 'low-health-cook-eat-reengage-5m';
 export const LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_VERSION = '0.1.0';
 export const LOW_HEALTH_COOK_EAT_REENGAGE_5M_BUDGET_MS = 5 * 60 * 1000;
+const LOW_HEALTH_COOK_EAT_REENGAGE_5M_TIMEOUT_MS = LOW_HEALTH_COOK_EAT_REENGAGE_5M_BUDGET_MS + 30_000;
 
 const START_POSITION = { x: 3222, y: 3218, level: 0 };
 const RAW_SHRIMP_ITEM_ID = 317;
@@ -28,11 +29,22 @@ export function makeLowHealthCookEatReengage5mBenchmarkTask(now: () => number = 
     return {
         id: LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
         version: LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_VERSION,
-        timeoutMs: LOW_HEALTH_COOK_EAT_REENGAGE_5M_BUDGET_MS,
+        timeoutMs: LOW_HEALTH_COOK_EAT_REENGAGE_5M_TIMEOUT_MS,
         resident: {
             spawnPosition: START_POSITION,
             initialInventory: [{ itemId: RAW_SHRIMP_ITEM_ID }, { itemId: 590 }, { itemId: 1511 }, { itemId: 1351 }],
             initialSkills: { hitpoints: { exp: 1154, level: 3 } },
+        },
+        setup: async context => {
+            if (!context.ensureInventoryItem) {
+                context.recordSummary('Gateway inventory ensure unavailable; relying on create-time benchmark inventory.');
+                return;
+            }
+            await context.ensureInventoryItem({ itemId: RAW_SHRIMP_ITEM_ID }, 1);
+            await context.ensureInventoryItem({ itemId: 590 }, 1);
+            await context.ensureInventoryItem({ itemId: 1511 }, 1);
+            await context.ensureInventoryItem({ itemId: 1351 }, 1);
+            context.recordSummary('Ensured raw fish and cooking tools after connecting benchmark resident.');
         },
         run: async context => {
             const startedAt = now();

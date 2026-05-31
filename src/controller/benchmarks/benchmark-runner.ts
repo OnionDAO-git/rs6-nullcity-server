@@ -2,7 +2,15 @@ import fs from 'fs';
 import type { ActionEvidence, ActionFinalStatus } from '../actions/action-attempt';
 import type { SparkModuleIdentity } from '../spark';
 import type { SubmittedActionAck } from '../transport/gateway-client';
-import type { ActionResult, AgentAction, CreateResidentPayload, Perception, PerceptionEvent } from '../transport/message-codecs';
+import type {
+    ActionResult,
+    AgentAction,
+    CreateResidentPayload,
+    InventoryEnsureItem,
+    Perception,
+    PerceptionEvent,
+    ResidentInventoryEnsureSummary,
+} from '../transport/message-codecs';
 import {
     type BenchmarkArtifact,
     type BenchmarkRunMode,
@@ -15,6 +23,7 @@ export interface BenchmarkGateway {
     createResident(payload: CreateResidentPayload): Promise<unknown>;
     connectResident(payload: { name: string; observe: boolean; control: boolean; onDisconnect: 'idle' }): Promise<unknown>;
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck>;
+    ensureInventoryItem?(name: string, item: InventoryEnsureItem, amount: number): Promise<ResidentInventoryEnsureSummary>;
     disconnectResident(name: string): Promise<void>;
     deleteResident(name: string): Promise<void>;
     on?(event: 'perception', listener: (residentId: string, perception: Perception) => void): unknown;
@@ -37,6 +46,7 @@ export interface BenchmarkTaskContext {
     readonly module: SparkModuleIdentity;
     readonly signal: AbortSignal;
     submitAction(action: AgentAction): Promise<ActionResult>;
+    ensureInventoryItem?(item: InventoryEnsureItem, amount: number): Promise<ResidentInventoryEnsureSummary>;
     peerResident(id: string): string | undefined;
     submitPeerAction(id: string, action: AgentAction): Promise<ActionResult>;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
@@ -340,6 +350,9 @@ export class BenchmarkRunner {
                 recordActionAttempt(evidence, { requestId: ack.requestId, action, result: ack.ackResult });
                 return ack.ackResult;
             },
+            ensureInventoryItem: this.options.gateway.ensureInventoryItem
+                ? async (item, amount) => this.options.gateway.ensureInventoryItem!(this.resident, item, amount)
+                : undefined,
             peerResident: id => this.peerResidents.get(id),
             submitPeerAction: async (id, action) => {
                 const peerResident = this.peerResidents.get(id);

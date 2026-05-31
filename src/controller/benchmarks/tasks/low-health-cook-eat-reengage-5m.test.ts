@@ -13,6 +13,26 @@ describe('makeLowHealthCookEatReengage5mBenchmarkTask', () => {
         });
     });
 
+    it('post-connect setup ensures raw fish and tools are actually present in live inventory', async () => {
+        const ensureInventoryItem = jest.fn(async () => undefined);
+        const task = makeLowHealthCookEatReengage5mBenchmarkTask();
+        const context = taskContext({
+            submitAction: jest.fn(),
+            ensureInventoryItem,
+            actionAttempts: [],
+            perceptions: [],
+            events: [],
+        });
+
+        await task.setup?.(context);
+
+        expect(ensureInventoryItem).toHaveBeenCalledWith({ itemId: 317 }, 1);
+        expect(ensureInventoryItem).toHaveBeenCalledWith({ itemId: 590 }, 1);
+        expect(ensureInventoryItem).toHaveBeenCalledWith({ itemId: 1511 }, 1);
+        expect(ensureInventoryItem).toHaveBeenCalledWith({ itemId: 1351 }, 1);
+        expect(context.recordSummary).toHaveBeenCalledWith(expect.stringContaining('Ensured raw fish and cooking tools'));
+    });
+
     it('autonomous mode observes selected-module recovery and safe reengage without scripted actions', async () => {
         const submitAction = jest.fn();
         const task = makeLowHealthCookEatReengage5mBenchmarkTask(() => 1_000);
@@ -170,6 +190,7 @@ function item(itemId: number, key: string): Record<string, unknown> {
 function taskContext(overrides: {
     signal?: AbortSignal;
     submitAction: jest.Mock;
+    ensureInventoryItem?: jest.Mock;
     actionAttempts: Array<{ action: AgentAction; sparkModule?: typeof STANDARD_MODULE; result?: ActionResult }>;
     perceptions: Perception[];
     events: PerceptionEvent[];
@@ -179,6 +200,7 @@ function taskContext(overrides: {
         module: STANDARD_MODULE,
         signal: overrides.signal || new AbortController().signal,
         submitAction: overrides.submitAction,
+        ensureInventoryItem: overrides.ensureInventoryItem,
         peerResident: jest.fn(),
         submitPeerAction: jest.fn(),
         recordActionAttempt: jest.fn(),
