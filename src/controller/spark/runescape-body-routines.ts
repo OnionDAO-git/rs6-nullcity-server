@@ -417,13 +417,7 @@ function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPercept
         return undefined;
     }
 
-    const shouldPrioritizeCastleEntry =
-        shouldRouteViaLumbridgeKitchenEntry(here, target) &&
-        (here.x > LUMBRIDGE_CASTLE_KITCHEN_ENTRY.x || here.y > LUMBRIDGE_CASTLE_KITCHEN_ENTRY.y);
-    if (shouldPrioritizeCastleEntry) {
-        return lumbridgeKitchenEntryRouteAction(perception, here, true);
-    }
-
+    const shouldPrioritizeCastleEntry = shouldContinueThroughLumbridgeKitchenEntry(here, target);
     const adjacentOpenable = (perception.nearby?.objects || [])
         .filter(
             candidate =>
@@ -433,8 +427,12 @@ function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPercept
                 distance(candidate.position, target) <= distance(here, target),
         )
         .sort((a, b) => distance(a.position, target) - distance(b.position, target))[0];
-    if (adjacentOpenable) {
+    if (adjacentOpenable && (!shouldPrioritizeCastleEntry || isLumbridgeKitchenRouteOpenable(adjacentOpenable.position, target))) {
         return openCookingRouteAction(here, adjacentOpenable);
+    }
+
+    if (shouldPrioritizeCastleEntry) {
+        return lumbridgeKitchenEntryRouteAction(perception, here, true);
     }
 
     if (!shouldRouteViaLumbridgeKitchenEntry(here, target)) {
@@ -514,6 +512,18 @@ function shouldRouteViaLumbridgeKitchenEntry(here: BodyPos, target: BodyPos): bo
         here.level === LUMBRIDGE_CASTLE_KITCHEN_ENTRY.level &&
         distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= LUMBRIDGE_CASTLE_KITCHEN_ROUTE_MAX_DISTANCE
     );
+}
+
+function shouldContinueThroughLumbridgeKitchenEntry(here: BodyPos, target: BodyPos): boolean {
+    return (
+        shouldRouteViaLumbridgeKitchenEntry(here, target) &&
+        distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) > 0 &&
+        !isLumbridgeKitchenTarget(here)
+    );
+}
+
+function isLumbridgeKitchenRouteOpenable(position: BodyPos, target: BodyPos): boolean {
+    return distance(position, target) <= 5 || distance(position, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= 1;
 }
 
 function isLumbridgeCastleKitchenEntryOpen(perception: BodyHybridPerception): boolean {
@@ -1007,12 +1017,14 @@ export function starterFishingCookingAction(
                 return routeAction;
             }
         }
-        return {
-            kind: 'move_to',
-            target: LUMBRIDGE_CASTLE_RANGE,
-            range: COOKING_RANGE_APPROACH_RADIUS,
-            cause: 'starter_fishing_find_range',
-        };
+        if (!isTargetFailureCooldownActive(LUMBRIDGE_CASTLE_RANGE, targetFailureCooldowns, currentTick)) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_CASTLE_RANGE,
+                range: COOKING_RANGE_APPROACH_RADIUS,
+                cause: 'starter_fishing_find_range',
+            };
+        }
     }
 
     return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };

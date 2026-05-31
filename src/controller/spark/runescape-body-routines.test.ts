@@ -987,7 +987,7 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
-    it('approaches the range when the castle entrance is already open but the range is distant', () => {
+    it('continues through the castle entrance when it is already open but the range is distant', () => {
         const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
         const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
         const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
@@ -1000,9 +1000,9 @@ describe('starterFishingCookingAction', () => {
 
         expect(action).toEqual({
             kind: 'move_to',
-            target: range.position,
-            range: 1,
-            cause: 'starter_fishing_find_range',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
         });
     });
 
@@ -1020,6 +1020,65 @@ describe('starterFishingCookingAction', () => {
             target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
             range: 0,
             cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('continues to the castle entrance from the south even when the entrance is visibly open', () => {
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3208, y: 3208, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [openCastleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('does not retry the direct Lumbridge range fallback while that target is cooling down', () => {
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3208, y: 3208, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [openCastleDoor] },
+            }),
+            { 'target:3208,3213,0': 500 },
+            600,
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+        expect(action).not.toEqual(
+            expect.objectContaining({
+                kind: 'move_to',
+                target: LUMBRIDGE_CASTLE_RANGE,
+                cause: 'starter_fishing_find_range',
+            }),
+        );
+    });
+
+    it('reports missing heat instead of forcing a cooled-down fallback range outside the entry route', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3180, y: 3180, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+            }),
+            { 'target:3208,3213,0': 500 },
+            600,
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I have raw fish now. I need a fire or range to cook it.',
+            cause: 'starter_fishing_missing_heat',
         });
     });
 
