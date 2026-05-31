@@ -39,6 +39,13 @@ nodemon runner. The supervised runner starts the compiled game server with a
 larger heap and restarts it after a crash. Rebuild before restarting it so
 `dist/` matches the checked-out source.
 
+## Model policy
+
+- **Brain + Body both run `qwopus3.5-27b-v3@q4_k_s`** — the `llm.endpoints.default` model in `controller.yml`. Brain runs thinking ON; Body runs thinking OFF.
+- **`qwen/qwen3.6-27b` is NON-SERVING** as of 2026-05-31. Live A/B (S-INFER-AB-1, `docs/capability-evidence/2026-05-31-qwen-vs-qwopus-ab.md`) showed it hung on a trivial thinking-off prompt on **both** `inf` and `spacetower` hosts (0/24 usable), while qwopus answered fine on the same hosts. **Do NOT re-point any `llm.endpoints.*.model`, soul `model.endpoint`, or behavior back at qwen** (cron/Codex/agents included) until Dev confirms qwen serves again.
+- **Inference boxes should serve qwopus-only** (Dev action): dedicating VRAM to qwopus keeps it hot and cuts its ~40s latency under 19–25 concurrent residents. See HD-053.
+- Future model mix — a fast small model for the high-frequency Body + a stronger model (Haiku/Claude) for the rare deep Planner — is tracked in `docs/superpowers/plans/2026-06-01-resident-intelligence-roadmap.md` and HD-052.
+
 ## Active resident cohort
 
 The local controller is intentionally capped to a small active cohort while the
