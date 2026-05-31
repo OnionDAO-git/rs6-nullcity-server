@@ -38,7 +38,7 @@ Reduce `res:qa-trader` stuck churn and restore trade-oriented ordinary behavior.
 - `npm run check:no-ui` passed.
 - `npm run typecheck` passed.
 - `npm run build` passed: `821` files compiled.
-- `npm run fin` in this sandbox fails on known socket-bind `EPERM` tests (`listen EPERM` on local ports). Focused packet suites, `check:no-ui`, and `build` passed.
+- `npm run fin` passed in Codex Desktop: `228` suites and `3247/3247` tests passed.
 
 ## Live Status
 
