@@ -173,6 +173,57 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(cityGateway.close).toHaveBeenCalledTimes(1);
     });
 
+    it('passes the host-owned city exchange service into resident runtimes', async () => {
+        const gateway = new FakeGateway();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-city-exchange-'));
+        const runtimeState = {
+            resident: 'res:pip',
+            attention: 100,
+            tick: 7,
+            legacy: { kind: 'mentor', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: new Date(0).toISOString(),
+                dayStartedAt: new Date(0).toISOString(),
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+            variables: {},
+            hookCooldowns: {},
+            shadowedHooks: [],
+        } satisfies RuntimeState;
+        const runtime = {
+            ...fakeRuntime(),
+            getState: jest.fn(() => runtimeState),
+            incrementAttention: jest.fn((amount: number) => {
+                runtimeState.attention += amount;
+            }),
+        } as unknown as ResidentRuntime;
+        const runtimeFactory = jest.fn((options: ConstructorParameters<typeof ResidentRuntime>[0]) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(
+            { ...config(), memory: { dir: memoryDir, qmdBin: '' } },
+            { ...dependencies(gateway), runtimeFactory },
+        );
+
+        await host.start();
+
+        const runtimeOptions = runtimeFactory.mock.calls[0]?.[0];
+        expect(runtimeOptions?.cityExchange).toBeDefined();
+        await runtimeOptions?.cityExchange?.exchangeApForGp('res:pip', {
+            idempotencyKey: 'host-city-exchange',
+            gpAmount: 25,
+            apAmount: 50,
+            cityUserId: 'resident:self',
+            sourceType: 'resident',
+            sourceId: 'test',
+        });
+        expect(gateway.burnResidentGold).toHaveBeenCalledWith('res:pip', 25);
+
+        await host.stop();
+    });
+
     it('uses a fresh retryable city gateway for GP inventory calls when the live host owns the gateway', async () => {
         const gateway = new FakeGateway();
         const firstCityGateway = new FakeGateway();

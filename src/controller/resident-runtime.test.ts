@@ -1395,6 +1395,99 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).not.toHaveBeenCalled();
     });
 
+    it('routes city_exchange_ap_gp nervous actions through the city exchange service instead of the game body', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-city-exchange-test-'));
+        const state = stateFor('res:pip');
+        state.attention = 5015;
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+        const cityExchange = {
+            exchangeApForGp: jest.fn(async () => ({
+                status: 'complete',
+                exchangeId: 'exchange-1',
+                apEvidence: { creditedAmount: 100, attentionBefore: 5014, attentionAfter: 5114 },
+                gpEvidence: { itemId: 995, burnedAmount: 50, remainingAmount: 50 },
+            })),
+        };
+        const gameSkill = {
+            buildContext: jest.fn(() => ({ knowledgeResults: [], workflowAvailability: [], brainSection: '', bodySection: '' })),
+            observeAttempt: jest.fn(),
+        } as unknown as ResidentRuntimeGameSkill;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.exchange-reflex' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            body,
+            cityExchange,
+            gameSkill,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.exchange-reflex',
+                        version: '0.1.0',
+                        displayName: 'Exchange Reflex',
+                        capabilities: ['thinking', 'nervous-rules'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: () => thinking,
+                    createNervousSystem: () => ({
+                        react: () => ({
+                            rule: {
+                                id: 'self-initiated-ap-gp-exchange',
+                                priority: 86,
+                                condition: { kind: 'always' },
+                                action: { kind: 'noop' },
+                            },
+                            action: {
+                                kind: 'city_exchange_ap_gp',
+                                cause: 'nervous:self-initiated-ap-gp-exchange',
+                                gpAmount: 50,
+                                apAmount: 100,
+                                idempotencyKey: 'self-ap-gp:res:pip:1',
+                            },
+                            suppressThinking: true,
+                            interruptThinking: true,
+                        }),
+                    }),
+                },
+            ],
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        expect(cityExchange.exchangeApForGp).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({
+                idempotencyKey: 'self-ap-gp:res:pip:1',
+                gpAmount: 50,
+                apAmount: 100,
+                sourceType: 'resident',
+                sourceId: 'nervous:self-initiated-ap-gp-exchange',
+            }),
+        );
+        expect(body.submit).not.toHaveBeenCalled();
+        expect(gameSkill.observeAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                producer: 'nervous-system',
+                attempt: expect.objectContaining({
+                    action: expect.objectContaining({ kind: 'city_exchange_ap_gp' }),
+                    finalStatus: 'success',
+                    ackResult: expect.objectContaining({ status: 'complete', exchangeId: 'exchange-1' }),
+                }),
+            }),
+        );
+        expect(thinking.think).not.toHaveBeenCalled();
+    });
+
     it('stops a source module only once when it provides multiple facets', () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-module-stop-test-'));
         const state = stateFor('res:pip');

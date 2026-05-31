@@ -1,5 +1,5 @@
 import { EconomyEventLog } from './city-integration/economy-event';
-import { type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
+import { CityIntegrationService, type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
 import { ControllerConfig } from './config';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import { FactionStockpileLedger } from './factions/stockpile-ledger';
@@ -108,6 +108,7 @@ export class ControllerHost {
     public readonly loreBus: LoreBus;
     public readonly factionStockpile: FactionStockpileLedger;
     private readonly economyEventLog: EconomyEventLog;
+    private readonly cityIntegrationService: CityIntegrationService;
 
     constructor(
         private readonly config: ControllerConfig,
@@ -191,6 +192,18 @@ export class ControllerHost {
         // `startRuntime` should call `apLedger.attachEconomyEventLog(this.economyEventLog, { residentName: soul.frontmatter.name })`
         // so resident-side AP grant/decay/top-up/fade events feed the same log.
         this.economyEventLog = options.economyEventLog || new EconomyEventLog(config.memory.dir);
+        this.cityIntegrationService = new CityIntegrationService({
+            memoryRoot: config.memory.dir,
+            getRuntime: resident => this.getRuntime(resident),
+            inventory: {
+                inspectResidentGold: resident => this.inspectResidentGold(resident),
+                burnResidentGold: (resident, amount) => this.burnResidentGold(resident, amount),
+            },
+            birth: {
+                birthResident: input => this.birthResidentFromCity(input),
+            },
+            economyEventLog: this.economyEventLog,
+        });
         this.bindGatewayEvents();
     }
 
@@ -201,6 +214,10 @@ export class ControllerHost {
      */
     public getEconomyEventLog(): EconomyEventLog {
         return this.economyEventLog;
+    }
+
+    public getCityIntegrationService(): CityIntegrationService {
+        return this.cityIntegrationService;
     }
 
     async start(): Promise<void> {
@@ -410,6 +427,7 @@ export class ControllerHost {
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,
             patronGateway: this.patronGateway,
+            cityExchange: this.cityIntegrationService,
             loreBus: this.loreBus,
             factionStockpile: this.factionStockpile,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },

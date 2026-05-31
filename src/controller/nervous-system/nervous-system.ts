@@ -5,6 +5,7 @@ import type { Perception } from '../transport/message-codecs';
 import { readNervousRulesMd } from './rules-md';
 import { type NervousReaction, type NervousRule, clampNervousRulePriority, evaluateNervousRules } from './rules';
 import { PatronRegistry } from '../patron/patron-registry';
+import { SELF_INITIATED_AP_GP_EXCHANGE_CAUSE, selfInitiatedApGpExchangeAction } from '../spark/self-initiated-ap-gp-exchange';
 
 export interface NervousSystemOptions {
     soul: Soul;
@@ -48,6 +49,7 @@ const FINAL_TESTAMENT_PHRASES = [
 ] as const;
 const ATTENTION_TOPUP_ACK_COOLDOWN_TICKS = 20;
 const RESTART_COOLDOWN_COMPAT_WINDOW_TICKS = 1_000;
+const SELF_INITIATED_AP_GP_EXCHANGE_COOLDOWN_TICKS = 120;
 
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
@@ -140,6 +142,11 @@ export class NervousSystem {
         );
         if (soulReaction) {
             return soulReaction;
+        }
+
+        const selfInitiatedApGpExchange = this.selfInitiatedApGpExchangeReaction(perception);
+        if (selfInitiatedApGpExchange) {
+            return selfInitiatedApGpExchange;
         }
 
         const epitaphReaction = this.prepareEpitaphReaction(perception);
@@ -299,6 +306,44 @@ export class NervousSystem {
 
     private rules(memoryDir: string): NervousRule[] {
         return [...this.soulRules(), ...readNervousRulesMd(memoryDir).rules];
+    }
+
+    private selfInitiatedApGpExchangeReaction(perception: Perception): NervousReaction | undefined {
+        const tick = cooldownTick(this.options.state, perception);
+        const cooldownKey = 'self-initiated-ap-gp-exchange';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+            return undefined;
+        }
+
+        const action = selfInitiatedApGpExchangeAction({
+            attention: this.options.state.attention,
+            attentionFloor: this.options.soul.frontmatter.attentionProfile?.floor ?? 0,
+            perception,
+            idempotencyKey: `self-ap-gp:${this.options.soul.frontmatter.name}:${tick}`,
+        });
+        if (!action) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + SELF_INITIATED_AP_GP_EXCHANGE_COOLDOWN_TICKS;
+
+        const rule: NervousRule = {
+            id: 'self-initiated-ap-gp-exchange',
+            priority: 86,
+            condition: { kind: 'always' },
+            action: { kind: 'noop' },
+            cooldownTicks: SELF_INITIATED_AP_GP_EXCHANGE_COOLDOWN_TICKS,
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { ...action, cause: SELF_INITIATED_AP_GP_EXCHANGE_CAUSE },
+            suppressThinking: true,
+            interruptThinking: true,
+        };
     }
 
     private prepareEpitaphReaction(perception: Perception): NervousReaction | undefined {

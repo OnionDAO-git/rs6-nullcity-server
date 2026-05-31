@@ -1,5 +1,4 @@
 import { closeCityIntegrationHttpServer, startCityIntegrationHttpServer } from './city-integration/http-server';
-import { CityIntegrationService } from './city-integration/service';
 import { assertProductionControllerConfig, loadControllerConfig, parseControllerArgs, sanitizedControllerConfigSummary } from './config';
 import { ControllerHost } from './controller-host';
 import { acquireControllerLock } from './controller-lock';
@@ -78,22 +77,7 @@ async function main(): Promise<void> {
             if (!args.cityHttpToken) {
                 throw new Error('CONTROLLER_CITY_HTTP_TOKEN is required when --city-http-port is set');
             }
-            const cityService = new CityIntegrationService({
-                memoryRoot: config.memory.dir,
-                getRuntime: resident => host.getRuntime(resident),
-                inventory: {
-                    inspectResidentGold: resident => host.inspectResidentGold(resident),
-                    burnResidentGold: (resident, amount) => host.burnResidentGold(resident, amount),
-                },
-                birth: {
-                    birthResident: input => host.birthResidentFromCity(input),
-                },
-                // S-HOST-WIRE: share the host's EconomyEventLog so AP/GP/NCRI
-                // events from the city HTTP surface land in the same
-                // append-only stream that future per-resident ApLedger
-                // emitters will use (see ControllerHost.getEconomyEventLog).
-                economyEventLog: host.getEconomyEventLog(),
-            });
+            const cityService = host.getCityIntegrationService();
             cityHttpServer = await startCityIntegrationHttpServer({
                 service: cityService,
                 port: args.cityHttpPort,

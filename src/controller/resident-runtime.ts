@@ -96,6 +96,10 @@ export interface ResidentRuntimeFactionStockpile {
     recordAttempt(input: RecordFactionAttemptInput): unknown;
 }
 
+export interface ResidentRuntimeCityExchange {
+    exchangeApForGp(resident: string, input: unknown): Promise<unknown>;
+}
+
 export interface ResidentRuntimeOptions {
     soul: Soul;
     gateway: GatewayClient;
@@ -109,6 +113,7 @@ export interface ResidentRuntimeOptions {
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
     factionStockpile?: ResidentRuntimeFactionStockpile;
+    cityExchange?: ResidentRuntimeCityExchange;
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
     patrons?: PatronConfig[];
@@ -845,6 +850,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async submitActionWithWatchdog(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        if (input.action.kind === 'city_exchange_ap_gp') {
+            return this.executeCityExchangeApForGp(input);
+        }
         if (input.action.kind === 'trade_resource') {
             return this.executeTradeResource(input);
         }
@@ -1645,6 +1653,94 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         return 'no_progress';
     }
 
+    private async executeCityExchangeApForGp(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        const attempt: ActionAttempt = {
+            attemptId: `attempt-city_exchange_ap_gp-${Date.now()}`,
+            resident: this.name,
+            producer: input.producer,
+            action: input.action,
+            submittedAt: new Date().toISOString(),
+            cause: input.action.cause,
+            evidence: [],
+            finalStatus: 'accepted',
+            metadata: input.metadata,
+        };
+
+        this.safeActionCallback(input.onAckReady, attempt, 'city_exchange_ap_gp_ack_callback_failed');
+
+        const action = record(input.action);
+        const gpAmount = positiveInt(action.gpAmount);
+        const apAmount = positiveInt(action.apAmount);
+        const idempotencyKey =
+            typeof action.idempotencyKey === 'string' ? action.idempotencyKey : `runtime-city-exchange:${this.name}:${this.state.tick}`;
+        const sourceId = typeof input.action.cause === 'string' ? input.action.cause : 'city_exchange_ap_gp';
+
+        if (!this.options.cityExchange) {
+            attempt.ackResult = { ok: false, status: 'error', reason: 'city_exchange_unavailable' };
+            attempt.finalStatus = 'failure';
+            attempt.finalReason = 'city_exchange_unavailable';
+            this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
+            return attempt;
+        }
+        if (gpAmount === undefined || apAmount === undefined) {
+            attempt.ackResult = { ok: false, status: 'error', reason: 'invalid_exchange_amount' };
+            attempt.finalStatus = 'failure';
+            attempt.finalReason = 'invalid_exchange_amount';
+            this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
+            return attempt;
+        }
+
+        try {
+            const recordResult = await this.options.cityExchange.exchangeApForGp(this.name, {
+                idempotencyKey,
+                gpAmount,
+                apAmount,
+                cityUserId: 'resident:self',
+                sourceType: 'resident',
+                sourceId,
+            });
+            const result = record(recordResult);
+            const status = typeof result.status === 'string' ? result.status : undefined;
+            attempt.ackResult = {
+                ok: status === 'complete',
+                status,
+                exchangeId: result.exchangeId,
+                apEvidence: result.apEvidence,
+                gpEvidence: result.gpEvidence,
+                failureReason: result.failureReason,
+            };
+            attempt.finalStatus = status === 'complete' ? 'success' : 'failure';
+            attempt.finalReason = status === 'complete' ? undefined : stringReason(result.failureReason) || status || 'exchange_failed';
+            attempt.evidence.push({ source: 'action_result', detail: attempt.ackResult });
+        } catch (error) {
+            attempt.ackResult = {
+                ok: false,
+                status: 'error',
+                reason: error instanceof Error ? error.message : String(error),
+            };
+            attempt.finalStatus = 'failure';
+            attempt.finalReason = stringReason(attempt.ackResult.reason) || 'exchange_failed';
+        }
+
+        this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
+        return attempt;
+    }
+
+    private safeActionCallback(callback: ((attempt: ActionAttempt) => void) | undefined, attempt: ActionAttempt, cause: string): void {
+        if (!callback) {
+            return;
+        }
+        try {
+            callback(attempt);
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
     private async executeTradeResource(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
         const action = input.action as {
             kind: 'trade_resource';
@@ -2333,6 +2429,13 @@ function currentHp(resident: Record<string, unknown>): number {
 
 function numberField(value: unknown): number | undefined {
     return typeof value === 'number' ? value : undefined;
+}
+
+function positiveInt(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        return undefined;
+    }
+    return value;
 }
 
 function waitsForPerceptionEffect(kind: string): boolean {

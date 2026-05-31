@@ -380,6 +380,40 @@ describe('NervousSystem', () => {
             expect(reaction?.action?.kind).toBe('say');
         });
 
+        it('self-initiates AP-for-GP before asking humans when low AP and holding coins', () => {
+            const state = runtimeState(100);
+            state.attention = 5015;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(100),
+                resident: { hp: { current: 10, max: 10 }, inventory: [{ itemId: 995, amount: 100 }] },
+            });
+
+            expect(reaction?.rule.id).toBe('self-initiated-ap-gp-exchange');
+            expect(reaction?.action).toEqual({
+                kind: 'city_exchange_ap_gp',
+                cause: 'nervous:self-initiated-ap-gp-exchange',
+                gpAmount: 50,
+                apAmount: 100,
+                idempotencyKey: 'self-ap-gp:res:hans:100',
+            });
+            expect(reaction?.suppressThinking).toBe(true);
+            expect(reaction?.interruptThinking).toBe(true);
+        });
+
+        it('falls back to asking humans when low AP but no coins are held', () => {
+            const state = runtimeState(100);
+            state.attention = 5015;
+            state.hookCooldowns!['prepare-epitaph:written'] = Number.MAX_SAFE_INTEGER;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect(reaction?.action?.kind).toBe('say');
+        });
+
         it('does not appeal when attention is at or above floor + buffer', () => {
             const state = runtimeState(100);
             state.attention = 10001;

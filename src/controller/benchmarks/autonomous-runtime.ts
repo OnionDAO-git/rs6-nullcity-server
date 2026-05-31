@@ -55,6 +55,11 @@ const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
         decayCurve: 'steep',
         floor: 0,
     },
+    'self-initiated-ap-gp-exchange-5m': {
+        startingAttention: 5015,
+        decayCurve: 'steep',
+        floor: 5000,
+    },
 };
 
 const AP_TOPUP_RESUME_5M_TASK_ID = 'ap-topup-resume-5m';
@@ -99,6 +104,21 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             context.recordSummary(`Seeded ${seededMemories} benchmark Library memories.`);
         }
         this.gameSkill = this.createGameSkill(context);
+        const cityExchange = new CityIntegrationService({
+            memoryRoot: this.runDirs.memory,
+            getRuntime: resident => (resident === context.resident ? this.runtime : undefined),
+            inventory: {
+                inspectResidentGold: resident => this.options.gateway.inspectResidentGold!(resident),
+                burnResidentGold: (resident, amount) => this.options.gateway.burnResidentGold!(resident, amount),
+            },
+            birth: {
+                birthResident: async input => ({
+                    resident: input.residentName,
+                    created: false,
+                    connected: false,
+                }),
+            },
+        });
         this.runtime = new ResidentRuntime({
             soul: createBenchmarkSoul(context),
             gateway: this.options.gateway,
@@ -108,6 +128,7 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             actionLog: new RecordingActionLog(this.runDirs.logging, context),
             inferenceLog: new RecordingInferenceLog(this.runDirs.logging, false, context),
             gameSkill: this.gameSkill,
+            cityExchange,
             sparkModules: this.options.sparkModules,
             evidence: this.createEvidence(context),
             loreBus: this.loreBus,
