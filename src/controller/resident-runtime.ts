@@ -2286,6 +2286,11 @@ function movementWaitToEffect(
             ? chebyshevDistance(detail.finalPosition, detail.target)
             : undefined;
     const improved = typeof startDistance === 'number' && typeof finalDistance === 'number' && finalDistance < startDistance;
+    const detoured =
+        typeof startDistance === 'number' &&
+        typeof finalDistance === 'number' &&
+        finalDistance === startDistance &&
+        Boolean(detail.startPosition && detail.finalPosition && movedOnSamePlane(detail.startPosition, detail.finalPosition));
 
     if (wait.reason === 'timeout' && improved) {
         return {
@@ -2302,6 +2307,30 @@ function movementWaitToEffect(
                         startDistance,
                         finalDistance,
                         improved,
+                        waitOutcome: wait.reason,
+                        timeoutMs: detail.timeoutMs,
+                    },
+                },
+            ],
+        };
+    }
+
+    if (wait.reason === 'timeout' && detoured) {
+        return {
+            ok: true,
+            evidence: [
+                {
+                    source: 'perception',
+                    detail: {
+                        kind: 'movement_detour',
+                        target: detail.target,
+                        range: detail.range,
+                        startPosition: detail.startPosition,
+                        finalPosition: detail.finalPosition,
+                        startDistance,
+                        finalDistance,
+                        improved,
+                        detoured,
                         waitOutcome: wait.reason,
                         timeoutMs: detail.timeoutMs,
                     },
@@ -2397,6 +2426,10 @@ function positionMatches(position: Position | undefined, target: Position, range
 
 function samePlane(a: Position, b: Position): boolean {
     return b.level === undefined || a.level === b.level || a.level === undefined;
+}
+
+function movedOnSamePlane(a: Position, b: Position): boolean {
+    return samePlane(a, b) && (a.x !== b.x || a.y !== b.y);
 }
 
 function movementEffectTimeoutMs(position: Position | undefined, target: Position): number {
