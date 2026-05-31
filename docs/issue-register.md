@@ -68,6 +68,11 @@ Use compact tags in the evidence column and in `docs/resident-capabilities.md`:
 | `issue:<id>` | Known gap or blocker. |
 | `commit:<sha>` | Fix or behavior substrate landed in code. |
 
+## Latest Evidence Notes
+
+- `QA-20260529-006` / `CQA10-unconditioned-economy-recurrence`: `docs/capability-evidence/2026-05-31-cqa10-unconditioned-economy-recurrence.md` adds normal-life `economySummary` fields that split controlled vs organic self-initiated AP/GP recurrence and report latest-known GP runway. No-drain artifact `data/benchmarks/capability-qa-2026-05-31/cqa10-unconditioned-economy-recurrence/normal_life_audit_20260531T091659Z.json` stayed healthy (`23` residents, `1996/1996` actions, `lowHealthWaits=0`, `cookingActions=82`, `eatingActions=20`, `xpEvents=24`) but showed `organicSelfInitiatedApGpExchangeEvents=0`, all trade counts `0`, and no low-AP resident with at least `10 GP`. Keep open; next action is a longer no-drain window plus a fresher GP inventory scan/earning-route probe.
+- `QA-20260529-011` / AP-for-GP: the same CQA10 no-drain artifact keeps broad unconditioned multi-resident AP/GP recurrence open even though benchmark/control proofs pass. The new split confirms the prior banker event was controlled-drain evidence and this follow-up window had no eligible low-AP+GP resident, so the next AP/GP work should focus on GP distribution/earning cadence before another threshold tweak.
+
 ## Open Issues
 
 | ID | Severity | Area | Status | Packet | Capability row | Evidence refs | Owner | Opened | Next action |

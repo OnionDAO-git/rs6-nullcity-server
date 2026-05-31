@@ -1,10 +1,12 @@
 import fs from 'fs';
 import path from 'path';
+import { SELF_INITIATED_EXCHANGE_MIN_GP, SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD } from '../spark/self-initiated-ap-gp-exchange';
 import { isoDate } from '../util/clock';
 
 export interface NormalLifeAuditOptions {
     logsRoot: string;
     libraryRoot: string;
+    economyEventsPath: string;
     outputDir: string;
     windowStart: Date;
     windowEnd: Date;
@@ -54,6 +56,35 @@ export interface NormalLifeAuditRecurrenceSummary {
     stuckRecovered: number;
 }
 
+export interface NormalLifeAuditGpObservation {
+    resident: string;
+    gp: number;
+    observedAt: string;
+}
+
+export interface NormalLifeAuditGpRunwayResident {
+    resident: string;
+    apLast: number;
+    gp: number;
+    requestAttentionActions: number;
+    lastGpObservedAt: string;
+}
+
+export interface NormalLifeAuditEconomySummary {
+    economyEventsPath: string;
+    economyEventsInWindow: number;
+    apGpExchangeEvents: number;
+    selfInitiatedApGpExchangeEvents: number;
+    controlledApGpExchangeEvents: number;
+    organicSelfInitiatedApGpExchangeEvents: number;
+    adminDrainEvents: number;
+    attentionRunwayThresholdAp: number;
+    minimumExchangeGp: number;
+    latestGpByResident: NormalLifeAuditGpObservation[];
+    lowApWithGpResidents: NormalLifeAuditGpRunwayResident[];
+    requestAttentionWithGpResidents: NormalLifeAuditGpRunwayResident[];
+}
+
 export interface NormalLifeAuditReport {
     runId: string;
     generatedAt: string;
@@ -71,6 +102,7 @@ export interface NormalLifeAuditReport {
     trackedCauseCounts: NormalLifeTrackedCounts;
     trackedTimelineCounts: NormalLifeTrackedCounts;
     recurrenceSummary: NormalLifeAuditRecurrenceSummary;
+    economySummary: NormalLifeAuditEconomySummary;
     residentSlices: NormalLifeAuditResidentSlice[];
     residentSignalSummary: NormalLifeAuditResidentSlice[];
     notObservedTimelineKinds: string[];
@@ -161,11 +193,13 @@ const TRACKED_TIMELINE_KINDS = [
     'first_xp',
     'say',
 ];
+const CONTROLLED_EXCHANGE_AFTER_ADMIN_DRAIN_MS = 10 * 60 * 1000;
 
 export function parseNormalLifeAuditArgs(argv: string[], now: Date = new Date()): NormalLifeAuditOptions {
     const options: NormalLifeAuditOptions = {
         logsRoot: process.env.CONTROLLER_LOGS_ROOT || path.join('data', 'controller', 'logs'),
         libraryRoot: process.env.CONTROLLER_LIBRARY_ROOT || path.join('data', 'controller', 'memory', 'library'),
+        economyEventsPath: process.env.CONTROLLER_ECONOMY_EVENTS_PATH || '',
         outputDir: process.env.CONTROLLER_NORMAL_LIFE_AUDIT_OUTPUT_DIR || path.join('data', 'benchmarks', `capability-qa-${isoDate(now)}`),
         windowEnd: now,
         windowStart: new Date(now.getTime() - DEFAULT_DURATION_MS),
@@ -187,6 +221,10 @@ export function parseNormalLifeAuditArgs(argv: string[], now: Date = new Date())
             options.libraryRoot = readRequiredValue(argv, ++i, arg);
         } else if (arg.startsWith('--library-root=')) {
             options.libraryRoot = arg.slice('--library-root='.length);
+        } else if (arg === '--economy-events-path') {
+            options.economyEventsPath = readRequiredValue(argv, ++i, arg);
+        } else if (arg.startsWith('--economy-events-path=')) {
+            options.economyEventsPath = arg.slice('--economy-events-path='.length);
         } else if (arg === '--output-dir' || arg === '--output') {
             options.outputDir = readRequiredValue(argv, ++i, arg);
         } else if (arg.startsWith('--output-dir=')) {
@@ -218,6 +256,10 @@ export function parseNormalLifeAuditArgs(argv: string[], now: Date = new Date())
         }
     }
 
+    if (!options.economyEventsPath) {
+        options.economyEventsPath = defaultEconomyEventsPath(options.libraryRoot);
+    }
+
     if (startOverride && endOverride && startOverride.getTime() > endOverride.getTime()) {
         throw new Error('window start must be <= window end');
     }
@@ -243,6 +285,7 @@ export function parseNormalLifeAuditArgs(argv: string[], now: Date = new Date())
 export function collectNormalLifeAudit(options: {
     logsRoot: string;
     libraryRoot: string;
+    economyEventsPath?: string;
     windowStart: Date;
     windowEnd: Date;
     maxTopRows?: number;
@@ -254,6 +297,7 @@ export function collectNormalLifeAudit(options: {
     const excludePrefixes = options.excludeResidentPrefixes ?? DEFAULT_EXCLUDE_PREFIXES;
     const runId = options.runId ?? `normal_life_audit_${timestampCompact(options.generatedAt ?? options.windowEnd)}`;
     const generatedAt = options.generatedAt ?? options.windowEnd;
+    const economyEventsPath = options.economyEventsPath ?? defaultEconomyEventsPath(options.libraryRoot);
 
     const actionKindCounts = new Map<string, number>();
     const causeCounts = new Map<string, number>();
@@ -330,6 +374,12 @@ export function collectNormalLifeAudit(options: {
     const actionSuccessRate = totalActionAttempts === 0 ? 0 : round3((successfulActionSubmissions / totalActionAttempts) * 100);
 
     const residentSliceReports = sortedResidentSlices(residentSlices);
+    const economySummary = buildEconomySummary({
+        economyEventsPath,
+        residentSlices: residentSliceReports,
+        windowStart: options.windowStart,
+        windowEnd: options.windowEnd,
+    });
 
     return {
         runId,
@@ -348,6 +398,7 @@ export function collectNormalLifeAudit(options: {
         trackedCauseCounts: trackedCounts(causeCounts, TRACKED_CAUSES),
         trackedTimelineCounts: trackedCounts(timelineKindCounts, TRACKED_TIMELINE_KINDS),
         recurrenceSummary: buildRecurrenceSummary(actionKindCounts, causeCounts, timelineKindCounts),
+        economySummary,
         residentSlices: residentSliceReports,
         residentSignalSummary: residentSliceReports,
         notObservedTimelineKinds: TRACKED_TIMELINE_KINDS.filter(kind => !timelineKindCounts.has(kind)),
@@ -370,6 +421,7 @@ export async function runNormalLifeAuditCli(argv: string[], runtime: NormalLifeA
         const report = collectNormalLifeAudit({
             logsRoot: options.logsRoot,
             libraryRoot: options.libraryRoot,
+            economyEventsPath: options.economyEventsPath,
             windowStart: options.windowStart,
             windowEnd: options.windowEnd,
             maxTopRows: options.maxTopRows,
@@ -427,6 +479,10 @@ function parseIsoMillis(value: string | undefined): number | undefined {
     const ts = Date.parse(value);
     if (!Number.isFinite(ts)) return undefined;
     return ts;
+}
+
+function defaultEconomyEventsPath(libraryRoot: string): string {
+    return path.join(path.dirname(libraryRoot), 'city-integration', 'economy-events.jsonl');
 }
 
 function safeReadDirs(root: string): string[] {
@@ -568,6 +624,152 @@ function buildRecurrenceSummary(
         stuckDetected: timelineKindCounts.get('stuck_detected') || 0,
         stuckRecovered: timelineKindCounts.get('stuck_recovered') || 0,
     };
+}
+
+function buildEconomySummary(options: {
+    economyEventsPath: string;
+    residentSlices: NormalLifeAuditResidentSlice[];
+    windowStart: Date;
+    windowEnd: Date;
+}): NormalLifeAuditEconomySummary {
+    const allRows = readJsonl(options.economyEventsPath);
+    const rows = allRows.filter(row => {
+        const ts = parseIsoMillis(stringField(row, 'ts'));
+        return ts !== undefined && inWindow(ts, options.windowStart, options.windowEnd);
+    });
+    const adminDrainTimes = new Map<string, number[]>();
+    const latestGp = new Map<string, NormalLifeAuditGpObservation>();
+
+    let apGpExchangeEvents = 0;
+    let selfInitiatedApGpExchangeEvents = 0;
+    let controlledApGpExchangeEvents = 0;
+    let organicSelfInitiatedApGpExchangeEvents = 0;
+    let adminDrainEvents = 0;
+    for (const row of allRows) {
+        const resident = stringField(row, 'residentName');
+        const tsString = stringField(row, 'ts');
+        const ts = parseIsoMillis(tsString);
+        const kind = stringField(row, 'kind');
+        if (!resident || !tsString || ts === undefined || !kind) continue;
+
+        if (
+            kind === 'ap_decay' &&
+            (stringField(row, 'refId') || '').startsWith(`admin_drain:${resident}:`) &&
+            ts >= options.windowStart.getTime() - CONTROLLED_EXCHANGE_AFTER_ADMIN_DRAIN_MS &&
+            ts <= options.windowEnd.getTime()
+        ) {
+            adminDrainEvents += 1;
+            const times = adminDrainTimes.get(resident) || [];
+            times.push(ts);
+            adminDrainTimes.set(resident, times);
+        }
+    }
+
+    for (const row of allRows) {
+        const resident = stringField(row, 'residentName');
+        const tsString = stringField(row, 'ts');
+        const ts = parseIsoMillis(tsString);
+        const kind = stringField(row, 'kind');
+        if (!resident || !tsString || ts === undefined || kind !== 'gp_observed' || ts > options.windowEnd.getTime()) continue;
+        const gp = gpObservedFromEvent(row);
+        if (gp !== undefined) {
+            const current = latestGp.get(resident);
+            const currentTs = current ? parseIsoMillis(current.observedAt) : undefined;
+            if (!current || currentTs === undefined || ts >= currentTs) {
+                latestGp.set(resident, { resident, gp, observedAt: tsString });
+            }
+        }
+    }
+
+    for (const row of rows) {
+        const resident = stringField(row, 'residentName');
+        const ts = parseIsoMillis(stringField(row, 'ts'));
+        const kind = stringField(row, 'kind');
+        if (!resident || ts === undefined || kind !== 'ap_gp_exchange') continue;
+
+        apGpExchangeEvents += 1;
+        const isSelfInitiated = stringField(row, 'cityUserId') === 'resident:self' && (stringField(row, 'refId') || '').includes('self-ap-gp:');
+        if (isSelfInitiated) {
+            selfInitiatedApGpExchangeEvents += 1;
+        }
+        const isControlled = Boolean(
+            (adminDrainTimes.get(resident) || []).some(
+                drainTs => drainTs <= ts && ts - drainTs <= CONTROLLED_EXCHANGE_AFTER_ADMIN_DRAIN_MS,
+            ),
+        );
+        if (isControlled) {
+            controlledApGpExchangeEvents += 1;
+        }
+        if (isSelfInitiated && !isControlled) {
+            organicSelfInitiatedApGpExchangeEvents += 1;
+        }
+    }
+
+    const latestGpByResident = [...latestGp.values()].sort((a, b) => {
+        if (b.gp === a.gp) return a.resident.localeCompare(b.resident);
+        return b.gp - a.gp;
+    });
+
+    const lowApWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
+        return slice.apLast !== undefined && slice.apLast < SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD;
+    });
+    const requestAttentionWithGpResidents = buildRunwayResidents(latestGp, options.residentSlices, slice => {
+        return (slice.trackedCauseCounts['nervous:request-attention'] || 0) > 0;
+    });
+
+    return {
+        economyEventsPath: options.economyEventsPath,
+        economyEventsInWindow: rows.length,
+        apGpExchangeEvents,
+        selfInitiatedApGpExchangeEvents,
+        controlledApGpExchangeEvents,
+        organicSelfInitiatedApGpExchangeEvents,
+        adminDrainEvents,
+        attentionRunwayThresholdAp: SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD,
+        minimumExchangeGp: SELF_INITIATED_EXCHANGE_MIN_GP,
+        latestGpByResident,
+        lowApWithGpResidents,
+        requestAttentionWithGpResidents,
+    };
+}
+
+function buildRunwayResidents(
+    latestGp: Map<string, NormalLifeAuditGpObservation>,
+    residentSlices: NormalLifeAuditResidentSlice[],
+    include: (slice: NormalLifeAuditResidentSlice) => boolean,
+): NormalLifeAuditGpRunwayResident[] {
+    return residentSlices
+        .filter(slice => include(slice))
+        .map(slice => {
+            const gp = latestGp.get(slice.resident);
+            if (!gp || gp.gp < SELF_INITIATED_EXCHANGE_MIN_GP || slice.apLast === undefined) return undefined;
+            return {
+                resident: slice.resident,
+                apLast: slice.apLast,
+                gp: gp.gp,
+                requestAttentionActions: slice.trackedCauseCounts['nervous:request-attention'] || 0,
+                lastGpObservedAt: gp.observedAt,
+            };
+        })
+        .filter((entry): entry is NormalLifeAuditGpRunwayResident => entry !== undefined)
+        .sort((a, b) => {
+            if (a.apLast === b.apLast) {
+                if (b.requestAttentionActions === a.requestAttentionActions) return a.resident.localeCompare(b.resident);
+                return b.requestAttentionActions - a.requestAttentionActions;
+            }
+            return a.apLast - b.apLast;
+        });
+}
+
+function gpObservedFromEvent(row: Record<string, unknown>): number | undefined {
+    const note = stringField(row, 'note') || '';
+    const match = note.match(/observed\s+([0-9]+(?:\.[0-9]+)?)\s+GP\s+in\s+item\s+995/i);
+    if (match) {
+        const parsed = Number(match[1]);
+        return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    const gpDelta = numberField(row, 'gpDelta');
+    return gpDelta !== undefined && gpDelta > 0 ? gpDelta : undefined;
 }
 
 function sortedResidentSlices(slices: Map<string, ResidentSliceAccumulator>): NormalLifeAuditResidentSlice[] {

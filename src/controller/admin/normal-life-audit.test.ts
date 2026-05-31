@@ -263,6 +263,139 @@ describe('normal life audit', () => {
         expect(alpha?.failedActionSubmissions).toBe(0);
     });
 
+    it('summarizes organic vs controlled AP/GP economy recurrence and GP runway', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'normal-life-audit-economy-'));
+        const logsRoot = path.join(root, 'logs');
+        const libraryRoot = path.join(root, 'library');
+        const economyEventsPath = path.join(root, 'city-integration', 'economy-events.jsonl');
+        fs.mkdirSync(logsRoot, { recursive: true });
+        fs.mkdirSync(libraryRoot, { recursive: true });
+
+        writeJsonl(path.join(logsRoot, 'res:qa-alpha', 'actions', '2026-05-31.jsonl'), [
+            action('2026-05-31T12:01:00.000Z', 'say', 'nervous:request-attention', true, 250),
+        ]);
+        writeJsonl(path.join(logsRoot, 'res:qa-beta', 'actions', '2026-05-31.jsonl'), [
+            action('2026-05-31T12:01:00.000Z', 'say', 'idle_initiative', true, 600),
+        ]);
+        writeJsonl(path.join(logsRoot, 'res:qa-gamma', 'actions', '2026-05-31.jsonl'), [
+            action('2026-05-31T12:01:00.000Z', 'say', 'nervous:request-attention', true, 200),
+        ]);
+
+        writeJsonl(economyEventsPath, [
+            economy('2026-05-31T11:59:00.000Z', 'gp_observed', 'res:qa-gamma', {
+                refId: 'inspect:res:qa-gamma',
+                note: 'observed 200 GP in item 995',
+            }),
+            economy('2026-05-31T11:59:30.000Z', 'gp_observed', 'res:qa-beta', {
+                refId: 'inspect:res:qa-beta-stale',
+                note: 'observed 300 GP in item 995',
+            }),
+            economy('2026-05-31T11:59:45.000Z', 'ap_decay', 'res:qa-delta', {
+                refId: 'admin_drain:res:qa-delta:2026-05-31T11:59:45.000Z',
+                apDelta: -200,
+            }),
+            economy('2026-05-31T12:02:00.000Z', 'gp_observed', 'res:qa-alpha', {
+                refId: 'inspect:res:qa-alpha',
+                note: 'observed 100 GP in item 995',
+            }),
+            economy('2026-05-31T12:03:00.000Z', 'ap_decay', 'res:qa-alpha', {
+                refId: 'admin_drain:res:qa-alpha:2026-05-31T12:03:00.000Z',
+                apDelta: -300,
+            }),
+            economy('2026-05-31T12:03:30.000Z', 'ap_gp_exchange', 'res:qa-alpha', {
+                cityUserId: 'resident:self',
+                refId: 'apgp:res:qa-alpha:self-ap-gp:res:qa-alpha:42',
+                apDelta: 100,
+                gpDelta: -50,
+            }),
+            economy('2026-05-31T12:04:00.000Z', 'gp_observed', 'res:qa-beta', {
+                refId: 'inspect:res:qa-beta',
+                note: 'observed 75 GP in item 995',
+            }),
+            economy('2026-05-31T12:05:00.000Z', 'ap_gp_exchange', 'res:qa-beta', {
+                cityUserId: 'resident:self',
+                refId: 'apgp:res:qa-beta:self-ap-gp:res:qa-beta:77',
+                apDelta: 50,
+                gpDelta: -25,
+            }),
+            economy('2026-05-31T12:06:00.000Z', 'ap_gp_exchange', 'res:qa-gamma', {
+                cityUserId: 'resident:self',
+                refId: 'apgp:res:qa-gamma:manual-resident-self',
+                apDelta: 40,
+                gpDelta: -20,
+            }),
+            economy('2026-05-31T12:06:30.000Z', 'ap_gp_exchange', 'res:qa-delta', {
+                cityUserId: 'resident:self',
+                refId: 'apgp:res:qa-delta:self-ap-gp:res:qa-delta:88',
+                apDelta: 40,
+                gpDelta: -20,
+            }),
+            economy('2026-05-31T13:05:00.000Z', 'ap_gp_exchange', 'res:qa-late', {
+                cityUserId: 'resident:self',
+                refId: 'outside-window',
+                apDelta: 50,
+                gpDelta: -25,
+            }),
+        ]);
+
+        const report = collectNormalLifeAudit({
+            logsRoot,
+            libraryRoot,
+            economyEventsPath,
+            windowStart: new Date('2026-05-31T12:00:00.000Z'),
+            windowEnd: new Date('2026-05-31T13:00:00.000Z'),
+            maxTopRows: 6,
+        });
+
+        expect(report.economySummary).toMatchObject({
+            economyEventsInWindow: 7,
+            apGpExchangeEvents: 4,
+            selfInitiatedApGpExchangeEvents: 3,
+            controlledApGpExchangeEvents: 2,
+            organicSelfInitiatedApGpExchangeEvents: 1,
+            adminDrainEvents: 2,
+            attentionRunwayThresholdAp: 300,
+            minimumExchangeGp: 10,
+        });
+        expect(report.economySummary.latestGpByResident).toEqual([
+            { resident: 'res:qa-gamma', gp: 200, observedAt: '2026-05-31T11:59:00.000Z' },
+            { resident: 'res:qa-alpha', gp: 100, observedAt: '2026-05-31T12:02:00.000Z' },
+            { resident: 'res:qa-beta', gp: 75, observedAt: '2026-05-31T12:04:00.000Z' },
+        ]);
+        expect(report.economySummary.lowApWithGpResidents).toEqual([
+            {
+                resident: 'res:qa-gamma',
+                apLast: 200,
+                gp: 200,
+                requestAttentionActions: 1,
+                lastGpObservedAt: '2026-05-31T11:59:00.000Z',
+            },
+            {
+                resident: 'res:qa-alpha',
+                apLast: 250,
+                gp: 100,
+                requestAttentionActions: 1,
+                lastGpObservedAt: '2026-05-31T12:02:00.000Z',
+            },
+        ]);
+        expect(report.economySummary.requestAttentionWithGpResidents).toEqual([
+            {
+                resident: 'res:qa-gamma',
+                apLast: 200,
+                gp: 200,
+                requestAttentionActions: 1,
+                lastGpObservedAt: '2026-05-31T11:59:00.000Z',
+            },
+            {
+                resident: 'res:qa-alpha',
+                apLast: 250,
+                gp: 100,
+                requestAttentionActions: 1,
+                lastGpObservedAt: '2026-05-31T12:02:00.000Z',
+            },
+        ]);
+    });
+
     it('writes a JSON artifact and returns exit code 0', async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'normal-life-audit-cli-'));
         const logsRoot = path.join(root, 'logs');
@@ -319,6 +452,17 @@ function action(t: string, kind: string, cause: string, ok: boolean, attentionAf
 
 function timeline(ts: string, kind: string): Record<string, unknown> {
     return { ts, kind };
+}
+
+function economy(ts: string, kind: string, residentName: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+        schemaVersion: 1,
+        id: `${kind}-${residentName}-${ts}`,
+        ts,
+        kind,
+        residentName,
+        ...extra,
+    };
 }
 
 function writeJsonl(filePath: string, rows: unknown[]): void {
