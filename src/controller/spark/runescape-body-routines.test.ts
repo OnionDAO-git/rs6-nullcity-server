@@ -1604,6 +1604,36 @@ describe('lowHealthRecoveryAction', () => {
         });
     });
 
+    it('routes toward starter fishing when hurt near passive Lumbridge NPCs and carrying a net', () => {
+        const man: BodyActor = {
+            id: 'npc:man',
+            kind: 'npc',
+            key: 'rs:man',
+            name: 'Man',
+            position: { x: 3226, y: 3218, level: 0 },
+            hpFraction: 0.7,
+            combatLevel: 2,
+        };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+                nearby: { npcs: [man] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: 7,
+            cause: 'low_health_fish_food',
+        });
+    });
+
     it('prioritizes visible ground food over coins when hurt and carrying no food', () => {
         const coins = ground(COINS, 100, 100, 'rs:coins');
         const food = ground(315, 103, 100, 'rs:shrimps');

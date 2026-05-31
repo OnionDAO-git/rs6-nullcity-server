@@ -530,7 +530,7 @@ function isVisibleCombatThreat(actor: BodyActor): boolean {
     const name = `${actor.key || ''} ${actor.name || ''}`;
     const combatLevel = Number(actor.combatLevel || 0);
     const alive = actor.hpFraction === undefined || actor.hpFraction > 0;
-    return alive && (combatLevel > 1 || /\b(goblin|spider|zombie|skeleton|guard)\b/i.test(name));
+    return alive && (combatLevel >= 5 || /\b(goblin|spider|zombie|skeleton|guard)\b/i.test(name));
 }
 
 function hasNearbyRecoveryThreat(perception: BodyHybridPerception, here: BodyPos): boolean {
