@@ -3846,6 +3846,117 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('answers addressed factual memory questions even when patron memories would crowd the normal prompt slice', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            lastBrainTick: 1,
+            lastBodyTick: 1,
+        };
+        const agent = hybridAgent(
+            llm,
+            state,
+            soul(),
+            memory([
+                'Patron memory: claude-e16-beta gave me 10 AP +20 attention.',
+                'Patron memory: alice gave me 5 AP.',
+                'Patron memory: bob gave me 5 AP.',
+                'Patron memory: carol gave me 5 AP.',
+                'Patron memory: dave gave me 5 AP.',
+                'Patron memory: eve gave me 5 AP.',
+                'Fact memory (routes.md): - 2026-05-31T16:25:45.576Z res:cmem162544 taught: "west gate passphrase is ember-vellum."',
+            ]),
+        );
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3187, 3220),
+                events: [chatFromCodex('agent, what do you remember about the west gate passphrase?', 3187, 3222)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I remember west gate passphrase is ember-vellum.',
+                voiceSource: 'scripted',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_memory_recall');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('answers addressed factual memory questions from plain qmd fact lines', async () => {
+        const llm = scriptedLlm([]);
+        const agent = hybridAgent(
+            llm,
+            runtimeState(),
+            soul(),
+            memory(['Fact memory (routes.md): - 2026-05-31T16:35:45.576Z west gate passphrase is ember-vellum.']),
+        );
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3187, 3220),
+                events: [chatFromCodex('agent, what do you remember about the west gate passphrase?', 3187, 3222)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I remember west gate passphrase is ember-vellum.',
+                voiceSource: 'scripted',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_memory_recall');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps direct memory recall retrieval focused on the question instead of ambient nearby chatter', async () => {
+        const llm = scriptedLlm([]);
+        const memoryStore = memory();
+        (memoryStore.retrieve as jest.Mock).mockImplementation((_resident: string, query: string) => {
+            if (/scouting|nearby|goal/i.test(query)) {
+                return ['Patron memory: claude-e16-beta gave me 10 AP +20 attention.'];
+            }
+            return ['Fact memory (routes.md): - 2026-05-31T16:35:45.576Z res:cmem taught: "west gate passphrase is ember-vellum."'];
+        });
+        const agent = hybridAgent(llm, runtimeState(), soul(), memoryStore);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3187, 3220),
+                events: [
+                    chatFromCodex('agent, what do you remember about the west gate passphrase?', 3187, 3222),
+                    chatFromResidentPeer(
+                        'I am scouting. Nearby I see 15 trees and 2 players at 3197,3216. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                        3197,
+                        3216,
+                    ),
+                ],
+            }),
+        );
+
+        expect(memoryStore.retrieve).toHaveBeenCalledWith(
+            'res:agent',
+            'agent, what do you remember about the west gate passphrase?',
+            expect.any(Number),
+        );
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I remember west gate passphrase is ember-vellum.',
+                voiceSource: 'scripted',
+            },
+        ]);
+        expect(result.cause).toBe('direct_chat_memory_recall');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('asks for clarification on unknown addressed commands without waiting for Body inference', async () => {
         const llm = scriptedLlm([]);
         const agent = hybridAgent(llm, runtimeState());

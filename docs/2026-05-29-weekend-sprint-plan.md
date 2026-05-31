@@ -309,7 +309,7 @@ These packets come from the design specs `docs/superpowers/specs/2026-05-30-*.md
 | S-NCRI-4 | same | Seed first 3 NCRI fixtures + admin CLI + dry-run sale demo. | NCRI agent |
 | S-MEM-1 | `2026-05-30-resident-memory-system-design.md` | DONE 2026-05-31: ResidentMemoryService facade + formal qmd `FactsStore`; isolation, append, restart, `world-events.md`, `readTopic`, `relevantTo` tests. | memory agent |
 | S-MEM-2 | same | mem0 local + prompt envelope "Memory" block (substrate cloud; live recall live). | memory agent |
-| S-MEM-4 | same | Retention/summarization policy with stub LLM; cloud-doable. | memory agent |
+| S-MEM-4-retention | same | Retention/summarization policy with stub LLM; cloud-doable. Distinct from the S-MEM-4 named-recall soak that landed later as live evidence. | memory agent |
 | S-GOAL-1 | `2026-05-30-goal-as-orientation-design.md` | SoulOrientation schema + envelope block; backward-compat for old souls. | gameplay agent |
 | S-GOAL-2 | same | OrientationScorer + `orientation_progress`/`orientation_stalled` events. | gameplay agent |
 | S-GOAL-4 | same | Operator nudge + goal-edit CLI with audit. | admin agent |
@@ -323,6 +323,7 @@ These packets come from the design specs `docs/superpowers/specs/2026-05-30-*.md
 |---|---|---|---|
 | S-STORY-3 | storyteller-overseer | Real paid dispatch with persona; needs configured paid profile + cost cap. | storyteller/LLM agent |
 | S-MEM-3 | resident-memory | Brain-driven `rememberFact` decisions; needs live benchmark `memory-write-recall-10m`. | gameplay/memory agent |
+| S-MEM-4 | resident-memory | DONE 2026-05-31: named `res:agent` memory-recall soak proves taught route fact write + delayed natural recall on the hot stack, and documents Hans as partial. | gameplay/memory agent |
 | S-GOAL-3 | goal-as-orientation | DONE 2026-05-31: `orientation-bias-10m` live artifact proves Soul orientation biases active goal/action family toward combat over neutral exploration. Dynamic SPARK module switching remains future optional work. | gameplay agent |
 
 **Dashboard-only (in `../rs6-nullcity-residents-dashboard`):**

@@ -60,6 +60,7 @@ import { fleeTarget } from '../spark/runescape-nervous-rules';
 import {
     statusSpeech,
     DEFAULT_FOLLOW_RADIUS,
+    MAX_PROMPT_MEMORIES,
     rememberPendingDirectTrade,
     starterFishingCookingAction,
     type HelperContext,
@@ -232,6 +233,33 @@ export async function nonCommandChatReaction(
     }
 
     return undefined;
+}
+
+function directRecallMemories(ctx: ChatContext, perception: HybridPerception, normalizedQuestion: string): string[] {
+    const promptMemories = ctx.promptMemories(perception, 'body');
+    try {
+        const targeted = ctx.options.memory
+            .retrieve(ctx.options.soul.frontmatter.name, normalizedQuestion, Math.max(12, MAX_PROMPT_MEMORIES * 2))
+            .map((memory: string) => memory.trim())
+            .filter(Boolean);
+        return uniqueMemories([...targeted, ...promptMemories]);
+    } catch {
+        return promptMemories;
+    }
+}
+
+function uniqueMemories(memories: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const memory of memories) {
+        const key = memory.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (!key || seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        result.push(memory);
+    }
+    return result;
 }
 
 export function cleanSmallTalkReply(text: string | undefined, normalizedQuestion: string, memories: string[]): string | undefined {
@@ -811,7 +839,7 @@ export async function directChatAction(
     }
 
     if (isMemoryRecallIntent(command, chat.normalizedText)) {
-        const memories = ctx.promptMemories(perception, 'body');
+        const memories = directRecallMemories(ctx, perception, chat.normalizedText);
         const text = memoryRecallFallback(memories) || 'I do not have a clear Library memory for that yet.';
         recordChatReplyEmit(ctx);
         cognition.tickTelemetry = {
@@ -1629,7 +1657,8 @@ function factualMemoryRecallFallback(lines: string[]): string | undefined {
         lines.find(line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\btaught:\s*"/i.test(line)) ||
         lines.find(
             line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\b(learned|remembered|found|discovered)\b/i.test(line),
-        );
+        ) ||
+        lines.find(line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\b[a-z][a-z0-9 -]+\s+is\s+[a-z0-9 -]+\b/i.test(line));
     if (!factLine) {
         return undefined;
     }
