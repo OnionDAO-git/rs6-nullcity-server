@@ -41,8 +41,11 @@ export const SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER = 20;
 /** Minimum GP the resident must hold before self-initiating an exchange. */
 export const SELF_INITIATED_EXCHANGE_MIN_GP = 10;
 
-/** Maximum GP burned in a single self-initiated exchange (keeps a cushion). */
-export const SELF_INITIATED_EXCHANGE_MAX_GP = 50;
+/** Target AP runway above the declared floor after a self-initiated exchange. */
+export const SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP = 500;
+
+/** Maximum GP burned in a single self-initiated exchange (keeps rich residents from overspending). */
+export const SELF_INITIATED_EXCHANGE_MAX_GP = 250;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -99,8 +102,10 @@ export interface SelfInitiatedApGpExchangeInput {
  *    (when no floor is declared, the threshold collapses to the buffer), AND
  *  - the resident holds at least `SELF_INITIATED_EXCHANGE_MIN_GP` real GP.
  *
- * The emitted action spends `min(gp, SELF_INITIATED_EXCHANGE_MAX_GP)` GP and
- * requests `gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP` AP in return.
+ * The emitted action spends enough GP to buy roughly
+ * `SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP` above the resident's floor,
+ * capped by both inventory and `SELF_INITIATED_EXCHANGE_MAX_GP`, then requests
+ * `gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP` AP in return.
  */
 export function selfInitiatedApGpExchangeAction(input: SelfInitiatedApGpExchangeInput): AgentAction | undefined {
     const { attention, attentionFloor } = input;
@@ -119,7 +124,10 @@ export function selfInitiatedApGpExchangeAction(input: SelfInitiatedApGpExchange
         return undefined;
     }
 
-    const gpAmount = Math.min(gp, SELF_INITIATED_EXCHANGE_MAX_GP);
+    const currentRunway = Math.max(0, attention - floor);
+    const neededAp = Math.max(0, SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - currentRunway);
+    const gpNeededForRunway = Math.ceil(neededAp / SELF_INITIATED_EXCHANGE_AP_PER_GP);
+    const gpAmount = Math.min(gp, SELF_INITIATED_EXCHANGE_MAX_GP, Math.max(SELF_INITIATED_EXCHANGE_MIN_GP, gpNeededForRunway));
     const apAmount = gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP;
 
     const action: AgentAction = {

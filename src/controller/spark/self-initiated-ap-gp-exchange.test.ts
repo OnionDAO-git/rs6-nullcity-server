@@ -4,6 +4,7 @@ import {
     SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER,
     SELF_INITIATED_EXCHANGE_MAX_GP,
     SELF_INITIATED_EXCHANGE_MIN_GP,
+    SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP,
     gpInInventory,
     selfInitiatedApGpExchangeAction,
 } from './self-initiated-ap-gp-exchange';
@@ -50,18 +51,33 @@ describe('selfInitiatedApGpExchangeAction', () => {
         expect(SELF_INITIATED_AP_GP_EXCHANGE_CAUSE).toBe('nervous:self-initiated-ap-gp-exchange');
     });
 
-    it('caps the GP spend at SELF_INITIATED_EXCHANGE_MAX_GP and credits AP per the confirmed rate', () => {
+    it('spends enough GP to buy a useful AP runway without spending more than needed', () => {
         const action = selfInitiatedApGpExchangeAction({
             attention: floor + 15,
             attentionFloor: floor,
-            perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 100 }] } },
+            perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 1000 }] } },
+        });
+        expect(action).toBeDefined();
+        const record = action as unknown as { gpAmount: number; apAmount: number };
+        expect(record.gpAmount).toBe(
+            Math.ceil((SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - 15) / SELF_INITIATED_EXCHANGE_AP_PER_GP),
+        );
+        expect(record.apAmount).toBe(record.gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP);
+        expect(SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP).toBe(500);
+        expect(SELF_INITIATED_EXCHANGE_MAX_GP).toBe(250);
+        expect(SELF_INITIATED_EXCHANGE_AP_PER_GP).toBe(2);
+    });
+
+    it('caps the GP spend at SELF_INITIATED_EXCHANGE_MAX_GP when the needed runway is larger than the cap', () => {
+        const action = selfInitiatedApGpExchangeAction({
+            attention: 5,
+            attentionFloor: floor,
+            perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 1000 }] } },
         });
         expect(action).toBeDefined();
         const record = action as unknown as { gpAmount: number; apAmount: number };
         expect(record.gpAmount).toBe(SELF_INITIATED_EXCHANGE_MAX_GP);
-        expect(SELF_INITIATED_EXCHANGE_MAX_GP).toBe(50);
         expect(record.apAmount).toBe(SELF_INITIATED_EXCHANGE_MAX_GP * SELF_INITIATED_EXCHANGE_AP_PER_GP);
-        expect(SELF_INITIATED_EXCHANGE_AP_PER_GP).toBe(2);
     });
 
     it('spends all GP when the resident holds less than the cap', () => {

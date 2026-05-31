@@ -394,8 +394,8 @@ describe('NervousSystem', () => {
             expect(reaction?.action).toEqual({
                 kind: 'city_exchange_ap_gp',
                 cause: 'nervous:self-initiated-ap-gp-exchange',
-                gpAmount: 50,
-                apAmount: 100,
+                gpAmount: 100,
+                apAmount: 200,
                 idempotencyKey: 'self-ap-gp:res:hans:100',
             });
             expect(reaction?.suppressThinking).toBe(true);
