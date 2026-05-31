@@ -42,7 +42,6 @@ async function main(): Promise<void> {
     process.once('SIGTERM', () => void shutdown());
 
     try {
-        await host.start();
         if (args.mcpHttpPort !== undefined) {
             mcpHttpServer = await startControllerMcpHttpServer(host, {
                 port: args.mcpHttpPort,
@@ -89,6 +88,7 @@ async function main(): Promise<void> {
             });
             process.stderr.write(`[controller] city integration HTTP listening at ${cityHttpServer.url}\n`);
         }
+        await host.start();
     } catch (error) {
         if (cityHttpServer) {
             await closeCityIntegrationHttpServer(cityHttpServer.server).catch(closeError => {

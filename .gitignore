@@ -12,6 +12,7 @@ node_modules
 /data/controller/storyteller/canon/
 /data/controller/storyteller/review/
 /data/controller/storyteller/overseer-ledger.jsonl
+/data/runtime-logs
 /data/benchmarks/**
 !/data/benchmarks/README.md
 /data/knowledge/suggestions.*.jsonl

@@ -50,7 +50,6 @@ describe('inference health audit', () => {
             expect(classifyDecisionCause('plan_generated')).toBe('clean');
             expect(classifyDecisionCause('brain_goal')).toBe('clean');
             expect(classifyDecisionCause('candidate_fallback')).toBe('clean');
-            expect(classifyDecisionCause('empty_completion_idle_initiative')).toBe('clean');
             expect(classifyDecisionCause('brain_clean')).toBe('clean');
 
             // recovered_* — was broken, parser salvaged it
@@ -68,6 +67,7 @@ describe('inference health audit', () => {
             // reflex pre-emption (bucket C)
             expect(classifyDecisionCause('thinking_cancelled')).toBe('thinking_cancelled');
             expect(classifyDecisionCause('thinking_watchdog_timeout')).toBe('thinking_cancelled');
+            expect(classifyDecisionCause('brain_timeout_fallback')).toBe('thinking_cancelled');
 
             // schema mismatch
             expect(classifyDecisionCause('empty_completion_schema_mismatch')).toBe('schema_mismatch');
@@ -76,6 +76,7 @@ describe('inference health audit', () => {
 
             // truly empty (bare empty_completion is conservatively truly_empty)
             expect(classifyDecisionCause('empty_completion')).toBe('truly_empty');
+            expect(classifyDecisionCause('empty_completion_idle_initiative')).toBe('truly_empty');
             expect(classifyDecisionCause('empty_completion_truly_empty')).toBe('truly_empty');
             expect(classifyDecisionCause('brain_truly_empty')).toBe('truly_empty');
             expect(classifyDecisionCause(undefined)).toBe('truly_empty');
@@ -170,6 +171,56 @@ describe('inference health audit', () => {
 
         const hero = report.residentSlices.find(s => s.resident === 'res:hero');
         expect(hero!.usableBrainDecisionRate).toBe(0.75);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
+    it('does not count non-inference controller decisions as clean brain output', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inference-health-control-'));
+        const trajectoryRoot = path.join(root, 'memory');
+
+        writeTrajectory(trajectoryRoot, 'res:hans', [
+            decision('2026-05-31T17:31:00.000Z', 'budget_exhausted:pause'),
+            decision('2026-05-31T17:31:01.000Z', 'hook_noop'),
+            decision('2026-05-31T17:31:02.000Z', 'body_wait'),
+            decision('2026-05-31T17:31:03.000Z', 'follow_listen_hold'),
+            decision('2026-05-31T17:31:04.000Z', 'resident_busy'),
+            decision('2026-05-31T17:31:05.000Z', 'combat_hold'),
+            action('2026-05-31T17:31:06.000Z', 'move_to'),
+            sayLine('2026-05-31T17:31:07.000Z'),
+        ]);
+        writeTrajectory(trajectoryRoot, 'res:agent', [
+            decision('2026-05-31T17:32:00.000Z', 'completion_action', { promptHash: 'p1', completionHash: 'c1' }),
+            decision('2026-05-31T17:32:01.000Z', 'budget_exhausted:pause'),
+            action('2026-05-31T17:32:02.000Z', 'interact', 'goal:work'),
+        ]);
+
+        const report = collectInferenceHealth({
+            trajectoryRoot,
+            windowStart: new Date('2026-05-31T17:30:00.000Z'),
+            windowEnd: new Date('2026-05-31T18:00:00.000Z'),
+            generatedAt: new Date('2026-05-31T18:00:00.000Z'),
+        });
+
+        expect(report.activeResidents).toBe(2);
+        expect(report.brainEligibleDecisions).toBe(1);
+        expect(report.breakdown).toEqual({
+            clean: 1,
+            recovered: 0,
+            think_only_no_answer: 0,
+            thinking_cancelled: 0,
+            schema_mismatch: 0,
+            truly_empty: 0,
+        });
+        expect(report.usableBrainDecisionRate).toBe(1);
+        expect(report.causeCounts).toEqual([['completion_action', 1]]);
+
+        const hans = report.residentSlices.find(s => s.resident === 'res:hans');
+        expect(hans).toBeDefined();
+        expect(hans!.brainEligibleDecisions).toBe(0);
+        expect(hans!.usableBrainDecisionRate).toBe(0);
+        expect(hans!.causeCounts).toEqual([]);
+        expect(hans!.totalAttributableActions).toBe(2);
 
         fs.rmSync(root, { recursive: true, force: true });
     });

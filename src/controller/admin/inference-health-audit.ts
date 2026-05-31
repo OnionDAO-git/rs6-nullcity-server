@@ -118,6 +118,14 @@ export interface InferenceHealthAuditCliRuntime {
 const DEFAULT_DURATION_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_TOP_ROWS = 20;
 const DEFAULT_EXCLUDE_PREFIXES = ['res:bmk_'];
+const INFERENCE_DECISION_CAUSES = new Set([
+    'candidate_fallback',
+    'completion_parse_failed',
+    'plan_generated',
+    'thinking_cancelled',
+    'thinking_watchdog_timeout',
+    'brain_timeout_fallback',
+]);
 
 /**
  * The decisionCause strings S-INFER-1 routes recovered completions through. A
@@ -136,7 +144,7 @@ export function classifyDecisionCause(rawCause: string | undefined): DecisionHea
         return 'truly_empty';
     }
 
-    if (cause === 'thinking_cancelled' || cause === 'thinking_watchdog_timeout') {
+    if (cause === 'thinking_cancelled' || cause === 'thinking_watchdog_timeout' || cause === 'brain_timeout_fallback') {
         return 'thinking_cancelled';
     }
 
@@ -152,7 +160,7 @@ export function classifyDecisionCause(rawCause: string | undefined): DecisionHea
         return 'schema_mismatch';
     }
 
-    if (cause === 'empty_completion' || cause.endsWith('truly_empty')) {
+    if (cause === 'empty_completion' || cause === 'empty_completion_idle_initiative' || cause.endsWith('truly_empty')) {
         // Bare `empty_completion` is the telemetry-safe spelling S-INFER-1 keeps
         // for `clean` (well-formed `{}`) AND `truly_empty`. Because the two are
         // indistinguishable at the cause level, the conservative reading is
@@ -162,9 +170,8 @@ export function classifyDecisionCause(rawCause: string | undefined): DecisionHea
         return 'truly_empty';
     }
 
-    if (cause.endsWith('clean') || cause === 'empty_completion_idle_initiative') {
-        // Explicit clean spelling, or the idle-initiative recovery the brain
-        // takes when an empty completion is backfilled with a useful beat.
+    if (cause.endsWith('clean')) {
+        // Explicit clean spelling from the completion parser.
         return 'clean';
     }
 
@@ -217,7 +224,7 @@ export function collectInferenceHealth(options: {
                 if (ts === undefined || !inWindow(ts, options.windowStart, options.windowEnd)) continue;
                 const kind = stringField(row, 'kind');
 
-                if (kind === 'decision') {
+                if (kind === 'decision' && isInferenceDecision(row)) {
                     brainEligible += 1;
                     const cause = stringField(row, 'cause') || '(unset)';
                     bump(causeCounts, cause);
@@ -441,6 +448,30 @@ function pct(rate: number): string {
 
 function endsWithAny(value: string, suffixes: string[]): boolean {
     return suffixes.some(suffix => value.endsWith(suffix));
+}
+
+/**
+ * Trajectory `decision` rows include many controller/control-flow decisions
+ * (`budget_exhausted:pause`, `hook_noop`, `body_wait`, `follow_listen_hold`,
+ * etc.) that never called the model. Do not let those inflate the inference
+ * health headline as "clean brain" output. A row is inference-bearing only
+ * when it has prompt/completion hashes or a cause family emitted by the
+ * Brain/SPARK completion parser.
+ */
+function isInferenceDecision(row: Record<string, unknown>): boolean {
+    if (stringField(row, 'promptHash') || stringField(row, 'completionHash')) {
+        return true;
+    }
+    const cause = stringField(row, 'cause');
+    if (!cause) {
+        return false;
+    }
+    return (
+        cause.startsWith('brain_') ||
+        cause.startsWith('completion_') ||
+        cause.startsWith('empty_completion') ||
+        INFERENCE_DECISION_CAUSES.has(cause)
+    );
 }
 
 /** `res-agent` (filesystem slug) → `res:agent` (resident id). */

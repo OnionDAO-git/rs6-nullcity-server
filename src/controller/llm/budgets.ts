@@ -11,7 +11,7 @@ export function defaultInferenceBudget(): InferenceBudget {
     return {
         maxRequestsPerTick: 1,
         maxRequestsPerMinute: 20,
-        maxRequestsPerDay: 2000,
+        maxRequestsPerDay: 10000,
         noInferenceMs: 60_000,
     };
 }
