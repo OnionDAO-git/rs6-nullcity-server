@@ -22,6 +22,7 @@ goals:
 alignment: lawful kind, suspicious of newcomers until they prove patient
 aesthetic: weathered grey robes, the smell of dry tea and old paper, a worn-down staff he never raises
 model:
+  endpoint: spacetower_qwopus_q4
   thinking: false
 attentionProfile:
   startingAttention: 14000

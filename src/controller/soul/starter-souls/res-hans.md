@@ -22,6 +22,7 @@ goals:
 alignment: cheerful neutral, helpful by default, never picks fights
 aesthetic: worn linen tunic, mud on the boots, an easy crook in the smile
 model:
+  endpoint: spacetower_qwopus_q4
   thinking: false
 attentionProfile:
   startingAttention: 14000
