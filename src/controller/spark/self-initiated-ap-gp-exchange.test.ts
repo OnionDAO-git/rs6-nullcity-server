@@ -4,6 +4,7 @@ import {
     SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER,
     SELF_INITIATED_EXCHANGE_MAX_GP,
     SELF_INITIATED_EXCHANGE_MIN_GP,
+    SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD,
     SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP,
     gpInInventory,
     selfInitiatedApGpExchangeAction,
@@ -118,21 +119,34 @@ describe('selfInitiatedApGpExchangeAction', () => {
         expect(action).toBeUndefined();
     });
 
-    it('uses the critical threshold when the resident has no declared attention floor', () => {
-        // With floor 0 the buffer-based threshold collapses to the buffer itself.
+    it('uses a useful AP runway threshold when the resident has no declared attention floor', () => {
         const firing = selfInitiatedApGpExchangeAction({
-            attention: SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER - 1,
+            attention: SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD - 1,
             attentionFloor: 0,
             perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 40 }] } },
         });
         expect(firing).toBeDefined();
 
         const quiet = selfInitiatedApGpExchangeAction({
-            attention: SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER + 50,
+            attention: SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD,
             attentionFloor: 0,
             perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 40 }] } },
         });
         expect(quiet).toBeUndefined();
+        expect(SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD).toBe(300);
+    });
+
+    it('buys the missing runway for a no-floor resident under AP pressure', () => {
+        const action = selfInitiatedApGpExchangeAction({
+            attention: 181,
+            attentionFloor: 0,
+            perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 1000 }] } },
+        });
+
+        expect(action).toBeDefined();
+        const record = action as unknown as { gpAmount: number; apAmount: number };
+        expect(record.gpAmount).toBe(Math.ceil((SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP - 181) / SELF_INITIATED_EXCHANGE_AP_PER_GP));
+        expect(record.apAmount).toBe(record.gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP);
     });
 
     it('carries an idempotencyKey when one is provided so the request is replay-safe', () => {

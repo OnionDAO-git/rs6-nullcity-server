@@ -38,6 +38,9 @@ export const SELF_INITIATED_EXCHANGE_AP_PER_GP = 2;
 /** AP buffer above the declared floor within which the reflex fires. */
 export const SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER = 20;
 
+/** AP threshold for residents with no declared attention floor. */
+export const SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD = 300;
+
 /** Minimum GP the resident must hold before self-initiating an exchange. */
 export const SELF_INITIATED_EXCHANGE_MIN_GP = 10;
 
@@ -99,7 +102,8 @@ export interface SelfInitiatedApGpExchangeInput {
  * Fires when:
  *  - AP is positive (a faded resident at AP <= 0 cannot act), AND
  *  - AP is below `attentionFloor + SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER`
- *    (when no floor is declared, the threshold collapses to the buffer), AND
+ *    when a floor is declared, or below
+ *    `SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD` when no floor exists, AND
  *  - the resident holds at least `SELF_INITIATED_EXCHANGE_MIN_GP` real GP.
  *
  * The emitted action spends enough GP to buy roughly
@@ -114,7 +118,7 @@ export function selfInitiatedApGpExchangeAction(input: SelfInitiatedApGpExchange
     }
 
     const floor = Number.isFinite(attentionFloor) && attentionFloor > 0 ? attentionFloor : 0;
-    const threshold = floor + SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER;
+    const threshold = floor > 0 ? floor + SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER : SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD;
     if (attention >= threshold) {
         return undefined;
     }

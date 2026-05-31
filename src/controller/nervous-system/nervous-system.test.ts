@@ -402,6 +402,52 @@ describe('NervousSystem', () => {
             expect(reaction?.interruptThinking).toBe(true);
         });
 
+        it('self-funds no-floor residents before AP reaches the last-second appeal threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 181;
+            const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(100),
+                resident: { hp: { current: 10, max: 10 }, inventory: [{ itemId: 995, amount: 1000 }] },
+            });
+
+            expect(reaction?.rule.id).toBe('self-initiated-ap-gp-exchange');
+            expect(reaction?.action).toMatchObject({
+                kind: 'city_exchange_ap_gp',
+                cause: 'nervous:self-initiated-ap-gp-exchange',
+                gpAmount: 160,
+                apAmount: 320,
+                idempotencyKey: 'self-ap-gp:res:agent:100',
+            });
+        });
+
+        it('does not self-fund no-floor residents at the runway threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 300;
+            const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(100),
+                resident: { hp: { current: 10, max: 10 }, inventory: [{ itemId: 995, amount: 1000 }] },
+            });
+
+            expect(reaction?.action?.cause).not.toBe('nervous:self-initiated-ap-gp-exchange');
+        });
+
+        it('keeps floor residents on the floor+buffer threshold rather than the no-floor threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(100),
+                resident: { hp: { current: 10, max: 10 }, inventory: [{ itemId: 995, amount: 1000 }] },
+            });
+
+            expect(reaction?.action?.cause).not.toBe('nervous:self-initiated-ap-gp-exchange');
+        });
+
         it('falls back to asking humans when low AP but no coins are held', () => {
             const state = runtimeState(100);
             state.attention = 5015;
