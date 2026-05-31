@@ -411,6 +411,11 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('scout-nearby-area');
     });
 
+    it("returns explorationGoal for 'orientation-bias-10m' so orientation can override a neutral benchmark", () => {
+        const g = benchmarkGoalForTask('orientation-bias-10m', 0);
+        expect(g?.id).toBe('scout-nearby-area');
+    });
+
     it("returns a trade tester goal for 'trading-giving-5m'", () => {
         const g = benchmarkGoalForTask('trading-giving-5m', 0);
         expect(g?.id).toBe('trade-with-codex');

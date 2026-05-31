@@ -253,6 +253,36 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
         await driver.stop('test_complete');
     });
 
+    it('copies a benchmark task orientation goal into the synthetic resident soul', async () => {
+        const orientationGoal = {
+            id: 'train-combat-safely',
+            description: 'Train combat safely against starter enemies and gather combat evidence for Null City.',
+            tier: 'pursue' as const,
+        };
+        const context = benchmarkContext({
+            task: {
+                id: 'orientation-bias-10m',
+                version: '0.1.0',
+                timeoutMs: 5000,
+                orientationGoal,
+                run: jest.fn(),
+            } as never,
+        });
+        const driver = new ResidentRuntimeBenchmarkDriver({
+            config: config(),
+            gateway: new FakeGateway() as never,
+            module: context.module,
+            sparkModules: [],
+        });
+
+        await driver.start(context);
+
+        const runtimeOptions = (ResidentRuntime as jest.Mock).mock.calls.at(-1)?.[0];
+        expect(runtimeOptions.soul.frontmatter.orientationGoal).toEqual(orientationGoal);
+
+        await driver.stop('test_complete');
+    });
+
     it('gives ap-gp-library-strategy-5m enough urgent body cadence to prove AP/GP ordering before fade', async () => {
         const context = benchmarkContext({
             task: { id: 'ap-gp-library-strategy-5m', version: '0.1.0', timeoutMs: 5000, run: jest.fn() },

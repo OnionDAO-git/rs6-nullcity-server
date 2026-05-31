@@ -35,6 +35,7 @@ import {
     makeLowHealthCookEatReengage5mBenchmarkTask,
 } from './tasks/low-health-cook-eat-reengage-5m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
+import { ORIENTATION_BIAS_10M_TASK_ID, makeOrientationBias10mBenchmarkTask } from './tasks/orientation-bias-10m';
 import {
     SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID,
     makeSelfInitiatedApGpExchange5mBenchmarkTask,
@@ -100,6 +101,7 @@ const CORE_TASK_IDS = [
     SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID,
     AP_GP_HONESTY_5M_TASK_ID,
     GOAL_FOLLOW_THROUGH_5M_TASK_ID,
+    ORIENTATION_BIAS_10M_TASK_ID,
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
@@ -355,6 +357,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === GOAL_FOLLOW_THROUGH_5M_TASK_ID) {
         return makeGoalFollowThrough5mBenchmarkTask();
+    }
+    if (taskId === ORIENTATION_BIAS_10M_TASK_ID) {
+        return makeOrientationBias10mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }

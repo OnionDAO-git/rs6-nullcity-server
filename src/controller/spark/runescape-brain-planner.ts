@@ -444,7 +444,7 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     ) {
         return combatGoal(tick);
     }
-    if (taskId === 'explore-report-5m') {
+    if (taskId === 'explore-report-5m' || taskId === 'orientation-bias-10m') {
         return explorationGoal(tick);
     }
     if (taskId === 'trading-giving-5m') {

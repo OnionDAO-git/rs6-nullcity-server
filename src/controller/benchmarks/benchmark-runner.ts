@@ -11,6 +11,7 @@ import type {
     PerceptionEvent,
     ResidentInventoryEnsureSummary,
 } from '../transport/message-codecs';
+import type { SoulOrientationGoal } from '../soul/soul-schema';
 import {
     type BenchmarkArtifact,
     type BenchmarkRunMode,
@@ -73,6 +74,13 @@ export interface BenchmarkTask {
     version: string;
     timeoutMs: number;
     autonomousRequiresSelectedModuleAction?: boolean;
+    /**
+     * Optional synthetic Soul north-star for autonomous proof tasks. The
+     * benchmark runtime copies this into the disposable resident's
+     * frontmatter so normal planner code, not the verifier, decides whether
+     * orientation changes behavior.
+     */
+    orientationGoal?: SoulOrientationGoal;
     resident?: Omit<CreateResidentPayload, 'name'>;
     peers?: BenchmarkTaskPeer[];
     memorySeeds?: BenchmarkMemorySeed[];

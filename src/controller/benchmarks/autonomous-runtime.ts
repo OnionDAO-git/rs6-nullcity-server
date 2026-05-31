@@ -517,6 +517,7 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
                         benchmarkTask: context.task.id,
                     },
                 },
+                orientationGoal: context.task.orientationGoal,
                 modules: [{ id: context.module.id, enabled: true }],
                 behavior: {
                     kind: 'hybrid-agent',

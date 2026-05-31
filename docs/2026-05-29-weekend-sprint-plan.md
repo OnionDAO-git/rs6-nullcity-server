@@ -323,7 +323,7 @@ These packets come from the design specs `docs/superpowers/specs/2026-05-30-*.md
 |---|---|---|---|
 | S-STORY-3 | storyteller-overseer | Real paid dispatch with persona; needs configured paid profile + cost cap. | storyteller/LLM agent |
 | S-MEM-3 | resident-memory | Brain-driven `rememberFact` decisions; needs live benchmark `memory-write-recall-10m`. | gameplay/memory agent |
-| S-GOAL-3 | goal-as-orientation | Module-preference bias; needs live benchmark `orientation-bias-10m`. | gameplay agent |
+| S-GOAL-3 | goal-as-orientation | DONE 2026-05-31: `orientation-bias-10m` live artifact proves Soul orientation biases active goal/action family toward combat over neutral exploration. Dynamic SPARK module switching remains future optional work. | gameplay agent |
 
 **Dashboard-only (in `../rs6-nullcity-residents-dashboard`):**
 

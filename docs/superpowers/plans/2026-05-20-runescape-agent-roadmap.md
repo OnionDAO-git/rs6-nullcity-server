@@ -847,7 +847,7 @@ Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into th
 - `[ ]` **S16: Goal As Orientation (aspirational goal as compass, not completion target).**
   - Spec: `docs/superpowers/specs/2026-05-30-goal-as-orientation-design.md`.
   - Files: `src/controller/soul/soul-schema.ts`, new `src/controller/spark/orientation-planner.ts`, new `src/controller/spark/orientation-scorer.ts`, `src/controller/spark/runescape-brain-planner.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`.
-  - Packets: `S-GOAL-1` (soul schema + envelope block, cloud), `S-GOAL-2` (scorer + library events, cloud), `S-GOAL-3` (module-bias + live benchmark, **needs hot stack**), `S-GOAL-4` (operator nudge + goal-edit CLI, cloud).
+  - Packets: `S-GOAL-1` (soul schema + envelope block, cloud), `S-GOAL-2` (scorer + library events, cloud), `S-GOAL-3` (module-bias/action-family live benchmark, shipped 2026-05-31), `S-GOAL-4` (operator nudge + goal-edit CLI, cloud).
   - Issue: `QA-20260530-007`.
   - Deliverable: a Soul with aspirational `goal` + `orientationHints` biases planner toward orientation when survival/GP needs are met; emits `orientation_progress`/`orientation_stalled` library events; operator-only goal edits.
 
