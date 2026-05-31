@@ -367,6 +367,172 @@ describe('ResidentRuntime modules', () => {
         expect(effectAbortObserved).toBe(true);
     });
 
+    it('matches gateway action_result failures with the resident: prefix before movement waits time out', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-prefixed-action-result-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-prefixed-action-result-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-31T17:30:00.000Z') });
+        const session = store.beginSession('session-prefixed-action-result', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T17:30:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 120;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3208, y: 3213, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'low_health_cook_food' }],
+                cause: 'low_health_cook_food',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => {
+                setImmediate(() => {
+                    gateway.emit('actionResult', 'resident:res:pip', 'request-prefixed-move', { ok: false, reason: 'target_not_found' });
+                });
+                return { ok: true, status: 'queued', requestId: 'request-prefixed-move' };
+            }),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(() => new Promise(resolve => setTimeout(() => resolve({ ok: false, reason: 'timeout' }), 25))),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 100 },
+        });
+
+        await runtime.onPerception({
+            tick: 120,
+            resident: { position: { x: 3208, y: 3208, level: 0 } },
+            events: [],
+        });
+
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-prefixed-move',
+                status: 'failure',
+                reason: 'target_not_found',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'action_result',
+                        detail: expect.objectContaining({
+                            kind: 'gateway_action_result',
+                            requestId: 'request-prefixed-move',
+                            result: { ok: false, reason: 'target_not_found' },
+                        }),
+                    }),
+                ],
+            }),
+        );
+    });
+
+    it('does not treat successful gateway action_result as movement completion without effect evidence', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-success-waits-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-success-waits-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-31T17:31:00.000Z') });
+        const session = store.beginSession('session-gateway-success-waits', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T17:31:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 121;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3208, y: 3213, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'low_health_cook_food' }],
+                cause: 'low_health_cook_food',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => {
+                setImmediate(() => {
+                    gateway.emit('actionResult', 'resident:res:pip', 'request-successful-move-submit', {
+                        ok: true,
+                        cause: 'applied_on_tick',
+                    });
+                });
+                return { ok: true, status: 'queued', requestId: 'request-successful-move-submit' };
+            }),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(() => new Promise(resolve => setTimeout(() => resolve({ ok: false, reason: 'timeout' }), 25))),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 100 },
+        });
+
+        await runtime.onPerception({
+            tick: 121,
+            resident: { position: { x: 3208, y: 3208, level: 0 } },
+            events: [],
+        });
+
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-successful-move-submit',
+                status: 'timeout',
+                reason: 'timeout',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'perception',
+                        detail: expect.objectContaining({
+                            kind: 'movement_timeout',
+                            target,
+                        }),
+                    }),
+                ],
+            }),
+        );
+    });
+
     it('does not reuse stale gateway action_result cache when a request id repeats later', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-request-id-reuse-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-request-id-reuse-evidence-'));

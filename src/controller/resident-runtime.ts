@@ -231,7 +231,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             });
         if (typeof options.gateway.on === 'function') {
             this.gatewayActionResultListener = (residentId, requestId, result, cause) => {
-                if (residentId === this.name && requestId) {
+                if (normalizeGatewayResidentId(residentId) === this.name && requestId) {
                     this.observeGatewayActionResult(requestId, result, cause);
                 }
             };
@@ -1361,8 +1361,11 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 gatewayWatch.promise.then(observation => ({ kind: 'gateway' as const, observation })),
             ]);
             if (winner.kind === 'gateway' && winner.observation) {
-                effectAbort.abort();
-                return gatewayActionResultToEffect(winner.observation);
+                if (winner.observation.result.ok === false) {
+                    effectAbort.abort();
+                    return gatewayActionResultToEffect(winner.observation);
+                }
+                return toEffect(await effectPromise);
             }
             if (winner.kind === 'gateway') {
                 effectAbort.abort();
@@ -2339,6 +2342,10 @@ function eventWaitToEffect(
         return { ok: false, reason: wait.reason };
     }
     return { ok: true, evidence: [evidence(wait.observation.value)] };
+}
+
+function normalizeGatewayResidentId(residentId: string): string {
+    return residentId.startsWith('resident:') ? residentId.slice('resident:'.length) : residentId;
 }
 
 function gatewayActionResultToEffect(observation: GatewayActionResultObservation): EffectWaitResult {
