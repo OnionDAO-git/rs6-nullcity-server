@@ -64,7 +64,7 @@ Results:
 - `npm test -- --runTestsByPath src/controller/nervous-system/nervous-system.test.ts src/controller/benchmarks/tasks/starter-gp-harvest-choice-5m.test.ts src/controller/benchmarks/cli.test.ts src/controller/benchmarks/autonomous-runtime.test.ts src/controller/thinking/hybrid-agent-thinking-module.test.ts --runInBand` passed: `5` suites, `361` tests.
 - `npm run fin` passed: boundary check, typecheck, lint/format, `227` suites, `3208` tests.
 - `npm run build` passed: `819` files compiled.
-- `npm run controller:smoke -- --observe-seconds 60 --allow-recent-visible` passed for all `23` residents after restart; `res:agent` showed `2` actions / `2` successful results in the observed minute.
+- `npm run controller:smoke -- --observe-seconds 60 --allow-recent-visible` passed for all `23` residents after restart; `res:agent` showed `1` action / `1` successful result in the observed minute.
 
 ## Next
 
