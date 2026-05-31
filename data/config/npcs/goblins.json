@@ -29,7 +29,7 @@
             },
             "drop_table": [
                 { "itemKey": "rs:bones", "frequency": "always", "amount": 1 },
-                { "itemKey": "rs:coins", "frequency": "always", "amount": 3 }
+                { "itemKey": "rs:coins", "frequency": "always", "amount": 20 }
             ]
         }
     },

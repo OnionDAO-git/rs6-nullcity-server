@@ -44,7 +44,7 @@ describe('findNpc', () => {
         expect(configHandler.findNpc('rs:goblin').dropTable).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({ itemKey: 'rs:bones', frequency: 'always', amount: 1 }),
-                expect.objectContaining({ itemKey: 'rs:coins', frequency: 'always', amount: 3 }),
+                expect.objectContaining({ itemKey: 'rs:coins', frequency: 'always', amount: 20 }),
             ]),
         );
     });
