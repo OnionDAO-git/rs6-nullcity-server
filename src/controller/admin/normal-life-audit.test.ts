@@ -265,6 +265,46 @@ describe('normal life audit', () => {
         expect(alpha?.failedActionSubmissions).toBe(0);
     });
 
+    it('attributes stuck churn to residents for targeted follow-up fixes', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'normal-life-audit-stuck-'));
+        const logsRoot = path.join(root, 'logs');
+        const libraryRoot = path.join(root, 'library');
+        fs.mkdirSync(logsRoot, { recursive: true });
+        fs.mkdirSync(libraryRoot, { recursive: true });
+
+        writeJsonl(path.join(logsRoot, 'res:qa-alpha', 'actions', '2026-05-31.jsonl'), [
+            action('2026-05-31T12:01:00.000Z', 'move_to', 'explore_patrol', true, 100),
+        ]);
+        writeJsonl(path.join(logsRoot, 'res:qa-beta', 'actions', '2026-05-31.jsonl'), [
+            action('2026-05-31T12:01:00.000Z', 'move_to', 'explore_patrol', true, 100),
+        ]);
+
+        writeJsonl(path.join(libraryRoot, 'res-qa-alpha', 'timeline.jsonl'), [
+            timeline('2026-05-31T12:02:00.000Z', 'stuck_detected'),
+            timeline('2026-05-31T12:03:00.000Z', 'stuck_recovered'),
+            timeline('2026-05-31T12:04:00.000Z', 'stuck_detected'),
+        ]);
+        writeJsonl(path.join(libraryRoot, 'res-qa-beta', 'timeline.jsonl'), [
+            timeline('2026-05-31T12:02:00.000Z', 'stuck_detected'),
+            timeline('2026-05-31T12:03:00.000Z', 'stuck_recovered'),
+        ]);
+
+        const report = collectNormalLifeAudit({
+            logsRoot,
+            libraryRoot,
+            windowStart: new Date('2026-05-31T12:00:00.000Z'),
+            windowEnd: new Date('2026-05-31T13:00:00.000Z'),
+            maxTopRows: 1,
+        });
+
+        expect(report.stuckSummary).toEqual({
+            stuckDetected: 3,
+            stuckRecovered: 2,
+            unresolved: 1,
+            topResidents: [{ resident: 'res:qa-alpha', stuckDetected: 2, stuckRecovered: 1, unresolved: 1, churn: 3 }],
+        });
+    });
+
     it('summarizes organic vs controlled AP/GP economy recurrence and GP runway', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'normal-life-audit-economy-'));
         const logsRoot = path.join(root, 'logs');

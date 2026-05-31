@@ -56,6 +56,21 @@ export interface NormalLifeAuditRecurrenceSummary {
     stuckRecovered: number;
 }
 
+export interface NormalLifeAuditStuckResident {
+    resident: string;
+    stuckDetected: number;
+    stuckRecovered: number;
+    unresolved: number;
+    churn: number;
+}
+
+export interface NormalLifeAuditStuckSummary {
+    stuckDetected: number;
+    stuckRecovered: number;
+    unresolved: number;
+    topResidents: NormalLifeAuditStuckResident[];
+}
+
 export interface NormalLifeAuditGpObservation {
     resident: string;
     gp: number;
@@ -102,6 +117,7 @@ export interface NormalLifeAuditReport {
     trackedCauseCounts: NormalLifeTrackedCounts;
     trackedTimelineCounts: NormalLifeTrackedCounts;
     recurrenceSummary: NormalLifeAuditRecurrenceSummary;
+    stuckSummary: NormalLifeAuditStuckSummary;
     economySummary: NormalLifeAuditEconomySummary;
     residentSlices: NormalLifeAuditResidentSlice[];
     residentSignalSummary: NormalLifeAuditResidentSlice[];
@@ -375,6 +391,7 @@ export function collectNormalLifeAudit(options: {
     const actionSuccessRate = totalActionAttempts === 0 ? 0 : round3((successfulActionSubmissions / totalActionAttempts) * 100);
 
     const residentSliceReports = sortedResidentSlices(residentSlices);
+    const stuckSummary = buildStuckSummary(residentSliceReports, maxTopRows);
     const economySummary = buildEconomySummary({
         economyEventsPath,
         residentSlices: residentSliceReports,
@@ -399,6 +416,7 @@ export function collectNormalLifeAudit(options: {
         trackedCauseCounts: trackedCounts(causeCounts, TRACKED_CAUSES),
         trackedTimelineCounts: trackedCounts(timelineKindCounts, TRACKED_TIMELINE_KINDS),
         recurrenceSummary: buildRecurrenceSummary(actionKindCounts, causeCounts, timelineKindCounts),
+        stuckSummary,
         economySummary,
         residentSlices: residentSliceReports,
         residentSignalSummary: residentSliceReports,
@@ -624,6 +642,41 @@ function buildRecurrenceSummary(
         logouts: timelineKindCounts.get('logout') || 0,
         stuckDetected: timelineKindCounts.get('stuck_detected') || 0,
         stuckRecovered: timelineKindCounts.get('stuck_recovered') || 0,
+    };
+}
+
+function buildStuckSummary(residentSlices: NormalLifeAuditResidentSlice[], maxTopRows: number): NormalLifeAuditStuckSummary {
+    let stuckDetected = 0;
+    let stuckRecovered = 0;
+    const topResidents = residentSlices
+        .map(slice => {
+            const residentDetected = slice.trackedTimelineCounts.stuck_detected || 0;
+            const residentRecovered = slice.trackedTimelineCounts.stuck_recovered || 0;
+            stuckDetected += residentDetected;
+            stuckRecovered += residentRecovered;
+            return {
+                resident: slice.resident,
+                stuckDetected: residentDetected,
+                stuckRecovered: residentRecovered,
+                unresolved: Math.max(0, residentDetected - residentRecovered),
+                churn: residentDetected + residentRecovered,
+            };
+        })
+        .filter(entry => entry.churn > 0)
+        .sort((a, b) => {
+            if (b.churn === a.churn) {
+                if (b.unresolved === a.unresolved) return a.resident.localeCompare(b.resident);
+                return b.unresolved - a.unresolved;
+            }
+            return b.churn - a.churn;
+        })
+        .slice(0, maxTopRows);
+
+    return {
+        stuckDetected,
+        stuckRecovered,
+        unresolved: Math.max(0, stuckDetected - stuckRecovered),
+        topResidents,
     };
 }
 
