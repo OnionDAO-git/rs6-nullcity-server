@@ -210,9 +210,9 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             buildContext: input => service.buildContext(input),
             observeAttempt: event => {
                 const attempt = event.attempt;
-                // S-GOAL-FOLLOW-1 D3: snapshot the resident's active goal id
-                // + tick at observe time so the goal-follow-through benchmark
-                // can attribute each action to the goal that motivated it.
+                // S-GOAL-FOLLOW-1 D3: prefer the ActionAttempt causation tag
+                // captured at submit time, then fall back to the runtime
+                // snapshot for older attempts that did not carry one.
                 const runtimeState = this.runtimeStateSnapshot();
                 context.recordActionAttempt({
                     requestId: attempt.requestId,
@@ -223,8 +223,8 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
                     finalStatus: attempt.finalStatus,
                     finalReason: attempt.finalReason,
                     evidence: attempt.evidence,
-                    goalId: runtimeState?.cognition?.activeGoal?.id,
-                    tick: runtimeState?.tick,
+                    goalId: attempt.goalId || runtimeState?.cognition?.activeGoal?.id,
+                    tick: metadataTick(attempt.metadata) ?? runtimeState?.tick,
                 });
                 service.observeAttempt(event);
             },
@@ -610,6 +610,10 @@ function identity(value: unknown): SparkModuleIdentity | undefined {
 function numericField(record: Record<string, unknown>, key: string): number | undefined {
     const value = record[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function metadataTick(metadata: unknown): number | undefined {
+    return isRecord(metadata) ? numericField(metadata, 'tick') : undefined;
 }
 
 function isAction(value: unknown): value is AgentAction {

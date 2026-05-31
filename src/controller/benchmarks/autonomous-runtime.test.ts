@@ -70,6 +70,8 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
                 action: { kind: 'use_item_on_item', itemSlot: 0, targetSlot: 1, cause: 'woodcutting_chain_firemaking' },
                 submittedAt: '2026-05-23T02:20:00.000Z',
                 requestId: 'request-1',
+                goalId: 'goal:test-fire',
+                metadata: { tick: 7 },
                 evidence: [
                     {
                         source: 'perception',
@@ -94,6 +96,8 @@ describe('ResidentRuntimeBenchmarkDriver', () => {
                         detail: expect.objectContaining({ kind: 'action_effect_observed' }),
                     }),
                 ]),
+                goalId: 'goal:test-fire',
+                tick: 7,
                 sparkModule: context.module,
             }),
         );

@@ -20,6 +20,8 @@ import {
     normalizeBenchmarkArtifact,
 } from './benchmark-artifact';
 
+const AUTONOMOUS_TIMEOUT_GRACE_MS = 2_000;
+
 export interface BenchmarkGateway {
     createResident(payload: CreateResidentPayload): Promise<unknown>;
     connectResident(payload: { name: string; observe: boolean; control: boolean; onDisconnect: 'idle' }): Promise<unknown>;
@@ -429,7 +431,7 @@ export class BenchmarkRunner {
                                 `benchmark task ${this.options.task.id} timed out after ${this.options.task.timeoutMs}ms`,
                             ),
                         );
-                    }, this.options.task.timeoutMs);
+                    }, this.options.task.timeoutMs + this.timeoutGraceMs());
                 }),
             ]);
         } finally {
@@ -437,6 +439,10 @@ export class BenchmarkRunner {
                 clearTimeout(timeout);
             }
         }
+    }
+
+    private timeoutGraceMs(): number {
+        return (this.options.mode || 'scripted') === 'autonomous' ? AUTONOMOUS_TIMEOUT_GRACE_MS : 0;
     }
 
     private bindEvidenceListeners(evidence: BenchmarkEvidenceBuffer): Array<{ event: string; listener: (...args: unknown[]) => void }> {
@@ -576,6 +582,8 @@ function actionAttemptEvidence(
         evidenceCount: attempt.evidence?.length,
         effectEvidenceCount: actionEffectEvidenceCount(attempt.evidence),
         attentionAfter: attempt.attentionAfter,
+        goalId: attempt.goalId,
+        tick: attempt.tick,
         sparkModule: attempt.sparkModule,
     };
 }

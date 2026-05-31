@@ -17,6 +17,7 @@ import type { BenchmarkTask, BenchmarkTaskContext, BenchmarkTaskOutcome } from '
  * each action to the goal that motivated it.
  *
  * PASS criteria:
+ *   - totalActions >= 10                           (not just one lucky action)
  *   - goalAttributedActions / totalActions >= 0.6  (most actions serve a goal)
  *   - goalChangeCount <= 3                          (no thrash)
  *   - the final attributed goal id IS the seeded goal OR a sensible
@@ -42,10 +43,13 @@ export const SEED_GOAL_ID = 'follow-through-goal';
 const START_POSITION = { x: 3222, y: 3218, level: 0 };
 /** Minimum fraction of actions that must be goal-attributed to pass. */
 const MIN_ATTRIBUTION_RATIO = 0.6;
+/** Minimum number of action attempts before follow-through evidence is meaningful. */
+const MIN_TOTAL_ACTIONS = 10;
 /** Maximum number of goal changes tolerated before it counts as thrash. */
 const MAX_GOAL_CHANGES = 3;
 
 export interface GoalFollowThrough5mActionAttempt {
+    requestId?: string;
     action: AgentAction;
     /** Active goal id at the moment the action was emitted (D1 causation). */
     goalId?: string;
@@ -100,8 +104,9 @@ function goalChangeCount(trace: GoalTraceEntry[]): number {
 }
 
 export function verifyGoalFollowThrough5m(input: GoalFollowThrough5mVerificationInput): BenchmarkTaskOutcome {
-    const trace = buildGoalTrace(input.actions);
-    const totalActions = input.actions.length;
+    const actions = compactGoalFollowThroughAttempts(input.actions);
+    const trace = buildGoalTrace(actions);
+    const totalActions = actions.length;
     const goalAttributedActions = trace.length;
     const changes = goalChangeCount(trace);
     const finalGoalId = trace.at(-1)?.goalId;
@@ -132,6 +137,16 @@ export function verifyGoalFollowThrough5m(input: GoalFollowThrough5mVerification
             metrics,
             summaries: [traceSummary],
             failureReason: 'No actions were observed during the benchmark window',
+        };
+    }
+
+    if (totalActions < MIN_TOTAL_ACTIONS) {
+        return {
+            status: 'failed',
+            score: Number((totalActions / MIN_TOTAL_ACTIONS).toFixed(2)),
+            metrics,
+            summaries: [traceSummary],
+            failureReason: `Only ${totalActions} action(s) were observed (need >= ${MIN_TOTAL_ACTIONS})`,
         };
     }
 
@@ -176,6 +191,39 @@ export function verifyGoalFollowThrough5m(input: GoalFollowThrough5mVerification
     };
 }
 
+export function compactGoalFollowThroughAttempts(actions: GoalFollowThrough5mActionAttempt[]): GoalFollowThrough5mActionAttempt[] {
+    const orderedKeys: string[] = [];
+    const byKey = new Map<string, GoalFollowThrough5mActionAttempt>();
+    actions.forEach((attempt, index) => {
+        const key = attempt.requestId ? `request:${attempt.requestId}` : `index:${index}`;
+        const current = byKey.get(key);
+        if (!current) {
+            orderedKeys.push(key);
+            byKey.set(key, attempt);
+            return;
+        }
+        if (preferGoalFollowThroughAttempt(attempt, current)) {
+            byKey.set(key, attempt);
+        }
+    });
+    return orderedKeys.map(key => byKey.get(key)).filter((attempt): attempt is GoalFollowThrough5mActionAttempt => attempt !== undefined);
+}
+
+function preferGoalFollowThroughAttempt(candidate: GoalFollowThrough5mActionAttempt, current: GoalFollowThrough5mActionAttempt): boolean {
+    const candidateFinal = typeof candidate.finalStatus === 'string' && candidate.finalStatus.length > 0;
+    const currentFinal = typeof current.finalStatus === 'string' && current.finalStatus.length > 0;
+    if (candidateFinal !== currentFinal) {
+        return candidateFinal;
+    }
+    if (candidate.goalId && !current.goalId) {
+        return true;
+    }
+    if (typeof candidate.tick === 'number' && typeof current.tick !== 'number') {
+        return true;
+    }
+    return false;
+}
+
 export function makeGoalFollowThrough5mBenchmarkTask(now: () => number = () => Date.now()): BenchmarkTask {
     return {
         id: GOAL_FOLLOW_THROUGH_5M_TASK_ID,
@@ -215,15 +263,16 @@ async function observeFollowThrough(context: BenchmarkTaskContext, now: () => nu
 }
 
 function recordedAttempts(context: BenchmarkTaskContext): GoalFollowThrough5mActionAttempt[] {
-    return context.actionAttempts().map(attempt => {
+    return compactGoalFollowThroughAttempts(context.actionAttempts().map(attempt => {
         const withGoal = attempt as typeof attempt & { goalId?: string; tick?: number };
         return {
+            requestId: attempt.requestId,
             action: attempt.action,
             goalId: typeof withGoal.goalId === 'string' ? withGoal.goalId : undefined,
             tick: typeof withGoal.tick === 'number' ? withGoal.tick : undefined,
             finalStatus: attempt.finalStatus,
         };
-    });
+    }));
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

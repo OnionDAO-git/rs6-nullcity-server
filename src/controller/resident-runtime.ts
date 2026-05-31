@@ -850,23 +850,24 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async submitActionWithWatchdog(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
-        if (input.action.kind === 'city_exchange_ap_gp') {
-            return this.executeCityExchangeApForGp(input);
+        const attributedInput = input.goalId ? input : { ...input, goalId: this.state.cognition?.activeGoal?.id };
+        if (attributedInput.action.kind === 'city_exchange_ap_gp') {
+            return this.executeCityExchangeApForGp(attributedInput);
         }
-        if (input.action.kind === 'trade_resource') {
-            return this.executeTradeResource(input);
+        if (attributedInput.action.kind === 'trade_resource') {
+            return this.executeTradeResource(attributedInput);
         }
-        const timeoutMs = this.actionWatchdogTimeoutMs(input.action);
+        const timeoutMs = this.actionWatchdogTimeoutMs(attributedInput.action);
         let timer: NodeJS.Timeout | undefined;
         const timeout = new Promise<ActionAttempt>(resolve => {
             timer = setTimeout(() => {
                 const attempt =
                     this.actionCoordinator.cancelCurrent('action_watchdog_timeout') ||
-                    fallbackTimedOutAttempt(this.name, input, 'action_watchdog_timeout');
+                    fallbackTimedOutAttempt(this.name, attributedInput, 'action_watchdog_timeout');
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'action_watchdog_timeout',
-                    actionKind: input.action.kind,
+                    actionKind: attributedInput.action.kind,
                     timeoutMs,
                     sparkModule: this.thinkingSparkModule,
                 });
@@ -874,7 +875,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             }, timeoutMs);
         });
         try {
-            return await Promise.race([this.actionCoordinator.submit(input), timeout]);
+            return await Promise.race([this.actionCoordinator.submit(attributedInput), timeout]);
         } finally {
             if (timer) {
                 clearTimeout(timer);

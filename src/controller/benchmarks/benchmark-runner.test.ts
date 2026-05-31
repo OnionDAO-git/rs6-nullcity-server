@@ -335,6 +335,8 @@ describe('BenchmarkRunner', () => {
                     sparkModule: module,
                     finalStatus: 'success',
                     attentionAfter: 99.5,
+                    goalId: 'follow-through-goal',
+                    tick: 42,
                     evidence: [
                         {
                             source: 'perception',
@@ -391,6 +393,8 @@ describe('BenchmarkRunner', () => {
                 finalStatus: 'success',
                 effectEvidenceCount: 1,
                 attentionAfter: 99.5,
+                goalId: 'follow-through-goal',
+                tick: 42,
                 sparkModule: module,
             }),
         ]);
