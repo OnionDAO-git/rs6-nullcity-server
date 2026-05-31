@@ -688,7 +688,8 @@ function buildEconomySummary(options: {
         if (!resident || ts === undefined || kind !== 'ap_gp_exchange') continue;
 
         apGpExchangeEvents += 1;
-        const isSelfInitiated = stringField(row, 'cityUserId') === 'resident:self' && (stringField(row, 'refId') || '').includes('self-ap-gp:');
+        const isSelfInitiated =
+            stringField(row, 'cityUserId') === 'resident:self' && (stringField(row, 'refId') || '').includes('self-ap-gp:');
         if (isSelfInitiated) {
             selfInitiatedApGpExchangeEvents += 1;
         }
