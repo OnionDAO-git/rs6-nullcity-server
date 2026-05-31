@@ -139,4 +139,35 @@ describe('GoalContractStore', () => {
             }),
         ).toThrow();
     });
+
+    it('list() cache: repeated calls skip disk reads', () => {
+        store.create({ residentName: 'res:hans', goalText: 'Goal A.' });
+        store.list(); // warm cache
+        const spy = jest.spyOn(fs, 'readdirSync');
+        store.list();
+        store.list();
+        expect(spy).not.toHaveBeenCalled();
+        spy.mockRestore();
+    });
+
+    it('list() cache invalidates after create()', () => {
+        store.create({ residentName: 'res:hans', goalText: 'Goal A.' });
+        store.list();
+        store.create({ residentName: 'res:pip', goalText: 'Goal B.' });
+        expect(store.list()).toHaveLength(2);
+    });
+
+    it('list() cache invalidates after markAchieved()', () => {
+        const goal = store.create({ residentName: 'res:hans', goalText: 'A goal.' });
+        store.list();
+        store.markAchieved(goal.id, 'evidence');
+        expect(store.list()[0].status).toBe('achieved');
+    });
+
+    it('list() cache invalidates after markAbandoned()', () => {
+        const goal = store.create({ residentName: 'res:hans', goalText: 'A goal.' });
+        store.list();
+        store.markAbandoned(goal.id, 'reason');
+        expect(store.list()[0].status).toBe('abandoned');
+    });
 });

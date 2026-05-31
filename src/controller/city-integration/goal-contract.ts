@@ -89,6 +89,9 @@ export class GoalContractError extends Error {
  * on list. One JSON file per goal under `<memoryRoot>/city-integration/goals`.
  */
 export class GoalContractStore {
+    private _writeGen = 0;
+    private _listCache: { gen: number; goals: GoalContract[] } | null = null;
+
     constructor(
         private readonly memoryRoot: string,
         private readonly now: () => Date = () => new Date(),
@@ -151,9 +154,14 @@ export class GoalContractStore {
     }
 
     list(): GoalContract[] {
+        if (this._listCache !== null && this._listCache.gen === this._writeGen) {
+            return this._listCache.goals;
+        }
         const dir = this.goalDir();
         if (!fs.existsSync(dir)) {
-            return [];
+            const empty: GoalContract[] = [];
+            this._listCache = { gen: this._writeGen, goals: empty };
+            return empty;
         }
         const goals: GoalContract[] = [];
         for (const fname of fs.readdirSync(dir)) {
@@ -167,7 +175,9 @@ export class GoalContractStore {
                 // Skip malformed files.
             }
         }
-        return goals.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        goals.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        this._listCache = { gen: this._writeGen, goals };
+        return goals;
     }
 
     listByResident(residentName: string): GoalContract[] {
@@ -197,6 +207,7 @@ export class GoalContractStore {
         const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
         fs.writeFileSync(tmp, `${JSON.stringify(goal, null, 2)}\n`);
         fs.renameSync(tmp, filePath);
+        this._writeGen++;
     }
 
     private goalPath(id: string): string {
