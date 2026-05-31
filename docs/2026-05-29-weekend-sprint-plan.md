@@ -307,7 +307,7 @@ These packets come from the design specs `docs/superpowers/specs/2026-05-30-*.md
 | S-NCRI-2 | same | Atomic AP-debit + ownership transfer + `ncri_sale` event with rollback. Closes the simple loop's value edge. | economy agent |
 | S-NCRI-3 | same | Redemption substrate + print-queue contract (substrate only; print run is live). | economy agent |
 | S-NCRI-4 | same | Seed first 3 NCRI fixtures + admin CLI + dry-run sale demo. | NCRI agent |
-| S-MEM-1 | `2026-05-30-resident-memory-system-design.md` | ResidentMemoryService facade + formalize qmd facts; per-resident isolation tests. | memory agent |
+| S-MEM-1 | `2026-05-30-resident-memory-system-design.md` | DONE 2026-05-31: ResidentMemoryService facade + formal qmd `FactsStore`; isolation, append, restart, `world-events.md`, `readTopic`, `relevantTo` tests. | memory agent |
 | S-MEM-2 | same | mem0 local + prompt envelope "Memory" block (substrate cloud; live recall live). | memory agent |
 | S-MEM-4 | same | Retention/summarization policy with stub LLM; cloud-doable. | memory agent |
 | S-GOAL-1 | `2026-05-30-goal-as-orientation-design.md` | SoulOrientation schema + envelope block; backward-compat for old souls. | gameplay agent |
