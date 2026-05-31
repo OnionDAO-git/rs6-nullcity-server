@@ -23,6 +23,7 @@ import {
     COOKS_ASSISTANT_VISIBLE_INGREDIENTS_5M_TASK_ID,
     makeCooksAssistantVisibleIngredients5mBenchmarkTask,
 } from './tasks/cooks-assistant-visible-ingredients-5m';
+import { EARN_GP_VIA_COMBAT_5M_TASK_ID, makeEarnGpViaCombat5mBenchmarkTask } from './tasks/earn-gp-via-combat-5m';
 import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './tasks/equipment-prep-3m';
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
@@ -75,6 +76,7 @@ const CORE_TASK_IDS = [
     LEVEL_UP_FIREMAKING_3M_TASK_ID,
     BURY_BONES_PRAYER_3M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
+    EARN_GP_VIA_COMBAT_5M_TASK_ID,
     LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     MEMORY_ROUTE_RECALL_5M_TASK_ID,
@@ -303,6 +305,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === COMBAT_PRAYER_10M_TASK_ID) {
         return makeCombatPrayer10mBenchmarkTask();
+    }
+    if (taskId === EARN_GP_VIA_COMBAT_5M_TASK_ID) {
+        return makeEarnGpViaCombat5mBenchmarkTask();
     }
     if (taskId === LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID) {
         return makeLowHealthCookEatReengage5mBenchmarkTask();
