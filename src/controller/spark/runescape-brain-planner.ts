@@ -405,7 +405,33 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'explore-report-5m') {
         return explorationGoal(tick);
     }
+    if (taskId === 'goal-follow-through-5m') {
+        return goalFollowThroughGoal(tick);
+    }
     return undefined;
+}
+
+/**
+ * Build the `follow-through-goal` Active Goal seeded by the
+ * `goal-follow-through-5m` benchmark (S-GOAL-FOLLOW-1 D3). It is a generic,
+ * low-friction pursue goal: the benchmark measures that the resident keeps
+ * *following whatever goal it selected* rather than thrashing, so the goal's
+ * exact content matters less than its stability. Exploration-flavoured steps
+ * keep the resident productively busy without needing scarce inventory.
+ */
+export function goalFollowThroughGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'follow-through-goal',
+        description: 'Stay committed to one useful objective: scout the area and report findings without abandoning the plan.',
+        steps: [
+            'Pick a nearby landmark or task and move toward it',
+            'Make visible progress and report it',
+            'Keep working the same goal rather than switching',
+        ],
+        success: 'Most actions this session served the same goal with minimal goal-switching.',
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
 }
 
 /** Build the canonical `scout-nearby-area` Active Goal. */

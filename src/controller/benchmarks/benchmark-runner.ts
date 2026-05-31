@@ -81,6 +81,15 @@ export interface BenchmarkRecordedActionAttempt {
     finalReason?: string;
     evidence?: ActionEvidence[];
     attentionAfter?: number;
+    /**
+     * Active goal id at the moment the action was emitted
+     * (`cognition.activeGoal?.id`, S-GOAL-FOLLOW-1 D1/D3). Additive optional
+     * causation tag the goal-follow-through benchmark reads to attribute
+     * each action to the goal that motivated it.
+     */
+    goalId?: string;
+    /** Tick the action was emitted on, for goal-trace timelines. */
+    tick?: number;
 }
 
 export interface BenchmarkRecordedInferenceRequest {

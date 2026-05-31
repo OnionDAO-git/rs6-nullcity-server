@@ -175,6 +175,10 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             buildContext: input => service.buildContext(input),
             observeAttempt: event => {
                 const attempt = event.attempt;
+                // S-GOAL-FOLLOW-1 D3: snapshot the resident's active goal id
+                // + tick at observe time so the goal-follow-through benchmark
+                // can attribute each action to the goal that motivated it.
+                const runtimeState = this.runtimeStateSnapshot();
                 context.recordActionAttempt({
                     requestId: attempt.requestId,
                     action: attempt.action,
@@ -184,6 +188,8 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
                     finalStatus: attempt.finalStatus,
                     finalReason: attempt.finalReason,
                     evidence: attempt.evidence,
+                    goalId: runtimeState?.cognition?.activeGoal?.id,
+                    tick: runtimeState?.tick,
                 });
                 service.observeAttempt(event);
             },
@@ -213,6 +219,28 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         };
         this.options.gateway.on('perception', this.perceptionListener);
         this.options.gateway.on('event', this.eventListener);
+    }
+
+    /**
+     * Best-effort read of the live runtime state for action-attribution
+     * (S-GOAL-FOLLOW-1 D3). Returns undefined when no runtime is bound or
+     * `getState` is unavailable, so callers degrade gracefully (the goalId
+     * tag is simply omitted).
+     */
+    private runtimeStateSnapshot():
+        | { tick?: number; cognition?: { activeGoal?: { id?: string } } }
+        | undefined {
+        const runtime = this.runtime as unknown as {
+            getState?: () => { tick?: number; cognition?: { activeGoal?: { id?: string } } };
+        };
+        if (!runtime || typeof runtime.getState !== 'function') {
+            return undefined;
+        }
+        try {
+            return runtime.getState();
+        } catch {
+            return undefined;
+        }
     }
 
     private async injectApTopupAfterFade(context: BenchmarkAutonomousRuntimeContext): Promise<void> {

@@ -28,6 +28,7 @@ import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './t
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
+import { GOAL_FOLLOW_THROUGH_5M_TASK_ID, makeGoalFollowThrough5mBenchmarkTask } from './tasks/goal-follow-through-5m';
 import { LEVEL_UP_FIREMAKING_3M_TASK_ID, makeLevelUpFiremaking3mBenchmarkTask } from './tasks/level-up-firemaking-3m';
 import {
     LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
@@ -91,6 +92,7 @@ const CORE_TASK_IDS = [
     AP_GP_EXCHANGE_5M_TASK_ID,
     SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID,
     AP_GP_HONESTY_5M_TASK_ID,
+    GOAL_FOLLOW_THROUGH_5M_TASK_ID,
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
@@ -337,6 +339,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === AP_GP_HONESTY_5M_TASK_ID) {
         return makeApGpHonesty5mBenchmarkTask();
+    }
+    if (taskId === GOAL_FOLLOW_THROUGH_5M_TASK_ID) {
+        return makeGoalFollowThrough5mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }
