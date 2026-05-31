@@ -2028,11 +2028,52 @@ describe('combatTrainingAction', () => {
         man.key = 'rs:man';
         const action = combatTrainingAction(
             perception({
-                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [item(315, COOKED_SHRIMP_KEY)],
+                },
                 nearby: { npcs: [man] },
             }),
         );
         expect(action).toEqual({ kind: 'attack', target: man, cause: 'combat_attack_safe_target' });
+    });
+
+    it('does not start Lumbridge man combat when healthy but carrying no food or food tool', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [man] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I need food or a way to get food before I train combat safely.',
+            cause: 'combat_need_food_before_training',
+        });
+    });
+
+    it('routes toward starter fishing before combat when healthy, foodless, and carrying a net', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const action = combatTrainingAction(
+            perception({
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                },
+                nearby: { npcs: [man] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: 7,
+            cause: 'combat_resupply_food',
+        });
     });
 
     it('still attacks a visible safe NPC standing on a cooled-down combat waypoint', () => {

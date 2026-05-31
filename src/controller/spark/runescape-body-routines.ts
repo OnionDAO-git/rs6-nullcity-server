@@ -586,6 +586,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function visibleFoodPickupAction(
+    perception: BodyHybridPerception,
+    residentId: string | undefined,
+    pickupCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    cause: string,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    const inventory = perception.resident?.inventory || [];
+    if (!here || !inventoryHasFreeSlot(inventory)) {
+        return undefined;
+    }
+
+    const food = (perception.nearby?.worldItems || [])
+        .filter(
+            candidate =>
+                sameLevel(here, candidate.position) &&
+                isEdibleFood(candidate) &&
+                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
+                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    return food ? { kind: 'interact', target: food, option: 'pick-up', cause } : undefined;
+}
+
 /**
  * Returns a shallow clone of the action with its `cause` rewritten.
  * Mirrors the monolith's `actionWithCause` helper.
@@ -1180,19 +1208,16 @@ export function lowHealthRecoveryAction(
             : undefined;
     }
 
-    const food = (perception.nearby?.worldItems || [])
-        .filter(
-            candidate =>
-                sameLevel(here, candidate.position) &&
-                isEdibleFood(candidate) &&
-                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
-                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick) &&
-                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
-        )
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-
-    if (food) {
-        return { kind: 'interact', target: food, option: 'pick-up', cause: 'low_health_pickup_food' };
+    const foodPickup = visibleFoodPickupAction(
+        perception,
+        residentId,
+        pickupCooldowns,
+        currentTick,
+        targetFailureCooldowns,
+        'low_health_pickup_food',
+    );
+    if (foodPickup) {
+        return foodPickup;
     }
 
     const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
@@ -1417,7 +1442,57 @@ export function combatTrainingAction(
             : undefined;
     }
 
+    const resupply = combatRecoverySupplyAction(perception, target, pickupCooldowns, currentTick, targetFailureCooldowns);
+    if (resupply) {
+        return resupply;
+    }
+
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
+}
+
+function combatRecoverySupplyAction(
+    perception: BodyHybridPerception,
+    target: BodyActor,
+    pickupCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+): AgentAction | undefined {
+    if (!combatTargetNeedsRecoverySupply(target) || firstFoodSlot(perception.resident?.inventory || []) !== undefined) {
+        return undefined;
+    }
+
+    const foodPickup = visibleFoodPickupAction(
+        perception,
+        undefined,
+        pickupCooldowns,
+        currentTick,
+        targetFailureCooldowns,
+        'combat_resupply_food',
+    );
+    if (foodPickup) {
+        return foodPickup;
+    }
+
+    const cookingAction = starterFishingCookingAction(perception, targetFailureCooldowns, currentTick);
+    if (cookingAction) {
+        return actionWithCause(cookingAction, 'combat_resupply_food');
+    }
+
+    const fishingAction = starterFishingRouteAction(perception, targetFailureCooldowns, currentTick);
+    if (fishingAction) {
+        return actionWithCause(fishingAction, 'combat_resupply_food');
+    }
+
+    return {
+        kind: 'say',
+        text: 'I need food or a way to get food before I train combat safely.',
+        cause: 'combat_need_food_before_training',
+    };
+}
+
+function combatTargetNeedsRecoverySupply(target: BodyActor): boolean {
+    const label = [target.name, target.key, target.id].filter(Boolean).join(' ');
+    return HUMAN_BONE_SOURCE_PATTERN.test(label);
 }
 
 export interface FactionLandmarkWorkInput {
