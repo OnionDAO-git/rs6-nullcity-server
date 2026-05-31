@@ -468,6 +468,9 @@ function isInferenceDecision(row: Record<string, unknown>): boolean {
     if (stringField(row, 'promptHash') || stringField(row, 'completionHash')) {
         return true;
     }
+    if (numberField(row, 'promptTokens') > 0) {
+        return true;
+    }
     const cause = stringField(row, 'cause');
     if (!cause) {
         return false;
@@ -597,6 +600,12 @@ function stringField(record: Record<string, unknown> | undefined, key: string): 
     if (!record) return undefined;
     const value = record[key];
     return typeof value === 'string' ? value : undefined;
+}
+
+function numberField(record: Record<string, unknown> | undefined, key: string): number {
+    if (!record) return 0;
+    const value = record[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

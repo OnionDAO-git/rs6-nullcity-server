@@ -227,6 +227,50 @@ describe('inference health audit', () => {
         fs.rmSync(root, { recursive: true, force: true });
     });
 
+    it('counts prompt-bearing arbitrary SPARK causes as clean brain output', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inference-health-prompt-cause-'));
+        const trajectoryRoot = path.join(root, 'memory');
+
+        writeTrajectory(trajectoryRoot, 'res:duke-horacio', [
+            decision('2026-05-31T17:31:00.000Z', 'greet-entrants', {
+                promptTokens: 3796,
+                actionKinds: ['say'],
+            }),
+            decision('2026-05-31T17:31:01.000Z', 'idle_step', {
+                promptTokens: 3694,
+                actionKinds: ['move_to'],
+            }),
+            decision('2026-05-31T17:31:02.000Z', 'body_wait', {
+                promptTokens: 0,
+                actionKinds: [],
+            }),
+        ]);
+
+        const report = collectInferenceHealth({
+            trajectoryRoot,
+            windowStart: new Date('2026-05-31T17:30:00.000Z'),
+            windowEnd: new Date('2026-05-31T18:00:00.000Z'),
+            generatedAt: new Date('2026-05-31T18:00:00.000Z'),
+        });
+
+        expect(report.brainEligibleDecisions).toBe(2);
+        expect(report.breakdown).toEqual({
+            clean: 2,
+            recovered: 0,
+            think_only_no_answer: 0,
+            thinking_cancelled: 0,
+            schema_mismatch: 0,
+            truly_empty: 0,
+        });
+        expect(report.usableBrainDecisionRate).toBe(1);
+        expect(report.causeCounts).toEqual([
+            ['greet-entrants', 1],
+            ['idle_step', 1],
+        ]);
+
+        fs.rmSync(root, { recursive: true, force: true });
+    });
+
     it('writes a JSON artifact and reports a no-signal window without failing', async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'inference-health-cli-'));
         const trajectoryRoot = path.join(root, 'memory');
