@@ -146,6 +146,43 @@ describe('Spark evidence integration', () => {
         );
     });
 
+    it('records a reflex-cancelled think as thinking_cancelled, not empty_completion (S-INFER-2 D2)', async () => {
+        // A nervous reflex interrupted the think mid-flight: the completion is
+        // empty ONLY because it was aborted (bucket C), not because the model
+        // produced no decision. It must surface thinking_cancelled (carrying the
+        // reflex cause), never fold into the empty_completion buckets.
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: '', nooped: true, cancelledBy: 'nervous:flee_combat' })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('thinking_cancelled:nervous:flee_combat');
+        expect(result.cause).not.toBe('empty_completion');
+        expect(result.cause?.startsWith('empty_completion')).toBe(false);
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'decision', cause: 'thinking_cancelled:nervous:flee_combat', actionKinds: [] }),
+            ]),
+        );
+    });
+
+    it('keeps a bare request_timeout cancel as its own cause, not thinking_cancelled (S-INFER-2 D2)', async () => {
+        // A genuine request timeout already has a historical label; do not relabel
+        // it thinking_cancelled — only reflex/watchdog interrupts get that tag.
+        const { builder } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: '', nooped: true, cancelledBy: 'request_timeout' })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('request_timeout');
+    });
+
     it('recovers a think-wrapped JSON action completion that the old greedy parser discarded (S-INFER-1)', async () => {
         // The answer is real but wrapped in a <think> block whose reasoning
         // contains braces — exactly the shape the greedy first-{-to-last-}

@@ -212,6 +212,7 @@ export interface HelperContext {
     endpointFor(profile?: any): string;
     temperatureFor(profile: any, fallback: number): number;
     timeoutFor(profile: any, fallback?: number): number | undefined;
+    maxTokensFor(profile: any, fallback?: number): number | undefined;
     modelFor(profile?: any): string | undefined;
     complete(thinkId: number, request: any): Promise<any>;
     cancelledResult(thinkId: number, perception?: HybridPerception): any;
@@ -3250,6 +3251,24 @@ export function observeCompletedLocalGoal(ctx: HelperContext, perception: Hybrid
 const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 
+/**
+ * S-INFER-2 (D1): explicit completion-token ceiling for the BRAIN call.
+ *
+ * Thinking stays ON (behavior.brain.thinking ?? true). A reasoning model spends
+ * tokens on its `<think>` trace BEFORE the final JSON goal/say. With no ceiling
+ * the run is bounded only by the server's unknown default + the 20s timeout; if
+ * that default is small the answer is truncated mid-think and the salvage path
+ * sees reasoning-only text → `think_only_no_answer` (a bogus "no decision").
+ *
+ * 1536 is chosen to comfortably fit a few hundred tokens of reasoning plus the
+ * compact goal/say JSON the Brain emits (steps + success + a short say line),
+ * while staying well under a local quantized model's context budget so the
+ * prompt envelope is never crowded out. Endpoint config (`llm.endpoints.*.
+ * maxTokens`) can override per deployment; a per-request value (here) wins over
+ * the endpoint default inside LlmClient.
+ */
+const DEFAULT_BRAIN_MAX_TOKENS = 1536;
+
 function shouldShareGoal(ctx: HelperContext): boolean {
     const interval = ctx.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;
     if (interval <= 0) {
@@ -3292,6 +3311,11 @@ export async function runBrain(
         temperature: ctx.temperatureFor(behavior.brain, 0.7),
         thinking: behavior.brain?.thinking ?? true,
         timeoutMs: ctx.timeoutFor(behavior.brain, DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS),
+        // S-INFER-2 (D1): give the THINKING model an explicit ceiling that fits
+        // its <think> reasoning AND the final goal/say JSON. Endpoint/profile
+        // config can override; falls back through LlmClient to the endpoint
+        // maxTokens then the server default when neither is set.
+        maxTokens: ctx.maxTokensFor(behavior.brain, DEFAULT_BRAIN_MAX_TOKENS),
         priority: 5,
         ...(ctx.modelFor(behavior.brain) ? { model: ctx.modelFor(behavior.brain) } : {}),
     });

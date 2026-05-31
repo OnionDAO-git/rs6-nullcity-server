@@ -7,6 +7,17 @@ export interface LlmRequest {
     temperature?: number;
     thinking?: boolean;
     timeoutMs?: number;
+    /**
+     * S-INFER-2 (D1): explicit completion-token ceiling. A thinking model must
+     * have room to emit its `<think>` reasoning AND the final JSON answer — an
+     * unknown/low server default truncates the answer mid-think and surfaces as
+     * a bogus `empty_completion`. When set, the client sends both `max_tokens`
+     * (OpenAI-classic) and `max_completion_tokens` (newer reasoning-model field)
+     * so either provider style honours the ceiling. Falls back to the endpoint
+     * `maxTokens` default when omitted; if neither is set the field is dropped
+     * and the server default applies (prior behaviour).
+     */
+    maxTokens?: number;
     signal?: AbortSignal;
     priority?: number;
 }
@@ -62,6 +73,9 @@ export class LlmClient {
             return { text: JSON.stringify({ actions: [] }), model, nooped: true };
         }
 
+        // S-INFER-2 (D1): per-request ceiling wins over the endpoint default; if
+        // neither is present we omit the field so the server default still applies.
+        const maxTokens = request.maxTokens ?? endpoint.maxTokens;
         const body = {
             model,
             messages: [{ role: 'user', content: request.prompt }],
@@ -72,6 +86,7 @@ export class LlmClient {
                       reasoning: { enabled: request.thinking },
                       chat_template_kwargs: { enable_thinking: request.thinking },
                   }),
+            ...(maxTokens !== undefined && maxTokens > 0 ? { max_tokens: maxTokens, max_completion_tokens: maxTokens } : {}),
             response_format: responseFormatBody(endpoint.responseFormat),
         };
 

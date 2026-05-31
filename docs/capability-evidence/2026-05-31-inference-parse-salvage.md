@@ -139,3 +139,121 @@ is **PENDING a controller restart**.
   reasoning_content, reasoning)`, so the answer reaches the parser; the failure
   was purely at the parse layer. Reordering risks subtle behaviour change for
   no proven gain here.
+
+---
+
+# Request Hardening (S-INFER-2)
+
+**Date:** 2026-05-31
+**Owner:** claude (agents/wip)
+**Packet:** S-INFER-2 — harden the brain inference *request* + parse path so a
+THINKING model reliably produces usable plans. Thinking stays ON — it is the
+feature. Builds on S-INFER-1 (json-salvage + classification enum).
+
+**Honesty:** Everything below is proven by **fixtures / unit tests only**. No
+live inference ran in the sandbox. We do NOT claim the live empty-rate dropped —
+that A/B is PENDING a controller restart. We claim: the request now gives the
+thinking model explicit room, both response layouts parse, cancelled ≠ empty,
+and there is one unified parser — each backed by a named test.
+
+## D1 — Token / time headroom for the thinking model
+
+A reasoning model spends tokens on its `<think>` trace BEFORE the final JSON. If
+the (unknown) server default generation length is small, the answer is truncated
+mid-think and the salvage path sees reasoning-only text → a bogus
+`think_only_no_answer`. The request now sends an explicit ceiling.
+
+- **`max_tokens` (a.k.a. `max_completion_tokens`)**: added to `LlmRequest`
+  (`maxTokens?`). When set, `llm-client.ts` sends **both** `max_tokens`
+  (OpenAI-classic) and `max_completion_tokens` (newer reasoning-model field) so
+  either provider style honours it. The brain call passes
+  **`DEFAULT_BRAIN_MAX_TOKENS = 1536`** — sized to fit a few hundred tokens of
+  reasoning plus the compact goal/say JSON, while staying well under a local
+  quantized model's context so the prompt envelope is never crowded out.
+- **Endpoint-configurable**: new optional `llm.endpoints.*.maxTokens` /
+  `llm.profiles.*.maxTokens` config field. Resolution order inside the client:
+  per-request `maxTokens` → endpoint `maxTokens` → (omit field, server default).
+  A behavior profile (`behavior.brain.maxTokens`) wins via `maxTokensFor(...)`.
+  When nothing is set the field is dropped entirely, preserving prior behaviour.
+- **Brain timeout**: `DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS` was already a generous
+  **20_000ms** (configurable via `timeoutFor(behavior.brain, …)`). NOT stingy
+  for a reasoning model, so left **unchanged**; documented rather than altered.
+- **Thinking stays ON** everywhere: `thinking: behavior.brain?.thinking ?? true`
+  is untouched; a test asserts `brainRequest.thinking === true` alongside
+  `brainRequest.maxTokens === 1536`.
+
+Tests: `llm-client.test.ts` (sends 1536 ceiling on both fields; endpoint-default
+fallback; omits when unset; per-request overrides endpoint).
+`hybrid-agent-thinking-module.test.ts` (brain call carries thinking=true +
+timeout=20_000 + maxTokens=1536).
+
+## D2 — `thinking_cancelled` (bucket C) classified distinctly
+
+A brain think CANCELLED mid-flight (a reflex with `interruptThinking` →
+`resident-runtime.ts` calls `stop('nervous:<ruleId>')`, the watchdog, attention
+exhaustion, or a request timeout) is empty ONLY because it was aborted — NOT
+because the model produced no decision. It must never fold into the
+`empty_completion` buckets and inflate the "no decision" rate.
+
+- **Hybrid brain path** (`hybrid-agent-helpers.ts:runBrain`): already returns the
+  cancellation result (`cancellation.cause`, e.g. `nervous:flee_combat`) BEFORE
+  `parseBrainCompletionDetailed`, with `'thinking_cancelled'` as the fallback
+  label. A regression test now locks that a reflex-cancelled think surfaces the
+  reflex cause and is NOT any `empty_completion*` / `brain_*` class.
+- **SPARK path** (`spark.ts`): NEW branch — when the empty completion has
+  `response.cancelledBy`, the decisionCause becomes
+  `cancelledDecisionCause(reason)` = `thinking_cancelled:<reason>` (e.g.
+  `thinking_cancelled:nervous:flee_combat`). A bare `request_timeout` keeps its
+  own historical label (genuine timeout, not a reflex). This is checked BEFORE
+  the S-INFER-1 `emptyCompletionCause(...)` salvage classification, so bucket C
+  never reaches the empty buckets.
+
+Tests: `spark-evidence.test.ts` (reflex-cancelled → `thinking_cancelled:...`,
+not empty_completion, with the decision recorded in the trajectory;
+`request_timeout` keeps its own cause). `hybrid-agent-thinking-module.test.ts`
+(reflex-cancelled brain cause distinct).
+
+## D3 — Robust to BOTH reasoning-model response layouts
+
+`llm-client.ts` flattens `content || reasoning_content || reasoning` into
+`response.text`, so by parse time both layouts arrive as one string:
+
+- (a) `content` carries `<think>…</think>{json}` inline → recovered,
+  `recovered_after_think_strip`.
+- (b) `content` empty, `reasoning_content` carries the trace with the answer at
+  its TAIL (no wrapping tags) → recovered via balanced-brace scan.
+- (b) reasoning-only, no JSON answer → `think_only_no_answer` (no silent `{}`).
+- pure prose, no tags, no object → `truly_empty` (kept distinct from think
+  truncation so the breakdown stays honest).
+
+Tests: `json-salvage.test.ts` D3 block (both layouts + reasoning-only +
+prose-only). `llm-client.test.ts` (reasoning_content-tail surfaces verbatim as
+`response.text`).
+
+## D4 — One unified `<think>`-strip + JSON-extract path
+
+`completion-parser.ts` already used `json-salvage.ts` (S-INFER-1).
+`inference-health.ts` had its OWN `stripThinkBlocks` + greedy `extractJsonObject`
+(first-`{`-to-last-`}`). It now **delegates both to `json-salvage.ts`**
+(`stripThinkBlocks` + `salvageJsonCandidates`, balanced-brace) while keeping its
+strict health-probe contract: the recovered object must equal the whole trimmed
+(think-stripped) text — no surrounding prose — AND be exactly the two probe keys.
+Net: ONE robust strip+extract path across brain parser, SPARK parser, and probe.
+
+Tests: all existing `inference-health.test.ts` stay green (prose-wrapped →
+`unexpected_completion`; extra keys → `unexpected_completion`; think-stripped
+exact JSON → `ok`), plus a NEW test proving two adjacent objects go through the
+shared balanced-brace scan (not a greedy slice) and are still rejected by the
+strict equality gate.
+
+## Live verification (PENDING controller restart)
+
+Same protocol as S-INFER-1, with one addition: after restart, the histogram
+should also surface `thinking_cancelled(:*)` as its own bucket, separate from
+`empty_completion(_*)`. A drop in raw `empty_completion*` count attributable to
+cancellations moving into `thinking_cancelled` is the D2 win; recoveries vs
+`think_only_no_answer` remain the S-INFER-1 / model-quality signal.
+
+```
+grep -oE 'empty_completion(_[a-z_]+)?|brain_[a-z_]+|thinking_cancelled(:[a-z_:]+)?' <trajectory> | sort | uniq -c
+```

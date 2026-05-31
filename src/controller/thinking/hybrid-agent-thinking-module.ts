@@ -405,6 +405,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return profile?.timeoutMs ?? fallback;
     }
 
+    maxTokensFor(profile: any, fallback?: number): number | undefined {
+        // S-INFER-2 (D1): a behavior profile maxTokens wins; otherwise the
+        // caller's generous default. When this resolves to undefined the
+        // LlmClient falls back to the endpoint config maxTokens (then the
+        // server default), so the ceiling stays endpoint-configurable without
+        // touching the soul schema.
+        return profile?.maxTokens ?? fallback;
+    }
+
     modelFor(profile?: any): string | undefined {
         return profile?.model || this.options.soul.frontmatter.model?.model;
     }

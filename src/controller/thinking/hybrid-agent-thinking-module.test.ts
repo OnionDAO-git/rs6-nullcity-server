@@ -92,6 +92,40 @@ describe('HybridAgentThinkingModule', () => {
         );
     });
 
+    it('records a reflex-cancelled Brain think distinctly (not empty_completion) — S-INFER-2 D2', async () => {
+        // A nervous reflex with interruptThinking fires mid-think; resident-runtime
+        // calls stop(`nervous:<ruleId>`). The cancelled brain MUST surface that
+        // reflex cause (bucket C), never fold into the empty-completion buckets.
+        let capturedSignal: AbortSignal | undefined;
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(
+            request =>
+                new Promise(resolve => {
+                    capturedSignal = request.signal;
+                    request.signal?.addEventListener('abort', () =>
+                        resolve({ text: '', nooped: true, cancelledBy: String(request.signal?.reason || 'aborted') }),
+                    );
+                }),
+        );
+        const agent = hybridAgent({ complete });
+
+        const thinking = agent.think(perception({ tick: 1 }));
+        for (let i = 0; i < 5 && !capturedSignal; i += 1) {
+            await Promise.resolve();
+        }
+        expect(capturedSignal).toBeDefined();
+
+        agent.stop('nervous:flee_combat');
+        const result = await thinking;
+
+        // Brain thinking stayed ON (the call was made); the interrupt cause is
+        // preserved verbatim and is NOT any empty_completion / brain_* class.
+        expect(result.cause).toBe('nervous:flee_combat');
+        expect(result.cause).not.toBe('empty_completion');
+        expect(result.cause?.startsWith('empty_completion')).toBe(false);
+        expect(result.cause?.startsWith('brain_')).toBe(false);
+        expect(result.nooped).toBe(true);
+    });
+
     it('does not retry Brain inference while watchdog backoff is active', async () => {
         const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(async () => {
             throw new Error('Brain should be backed off');
@@ -571,6 +605,9 @@ describe('HybridAgentThinkingModule', () => {
         const bodyRequest = llm.complete.mock.calls[1][0];
         expect(brainRequest.thinking).toBe(true);
         expect(brainRequest.timeoutMs).toBe(20_000);
+        // S-INFER-2 (D1): the THINKING brain call must carry an explicit, generous
+        // completion-token ceiling so reasoning + the final JSON answer both fit.
+        expect(brainRequest.maxTokens).toBe(1536);
         expect(brainRequest.prompt).toContain('/think');
         expect(brainRequest.prompt).toContain('RuneBench-style loop');
         expect(brainRequest.prompt).toContain('Measurable goals');

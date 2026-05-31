@@ -144,3 +144,57 @@ describe('parseJsonWithSalvage', () => {
         expect(r.value).toEqual({ say: 'ok' });
     });
 });
+
+// S-INFER-2 (D3): the thinking model returns its trace + answer in one of two
+// shapes. LlmClient already flattens `content || reasoning_content || reasoning`
+// into `response.text`, so by the time salvage runs, BOTH layouts arrive as a
+// single string. These fixtures lock that the salvage recovers the answer from
+// either layout, and that a reasoning-only trace (no JSON answer) is classified
+// `think_only_no_answer` rather than silently `{}`.
+describe('parseJsonWithSalvage — both reasoning-model response layouts (S-INFER-2 D3)', () => {
+    it('layout (a): content carries the full <think>…</think>{json} inline → recovered_after_think_strip', () => {
+        const content =
+            '<think>The player asked me to fish. I should set a fishing goal. {not json}</think>\n{"goal":{"description":"go fishing"}}';
+        const r = parseJsonWithSalvage(content, schema);
+        expect(r.value).toEqual({ goal: { description: 'go fishing' } });
+        expect(r.classification).toBe('recovered_after_think_strip');
+        expect(r.hadThink).toBe(true);
+    });
+
+    it('layout (b): reasoning_content carries the trace and the answer is at its TAIL (no <think> tags) → recovered', () => {
+        // vLLM/Qwen often put the reasoning in `reasoning_content` WITHOUT wrapping
+        // tags and append the final JSON at the very end. LlmClient surfaces this
+        // whole string as response.text; the balanced-brace scan finds the tail JSON.
+        const reasoningContent = [
+            'First I consider the options. The player needs help cooking.',
+            'A goal with a clear description is best. Let me emit it now.',
+            '{"goal":{"description":"help cook by gathering ingredients"},"say":"On my way to the kitchen."}',
+        ].join('\n');
+        const r = parseJsonWithSalvage(reasoningContent, schema);
+        expect(r.value).toEqual({
+            goal: { description: 'help cook by gathering ingredients' },
+            say: 'On my way to the kitchen.',
+        });
+        // No <think> tags present and the prose precedes the object, so this is a
+        // surrounding-prose recovery, not a clean whole-string parse.
+        expect(r.classification).toBe('recovered_after_think_strip');
+        expect(r.hadThink).toBe(false);
+    });
+
+    it('layout (b) reasoning-only: reasoning_content holds ONLY reasoning, no JSON answer → think_only_no_answer, no value', () => {
+        // The think trace consumed the whole budget (or the model never committed
+        // to an answer). Must NOT be a silent `{}` — classify the real reason.
+        const reasoningOnly = '<think>Let me weigh fishing vs woodcutting vs mining, considering levels and';
+        const r = parseJsonWithSalvage(reasoningOnly, schema);
+        expect(r.value).toBeUndefined();
+        expect(r.classification).toBe('think_only_no_answer');
+    });
+
+    it('layout (b) reasoning-only WITHOUT tags + no JSON → truly_empty (no think tag, no object)', () => {
+        // Pure prose with no tags and no object is genuinely empty content, not a
+        // think-truncation; keep that distinct so the breakdown stays honest.
+        const r = parseJsonWithSalvage('I am thinking about what to do but have not decided.', schema);
+        expect(r.value).toBeUndefined();
+        expect(r.classification).toBe('truly_empty');
+    });
+});

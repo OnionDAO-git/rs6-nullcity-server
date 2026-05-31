@@ -187,6 +187,28 @@ describe('runInferenceHealthProbe', () => {
         });
     });
 
+    it('rejects two adjacent objects via the shared balanced-brace scan, not a greedy slice (S-INFER-2 D4)', async () => {
+        // The old greedy first-{-to-last-} extractor sliced these two objects into
+        // one malformed string and rejected it incidentally. The shared scan now
+        // yields two distinct objects; the strict whole-text equality gate rejects
+        // the trailing junk object so the probe still fails — proving delegation to
+        // json-salvage without weakening the contract.
+        const complete = jest.fn(async () => ({
+            text: '{"health":"ok","probe":"nullcity-inference-health"}{"junk":1}',
+            model: 'qwen-health',
+            nooped: false,
+        }));
+
+        const result = await runInferenceHealthProbe({
+            complete,
+            endpoints: {
+                default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
+            },
+        });
+
+        expect(result).toMatchObject({ ok: false, status: 'unexpected_completion' });
+    });
+
     it('honors endpoint text response format and reads provider reasoning/cost fields', async () => {
         const fetchMock = jest.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
             const body = JSON.parse(String(init?.body));

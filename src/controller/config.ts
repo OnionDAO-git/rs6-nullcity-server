@@ -52,6 +52,13 @@ export interface LlmEndpointConfig {
     profileId?: string;
     responseFormat?: LlmResponseFormat;
     timeoutMs: number;
+    /**
+     * S-INFER-2 (D1): default completion-token ceiling for this endpoint. Sized
+     * to fit a thinking model's `<think>` reasoning plus its final JSON answer
+     * (see DEFAULT_BRAIN_MAX_TOKENS in hybrid-agent-helpers). Optional — when
+     * unset the server's own default applies. A per-request `maxTokens` overrides.
+     */
+    maxTokens?: number;
     cost?: LlmCostConfig;
 }
 
@@ -432,6 +439,7 @@ function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
             endpointId: name,
             responseFormat: readLlmResponseFormat(endpoint.responseFormat),
             timeoutMs: readNumber(endpoint.timeoutMs, 30000),
+            maxTokens: readOptionalNumber(endpoint.maxTokens),
             cost: readLlmCost(endpoint.cost),
         };
     }
@@ -461,6 +469,7 @@ function readLlmProfiles(value: unknown, endpoints: Record<string, LlmEndpointCo
             profileId: name,
             responseFormat: readLlmResponseFormat(profile.responseFormat) ?? endpoint.responseFormat,
             timeoutMs: readNumber(profile.timeoutMs, endpoint.timeoutMs ?? 30000),
+            maxTokens: readOptionalNumber(profile.maxTokens) ?? endpoint.maxTokens,
             cost: readLlmCost(profile.cost) ?? endpoint.cost,
         };
     }

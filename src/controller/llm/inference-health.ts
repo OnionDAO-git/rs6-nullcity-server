@@ -1,5 +1,6 @@
 import type { LlmEndpointConfig } from '../config';
 import type { LlmResponse } from './llm-client';
+import { stripThinkBlocks, salvageJsonCandidates } from './json-salvage';
 
 export type InferenceHealthStatus =
     | 'ok'
@@ -149,13 +150,27 @@ export async function runInferenceHealthProbe(options: InferenceHealthProbeOptio
     }
 }
 
-function stripThinkBlocks(text: string): string {
-    return text.replace(/<think>[\s\S]*?<\/think>/gi, '');
-}
-
+/**
+ * S-INFER-2 (D4): the `<think>`-strip and JSON-object extraction now delegate to
+ * the shared `json-salvage` util so there is ONE robust path across the brain
+ * parser, the SPARK completion parser, and this probe. The health probe keeps
+ * its OWN strict contract on top of that shared extraction:
+ *   - after stripping think blocks, the recovered object must be the WHOLE
+ *     trimmed text (no surrounding prose — a health probe must answer compactly);
+ *   - the object must be EXACTLY the two probe keys with the expected values.
+ * The balanced-brace scan replaces the old greedy first-{-to-last-} slice, but
+ * the equality + schema gates preserve the historical reject behaviour.
+ */
 function isExpectedHealthResponse(text: string): boolean {
-    const jsonText = extractJsonObject(text);
-    if (!jsonText || jsonText !== text.trim()) {
+    const candidates = salvageJsonCandidates(text);
+    if (candidates.length === 0) {
+        return false;
+    }
+    const jsonText = candidates[candidates.length - 1];
+    // Strict probe contract: the object must be the entire compact answer, with
+    // no prose wrapped around it (the shared scan would otherwise recover an
+    // object embedded in prose, which the probe must reject as unexpected).
+    if (jsonText !== stripThinkBlocks(text).trim()) {
         return false;
     }
     try {
@@ -168,15 +183,6 @@ function isExpectedHealthResponse(text: string): boolean {
     } catch {
         return false;
     }
-}
-
-function extractJsonObject(text: string): string | undefined {
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start < 0 || end <= start) {
-        return undefined;
-    }
-    return text.slice(start, end + 1);
 }
 
 function preview(text: string): string {
