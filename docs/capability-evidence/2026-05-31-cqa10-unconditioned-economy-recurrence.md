@@ -31,6 +31,8 @@ Artifact: `data/benchmarks/capability-qa-2026-05-31/cqa10-unconditioned-economy-
 
 Verification rerun artifact: `data/benchmarks/capability-qa-2026-05-31/cqa10-unconditioned-economy-recurrence/normal_life_audit_20260531T092910Z.json` reproduced the same window totals: 23 residents, 2385/2385 actions, `lowHealthWaits=0`, `organicSelfInitiatedApGpExchangeEvents=1`, and trade counts still `0`.
 
+Follow-up 31m no-drain artifact: `data/benchmarks/capability-qa-2026-05-31/cqa10-no-drain-30m-followup/normal_life_audit_20260531T093212Z.json` extends the same no-drain start to `2026-05-31T09:31:53.000Z`: 23 residents, 3391/3391 actions, `lowHealthWaits=0`, `organicSelfInitiatedApGpExchangeEvents=3`, trade counts still `0`, and stuck churn `237/183`.
+
 ## Audit Shape Added
 
 `normal-life-audit` now writes:
@@ -118,6 +120,45 @@ The only request-attention resident with enough observed GP was:
 | Resident | AP last | GP | Request-attention actions | GP observed at |
 |---|---:|---:|---:|---|
 | `res:qa-social` | 59186 | 234 | 1 | `2026-05-31T08:56:20.363Z` |
+
+## 31m Follow-up
+
+The follow-up audit preserved the no-drain lower bound (`2026-05-31T09:00:30.000Z`) and extended the window to `2026-05-31T09:31:53.000Z`.
+
+| Metric | Count |
+|---|---:|
+| activeResidents | 23 |
+| totalActionAttempts | 3391 |
+| successfulActionSubmissions | 3391 |
+| failedActionSubmissions | 0 |
+| actionSuccessRate | 100 |
+| apGpExchangeActions | 3 |
+| apGpExchangeEvents | 3 |
+| selfInitiatedApGpExchangeEvents | 3 |
+| controlledApGpExchangeEvents | 0 |
+| organicSelfInitiatedApGpExchangeEvents | 3 |
+| tradeRequests | 0 |
+| tradeCompleted | 0 |
+| tradeCancelled | 0 |
+| lowHealthWaits | 0 |
+| cookingActions | 140 |
+| eatingActions | 33 |
+| combatResupplyActions | 133 |
+| xpEvents | 54 |
+| deaths | 0 |
+| logouts | 0 |
+| stuckDetected | 237 |
+| stuckRecovered | 183 |
+
+Organic exchange events:
+
+| Time | Resident | GP delta | AP delta | Ref |
+|---|---|---:|---:|---|
+| `2026-05-31T09:20:12.371Z` | `res:qa-guide` | -101 | 202 | `apgp:res:qa-guide:self-ap-gp:res:qa-guide:10` |
+| `2026-05-31T09:24:59.637Z` | `res:qa-forager` | -25 | 50 | `apgp:res:qa-forager:self-ap-gp:res:qa-forager:102` |
+| `2026-05-31T09:27:21.369Z` | `res:qa-guide` | -24 | 48 | `apgp:res:qa-guide:self-ap-gp:res:qa-guide:337` |
+
+Resident slices show `res:qa-guide` emitted 2 `city_exchange_ap_gp` actions and 2 `city_ap_gp_exchange` timeline events, while `res:qa-forager` emitted 1 of each. This upgrades the finding from a single organic event to repeated organic recurrence across two residents. It still leaves trade closure and fresh GP inventory scanning open.
 
 ## Companion Counts
 
