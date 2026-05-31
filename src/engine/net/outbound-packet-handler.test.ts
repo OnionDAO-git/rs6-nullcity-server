@@ -67,4 +67,20 @@ describe('OutboundPacketHandler map rebuild packets', () => {
         expect(() => handler.setWorldItem({ itemId: 1944, amount: 1 } as any, new Position(3271, 3263, 0))).not.toThrow();
         expect(handler.getSpectatorPacketHistory().length).toBeGreaterThan(0);
     });
+
+    it('bounds spectator packet replay by bytes instead of retaining every large frame', () => {
+        const position = new Position(3214, 3204, 0);
+        const handler = handlerAt(position);
+        const largeWidgetText = 'x'.repeat(4_000);
+
+        for (let i = 0; i < 300; i += 1) {
+            handler.updateWidgetString(1, i, largeWidgetText);
+        }
+
+        const history = handler.getSpectatorPacketHistory();
+        const retainedBytes = history.reduce((total, frame) => total + frame.payloadBase64.length + frame.frameBase64.length, 0);
+
+        expect(history.length).toBeLessThan(300);
+        expect(retainedBytes).toBeLessThanOrEqual(1_500_000);
+    });
 });
