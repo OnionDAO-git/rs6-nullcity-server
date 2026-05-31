@@ -4,14 +4,14 @@ Null City keeps the proven inference route as `default` and adds named canary en
 
 ## Endpoints
 
-- `default`: `http://inf.nullcity.ai:1234`, model `qwen/qwen3.6-27b`.
+- `default`: `http://inf.nullcity.ai:1234`, model `qwopus3.5-27b-v3@q4_k_s`, timeout `75000`.
 - `spacetower_qwopus_q4`: `http://spacetower.nullcity.ai:8100`, model `qwopus3.5-27b-v3@q4_k_s`.
 
-Do not assume cross-loaded model combinations exist on both machines. As of the latest Dev correction, `inf` is the Qwen baseline and `spacetower` is the Qwopus canary.
+Do not assume cross-loaded model combinations exist on both machines. As of 2026-05-31, Qwen is non-serving on both owned boxes; do not repoint `default` or a soul endpoint to Qwen until Dev confirms it serves again.
 
 ## Safe Default
 
-Do not move the demo heroes to the canary model right before a team demo. The baseline `default` stays stable for `res:agent` and named public heroes. Synthetic QA residents `res:qa-scout` and `res:qa-forager` are pinned to `spacetower_qwopus_q4`, so operators can compare behaviour without putting noisy test residents on public wall/library surfaces.
+Do not move the demo heroes away from the `default` qwopus route right before a team demo. The baseline `default` stays stable for `res:agent` and named public heroes. Synthetic QA residents `res:qa-scout` and `res:qa-forager` can still be pinned to named canary endpoints, so operators can compare behavior without putting noisy test residents on public wall/library surfaces.
 
 ## Quick Probe
 

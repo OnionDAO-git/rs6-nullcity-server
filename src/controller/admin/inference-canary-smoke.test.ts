@@ -1,4 +1,5 @@
 import type { InferenceHealthResult } from '../llm/inference-health';
+import { loadControllerConfig } from '../config';
 import { DEFAULT_INFERENCE_CANARY_ENDPOINTS, parseInferenceCanarySmokeArgs, runInferenceCanarySmoke } from './inference-canary-smoke';
 
 describe('inference canary smoke', () => {
@@ -11,6 +12,13 @@ describe('inference canary smoke', () => {
                 json: false,
             }),
         );
+    });
+
+    it('keeps the committed canary config on the restart-surviving qwopus default', () => {
+        const config = loadControllerConfig('config/controller.inference-canary.yml');
+
+        expect(config.llm.endpoints.default.model).toBe('qwopus3.5-27b-v3@q4_k_s');
+        expect(config.llm.endpoints.default.timeoutMs).toBeGreaterThanOrEqual(75_000);
     });
 
     it('parses explicit endpoints, all-endpoints mode, timeout, and json output', () => {
