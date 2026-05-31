@@ -444,3 +444,13 @@ grep -oE 'thinking_cancelled(:[a-z_:]+)?|brain_inflight_debounced' <trajectory> 
 # brain instead of cancelling it). Any residual thinking_cancelled:interrupted_by:
 # took_damage / :death_seen / :attention_empty is CORRECT (survival aborts).
 ```
+
+## CLEAN-WINDOW RESULT (2026-05-31 ~22:21Z) — inference fix verified DONE
+
+Stable-window `npm run controller:inference-audit` (window 21:51–22:21Z, 23 residents, 641 brain decisions):
+- **usable-brain-rate = 89.1%** (clean=571, recovered=0)
+- broken: **timeout=0, empty=0, think_only=0**, schema=2, cancelled=68 (~10.6% residual, basic-resident/minor-churn)
+- planning: goalsEmitted=22, goal-follow-through=44.3%
+- survival: 10 active residents, `degradedFlags=[]`, zero deaths/logouts/ap_fades
+
+**Arc closed:** qwen3.6-27b non-serving (0% usable, S-INFER-AB-1) → switched brain+body to qwopus3.5-27b (S-INFER model switch) → raised brain timeout 20s→75s (qwopus p50 ~40s) → max_tokens 1536→4096 → made brain uninterruptible by non-survival reflexes/hooks (S-INFER-4/5/6) → in-flight debounce (S-INFER-7) → resolved restart-contention (one stable steward-owned controller). From 0.3% → **89.1% usable** in a clean window. Residents think (qwopus, thinking ON), the Body executes (thinking OFF), the Nervous System protects without aborting the Brain. Survival reflexes + AP self-trade keep residents alive. HD-053 records the qwopus-only model policy.
