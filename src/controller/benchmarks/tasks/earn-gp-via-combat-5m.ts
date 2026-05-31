@@ -5,8 +5,8 @@ export const EARN_GP_VIA_COMBAT_5M_TASK_ID = 'earn-gp-via-combat-5m';
 export const EARN_GP_VIA_COMBAT_5M_TASK_VERSION = '0.1.0';
 export const EARN_GP_VIA_COMBAT_5M_BUDGET_MS = 5 * 60 * 1000;
 
-// Same Lumbridge goblin courtyard waypoint the CQA5 combat smoke (combat-prayer-10m) uses,
-// so the resident spawns into safe combat with a weapon + food but zero GP.
+// Same Lumbridge goblin courtyard waypoint the CQA5 combat smoke uses, now
+// backed by a real small-coin drop so residents can earn AP-funding GP.
 const START_POSITION = { x: 3254, y: 3230, level: 0 };
 const COOKED_SHRIMP_ITEM_ID = 315;
 const BRONZE_SCIMITAR_ITEM_ID = 9703;

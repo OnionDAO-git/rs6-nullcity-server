@@ -5,7 +5,7 @@ import { makeEarnGpViaCombat5mBenchmarkTask, verifyEarnGpViaCombat5m } from './e
 const STANDARD_MODULE = { id: 'onion.runescape.standard', version: '0.1.0' };
 
 describe('makeEarnGpViaCombat5mBenchmarkTask', () => {
-    it('starts a fed, armed resident at the safe-combat waypoint carrying zero GP', () => {
+    it('starts a fed, armed resident at the Lumbridge goblin courtyard carrying zero GP', () => {
         const task = makeEarnGpViaCombat5mBenchmarkTask();
         expect(task.resident).toMatchObject({
             spawnPosition: { x: 3254, y: 3230, level: 0 },

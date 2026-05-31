@@ -367,6 +367,11 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.id).toBe('train-combat-safely');
     });
 
+    it("returns combatGoal for 'earn-gp-via-combat-5m'", () => {
+        const g = benchmarkGoalForTask('earn-gp-via-combat-5m', 0);
+        expect(g?.id).toBe('train-combat-safely');
+    });
+
     it("returns combatGoal for 'low-health-cook-eat-reengage-5m'", () => {
         const g = benchmarkGoalForTask('low-health-cook-eat-reengage-5m', 0);
         expect(g?.id).toBe('train-combat-safely');

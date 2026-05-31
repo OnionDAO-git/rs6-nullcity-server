@@ -34,6 +34,20 @@ describe('findNpc', () => {
             name: 'Banker',
         });
     });
+
+    it('loads Lumbridge goblins with deterministic bones and coin drops for combat GP benchmarks', async () => {
+        const { loadNpcConfigurations } = require('@engine/config/npc-config');
+        const { npcs, npcPresets } = await loadNpcConfigurations('data/config/npcs/');
+        configHandler.npcMap = npcs;
+        configHandler.npcPresetMap = npcPresets;
+
+        expect(configHandler.findNpc('rs:goblin').dropTable).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ itemKey: 'rs:bones', frequency: 'always', amount: 1 }),
+                expect.objectContaining({ itemKey: 'rs:coins', frequency: 'always', amount: 3 }),
+            ]),
+        );
+    });
 });
 
 describe('item configuration', () => {

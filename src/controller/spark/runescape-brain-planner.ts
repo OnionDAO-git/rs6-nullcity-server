@@ -399,7 +399,12 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'fishing-cooking-10m') {
         return starterFishingCookingGoal(tick);
     }
-    if (taskId === 'combat-prayer-10m' || taskId === 'low-health-cook-eat-reengage-5m' || taskId === 'equipment-prep-3m') {
+    if (
+        taskId === 'combat-prayer-10m' ||
+        taskId === 'earn-gp-via-combat-5m' ||
+        taskId === 'low-health-cook-eat-reengage-5m' ||
+        taskId === 'equipment-prep-3m'
+    ) {
         return combatGoal(tick);
     }
     if (taskId === 'explore-report-5m') {
