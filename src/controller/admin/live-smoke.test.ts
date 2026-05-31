@@ -79,6 +79,28 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toContain('decision_loop_without_actions:low_health_hold_position');
     });
 
+    it('accepts follow listen holds when the resident keeps visible speech alive', () => {
+        writeResidentState('res:qa-trader', { tick: 300, lastMeaningfulProgressAt: 299, stuckSince: 299 });
+        writeTrajectory('res:qa-trader', [
+            { tick: 260, kind: 'say', text: 'I have starter supplies ready. Say "trade trade me" to trade.' },
+            { tick: 261, kind: 'action_result', status: 'success', reason: 'success' },
+            ...Array.from({ length: 30 }, (_, index) => ({
+                tick: 262 + index,
+                kind: 'decision',
+                cause: 'follow_listen_hold',
+                actionKinds: [],
+            })),
+            { tick: 292, kind: 'say', text: 'I have starter supplies ready. Say "trade inventory" to inspect them.' },
+            { tick: 293, kind: 'action_result', status: 'success', reason: 'success' },
+        ]);
+
+        const [summary] = summarizeLiveResidents({ memoryDir, residents: ['res:qa-trader'], windowTicks: 50, maxStuckTicks: 90 });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.recent).toMatchObject({ actions: 0, decisions: 30, says: 2, results: 2 });
+        expect(summary.issues).not.toContain('decision_loop_without_actions:follow_listen_hold');
+    });
+
     it('auto-discovers only resident directories with runtime state', () => {
         fs.mkdirSync(path.join(memoryDir, 'library'), { recursive: true });
         fs.mkdirSync(path.join(memoryDir, 'data'), { recursive: true });

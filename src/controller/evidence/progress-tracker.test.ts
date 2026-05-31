@@ -42,6 +42,32 @@ describe('ProgressTracker', () => {
         expect(recovered.meaningful).toBe(true);
     });
 
+    it('can record an explicit meaningful signal and clear an existing stuck state', () => {
+        const tracker = new ProgressTracker({ stuckThresholdTicks: 3 });
+        tracker.observe(snapshot({ tick: 1 }));
+        expect(tracker.observe(snapshot({ tick: 4 }))).toEqual({ meaningful: false, reasons: [], newStuck: true, stuckSince: 4 });
+
+        expect(tracker.recordMeaningful(5, 'visible_say:social_keepalive')).toEqual({
+            meaningful: true,
+            reasons: ['visible_say:social_keepalive'],
+            newStuck: false,
+            stuckSince: null,
+        });
+
+        expect(tracker.observe(snapshot({ tick: 7 }))).toEqual({
+            meaningful: false,
+            reasons: [],
+            newStuck: false,
+            stuckSince: null,
+        });
+        expect(tracker.observe(snapshot({ tick: 8 }))).toEqual({
+            meaningful: false,
+            reasons: [],
+            newStuck: true,
+            stuckSince: 8,
+        });
+    });
+
     it('does not flag ordinary scouting cadence as stuck before the default threshold', () => {
         const tracker = new ProgressTracker();
         tracker.observe(snapshot({ tick: 1, positionHash: 'lumbridge-bank' }));

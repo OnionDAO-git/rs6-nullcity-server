@@ -65,6 +65,12 @@ export class ProgressTracker {
         return { meaningful: false, reasons: [], newStuck, stuckSince: this.stuckSinceTick };
     }
 
+    recordMeaningful(tick: number, reason: string): ProgressDelta {
+        this.lastMeaningfulTick = tick;
+        this.stuckSinceTick = null;
+        return { meaningful: true, reasons: [reason], newStuck: false, stuckSince: null };
+    }
+
     reset(): void {
         this.previous = null;
         this.lastMeaningfulTick = null;

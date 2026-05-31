@@ -1007,8 +1007,21 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         evidence: attempt.evidence,
                     }),
                 );
+                this.observeActionProgress(attempt);
             },
         };
+    }
+
+    private observeActionProgress(attempt: ActionAttempt): void {
+        const reason = visibleSpeechProgressReason(attempt);
+        if (!reason) {
+            return;
+        }
+        const tick = Math.max(this.state.tick, actionAttemptTick(attempt) ?? 0, this.progressTracker.current()?.tick ?? 0);
+        const delta = this.progressTracker.recordMeaningful(tick, reason);
+        this.state.lastMeaningfulProgressAt = this.runtimeProgressTick(tick);
+        this.state.stuckSince = undefined;
+        this.recordProgressEvidence(tick, delta);
     }
 
     private observeRuntimeProgress(tick: number, perception: Perception): void {
@@ -2469,6 +2482,17 @@ function supportsPerceptionEffectWait(body: ResidentBody): boolean {
 
 function stringReason(reason: unknown): string | undefined {
     return typeof reason === 'string' ? reason : undefined;
+}
+
+function visibleSpeechProgressReason(attempt: ActionAttempt): string | undefined {
+    if (attempt.finalStatus !== 'success' || attempt.action.kind !== 'say') {
+        return undefined;
+    }
+    const cause = stringReason((attempt.action as { cause?: unknown }).cause) || stringReason(attempt.cause);
+    if (cause === 'social_keepalive' || cause === 'trade_keepalive') {
+        return `visible_say:${cause}`;
+    }
+    return undefined;
 }
 
 function actionEffectObserved(action: AgentAction, before: Perception | undefined, after: Perception): boolean {

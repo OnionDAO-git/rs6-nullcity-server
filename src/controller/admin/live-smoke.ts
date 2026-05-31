@@ -453,7 +453,14 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
         summary.issues.push('recent_actions_not_succeeding');
     }
     const dominantDecision = dominantDecisionCause(decisionCauses, summary.recent.decisions);
-    if (summary.recent.actions === 0 && dominantDecision && dominantDecision.count >= 20 && dominantDecision.share >= 0.75) {
+    const visibleFollowHold = dominantDecision?.cause === 'follow_listen_hold' && summary.recent.says > 0;
+    if (
+        summary.recent.actions === 0 &&
+        dominantDecision &&
+        !visibleFollowHold &&
+        dominantDecision.count >= 20 &&
+        dominantDecision.share >= 0.75
+    ) {
         summary.issues.push(`decision_loop_without_actions:${dominantDecision.cause}`);
     }
     summary.status = summary.issues.length ? (state ? 'warn' : 'missing') : 'ok';
