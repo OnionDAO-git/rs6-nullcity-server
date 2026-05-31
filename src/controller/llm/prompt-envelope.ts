@@ -305,6 +305,9 @@ function outputContract(): unknown {
                 condition: { kind: 'perception_path_lte', value: { path: 'self.hpFraction', value: 0.35 } },
                 action: { kind: 'eat', slot: 0 },
                 cooldownTicks: 2,
+                // SURVIVAL-CRITICAL (S-INFER-4): this is the canonical low-HP eat
+                // example shown to the Brain. interruptThinking:true is correct — a
+                // resident at <=35% HP must abandon deliberation and eat NOW.
                 interruptThinking: true,
                 suppressThinking: true,
             },

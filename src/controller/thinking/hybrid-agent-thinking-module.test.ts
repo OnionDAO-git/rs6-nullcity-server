@@ -604,10 +604,15 @@ describe('HybridAgentThinkingModule', () => {
         const brainRequest = llm.complete.mock.calls[0][0];
         const bodyRequest = llm.complete.mock.calls[1][0];
         expect(brainRequest.thinking).toBe(true);
-        expect(brainRequest.timeoutMs).toBe(20_000);
-        // S-INFER-2 (D1): the THINKING brain call must carry an explicit, generous
-        // completion-token ceiling so reasoning + the final JSON answer both fit.
-        expect(brainRequest.maxTokens).toBe(1536);
+        // Brain timeout default is 75_000 (maintainer commit c7bf5678 raised it
+        // 20s → 75s to fit qwopus p50 ~40s). Asserting the shipped value here so
+        // this test reflects the deliberation window the slow brain actually gets.
+        expect(brainRequest.timeoutMs).toBe(75_000);
+        // S-INFER-2 (D1) / S-INFER-4 (B): the THINKING brain call must carry an
+        // explicit, generous completion-token ceiling so reasoning + the final
+        // JSON answer both fit. Raised 1536 → 4096 because qwopus spends most of
+        // its budget on the <think> trace before the compact goal/say JSON.
+        expect(brainRequest.maxTokens).toBe(4096);
         expect(brainRequest.prompt).toContain('/think');
         expect(brainRequest.prompt).toContain('RuneBench-style loop');
         expect(brainRequest.prompt).toContain('Measurable goals');
@@ -10068,7 +10073,8 @@ describe('HybridAgentThinkingModule', () => {
             expect(result.chat_reply_emitted).toBe(true);
             expect(result.chat_reply_kind).toBe('small_talk');
             expect(result.voiceSource).toBe('inference');
-            expect(llm.complete.mock.calls[0]?.[0].timeoutMs).toBe(20_000);
+            // Brain timeout default raised 20s → 75s (maintainer c7bf5678) for qwopus.
+            expect(llm.complete.mock.calls[0]?.[0].timeoutMs).toBe(75_000);
         });
 
         it('F2-T1b: Small talk prompt includes recent Library memories so the resident can answer recall questions.', async () => {

@@ -7,12 +7,26 @@ export interface InferenceBudget {
     noInferenceMs?: number;
 }
 
+/**
+ * Default rate/backoff limits. Named constants so the maintainer can tighten
+ * them back later if a resident over-spends inference. S-INFER-4 loosened these
+ * because the slow (~40s) qwopus brain was being rate-capped / suppressed while
+ * trying to think; a single resident attempting to deliberate must not be
+ * throttled out of finishing.
+ */
+const DEFAULT_MAX_REQUESTS_PER_TICK = 1;
+/** 20 → 60: a resident that is trying to think should not be rate-capped. */
+const DEFAULT_MAX_REQUESTS_PER_MINUTE = 60;
+const DEFAULT_MAX_REQUESTS_PER_DAY = 10000;
+/** 60_000 → 20_000: a transient hiccup must not suppress thinking for a full minute. */
+const DEFAULT_NO_INFERENCE_MS = 20_000;
+
 export function defaultInferenceBudget(): InferenceBudget {
     return {
-        maxRequestsPerTick: 1,
-        maxRequestsPerMinute: 20,
-        maxRequestsPerDay: 10000,
-        noInferenceMs: 60_000,
+        maxRequestsPerTick: DEFAULT_MAX_REQUESTS_PER_TICK,
+        maxRequestsPerMinute: DEFAULT_MAX_REQUESTS_PER_MINUTE,
+        maxRequestsPerDay: DEFAULT_MAX_REQUESTS_PER_DAY,
+        noInferenceMs: DEFAULT_NO_INFERENCE_MS,
     };
 }
 

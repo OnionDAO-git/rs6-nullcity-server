@@ -80,6 +80,9 @@ export class NervousSystem {
                 rule: LOW_HEALTH_RULE,
                 action: { kind: 'eat', slot: lowHealthFood, cause: `nervous:${LOW_HEALTH_RULE.id}` },
                 suppressThinking: true,
+                // SURVIVAL-CRITICAL (S-INFER-4): HP is at/below LOW_HEALTH_FOOD_THRESHOLD.
+                // A resident MUST abandon any slow (~40s) deliberation and eat NOW, or it
+                // deliberates itself to death. Keep interruptThinking:true.
                 interruptThinking: true,
             };
         }
@@ -129,7 +132,11 @@ export class NervousSystem {
                                     rule,
                                     action: { kind: 'say', text: message, cause: `nervous:patron-acknowledge` },
                                     suppressThinking: true,
-                                    interruptThinking: true,
+                                    // NON-URGENT (S-INFER-4): thanking a patron for a chat is social.
+                                    // The say still fires (resident responds), but it must NOT abort a
+                                    // slow in-flight brain deliberation — that was the bulk of the 95%
+                                    // thinking_cancelled rate.
+                                    interruptThinking: false,
                                 };
                             }
                         }
@@ -246,7 +253,11 @@ export class NervousSystem {
                 rule,
                 action: { kind: 'say', text: message, cause: 'nervous:patron-ask-acknowledge' },
                 suppressThinking: true,
-                interruptThinking: true,
+                // NON-URGENT (S-INFER-4): being addressed by chat (addressed_by_chat).
+                // Acknowledge so the resident still responds, but do NOT cancel a 40s
+                // in-flight brain deliberation — this was a top contributor to the
+                // 728/764 thinking_cancelled rate.
+                interruptThinking: false,
             };
         }
 
@@ -310,7 +321,9 @@ export class NervousSystem {
                 rule,
                 action: { kind: 'say', text: message, cause: 'nervous:patron-memory-acknowledge' },
                 suppressThinking: true,
-                interruptThinking: true,
+                // NON-URGENT (S-INFER-4): thanking a remembered patron is social. The
+                // say still fires but must NOT abort a slow in-flight brain deliberation.
+                interruptThinking: false,
             };
         }
 
@@ -358,7 +371,12 @@ export class NervousSystem {
             rule,
             action,
             suppressThinking: true,
-            interruptThinking: true,
+            // NON-URGENT (S-INFER-4): a proactive AP-runway top-up is economic, NOT
+            // imminent death — it fires well above the floor to buy runway. The
+            // exchange still executes; it just must not cancel an in-flight brain.
+            // The actual imminent-death reflex is requestAttentionReaction, which
+            // already runs with interruptThinking:false.
+            interruptThinking: false,
         };
     }
 

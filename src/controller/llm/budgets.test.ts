@@ -5,9 +5,9 @@ describe('inference budgets', () => {
     it('keeps resident brain budgets bounded but high enough for all-day weekend operation', () => {
         expect(defaultInferenceBudget()).toEqual({
             maxRequestsPerTick: 1,
-            maxRequestsPerMinute: 20,
+            maxRequestsPerMinute: 60,
             maxRequestsPerDay: 10000,
-            noInferenceMs: 60_000,
+            noInferenceMs: 20_000,
         });
     });
 

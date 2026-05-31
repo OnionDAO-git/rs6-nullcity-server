@@ -3260,14 +3260,17 @@ const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
  * that default is small the answer is truncated mid-think and the salvage path
  * sees reasoning-only text → `think_only_no_answer` (a bogus "no decision").
  *
- * 1536 is chosen to comfortably fit a few hundred tokens of reasoning plus the
- * compact goal/say JSON the Brain emits (steps + success + a short say line),
- * while staying well under a local quantized model's context budget so the
- * prompt envelope is never crowded out. Endpoint config (`llm.endpoints.*.
- * maxTokens`) can override per deployment; a per-request value (here) wins over
- * the endpoint default inside LlmClient.
+ * 4096 (S-INFER-4 B, raised from 1536) comfortably fits a thinking model's
+ * full <think> reasoning trace PLUS the compact goal/say JSON the Brain emits
+ * (steps + success + a short say line). The slow qwopus brain spends most of
+ * its ~40s budget on the <think> trace; 1536 risked truncating mid-think so the
+ * salvage path saw reasoning-only text → a bogus `think_only_no_answer`. 4096
+ * still stays well under a local quantized model's context budget so the prompt
+ * envelope is never crowded out. Endpoint config (`llm.endpoints.*.maxTokens`)
+ * can override per deployment; a per-request value (here) wins over the endpoint
+ * default inside LlmClient. Body keeps its own smaller ceiling.
  */
-const DEFAULT_BRAIN_MAX_TOKENS = 1536;
+const DEFAULT_BRAIN_MAX_TOKENS = 4096;
 
 function shouldShareGoal(ctx: HelperContext): boolean {
     const interval = ctx.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;

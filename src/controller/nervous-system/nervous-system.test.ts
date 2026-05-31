@@ -20,7 +20,9 @@ describe('NervousSystem', () => {
             cause: 'nervous:patron-memory-acknowledge',
         });
         expect(reaction?.suppressThinking).toBe(true);
-        expect(reaction?.interruptThinking).toBe(true);
+        // S-INFER-4 (A): thanking a remembered patron is NON-URGENT social — the
+        // say still fires but must NOT cancel a slow in-flight brain deliberation.
+        expect(reaction?.interruptThinking).toBe(false);
     });
 
     it('does not repeat the same remembered patron gift after acknowledging it', () => {
@@ -310,7 +312,9 @@ describe('NervousSystem', () => {
             cause: 'nervous:patron-ask-acknowledge',
         });
         expect(reaction?.suppressThinking).toBe(true);
-        expect(reaction?.interruptThinking).toBe(true);
+        // S-INFER-4 (A): being addressed by patron chat is NON-URGENT — acknowledge
+        // (the say fires) but do NOT abort a 40s brain deliberation in flight.
+        expect(reaction?.interruptThinking).toBe(false);
     });
 
     it('cooldowns repeated live patron:ask acknowledgements from the same human', () => {
@@ -403,7 +407,11 @@ describe('NervousSystem', () => {
                 idempotencyKey: 'self-ap-gp:res:hans:100',
             });
             expect(reaction?.suppressThinking).toBe(true);
-            expect(reaction?.interruptThinking).toBe(true);
+            // S-INFER-4 (A): a proactive AP-runway top-up is economic, NOT imminent
+            // death (it fires well above the floor). The exchange still executes;
+            // it just must not cancel an in-flight brain. The true death reflex is
+            // requestAttentionReaction, which never interrupted thinking.
+            expect(reaction?.interruptThinking).toBe(false);
         });
 
         it('self-funds no-floor residents before AP reaches the last-second appeal threshold', () => {
@@ -471,7 +479,9 @@ describe('NervousSystem', () => {
                 idempotencyKey: 'self-ap-gp:res:hans:100',
             });
             expect(reaction?.suppressThinking).toBe(true);
-            expect(reaction?.interruptThinking).toBe(true);
+            // S-INFER-4 (A): hero surplus-GP→AP top-up is economic/routine; the
+            // exchange still executes but must not abort a slow brain deliberation.
+            expect(reaction?.interruptThinking).toBe(false);
         });
 
         it('hero surplus: does not fire when floor-clamped hero holds no coins', () => {
@@ -779,6 +789,60 @@ describe('NervousSystem', () => {
             const reaction = sys.react(healthyPerception(100));
 
             expect(reaction?.action?.cause).toBe('nervous:prepare-epitaph');
+        });
+    });
+
+    describe('interruptThinking survival/non-urgent classification (S-INFER-4)', () => {
+        // Live finding: 728/764 (95%) qwopus brain decisions were thinking_cancelled
+        // because NON-URGENT reflexes fired interruptThinking:true and aborted the
+        // slow (~40s) in-flight deliberation. Survival reflexes MUST still interrupt
+        // (so residents never deliberate themselves to death); routine social/
+        // economic reflexes must NOT.
+
+        it('SURVIVAL: low-health eat reflex still interrupts thinking', () => {
+            const system = new NervousSystem({
+                soul: soul(),
+                state: runtimeState(42),
+                memory: memoryWith([]),
+            });
+
+            const reaction = system.react({
+                tick: 42,
+                resident: { hp: { current: 2, max: 10 }, inventory: [{ key: 'shrimp', amount: 1 }] },
+                events: [],
+            });
+
+            expect(reaction?.rule.id).toBe('eat-when-low-health');
+            expect(reaction?.action).toEqual({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' });
+            // A resident at 20% HP MUST abandon a slow deliberation to eat NOW.
+            expect(reaction?.suppressThinking).toBe(true);
+            expect(reaction?.interruptThinking).toBe(true);
+        });
+
+        it('NON-URGENT: being addressed by chat (patron:ask) acts but does NOT interrupt thinking', () => {
+            const state = runtimeState(99);
+            state.attention = 5000;
+            const system = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
+
+            const reaction = system.react({
+                tick: 99,
+                resident: { hp: { current: 10, max: 10 }, inventory: [] },
+                events: [
+                    {
+                        kind: 'chat',
+                        source: 'patron:ask',
+                        from: { name: 'visitor-1' },
+                        text: 'Are you there?',
+                    },
+                ],
+            });
+
+            expect(reaction?.rule.id).toContain('patron-ask-acknowledge');
+            // The acknowledgement STILL fires (resident responds)...
+            expect(reaction?.action.kind).toBe('say');
+            expect(reaction?.suppressThinking).toBe(true);
+            // ...but it must NOT cancel a 40s in-flight brain deliberation.
+            expect(reaction?.interruptThinking).toBe(false);
         });
     });
 });
