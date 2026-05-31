@@ -486,9 +486,6 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const nervousPerception = this.peekWithPendingEvents(perception);
             const reaction = this.nervousSystem.react(nervousPerception);
             if (reaction) {
-                if (this.deciding && reaction.interruptThinking) {
-                    this.thinking.stop(`nervous:${reaction.rule.id}`);
-                }
                 const decisionPerception = this.withPendingEvents(perception);
                 this.history.push(decisionPerception);
                 this.body.observePerception(decisionPerception);

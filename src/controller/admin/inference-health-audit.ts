@@ -145,12 +145,7 @@ export function classifyDecisionCause(rawCause: string | undefined): DecisionHea
         return 'truly_empty';
     }
 
-    if (
-        cause === 'thinking_cancelled' ||
-        cause === 'thinking_watchdog_timeout' ||
-        cause === 'brain_timeout_fallback' ||
-        cause === 'request_timeout'
-    ) {
+    if (isCancelledCause(cause)) {
         return 'thinking_cancelled';
     }
 
@@ -479,7 +474,21 @@ function isInferenceDecision(row: Record<string, unknown>): boolean {
         cause.startsWith('brain_') ||
         cause.startsWith('completion_') ||
         cause.startsWith('empty_completion') ||
-        INFERENCE_DECISION_CAUSES.has(cause)
+        INFERENCE_DECISION_CAUSES.has(cause) ||
+        isCancelledCause(cause)
+    );
+}
+
+function isCancelledCause(cause: string): boolean {
+    return (
+        cause === 'thinking_cancelled' ||
+        cause.startsWith('thinking_cancelled:') ||
+        cause === 'thinking_watchdog_timeout' ||
+        cause.startsWith('thinking_watchdog_timeout:') ||
+        cause === 'brain_timeout_fallback' ||
+        cause.startsWith('brain_timeout_fallback:') ||
+        cause === 'request_timeout' ||
+        cause.startsWith('request_timeout:')
     );
 }
 

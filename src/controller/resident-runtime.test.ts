@@ -1800,8 +1800,9 @@ describe('ResidentRuntime modules', () => {
             submit: jest.fn(async () => ({ ok: true })),
         } as unknown as ResidentBody;
 
-        // The survival reflex models the eat-when-low-health reaction AFTER S-INFER-5:
-        // it ACTS (kind:'eat') but interruptThinking:false.
+        // Legacy memory/module rules can still carry interruptThinking:true from
+        // before S-INFER-5. The runtime boundary must ignore that stale flag:
+        // the reflex ACTS (kind:'eat') but the Brain remains uninterruptible.
         const runtime = new ResidentRuntime({
             soul: soul('res:pip', { modules: [{ id: 'onion.reflex' }] }),
             gateway: {} as GatewayClient,
@@ -1839,8 +1840,8 @@ describe('ResidentRuntime modules', () => {
                                 },
                                 action: { kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' },
                                 suppressThinking: true,
-                                // S-INFER-5: the Brain is uninterruptible.
-                                interruptThinking: false,
+                                // Legacy/stale value from memory or a module.
+                                interruptThinking: true,
                             };
                         },
                     }),

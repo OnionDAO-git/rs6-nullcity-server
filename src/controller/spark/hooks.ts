@@ -49,7 +49,7 @@ export const systemHooks: HookDefinition[] = (
             priority: 85,
             condition: { kind: 'event_kind', value: 'chat' },
             cooldownTicks: 2,
-            interrupt: true,
+            interrupt: false,
             contextHint: 'Recent chat may be directed at the resident. Respond in character if appropriate.',
         },
         {
@@ -57,7 +57,7 @@ export const systemHooks: HookDefinition[] = (
             priority: 80,
             condition: { kind: 'event_kind', value: 'trade_request' },
             cooldownTicks: 4,
-            interrupt: true,
+            interrupt: false,
             contextHint: 'A trade request requires an accept, decline, or social response decision.',
         },
         {
