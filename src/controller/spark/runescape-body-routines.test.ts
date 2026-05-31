@@ -1822,6 +1822,23 @@ describe('prayerTrainingAction', () => {
         });
     });
 
+    it('skips a failed prayer waypoint and tries the next fallback waypoint', () => {
+        const action = prayerTrainingAction(
+            perception({
+                tick: 20,
+                resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [] },
+            }),
+            { 'target:3222,3218,0': 19 },
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3249, y: 3238, level: 0 },
+            range: 6,
+            cause: 'prayer_seek_safe_bone_source',
+        });
+    });
+
     it('returns undefined when at the waypoint with no safe source visible (do not flap)', () => {
         const action = prayerTrainingAction(
             perception({
@@ -1921,6 +1938,22 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: man, cause: 'combat_attack_safe_target' });
     });
 
+    it('still attacks a visible safe NPC standing on a cooled-down combat waypoint', () => {
+        const goblin = combatNpc('Goblin', 3249, 3238);
+        goblin.key = 'rs:goblin';
+        const action = combatTrainingAction(
+            perception({
+                tick: 20,
+                resident: { position: { x: 3248, y: 3238, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [goblin] },
+            }),
+            undefined,
+            20,
+            { 'target:3249,3238,0': 19 },
+        );
+        expect(action).toEqual({ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' });
+    });
+
     it('prefers a visible goblin over a Lumbridge man fallback', () => {
         const man = combatNpc('Man', 3221, 3220);
         man.key = 'rs:man';
@@ -1988,6 +2021,20 @@ describe('combatTrainingAction', () => {
             range: 6,
             cause: 'combat_seek_safe_target',
         });
+    });
+
+    it('does not replay a combat waypoint that recently timed out', () => {
+        const action = combatTrainingAction(
+            perception({
+                tick: 20,
+                resident: { position: { x: 3234, y: 3236, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+            undefined,
+            20,
+            { 'target:3249,3238,0': 19 },
+        );
+        expect(action).toBeUndefined();
     });
 
     it('returns undefined when resident has no position', () => {

@@ -1569,7 +1569,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     if (targetNpc) {
                         action = { kind: 'attack', target: targetNpc, cause: 'routine:safe_combat' };
                     } else {
-                        action = combatTrainingAction(perception);
+                        action = combatTrainingAction(perception, undefined, this.state.tick, this.state.cognition?.targetFailureCooldowns);
                     }
                 }
                 break;

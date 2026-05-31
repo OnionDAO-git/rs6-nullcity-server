@@ -850,7 +850,7 @@ export async function directChatAction(
         resumeManualPause(ctx);
         cognition.activeGoal = prayerGoal(ctx.options.state.tick);
         return {
-            action: prayerTrainingAction(perception) || {
+            action: prayerTrainingAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick) || {
                 kind: 'say',
                 text: statusSpeech(ctx, perception, 'I will look for a safe creature, collect bones, then bury them'),
             },
@@ -874,7 +874,12 @@ export async function directChatAction(
         resumeManualPause(ctx);
         cognition.activeGoal = combatGoal(ctx.options.state.tick);
         return {
-            action: combatTrainingAction(perception) || {
+            action: combatTrainingAction(
+                perception,
+                ctx.pickupCooldowns(),
+                ctx.options.state.tick,
+                ctx.cognition().targetFailureCooldowns,
+            ) || {
                 kind: 'say',
                 text: statusSpeech(ctx, perception, 'I will look for a safe low-level creature to fight'),
             },

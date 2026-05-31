@@ -440,6 +440,7 @@ export function lowHealthRecoveryAction(
         ctx.options.state.resident,
         hasCarriedFood ? undefined : ctx.cognition().pickupCooldowns,
         ctx.options.state.tick,
+        ctx.cognition().targetFailureCooldowns,
     );
     if (action) {
         if (ctx.isRepeatedAction(action)) {
@@ -1480,14 +1481,16 @@ export function fallbackAction(
     const goal = ctx.activeGoal();
     const prayerAction =
         goal && /prayer|bone|bones|bury/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
-            ? prayerTrainingAction(view)
+            ? prayerTrainingAction(view, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick)
             : undefined;
     if (prayerAction) {
         return { action: prayerAction, cause: prayerAction.cause || 'prayer_bury_bones' };
     }
 
     const combatAction =
-        goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view, ctx.pickupCooldowns(), ctx.options.state.tick) : undefined;
+        goal && isCombatTrainingGoal(goal)
+            ? combatTrainingAction(view, ctx.pickupCooldowns(), ctx.options.state.tick, ctx.cognition().targetFailureCooldowns)
+            : undefined;
     if (combatAction) {
         return { action: combatAction, cause: combatAction.cause || 'combat_training' };
     }
@@ -2588,14 +2591,19 @@ export function goalRoutineOverride(
     }
 
     if (isPrayerTrainingGoal(goal)) {
-        const prayerAction = prayerTrainingAction(perception);
+        const prayerAction = prayerTrainingAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick);
         if (prayerAction) {
             return { action: prayerAction, cause: prayerAction.cause || 'prayer_training' };
         }
     }
 
     if (isCombatTrainingGoal(goal)) {
-        const combatAction = combatTrainingAction(perception, ctx.pickupCooldowns(), ctx.options.state.tick);
+        const combatAction = combatTrainingAction(
+            perception,
+            ctx.pickupCooldowns(),
+            ctx.options.state.tick,
+            ctx.cognition().targetFailureCooldowns,
+        );
         if (combatAction) {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }

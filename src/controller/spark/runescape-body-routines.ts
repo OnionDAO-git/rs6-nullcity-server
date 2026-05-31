@@ -304,11 +304,17 @@ export function isTargetFailureCooldownActive(
             keys.add(`actor-name:${actorName}`);
         }
     }
-    keys.add(`target:${coordinate}`);
+    const hasActorIdentity = typeof targetRecord.id === 'string' || actorKind === 'npc' || actorKind === 'player';
+    if (!hasActorIdentity) {
+        keys.add(`target:${coordinate}`);
+    }
 
     return Object.entries(cooldowns).some(([key, failedAt]) => {
         if (currentTick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS) {
             return false;
+        }
+        if (hasActorIdentity) {
+            return keys.has(key);
         }
         return keys.has(key) || key === `target:${coordinate}` || key.endsWith(`:${coordinate}`);
     });
@@ -1169,6 +1175,17 @@ export function nearestCombatTrainingWaypoint(here: BodyPos): BodyPos {
     return [...COMBAT_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
 }
 
+function nearestAvailableTrainingWaypoint(
+    here: BodyPos,
+    waypoints: ReadonlyArray<BodyPos>,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): BodyPos | undefined {
+    return [...waypoints]
+        .filter(waypoint => !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick))
+        .sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
 /** Lower number = higher-priority NPC kill choice for prayer (bone) sourcing. */
 export function boneSourcePriority(actor: BodyActor): number {
     const label = [actor.name, actor.key, actor.id].filter(Boolean).join(' ');
@@ -1238,7 +1255,10 @@ export function prayerTrainingAction(
 
     const target = safeBoneSourceTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
-        const waypoint = nearestPrayerTrainingWaypoint(here);
+        const waypoint = nearestAvailableTrainingWaypoint(here, PRAYER_TRAINING_WAYPOINTS, targetFailureCooldowns, currentTick);
+        if (!waypoint) {
+            return undefined;
+        }
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
             ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'prayer_seek_safe_bone_source' }
             : undefined;
@@ -1347,7 +1367,10 @@ export function combatTrainingAction(
 
     const target = safeCombatTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
-        const waypoint = nearestCombatTrainingWaypoint(here);
+        const waypoint = nearestAvailableTrainingWaypoint(here, COMBAT_TRAINING_WAYPOINTS, targetFailureCooldowns, currentTick);
+        if (!waypoint) {
+            return undefined;
+        }
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
             ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
             : undefined;

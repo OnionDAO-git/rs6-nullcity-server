@@ -4369,6 +4369,46 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('combat_equip_useful_gear');
     });
 
+    it('does not replay a failed combat waypoint for an active combat training goal', async () => {
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'train-combat-safely',
+                description: 'Train combat on safe low-level NPCs and retreat if hurt.',
+                steps: ['find a chicken or rat', 'attack when healthy', 'eat or stop when hurt'],
+                createdAtTick: 0,
+            },
+            targetFailureCooldowns: {
+                'target:3249,3238,0': 2,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3234, 3236),
+                    hp: { current: 10, max: 10 },
+                    inventory: [],
+                    equipment: [],
+                },
+                npcs: [],
+            }),
+        );
+
+        expect(result.actions).not.toContainEqual({
+            kind: 'move_to',
+            target: { x: 3249, y: 3238, level: 0 },
+            range: 6,
+            cause: 'combat_seek_safe_target',
+        });
+        expect(result.cause).not.toBe('combat_seek_safe_target');
+    });
+
     it('loots useful drops before attacking the next safe combat target', async () => {
         const rat = npc('Rat', 3219, 3201);
         const bones = { itemId: 526, key: 'rs:bones', amount: 1, position: { x: 3222, y: 3201, level: 0 } };
@@ -4651,6 +4691,31 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(result.actions).toEqual([
             { kind: 'say', text: 'I am too hurt to start combat without food. I need to heal or get food first.' },
+        ]);
+        expect(result.cause).toBe('direct_chat_train_combat');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not replay a failed combat waypoint from a direct training command', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = { targetFailureCooldowns: { 'target:3249,3238,0': 1 } };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: { ...residentAt(3234, 3236), inventory: [], equipment: [] },
+                npcs: [],
+                events: [chatFromCodex('agent train combat', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I will look for a safe low-level creature to fight at 3234,3236. Goal: Train combat on safe low-level NPCs and stop when hurt.',
+            },
         ]);
         expect(result.cause).toBe('direct_chat_train_combat');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -5103,6 +5168,36 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([{ kind: 'equip', slot: 0, cause: 'prayer_equip_useful_gear' }]);
+        expect(result.cause).toBe('direct_chat_train_prayer');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not replay a failed prayer waypoint from a direct training command', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.cognition = {
+            targetFailureCooldowns: {
+                'target:3222,3218,0': 1,
+                'target:3249,3238,0': 1,
+            },
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: { ...residentAt(3234, 3236), inventory: [], equipment: [] },
+                npcs: [],
+                events: [chatFromCodex('agent train prayer', 3218, 3201)],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'I will look for a safe creature, collect bones, then bury them at 3234,3236. Goal: Pick up bones and bury them to train Prayer after safe combat.',
+            },
+        ]);
         expect(result.cause).toBe('direct_chat_train_prayer');
         expect(llm.complete).not.toHaveBeenCalled();
     });

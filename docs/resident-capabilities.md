@@ -55,6 +55,12 @@ The honest limit: they are not yet reliable arbitrary-goal adventurers. Starter 
 | Are they human-like yet? | Partly. They are visibly embodied and narratable, but still routine-heavy and sometimes repetitive. | Strong action/story logs; known template loops and weak long-goal planning remain. | Medium |
 | What should we improve next? | Quest item gathering, real operator trading, combat survival, long-delay memory, long-run door-heavy route reliability, and goal-as-orientation tests. | See "Recommended Next Tests" and "Expanded Capability Backlog." | High priority |
 
+## Latest Combat QA Note
+
+QA032 improved the live combat recovery evidence but did **not** close the full recovery chain. After target-failure cooldowns were threaded through combat/prayer routines and direct training commands, the rebuilt hot stack rerun `data/benchmarks/capability-qa-2026-05-30/qa032-low-health-cook-eat-reengage-rerun/named_combat_soak_20260531025617.json` showed `res:qa-survivor` performing 10 safe attacks, 0 unsafe attacks, 0 deaths, combat evidence, bones pickup/bury evidence, Prayer evidence, and one `low_health_fish_food` action. The strict verifier still failed because the resident did not progress from raw shrimp to `low_health_cook_food`, `low_health_eat`, or safe combat re-engage inside 180 seconds.
+
+Current interpretation: directed starter combat is stronger than the QA031 row implies, but full low-health fish -> cook -> eat -> re-engage remains open. The next packet should target low-health nervous/body recovery ordering, especially repeated low-health food reflexes suppressing the cook/eat recovery path when perception is stale.
+
 ## Evidence Snapshot
 
 Sources checked:

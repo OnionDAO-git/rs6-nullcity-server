@@ -38,11 +38,12 @@ describe('seedNcriFixtures', () => {
         expect(seeded.every(result => result.pricing.pricingMode === 'admin-fixed')).toBe(true);
 
         const registry = new NcriRegistry(memoryRoot);
-        expect(registry.list().map(record => record.displayName)).toEqual([
-            'Bronze Sword of First Light',
-            'Tinderbox of the Flame',
-            'Small Fishing Net of First Catch',
-        ]);
+        expect(
+            registry
+                .list()
+                .map(record => record.displayName)
+                .sort(),
+        ).toEqual(['Bronze Sword of First Light', 'Small Fishing Net of First Catch', 'Tinderbox of the Flame']);
         const pricing = new NcriPricingStore(memoryRoot);
         expect(pricing.allLatest().size).toBe(3);
     });

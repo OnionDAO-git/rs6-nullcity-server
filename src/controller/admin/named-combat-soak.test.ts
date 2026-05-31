@@ -245,9 +245,7 @@ describe('named combat soak verifier', () => {
     });
 
     it('parses the required low-health recovery chain flag', () => {
-        expect(
-            parseNamedCombatSoakArgs(['--require-low-health-recovery-chain'], new Date('2026-05-30T15:52:00.000Z')),
-        ).toMatchObject({
+        expect(parseNamedCombatSoakArgs(['--require-low-health-recovery-chain'], new Date('2026-05-30T15:52:00.000Z'))).toMatchObject({
             requireLowHealthRecoveryChain: true,
         });
     });
