@@ -323,6 +323,11 @@ export class AgentGateway {
                 send(frame('ok', { ok: true, result }, message.id));
                 return;
             }
+            case 'ensure_inventory_item': {
+                const summary = this.registry.ensureInventoryItem(message.payload.name, message.payload.item, message.payload.amount);
+                send(frame('resident_inventory_ensured', summary, message.id));
+                return;
+            }
             case 'inspect_resident_gold': {
                 const summary = this.registry.inspectGold(message.payload.name);
                 send(frame('resident_gold', summary, message.id));

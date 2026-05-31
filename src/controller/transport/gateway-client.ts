@@ -6,8 +6,10 @@ import {
     type AgentAction,
     type ConnectResidentPayload,
     type CreateResidentPayload,
+    type InventoryEnsureItem,
     type Perception,
     type PerceptionEvent,
+    type ResidentInventoryEnsureSummary,
     type ResidentFilter,
     type ResidentSummary,
     decodeMessage,
@@ -149,6 +151,12 @@ export class GatewayClient extends EventEmitter {
 
     submitAction(name: string, action: AgentAction): Promise<ActionResult> {
         return this.submitActionWithRequestId(name, action).then(value => value.ackResult);
+    }
+
+    ensureInventoryItem(name: string, item: InventoryEnsureItem, amount: number): Promise<ResidentInventoryEnsureSummary> {
+        return this.request('ensure_inventory_item', { name, item, amount }, { timeoutMs: this.inventoryTimeoutMs() }).then(
+            value => readPayload(value) as unknown as ResidentInventoryEnsureSummary,
+        );
     }
 
     inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }> {

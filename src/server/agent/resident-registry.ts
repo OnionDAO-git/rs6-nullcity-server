@@ -12,6 +12,7 @@ import type { DisconnectPolicy, ResidentSummary } from './protocol/messages';
 
 export const RESIDENT_NAME_PATTERN = /^res:[a-z0-9_-]{1,20}$/;
 export const RESIDENT_GOLD_ITEM_ID = 995;
+const MAX_ITEM_STACK = 2_147_483_647;
 const MAX_INITIAL_SKILL_EXP = 200_000_000;
 const KNOWN_SKILL_NAMES: ReadonlySet<SkillName> = new Set([
     'attack',
@@ -44,6 +45,7 @@ export const isValidResidentName = (name: string): boolean => RESIDENT_NAME_PATT
 
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null | undefined;
 export type InitialSkillSeed = number | { exp?: number; level?: number };
+export type InventoryEnsureItem = number | string | { itemId: number };
 
 export interface ResidentCreateOptions {
     appearance?: Appearance;
@@ -56,6 +58,15 @@ export interface ResidentGoldSummary {
     resident: string;
     itemId: typeof RESIDENT_GOLD_ITEM_ID;
     amount: number;
+}
+
+export interface ResidentInventoryEnsureSummary {
+    resident: string;
+    itemId: number;
+    requestedAmount: number;
+    previousAmount: number;
+    amount: number;
+    addedAmount: number;
 }
 
 export class ResidentRegistry {
@@ -231,6 +242,57 @@ export class ResidentRegistry {
         return { resident: name, itemId: RESIDENT_GOLD_ITEM_ID, amount: before - amount };
     }
 
+    public ensureInventoryItem(name: string, item: InventoryEnsureItem, amount: number): ResidentInventoryEnsureSummary {
+        name = this.assertValidName(name);
+        amount = this.requireEnsureAmount(amount);
+        const itemId = this.resolveInventoryEnsureItem(item);
+        const itemDetails = findItem(itemId);
+        if (!itemDetails) {
+            throw new Error('EUNKNOWN_ITEM');
+        }
+        const stackable = Boolean(itemDetails.stackable || itemDetails.bankNoteId != null);
+
+        const resident = this.activeResident(name);
+        if (resident) {
+            const previousAmount = resident.inventory.amount(itemId);
+            const addedAmount = Math.max(0, amount - previousAmount);
+            if (addedAmount > 0) {
+                this.ensureOnlineInventorySpace(resident, itemId, addedAmount, stackable, previousAmount);
+                this.addToOnlineInventory(resident, itemId, addedAmount, stackable);
+                resident.emitPerceptionEvent({
+                    kind: 'item_received',
+                    item: { itemId, key: itemDetails.key, amount: addedAmount },
+                });
+                resident.save();
+            }
+            return {
+                resident: name,
+                itemId,
+                requestedAmount: amount,
+                previousAmount,
+                amount: previousAmount + addedAmount,
+                addedAmount,
+            };
+        }
+
+        const save = this.loadOfflineResidentSave(name);
+        save.inventory = normalizeInventory(save.inventory);
+        const previousAmount = this.containerAmount(save.inventory, itemId);
+        const addedAmount = Math.max(0, amount - previousAmount);
+        if (addedAmount > 0) {
+            this.addToOfflineInventory(save.inventory, itemId, addedAmount, stackable);
+            this.writeOfflineResidentSave(name, save);
+        }
+        return {
+            resident: name,
+            itemId,
+            requestedAmount: amount,
+            previousAmount,
+            amount: previousAmount + addedAmount,
+            addedAmount,
+        };
+    }
+
     public controllerFor(name: string): string | undefined {
         name = normalizeResidentName(name);
         if (!this.activeResident(name)) {
@@ -349,6 +411,27 @@ export class ResidentRegistry {
         return value;
     }
 
+    private requireEnsureAmount(value: unknown): number {
+        if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0 || value > MAX_ITEM_STACK) {
+            throw new Error('EBAD_AMOUNT');
+        }
+        return value;
+    }
+
+    private resolveInventoryEnsureItem(item: InventoryEnsureItem): number {
+        if (typeof item === 'number') {
+            return this.requirePositiveInt(item, 'item.itemId');
+        }
+        if (typeof item === 'string') {
+            const details = findItem(item);
+            if (!details) {
+                throw new Error('EUNKNOWN_ITEM');
+            }
+            return details.gameId;
+        }
+        return this.requirePositiveInt(item.itemId, 'item.itemId');
+    }
+
     private applyInitialSkills(resident: Resident, skills: Record<string, InitialSkillSeed> | undefined): void {
         if (!skills) {
             return;
@@ -441,4 +524,75 @@ export class ResidentRegistry {
             }
         }
     }
+
+    private ensureOnlineInventorySpace(
+        resident: Resident,
+        itemId: number,
+        amountToAdd: number,
+        stackable: boolean,
+        previousAmount: number,
+    ): void {
+        if (stackable) {
+            if (previousAmount === 0 && !resident.inventory.hasSpace()) {
+                throw new Error('EINVENTORY_FULL');
+            }
+            return;
+        }
+        if (resident.inventory.getOpenSlotCount() < amountToAdd) {
+            throw new Error('EINVENTORY_FULL');
+        }
+    }
+
+    private addToOnlineInventory(resident: Resident, itemId: number, amountToAdd: number, stackable: boolean): void {
+        if (stackable) {
+            if (!resident.inventory.add({ itemId, amount: amountToAdd }, false)) {
+                throw new Error('EINVENTORY_FULL');
+            }
+            return;
+        }
+        for (let i = 0; i < amountToAdd; i += 1) {
+            if (!resident.inventory.add({ itemId, amount: 1 }, false)) {
+                throw new Error('EINVENTORY_FULL');
+            }
+        }
+    }
+
+    private addToOfflineInventory(items: Array<Item | null>, itemId: number, amountToAdd: number, stackable: boolean): void {
+        if (stackable) {
+            const existingIndex = items.findIndex(item => item?.itemId === itemId);
+            if (existingIndex >= 0) {
+                const existing = items[existingIndex]!;
+                items[existingIndex] = { ...existing, amount: (existing.amount || 0) + amountToAdd };
+                return;
+            }
+            const slot = items.findIndex(item => !item);
+            if (slot < 0) {
+                throw new Error('EINVENTORY_FULL');
+            }
+            items[slot] = { itemId, amount: amountToAdd };
+            return;
+        }
+
+        if (items.filter(item => !item).length < amountToAdd) {
+            throw new Error('EINVENTORY_FULL');
+        }
+        for (let remaining = amountToAdd; remaining > 0; remaining -= 1) {
+            const slot = items.findIndex(item => !item);
+            if (slot < 0) {
+                throw new Error('EINVENTORY_FULL');
+            }
+            items[slot] = { itemId, amount: 1 };
+        }
+    }
+}
+
+function normalizeInventory(items: Array<Item | null>): Array<Item | null> {
+    if (items.length > 28) {
+        throw new Error('EINVENTORY_OVERSIZED');
+    }
+    const normalized = [...items];
+    while (normalized.length < 28) {
+        normalized.push(null);
+    }
+    return normalized;
 }

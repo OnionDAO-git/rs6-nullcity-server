@@ -128,6 +128,108 @@ describe('GatewayClient', () => {
         client.close();
     });
 
+    it('can request an operator inventory ensure and read the ensured summary', async () => {
+        server.once('connection', socket => {
+            socket.on('message', raw => {
+                const message = JSON.parse(raw.toString()) as { id?: string | number; kind?: string; payload?: Record<string, unknown> };
+                if (message.kind === 'controller_hello') {
+                    socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'ok', payload: { ok: true } }));
+                    return;
+                }
+                if (message.kind === 'ensure_inventory_item') {
+                    expect(message.payload).toEqual({ name: 'res:qa-survivor', item: 303, amount: 1 });
+                    socket.send(
+                        JSON.stringify({
+                            v: 1,
+                            id: message.id,
+                            kind: 'resident_inventory_ensured',
+                            payload: {
+                                resident: 'res:qa-survivor',
+                                itemId: 303,
+                                requestedAmount: 1,
+                                previousAmount: 0,
+                                amount: 1,
+                                addedAmount: 1,
+                            },
+                        }),
+                    );
+                }
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 500,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        await expect(client.ensureInventoryItem('res:qa-survivor', 303, 1)).resolves.toEqual({
+            resident: 'res:qa-survivor',
+            itemId: 303,
+            requestedAmount: 1,
+            previousAmount: 0,
+            amount: 1,
+            addedAmount: 1,
+        });
+        client.close();
+    });
+
+    it('ensureInventoryItem honors a larger inventoryRequestTimeoutMs override', async () => {
+        server.once('connection', socket => {
+            socket.on('message', raw => {
+                const message = JSON.parse(raw.toString()) as { id?: string | number; kind?: string };
+                if (message.kind === 'controller_hello') {
+                    socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'ok', payload: { ok: true } }));
+                    return;
+                }
+                if (message.kind === 'ensure_inventory_item') {
+                    setTimeout(() => {
+                        socket.send(
+                            JSON.stringify({
+                                v: 1,
+                                id: message.id,
+                                kind: 'resident_inventory_ensured',
+                                payload: {
+                                    resident: 'res:slow',
+                                    itemId: 303,
+                                    requestedAmount: 1,
+                                    previousAmount: 0,
+                                    amount: 1,
+                                    addedAmount: 1,
+                                },
+                            }),
+                        );
+                    }, 150);
+                }
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 50,
+            inventoryRequestTimeoutMs: 300,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        const result = await client.ensureInventoryItem('res:slow', 303, 1);
+        client.close();
+
+        expect(result).toEqual({
+            resident: 'res:slow',
+            itemId: 303,
+            requestedAmount: 1,
+            previousAmount: 0,
+            amount: 1,
+            addedAmount: 1,
+        });
+    });
+
     it('listResidents honors a larger listResidentsRequestTimeoutMs override', async () => {
         server.once('connection', socket => {
             socket.on('message', raw => {

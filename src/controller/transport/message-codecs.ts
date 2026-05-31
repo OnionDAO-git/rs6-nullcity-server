@@ -78,6 +78,7 @@ export interface PerceptionEvent {
 }
 
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+export type InventoryEnsureItem = number | string | { itemId: number };
 export type InitialSkillSeed = number | { exp?: number; level?: number };
 
 export interface CreateResidentPayload {
@@ -106,6 +107,21 @@ export interface ResidentNamePayload {
     cause?: string;
 }
 
+export interface EnsureInventoryItemPayload {
+    name: string;
+    item: InventoryEnsureItem;
+    amount: number;
+}
+
+export interface ResidentInventoryEnsureSummary {
+    resident: string;
+    itemId: number;
+    requestedAmount: number;
+    previousAmount: number;
+    amount: number;
+    addedAmount: number;
+}
+
 export type ClientMessage =
     | GatewayEnvelope<'auth', AuthPayload>
     | GatewayEnvelope<'controller_hello', ControllerHelloPayload>
@@ -114,6 +130,7 @@ export type ClientMessage =
     | GatewayEnvelope<'connect_resident', ConnectResidentPayload>
     | GatewayEnvelope<'attach', ConnectResidentPayload>
     | GatewayEnvelope<'submit_action', SubmitActionPayload>
+    | GatewayEnvelope<'ensure_inventory_item', EnsureInventoryItemPayload>
     | GatewayEnvelope<'inspect_resident_gold', { name: string }>
     | GatewayEnvelope<'burn_resident_gold', { name: string; amount: number }>
     | GatewayEnvelope<'detach', ResidentNamePayload>
@@ -125,6 +142,7 @@ export type ServerMessage =
     | GatewayEnvelope<'resident_list', { residents: ResidentSummary[] }>
     | GatewayEnvelope<'resident_created', { resident: ResidentSummary }>
     | GatewayEnvelope<'resident_connected', { resident: ResidentSummary; perception?: Perception | null }>
+    | GatewayEnvelope<'resident_inventory_ensured', ResidentInventoryEnsureSummary>
     | GatewayEnvelope<'resident_gold', { resident: string; itemId: 995; amount: number }>
     | GatewayEnvelope<'resident_gold_burned', { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>
     | GatewayEnvelope<'resident_disconnected', ResidentNamePayload & { cause?: string }>

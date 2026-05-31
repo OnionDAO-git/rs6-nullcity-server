@@ -22,6 +22,7 @@
         "controller:dev": "ts-node -r tsconfig-paths/register src/controller/index.ts",
         "controller:bench": "npm run build && node dist/controller/benchmarks/cli.js",
         "benchmark:report": "ts-node -r tsconfig-paths/register src/controller/benchmarks/report.ts",
+        "controller:ensure-inventory": "ts-node -r tsconfig-paths/register src/controller/admin/ensure-inventory.ts",
         "controller:revive": "ts-node -r tsconfig-paths/register src/controller/admin/revive-cli.ts",
         "controller:trade-soak": "ts-node -r tsconfig-paths/register src/controller/admin/named-trade-soak.ts",
         "controller:equip-soak": "ts-node -r tsconfig-paths/register src/controller/admin/named-equip-soak.ts",

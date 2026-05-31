@@ -15,6 +15,7 @@ jest.mock('./resident-registry', () => ({
     ResidentRegistry: jest.fn().mockImplementation(() => ({
         list: jest.fn(() => []),
         releaseController: jest.fn(() => []),
+        ensureInventoryItem: jest.fn(),
     })),
 }));
 
@@ -115,10 +116,60 @@ describe('AgentGateway submit_action', () => {
     });
 });
 
+describe('AgentGateway ensure_inventory_item', () => {
+    it('delegates operator inventory ensure requests to the registry', async () => {
+        const gateway = new AgentGateway();
+        const send = jest.fn();
+        const ensureInventoryItem = jest.fn(() => ({
+            resident: 'res:qa-survivor',
+            itemId: 303,
+            requestedAmount: 1,
+            previousAmount: 0,
+            amount: 1,
+            addedAmount: 1,
+        }));
+        Object.assign(gateway as unknown as MutableGateway, {
+            registry: {
+                ensureInventoryItem,
+            },
+        });
+
+        await (gateway as unknown as MutableGateway).handleMessage(
+            {
+                v: 1,
+                kind: 'ensure_inventory_item',
+                id: 'ensure-net',
+                payload: { name: 'res:qa-survivor', item: 303, amount: 1 },
+            },
+            'controller-1',
+            { id: 'observer', sendPerception: jest.fn() },
+            send,
+            new Set(),
+        );
+
+        expect(ensureInventoryItem).toHaveBeenCalledWith('res:qa-survivor', 303, 1);
+        expect(send).toHaveBeenCalledWith(
+            frame(
+                'resident_inventory_ensured',
+                {
+                    resident: 'res:qa-survivor',
+                    itemId: 303,
+                    requestedAmount: 1,
+                    previousAmount: 0,
+                    amount: 1,
+                    addedAmount: 1,
+                },
+                'ensure-net',
+            ),
+        );
+    });
+});
+
 type MutableGateway = {
     registry: {
         get(name: string): unknown;
         controllerFor(name: string): string | null;
+        ensureInventoryItem?(name: string, item: number | string, amount: number): unknown;
     };
     sessionFor(resident: unknown): {
         submitAction(action: unknown, requestId?: string | number): void;
