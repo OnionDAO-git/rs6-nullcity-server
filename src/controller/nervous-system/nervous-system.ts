@@ -18,6 +18,10 @@ type Item = { itemId?: number; key?: string; amount?: number };
 const LOW_HEALTH_FOOD_THRESHOLD = 0.4;
 const FOOD_KEY_PATTERN =
     /(food|shrimp|anchovies|sardine|herring|trout|salmon|tuna|lobster|bass|swordfish|monkfish|shark|manta|karambwan|bread|cake|meat|chicken)/i;
+const RAW_FOOD_KEY_PATTERN = /(^|[:_-])raw([:_-]|$)/i;
+const BURNT_FOOD_KEY_PATTERN = /burnt.*(shrimp|fish|anchov|meat|food)|(shrimp|fish|anchov|meat|food).*burnt/i;
+const STARTER_RAW_FISH_ITEM_IDS: ReadonlySet<number> = new Set([317, 321]);
+const STARTER_BURNT_FISH_ITEM_IDS: ReadonlySet<number> = new Set([7954, 323]);
 
 /** Ticks between attention-appeal says (~10 minutes at 1 tick/s). */
 const REQUEST_ATTENTION_COOLDOWN_TICKS = 600;
@@ -423,7 +427,23 @@ function isFoodItem(value: unknown): value is Item {
         return false;
     }
 
-    return typeof value.key === 'string' && FOOD_KEY_PATTERN.test(value.key);
+    const key = typeof value.key === 'string' ? value.key : '';
+    const itemId = typeof value.itemId === 'number' ? value.itemId : undefined;
+    return (
+        FOOD_KEY_PATTERN.test(key) &&
+        !RAW_FOOD_KEY_PATTERN.test(key) &&
+        !BURNT_FOOD_KEY_PATTERN.test(key) &&
+        !isStarterRawFish(itemId, key) &&
+        !isStarterBurntFish(itemId)
+    );
+}
+
+function isStarterRawFish(itemId: number | undefined, key: string): boolean {
+    return (itemId !== undefined && STARTER_RAW_FISH_ITEM_IDS.has(itemId)) || /^rs:raw_(shrimp|anchovies)$/i.test(key);
+}
+
+function isStarterBurntFish(itemId: number | undefined): boolean {
+    return itemId !== undefined && STARTER_BURNT_FISH_ITEM_IDS.has(itemId);
 }
 
 type PatronMemory = { kind: 'gift' | 'witness' | 'sponsor'; handle: string; detail?: string };

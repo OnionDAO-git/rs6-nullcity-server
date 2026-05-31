@@ -177,6 +177,111 @@ describe('NervousSystem', () => {
         expect(reaction?.action).toEqual({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' });
     });
 
+    it('does not treat raw starter fish as edible emergency food', () => {
+        const system = new NervousSystem({
+            soul: soul(),
+            state: runtimeState(42),
+            memory: memoryWith([]),
+        });
+
+        const reaction = system.react({
+            tick: 42,
+            resident: {
+                hp: { current: 2, max: 10 },
+                inventory: [
+                    { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                    { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    { itemId: 321, key: 'rs:raw_anchovies', amount: 1 },
+                ],
+            },
+            events: [],
+        });
+
+        expect(reaction?.action?.cause).not.toBe('nervous:eat-when-low-health');
+    });
+
+    it('still treats cooked starter fish as edible emergency food', () => {
+        const system = new NervousSystem({
+            soul: soul(),
+            state: runtimeState(42),
+            memory: memoryWith([]),
+        });
+
+        const reaction = system.react({
+            tick: 42,
+            resident: {
+                hp: { current: 2, max: 10 },
+                inventory: [
+                    { itemId: 303, key: 'rs:small_fishing_net', amount: 1 },
+                    { itemId: 315, key: 'rs:shrimps', amount: 1 },
+                ],
+            },
+            events: [],
+        });
+
+        expect(reaction?.action).toEqual({ kind: 'eat', slot: 1, cause: 'nervous:eat-when-low-health' });
+    });
+
+    it('skips raw fish and eats a later cooked fish slot', () => {
+        const system = new NervousSystem({
+            soul: soul(),
+            state: runtimeState(42),
+            memory: memoryWith([]),
+        });
+
+        const reaction = system.react({
+            tick: 42,
+            resident: {
+                hp: { current: 2, max: 10 },
+                inventory: [
+                    { itemId: 317, key: 'rs:raw_shrimp', amount: 1 },
+                    { itemId: 315, key: 'rs:shrimps', amount: 1 },
+                ],
+            },
+            events: [],
+        });
+
+        expect(reaction?.action).toEqual({ kind: 'eat', slot: 1, cause: 'nervous:eat-when-low-health' });
+    });
+
+    it('does not treat generic raw fish as edible emergency food', () => {
+        const system = new NervousSystem({
+            soul: soul(),
+            state: runtimeState(42),
+            memory: memoryWith([]),
+        });
+
+        const reaction = system.react({
+            tick: 42,
+            resident: {
+                hp: { current: 2, max: 10 },
+                inventory: [{ itemId: 327, key: 'rs:raw_sardine', amount: 1 }],
+            },
+            events: [],
+        });
+
+        expect(reaction?.action?.cause).not.toBe('nervous:eat-when-low-health');
+    });
+
+    it('does not treat burnt food as edible emergency food', () => {
+        const system = new NervousSystem({
+            soul: soul(),
+            state: runtimeState(42),
+            memory: memoryWith([]),
+        });
+
+        const reaction = system.react({
+            tick: 42,
+            resident: {
+                hp: { current: 2, max: 10 },
+                inventory: [{ itemId: 7954, key: 'rs:burnt_shrimp', amount: 1 }],
+            },
+            events: [],
+        });
+
+        expect(reaction?.action?.cause).not.toBe('nervous:eat-when-low-health');
+    });
+
     it('acknowledges live patron:ask chat events without requiring inference or patron registry config', () => {
         const system = new NervousSystem({
             soul: soul(),
