@@ -160,6 +160,7 @@ const TRACKED_ACTION_KINDS = [
 ];
 const TRACKED_CAUSES = [
     'nervous:self-initiated-ap-gp-exchange',
+    'nervous:starter-gp-harvest',
     'nervous:request-attention',
     'low_health_heal_wait',
     'low_health_fish_food',

@@ -105,6 +105,7 @@ describe('normal life audit', () => {
         ]);
         expect(Object.keys(report.trackedCauseCounts)).toEqual([
             'nervous:self-initiated-ap-gp-exchange',
+            'nervous:starter-gp-harvest',
             'nervous:request-attention',
             'low_health_heal_wait',
             'low_health_fish_food',
@@ -153,6 +154,7 @@ describe('normal life audit', () => {
                 }),
                 trackedCauseCounts: expect.objectContaining({
                     'nervous:self-initiated-ap-gp-exchange': 1,
+                    'nervous:starter-gp-harvest': 0,
                     combat_resupply_food: 0,
                 }),
                 trackedTimelineCounts: expect.objectContaining({

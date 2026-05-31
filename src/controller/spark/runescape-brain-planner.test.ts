@@ -40,6 +40,7 @@ import {
     starterCookingGoal,
     starterFishingCookingGoal,
     starterFishingGoal,
+    starterGpHarvestGoal,
     woodcuttingGoal,
 } from './runescape-brain-planner';
 
@@ -280,6 +281,17 @@ describe('goal factories', () => {
         const g = combatGoal(0);
         expect(g.id).toBe('train-combat-safely');
         expect(g.ttlTicks).toBe(450);
+    });
+
+    it('starterGpHarvestGoal builds a combat-routable GP harvest goal', () => {
+        const g = starterGpHarvestGoal(11);
+
+        expect(g.id).toBe('earn-starter-gp-via-combat');
+        expect(g.description).toContain('RuneScape GP');
+        expect(g.steps?.join(' ')).toMatch(/attack|loot|coins/i);
+        expect(g.ttlTicks).toBe(600);
+        expect(g.createdAtTick).toBe(11);
+        expect(isCombatTrainingGoal(g)).toBe(true);
     });
 
     it('explorationGoal builds a scout-nearby-area goal', () => {

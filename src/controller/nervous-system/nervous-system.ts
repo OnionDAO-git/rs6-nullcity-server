@@ -1,11 +1,17 @@
 import type { MemoryStore } from '../memory/memory-store';
-import type { RuntimeState } from '../memory/runtime-state';
+import type { ActiveGoalState, RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import { readNervousRulesMd } from './rules-md';
 import { type NervousReaction, type NervousRule, clampNervousRulePriority, evaluateNervousRules } from './rules';
 import { PatronRegistry } from '../patron/patron-registry';
-import { SELF_INITIATED_AP_GP_EXCHANGE_CAUSE, selfInitiatedApGpExchangeAction } from '../spark/self-initiated-ap-gp-exchange';
+import { STARTER_GP_HARVEST_GOAL_ID, starterGpHarvestGoal } from '../spark/runescape-brain-planner';
+import {
+    SELF_INITIATED_AP_GP_EXCHANGE_CAUSE,
+    SELF_INITIATED_EXCHANGE_MIN_GP,
+    gpInInventory,
+    selfInitiatedApGpExchangeAction,
+} from '../spark/self-initiated-ap-gp-exchange';
 
 export interface NervousSystemOptions {
     soul: Soul;
@@ -50,6 +56,7 @@ const FINAL_TESTAMENT_PHRASES = [
 const ATTENTION_TOPUP_ACK_COOLDOWN_TICKS = 20;
 const RESTART_COOLDOWN_COMPAT_WINDOW_TICKS = 1_000;
 const SELF_INITIATED_AP_GP_EXCHANGE_COOLDOWN_TICKS = 120;
+const STARTER_GP_HARVEST_COOLDOWN_TICKS = 120;
 
 const LOW_HEALTH_RULE: NervousRule = {
     id: 'eat-when-low-health',
@@ -152,6 +159,11 @@ export class NervousSystem {
         const epitaphReaction = this.prepareEpitaphReaction(perception);
         if (epitaphReaction) {
             return epitaphReaction;
+        }
+
+        const starterGpHarvest = this.starterGpHarvestReaction(perception);
+        if (starterGpHarvest) {
+            return starterGpHarvest;
         }
 
         return this.requestAttentionReaction(perception);
@@ -396,7 +408,74 @@ export class NervousSystem {
         };
     }
 
+    private starterGpHarvestReaction(perception: Perception): NervousReaction | undefined {
+        if (!this.shouldSeekStarterGpHarvest(perception)) {
+            return undefined;
+        }
+
+        const tick = cooldownTick(this.options.state, perception);
+        const existingGoal = this.options.state.cognition?.activeGoal;
+        if (existingGoal?.id === STARTER_GP_HARVEST_GOAL_ID && !goalExpired(existingGoal, tick)) {
+            return undefined;
+        }
+
+        const cooldownKey = 'starter-gp-harvest';
+        const coolingUntil = this.options.state.hookCooldowns?.[cooldownKey] ?? 0;
+        if (isCooldownActive(coolingUntil, tick, this.options.state.tick)) {
+            return undefined;
+        }
+
+        this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
+        this.options.state.hookCooldowns[cooldownKey] = tick + STARTER_GP_HARVEST_COOLDOWN_TICKS;
+
+        this.options.state.cognition = this.options.state.cognition ?? {};
+        this.options.state.cognition.activeGoal = starterGpHarvestGoal(tick);
+        this.options.state.cognition.lastGoalShareTick = undefined;
+
+        const rule: NervousRule = {
+            id: 'starter-gp-harvest',
+            priority: 84,
+            condition: { kind: 'always' },
+            action: { kind: 'noop' },
+            cooldownTicks: STARTER_GP_HARVEST_COOLDOWN_TICKS,
+            source: 'system',
+        };
+
+        return {
+            rule,
+            action: { kind: 'noop', cause: 'nervous:starter-gp-harvest' },
+            suppressThinking: false,
+            interruptThinking: false,
+        };
+    }
+
+    private shouldSeekStarterGpHarvest(perception: Perception): boolean {
+        const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
+        const attention = this.options.state.attention;
+        if (!Number.isFinite(attention) || attention <= 0) {
+            return false;
+        }
+
+        const withinLowAttentionBand =
+            floor > 0
+                ? attention >= floor && attention < floor + LOW_ATTENTION_REQUEST_BUFFER
+                : attention <= CRITICAL_ATTENTION_REQUEST_THRESHOLD;
+        if (!withinLowAttentionBand) {
+            return false;
+        }
+
+        if (gpInInventory(perception) >= SELF_INITIATED_EXCHANGE_MIN_GP) {
+            return false;
+        }
+
+        return !isLowHealth(perception);
+    }
+
     private requestAttentionReaction(perception: Perception): NervousReaction | undefined {
+        if (this.hasActiveStarterGpHarvestGoal(perception) && !isLowHealth(perception)) {
+            return undefined;
+        }
+
         const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
         const threshold = floor > 0 ? floor + LOW_ATTENTION_REQUEST_BUFFER : CRITICAL_ATTENTION_REQUEST_THRESHOLD;
         const attention = this.options.state.attention;
@@ -434,6 +513,15 @@ export class NervousSystem {
         };
     }
 
+    private hasActiveStarterGpHarvestGoal(perception: Perception): boolean {
+        const goal = this.options.state.cognition?.activeGoal;
+        if (goal?.id !== STARTER_GP_HARVEST_GOAL_ID) {
+            return false;
+        }
+
+        return !goalExpired(goal, cooldownTick(this.options.state, perception));
+    }
+
     private soulRules(): NervousRule[] {
         const rules = this.options.soul.frontmatter.nervousSystem;
         if (!Array.isArray(rules)) {
@@ -465,6 +553,18 @@ function lowHealthFoodSlot(perception: Perception): number | undefined {
     const inventory = Array.isArray(resident.inventory) ? resident.inventory : [];
     const slot = inventory.findIndex(item => isFoodItem(item));
     return slot >= 0 ? slot : undefined;
+}
+
+function isLowHealth(perception: Perception): boolean {
+    const resident = isRecord(perception.resident) ? perception.resident : {};
+    const hp = isRecord(resident.hp) ? resident.hp : {};
+    const current = Number(hp.current);
+    const max = Number(hp.max);
+    return Number.isFinite(current) && Number.isFinite(max) && max > 0 && current / max <= LOW_HEALTH_FOOD_THRESHOLD;
+}
+
+function goalExpired(goal: ActiveGoalState, tick: number): boolean {
+    return goal.ttlTicks !== undefined && tick - goal.createdAtTick > goal.ttlTicks;
 }
 
 function isFoodItem(value: unknown): value is Item {

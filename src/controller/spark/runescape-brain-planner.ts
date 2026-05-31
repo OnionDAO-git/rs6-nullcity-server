@@ -313,6 +313,25 @@ export function combatGoal(tick: number): ActiveGoalState {
     };
 }
 
+export const STARTER_GP_HARVEST_GOAL_ID = 'earn-starter-gp-via-combat';
+
+/** Build the AP-survival goal that earns starter RuneScape GP from safe combat. */
+export function starterGpHarvestGoal(tick: number): ActiveGoalState {
+    return {
+        id: STARTER_GP_HARVEST_GOAL_ID,
+        description: 'Earn starter RuneScape GP by safely fighting low-level NPCs and looting coin item 995.',
+        steps: [
+            'Find a safe Chicken, Rat, Cow, or Goblin',
+            'Attack only while healthy',
+            'Loot coins after the fight',
+            'Use gathered GP to self-fund AP before fading',
+        ],
+        success: 'Real RuneScape GP coin item 995 is carried and can be exchanged for AP.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
 /**
  * Build a `follow-<slug>` Active Goal pointed at the named target. Falls
  * back to the literal label `target` when the input is empty.

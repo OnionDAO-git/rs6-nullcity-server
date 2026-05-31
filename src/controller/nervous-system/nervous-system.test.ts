@@ -25,6 +25,7 @@ describe('NervousSystem', () => {
 
     it('does not repeat the same remembered patron gift after acknowledging it', () => {
         const state = runtimeState(42);
+        state.attention = 1000;
         const memory = memoryWith(['Patron gift from alice@onion: 10 Shards (2026-05-24 13:33:26)']);
         const system = new NervousSystem({ soul: soul(), state, memory });
 
@@ -38,6 +39,7 @@ describe('NervousSystem', () => {
 
     it('briefly throttles patron memory scans after all visible gifts were already acknowledged', () => {
         const state = runtimeState(42);
+        state.attention = 1000;
         const memory = memoryWith(['Patron gift from alice@onion: 10 Shards (2026-05-24 13:33:26)']);
         const system = new NervousSystem({ soul: soul(), state, memory });
 
@@ -55,6 +57,7 @@ describe('NervousSystem', () => {
 
     it('collapses a backlog of unacknowledged patron memories into one visible thanks', () => {
         const state = runtimeState(42);
+        state.attention = 1000;
         const memory = memoryWith([
             'Patron gift from alice@onion: 5 Shards (2026-05-24 13:00:00)',
             'Patron gift from bob@onion: 10 Shards (2026-05-24 13:33:26)',
@@ -312,6 +315,7 @@ describe('NervousSystem', () => {
 
     it('cooldowns repeated live patron:ask acknowledgements from the same human', () => {
         const state = runtimeState(42);
+        state.attention = 1000;
         const system = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
         const perception = {
             ...healthyPerception(42),
@@ -448,16 +452,65 @@ describe('NervousSystem', () => {
             expect(reaction?.action?.cause).not.toBe('nervous:self-initiated-ap-gp-exchange');
         });
 
-        it('falls back to asking humans when low AP but no coins are held', () => {
+        it('starts a starter GP harvest instead of suppressing thinking when low AP and no coins are held', () => {
             const state = runtimeState(100);
-            state.attention = 5015;
-            state.hookCooldowns!['prepare-epitaph:written'] = Number.MAX_SAFE_INTEGER;
+            state.attention = 5300;
             const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
 
             const reaction = sys.react(healthyPerception(100));
 
+            expect(reaction?.rule.id).toBe('starter-gp-harvest');
+            expect(reaction?.action).toEqual({ kind: 'noop', cause: 'nervous:starter-gp-harvest' });
+            expect(reaction?.suppressThinking).toBe(false);
+            expect(reaction?.interruptThinking).toBe(false);
+            expect(state.cognition?.activeGoal).toMatchObject({
+                id: 'earn-starter-gp-via-combat',
+                createdAtTick: 100,
+            });
+        });
+
+        it('lets an active starter GP harvest continue without an attention appeal', () => {
+            const state = runtimeState(101);
+            state.attention = 5300;
+            state.hookCooldowns!['starter-gp-harvest'] = 220;
+            state.cognition = {
+                activeGoal: {
+                    id: 'earn-starter-gp-via-combat',
+                    description: 'Earn starter RuneScape GP by safely fighting low-level NPCs and looting coins.',
+                    steps: ['Attack a safe Goblin', 'Loot coin item 995'],
+                    createdAtTick: 100,
+                    ttlTicks: 600,
+                },
+            };
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(101));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:request-attention');
+            expect(reaction?.action?.cause).not.toBe('nervous:starter-gp-harvest');
+        });
+
+        it('still appeals for attention when an active starter GP harvest resident is low health with no food', () => {
+            const state = runtimeState(101);
+            state.attention = 5300;
+            state.hookCooldowns!['starter-gp-harvest'] = 220;
+            state.cognition = {
+                activeGoal: {
+                    id: 'earn-starter-gp-via-combat',
+                    description: 'Earn starter RuneScape GP by safely fighting low-level NPCs and looting coins.',
+                    steps: ['Attack a safe Goblin', 'Loot coin item 995'],
+                    createdAtTick: 100,
+                    ttlTicks: 600,
+                },
+            };
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(101),
+                resident: { hp: { current: 2, max: 10 }, inventory: [] },
+            });
+
             expect(reaction?.action?.cause).toBe('nervous:request-attention');
-            expect(reaction?.action?.kind).toBe('say');
         });
 
         it('does not appeal when attention is at or above floor + buffer', () => {
@@ -522,7 +575,10 @@ describe('NervousSystem', () => {
             state.attention = 10;
             const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
 
-            const reaction = sys.react(healthyPerception(100));
+            const reaction = sys.react({
+                ...healthyPerception(100),
+                resident: { hp: { current: 2, max: 10 }, inventory: [] },
+            });
 
             expect(reaction?.action?.cause).toBe('nervous:request-attention');
             expect((reaction?.action as { text?: string }).text).toContain('AP');

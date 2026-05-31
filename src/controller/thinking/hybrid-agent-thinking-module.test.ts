@@ -4,6 +4,7 @@ import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
 import type { Soul } from '../soul/soul-schema';
 import { STARTER_FISHING_SPOT_DISCOVERY_RANGE, explorationPatrolCooldownKey } from '../spark/runescape-body-routines';
+import { starterGpHarvestGoal } from '../spark/runescape-brain-planner';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { latestAddressedChat } from './hybrid-agent-chat';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
@@ -7360,6 +7361,35 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' }]);
         expect(result.cause).toBe('combat_attack_safe_target');
         expect(state.cognition?.activeGoal?.id).toBe('train-combat-safely');
+        expect(llm.complete).toHaveBeenCalledTimes(0);
+    });
+
+    it('routes an ordinary starter GP harvest goal into safe combat before LLM inference', async () => {
+        const goblin = npc('Goblin', 3254, 3231);
+        goblin.key = 'rs:goblin';
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: starterGpHarvestGoal(100),
+            lastBrainTick: 100,
+            lastBodyTick: 100,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 101,
+                resident: {
+                    ...residentAt(3254, 3230),
+                    inventory: [{ itemId: 315, key: 'rs:shrimps', amount: 1 }],
+                },
+                npcs: [goblin],
+            }),
+        );
+
+        expect(result.actions).toEqual([{ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' }]);
+        expect(result.cause).toBe('combat_attack_safe_target');
+        expect(state.cognition?.activeGoal?.id).toBe('earn-starter-gp-via-combat');
         expect(llm.complete).toHaveBeenCalledTimes(0);
     });
 
