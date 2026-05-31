@@ -1770,6 +1770,107 @@ describe('ResidentRuntime modules', () => {
         expect(thinking.think).not.toHaveBeenCalled();
     });
 
+    it('S-INFER-5: a survival reflex during an in-flight brain decision STILL acts via the Body but does NOT abort deliberation (uninterruptible brain + execution-priority invariant)', async () => {
+        // Architectural endpoint: Brain=deliberative/uninterruptible, Body=reactive,
+        // Nervous=reflexive-safety. A low-health resident's survival eat reflex
+        // (interruptThinking:false) is ALWAYS submitted to the Body, so the resident
+        // still eats — but it must NOT call thinking.stop() on the in-flight brain.
+        // The Nervous/Body layer retains EXECUTION priority (the eat happens NOW),
+        // so a stale brain plan cannot make the resident deliberate itself to death;
+        // the redundant brain-abort is dropped (it was a top thinking_cancelled cause).
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-uninterruptible-test-'));
+        const state = stateFor('res:pip');
+
+        // think() never resolves, so `deciding` stays true across the next perception
+        // (the brain is mid-flight when the survival reflex fires).
+        let releaseThink: (() => void) | undefined;
+        const thinking: ThinkingModule = {
+            think: jest.fn(
+                () =>
+                    new Promise(resolve => {
+                        releaseThink = () => resolve({ actions: [], cause: 'never', nooped: true });
+                    }),
+            ),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        // The survival reflex models the eat-when-low-health reaction AFTER S-INFER-5:
+        // it ACTS (kind:'eat') but interruptThinking:false.
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.reflex' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            body,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.reflex',
+                        version: '0.1.0',
+                        displayName: 'Reflex',
+                        capabilities: ['thinking', 'nervous-rules'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: () => thinking,
+                    createNervousSystem: () => ({
+                        react: (perception: { events?: Array<{ kind?: string }> }) => {
+                            // Only the SECOND perception (the one that carries the
+                            // low-health signal) fires the survival reflex; the first
+                            // perception starts the brain deliberation.
+                            const lowHealth = (perception.events || []).some(event => event.kind === 'hp_low');
+                            if (!lowHealth) {
+                                return undefined;
+                            }
+                            return {
+                                rule: {
+                                    id: 'eat-when-low-health',
+                                    priority: 100,
+                                    condition: { kind: 'always' },
+                                    action: { kind: 'noop' },
+                                },
+                                action: { kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' },
+                                suppressThinking: true,
+                                // S-INFER-5: the Brain is uninterruptible.
+                                interruptThinking: false,
+                            };
+                        },
+                    }),
+                },
+            ],
+        });
+
+        // Tick 1: no reflex → brain starts deliberating. think() never resolves, so we
+        // do NOT await this perception; we let microtasks flush so `deciding` becomes
+        // true while the brain is mid-flight.
+        const pendingTick1 = runtime.onPerception({ tick: 1, events: [] });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(thinking.think).toHaveBeenCalledTimes(1);
+
+        // Tick 2: low-health survival reflex fires WHILE the brain is mid-flight.
+        await runtime.onPerception({ tick: 2, events: [{ kind: 'hp_low' }] });
+
+        // The Body ACTS in real time — the resident eats. EXECUTION priority held.
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'eat-when-low-health' }),
+        );
+        // ...but the in-flight brain deliberation was NOT aborted (uninterruptible).
+        expect(thinking.stop).not.toHaveBeenCalled();
+
+        releaseThink?.();
+        await pendingTick1;
+    });
+
     it('routes city_exchange_ap_gp nervous actions through the city exchange service instead of the game body', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-city-exchange-test-'));
         const state = stateFor('res:pip');

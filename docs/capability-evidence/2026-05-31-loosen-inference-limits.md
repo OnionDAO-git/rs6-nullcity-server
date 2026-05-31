@@ -111,3 +111,141 @@ npm run controller:inference-audit  # (or the equivalent inference-health-audit)
 grep -oE 'thinking_cancelled(:[a-z_:]+)?|brain_[a-z_]+|empty_completion(_[a-z_]+)?' <trajectory> | sort | uniq -c
 # expect far fewer thinking_cancelled:nervous:patron-* / nervous:self-initiated-ap-gp-exchange.
 ```
+
+---
+
+# S-INFER-5 — Brain fully uninterruptible (the architectural endpoint)
+
+After S-INFER-4 the live audit showed usable-brain-rate **82.9%** (was 0.3%),
+with a residual `cancelled=74` still attributed to reflexes aborting the brain
+(live cause labels `thinking_cancelled:interrupted_by:trade_request` and
+`:addressed_by_chat`). S-INFER-5 finishes the three-layer model:
+
+> **Brain = deliberative / uninterruptible · Body = reactive · Nervous = reflexive-safety**
+
+## What shipped (in the allowed scope)
+
+Every remaining `interruptThinking: true` in **production** nervous-system code
+is now `false`. The Brain can no longer be aborted by ANY nervous reflex:
+
+| Site | Reflex | Before | After |
+|------|--------|--------|-------|
+| `nervous-system.ts:86` | `eat-when-low-health` (SURVIVAL) | `true` | **`false`** |
+| `llm/prompt-envelope.ts:311` | `eat-when-hurt` schema example shown to the Brain | `true` | **`false`** |
+
+(S-INFER-4 had already flipped the non-survival reflexes: `patron-acknowledge`,
+`patron-ask-acknowledge` [addressed_by_chat], `patron-memory-acknowledge`,
+self-initiated / hero-surplus AP-GP exchange. `requestAttentionReaction` was
+always `false`.)
+
+`grep -rn "interruptThinking: true" src/ | grep -v '\.test\.ts'` now returns
+**nothing** — production has zero brain-aborting reflexes.
+
+## Why dropping the SURVIVAL interrupt is safe (execution-priority invariant)
+
+The reflex action is **always** submitted at `resident-runtime.ts:489`;
+`interruptThinking` ONLY gates the *redundant* extra `thinking.stop()`. So an
+`eat-when-low-health` reflex set to `interruptThinking:false` **still eats** in
+real time via the Body — it just no longer kills the in-flight deliberation.
+
+The Nervous/Body layer retains **EXECUTION priority** over a stale brain plan, so
+a low-health resident cannot deliberate itself to death:
+
+- `lowHealthRecoveryAction` (hybrid-agent-helpers.ts:444) pre-empts the brain
+  plan with eat/recovery whenever `isLowHealth(perception)`.
+- `classifyCombatDecision` (hybrid-agent-helpers.ts:1353) returns `retreat_low_hp`
+  at HP < 15% (or ≤ 30% with no food), filtering a stale "attack" plan at
+  execution time. Existing test `F5-T3 (Low HP Retreat)` already proves
+  HP 20% + no food → `move_to` flee, NOT attack.
+
+**Invariant verification result: HOLDS** — proven by the new
+`resident-runtime.test.ts` test "S-INFER-5: a survival reflex during an in-flight
+brain decision STILL acts via the Body but does NOT abort deliberation": with the
+brain mid-flight (`think()` pending, `deciding=true`), a low-health survival
+reflex (`interruptThinking:false`) is submitted to the Body (`body.submit` called
+with the `eat`) while `thinking.stop` is **never** called.
+
+## TDD evidence (S-INFER-5)
+
+- SURVIVAL reaction (low-health eat) now asserts `interruptThinking:false` and
+  STILL returns the `eat` action. (updated test — was `true`)
+- NON-URGENT `addressed_by_chat` (patron:ask) still acts + `interruptThinking:false`. (S-INFER-4 test, unchanged, still green)
+- Execution-priority invariant: Body acts mid-deliberation, brain not aborted. (new resident-runtime test)
+- Routing fixtures at `resident-runtime.test.ts` that set `interruptThinking:true`
+  are mock reactions exercising action ROUTING (city_exchange / wave-on-hit), not
+  production interrupt contracts — intentionally left.
+
+## Residual / FOLLOW-UP (out of S-INFER-5 allowed scope) — `src/controller/spark/hooks.ts`
+
+The live cancel labels `interrupted_by:trade_request` / `interrupted_by:addressed_by_chat`
+do **not** originate from nervous-system `interruptThinking`. They come from the
+SPARK hook interrupt path:
+
+- `spark/hooks.ts` defines `HookDefinition.interrupt: true` on the system hooks
+  `addressed_by_chat` (id, priority 85) and `trade_request` (id, priority 80).
+- `spark.ts:486-490` (`considerInterrupt`) calls
+  `abortInflight(\`interrupted_by:${winner.id}\`)` when such a hook wins, which
+  becomes the `thinking_cancelled:interrupted_by:<id>` cancel cause in the audit.
+
+**Live mitigant already in tree:** the production qwopus Brain is a
+`HybridAgentThinkingModule`, whose `considerInterrupt()` returns `false`
+unconditionally (hybrid-agent-thinking-module.ts:300). So these two hooks
+**cannot abort the hybrid Brain today** — they only bite a `SparkThinkingModule`
+or a basic-agent resident. This is why S-INFER-4 already drove usable-rate to
+82.9% even with these hooks still `interrupt:true`.
+
+`hooks.ts` is outside the S-INFER-5 allowed-files list. Precise diff-spec for the
+follow-up packet (S-INFER-6 or maintainer):
+
+```diff
+# src/controller/spark/hooks.ts
+         {
+             id: 'addressed_by_chat',
+             priority: 85,
+             condition: { kind: 'event_kind', value: 'chat' },
+             cooldownTicks: 2,
+-            interrupt: true,
++            // Brain is uninterruptible; this hook still raises the chat context to
++            // the next brain beat, it must not abort an in-flight deliberation (S-INFER-5/6).
++            interrupt: false,
+             contextHint: 'Recent chat may be directed at the resident. Respond in character if appropriate.',
+         },
+         {
+             id: 'trade_request',
+             priority: 80,
+             condition: { kind: 'event_kind', value: 'trade_request' },
+             cooldownTicks: 4,
+-            interrupt: true,
++            // Brain is uninterruptible; the trade still surfaces to the next brain
++            // beat / Body trade routine, it must not abort deliberation (S-INFER-5/6).
++            interrupt: false,
+             contextHint: 'A trade request requires an accept, decline, or social response decision.',
+         },
+```
+
+Keep the SURVIVAL hooks (`attention_empty`, `took_damage`, `death_seen`)
+interrupting at the SPARK layer — those mirror the Body's reflexive-safety role
+and do not block the hybrid Brain (which ignores `considerInterrupt` anyway).
+After flipping these two, re-audit: the `interrupted_by:trade_request` and
+`:addressed_by_chat` buckets should drop to ~0 for any non-hybrid residents.
+
+## Honesty / live-verify recipe (PENDING controller restart)
+
+Proven by unit test: **the Brain is no longer abortable by any nervous reflex**
+(production `interruptThinking:true` count = 0); survival actions (eat/flee)
+**still execute** via the Body; the **execution-priority invariant HOLDS**
+(low-health Body override + `retreat_low_hp` filter a stale unsafe brain attack).
+Live cancel-rate impact is **PENDING a controller restart + re-audit** — this
+packet does NOT claim the cancel rate hit zero.
+
+Live-verify after restart:
+
+```bash
+# restart controller on the new SHA, warm up ~20 min, then re-run inference audit
+npm run controller:inference-audit   # (or the inference-health-audit equivalent)
+# expect: cancelled → ~0 for nervous causes, usable-brain-rate ~95%+.
+grep -oE 'thinking_cancelled(:[a-z_:]+)?|brain_[a-z_]+|empty_completion(_[a-z_]+)?' <trajectory> | sort | uniq -c
+# expect ZERO thinking_cancelled:nervous:* (incl. eat-when-low-health). Any residual
+# thinking_cancelled:interrupted_by:trade_request / :addressed_by_chat would be a
+# non-hybrid resident and is closed by the spark/hooks.ts diff-spec above.
+```

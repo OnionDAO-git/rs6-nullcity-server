@@ -80,10 +80,15 @@ export class NervousSystem {
                 rule: LOW_HEALTH_RULE,
                 action: { kind: 'eat', slot: lowHealthFood, cause: `nervous:${LOW_HEALTH_RULE.id}` },
                 suppressThinking: true,
-                // SURVIVAL-CRITICAL (S-INFER-4): HP is at/below LOW_HEALTH_FOOD_THRESHOLD.
-                // A resident MUST abandon any slow (~40s) deliberation and eat NOW, or it
-                // deliberates itself to death. Keep interruptThinking:true.
-                interruptThinking: true,
+                // Brain is uninterruptible; this reflex still acts via the Body, it must
+                // not abort deliberation (S-INFER-5). HP is at/below
+                // LOW_HEALTH_FOOD_THRESHOLD, so the eat is ALWAYS submitted in real time
+                // (resident-runtime.ts:489 submits the action regardless of this flag).
+                // The execution-priority invariant (low-health Body override +
+                // classifyCombatDecision→retreat_low_hp filter a stale brain attack) keeps
+                // the resident safe, so killing the in-flight deliberation is pure
+                // redundancy — and that redundant abort was a top thinking_cancelled cause.
+                interruptThinking: false,
             };
         }
 

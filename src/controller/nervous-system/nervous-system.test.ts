@@ -792,14 +792,22 @@ describe('NervousSystem', () => {
         });
     });
 
-    describe('interruptThinking survival/non-urgent classification (S-INFER-4)', () => {
-        // Live finding: 728/764 (95%) qwopus brain decisions were thinking_cancelled
-        // because NON-URGENT reflexes fired interruptThinking:true and aborted the
-        // slow (~40s) in-flight deliberation. Survival reflexes MUST still interrupt
-        // (so residents never deliberate themselves to death); routine social/
-        // economic reflexes must NOT.
+    describe('interruptThinking fully-uninterruptible classification (S-INFER-4 → S-INFER-5)', () => {
+        // Live finding (S-INFER-4): 728/764 (95%) qwopus brain decisions were
+        // thinking_cancelled because reflexes fired interruptThinking:true and
+        // aborted the slow (~40s) in-flight deliberation. S-INFER-4 flipped the
+        // non-urgent (social/economic) reflexes to false.
+        //
+        // S-INFER-5 makes the Brain FULLY uninterruptible: even the SURVIVAL
+        // reflexes (eat-when-low-health) now set interruptThinking:false. The
+        // reflex action is ALWAYS submitted (resident-runtime.ts:489 submits the
+        // action; interruptThinking only gates the redundant thinking.stop()), so
+        // the resident still eats — it just no longer kills the in-flight brain.
+        // The Body/Nervous layer retains EXECUTION priority (low-health override
+        // + classifyCombatDecision→retreat_low_hp filter a stale brain attack), so
+        // dropping the interrupt cannot make a resident deliberate itself to death.
 
-        it('SURVIVAL: low-health eat reflex still interrupts thinking', () => {
+        it('SURVIVAL: low-health eat reflex still ACTS but no longer interrupts thinking (S-INFER-5)', () => {
             const system = new NervousSystem({
                 soul: soul(),
                 state: runtimeState(42),
@@ -813,10 +821,12 @@ describe('NervousSystem', () => {
             });
 
             expect(reaction?.rule.id).toBe('eat-when-low-health');
+            // The eat STILL fires — the Body reacts in real time at 20% HP.
             expect(reaction?.action).toEqual({ kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' });
-            // A resident at 20% HP MUST abandon a slow deliberation to eat NOW.
             expect(reaction?.suppressThinking).toBe(true);
-            expect(reaction?.interruptThinking).toBe(true);
+            // S-INFER-5: the Brain is uninterruptible. The eat acts via the Body;
+            // it must NOT abort an in-flight deliberation.
+            expect(reaction?.interruptThinking).toBe(false);
         });
 
         it('NON-URGENT: being addressed by chat (patron:ask) acts but does NOT interrupt thinking', () => {
