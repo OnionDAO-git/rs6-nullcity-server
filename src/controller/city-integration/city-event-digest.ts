@@ -69,11 +69,13 @@ function emptyCountsByKind(): Record<EconomyEventKind, number> {
 export function buildCityEventDigest(events: EconomyEvent[], options: BuildCityEventDigestOptions): CityEventDigest {
     const { generatedAt, windowStart, windowEnd, goals, notableGpThreshold = 100, recentAchievedLimit = 5 } = options;
 
+    // Half-open window [windowStart, windowEnd): events AT windowStart are included;
+    // events AT windowEnd are excluded (prevents double-counting on scheduled boundary ticks).
     const inWindow = events.filter(event => {
         if (windowStart !== undefined && event.ts < windowStart) {
             return false;
         }
-        if (windowEnd !== undefined && event.ts > windowEnd) {
+        if (windowEnd !== undefined && event.ts >= windowEnd) {
             return false;
         }
         return true;

@@ -308,7 +308,8 @@ describe('ApLedger EconomyEventLog emission', () => {
         ledger.append({ kind: 'fade', tick: 1, ts: '2026-05-30T01:00:00.000Z' });
         const fadeEvents = log.readAll().filter(e => e.kind === 'ap_fade');
         expect(fadeEvents).toHaveLength(1);
-        expect(fadeEvents[0]).toMatchObject({ kind: 'ap_fade', residentName, apDelta: 0 });
+        expect(fadeEvents[0]).toMatchObject({ kind: 'ap_fade', residentName });
+        expect(fadeEvents[0].apDelta).toBeUndefined();
     });
 
     it('does not emit anything for spend or resume', () => {
@@ -342,6 +343,27 @@ describe('ApLedger EconomyEventLog emission', () => {
         const events = log.readAll();
         expect(events).toHaveLength(1);
         expect(events[0]).toMatchObject({ kind: 'ap_grant', apDelta: 20 });
+    });
+
+    it('attachEconomyEventLog throws on re-attach without { replace: true }', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        const log2 = new EconomyEventLog(memoryRoot, () => new Date('2026-05-30T01:00:00.000Z'));
+        expect(() => ledger.attachEconomyEventLog(log2, { residentName })).toThrow('attachEconomyEventLog: already attached');
+    });
+
+    it('attachEconomyEventLog replaces when { replace: true } is passed', () => {
+        const ledger = ApLedger.empty(log, { residentName });
+        // log2 must use a distinct memoryRoot so it writes to a separate file.
+        const memoryRoot2 = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-ledger-emit2-'));
+        try {
+            const log2 = new EconomyEventLog(memoryRoot2, () => new Date('2026-05-30T01:00:00.000Z'));
+            expect(() => ledger.attachEconomyEventLog(log2, { residentName }, { replace: true })).not.toThrow();
+            ledger.append(grant(10));
+            expect(log.readAll()).toHaveLength(0);
+            expect(log2.readAll()).toHaveLength(1);
+        } finally {
+            fs.rmSync(memoryRoot2, { recursive: true, force: true });
+        }
     });
 
     it('refIds from two different residents are distinct (no cross-resident collision)', () => {

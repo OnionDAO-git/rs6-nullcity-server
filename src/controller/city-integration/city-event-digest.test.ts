@@ -136,6 +136,42 @@ describe('buildCityEventDigest', () => {
         expect(d.windowEnd).toBe('2026-05-29T13:00:00.000Z');
     });
 
+    it('window lower bound is inclusive: event AT windowStart is included', () => {
+        const d = buildCityEventDigest([ev('ap_grant', { residentName: 'res:hans', apDelta: 10, ts: '2026-05-29T11:00:00.000Z' })], {
+            generatedAt: GEN,
+            windowStart: '2026-05-29T11:00:00.000Z',
+            windowEnd: '2026-05-29T13:00:00.000Z',
+        });
+        expect(d.totalEvents).toBe(1);
+    });
+
+    it('window upper bound is exclusive: event AT windowEnd is excluded', () => {
+        const d = buildCityEventDigest([ev('ap_grant', { residentName: 'res:hans', apDelta: 10, ts: '2026-05-29T13:00:00.000Z' })], {
+            generatedAt: GEN,
+            windowStart: '2026-05-29T11:00:00.000Z',
+            windowEnd: '2026-05-29T13:00:00.000Z',
+        });
+        expect(d.totalEvents).toBe(0);
+    });
+
+    it('consecutive non-overlapping windows do not double-count a boundary event', () => {
+        const boundary = '2026-05-29T12:00:00.000Z';
+        const event = ev('ap_grant', { residentName: 'res:hans', apDelta: 5, ts: boundary });
+        const window1 = buildCityEventDigest([event], {
+            generatedAt: GEN,
+            windowStart: '2026-05-29T10:00:00.000Z',
+            windowEnd: boundary,
+        });
+        const window2 = buildCityEventDigest([event], {
+            generatedAt: GEN,
+            windowStart: boundary,
+            windowEnd: '2026-05-29T14:00:00.000Z',
+        });
+        // The event belongs to exactly one window (window2 with inclusive lower bound).
+        expect(window1.totalEvents + window2.totalEvents).toBe(1);
+        expect(window2.totalEvents).toBe(1);
+    });
+
     it('summarizes goals when provided', () => {
         const d = buildCityEventDigest([], {
             generatedAt: GEN,

@@ -103,6 +103,26 @@ describe('EconomyEventLog', () => {
         expect(recent).toHaveLength(2);
     });
 
+    it('filters by untilTs (exclusive upper bound)', () => {
+        log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5, ts: '2026-05-29T10:00:00.000Z' });
+        log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5, ts: '2026-05-29T12:00:00.000Z' });
+        log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5, ts: '2026-05-29T14:00:00.000Z' });
+        // Events at exactly untilTs are excluded (half-open upper bound).
+        const before = log.filter({ untilTs: '2026-05-29T12:00:00.000Z' });
+        expect(before).toHaveLength(1);
+    });
+
+    it('filters by sinceTs+untilTs forming a half-open window [since, until)', () => {
+        log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5, ts: '2026-05-29T10:00:00.000Z' });
+        log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5, ts: '2026-05-29T12:00:00.000Z' });
+        log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5, ts: '2026-05-29T14:00:00.000Z' });
+        const window = log.filter({
+            sinceTs: '2026-05-29T10:00:00.000Z',
+            untilTs: '2026-05-29T14:00:00.000Z',
+        });
+        expect(window).toHaveLength(2); // 10:00 included, 12:00 included, 14:00 excluded
+    });
+
     it('combines filter criteria (resident + kind)', () => {
         log.append({ kind: 'gp_earned', residentName: 'res:hans', gpDelta: 100 });
         log.append({ kind: 'ap_grant', residentName: 'res:hans', apDelta: 5 });

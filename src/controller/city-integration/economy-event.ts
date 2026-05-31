@@ -91,6 +91,8 @@ export interface EconomyEventFilter {
     kind?: EconomyEventKind;
     /** Inclusive lower bound on `ts` (ISO string compare). */
     sinceTs?: string;
+    /** Exclusive upper bound on `ts` (ISO string compare). Forms a half-open window [sinceTs, untilTs). */
+    untilTs?: string;
 }
 
 /**
@@ -164,6 +166,9 @@ export class EconomyEventLog {
                 return false;
             }
             if (criteria.sinceTs !== undefined && event.ts < criteria.sinceTs) {
+                return false;
+            }
+            if (criteria.untilTs !== undefined && event.ts >= criteria.untilTs) {
                 return false;
             }
             return true;

@@ -198,11 +198,20 @@ export class ApLedger {
     }
 
     /**
-     * Attach (or replace) the EconomyEventLog + resident context after
-     * construction. Useful when the ledger is built from a stored snapshot
-     * before the runtime wires up its emission seam.
+     * Attach the EconomyEventLog + resident context after construction.
+     * Useful when the ledger is built from a stored snapshot before the
+     * runtime wires up its emission seam. Pass `{ replace: true }` to
+     * intentionally rewire; without it, re-attaching throws to prevent
+     * silent log-target switches.
      */
-    attachEconomyEventLog(economyEventLog: EconomyEventLog, economyContext: ApLedgerEconomyContext = {}): void {
+    attachEconomyEventLog(
+        economyEventLog: EconomyEventLog,
+        economyContext: ApLedgerEconomyContext = {},
+        options: { replace?: boolean } = {},
+    ): void {
+        if (this.economyEventLog_ !== undefined && !options.replace) {
+            throw new Error('attachEconomyEventLog: already attached; pass { replace: true } to replace');
+        }
         this.economyEventLog_ = economyEventLog;
         this.economyContext_ = economyContext;
     }
@@ -259,10 +268,11 @@ export class ApLedger {
                 });
                 return;
             case 'fade':
+                // apDelta intentionally omitted: there is no signed delta to report on a fade event.
+                // The preceding ap_decay event records the final AP consumed.
                 log.append({
                     kind: 'ap_fade',
                     residentName,
-                    apDelta: 0,
                     refId,
                     ts: event.ts,
                     note: 'faded (AP reached 0)',
