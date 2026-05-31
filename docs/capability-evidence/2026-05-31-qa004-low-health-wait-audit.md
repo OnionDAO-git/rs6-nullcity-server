@@ -168,12 +168,54 @@ Key signals:
 
 The quick check is encouraging: after restart, residents were attacking, eating, and cooking for low-health recovery without re-entering the old wait flood.
 
+## 20-Minute Post-Restart Soak
+
+The longer soak passed for the specific QA004 failure mode.
+
+Verification:
+
+```bash
+npm run -s controller:normal-life-audit -- \
+  --start=2026-05-31T07:27:39.000Z \
+  --end=2026-05-31T07:47:39.000Z \
+  --top=30 \
+  --output-dir=data/benchmarks/capability-qa-2026-05-31/qa004-post-restart-20m-audit
+```
+
+Artifact:
+
+- `data/benchmarks/capability-qa-2026-05-31/qa004-post-restart-20m-audit/normal_life_audit_20260531T074740Z.json`
+
+Key signals:
+
+| Signal | Value |
+|---|---:|
+| Active residents | 23 |
+| Action attempts | 2677 |
+| Successful submissions | 2677 |
+| Failed submissions | 0 |
+| `low_health_heal_wait` actions | 0 |
+| `combat_resupply_food` actions | 40 |
+| `attack` actions | 2 |
+| `eat` actions | 32 |
+| `use_item_on` actions | 30 |
+| `use_item_on_item` actions | 80 |
+| `combat_loot_pickup` actions | 1 |
+| `combat_bury_looted_bones` actions | 1 |
+| `stuck_detected` / `stuck_recovered` | 592 / 590 |
+
+Interpretation:
+
+- The original wait flood is fixed/narrowed. `low_health_heal_wait` stayed at `0` for a 20-minute ordinary-life window.
+- The new combat guard is active: `combat_resupply_food=40` shows residents were routed to food supply paths before continuing risky starter `Man` combat.
+- The broader live behavior remains routine-heavy. Combat did not flood, but only 2 attacks occurred in this window, and stuck churn is still high.
+
 ## Remaining Risk
 
-QA004 should remain open until a longer post-restart ordinary-life audit proves:
+The specific food/tool-exhaustion `low_health_heal_wait` loop can be closed as of this evidence. Keep the broader combat/survival parent issue open until later ordinary-life windows prove:
 
-- `low_health_heal_wait` is no longer a dominant cause,
 - named combat residents can resupply or pause safely without flooding noops,
 - combat still produces safe attacks, bones, Prayer XP, and no deaths.
+- stuck churn drops enough that combat residents are not spending most of their life in movement recovery.
 
-Next recommended packet: restart the controller on this build, run a 20-30 minute `controller:normal-life-audit`, and close or narrow QA004 based on the new cause histogram.
+Next recommended packet: run a fresh CQA10 ordinary-life recurrence window after QA004, focused on whether AP/GP exchange, trade closure, combat, eating/cooking, and stuck recovery all recur naturally without any one cause dominating.
