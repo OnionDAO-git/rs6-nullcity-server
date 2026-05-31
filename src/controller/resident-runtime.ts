@@ -1679,6 +1679,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             attempt.ackResult = { ok: false, status: 'error', reason: 'city_exchange_unavailable' };
             attempt.finalStatus = 'failure';
             attempt.finalReason = 'city_exchange_unavailable';
+            this.appendCityExchangeActionLog(input, attempt);
             this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
             return attempt;
         }
@@ -1686,6 +1687,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             attempt.ackResult = { ok: false, status: 'error', reason: 'invalid_exchange_amount' };
             attempt.finalStatus = 'failure';
             attempt.finalReason = 'invalid_exchange_amount';
+            this.appendCityExchangeActionLog(input, attempt);
             this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
             return attempt;
         }
@@ -1722,8 +1724,23 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             attempt.finalReason = stringReason(attempt.ackResult.reason) || 'exchange_failed';
         }
 
+        this.appendCityExchangeActionLog(input, attempt);
         this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
         return attempt;
+    }
+
+    private appendCityExchangeActionLog(input: ActionCoordinatorSubmitInput, attempt: ActionAttempt): void {
+        this.options.actionLog.append(this.name, {
+            ...record(input.metadata),
+            action: input.action,
+            result:
+                attempt.ackResult ??
+                ({
+                    ok: attempt.finalStatus === 'success',
+                    status: attempt.finalStatus,
+                    reason: attempt.finalReason,
+                } satisfies Record<string, unknown>),
+        });
     }
 
     private safeActionCallback(callback: ((attempt: ActionAttempt) => void) | undefined, attempt: ActionAttempt, cause: string): void {

@@ -1418,13 +1418,14 @@ describe('ResidentRuntime modules', () => {
             observeAttempt: jest.fn(),
         } as unknown as ResidentRuntimeGameSkill;
 
+        const actionLog = { append: jest.fn() } as unknown as ActionLog;
         const runtime = new ResidentRuntime({
             soul: soul('res:pip', { modules: [{ id: 'onion.exchange-reflex' }] }),
             gateway: {} as GatewayClient,
             memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
             stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
             llm: {} as LlmClient,
-            actionLog: {} as ActionLog,
+            actionLog,
             inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
             body,
             cityExchange,
@@ -1483,6 +1484,17 @@ describe('ResidentRuntime modules', () => {
                     finalStatus: 'success',
                     ackResult: expect.objectContaining({ status: 'complete', exchangeId: 'exchange-1' }),
                 }),
+            }),
+        );
+        expect(actionLog.append).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({
+                tick: 0,
+                attention_after: state.attention,
+                source: 'nervous-system',
+                ruleId: 'self-initiated-ap-gp-exchange',
+                action: expect.objectContaining({ kind: 'city_exchange_ap_gp' }),
+                result: expect.objectContaining({ ok: true, status: 'complete', exchangeId: 'exchange-1' }),
             }),
         );
         expect(thinking.think).not.toHaveBeenCalled();
