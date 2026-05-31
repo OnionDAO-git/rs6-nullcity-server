@@ -17,8 +17,12 @@ describe('inference canary smoke', () => {
     it('keeps the committed canary config on the restart-surviving qwopus default', () => {
         const config = loadControllerConfig('config/controller.inference-canary.yml');
 
-        expect(config.llm.endpoints.default.model).toBe('qwopus3.5-27b-v3@q4_k_s');
-        expect(config.llm.endpoints.default.timeoutMs).toBeGreaterThanOrEqual(75_000);
+        expect(config.llm.endpoints.default.baseUrl).toBe('http://spacetower.nullcity.ai:8100');
+        expect(config.llm.endpoints.default.model).toBe('qwopus3.5-27b-v3');
+        expect(config.llm.endpoints.default.timeoutMs).toBeGreaterThanOrEqual(240_000);
+        expect(config.llm.endpoints.default.maxTokens).toBe(512);
+        expect(config.llm.endpoints.default.forceThinking).toBe(false);
+        expect(config.llm.endpoints.inf_qwopus_q4?.baseUrl).toBe('http://inf.nullcity.ai:1234');
     });
 
     it('parses explicit endpoints, all-endpoints mode, timeout, and json output', () => {

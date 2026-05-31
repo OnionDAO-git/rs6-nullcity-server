@@ -236,6 +236,42 @@ describe('LlmClient retry and endpoint pause', () => {
         expect(body.max_completion_tokens).toBe(1024);
     });
 
+    it('caps an oversized request max_tokens at the endpoint compatibility ceiling', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('bounded'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: { baseUrl: 'https://llm.test', model: 'test-model', timeoutMs: 1000, maxTokens: 512 },
+        });
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true, maxTokens: 4096 });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.max_tokens).toBe(512);
+        expect(body.max_completion_tokens).toBe(512);
+    });
+
+    it('lets an endpoint force thinking off for model servers that reject thinking-mode prompts', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('bounded'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: {
+                baseUrl: 'https://llm.test',
+                model: 'test-model',
+                timeoutMs: 1000,
+                forceThinking: false,
+                maxTokens: 512,
+            },
+        });
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true, maxTokens: 4096 });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.reasoning).toEqual({ enabled: false });
+        expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+        expect(body.max_tokens).toBe(512);
+        expect(body.max_completion_tokens).toBe(512);
+    });
+
     it('lets an individual request override the endpoint model', async () => {
         const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('custom'));
         global.fetch = fetchMock;

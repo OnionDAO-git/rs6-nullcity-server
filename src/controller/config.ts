@@ -57,9 +57,16 @@ export interface LlmEndpointConfig {
      * S-INFER-2 (D1): default completion-token ceiling for this endpoint. Sized
      * to fit a thinking model's `<think>` reasoning plus its final JSON answer
      * (see DEFAULT_BRAIN_MAX_TOKENS in hybrid-agent-helpers). Optional — when
-     * unset the server's own default applies. A per-request `maxTokens` overrides.
+     * unset the server's own default applies. A per-request `maxTokens` is capped
+     * by this endpoint ceiling when both are present.
      */
     maxTokens?: number;
+    /**
+     * Endpoint compatibility override for owned/quantized servers whose loaded
+     * model rejects thinking-mode requests regardless of the resident's SOUL.
+     * Undefined preserves the per-request/resident choice.
+     */
+    forceThinking?: boolean;
     cost?: LlmCostConfig;
 }
 
@@ -443,6 +450,7 @@ function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
             responseFormat: readLlmResponseFormat(endpoint.responseFormat),
             timeoutMs: readNumber(endpoint.timeoutMs, 30000),
             maxTokens: readOptionalNumber(endpoint.maxTokens),
+            forceThinking: readOptionalBoolean(endpoint.forceThinking),
             cost: readLlmCost(endpoint.cost),
         };
     }
@@ -473,6 +481,7 @@ function readLlmProfiles(value: unknown, endpoints: Record<string, LlmEndpointCo
             responseFormat: readLlmResponseFormat(profile.responseFormat) ?? endpoint.responseFormat,
             timeoutMs: readNumber(profile.timeoutMs, endpoint.timeoutMs ?? 30000),
             maxTokens: readOptionalNumber(profile.maxTokens) ?? endpoint.maxTokens,
+            forceThinking: readOptionalBoolean(profile.forceThinking) ?? endpoint.forceThinking,
             cost: readLlmCost(profile.cost) ?? endpoint.cost,
         };
     }
@@ -502,6 +511,10 @@ function readLlmCost(value: unknown): LlmCostConfig | undefined {
 
 function readOptionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

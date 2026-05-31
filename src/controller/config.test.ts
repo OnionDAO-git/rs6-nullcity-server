@@ -140,20 +140,31 @@ describe('controller config', () => {
     it('ships a tracked inference canary config for the loaded owned-hardware models', () => {
         const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.inference-canary.yml'));
 
-        // S-QWOPUS-CONFIG-1 (Codex) migrated the canary default off the non-serving
-        // qwen and onto qwopus q4; assertion updated to match config/controller.inference-canary.yml.
+        // S-INFER-8-DEPLOY-AUDIT-1 keeps the canary on the owned qwopus route,
+        // but uses the serving alias because the exact @q4_k_s id is listed yet
+        // rejects even tiny probes on both owned boxes.
         expect(config.llm.endpoints.default).toMatchObject({
-            baseUrl: 'http://inf.nullcity.ai:1234',
-            model: 'qwopus3.5-27b-v3@q4_k_s',
-            timeoutMs: 75000,
+            baseUrl: 'http://spacetower.nullcity.ai:8100',
+            model: 'qwopus3.5-27b-v3',
+            timeoutMs: 240000,
+            maxTokens: 512,
+            forceThinking: false,
         });
         expect(config.llm.endpoints.spacetower_qwopus_q4).toMatchObject({
             baseUrl: 'http://spacetower.nullcity.ai:8100',
-            model: 'qwopus3.5-27b-v3@q4_k_s',
+            model: 'qwopus3.5-27b-v3',
             timeoutMs: 30000,
+            maxTokens: 512,
+            forceThinking: false,
         });
         expect(config.llm.endpoints.spacetower_qwen).toBeUndefined();
-        expect(config.llm.endpoints.inf_qwopus_q4).toBeUndefined();
+        expect(config.llm.endpoints.inf_qwopus_q4).toMatchObject({
+            baseUrl: 'http://inf.nullcity.ai:1234',
+            model: 'qwopus3.5-27b-v3',
+            timeoutMs: 240000,
+            maxTokens: 512,
+            forceThinking: false,
+        });
     });
 
     it('resolves model profiles separately from endpoint hardware definitions', () => {
@@ -169,6 +180,8 @@ describe('controller config', () => {
                 '      provider: openai-compatible',
                 '      baseUrl: http://spacetower.nullcity.ai:8100',
                 '      timeoutMs: 30000',
+                '      maxTokens: 512',
+                '      forceThinking: false',
                 '    openrouter:',
                 '      provider: openrouter',
                 '      baseUrl: https://openrouter.ai/api',
@@ -182,6 +195,7 @@ describe('controller config', () => {
                 '      endpoint: openrouter',
                 '      model: anthropic/claude-3.5-haiku',
                 '      timeoutMs: 45000',
+                '      forceThinking: true',
                 '      cost:',
                 '        promptTokenUsd: 0.0000008',
                 '        completionTokenUsd: 0.000004',
@@ -197,6 +211,8 @@ describe('controller config', () => {
             baseUrl: 'http://spacetower.nullcity.ai:8100',
             model: 'qwopus3.5-27b-v3@q4_k_s',
             timeoutMs: 30000,
+            maxTokens: 512,
+            forceThinking: false,
         });
         expect(config.llm.profiles.haiku).toMatchObject({
             profileId: 'haiku',
@@ -207,6 +223,7 @@ describe('controller config', () => {
             model: 'anthropic/claude-3.5-haiku',
             responseFormat: 'text',
             timeoutMs: 45000,
+            forceThinking: true,
             cost: {
                 promptTokenUsd: 0.0000008,
                 completionTokenUsd: 0.000004,

@@ -1,70 +1,102 @@
-# S-INFER-8-DEPLOY-AUDIT-1 live audit refresh (2026-05-31)
+# S-INFER-8-DEPLOY-AUDIT-1 live deploy audit (2026-05-31)
 
 ## Scope
 
 - Packet: `S-INFER-8-DEPLOY-AUDIT-1`
-- Goal: verify the currently running 10-resident cohort after the S-INFER-8 timeout/watchdog landing and refresh AP/GP + inference health evidence from live artifacts.
-- Runtime control: no controller restart in this pass (existing stack was already live); this packet gathered fresh smoke/audit evidence from the active window.
+- Goal: deploy the S-INFER-8 generous brain-timeout/watchdog stack, verify the live owned-model route, and leave a restart-surviving config that does not melt resident inference.
+- Runtime: rebuilt `dist`, restarted `screen:nullcity-controller-codex`, active controller PID `17392`, log `/tmp/nullcity-runtime/controller-20260531T232803Z.log`.
+
+## Key finding
+
+The exact model id `qwopus3.5-27b-v3@q4_k_s` is listed by both owned servers but currently rejects even tiny requests with:
+
+```text
+{"error":"Context size has been exceeded."}
+```
+
+The unsuffixed serving alias `qwopus3.5-27b-v3` succeeds on both `spacetower.nullcity.ai:8100` and `inf.nullcity.ai:1234`, including resident-sized prompts. The live default was moved to Spacetower with `model: qwopus3.5-27b-v3`, `forceThinking: false`, and `maxTokens: 512`.
 
 ## Commands run
 
 ```bash
+npm test -- --runInBand src/controller/llm/llm-client.test.ts src/controller/config.test.ts src/controller/admin/inference-canary-smoke.test.ts
+npm run build
+npm run inference:canary -- --config controller.yml --endpoint default --timeout-ms=90000 --json
 npm run controller:smoke -- --observe-seconds 60 --allow-recent-visible
-npm run controller:inference-audit -- --duration-ms 1800000 --top 10
-npm run controller:normal-life-audit -- --duration-ms 1800000 --top 12
+npm run controller:inference-audit -- --duration-ms=120000 --output-dir data/benchmarks/capability-qa-2026-05-31/s-infer-8-deploy-audit-1
 npm run check:no-ui
+npm run typecheck
+npm run fin
 ```
 
 ## Results
 
+### Direct owned-server probes
+
+- `spacetower/qwopus3.5-27b-v3@q4_k_s`: `400 Context size has been exceeded` on tiny prompt.
+- `inf/qwopus3.5-27b-v3@q4_k_s`: `400 Context size has been exceeded` on tiny prompt.
+- `spacetower/qwopus3.5-27b-v3`: `200` on resident-sized prompt, about `8.9s`.
+- `inf/qwopus3.5-27b-v3`: `200` on resident-sized prompt, about `3.9s`.
+- `inf/qwen/qwen3.6-27b`: `200` on resident-sized prompt, about `18.1s`.
+- `inf/qwen/qwen3.6-35b-a3b`: `200` on resident-sized prompt, about `10.9s`.
+- `inf/qwopus3.5-27b-v3@q8_0`: `200` on resident-sized prompt, about `3.9s`.
+
+### Canary
+
+`npm run inference:canary -- --config controller.yml --endpoint default --timeout-ms=90000 --json`
+
+- `ok=true`
+- endpoint: `default`
+- model: `qwopus3.5-27b-v3`
+- latency: `20537ms`
+- prompt tokens: `52`
+- completion tokens: `25`
+
+### Fresh controller log
+
+`grep -c "LLM completion failed: 400" /tmp/nullcity-runtime/controller-20260531T232803Z.log`
+
+- `0` LLM 400s after restart on the model alias.
+- `2` `ECONTROL_REQUIRED` gateway errors appeared shortly after restart; this is separate from inference and should be watched under runtime/control ownership.
+
 ### Smoke (60s)
 
-- `res:hans`, `res:qa-woodcutter`, `res:qa-cook`, `res:qa-survivor`, `res:qa-guardian`, `res:qa-trader`, `res:qa-banker`, and `res:qa-social` showed visible action/say cadence during observation.
-- `res:agent` and `res:qa-scout` returned `WARN` due to `no_recent_visible_activity` / `no_observed_visible_activity` in this narrow 60s window.
-- No smoke timeouts were reported in the observed output.
+`npm run controller:smoke -- --observe-seconds 60 --allow-recent-visible`
 
-### Inference health (30m window)
+- `9/10` active residents were `OK`.
+- `res:qa-social` was the only `WARN` in the 60s window (`no_recent_visible_activity/no_observed_visible_activity`).
+- Successful visible work included woodcutting/firemaking, fishing/cooking, movement, trade-route movement, combat movement/loot pickup, and speech.
 
-Artifact: `data/benchmarks/capability-qa-2026-05-31/inference-audit/inference_health_audit_20260531T231651Z.json`
+### Inference health (fresh 2m window)
 
-- Window: `2026-05-31T22:46:51.352Z` to `2026-05-31T23:16:51.352Z`
-- Residents: `10`
-- Brain-eligible decisions: `124`
+Artifact: `data/benchmarks/capability-qa-2026-05-31/s-infer-8-deploy-audit-1/inference_health_audit_20260531T233026Z.json`
+
+- Window: `2026-05-31T23:28:26.273Z` to `2026-05-31T23:30:26.273Z`
+- Residents: `9`
+- Brain-eligible decisions: `29`
 - Usable brain rate: `100.0%`
-- Breakdown:
-  - clean: `124`
-  - recovered: `0`
-  - think_only_no_answer: `0`
-  - thinking_cancelled: `0`
-  - schema_mismatch: `0`
-  - truly_empty: `0`
-- Goal follow-through: `87.5%` (`1330/1520` attributable actions), `goalsEmitted=18`
+- Breakdown: `clean=29`, `recovered=0`, `think_only_no_answer=0`, `thinking_cancelled=0`, `schema_mismatch=0`, `truly_empty=0`
+- Planning: `goalsEmitted=10`, `goal-follow-through=98.3%` (`117/119` actions)
 
-### Normal-life audit (30m window)
+## Code/config changes
 
-Artifact: `data/benchmarks/capability-qa-2026-05-31/normal_life_audit_20260531T231657Z.json`
+- `LlmEndpointConfig.forceThinking?: boolean` lets a hardware endpoint override a resident's requested thinking mode when the model server cannot serve thinking prompts.
+- Endpoint `maxTokens` now acts as a hard compatibility ceiling when a request asks for more.
+- `config/controller.inference-canary.yml` uses the serving alias `qwopus3.5-27b-v3` and records `forceThinking: false`, `maxTokens: 512`.
+- Live `controller.yml` was updated the same way for this running controller.
 
-- Window: `2026-05-31T22:46:57.156Z` to `2026-05-31T23:16:57.156Z`
-- Residents: `10`
-- Actions: `1518/1518` successful (`100%`)
-- Survival/cadence:
-  - `lowHealthWaits=0`
-  - `combatResupplyActions=84`
-  - `cookingActions=154`
-  - `eatingActions=23`
-  - `xpEvents=12`
-- Economy:
-  - `economyEventsInWindow=3`
-  - `apGpExchangeEvents=3`
-  - `selfInitiatedApGpExchangeEvents=3`
-  - `organicSelfInitiatedApGpExchangeEvents=3`
-  - `controlledApGpExchangeEvents=0`
-  - `tradeRequests=0`, `tradeCompleted=0`, `tradeCancelled=0`
-- Stuck churn:
-  - `stuckDetected=218`, `stuckRecovered=218`, unresolved aggregate `0`
-  - top churn residents: `res:agent` (84), `res:qa-trader` (78), `res:qa-scout` (70), `res:qa-banker` (66), `res:qa-social` (65)
+## Verification gates
+
+- Focused tests: `42/42` passed.
+- `npm run build`: passed, `847` files compiled.
+- `npm run check:no-ui`: passed.
+- `npm run typecheck`: passed.
+- `npm run fin`: passed, `244/244` suites and `3497/3497` tests.
 
 ## Interpretation
 
-- The live 10-resident cohort currently shows strong inference stability and clean AP/GP recurrence.
-- The remaining open behavior gap is ordinary trade closure in passive windows (`tradeRequests=0`) plus persistent stuck churn concentration around `res:agent` and social/trader/scout roles.
+The inference path is no longer the active blocker. The fresh post-restart window shows clean brain output and no LLM 400s. The important follow-ups are behavioral/runtime, not parser-timeout triage:
+
+- Fix or re-audit `res:qa-social` quiet windows.
+- Watch the `ECONTROL_REQUIRED` gateway control errors.
+- Run a longer 20-30m audit after this config has been stable for a quiet window.

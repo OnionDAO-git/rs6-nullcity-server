@@ -39,16 +39,31 @@ inference:
 
 llm:
   endpoints:
-    # Proven demo baseline. Qwen is non-serving as of 2026-05-31; keep default on qwopus.
+    # Serving demo baseline. The exact quantized id qwopus3.5-27b-v3@q4_k_s
+    # is listed on both owned boxes but currently rejects even tiny probes with
+    # "Context size has been exceeded"; the unsuffixed serving alias works.
     default:
-      baseUrl: http://inf.nullcity.ai:1234
-      model: qwopus3.5-27b-v3@q4_k_s
-      timeoutMs: 75000
-    # Dev's new canary URL + quantized model. Fast enough for live resident experiments.
+      baseUrl: http://spacetower.nullcity.ai:8100
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      # Spacetower's q4 qwopus currently rejects resident-sized thinking-mode
+      # prompts. Keep live canaries bounded until Dev changes the serving stack.
+      maxTokens: 512
+      forceThinking: false
     spacetower_qwopus_q4:
       baseUrl: http://spacetower.nullcity.ai:8100
-      model: qwopus3.5-27b-v3@q4_k_s
+      model: qwopus3.5-27b-v3
       timeoutMs: 30000
+      maxTokens: 512
+      forceThinking: false
+    # Keep the inf host named for explicit diagnostics/benchmarking, but do not
+    # use it as default while it returns context-size 400s on tiny probes.
+    inf_qwopus_q4:
+      baseUrl: http://inf.nullcity.ai:1234
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      maxTokens: 512
+      forceThinking: false
 
 patrons:
   - handle: demo@onion
