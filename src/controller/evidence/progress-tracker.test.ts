@@ -42,6 +42,25 @@ describe('ProgressTracker', () => {
         expect(recovered.meaningful).toBe(true);
     });
 
+    it('does not flag ordinary scouting cadence as stuck before the default threshold', () => {
+        const tracker = new ProgressTracker();
+        tracker.observe(snapshot({ tick: 1, positionHash: 'lumbridge-bank' }));
+
+        expect(tracker.observe(snapshot({ tick: 31, positionHash: 'lumbridge-bank' }))).toEqual({
+            meaningful: false,
+            reasons: [],
+            newStuck: false,
+            stuckSince: null,
+        });
+
+        expect(tracker.observe(snapshot({ tick: 46, positionHash: 'lumbridge-bank' }))).toEqual({
+            meaningful: false,
+            reasons: [],
+            newStuck: true,
+            stuckSince: 46,
+        });
+    });
+
     it('resets all tracking state', () => {
         const tracker = new ProgressTracker({ stuckThresholdTicks: 1 });
         tracker.observe(snapshot({ tick: 1 }));

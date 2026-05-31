@@ -732,7 +732,7 @@ describe('ResidentRuntime modules', () => {
         });
 
         await runtime.onPerception(progressPerception(10, 3200, 3200, 0, 1, 10));
-        await runtime.onPerception(progressPerception(31, 3200, 3200, 0, 1, 10));
+        await runtime.onPerception(progressPerception(55, 3200, 3200, 0, 1, 10));
 
         expect(state.lastMeaningfulProgressAt).toBe(500);
         expect(state.stuckSince).toBe(500);
@@ -766,10 +766,10 @@ describe('ResidentRuntime modules', () => {
         });
 
         await runtime.onPerception(progressPerception(120, 3200, 3200, 0, 1, 10));
-        await runtime.onPerception(progressPerception(141, 3200, 3200, 0, 1, 10));
+        await runtime.onPerception(progressPerception(165, 3200, 3200, 0, 1, 10));
 
-        expect(state.tick).toBe(141);
-        expect(state.stuckSince).toBe(141);
+        expect(state.tick).toBe(165);
+        expect(state.stuckSince).toBe(165);
         expect(state.stuckSince).toBeLessThanOrEqual(state.tick);
     });
 

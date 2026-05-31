@@ -24,7 +24,7 @@ const DEFAULT_THRESHOLDS: ProgressThresholds = {
     xpDelta: 1,
     inventoryDelta: 1,
     hpDelta: 1,
-    stuckThresholdTicks: 20,
+    stuckThresholdTicks: 45,
 };
 
 export class ProgressTracker {
