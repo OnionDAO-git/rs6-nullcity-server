@@ -186,3 +186,36 @@ export interface OrientationStalledLibraryEvent {
     /** Total consecutive non-progress ticks when the stall was detected. */
     nonProgressTicks: number;
 }
+
+/**
+ * Timeline event written when an operator sends a goal nudge (S-GOAL-4).
+ * Residents cannot issue nudges to themselves; this is operator-only.
+ * The Brain prompt reads recent nudge events as contextual hints.
+ */
+export interface OrientationNudgeLibraryEvent {
+    kind: 'orientation_nudge';
+    ts: string;
+    tick: number;
+    /** Free-text operator hint for the resident's next goal cycle. */
+    text: string;
+}
+
+/**
+ * Audit trail event written when an operator edits a resident's soul
+ * orientation goal via `resident:goal-edit` (S-GOAL-4). Records both
+ * the previous and new state for accountability.
+ */
+export interface OrientationGoalEditedLibraryEvent {
+    kind: 'orientation_goal_edited';
+    ts: string;
+    tick: number;
+    /** Previous orientation goal id, omitted if there was none. */
+    previousGoalId?: string;
+    /** New goal id, omitted if orientation was cleared. */
+    newGoalId?: string;
+    /** New goal description, omitted if orientation was cleared. */
+    newGoalDescription?: string;
+    /** New tier hint, omitted if cleared or not specified. */
+    newGoalTier?: string;
+    reason: 'operator_edit';
+}

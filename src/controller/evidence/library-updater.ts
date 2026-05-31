@@ -4,7 +4,12 @@ import { residentSlug } from '../memory/runtime-state';
 import { renderPortrait, type PortraitIndex, type PortraitRenderOptions } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
-import type { OrientationProgressLibraryEvent, OrientationStalledLibraryEvent } from '../spark/orientation-scorer';
+import type {
+    OrientationProgressLibraryEvent,
+    OrientationStalledLibraryEvent,
+    OrientationNudgeLibraryEvent,
+    OrientationGoalEditedLibraryEvent,
+} from '../spark/orientation-scorer';
 
 export interface NcriLibraryEvent {
     kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
@@ -305,6 +310,50 @@ export class LibraryUpdater {
         });
         this.touchIndex(index);
         this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record an operator goal nudge as a durable Library timeline moment (S-GOAL-4).
+     * Only operators may call this; residents cannot self-nudge. The nudge text is
+     * surfaced to the Brain prompt as a contextual hint on the next think() cycle.
+     */
+    observeOrientationNudge(event: OrientationNudgeLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_nudge',
+            text: event.text,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:nudge'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record an operator soul orientation-goal edit as a durable Library audit
+     * moment (S-GOAL-4). Records previous and new goal ids for accountability.
+     * Only operators may change a soul's orientation goal.
+     */
+    observeOrientationGoalEdited(event: OrientationGoalEditedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_goal_edited',
+            previousGoalId: event.previousGoalId,
+            newGoalId: event.newGoalId,
+            newGoalDescription: event.newGoalDescription,
+            newGoalTier: event.newGoalTier,
+            reason: event.reason,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:goal_edited'],
+        });
+        this.touchIndex(index);
     }
 
     async regeneratePortrait(): Promise<void> {
