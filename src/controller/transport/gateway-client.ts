@@ -39,6 +39,7 @@ export interface GatewayClientOptions {
      */
     inventoryRequestTimeoutMs?: number;
     listResidentsRequestTimeoutMs?: number;
+    connectResidentRequestTimeoutMs?: number;
     actionRequestTimeoutMs?: number;
     actionQueueTimeoutMs?: number;
     maxConcurrentActions?: number;
@@ -48,6 +49,7 @@ export interface GatewayClientOptions {
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_INVENTORY_TIMEOUT_MS = 30_000;
 const DEFAULT_LIST_RESIDENTS_TIMEOUT_MS = 30_000;
+const DEFAULT_CONNECT_RESIDENT_TIMEOUT_MS = 30_000;
 const DEFAULT_ACTION_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_ACTION_QUEUE_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT_ACTIONS = 4;
@@ -142,7 +144,7 @@ export class GatewayClient extends EventEmitter {
     }
 
     connectResident(payload: ConnectResidentPayload): Promise<ResidentSummary> {
-        return this.request('connect_resident', payload).then(value => readResident(value));
+        return this.request('connect_resident', payload, { timeoutMs: this.connectResidentTimeoutMs() }).then(value => readResident(value));
     }
 
     attach(payload: ConnectResidentPayload): Promise<ResidentSummary> {
@@ -184,6 +186,14 @@ export class GatewayClient extends EventEmitter {
             return Math.max(1, Math.floor(configured));
         }
         return DEFAULT_LIST_RESIDENTS_TIMEOUT_MS;
+    }
+
+    private connectResidentTimeoutMs(): number {
+        const configured = this.options.connectResidentRequestTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_CONNECT_RESIDENT_TIMEOUT_MS;
     }
 
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {

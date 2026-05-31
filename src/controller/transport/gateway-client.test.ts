@@ -260,6 +260,45 @@ describe('GatewayClient', () => {
         client.close();
     });
 
+    it('connectResident uses the resident connection timeout instead of the generic request timeout', async () => {
+        server.once('connection', socket => {
+            socket.on('message', raw => {
+                const message = JSON.parse(raw.toString()) as { id?: string | number; kind?: string; payload?: { name?: string } };
+                if (message.kind === 'controller_hello') {
+                    socket.send(JSON.stringify({ v: 1, id: message.id, kind: 'ok', payload: { ok: true } }));
+                    return;
+                }
+                if (message.kind === 'connect_resident') {
+                    setTimeout(() => {
+                        socket.send(
+                            JSON.stringify({
+                                v: 1,
+                                id: message.id,
+                                kind: 'resident_connected',
+                                payload: { resident: { name: message.payload?.name, online: true } },
+                            }),
+                        );
+                    }, 150);
+                }
+            });
+        });
+
+        const client = new GatewayClient({
+            url,
+            controllerId: 'test-controller',
+            requestTimeoutMs: 50,
+            reconnect: false,
+        });
+
+        await client.connect();
+        await client.hello();
+        await expect(client.connectResident({ name: 'res:slow', observe: true, control: true, onDisconnect: 'idle' })).resolves.toEqual({
+            name: 'res:slow',
+            online: true,
+        });
+        client.close();
+    });
+
     it('can submit an action while preserving request id separately from ack result', async () => {
         server.once('connection', socket => {
             socket.once('message', raw => {

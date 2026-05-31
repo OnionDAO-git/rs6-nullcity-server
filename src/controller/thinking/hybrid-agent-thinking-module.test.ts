@@ -4738,13 +4738,13 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).not.toContainEqual({
             kind: 'move_to',
             target: { x: 3249, y: 3238, level: 0 },
-            range: 6,
+            range: 1,
             cause: 'combat_seek_safe_target',
         });
         expect(result.actions).toContainEqual({
             kind: 'move_to',
             target: { x: 3222, y: 3218, level: 0 },
-            range: 6,
+            range: 1,
             cause: 'combat_seek_safe_target',
         });
         expect(result.cause).toBe('combat_seek_safe_target');
@@ -5085,7 +5085,7 @@ describe('HybridAgentThinkingModule', () => {
             {
                 kind: 'move_to',
                 target: { x: 3222, y: 3218, level: 0 },
-                range: 6,
+                range: 1,
                 cause: 'combat_seek_safe_target',
             },
         ]);
