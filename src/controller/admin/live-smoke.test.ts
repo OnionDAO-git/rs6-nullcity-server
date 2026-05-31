@@ -543,6 +543,132 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toContain('observed_actions_not_succeeding');
     });
 
+    it('separates no-action, before-submit cancellation, effect timeout, and after-submit interruption evidence', () => {
+        writeResidentState('res:agent', { tick: 1060, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [
+            { tick: 1001, kind: 'decision', cause: 'budget_exhausted:pause', actionKinds: [], sessionId: 'same-session' },
+            { tick: 1002, kind: 'action', requestId: 'request-unpaired', action: { kind: 'move_to' }, sessionId: 'same-session' },
+            {
+                tick: 1010,
+                kind: 'action_result',
+                requestId: 'attempt-before-submit',
+                status: 'cancelled_before_submit',
+                reason: 'action_watchdog_timeout',
+                sessionId: 'same-session',
+            },
+            { tick: 1020, kind: 'action', requestId: 'request-effect-timeout', action: { kind: 'move_to' }, sessionId: 'same-session' },
+            {
+                tick: 1030,
+                kind: 'action_result',
+                requestId: 'request-effect-timeout',
+                status: 'timeout',
+                reason: 'timeout',
+                sessionId: 'same-session',
+            },
+            { tick: 1040, kind: 'action', requestId: 'request-interrupt', action: { kind: 'move_to' }, sessionId: 'same-session' },
+            {
+                tick: 1050,
+                kind: 'action_result',
+                requestId: 'request-interrupt',
+                status: 'interrupted_after_submit',
+                reason: 'interrupted_by:nervous-system',
+                sessionId: 'same-session',
+            },
+        ]);
+
+        const [summary] = summarizeLiveResidents({ memoryDir, residents: ['res:agent'], windowTicks: 80 });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.recent).toMatchObject({
+            actions: 3,
+            results: 3,
+            timeouts: 1,
+            decisions: 1,
+            noActionDecisions: 1,
+            dominantNoActionDecision: 'budget_exhausted:pause',
+            beforeSubmitCancellations: 1,
+            effectTimeouts: 1,
+            afterSubmitInterruptions: 1,
+            unpairedActions: 1,
+        });
+        expect(summary.issues).toEqual(
+            expect.arrayContaining(['before_submit_cancellations:1', 'effect_timeouts:1', 'after_submit_interruptions:1']),
+        );
+    });
+
+    it('records the same trajectory classes for timed observation deltas', async () => {
+        writeResidentState('res:agent', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [{ tick: 990, kind: 'action_result', status: 'success', sessionId: 'same-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:agent'],
+            observeMs: 50,
+            sleep: async () => {
+                writeResidentState('res:agent', { tick: 1060, lastMeaningfulProgressAt: 999 });
+                writeTrajectory('res:agent', [
+                    { tick: 990, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                    { tick: 1001, kind: 'decision', cause: 'hook_noop', actionKinds: [], sessionId: 'same-session' },
+                    { tick: 1002, kind: 'action', requestId: 'request-unpaired', action: { kind: 'move_to' }, sessionId: 'same-session' },
+                    {
+                        tick: 1010,
+                        kind: 'action_result',
+                        requestId: 'attempt-before-submit',
+                        status: 'cancelled_before_submit',
+                        reason: 'action_watchdog_timeout',
+                        sessionId: 'same-session',
+                    },
+                    {
+                        tick: 1020,
+                        kind: 'action',
+                        requestId: 'request-effect-timeout',
+                        action: { kind: 'move_to' },
+                        sessionId: 'same-session',
+                    },
+                    {
+                        tick: 1030,
+                        kind: 'action_result',
+                        requestId: 'request-effect-timeout',
+                        status: 'timeout',
+                        reason: 'timeout',
+                        sessionId: 'same-session',
+                    },
+                    { tick: 1040, kind: 'action', requestId: 'request-interrupt', action: { kind: 'move_to' }, sessionId: 'same-session' },
+                    {
+                        tick: 1050,
+                        kind: 'action_result',
+                        requestId: 'request-interrupt',
+                        status: 'interrupted_after_submit',
+                        reason: 'interrupted_by:nervous-system',
+                        sessionId: 'same-session',
+                    },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.observed).toMatchObject({
+            actions: 3,
+            results: 3,
+            timeouts: 1,
+            decisions: 1,
+            noActionDecisions: 1,
+            dominantNoActionDecision: 'hook_noop',
+            beforeSubmitCancellations: 1,
+            effectTimeouts: 1,
+            afterSubmitInterruptions: 1,
+            unpairedActions: 1,
+            tickDelta: 60,
+        });
+        expect(summary.issues).toEqual(
+            expect.arrayContaining([
+                'observed_before_submit_cancellations:1',
+                'observed_effect_timeouts:1',
+                'observed_after_submit_interruptions:1',
+            ]),
+        );
+    });
+
     it.each(['hook_noop', 'budget_exhausted:pause'])(
         'warns when timed observation is dominated by inert %s decisions despite sparse visible events',
         async cause => {
@@ -659,6 +785,11 @@ describe('live smoke CLI helpers', () => {
                     timeouts: 1,
                     says: 1,
                     decisions: 4,
+                    noActionDecisions: 0,
+                    beforeSubmitCancellations: 0,
+                    effectTimeouts: 0,
+                    afterSubmitInterruptions: 0,
+                    unpairedActions: 0,
                 },
                 observed: {
                     durationMs: 60000,
@@ -673,6 +804,11 @@ describe('live smoke CLI helpers', () => {
                     says: 1,
                     decisions: 3,
                     inertDecisions: 0,
+                    noActionDecisions: 0,
+                    beforeSubmitCancellations: 0,
+                    effectTimeouts: 1,
+                    afterSubmitInterruptions: 0,
+                    unpairedActions: 0,
                     visibleEvents: 5,
                 },
                 issues: [],
@@ -680,6 +816,7 @@ describe('live smoke CLI helpers', () => {
         ]);
 
         expect(output).toContain('observed=60000ms/+50t actions=2 results=2 success=1 timeout=1 fail=0 says=1');
+        expect(output).toContain('preAckCancel=0 effectTimeout=1 afterSubmitInterrupt=0 unpaired=0');
     });
 
     it('returns a failing exit code for timed observations with warnings', async () => {

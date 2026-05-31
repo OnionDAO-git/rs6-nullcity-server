@@ -36,6 +36,13 @@ export interface LiveSmokeObservedDelta {
     inertDecisions: number;
     dominantInertDecision?: string;
     dominantInertDecisionCount?: number;
+    noActionDecisions: number;
+    dominantNoActionDecision?: string;
+    dominantNoActionDecisionCount?: number;
+    beforeSubmitCancellations: number;
+    effectTimeouts: number;
+    afterSubmitInterruptions: number;
+    unpairedActions: number;
     visibleEvents: number;
 }
 
@@ -54,6 +61,13 @@ export interface LiveSmokeSummary {
         timeouts: number;
         says: number;
         decisions: number;
+        noActionDecisions: number;
+        dominantNoActionDecision?: string;
+        dominantNoActionDecisionCount?: number;
+        beforeSubmitCancellations: number;
+        effectTimeouts: number;
+        afterSubmitInterruptions: number;
+        unpairedActions: number;
     };
     lastSay?: string;
     lastAction?: string;
@@ -89,7 +103,10 @@ interface TrajectoryEntry {
     tick?: number;
     kind?: string;
     sessionId?: string;
+    requestId?: string;
     action?: string | { kind?: string };
+    actionKind?: string;
+    actionKinds?: string[];
     status?: string;
     cause?: string;
     reason?: string;
@@ -280,6 +297,15 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
         if (observed.timeouts > 0 && observed.successes === 0 && observed.actions + observed.says === 0) {
             summary.issues.push('observed_only_timeouts');
         }
+        if (observed.beforeSubmitCancellations > 0) {
+            summary.issues.push(`observed_before_submit_cancellations:${observed.beforeSubmitCancellations}`);
+        }
+        if (observed.effectTimeouts > 0) {
+            summary.issues.push(`observed_effect_timeouts:${observed.effectTimeouts}`);
+        }
+        if (observed.afterSubmitInterruptions > 0) {
+            summary.issues.push(`observed_after_submit_interruptions:${observed.afterSubmitInterruptions}`);
+        }
         if (observed.actions > 0 && observed.results > 0 && observed.successes === 0 && observed.timeouts + observed.failures > 0) {
             summary.issues.push('observed_actions_not_succeeding');
         }
@@ -290,6 +316,14 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
             !hasSustainedVisibleCadence(observed)
         ) {
             summary.issues.push(`observed_inert_decision_loop:${observed.dominantInertDecision}`);
+        }
+        if (
+            observed.dominantNoActionDecision &&
+            observed.noActionDecisions >= MIN_OBSERVED_INERT_DECISIONS &&
+            observed.visibleEvents <= Math.max(3, Math.floor(observed.noActionDecisions / 8)) &&
+            !hasSustainedVisibleCadence(observed)
+        ) {
+            summary.issues.push(`observed_no_action_decision_loop:${observed.dominantNoActionDecision}`);
         }
         if (observed.actions + observed.says > 0) {
             summary.issues = summary.issues.filter(issue => issue !== 'no_recent_visible_activity');
@@ -373,7 +407,7 @@ export function formatLiveSmokeSummary(memoryDir: string, summaries: LiveSmokeSu
     for (const summary of summaries) {
         const issueText = summary.issues.length ? ` issues=${summary.issues.join(',')}` : '';
         const observed = summary.observed
-            ? ` observed=${summary.observed.durationMs}ms/+${summary.observed.tickDelta ?? 0}t actions=${summary.observed.actions} results=${summary.observed.results} success=${summary.observed.successes} timeout=${summary.observed.timeouts} fail=${summary.observed.failures} says=${summary.observed.says}${summary.observed.inertDecisions ? ` inert=${summary.observed.inertDecisions}:${summary.observed.dominantInertDecision || 'unknown'}` : ''}`
+            ? ` observed=${summary.observed.durationMs}ms/+${summary.observed.tickDelta ?? 0}t actions=${summary.observed.actions} results=${summary.observed.results} success=${summary.observed.successes} timeout=${summary.observed.timeouts} fail=${summary.observed.failures} says=${summary.observed.says} preAckCancel=${summary.observed.beforeSubmitCancellations} effectTimeout=${summary.observed.effectTimeouts} afterSubmitInterrupt=${summary.observed.afterSubmitInterruptions} unpaired=${summary.observed.unpairedActions}${summary.observed.noActionDecisions ? ` noAction=${summary.observed.noActionDecisions}:${summary.observed.dominantNoActionDecision || 'unknown'}` : ''}${summary.observed.inertDecisions ? ` inert=${summary.observed.inertDecisions}:${summary.observed.dominantInertDecision || 'unknown'}` : ''}`
             : '';
         const lastAction = summary.lastAction ? ` lastAction=${summary.lastAction}` : '';
         const lastResult = summary.lastResult ? ` lastResult=${summary.lastResult}` : '';
@@ -396,6 +430,7 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     const stateReferenceTick = tick ?? trajectoryReferenceTick;
     const recentEntries = entries.filter(entry => typeof entry.tick !== 'number' || entry.tick >= trajectoryReferenceTick - windowTicks);
     const decisionCauses = new Map<string, number>();
+    const noActionDecisionCauses = new Map<string, number>();
     const summary: LiveSmokeSummary = {
         resident: state?.resident || resident,
         status: state ? 'ok' : 'missing',
@@ -411,6 +446,11 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
             timeouts: 0,
             says: 0,
             decisions: 0,
+            noActionDecisions: 0,
+            beforeSubmitCancellations: 0,
+            effectTimeouts: 0,
+            afterSubmitInterruptions: 0,
+            unpairedActions: 0,
         },
         issues: [],
     };
@@ -420,6 +460,11 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
             summary.recent.decisions += 1;
             if (entry.cause) {
                 decisionCauses.set(entry.cause, (decisionCauses.get(entry.cause) || 0) + 1);
+            }
+            if (isNoActionDecision(entry)) {
+                summary.recent.noActionDecisions += 1;
+                const cause = entry.cause || 'unknown';
+                noActionDecisionCauses.set(cause, (noActionDecisionCauses.get(cause) || 0) + 1);
             }
         }
         if (entry.kind === 'say') {
@@ -438,6 +483,7 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
             summary.lastResult = entry.reason ? `${entry.status}:${entry.reason}` : entry.status;
         }
     }
+    Object.assign(summary.recent, actionHealthCounts(recentEntries));
 
     if (!state) {
         summary.issues.push('missing_runtime_state');
@@ -454,7 +500,21 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     if (summary.recent.results >= 3 && summary.recent.successes === 0) {
         summary.issues.push('recent_actions_not_succeeding');
     }
+    if (summary.recent.beforeSubmitCancellations > 0) {
+        summary.issues.push(`before_submit_cancellations:${summary.recent.beforeSubmitCancellations}`);
+    }
+    if (summary.recent.effectTimeouts > 0) {
+        summary.issues.push(`effect_timeouts:${summary.recent.effectTimeouts}`);
+    }
+    if (summary.recent.afterSubmitInterruptions > 0) {
+        summary.issues.push(`after_submit_interruptions:${summary.recent.afterSubmitInterruptions}`);
+    }
     const dominantDecision = dominantDecisionCause(decisionCauses, summary.recent.decisions);
+    const dominantNoActionDecision = dominantDecisionCause(noActionDecisionCauses, summary.recent.noActionDecisions);
+    if (dominantNoActionDecision) {
+        summary.recent.dominantNoActionDecision = dominantNoActionDecision.cause;
+        summary.recent.dominantNoActionDecisionCount = dominantNoActionDecision.count;
+    }
     const visibleFollowHold = dominantDecision?.cause === 'follow_listen_hold' && summary.recent.says > 0;
     const recentVisibleCadence =
         summary.recent.actions + summary.recent.results + summary.recent.says >= MIN_VISIBLE_EVENTS_FOR_INERT_CADENCE;
@@ -467,6 +527,15 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
         dominantDecision.share >= 0.75
     ) {
         summary.issues.push(`decision_loop_without_actions:${dominantDecision.cause}`);
+    }
+    if (
+        summary.recent.actions === 0 &&
+        summary.recent.dominantNoActionDecision &&
+        !recentVisibleCadence &&
+        summary.recent.noActionDecisions >= 20 &&
+        summary.recent.noActionDecisions / summary.recent.decisions >= 0.75
+    ) {
+        summary.issues.push(`no_action_decision_loop:${summary.recent.dominantNoActionDecision}`);
     }
     summary.status = summary.issues.length ? (state ? 'warn' : 'missing') : 'ok';
     return summary;
@@ -509,6 +578,13 @@ interface ObservationCounts {
     inertDecisions: number;
     dominantInertDecision?: string;
     dominantInertDecisionCount?: number;
+    noActionDecisions: number;
+    dominantNoActionDecision?: string;
+    dominantNoActionDecisionCount?: number;
+    beforeSubmitCancellations: number;
+    effectTimeouts: number;
+    afterSubmitInterruptions: number;
+    unpairedActions: number;
 }
 
 function readResidentObservationSnapshot(memoryDir: string, resident: string): ObservationSnapshot {
@@ -588,13 +664,24 @@ function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {
         says: 0,
         decisions: 0,
         inertDecisions: 0,
+        noActionDecisions: 0,
+        beforeSubmitCancellations: 0,
+        effectTimeouts: 0,
+        afterSubmitInterruptions: 0,
+        unpairedActions: 0,
     };
     const inertCauses = new Map<string, number>();
+    const noActionCauses = new Map<string, number>();
     for (const entry of entries) {
         if (entry.kind === 'action') counts.actions += 1;
         if (entry.kind === 'say') counts.says += 1;
         if (entry.kind === 'decision') {
             counts.decisions += 1;
+            if (isNoActionDecision(entry)) {
+                counts.noActionDecisions += 1;
+                const cause = entry.cause || 'unknown';
+                noActionCauses.set(cause, (noActionCauses.get(cause) || 0) + 1);
+            }
             if (isInertDecisionCause(entry.cause)) {
                 counts.inertDecisions += 1;
                 inertCauses.set(entry.cause as string, (inertCauses.get(entry.cause as string) || 0) + 1);
@@ -607,12 +694,62 @@ function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {
             if (entry.status === 'timeout') counts.timeouts += 1;
         }
     }
+    Object.assign(counts, actionHealthCounts(entries));
     const dominantInert = dominantDecisionCause(inertCauses, counts.inertDecisions);
     if (dominantInert) {
         counts.dominantInertDecision = dominantInert.cause;
         counts.dominantInertDecisionCount = dominantInert.count;
     }
+    const dominantNoAction = dominantDecisionCause(noActionCauses, counts.noActionDecisions);
+    if (dominantNoAction) {
+        counts.dominantNoActionDecision = dominantNoAction.cause;
+        counts.dominantNoActionDecisionCount = dominantNoAction.count;
+    }
     return counts;
+}
+
+function isNoActionDecision(entry: TrajectoryEntry): boolean {
+    if (entry.kind !== 'decision') {
+        return false;
+    }
+    return Array.isArray(entry.actionKinds) ? entry.actionKinds.length === 0 : false;
+}
+
+function actionHealthCounts(entries: TrajectoryEntry[]): {
+    beforeSubmitCancellations: number;
+    effectTimeouts: number;
+    afterSubmitInterruptions: number;
+    unpairedActions: number;
+} {
+    const actionRequestIds = new Set<string>();
+    const resultRequestIds = new Set<string>();
+    let beforeSubmitCancellations = 0;
+    let effectTimeouts = 0;
+    let afterSubmitInterruptions = 0;
+
+    for (const entry of entries) {
+        if (entry.kind === 'action' && entry.requestId) {
+            actionRequestIds.add(entry.requestId);
+        }
+        if (entry.kind !== 'action_result') {
+            continue;
+        }
+        if (entry.requestId) {
+            resultRequestIds.add(entry.requestId);
+        }
+        if (entry.status === 'cancelled_before_submit') {
+            beforeSubmitCancellations += 1;
+        }
+        if (entry.status === 'timeout') {
+            effectTimeouts += 1;
+        }
+        if (entry.status === 'interrupted_after_submit') {
+            afterSubmitInterruptions += 1;
+        }
+    }
+
+    const unpairedActions = [...actionRequestIds].filter(requestId => !resultRequestIds.has(requestId)).length;
+    return { beforeSubmitCancellations, effectTimeouts, afterSubmitInterruptions, unpairedActions };
 }
 
 function isInertDecisionCause(cause: string | undefined): boolean {
@@ -707,7 +844,10 @@ function actionKind(entry: TrajectoryEntry): string | undefined {
     if (typeof entry.action === 'string') {
         return entry.action;
     }
-    return typeof entry.action?.kind === 'string' ? entry.action.kind : undefined;
+    if (typeof entry.action?.kind === 'string') {
+        return entry.action.kind;
+    }
+    return typeof entry.actionKind === 'string' ? entry.actionKind : undefined;
 }
 
 function numberOrUndefined(value: unknown): number | undefined {
