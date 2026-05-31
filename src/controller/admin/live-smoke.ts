@@ -110,6 +110,7 @@ const DEFAULT_POLL_MS = 1000;
 const MAX_TRAJECTORY_FILES = 4;
 const INERT_DECISION_CAUSES = new Set(['body_wait', 'hook_noop']);
 const MIN_OBSERVED_INERT_DECISIONS = 20;
+const MIN_VISIBLE_EVENTS_FOR_INERT_CADENCE = 4;
 
 export function parseLiveSmokeCliArgs(argv: string[]): LiveSmokeCliOptions {
     const envResidents = process.env.CONTROLLER_SMOKE_RESIDENTS || process.env.CONTROLLER_SMOKE_RESIDENT;
@@ -285,7 +286,8 @@ export async function observeLiveResidents(options: ObserveLiveResidentsOptions)
         if (
             observed.dominantInertDecision &&
             observed.inertDecisions >= MIN_OBSERVED_INERT_DECISIONS &&
-            observed.visibleEvents <= Math.max(3, Math.floor(observed.inertDecisions / 8))
+            observed.visibleEvents <= Math.max(3, Math.floor(observed.inertDecisions / 8)) &&
+            !hasSustainedVisibleCadence(observed)
         ) {
             summary.issues.push(`observed_inert_decision_loop:${observed.dominantInertDecision}`);
         }
@@ -454,10 +456,13 @@ function summarizeResident(memoryDir: string, resident: string, windowTicks: num
     }
     const dominantDecision = dominantDecisionCause(decisionCauses, summary.recent.decisions);
     const visibleFollowHold = dominantDecision?.cause === 'follow_listen_hold' && summary.recent.says > 0;
+    const recentVisibleCadence =
+        summary.recent.actions + summary.recent.results + summary.recent.says >= MIN_VISIBLE_EVENTS_FOR_INERT_CADENCE;
     if (
         summary.recent.actions === 0 &&
         dominantDecision &&
         !visibleFollowHold &&
+        !recentVisibleCadence &&
         dominantDecision.count >= 20 &&
         dominantDecision.share >= 0.75
     ) {
@@ -612,6 +617,11 @@ function countTrajectoryEntries(entries: TrajectoryEntry[]): ObservationCounts {
 
 function isInertDecisionCause(cause: string | undefined): boolean {
     return Boolean(cause && (INERT_DECISION_CAUSES.has(cause) || cause.startsWith('budget_exhausted')));
+}
+
+function hasSustainedVisibleCadence(observed: LiveSmokeObservedDelta): boolean {
+    const cadenceFloor = Math.max(MIN_VISIBLE_EVENTS_FOR_INERT_CADENCE, Math.ceil(observed.durationMs / 30_000));
+    return observed.visibleEvents >= cadenceFloor;
 }
 
 function discoverResidents(memoryDir: string): string[] {

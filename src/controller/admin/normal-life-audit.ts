@@ -195,6 +195,7 @@ const TRACKED_CAUSES = [
     'direct_chat_trade',
     'agent_keepalive',
     'hero_keepalive',
+    'faction_landmark_recovery',
 ];
 const TRACKED_TIMELINE_KINDS = [
     'logout',

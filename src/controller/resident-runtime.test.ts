@@ -773,12 +773,21 @@ describe('ResidentRuntime modules', () => {
         expect(state.stuckSince).toBeLessThanOrEqual(state.tick);
     });
 
-    it.each(['social_keepalive', 'trade_keepalive', 'agent_keepalive'] as const)(
+    it.each(['social_keepalive', 'trade_keepalive', 'agent_keepalive', 'hero_keepalive', 'faction_landmark_recovery'] as const)(
         'counts successful %s speech as visible runtime progress',
         async cause => {
             const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-memory-'));
             const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-'));
-            const resident = cause === 'trade_keepalive' ? 'res:qa-trader' : cause === 'agent_keepalive' ? 'res:agent' : 'res:qa-social';
+            const resident =
+                cause === 'trade_keepalive'
+                    ? 'res:qa-trader'
+                    : cause === 'agent_keepalive'
+                      ? 'res:agent'
+                      : cause === 'hero_keepalive'
+                        ? 'res:hans'
+                        : cause === 'faction_landmark_recovery'
+                          ? 'res:the-hush'
+                          : 'res:qa-social';
             const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:20:00.000Z') });
             const session = store.beginSession('session-visible-speech', 'soul-v1');
             const evidence = {
@@ -905,12 +914,19 @@ describe('ResidentRuntime modules', () => {
         expect(state.stuckSince).toBe(46);
     });
 
-    it.each(['social_keepalive', 'agent_keepalive'] as const)(
+    it.each(['social_keepalive', 'agent_keepalive', 'hero_keepalive', 'faction_landmark_recovery'] as const)(
         'does not count failed %s speech as visible runtime progress',
         async cause => {
             const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-memory-'));
             const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-'));
-            const resident = cause === 'agent_keepalive' ? 'res:agent' : 'res:qa-social';
+            const resident =
+                cause === 'agent_keepalive'
+                    ? 'res:agent'
+                    : cause === 'hero_keepalive'
+                      ? 'res:hans'
+                      : cause === 'faction_landmark_recovery'
+                        ? 'res:the-hush'
+                        : 'res:qa-social';
             const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:27:00.000Z') });
             const session = store.beginSession('session-failed-speech', 'soul-v1');
             const evidence = {

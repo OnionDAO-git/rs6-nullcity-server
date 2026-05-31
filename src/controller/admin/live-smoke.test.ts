@@ -576,6 +576,47 @@ describe('live smoke CLI helpers', () => {
         },
     );
 
+    it('accepts sustained visible cadence despite many no-action budget decisions', async () => {
+        writeResidentState('res:the-hush', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:the-hush', [{ tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:the-hush'],
+            observeMs: 90_000,
+            sleep: async () => {
+                writeResidentState('res:the-hush', { tick: 1140, lastMeaningfulProgressAt: 1120 });
+                writeTrajectory('res:the-hush', [
+                    { tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                    ...Array.from({ length: 136 }, (_, index) => ({
+                        tick: 1001 + index,
+                        kind: 'decision',
+                        cause: 'budget_exhausted:pause',
+                        sessionId: 'same-session',
+                    })),
+                    ...Array.from({ length: 7 }, (_, index) => [
+                        {
+                            tick: 1020 + index * 15,
+                            kind: 'say',
+                            text: 'I am checking the landmark at 2938,3321.',
+                            sessionId: 'same-session',
+                        },
+                        {
+                            tick: 1021 + index * 15,
+                            kind: 'action_result',
+                            status: 'success',
+                            sessionId: 'same-session',
+                        },
+                    ]).flat(),
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.observed).toMatchObject({ inertDecisions: 136, says: 7, visibleEvents: 14, tickDelta: 140 });
+        expect(summary.issues).not.toContain('observed_inert_decision_loop:budget_exhausted:pause');
+    });
+
     it('flags missing observed progress when the resident only keeps old evidence', async () => {
         writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
         writeTrajectory('res:agent', [
