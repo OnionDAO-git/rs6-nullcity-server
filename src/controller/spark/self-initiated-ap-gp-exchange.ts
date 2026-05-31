@@ -134,12 +134,54 @@ export function selfInitiatedApGpExchangeAction(input: SelfInitiatedApGpExchange
     const gpAmount = Math.min(gp, SELF_INITIATED_EXCHANGE_MAX_GP, Math.max(SELF_INITIATED_EXCHANGE_MIN_GP, gpNeededForRunway));
     const apAmount = gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP;
 
-    const action: AgentAction = {
+    return {
         kind: 'city_exchange_ap_gp',
         cause: SELF_INITIATED_AP_GP_EXCHANGE_CAUSE,
         gpAmount,
         apAmount,
         ...(input.idempotencyKey !== undefined ? { idempotencyKey: input.idempotencyKey } : {}),
     };
-    return action;
+}
+
+// ---------------------------------------------------------------------------
+// Hero surplus GP → AP exchange (S-AP-CYCLE-2).
+//
+// Floor-clamped heroes earn real GP via combat but their AP sits comfortably
+// above the ordinary exchange threshold (floor + 20). This reflex converts that
+// surplus proactively — keeping the AP/GP loop visible in the event log even
+// when heroes are financially healthy.
+// ---------------------------------------------------------------------------
+
+/** GP reserve a hero keeps after a surplus exchange. */
+export const HERO_SURPLUS_GP_RESERVE = 5;
+
+/** Cause tag stamped on hero-surplus exchange actions. */
+export const HERO_SURPLUS_EXCHANGE_CAUSE = 'nervous:hero-surplus-gp-exchange';
+
+/**
+ * Returns a `city_exchange_ap_gp` AgentAction for floor-clamped residents that
+ * have accumulated surplus GP, regardless of current AP level. Fires when:
+ *  - AP is positive (faded residents cannot act), AND
+ *  - attentionFloor > 0 (floor-clamped hero), AND
+ *  - GP held exceeds HERO_SURPLUS_GP_RESERVE + SELF_INITIATED_EXCHANGE_MIN_GP.
+ *
+ * Spends (gp - HERO_SURPLUS_GP_RESERVE) capped by SELF_INITIATED_EXCHANGE_MAX_GP.
+ */
+export function heroSurplusGpExchangeAction(input: SelfInitiatedApGpExchangeInput): AgentAction | undefined {
+    const { attention, attentionFloor } = input;
+    if (!Number.isFinite(attention) || attention <= 0) return undefined;
+    const floor = Number.isFinite(attentionFloor) && attentionFloor > 0 ? attentionFloor : 0;
+    if (floor <= 0) return undefined;
+    const gp = input.gpOverride !== undefined ? input.gpOverride : gpInInventory(input.perception);
+    const surplus = gp - HERO_SURPLUS_GP_RESERVE;
+    if (surplus < SELF_INITIATED_EXCHANGE_MIN_GP) return undefined;
+    const gpAmount = Math.min(surplus, SELF_INITIATED_EXCHANGE_MAX_GP);
+    const apAmount = gpAmount * SELF_INITIATED_EXCHANGE_AP_PER_GP;
+    return {
+        kind: 'city_exchange_ap_gp',
+        cause: HERO_SURPLUS_EXCHANGE_CAUSE,
+        gpAmount,
+        apAmount,
+        ...(input.idempotencyKey !== undefined ? { idempotencyKey: input.idempotencyKey } : {}),
+    };
 }

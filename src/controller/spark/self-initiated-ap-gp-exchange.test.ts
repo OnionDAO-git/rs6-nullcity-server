@@ -1,4 +1,6 @@
 import {
+    HERO_SURPLUS_EXCHANGE_CAUSE,
+    HERO_SURPLUS_GP_RESERVE,
     SELF_INITIATED_AP_GP_EXCHANGE_CAUSE,
     SELF_INITIATED_EXCHANGE_AP_PER_GP,
     SELF_INITIATED_EXCHANGE_GP_FLOOR_BUFFER,
@@ -7,6 +9,7 @@ import {
     SELF_INITIATED_EXCHANGE_NO_FLOOR_AP_THRESHOLD,
     SELF_INITIATED_EXCHANGE_TARGET_RUNWAY_AP,
     gpInInventory,
+    heroSurplusGpExchangeAction,
     selfInitiatedApGpExchangeAction,
 } from './self-initiated-ap-gp-exchange';
 
@@ -158,5 +161,113 @@ describe('selfInitiatedApGpExchangeAction', () => {
         });
         expect(action).toBeDefined();
         expect((action as unknown as { idempotencyKey?: string }).idempotencyKey).toBe('self-exchange-abc');
+    });
+});
+
+describe('heroSurplusGpExchangeAction', () => {
+    const HERO_FLOOR = 5000;
+
+    it('fires for a floor-clamped hero holding GP above reserve + minimum', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 5500,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: 100,
+            perception: {},
+        });
+        expect(action).toBeDefined();
+        expect(action!.kind).toBe('city_exchange_ap_gp');
+        expect(action!.cause).toBe(HERO_SURPLUS_EXCHANGE_CAUSE);
+        expect(HERO_SURPLUS_EXCHANGE_CAUSE).toBe('nervous:hero-surplus-gp-exchange');
+    });
+
+    it('spends (gp - reserve) capped at MAX_GP when holding a large amount', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 8000,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: 1000,
+            perception: {},
+        });
+        expect(action).toBeDefined();
+        const record = action as unknown as { gpAmount: number; apAmount: number };
+        expect(record.gpAmount).toBe(SELF_INITIATED_EXCHANGE_MAX_GP);
+        expect(record.apAmount).toBe(SELF_INITIATED_EXCHANGE_MAX_GP * SELF_INITIATED_EXCHANGE_AP_PER_GP);
+    });
+
+    it('spends all surplus when GP is below MAX_GP + reserve', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 6000,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: 60,
+            perception: {},
+        });
+        expect(action).toBeDefined();
+        const record = action as unknown as { gpAmount: number; apAmount: number };
+        // surplus = 60 - HERO_SURPLUS_GP_RESERVE
+        expect(record.gpAmount).toBe(60 - HERO_SURPLUS_GP_RESERVE);
+        expect(record.apAmount).toBe((60 - HERO_SURPLUS_GP_RESERVE) * SELF_INITIATED_EXCHANGE_AP_PER_GP);
+    });
+
+    it('does not fire when GP surplus is below the minimum exchange amount', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 6000,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: HERO_SURPLUS_GP_RESERVE + SELF_INITIATED_EXCHANGE_MIN_GP - 1,
+            perception: {},
+        });
+        expect(action).toBeUndefined();
+    });
+
+    it('does not fire for a resident with no declared floor', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 500,
+            attentionFloor: 0,
+            gpOverride: 200,
+            perception: {},
+        });
+        expect(action).toBeUndefined();
+    });
+
+    it('does not fire when the resident has faded (AP <= 0)', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 0,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: 100,
+            perception: {},
+        });
+        expect(action).toBeUndefined();
+    });
+
+    it('reads GP from inventory when no gpOverride is provided', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 5500,
+            attentionFloor: HERO_FLOOR,
+            perception: { resident: { inventory: [{ itemId: COIN_ITEM_ID, amount: 80 }] } },
+        });
+        expect(action).toBeDefined();
+        const record = action as unknown as { gpAmount: number };
+        expect(record.gpAmount).toBe(80 - HERO_SURPLUS_GP_RESERVE);
+    });
+
+    it('carries an idempotencyKey when one is provided', () => {
+        const action = heroSurplusGpExchangeAction({
+            attention: 5500,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: 100,
+            perception: {},
+            idempotencyKey: 'hero-surplus-xyz',
+        });
+        expect(action).toBeDefined();
+        expect((action as unknown as { idempotencyKey?: string }).idempotencyKey).toBe('hero-surplus-xyz');
+    });
+
+    it('fires even when AP is well above the ordinary floor+buffer threshold', () => {
+        // Verify that hero surplus is not gated by the AP threshold
+        const action = heroSurplusGpExchangeAction({
+            attention: HERO_FLOOR + 10000,
+            attentionFloor: HERO_FLOOR,
+            gpOverride: 50,
+            perception: {},
+        });
+        expect(action).toBeDefined();
     });
 });

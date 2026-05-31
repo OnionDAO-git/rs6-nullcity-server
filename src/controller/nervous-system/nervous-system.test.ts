@@ -452,6 +452,38 @@ describe('NervousSystem', () => {
             expect(reaction?.action?.cause).not.toBe('nervous:self-initiated-ap-gp-exchange');
         });
 
+        it('hero surplus: exchanges accumulated GP for AP for floor-clamped heroes even when AP is above threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 5500; // well above floor+buffer (5020) — ordinary exchange would not fire
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react({
+                ...healthyPerception(100),
+                resident: { hp: { current: 10, max: 10 }, inventory: [{ itemId: 995, amount: 100 }] },
+            });
+
+            expect(reaction?.rule.id).toBe('self-initiated-ap-gp-exchange');
+            expect(reaction?.action).toEqual({
+                kind: 'city_exchange_ap_gp',
+                cause: 'nervous:hero-surplus-gp-exchange',
+                gpAmount: 95, // 100 - HERO_SURPLUS_GP_RESERVE (5)
+                apAmount: 190, // 95 * 2
+                idempotencyKey: 'self-ap-gp:res:hans:100',
+            });
+            expect(reaction?.suppressThinking).toBe(true);
+            expect(reaction?.interruptThinking).toBe(true);
+        });
+
+        it('hero surplus: does not fire when floor-clamped hero holds no coins', () => {
+            const state = runtimeState(100);
+            state.attention = 5500;
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).not.toBe('nervous:hero-surplus-gp-exchange');
+        });
+
         it('starts a starter GP harvest instead of suppressing thinking when low AP and no coins are held', () => {
             const state = runtimeState(100);
             state.attention = 5300;

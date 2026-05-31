@@ -8,9 +8,9 @@ import { PatronRegistry } from '../patron/patron-registry';
 import { STARTER_GP_HARVEST_GOAL_ID, starterGpHarvestGoal } from '../spark/runescape-brain-planner';
 import { RUNESCAPE_STANDARD_SPARK_MODULE_ID } from '../spark/standard-module-metadata';
 import {
-    SELF_INITIATED_AP_GP_EXCHANGE_CAUSE,
     SELF_INITIATED_EXCHANGE_MIN_GP,
     gpInInventory,
+    heroSurplusGpExchangeAction,
     selfInitiatedApGpExchangeAction,
 } from '../spark/self-initiated-ap-gp-exchange';
 
@@ -331,12 +331,13 @@ export class NervousSystem {
             return undefined;
         }
 
-        const action = selfInitiatedApGpExchangeAction({
+        const exchangeInput = {
             attention: this.options.state.attention,
             attentionFloor: this.options.soul.frontmatter.attentionProfile?.floor ?? 0,
             perception,
             idempotencyKey: `self-ap-gp:${this.options.soul.frontmatter.name}:${tick}`,
-        });
+        };
+        const action = selfInitiatedApGpExchangeAction(exchangeInput) ?? heroSurplusGpExchangeAction(exchangeInput);
         if (!action) {
             return undefined;
         }
@@ -355,7 +356,7 @@ export class NervousSystem {
 
         return {
             rule,
-            action: { ...action, cause: SELF_INITIATED_AP_GP_EXCHANGE_CAUSE },
+            action,
             suppressThinking: true,
             interruptThinking: true,
         };
