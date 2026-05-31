@@ -84,9 +84,9 @@ export function buildDigest(input: DigestBuilderInput): CityEventDigest {
     const topEvents = allEvents.slice(0, config.maxResidentMentions);
     const residents = input.residents.slice(0, config.maxResidentMentions);
 
-    const fadedResidents = residents.filter(r => r.isFaded).length;
-    const lowApResidents = residents.filter(r => r.isLowAp && !r.isFaded).length;
-    const activeResidents = residents.filter(r => !r.isFaded).length;
+    const fadedResidents = input.residents.filter(r => r.isFaded).length;
+    const lowApResidents = input.residents.filter(r => r.isLowAp && !r.isFaded).length;
+    const activeResidents = input.residents.filter(r => !r.isFaded).length;
 
     return {
         schemaVersion: 1,
@@ -104,7 +104,7 @@ export function buildDigest(input: DigestBuilderInput): CityEventDigest {
         topEvents,
         residents,
         systemHealth: {
-            totalResidents: residents.length,
+            totalResidents: input.residents.length,
             activeResidents,
             fadedResidents,
             lowApResidents,

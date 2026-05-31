@@ -243,6 +243,40 @@ describe('StorytellerModelClient.run — error handling', () => {
         expect(dispatch.publicBullets.filter(bullet => bullet.includes('observed 0 GP'))).toHaveLength(0);
     });
 
+    it('titles grounded Library movement as activity instead of a quiet window in nooped fallback copy', async () => {
+        const noopEndpoints: Record<string, LlmEndpointConfig> = {
+            default: { timeoutMs: 10_000 },
+        };
+        const { digest } = buildFixtureDigest();
+        const stuckEvent = {
+            ref: 'library:res-hans:stuck',
+            kind: 'stuck_recovered' as const,
+            residentName: 'res:hans',
+            ts: '2026-05-29T05:53:00.000Z',
+            note: 'res:hans recovered from being stuck.',
+            importance: 'medium' as const,
+            evidence: { source: 'library.timeline' },
+        };
+        const libraryDigest = {
+            ...digest,
+            apEvents: [],
+            gpEvents: [],
+            exchangeEvents: [],
+            ncriEvents: [],
+            goalEvents: [],
+            stuckEvents: [stuckEvent],
+            miscEvents: [],
+            topEvents: [stuckEvent],
+            systemHealth: { totalResidents: 1, activeResidents: 1, fadedResidents: 0, lowApResidents: 0 },
+        };
+
+        const client = new StorytellerModelClient(noopEndpoints);
+        const dispatch = await client.run(libraryDigest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.publicTitle).toBe('Null City Dispatch: residents kept moving');
+        expect(dispatch.publicBody).toContain('res:hans recovered from being stuck');
+    });
+
     it('redacts human and patron handles in nooped fallback public copy', async () => {
         const noopEndpoints: Record<string, LlmEndpointConfig> = {
             default: { timeoutMs: 10_000 },

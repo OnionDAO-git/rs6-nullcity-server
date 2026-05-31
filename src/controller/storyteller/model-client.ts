@@ -57,6 +57,9 @@ function headlineForDigest(digest: CityEventDigest, events: DigestEvent[]): stri
         return 'Null City Dispatch: NCRI activity recorded';
     if (events.some(event => event.kind === 'gp_earned' || event.kind === 'gp_observed')) return 'Null City Dispatch: GP movement recorded';
     if (events.some(event => event.kind === 'goal_completed')) return 'Null City Dispatch: a goal moved into the Library';
+    if (events.some(event => event.kind === 'stuck_recovered' || event.kind === 'library_writeback')) {
+        return 'Null City Dispatch: residents kept moving';
+    }
     if (digest.systemHealth.lowApResidents > 0) return 'Null City Dispatch: attention pressure is rising';
     return 'Null City Dispatch: quiet window recorded';
 }

@@ -1389,6 +1389,8 @@ export class CityIntegrationService {
         const digestId = asNonEmptyString(digest['digestId']) || runId;
         const topEvents = asArray(digest['topEvents']);
         const residents = asArray(digest['residents']);
+        const systemHealth = asObject(digest['systemHealth']);
+        const totalResidents = asOptionalNumber(systemHealth?.['totalResidents']);
         const dispatch = asObject(readJson(path.join(runRoot, 'dispatch.json')));
 
         return {
@@ -1399,7 +1401,7 @@ export class CityIntegrationService {
             windowStart: asOptionalString(digest['windowStart']),
             windowEnd: asOptionalString(digest['windowEnd']),
             topEventCount: topEvents.length,
-            residentCount: residents.length,
+            residentCount: typeof totalResidents === 'number' ? Math.max(0, Math.trunc(totalResidents)) : residents.length,
             summary: asOptionalString(digest['summary']),
             ...(dispatch ? { dispatch: storytellerDispatchSummary(dispatch, runId) } : {}),
         };

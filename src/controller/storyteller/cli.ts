@@ -20,13 +20,17 @@
  *   --output-dir <d>   Where to write run artifacts (default: data/controller/storyteller)
  */
 import path from 'path';
+import fs from 'fs';
 import type { EconomyEvent } from '../city-integration/economy-event';
 import { EconomyEventLog } from '../city-integration/economy-event';
 import type { GoalContract } from '../city-integration/goal-contract';
 import { GoalContractStore } from '../city-integration/goal-contract';
+import type { RuntimeState } from '../memory/runtime-state';
+import { residentSlug } from '../memory/runtime-state';
 import { buildDigest, buildFixtureDigest, economyEventsToDigestBuckets, goalContractsToDigestGoalEvents } from './digest-builder';
 import { StorytellerStore, buildOperatorSummary } from './store';
 import type { CityEventDigest, ResidentSnapshot } from './types';
+import type { DigestEvent } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
 
 export interface StorytellerDryRunArgs {
@@ -136,8 +140,15 @@ function defaultLiveDigestId(windowEnd: Date): string {
         .slice(0, 14)}`;
 }
 
-function buildResidentSnapshots(events: EconomyEvent[], goals: GoalContract[], windowStart: Date, windowEnd: Date): ResidentSnapshot[] {
+function buildResidentSnapshots(
+    memoryRoot: string,
+    events: EconomyEvent[],
+    goals: GoalContract[],
+    windowStart: Date,
+    windowEnd: Date,
+): ResidentSnapshot[] {
     const residents = new Map<string, ResidentSnapshot>();
+    const runtimeBackedResidents = new Set<string>();
 
     const ensure = (residentName: string): ResidentSnapshot => {
         const existing = residents.get(residentName);
@@ -155,12 +166,20 @@ function buildResidentSnapshots(events: EconomyEvent[], goals: GoalContract[], w
         return created;
     };
 
+    for (const runtimeResident of readRuntimeResidentSnapshots(memoryRoot)) {
+        residents.set(runtimeResident.residentName, runtimeResident);
+        runtimeBackedResidents.add(runtimeResident.residentName);
+    }
+
     for (const event of events.filter(event => inWindow(event, windowStart, windowEnd))) {
         if (!event.residentName) {
             continue;
         }
+        if (isSyntheticResidentName(event.residentName)) {
+            continue;
+        }
         const resident = ensure(event.residentName);
-        if (typeof event.apDelta === 'number') {
+        if (typeof event.apDelta === 'number' && !runtimeBackedResidents.has(event.residentName)) {
             resident.attention = Math.max(0, resident.attention + event.apDelta);
         }
         if (event.kind === 'ap_fade') {
@@ -173,6 +192,9 @@ function buildResidentSnapshots(events: EconomyEvent[], goals: GoalContract[], w
     }
 
     for (const goal of goals) {
+        if (isSyntheticResidentName(goal.residentName)) {
+            continue;
+        }
         const resident = ensure(goal.residentName);
         if (resident.goalText === undefined || goal.status === 'active') {
             resident.goalText = goal.goalText;
@@ -187,6 +209,198 @@ function buildResidentSnapshots(events: EconomyEvent[], goals: GoalContract[], w
         .sort((a, b) => a.residentName.localeCompare(b.residentName));
 }
 
+function readRuntimeResidentSnapshots(memoryRoot: string): ResidentSnapshot[] {
+    if (!fs.existsSync(memoryRoot)) {
+        return [];
+    }
+
+    const snapshots: ResidentSnapshot[] = [];
+    for (const entry of fs.readdirSync(memoryRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+        const statePath = path.join(memoryRoot, entry.name, 'runtime-state.json');
+        if (!fs.existsSync(statePath)) {
+            continue;
+        }
+        const state = readRuntimeState(statePath);
+        if (!state) {
+            continue;
+        }
+        const residentName =
+            typeof state.resident === 'string' && state.resident.length > 0 ? state.resident : inferResidentFromSlug(entry.name);
+        if (!residentName) {
+            continue;
+        }
+        if (isSyntheticResidentName(residentName)) {
+            continue;
+        }
+        const attention = typeof state.attention === 'number' && Number.isFinite(state.attention) ? state.attention : 0;
+        const isFaded = Boolean(state.deceased);
+        snapshots.push({
+            residentName,
+            attention,
+            isLowAp: !isFaded && attention > 0 && attention < 100,
+            isFaded,
+            gpObserved: null,
+            ...(typeof state.cognition?.activeGoal?.description === 'string' && state.cognition.activeGoal.description.length > 0
+                ? { goalText: state.cognition.activeGoal.description }
+                : {}),
+        });
+    }
+
+    return snapshots.sort((a, b) => a.residentName.localeCompare(b.residentName));
+}
+
+function readRuntimeState(statePath: string): Partial<RuntimeState> | undefined {
+    try {
+        return JSON.parse(fs.readFileSync(statePath, 'utf8')) as Partial<RuntimeState>;
+    } catch {
+        return undefined;
+    }
+}
+
+function inferResidentFromSlug(slug: string): string | undefined {
+    const candidate = slug.startsWith('res-') ? `res:${slug.slice(4)}` : `res:${slug}`;
+    return residentSlug(candidate) === slug ? candidate : undefined;
+}
+
+function isSyntheticResidentName(residentName: string): boolean {
+    return /^res-(qa-|bmk_)/.test(residentSlug(residentName));
+}
+
+function readLibraryDigestEvents(
+    memoryRoot: string,
+    windowStart: Date,
+    windowEnd: Date,
+): Pick<DigestBuilderEventBuckets, 'stuckEvents' | 'miscEvents'> {
+    const libraryRoot = path.join(memoryRoot, 'library');
+    if (!fs.existsSync(libraryRoot)) {
+        return { stuckEvents: [], miscEvents: [] };
+    }
+
+    const stuckEvents: DigestEvent[] = [];
+    const miscEvents: DigestEvent[] = [];
+    const start = windowStart.toISOString();
+    const end = windowEnd.toISOString();
+
+    for (const entry of fs.readdirSync(libraryRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) {
+            continue;
+        }
+        const residentName = inferResidentFromSlug(entry.name);
+        if (!residentName) {
+            continue;
+        }
+        if (isSyntheticResidentName(residentName)) {
+            continue;
+        }
+        const timelinePath = path.join(libraryRoot, entry.name, 'timeline.jsonl');
+        if (!fs.existsSync(timelinePath)) {
+            continue;
+        }
+        for (const event of readJsonLines(timelinePath)) {
+            const ts = typeof event['ts'] === 'string' ? event['ts'] : undefined;
+            if (!ts || ts < start || ts > end) {
+                continue;
+            }
+            const kind = typeof event['kind'] === 'string' ? event['kind'] : undefined;
+            const tick = typeof event['tick'] === 'number' && Number.isFinite(event['tick']) ? event['tick'] : undefined;
+            if (kind === 'stuck_recovered') {
+                stuckEvents.push({
+                    ref: `library:${residentSlug(residentName)}:${ts}:stuck_recovered:${tick ?? 'unknown'}`,
+                    kind: 'stuck_recovered',
+                    residentName,
+                    ts,
+                    note: `${residentName} recovered from being stuck.`,
+                    importance: 'medium',
+                    evidence: {
+                        source: 'library.timeline',
+                        ...(tick !== undefined ? { tick } : {}),
+                        reasons: Array.isArray(event['reasons']) ? event['reasons'] : undefined,
+                    },
+                });
+            } else if (kind === 'say') {
+                const text = typeof event['text'] === 'string' ? event['text'].trim() : '';
+                if (!text) {
+                    continue;
+                }
+                miscEvents.push({
+                    ref: `library:${residentSlug(residentName)}:${ts}:say:${hashRef(text)}`,
+                    kind: 'library_writeback',
+                    residentName,
+                    ts,
+                    note: `${residentName} said: "${truncateText(text, 140)}"`,
+                    importance: 'low',
+                    evidence: {
+                        source: 'library.timeline',
+                        ...(tick !== undefined ? { tick } : {}),
+                    },
+                });
+            }
+        }
+    }
+
+    return {
+        stuckEvents: latestByResidentKind(stuckEvents),
+        miscEvents: latestByResidentKind(miscEvents),
+    };
+}
+
+interface DigestBuilderEventBuckets {
+    stuckEvents: DigestEvent[];
+    miscEvents: DigestEvent[];
+}
+
+function readJsonLines(filePath: string): Record<string, unknown>[] {
+    try {
+        return fs
+            .readFileSync(filePath, 'utf8')
+            .split('\n')
+            .map(line => line.trim())
+            .filter(Boolean)
+            .flatMap(line => {
+                try {
+                    const parsed = JSON.parse(line);
+                    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+                        ? [parsed as Record<string, unknown>]
+                        : [];
+                } catch {
+                    return [];
+                }
+            });
+    } catch {
+        return [];
+    }
+}
+
+function latestByResidentKind(events: DigestEvent[]): DigestEvent[] {
+    const byKey = new Map<string, DigestEvent>();
+    for (const event of events) {
+        const key = `${event.residentName}:${event.kind}`;
+        const existing = byKey.get(key);
+        if (!existing || event.ts > existing.ts) {
+            byKey.set(key, event);
+        }
+    }
+    return [...byKey.values()].sort((a, b) => b.ts.localeCompare(a.ts));
+}
+
+function truncateText(text: string, maxChars: number): string {
+    if (text.length <= maxChars) {
+        return text;
+    }
+    return `${text.slice(0, Math.max(0, maxChars - 1)).trimEnd()}...`;
+}
+
+function hashRef(text: string): string {
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+        hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+    }
+    return hash.toString(36);
+}
+
 function buildLiveDigest(args: StorytellerDryRunArgs, options: Required<RunStorytellerDryRunOptions>): CityEventDigest {
     if (!args.memoryRoot) {
         throw new StorytellerDryRunCliError('missing_source', 'use --fixture or --memory-root');
@@ -198,18 +412,21 @@ function buildLiveDigest(args: StorytellerDryRunArgs, options: Required<RunStory
     const goals = new GoalContractStore(args.memoryRoot).list();
     const economyBuckets = economyEventsToDigestBuckets(events);
     const goalEvents = goalContractsToDigestGoalEvents(goals);
+    const libraryEvents = readLibraryDigestEvents(args.memoryRoot, windowStart, windowEnd);
 
     return buildDigest({
         digestId: args.digestId ?? defaultLiveDigestId(windowEnd),
         windowStart,
         windowEnd,
         now,
-        residents: buildResidentSnapshots(events, goals, windowStart, windowEnd),
+        residents: buildResidentSnapshots(args.memoryRoot, events, goals, windowStart, windowEnd),
         apEvents: economyBuckets.apEvents,
         gpEvents: economyBuckets.gpEvents,
         exchangeEvents: economyBuckets.exchangeEvents,
         ncriEvents: economyBuckets.ncriEvents,
         goalEvents,
+        stuckEvents: libraryEvents.stuckEvents,
+        miscEvents: libraryEvents.miscEvents,
     });
 }
 

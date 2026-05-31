@@ -174,6 +174,29 @@ describe('buildDigest — maxResidentMentions cap', () => {
         });
         expect(out).toHaveLength(3);
     });
+
+    it('counts system health from the full resident set, not the capped display list', () => {
+        const residents = [
+            ...Array.from({ length: 10 }, (_, i) => makeResident(`res:a${i}`, 2000, false, false)),
+            ...Array.from({ length: 2 }, (_, i) => makeResident(`res:f${i}`, 0, false, true)),
+            makeResident('res:low', 42, true, false),
+        ];
+        const digest = buildDigest({
+            digestId: 'test',
+            windowStart: WIN_START,
+            windowEnd: WIN_END,
+            residents,
+            config: { maxResidentMentions: 3 },
+        });
+
+        expect(digest.residents).toHaveLength(3);
+        expect(digest.systemHealth).toMatchObject({
+            totalResidents: 13,
+            activeResidents: 11,
+            fadedResidents: 2,
+            lowApResidents: 1,
+        });
+    });
 });
 
 // ---------------------------------------------------------------------------

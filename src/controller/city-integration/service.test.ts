@@ -462,6 +462,7 @@ describe('CityIntegrationService', () => {
                 builtAt: '2026-05-27T12:00:00.000Z',
                 topEvents: [{ ref: 'new-1' }, { ref: 'new-2' }],
                 residents: [{ residentName: 'res:test' }, { residentName: 'res:peer' }],
+                systemHealth: { totalResidents: 25, activeResidents: 23, fadedResidents: 1, lowApResidents: 2 },
                 summary: 'latest',
             }),
         );
@@ -485,7 +486,7 @@ describe('CityIntegrationService', () => {
             runId: 'run-latest',
             digestId: 'digest-latest',
             topEventCount: 2,
-            residentCount: 2,
+            residentCount: 25,
             summary: 'latest',
             dispatch: {
                 dispatchId: 'dispatch-latest',

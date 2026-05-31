@@ -115,6 +115,202 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(fs.existsSync(path.join(outputDir, 'live-test-digest', 'summary.txt'))).toBe(true);
     });
 
+    it('includes runtime-state residents even when no economy event fired in the digest window', () => {
+        writeRuntimeState(memoryRoot, 'res:hans', {
+            resident: 'res:hans',
+            attention: 4_950,
+            tick: 120,
+            cognition: {
+                activeGoal: {
+                    id: 'greet-patrons',
+                    description: 'Greet patrons in the Lumbridge courtyard.',
+                    createdAtTick: 100,
+                },
+            },
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeRuntimeState(memoryRoot, 'res:faded', {
+            resident: 'res:faded',
+            attention: 0,
+            tick: 9,
+            deceased: { date: '2026-05-30T00:05:00.000Z', tick: 9, cause: 'attention_exhausted' },
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T00:00:00.000Z',
+                until: '2026-05-30T00:10:00.000Z',
+                digestId: 'runtime-resident-digest',
+            },
+            { now: () => new Date('2026-05-30T00:10:00.000Z') },
+        );
+
+        expect(result.digest.systemHealth).toMatchObject({
+            totalResidents: 2,
+            activeResidents: 1,
+            fadedResidents: 1,
+            lowApResidents: 0,
+        });
+        expect(result.digest.residents).toEqual([
+            expect.objectContaining({
+                residentName: 'res:faded',
+                attention: 0,
+                isFaded: true,
+            }),
+            expect.objectContaining({
+                residentName: 'res:hans',
+                attention: 4_950,
+                goalText: 'Greet patrons in the Lumbridge courtyard.',
+                isFaded: false,
+            }),
+        ]);
+        expect(result.summary).toContain('System health: 2 residents total, 1 active, 1 faded, 0 low-AP');
+    });
+
+    it('adds grounded Library activity events when the economy window is quiet', () => {
+        writeRuntimeState(memoryRoot, 'res-hans', {
+            resident: 'res:hans',
+            attention: 5_000,
+            tick: 140,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeLibraryEvents(memoryRoot, 'res-hans', [
+            {
+                schemaVersion: 1,
+                ts: '2026-05-30T00:03:00.000Z',
+                tick: 10,
+                kind: 'say',
+                text: 'Still here as Hans; watching the area.',
+            },
+            {
+                schemaVersion: 1,
+                ts: '2026-05-30T00:04:00.000Z',
+                tick: 20,
+                kind: 'stuck_recovered',
+                reasons: ['position_changed'],
+            },
+        ]);
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T00:00:00.000Z',
+                until: '2026-05-30T00:10:00.000Z',
+                digestId: 'library-activity-digest',
+            },
+            { now: () => new Date('2026-05-30T00:10:00.000Z') },
+        );
+
+        expect(result.digest.miscEvents).toContainEqual(
+            expect.objectContaining({
+                kind: 'library_writeback',
+                residentName: 'res:hans',
+                note: 'res:hans said: "Still here as Hans; watching the area."',
+            }),
+        );
+        expect(result.digest.stuckEvents).toContainEqual(
+            expect.objectContaining({
+                kind: 'stuck_recovered',
+                residentName: 'res:hans',
+                note: 'res:hans recovered from being stuck.',
+            }),
+        );
+        expect(result.digest.topEvents.map(event => event.kind)).toEqual(['stuck_recovered', 'library_writeback']);
+        expect(result.summary).toContain('Stuck/recovered events: 1');
+        expect(result.summary).toContain('Misc events: 1');
+    });
+
+    it('filters synthetic QA and benchmark residents from public-canon live digests', () => {
+        writeRuntimeState(memoryRoot, 'res-hans', {
+            resident: 'res:hans',
+            attention: 5_000,
+            tick: 140,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeRuntimeState(memoryRoot, 'res-qa-cook', {
+            resident: 'res:qa-cook',
+            attention: 5_000,
+            tick: 141,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeRuntimeState(memoryRoot, 'res-bmk_fire_5m_deadbeef', {
+            resident: 'res:bmk_fire_5m_deadbeef',
+            attention: 5_000,
+            tick: 142,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeLibraryEvents(memoryRoot, 'res-hans', [
+            { schemaVersion: 1, ts: '2026-05-30T00:03:00.000Z', tick: 10, kind: 'say', text: 'The courtyard is awake.' },
+        ]);
+        writeLibraryEvents(memoryRoot, 'res-qa-cook', [
+            { schemaVersion: 1, ts: '2026-05-30T00:04:00.000Z', tick: 20, kind: 'say', text: 'QA fixture should stay private.' },
+        ]);
+        writeLibraryEvents(memoryRoot, 'res-bmk_fire_5m_deadbeef', [
+            { schemaVersion: 1, ts: '2026-05-30T00:05:00.000Z', tick: 30, kind: 'stuck_recovered' },
+        ]);
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T00:00:00.000Z',
+                until: '2026-05-30T00:10:00.000Z',
+                digestId: 'public-canon-digest',
+            },
+            { now: () => new Date('2026-05-30T00:10:00.000Z') },
+        );
+
+        expect(result.digest.systemHealth.totalResidents).toBe(1);
+        expect(result.digest.residents.map(resident => resident.residentName)).toEqual(['res:hans']);
+        expect(result.digest.miscEvents.map(event => event.residentName)).toEqual(['res:hans']);
+        expect(result.digest.stuckEvents).toHaveLength(0);
+        expect(result.summary).not.toContain('res:qa-cook');
+        expect(result.summary).not.toContain('res:bmk_fire_5m_deadbeef');
+    });
+
     it('attributes resident-owned NCRI transfers to the selling resident in dry-run artifacts', () => {
         let nowMs = Date.parse('2026-05-30T00:01:00.000Z');
         const now = () => new Date(nowMs);
@@ -165,3 +361,15 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(result.summary).toContain('NCRI events: 2');
     });
 });
+
+function writeRuntimeState(memoryRoot: string, slug: string, state: Record<string, unknown>): void {
+    const dir = path.join(memoryRoot, slug);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'runtime-state.json'), `${JSON.stringify(state, null, 2)}\n`);
+}
+
+function writeLibraryEvents(memoryRoot: string, slug: string, events: Record<string, unknown>[]): void {
+    const dir = path.join(memoryRoot, 'library', slug);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'timeline.jsonl'), events.map(event => JSON.stringify(event)).join('\n'));
+}
