@@ -53,6 +53,88 @@ describe('named combat soak verifier', () => {
         expect(outcome.summaries[0]).toContain('no bones/prayer proof');
     });
 
+    it('passes required low-health recovery when fish, cook, eat, and later safe attack are ordered', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            requireLowHealthRecoveryChain: true,
+            recoveryTargetName: 'goblin',
+            entries: [
+                log({ kind: 'move_to', target: { x: 3241, y: 3242, level: 0 }, range: 7, cause: 'low_health_fish_food' }),
+                log({ kind: 'interact', option: 'net', target: safeNpc('Fishing spot'), cause: 'low_health_fish_food' }),
+                log({ kind: 'use_item_on', itemSlot: 1, target: { key: 'rs:range', name: 'Range' }, cause: 'low_health_cook_food' }),
+                log({ kind: 'eat', slot: 1, cause: 'nervous:eat-when-low-health' }),
+                log({ kind: 'attack', target: safeNpc('Goblin'), cause: 'combat_attack_safe_target' }),
+            ],
+            events: [{ kind: 'hit', amount: 1 }],
+            commandSubmitted: 1,
+            perceptionCount: 4,
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics).toMatchObject({
+            lowHealthRecoveryChain: 1,
+            lowHealthFishActions: 1,
+            lowHealthCookActions: 1,
+            lowHealthEatActions: 1,
+            lowHealthRecoveryReengageAttacks: 1,
+        });
+        expect(outcome.summaries[0]).toContain('fished, cooked, ate');
+    });
+
+    it('fails required low-health recovery if the safe attack happens before eating', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            requireLowHealthRecoveryChain: true,
+            recoveryTargetName: 'goblin',
+            entries: [
+                log({ kind: 'interact', option: 'net', target: safeNpc('Fishing spot'), cause: 'low_health_fish_food' }),
+                log({ kind: 'use_item_on', itemSlot: 1, target: { key: 'rs:range', name: 'Range' }, cause: 'low_health_cook_food' }),
+                log({ kind: 'attack', target: safeNpc('Goblin'), cause: 'combat_attack_safe_target' }),
+                log({ kind: 'eat', slot: 1, cause: 'nervous:eat-when-low-health' }),
+            ],
+            events: [{ kind: 'hit', amount: 1 }],
+            commandSubmitted: 1,
+            perceptionCount: 4,
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('No ordered low-health fish/cook/eat/reengage chain');
+        expect(outcome.metrics).toMatchObject({
+            lowHealthRecoveryChain: 0,
+            lowHealthFishActions: 1,
+            lowHealthCookActions: 1,
+            lowHealthEatActions: 1,
+            lowHealthRecoveryReengageAttacks: 0,
+        });
+    });
+
+    it('fails required low-health recovery if reengage attacks a different safe target than requested', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            requireLowHealthRecoveryChain: true,
+            recoveryTargetName: 'goblin',
+            entries: [
+                log({ kind: 'interact', option: 'net', target: safeNpc('Fishing spot'), cause: 'low_health_fish_food' }),
+                log({ kind: 'use_item_on', itemSlot: 1, target: { key: 'rs:range', name: 'Range' }, cause: 'low_health_cook_food' }),
+                log({ kind: 'eat', slot: 1, cause: 'low_health_eat' }),
+                log({ kind: 'attack', target: safeNpc('Man'), cause: 'combat_attack_safe_target' }),
+            ],
+            events: [{ kind: 'hit', amount: 1 }],
+            commandSubmitted: 1,
+            perceptionCount: 4,
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.metrics).toMatchObject({
+            safeAttackActions: 1,
+            lowHealthRecoveryChain: 0,
+            lowHealthRecoveryReengageAttacks: 0,
+        });
+    });
+
     it('counts Lumbridge men as safe fallback combat proof', () => {
         const outcome = verifyNamedCombatSoakEvidence({
             resident: 'res:qa-survivor',
@@ -159,6 +241,14 @@ describe('named combat soak verifier', () => {
             targetName: 'goblin',
             configPath: 'controller.yml',
             outputDir: 'data/benchmarks/capability-qa-2026-05-30',
+        });
+    });
+
+    it('parses the required low-health recovery chain flag', () => {
+        expect(
+            parseNamedCombatSoakArgs(['--require-low-health-recovery-chain'], new Date('2026-05-30T15:52:00.000Z')),
+        ).toMatchObject({
+            requireLowHealthRecoveryChain: true,
         });
     });
 

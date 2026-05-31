@@ -22,6 +22,7 @@ export interface NamedCombatSoakOptions {
     durationMs: number;
     pollMs: number;
     keepPeer: boolean;
+    requireLowHealthRecoveryChain: boolean;
     commandSpawn: { x: number; y: number; level: number };
 }
 
@@ -32,6 +33,8 @@ export interface NamedCombatSoakVerificationInput {
     events: Array<Record<string, unknown>>;
     commandSubmitted: number;
     perceptionCount: number;
+    requireLowHealthRecoveryChain?: boolean;
+    recoveryTargetName?: string;
 }
 
 export interface NamedCombatSoakActorRef {
@@ -71,6 +74,9 @@ export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date())
         durationMs: readPositiveInt(process.env.CONTROLLER_COMBAT_SOAK_DURATION_MS, DEFAULT_DURATION_MS),
         pollMs: readPositiveInt(process.env.CONTROLLER_COMBAT_SOAK_POLL_MS, DEFAULT_POLL_MS),
         keepPeer: process.env.CONTROLLER_COMBAT_SOAK_KEEP_PEER === '1' || process.env.CONTROLLER_COMBAT_SOAK_KEEP_PEER === 'true',
+        requireLowHealthRecoveryChain:
+            process.env.CONTROLLER_COMBAT_SOAK_REQUIRE_LOW_HEALTH_RECOVERY_CHAIN === '1' ||
+            process.env.CONTROLLER_COMBAT_SOAK_REQUIRE_LOW_HEALTH_RECOVERY_CHAIN === 'true',
         commandSpawn: { x: 3253, y: 3230, level: 0 },
     };
 
@@ -112,6 +118,8 @@ export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date())
             options.pollMs = readPositiveInt(arg.slice('--poll-ms='.length), DEFAULT_POLL_MS);
         } else if (arg === '--keep-peer') {
             options.keepPeer = true;
+        } else if (arg === '--require-low-health-recovery-chain') {
+            options.requireLowHealthRecoveryChain = true;
         } else {
             throw new Error(`Unknown named combat soak argument ${arg}`);
         }
@@ -146,16 +154,23 @@ export function verifyNamedCombatSoakEvidence(input: NamedCombatSoakVerification
     if (metrics.combatEvidence === 0) {
         return failed('Safe attack appeared, but no combat event evidence was observed', metrics);
     }
+    if (input.requireLowHealthRecoveryChain && metrics.lowHealthRecoveryChain === 0) {
+        return failed('No ordered low-health fish/cook/eat/reengage chain appeared in the named resident action log', metrics);
+    }
 
     const prayerSummary =
         metrics.bonesEvidence > 0 && metrics.prayerEvidence > 0
             ? 'and carried the fight through bones/prayer evidence.'
             : 'with no bones/prayer proof in this short soak.';
+    const recoverySummary =
+        input.requireLowHealthRecoveryChain && metrics.lowHealthRecoveryChain > 0
+            ? `${input.resident} fished, cooked, ate, then reengaged a safe target.`
+            : `${input.resident} attacked a safe target, survived, and avoided unsafe targets`;
     return {
         status: 'passed',
         score: 1,
         metrics,
-        summaries: [`${input.resident} attacked a safe target, survived, and avoided unsafe targets ${prayerSummary}`],
+        summaries: [`${recoverySummary} ${prayerSummary}`],
     };
 }
 
@@ -242,9 +257,10 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
         });
         commandSubmitted += 1;
 
-        const sawSuccessfulAttack = await waitForResult(() => successfulSafeAttackCountFromLog(actionLogPath, baselineSize) >= 1, options);
+        const sawSuccessfulAttack = await waitForResult(() => requiredCombatSoakSatisfied(actionLogPath, baselineSize, options), options);
         if (!sawSuccessfulAttack) {
-            stdout(`[combat-soak] no successful safe attack before ${options.durationMs}ms; writing diagnostic artifact\n`);
+            const proof = options.requireLowHealthRecoveryChain ? 'low-health recovery chain' : 'successful safe attack';
+            stdout(`[combat-soak] no ${proof} before ${options.durationMs}ms; writing diagnostic artifact\n`);
         }
         await sleep(options.pollMs * 2);
 
@@ -256,6 +272,8 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
             events: targetEvents,
             commandSubmitted,
             perceptionCount: targetPerceptions.length,
+            requireLowHealthRecoveryChain: options.requireLowHealthRecoveryChain,
+            recoveryTargetName: options.targetName,
         });
         const artifactPath = writeArtifact(options.outputDir, {
             schemaVersion: 1,
@@ -291,6 +309,7 @@ function namedCombatSoakMetrics(input: NamedCombatSoakVerificationInput): Record
     const safeAttacks = attackEntries.filter(isSuccessfulSafeAttackEntry);
     const unsafeAttacks = attackEntries.filter(entry => !isSafeAttack(entry.action));
     const events = input.events;
+    const recovery = lowHealthRecoveryChainMetrics(input.entries, input.recoveryTargetName);
     return {
         ordinaryActionEntries: input.entries.length,
         commandSubmitted: input.commandSubmitted,
@@ -305,11 +324,46 @@ function namedCombatSoakMetrics(input: NamedCombatSoakVerificationInput): Record
         prayerEvidence: events.some(isPrayerEvent) || input.entries.some(isBuryAction) ? 1 : 0,
         survivalActions: input.entries.filter(entry => entry.action?.kind === 'eat' || isSurvivalCause(entry.action?.cause)).length,
         deathEvents: events.filter(isDeathEvent).length,
+        ...recovery,
+    };
+}
+
+function lowHealthRecoveryChainMetrics(entries: NamedCombatSoakLogEntry[], targetName?: string): Record<string, number> {
+    let fishIndex = -1;
+    let cookIndex = -1;
+    let eatIndex = -1;
+    let reengageIndex = -1;
+
+    entries.forEach((entry, index) => {
+        if (fishIndex < 0 && isLowHealthFishEntry(entry)) {
+            fishIndex = index;
+        }
+        if (fishIndex >= 0 && cookIndex < 0 && index > fishIndex && isLowHealthCookEntry(entry)) {
+            cookIndex = index;
+        }
+        if (cookIndex >= 0 && eatIndex < 0 && index > cookIndex && isLowHealthRecoveryEatEntry(entry)) {
+            eatIndex = index;
+        }
+        if (eatIndex >= 0 && reengageIndex < 0 && index > eatIndex && isSuccessfulRecoveryAttackEntry(entry, targetName)) {
+            reengageIndex = index;
+        }
+    });
+
+    return {
+        lowHealthFishActions: entries.filter(isLowHealthFishEntry).length,
+        lowHealthCookActions: entries.filter(isLowHealthCookEntry).length,
+        lowHealthEatActions: entries.filter(isLowHealthRecoveryEatEntry).length,
+        lowHealthRecoveryReengageAttacks: reengageIndex >= 0 ? 1 : 0,
+        lowHealthRecoveryChain: fishIndex >= 0 && cookIndex >= 0 && eatIndex >= 0 && reengageIndex >= 0 ? 1 : 0,
     };
 }
 
 function isSuccessfulSafeAttackEntry(entry: NamedCombatSoakLogEntry): boolean {
     return isSafeAttack(entry.action) && isSuccessfulActionResult(entry.result);
+}
+
+function isSuccessfulRecoveryAttackEntry(entry: NamedCombatSoakLogEntry, targetName?: string): boolean {
+    return isSuccessfulSafeAttackEntry(entry) && (!targetName || attackTargetMatches(entry.action, targetName));
 }
 
 function isSuccessfulActionResult(result: Record<string, unknown> | undefined): boolean {
@@ -325,6 +379,34 @@ function isSurvivalCause(cause: unknown): boolean {
     return typeof cause === 'string' && /^(combat_retreat|low_health_)/.test(cause);
 }
 
+function isLowHealthFishEntry(entry: NamedCombatSoakLogEntry): boolean {
+    const target = isRecord(entry.action?.target) ? entry.action.target : {};
+    const targetText = [target.key, target.name, target.id].filter((value): value is string => typeof value === 'string').join(' ');
+    return (
+        isSuccessfulActionResult(entry.result) &&
+        entry.action?.kind === 'interact' &&
+        /low_health_fish_food/.test(String(entry.action.cause || '')) &&
+        /net/i.test(String(entry.action.option || '')) &&
+        /fishing[_\s-]?spot/i.test(targetText)
+    );
+}
+
+function isLowHealthCookEntry(entry: NamedCombatSoakLogEntry): boolean {
+    if (!isSuccessfulActionResult(entry.result)) {
+        return false;
+    }
+    const cause = String(entry.action?.cause || '');
+    return entry.action?.kind === 'use_item_on' && /(low_health_cook_food|starter_fishing_cook_catch)/.test(cause);
+}
+
+function isLowHealthRecoveryEatEntry(entry: NamedCombatSoakLogEntry): boolean {
+    return (
+        isSuccessfulActionResult(entry.result) &&
+        entry.action?.kind === 'eat' &&
+        /(nervous:eat-when-low-health|low_health_eat|starter_fishing_eat_cooked_fish_for_space)/.test(String(entry.action.cause || ''))
+    );
+}
+
 function isSafeAttack(action: Record<string, unknown> | undefined): boolean {
     const target = isRecord(action?.target) ? action.target : {};
     const name = [target.name, target.key, target.id].filter((value): value is string => typeof value === 'string').join(' ');
@@ -335,6 +417,17 @@ function isSafeAttack(action: Record<string, unknown> | undefined): boolean {
         return false;
     }
     return SAFE_TARGET_PATTERN.test(name);
+}
+
+function attackTargetMatches(action: Record<string, unknown> | undefined, targetName: string): boolean {
+    const target = isRecord(action?.target) ? action.target : {};
+    const normalizedTargetName = targetName.trim().toLowerCase();
+    if (!normalizedTargetName) {
+        return true;
+    }
+    return [target.name, target.key, target.id].some(
+        value => typeof value === 'string' && value.toLowerCase().includes(normalizedTargetName),
+    );
 }
 
 function hasCombatEvidence(events: Array<Record<string, unknown>>): boolean {
@@ -419,6 +512,14 @@ function successfulSafeAttackCountFromLog(filePath: string, baselineSize: number
     return readActionLogEntriesSince(filePath, baselineSize).filter(isSuccessfulSafeAttackEntry).length;
 }
 
+function requiredCombatSoakSatisfied(filePath: string, baselineSize: number, options: NamedCombatSoakOptions): boolean {
+    const entries = readActionLogEntriesSince(filePath, baselineSize);
+    if (!options.requireLowHealthRecoveryChain) {
+        return entries.filter(isSuccessfulSafeAttackEntry).length >= 1;
+    }
+    return lowHealthRecoveryChainMetrics(entries, options.targetName).lowHealthRecoveryChain === 1;
+}
+
 async function waitFor(predicate: () => boolean, options: NamedCombatSoakOptions, label: string): Promise<void> {
     const matched = await waitForResult(predicate, options);
     if (!matched) {
@@ -457,6 +558,7 @@ function publicOptions(options: NamedCombatSoakOptions): Record<string, unknown>
         configPath: options.configPath,
         durationMs: options.durationMs,
         pollMs: options.pollMs,
+        requireLowHealthRecoveryChain: options.requireLowHealthRecoveryChain,
         commandSpawn: options.commandSpawn,
     };
 }
