@@ -59,6 +59,8 @@ The honest limit: they are not yet reliable arbitrary-goal adventurers. Starter 
 
 QA032 improved the live combat recovery evidence but did **not** close the full recovery chain. After target-failure cooldowns were threaded through combat/prayer routines and direct training commands, the rebuilt hot stack rerun `data/benchmarks/capability-qa-2026-05-30/qa032-low-health-cook-eat-reengage-rerun/named_combat_soak_20260531025617.json` showed `res:qa-survivor` performing 10 safe attacks, 0 unsafe attacks, 0 deaths, combat evidence, bones pickup/bury evidence, Prayer evidence, and one `low_health_fish_food` action. The strict verifier still failed because the resident did not progress from raw shrimp to `low_health_cook_food`, `low_health_eat`, or safe combat re-engage inside 180 seconds.
 
+QA034 now adds a dedicated strict verifier task, `low-health-cook-eat-reengage-5m`, so this chain is measured explicitly in benchmark mode (task wiring + focused tests are green). A live autonomous run could not be recorded in this sandbox because gateway connect is blocked (`EPERM 127.0.0.1:43595`), so final chain proof still requires a hot-stack rerun in a loopback-capable environment.
+
 Current interpretation: directed starter combat is stronger than the QA031 row implies, but full low-health fish -> cook -> eat -> re-engage remains open. The next packet should target low-health nervous/body recovery ordering, especially repeated low-health food reflexes suppressing the cook/eat recovery path when perception is stale.
 
 ## Evidence Snapshot

@@ -28,6 +28,10 @@ import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from 
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
 import { LEVEL_UP_FIREMAKING_3M_TASK_ID, makeLevelUpFiremaking3mBenchmarkTask } from './tasks/level-up-firemaking-3m';
+import {
+    LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
+    makeLowHealthCookEatReengage5mBenchmarkTask,
+} from './tasks/low-health-cook-eat-reengage-5m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
 import { MEMORY_ROUTE_RECALL_5M_TASK_ID, makeMemoryRouteRecall5mBenchmarkTask } from './tasks/memory-route-recall-5m';
@@ -71,6 +75,7 @@ const CORE_TASK_IDS = [
     LEVEL_UP_FIREMAKING_3M_TASK_ID,
     BURY_BONES_PRAYER_3M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
+    LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
     MEMORY_ROUTE_RECALL_5M_TASK_ID,
     WORLD_EVENT_REACTION_5M_TASK_ID,
@@ -298,6 +303,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === COMBAT_PRAYER_10M_TASK_ID) {
         return makeCombatPrayer10mBenchmarkTask();
+    }
+    if (taskId === LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID) {
+        return makeLowHealthCookEatReengage5mBenchmarkTask();
     }
     if (taskId === MEMORY_RECALL_3M_TASK_ID) {
         return makeMemoryRecall3mBenchmarkTask();
