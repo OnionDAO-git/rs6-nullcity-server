@@ -31,6 +31,7 @@ import {
     lowHealthHoldPositionAction,
     presenceBeaconAction,
     agentKeepaliveAction,
+    heroKeepaliveAction,
     activeFollowAction,
     followListenHoldAction,
     visibilityStatus,
@@ -208,6 +209,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                     const agentKeepalive = agentKeepaliveAction(this, perception as HybridPerception, visibility);
                     if (agentKeepalive) {
                         return this.result([agentKeepalive], 'agent_keepalive', 0, false);
+                    }
+
+                    const heroKeepalive = heroKeepaliveAction(this, perception as HybridPerception, visibility);
+                    if (heroKeepalive) {
+                        return this.result([heroKeepalive], 'hero_keepalive', 0, false);
                     }
 
                     const presenceBeacon = presenceBeaconAction(this, perception as HybridPerception);

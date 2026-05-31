@@ -165,6 +165,7 @@ export const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
 export const SOCIAL_KEEPALIVE_EVERY_TICKS = 36;
 export const TRADE_KEEPALIVE_EVERY_TICKS = 60;
 export const AGENT_KEEPALIVE_EVERY_TICKS = 60;
+export const HERO_KEEPALIVE_EVERY_TICKS = 60;
 export const TRADE_STARTER_OFFER_COOLDOWN_TICKS = 120;
 const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
 const COOKS_ASSISTANT_DIALOGUE_SEQUENCE: AgentAction[] = [
@@ -682,6 +683,47 @@ export function agentKeepaliveAction(
         kind: 'say',
         text: cleanSpeech('Agent online. No tester visible. Say "agent status" or "agent help" to check my goal, location, and next step.'),
         cause: 'agent_keepalive',
+    };
+}
+
+const HERO_KEEPALIVE_EXCLUDED_PREFIXES = new Set(['agent', 'social', 'trade']);
+
+export function heroKeepaliveAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+    visibility: { anchor?: Pos; returnDue: boolean },
+): AgentAction | undefined {
+    if (
+        HERO_KEEPALIVE_EXCLUDED_PREFIXES.has(ctx.commandPrefix()) ||
+        visibility.returnDue ||
+        typeof ctx.options.state.stuckSince !== 'number'
+    ) {
+        return undefined;
+    }
+    if (ctx.cognition().activeMove) {
+        return undefined;
+    }
+    if ((perception.nearby?.players || []).length > 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    const last = cognition.lastHeroKeepaliveTick;
+    if (typeof last !== 'number') {
+        cognition.lastHeroKeepaliveTick = tick;
+        return undefined;
+    }
+    if (tick - last < HERO_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    cognition.lastHeroKeepaliveTick = tick;
+    const display = ctx.options.soul.frontmatter.display || ctx.commandPrefix();
+    return {
+        kind: 'say',
+        text: cleanSpeech(`${display} here. No observers visible. Here if you need me.`),
+        cause: 'hero_keepalive',
     };
 }
 

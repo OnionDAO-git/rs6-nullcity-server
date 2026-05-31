@@ -7869,6 +7869,152 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
+    it('emits hero_keepalive for a named hero when stuck and cooldown elapsed', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:hans';
+        state.stuckSince = 60;
+        state.cognition = {
+            lastBrainTick: 60,
+            lastBodyTick: 60,
+            lastHeroKeepaliveTick: 60,
+        };
+        const hansSoul: Soul = {
+            sourcePath: '/tmp/res-hans.md',
+            body: '# Hans\n\nHans is a courtyard guard.',
+            frontmatter: {
+                name: 'res:hans',
+                display: 'Hans',
+                archetype: 'endurer',
+                model: { endpoint: 'default', temperature: 0.6 },
+                behavior: {
+                    kind: 'hybrid-agent',
+                    brainEveryTicks: 50,
+                    bodyEveryTicks: 1,
+                    shareGoalsEveryTicks: 60,
+                },
+                attentionProfile: { startingAttention: 14000, decayCurve: 'standard' },
+            },
+        };
+        const agent = hybridAgent(llm, state, hansSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+            }),
+        );
+
+        expect(result.cause).toBe('hero_keepalive');
+        expect(result.actions).toEqual([
+            {
+                kind: 'say',
+                text: 'Hans here. No observers visible. Here if you need me.',
+                cause: 'hero_keepalive',
+            },
+        ]);
+        expect(state.cognition?.lastHeroKeepaliveTick).toBe(121);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not emit hero_keepalive for res:agent (uses agent_keepalive instead)', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:agent';
+        state.stuckSince = 60;
+        state.cognition = {
+            lastBrainTick: 60,
+            lastBodyTick: 60,
+            lastAgentKeepaliveTick: 60,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+            }),
+        );
+
+        expect(result.cause).toBe('agent_keepalive');
+        expect(result.cause).not.toBe('hero_keepalive');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('does not emit hero_keepalive when a player is visible', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:hans';
+        state.stuckSince = 60;
+        state.cognition = {
+            lastBrainTick: 60,
+            lastBodyTick: 60,
+            lastHeroKeepaliveTick: 60,
+        };
+        const hansSoul: Soul = {
+            sourcePath: '/tmp/res-hans.md',
+            body: '# Hans',
+            frontmatter: {
+                name: 'res:hans',
+                display: 'Hans',
+                archetype: 'endurer',
+                model: { endpoint: 'default', temperature: 0.6 },
+                behavior: { kind: 'hybrid-agent', brainEveryTicks: 50, bodyEveryTicks: 1, shareGoalsEveryTicks: 60 },
+                attentionProfile: { startingAttention: 14000, decayCurve: 'standard' },
+            },
+        };
+        const agent = hybridAgent(llm, state, hansSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+                players: [player('Claude', 3201, 3200)],
+            }),
+        );
+
+        expect(result.cause).not.toBe('hero_keepalive');
+        expect(state.cognition?.lastHeroKeepaliveTick).toBe(60);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
+    it('keeps ordinary stuck recovery when hero_keepalive cooldown is not elapsed', async () => {
+        const llm = scriptedLlm([]);
+        const state = runtimeState();
+        state.resident = 'res:father-aereck';
+        state.stuckSince = 80;
+        state.cognition = {
+            lastBrainTick: 120,
+            lastBodyTick: 120,
+            lastHeroKeepaliveTick: 100,
+        };
+        const aereckSoul: Soul = {
+            sourcePath: '/tmp/res-father-aereck.md',
+            body: '# Father Aereck',
+            frontmatter: {
+                name: 'res:father-aereck',
+                display: 'Father Aereck',
+                archetype: 'mentor',
+                model: { endpoint: 'default', temperature: 0.6 },
+                behavior: { kind: 'hybrid-agent', brainEveryTicks: 50, bodyEveryTicks: 1, shareGoalsEveryTicks: 60 },
+                attentionProfile: { startingAttention: 14000, decayCurve: 'gentle' },
+            },
+        };
+        const agent = hybridAgent(llm, state, aereckSoul);
+
+        const result = await agent.think(
+            perception({
+                tick: 121,
+                resident: residentAt(3200, 3200),
+            }),
+        );
+
+        expect(result.cause).toBe('stuck_pre_inference_explore');
+        expect(result.actions[0]).toEqual(expect.objectContaining({ kind: 'move_to', cause: 'stuck_pre_inference_explore' }));
+        expect(state.cognition?.lastHeroKeepaliveTick).toBe(100);
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('proactively requests a starter trade from the configured tester when adjacent and stocked', async () => {
         const codex = player('codex', 3200, 3201);
         const llm = scriptedLlm([]);

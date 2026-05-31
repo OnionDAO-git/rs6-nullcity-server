@@ -57,6 +57,7 @@ export interface CognitiveState {
     lastSocialKeepaliveTick?: number;
     lastTradeKeepaliveTick?: number;
     lastAgentKeepaliveTick?: number;
+    lastHeroKeepaliveTick?: number;
     lastLowHealthSpeechTick?: number;
     routineLoopKey?: string;
     routineLoopCount?: number;

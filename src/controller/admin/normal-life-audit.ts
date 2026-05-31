@@ -194,6 +194,7 @@ const TRACKED_CAUSES = [
     'starter_fishing_eat_cooked_fish_for_space',
     'direct_chat_trade',
     'agent_keepalive',
+    'hero_keepalive',
 ];
 const TRACKED_TIMELINE_KINDS = [
     'logout',

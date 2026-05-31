@@ -2489,7 +2489,7 @@ function visibleSpeechProgressReason(attempt: ActionAttempt): string | undefined
         return undefined;
     }
     const cause = stringReason((attempt.action as { cause?: unknown }).cause) || stringReason(attempt.cause);
-    if (cause === 'social_keepalive' || cause === 'trade_keepalive' || cause === 'agent_keepalive') {
+    if (cause === 'social_keepalive' || cause === 'trade_keepalive' || cause === 'agent_keepalive' || cause === 'hero_keepalive') {
         return `visible_say:${cause}`;
     }
     return undefined;
