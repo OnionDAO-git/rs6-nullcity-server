@@ -87,6 +87,14 @@ export class ControllerHost {
     private readonly configuredDesired: Set<string>;
     private readonly desired: Set<string>;
     private readonly paused = new Set<string>();
+    // Residents birthed at runtime via the City API (human-funded Soul
+    // proposals). They are in neither config.residents nor soul discovery, so
+    // refreshDesiredResidents() must union them in or the reconcile loop tears
+    // their runtime down as `no_longer_desired` the tick after birth, orphaning
+    // a funded Soul (connected to the world but unmanaged: no evidence session,
+    // city API getRuntime() returns undefined). In-memory for now; cross-restart
+    // persistence is a follow-up (see FIX-BORN-RESIDENT-PERSIST-1).
+    private readonly cityBorn = new Set<string>();
     private readonly soulLoader: SoulLoader;
     private readonly memory: MemoryStore;
     private readonly stateStore: RuntimeStateStore;
@@ -291,6 +299,7 @@ export class ControllerHost {
         if (!this.runtimes.has(input.residentName)) {
             await this.connectWithSoul(soul);
         }
+        this.cityBorn.add(input.residentName);
         this.desired.add(input.residentName);
         return { resident: input.residentName, created, connected: true };
     }
@@ -540,7 +549,7 @@ export class ControllerHost {
     private refreshDesiredResidents(): void {
         this.desired.clear();
         const discovered = this.config.souls.discoverResidents ? this.discoveredSoulResidents() : [];
-        for (const name of [...this.configuredDesired, ...discovered]) {
+        for (const name of [...this.configuredDesired, ...discovered, ...this.cityBorn]) {
             if (!this.paused.has(name)) {
                 this.desired.add(name);
             }

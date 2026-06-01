@@ -357,6 +357,40 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('keeps a city-born resident desired across reconcile even with soul discovery disabled', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => []),
+            load: jest.fn((name: string) => soul(name)),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
+        const host = new ControllerHost(
+            { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false } },
+            deps,
+        );
+
+        await host.start();
+        expect(runtimeCount(host)).toBe(1);
+
+        await host.birthResidentFromCity({
+            proposalId: 'proposal-1',
+            residentName: 'res:born',
+            soulMarkdown: '---\nname: res:born\narchetype: mentor\n---\nborn soul body',
+            fundedAttention: 100,
+        });
+        expect(runtimeCount(host)).toBe(2);
+
+        // A reconcile rebuilds the desired set from the configured cohort (and
+        // soul discovery when enabled). A human-funded, city-born resident is in
+        // neither, so before the cityBorn fix it was torn down as
+        // "no_longer_desired" and orphaned. It must survive reconcile.
+        await host.reconcile();
+        expect(runtimeCount(host)).toBe(2);
+
+        await host.stop();
+    });
+
     it('passes configured SPARK modules into created runtimes', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
