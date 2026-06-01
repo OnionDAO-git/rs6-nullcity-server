@@ -5407,7 +5407,9 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('moves the trader toward Codex under the seeded trade benchmark when the tester is visible', async () => {
+    it('moves the trader toward its configured follow player under the seeded trade benchmark when visible', async () => {
+        // The trade goal now targets a present resident (trade-with-res-qa-social),
+        // but the trader still follows its configured followPlayer (codex) to stay in range.
         const codex = player('codex', 3229, 3230);
         const llm = scriptedLlm([]);
         const state = runtimeState();

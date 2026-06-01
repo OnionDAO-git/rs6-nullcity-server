@@ -679,6 +679,87 @@ export function firemakingAction(perception: BodyHybridPerception): AgentAction 
  * Approach and chop the nearest level-1 tree when the resident is carrying
  * a woodcutting axe. Moved verbatim from the monolith (R-β slice 2).
  */
+/** Bronze axe — the cheapest woodcutting axe, sold at Bob's Brilliant Axes (Lumbridge). */
+export const BRONZE_AXE_ITEM_ID = 1351;
+/** Bob's axe shop NPC location (Lumbridge), used to navigate when Bob is out of perception. */
+export const BOB_AXE_SHOP = { key: 'rs:lumbridge_bob', position: { x: 3230, y: 3203, level: 0 } } as const;
+/** Coin floor before attempting an axe purchase (bronze axe is ~16gp; buffer for shop rate). */
+const MIN_COINS_FOR_AXE = 30;
+/** A shop stays open after `interact 'trade'`; treat it as open for this many ticks. */
+const SHOP_OPEN_WINDOW_TICKS = 30;
+
+function coinsCarried(perception: BodyHybridPerception): number {
+    return (perception.resident?.inventory || []).reduce((sum, item) => {
+        return item && COIN_ITEM_IDS.has(item.itemId) ? sum + (item.amount ?? 1) : sum;
+    }, 0);
+}
+
+function isAxeShopkeeper(actor: BodyActor): boolean {
+    const ref = `${actor.key ?? ''} ${actor.name ?? ''}`.toLowerCase();
+    return /\bbob\b/.test(ref) || ref.includes('lumbridge_bob');
+}
+
+/**
+ * Resident tool-acquisition: a woodcutting resident with no axe but enough coins
+ * BUYS one at Bob's shop instead of stalling forever. Per tick: navigate to Bob
+ * (by known location when out of perception, then approach), open his shop via
+ * `interact 'trade'`, then `buy_from_shop` a bronze axe. Returns undefined when
+ * the resident already has an axe (defer to the skill routine) or cannot afford
+ * one (the caller reports blocked). `shopState` sequences the open->buy handshake
+ * across ticks since perception carries no shop-open signal.
+ */
+export function acquireWoodcuttingAxeAction(
+    perception: BodyHybridPerception,
+    shopState?: { lastShopOpenTick?: number },
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+    if (hasWoodcuttingAxe(perception)) {
+        return undefined;
+    }
+    const freeAxe = (perception.nearby?.objects || [])
+        .filter(object => object.objectId === LUMBRIDGE_FREE_AXE_OBJECT_ID && sameLevel(here, object.position))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (freeAxe) {
+        if (distance(here, freeAxe.position) > INTERACTION_APPROACH_RADIUS) {
+            return {
+                kind: 'move_to',
+                target: freeAxe.position,
+                range: INTERACTION_APPROACH_RADIUS,
+                cause: 'acquire_axe_approach_free_lumbridge_axe',
+            };
+        }
+
+        return { kind: 'interact', target: freeAxe, option: 'take-axe', cause: 'acquire_axe_take_free_lumbridge_axe' };
+    }
+    if (coinsCarried(perception) < MIN_COINS_FOR_AXE) {
+        return undefined;
+    }
+    const bob = (perception.nearby?.npcs || []).find(npc => isAxeShopkeeper(npc) && sameLevel(here, npc.position));
+    if (!bob) {
+        return {
+            kind: 'move_to',
+            target: { ...BOB_AXE_SHOP.position },
+            range: INTERACTION_APPROACH_RADIUS,
+            cause: 'acquire_axe_travel_to_shop',
+        };
+    }
+    if (distance(here, bob.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: bob.position, range: INTERACTION_APPROACH_RADIUS, cause: 'acquire_axe_approach_bob' };
+    }
+    const shopOpen = shopState?.lastShopOpenTick !== undefined && currentTick - shopState.lastShopOpenTick <= SHOP_OPEN_WINDOW_TICKS;
+    if (!shopOpen) {
+        if (shopState) {
+            shopState.lastShopOpenTick = currentTick;
+        }
+        return { kind: 'interact', target: bob, option: 'trade', cause: 'acquire_axe_open_shop' };
+    }
+    return { kind: 'buy_from_shop', itemId: BRONZE_AXE_ITEM_ID, quantity: 1, cause: 'acquire_axe_buy' };
+}
+
 export function levelOneWoodcuttingAction(
     perception: BodyHybridPerception,
     targetFailureCooldowns?: Record<string, number>,
@@ -689,7 +770,15 @@ export function levelOneWoodcuttingAction(
         return undefined;
     }
     if (!hasWoodcuttingAxe(perception)) {
-        return undefined;
+        // No axe but a woodcutting goal: instead of stalling forever, go buy one at
+        // Bob's shop. The shop-open tick is persisted via the cooldown record so the
+        // open->buy handshake sequences across body ticks.
+        const shopState = { lastShopOpenTick: targetFailureCooldowns?.['acquire_axe_shop_open'] };
+        const acquire = acquireWoodcuttingAxeAction(perception, shopState, currentTick);
+        if (targetFailureCooldowns && shopState.lastShopOpenTick !== undefined) {
+            targetFailureCooldowns['acquire_axe_shop_open'] = shopState.lastShopOpenTick;
+        }
+        return acquire;
     }
 
     const target = (perception.nearby?.objects || [])
@@ -709,32 +798,6 @@ export function levelOneWoodcuttingAction(
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
-}
-
-/** Take or approach a visible free Lumbridge axe when the resident lacks one. */
-export function acquireWoodcuttingAxeAction(perception: BodyHybridPerception): AgentAction | undefined {
-    const here = perception.resident?.position;
-    if (!here || hasWoodcuttingAxe(perception)) {
-        return undefined;
-    }
-
-    const freeAxe = (perception.nearby?.objects || [])
-        .filter(object => object.objectId === LUMBRIDGE_FREE_AXE_OBJECT_ID && sameLevel(here, object.position))
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-    if (!freeAxe) {
-        return undefined;
-    }
-
-    if (distance(here, freeAxe.position) > INTERACTION_APPROACH_RADIUS) {
-        return {
-            kind: 'move_to',
-            target: freeAxe.position,
-            range: INTERACTION_APPROACH_RADIUS,
-            cause: 'acquire_axe_approach_free_lumbridge_axe',
-        };
-    }
-
-    return { kind: 'interact', target: freeAxe, option: 'take-axe', cause: 'acquire_axe_take_free_lumbridge_axe' };
 }
 
 /** Approach and mine the nearest level-1 clay/copper/tin rock when carrying a pickaxe. */
