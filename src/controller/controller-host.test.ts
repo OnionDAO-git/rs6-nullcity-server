@@ -418,6 +418,40 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host2.stop();
     });
 
+    it('isolates a failing resident during reconcile so the rest of the cohort still connects', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => []),
+            load: jest.fn((name: string) => {
+                if (name === 'res:bad') {
+                    throw new Error('missing soul for res:bad');
+                }
+                return soul(name);
+            }),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-resil-mem-'));
+        // res:bad is iterated first (insertion order); before the per-resident
+        // try/catch it would throw and abort the whole reconcile, leaving res:good
+        // unmanaged. With isolation, res:good still connects.
+        const host = new ControllerHost(
+            {
+                ...config(),
+                residents: ['res:bad', 'res:good'],
+                souls: { ...config().souls, discoverResidents: false },
+                memory: { dir: memoryDir, qmdBin: '' },
+            },
+            deps,
+        );
+
+        await host.start();
+
+        expect(residentNames(host)).toContain('res:good');
+        expect(residentNames(host)).not.toContain('res:bad');
+
+        await host.stop();
+    });
+
     it('passes configured SPARK modules into created runtimes', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();

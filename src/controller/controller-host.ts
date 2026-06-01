@@ -384,18 +384,28 @@ export class ControllerHost {
         }
 
         for (const name of this.desired) {
-            const summary = residents.get(name);
-            if (!summary) {
-                await this.createAndConnect(name);
-            } else if (!summary.online) {
-                this.stopRuntime(name, 'resident_offline');
-                await this.connect(name);
-            } else if (!this.isControlledByThisController(summary)) {
-                this.stopRuntime(name, 'gateway_control_changed');
-                await this.connect(name);
-            } else if (!this.runtimes.has(name)) {
-                this.stopRuntime(name, 'runtime_missing');
-                await this.attachExisting(name);
+            // Isolate per-resident reconcile failures so one bad resident cannot
+            // block the whole cohort. This matters especially for persisted
+            // city-born residents: a born resident whose soul file is missing
+            // would otherwise throw in createAndConnect and abort the entire
+            // reconcile pass on every tick. Log + skip; the next pass retries.
+            try {
+                const summary = residents.get(name);
+                if (!summary) {
+                    await this.createAndConnect(name);
+                } else if (!summary.online) {
+                    this.stopRuntime(name, 'resident_offline');
+                    await this.connect(name);
+                } else if (!this.isControlledByThisController(summary)) {
+                    this.stopRuntime(name, 'gateway_control_changed');
+                    await this.connect(name);
+                } else if (!this.runtimes.has(name)) {
+                    this.stopRuntime(name, 'runtime_missing');
+                    await this.attachExisting(name);
+                }
+            } catch (error) {
+                // eslint-disable-next-line no-console
+                console.error(`[controller-host] reconcile failed for resident ${name}; skipping this pass`, error);
             }
         }
     }

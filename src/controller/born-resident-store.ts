@@ -51,6 +51,23 @@ export class BornResidentStore {
         this.persist([...residents]);
     }
 
+    /**
+     * Drop a born resident from the manifest so it is not re-spawned on the next
+     * restart. Intended for retirement/permanent death — a dead resident belongs
+     * in the Library of Souls, not back in the live cohort.
+     *
+     * TODO (FIX-BORN-PERSIST-RESTART-1 follow-up): wire this into the death /
+     * retirement path so a born resident that dies is pruned here. Until then a
+     * born resident that dies could be re-spawned on a controller restart.
+     */
+    remove(name: string): void {
+        const residents = new Set(this.list());
+        if (!residents.delete(name)) {
+            return;
+        }
+        this.persist([...residents]);
+    }
+
     private persist(residents: string[]): void {
         fs.mkdirSync(this.memoryRoot, { recursive: true });
         const payload: BornResidentFile = { schemaVersion: 1, residents };

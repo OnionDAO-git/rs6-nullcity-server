@@ -39,6 +39,24 @@ describe('BornResidentStore', () => {
         expect(new BornResidentStore(root).list()).toEqual([]);
     });
 
+    it('remove drops a resident and persists the removal', () => {
+        const root = tmpRoot();
+        const store = new BornResidentStore(root);
+        store.add('res:born1');
+        store.add('res:born2');
+        store.remove('res:born1');
+        expect(store.list()).toEqual(['res:born2']);
+        // persisted: a fresh instance also sees the removal
+        expect(new BornResidentStore(root).list()).toEqual(['res:born2']);
+    });
+
+    it('remove is a no-op for an unknown resident', () => {
+        const store = new BornResidentStore(tmpRoot());
+        store.add('res:born1');
+        store.remove('res:nope');
+        expect(store.list()).toEqual(['res:born1']);
+    });
+
     it('creates the memory root dir if it does not exist yet', () => {
         const root = path.join(tmpRoot(), 'nested', 'memory');
         const store = new BornResidentStore(root);
