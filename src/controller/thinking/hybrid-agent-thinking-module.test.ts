@@ -24,15 +24,18 @@ describe('S-INFER-8: brain inference timeout is a generous server-broken alarm, 
     });
 });
 
-describe('S-INFER-9: cohort routes the Brain to q8 (spark) and the Body to q4 (tower)', () => {
-    // The deliberate-planner + fast-executor split: the rare, cadenced Brain runs
-    // the smarter/slower q8 model (thinking ON, generous 240s ceiling) while the
-    // fast every-few-seconds Body runs the q4 model (thinking OFF, tight timeout).
+describe('S-INFER-10: cohort routes BOTH the Brain and the Body to q4 (tower); q8 dropped', () => {
+    // S-INFER-10 reverts the S-INFER-9 brain→q8 routing: q8 proved unusable
+    // (~1.4 tok/s, ~12 min/plan; full-envelope prompts timed out). BOTH tiers now
+    // run the fast q4 (tower) model via behavior.brain/body.endpoint=body_q4. The
+    // deliberate-planner Brain keeps thinking ON + the generous 240s ceiling; the
+    // fast every-few-seconds Body keeps thinking OFF + the tight timeout — they just
+    // share the same q4 endpoint now.
     // endpointFor(profile) = profile?.endpoint || soul.model?.endpoint || 'default',
-    // so the per-soul behavior.brain.endpoint / behavior.body.endpoint route the
-    // two tiers to SEPARATE endpoints without touching the shared `default`.
-    // The hybrid-agent cohort — these run the real deliberate-planner Brain (q8)
-    // + fast-executor Body (q4) split via behavior.brain/body.endpoint.
+    // so the per-soul behavior.brain.endpoint / behavior.body.endpoint both resolve
+    // to body_q4 (q4 tower) without touching the shared `default`.
+    // The hybrid-agent cohort — these run the deliberate-planner Brain + fast-executor
+    // Body, both on q4 via behavior.brain/body.endpoint.
     const HYBRID_COHORT = [
         'res:agent',
         'res:qa-woodcutter',
@@ -56,11 +59,12 @@ describe('S-INFER-9: cohort routes the Brain to q8 (spark) and the Body to q4 (t
         });
     }
 
-    it.each(HYBRID_COHORT)('routes %s Brain → brain_q8 endpoint and Body → body_q4 endpoint', name => {
+    it.each(HYBRID_COHORT)('routes %s Brain → body_q4 (q4) endpoint and Body → body_q4 endpoint', name => {
         const agent = moduleFor(name);
         const behavior = agent.behavior();
 
-        expect(agent.endpointFor(behavior.brain)).toBe('brain_q8');
+        // S-INFER-10: both tiers on q4 (tower); q8 dropped (unusable).
+        expect(agent.endpointFor(behavior.brain)).toBe('body_q4');
         expect(agent.endpointFor(behavior.body)).toBe('body_q4');
     });
 
@@ -92,10 +96,10 @@ describe('S-INFER-9: cohort routes the Brain to q8 (spark) and the Body to q4 (t
         expect(agent.endpointFor(behavior.body)).toBe('body_q4');
     });
 
-    it('resolves the Body endpoint independently of the Brain endpoint (slow brain cannot reroute the body)', () => {
+    it('resolves the Body endpoint independently of the Brain endpoint (a rerouted brain cannot move the body)', () => {
         // The Body request (runBody) builds its endpoint from behavior.body alone —
-        // there is no cross-reference to behavior.brain — so a slow q8 brain on a
-        // different host never changes where the q4 body fires.
+        // there is no cross-reference to behavior.brain — so changing the brain's
+        // endpoint never changes where the q4 body fires.
         const agent = moduleFor('res:agent');
         const behavior = agent.behavior();
 
@@ -104,7 +108,8 @@ describe('S-INFER-9: cohort routes the Brain to q8 (spark) and the Body to q4 (t
         (behavior.brain as { endpoint?: string }).endpoint = 'some_other_host';
 
         expect(agent.endpointFor(behavior.body)).toBe('body_q4');
-        expect(brainEndpointBefore).toBe('brain_q8');
+        // S-INFER-10: the brain now also resolves to q4 (body_q4); q8 dropped.
+        expect(brainEndpointBefore).toBe('body_q4');
     });
 });
 

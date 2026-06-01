@@ -50,8 +50,8 @@ behavior:
   returnToAnchorEveryTicks: 420
   returnToAnchorRadius: 10
   brain:
-    # S-INFER-9: deliberate planner → smarter/slower qwopus q8 (spark host).
-    endpoint: brain_q8
+    # S-INFER-10: deliberate planner → qwopus q4 (tower host). q8 dropped — unusable at ~1.4 tok/s (see HD-053).
+    endpoint: body_q4
     thinking: true
     temperature: 0.55
   body:

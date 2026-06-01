@@ -168,9 +168,10 @@ describe('SoulLoader', () => {
 
         it('uses only synthetic QA residents for the qwopus canary split', () => {
             expect(loader.load('res:agent').frontmatter.model?.endpoint).toBe('default');
-            // S-INFER-9: the res:hans hook-hero routes its single thinking-off model
-            // tier to the fast q4 (tower) via model.endpoint=body_q4 (it has no
-            // deliberative q8 brain/body split). Updated from the old 'default'.
+            // S-INFER-9 / S-INFER-10: the res:hans hook-hero routes its single
+            // thinking-off model tier to the fast q4 (tower) via model.endpoint=body_q4
+            // (it has no deliberative brain/body loop). Updated from the old 'default'.
+            // (S-INFER-10 reverted the cohort brain→q8 split: everything is on q4 now.)
             expect(loader.load('res:hans').frontmatter.model?.endpoint ?? 'default').toBe('body_q4');
             expect(loader.load('res:qa-scout').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
             expect(loader.load('res:qa-forager').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');

@@ -4,6 +4,8 @@
 **Packet:** S-INFER-9
 **Result:** shipped (routing proven by unit test; live quality/latency PENDING deploy + watch)
 
+> **REVERTED by S-INFER-10 (2026-05-31).** The q8 brain split was reverted to **q4-everywhere** after q8 proved unusable (~1.4 tok/s, ~12 min/plan; full-envelope prompts timed out — S-INFER-9-PREDEPLOY-GUARD-1 `ff47b826`). The committed config never reached production; the live controller stayed on q4 (95.5% usable-brain) the whole time. Cohort souls + `controller.yml` now route **both** Brain and Body to q4. See `docs/runtime-stewardship.md` § Model policy and HD-053.
+
 ## What
 
 The maintainer's intended architecture is a **deliberate-planner + fast-executor** split:
