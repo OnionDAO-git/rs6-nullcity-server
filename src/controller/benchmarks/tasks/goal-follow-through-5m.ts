@@ -263,16 +263,18 @@ async function observeFollowThrough(context: BenchmarkTaskContext, now: () => nu
 }
 
 function recordedAttempts(context: BenchmarkTaskContext): GoalFollowThrough5mActionAttempt[] {
-    return compactGoalFollowThroughAttempts(context.actionAttempts().map(attempt => {
-        const withGoal = attempt as typeof attempt & { goalId?: string; tick?: number };
-        return {
-            requestId: attempt.requestId,
-            action: attempt.action,
-            goalId: typeof withGoal.goalId === 'string' ? withGoal.goalId : undefined,
-            tick: typeof withGoal.tick === 'number' ? withGoal.tick : undefined,
-            finalStatus: attempt.finalStatus,
-        };
-    }));
+    return compactGoalFollowThroughAttempts(
+        context.actionAttempts().map(attempt => {
+            const withGoal = attempt as typeof attempt & { goalId?: string; tick?: number };
+            return {
+                requestId: attempt.requestId,
+                action: attempt.action,
+                goalId: typeof withGoal.goalId === 'string' ? withGoal.goalId : undefined,
+                tick: typeof withGoal.tick === 'number' ? withGoal.tick : undefined,
+                finalStatus: attempt.finalStatus,
+            };
+        }),
+    );
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

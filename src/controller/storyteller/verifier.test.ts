@@ -159,6 +159,22 @@ describe('verifyDispatch — unsupported death / fade', () => {
         expect(result.warnings.some(w => w.includes('death or fade'))).toBe(true);
     });
 
+    it('does not warn for explicit zero-fade status lines', () => {
+        const result = verifyDispatch(
+            makeDispatch({
+                publicBody: 'All 12 residents are active.',
+                publicBullets: [
+                    'No one is faded or low on AP.',
+                    'Zero residents faded in this window.',
+                    'No one is fading.',
+                    'Zero are faded.',
+                ],
+            }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('death or fade'))).toBe(false);
+    });
+
     it('passes when resident_faded event is in apEvents', () => {
         const digest = makeEmptyDigest();
         digest.apEvents = [makeEvent('fade-ap', 'resident_faded', 'critical')];

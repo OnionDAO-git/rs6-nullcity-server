@@ -45,6 +45,29 @@ function sanitizePublicText(text: string): string {
         .trim();
 }
 
+function parseModelJson(text: string): Record<string, unknown> | undefined {
+    for (const candidate of modelJsonCandidates(text)) {
+        try {
+            const raw = JSON.parse(candidate);
+            if (isRecord(raw)) return raw;
+        } catch {
+            // Try the next candidate below.
+        }
+    }
+    return undefined;
+}
+
+function modelJsonCandidates(text: string): string[] {
+    const trimmed = text.trim();
+    const candidates = [trimmed];
+    const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i) ?? trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced?.[1]) candidates.push(fenced[1].trim());
+    const firstBrace = trimmed.indexOf('{');
+    const lastBrace = trimmed.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+    return [...new Set(candidates.filter(Boolean))];
+}
+
 function capWords(text: string, maxWords: number): string {
     const words = text.trim().split(/\s+/).filter(Boolean);
     if (words.length <= maxWords) return text.trim();
@@ -171,14 +194,10 @@ export class StorytellerModelClient {
             reviewReasons.push(`model call was nooped (${llmResponse.cancelledBy ?? 'unknown'})`);
             parsed = buildNoModelFallback(digest, config);
         } else {
-            try {
-                const raw = JSON.parse(llmResponse.text);
-                if (isRecord(raw)) {
-                    parsed = raw;
-                } else {
-                    reviewReasons.push(`model returned non-JSON object: ${llmResponse.text.slice(0, 100)}`);
-                }
-            } catch {
+            const raw = parseModelJson(llmResponse.text);
+            if (raw) {
+                parsed = raw;
+            } else {
                 reviewReasons.push(`model returned non-JSON: ${llmResponse.text.slice(0, 100)}`);
             }
         }
@@ -189,6 +208,15 @@ export class StorytellerModelClient {
         const operatorSummary = safeString(parsed['operatorSummary']) || '(no summary)';
         const operatorWarnings = safeStringArray(parsed['operatorWarnings']);
         const eventRefsUsed = safeStringArray(parsed['eventRefsUsed']);
+        if (!safeString(parsed['publicTitle']).trim()) {
+            reviewReasons.push('model returned missing publicTitle');
+        }
+        if (!safeString(parsed['publicBody']).trim()) {
+            reviewReasons.push('model returned missing publicBody');
+        }
+        if (!publicBullets.length) {
+            reviewReasons.push('model returned missing publicBullets');
+        }
 
         let dispatch: StorytellerDispatch = {
             schemaVersion: 1,

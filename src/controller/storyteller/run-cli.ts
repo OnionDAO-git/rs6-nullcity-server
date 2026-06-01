@@ -132,7 +132,7 @@ function buildEndpoints(
     const endpoints: Record<string, LlmEndpointConfig> = {};
 
     if (baseUrl) {
-        const endpointCfg: LlmEndpointConfig = { baseUrl, model, timeoutMs: 60_000 };
+        const endpointCfg: LlmEndpointConfig = { baseUrl, model, timeoutMs: 60_000, responseFormat: 'text' };
         if (apiKey) endpointCfg.apiKey = apiKey;
         endpoints[modelProfile] = endpointCfg;
         if (modelProfile !== 'default') {

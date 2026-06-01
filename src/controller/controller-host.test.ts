@@ -368,7 +368,12 @@ describe('ControllerHost reconcile lifecycle', () => {
         const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-mem-'));
         const host = new ControllerHost(
-            { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false }, memory: { dir: memoryDir, qmdBin: '' } },
+            {
+                ...config(),
+                residents: ['res:pip'],
+                souls: { dir: soulsDir, discoverResidents: false },
+                memory: { dir: memoryDir, qmdBin: '' },
+            },
             deps,
         );
 
@@ -396,7 +401,12 @@ describe('ControllerHost reconcile lifecycle', () => {
     it('re-manages a city-born resident after a controller restart (persisted born manifest)', async () => {
         const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-mem-'));
-        const cfg = { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false }, memory: { dir: memoryDir, qmdBin: '' } };
+        const cfg = {
+            ...config(),
+            residents: ['res:pip'],
+            souls: { dir: soulsDir, discoverResidents: false },
+            memory: { dir: memoryDir, qmdBin: '' },
+        };
 
         // First controller process: birth a resident, then shut down.
         const host1 = new ControllerHost(cfg, dependencies(new FakeGateway()));
@@ -466,7 +476,12 @@ describe('ControllerHost reconcile lifecycle', () => {
         const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-death-souls-'));
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-death-mem-'));
         const host = new ControllerHost(
-            { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false }, memory: { dir: memoryDir, qmdBin: '' } },
+            {
+                ...config(),
+                residents: ['res:pip'],
+                souls: { dir: soulsDir, discoverResidents: false },
+                memory: { dir: memoryDir, qmdBin: '' },
+            },
             deps,
         );
 

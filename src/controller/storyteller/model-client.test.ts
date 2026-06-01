@@ -122,6 +122,18 @@ describe('StorytellerModelClient.run — happy path', () => {
 
         expect(dispatch.needsReview).toBe(false);
     });
+
+    it('accepts model JSON wrapped in a fenced code block', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(`\`\`\`json\n${validDispatchJson([refs.gpEarned])}\n\`\`\``));
+
+        const client = new StorytellerModelClient(makeEndpoints());
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.needsReview).toBe(false);
+        expect(dispatch.publicTitle).toBe('Null City Dispatch');
+        expect(dispatch.publicBullets).toEqual(['Alice is low on AP.', 'Bob earned GP.']);
+    });
 });
 
 // ---------------------------------------------------------------------------
@@ -309,6 +321,14 @@ describe('StorytellerModelClient.run — error handling', () => {
         const client = new StorytellerModelClient(makeEndpoints());
         const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
 
+        expect(dispatch.needsReview).toBe(true);
+        expect(dispatch.reviewReasons).toEqual(
+            expect.arrayContaining([
+                expect.stringContaining('missing publicTitle'),
+                expect.stringContaining('missing publicBody'),
+                expect.stringContaining('missing publicBullets'),
+            ]),
+        );
         expect(dispatch.publicTitle).toBe('(no title generated)');
         expect(dispatch.publicBody).toBe('(no body generated)');
     });

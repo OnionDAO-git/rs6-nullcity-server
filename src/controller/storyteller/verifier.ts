@@ -23,6 +23,8 @@ const PRIVATE_HANDLE = /(?:^|\s)@[A-Za-z]\w{1,30}\b|\b\d{17,19}\b/;
 
 // Claim patterns — matched against public text only (title + body + bullets).
 const DEATH_CLAIM = /\b(?:died|faded|deceased|passed away)\b/i;
+const ZERO_DEATH_STATUS =
+    /\b(?:(?:no|zero|0)\s+(?:one|residents?|resident|souls?|soul)?\s*(?:is\s+|are\s+|was\s+|were\s+)?(?:faded|fading|dead|deceased|died)|(?:no one|nobody|none)\s+(?:is\s+|are\s+|was\s+|were\s+)?(?:faded|fading|dead|deceased|died))\b/gi;
 const GP_MOVE_CLAIM =
     /\b(?:earned|traded|gained|collected|burned|lost)\b.{0,30}\b(?:GP|gold|coins?)\b|\b(?:GP|gold|coins?)\b.{0,30}\b(?:earned|traded|gained|collected)\b/i;
 const NCRI_CLAIM = /\bNCRI\b/i;
@@ -32,6 +34,10 @@ const RESIDENT_BIRTH_CLAIM = /\b(?:new resident|resident(?:s)?(?:\s+\w+){0,3}\s+
 
 function publicText(dispatch: StorytellerDispatch): string {
     return [dispatch.publicTitle, dispatch.publicBody, ...dispatch.publicBullets].join(' ');
+}
+
+function textWithoutZeroDeathStatus(text: string): string {
+    return text.replace(ZERO_DEATH_STATUS, '');
 }
 
 function allRefs(digest: CityEventDigest): Set<string> {
@@ -74,7 +80,7 @@ export function verifyDispatch(dispatch: StorytellerDispatch, digest: CityEventD
         digest.apEvents.some(e => e.kind === 'resident_faded') ||
         digest.miscEvents.some(e => e.kind === 'resident_faded') ||
         digest.residents.some(r => r.isFaded);
-    if (DEATH_CLAIM.test(text) && !hasFadeEvidence) {
+    if (DEATH_CLAIM.test(textWithoutZeroDeathStatus(text)) && !hasFadeEvidence) {
         warnings.push('public text claims a death or fade but no resident_faded event or faded snapshot in digest');
     }
 
