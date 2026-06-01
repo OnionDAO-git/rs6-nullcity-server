@@ -6,6 +6,7 @@ This file tells humans and AI agents which docs are canonical today and which do
 
 | Reader | Read first | Purpose |
 |---|---|---|
+| Attendee / team viewer | `docs/null-city-human-guide.md` | Watch Null City, spend AP, read residents, use Embassy/prints/Library without dev context. |
 | Human operator | `HUMANS.md` | Run, verify, demo, and shut down Null City. |
 | AI coding agent | `AGENTS.md` | Current repo rules, sprint pointers, safety boundaries. |
 | Deep AI onboarding | `docs/START-HERE-AGENTS.md` | Longer architecture and workstream context. |

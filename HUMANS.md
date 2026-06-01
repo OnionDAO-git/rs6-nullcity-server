@@ -1,6 +1,8 @@
-# HUMANS.md — Null City Human Guide
+# HUMANS.md — Null City Operator Guide
 
-The human-facing companion to [AGENTS.md](AGENTS.md). Everything you need to run, verify, and operate Null City locally.
+The human-operator companion to [AGENTS.md](AGENTS.md). Everything you need to run, verify, and operate Null City locally.
+
+For the non-technical attendee/team guide, read [`docs/null-city-human-guide.md`](docs/null-city-human-guide.md). That guide explains what humans can view and do in Null City without server commands.
 
 For demo prep, see [`docs/demo-day-checklist.md`](docs/demo-day-checklist.md). For what shipped most recently, see [`CHANGELOG.md`](CHANGELOG.md). For current project direction, see [`docs/2026-05-26-meeting-decisions.md`](docs/2026-05-26-meeting-decisions.md).
 
