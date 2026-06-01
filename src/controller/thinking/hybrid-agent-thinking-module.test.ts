@@ -5359,7 +5359,7 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(state.cognition?.activeGoal).toEqual(
             expect.objectContaining({
-                id: 'trade-with-codex',
+                id: 'trade-with-res-qa-social',
                 description: expect.stringContaining('trade'),
             }),
         );
@@ -5369,7 +5369,9 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('moves the trader toward Codex under the seeded trade benchmark when the tester is visible', async () => {
+    it('moves the trader toward its configured follow player under the seeded trade benchmark when visible', async () => {
+        // The trade goal now targets a present resident (trade-with-res-qa-social),
+        // but the trader still follows its configured followPlayer (codex) to stay in range.
         const codex = player('codex', 3229, 3230);
         const llm = scriptedLlm([]);
         const state = runtimeState();
@@ -5384,7 +5386,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(state.cognition?.activeGoal?.id).toBe('trade-with-codex');
+        expect(state.cognition?.activeGoal?.id).toBe('trade-with-res-qa-social');
         expect(result.actions).toEqual([{ kind: 'move_to', target: codex.position, range: 1, cause: 'follow_player_active' }]);
         expect(result.cause).toBe('follow_player_active');
         expect(llm.complete).not.toHaveBeenCalled();
