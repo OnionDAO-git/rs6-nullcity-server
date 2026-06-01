@@ -35,7 +35,7 @@ modules:
     enabled: true
 behavior:
   kind: hybrid-agent
-  followPlayer: codex
+  followPlayer: res:qa-trader
   followRadius: 2
   commandPrefix: social
   brainEveryTicks: 360
