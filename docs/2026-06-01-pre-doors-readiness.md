@@ -34,8 +34,14 @@ prune-on-death `602d9d8d`. Controller runs in screen `nullcity-controller-codex`
   (woodcutter, cook, guardian, scout, survivor, trader, banker, social) ARE actively doing
   real RuneScape work. **Lever: HD-052 (pending maintainer)** — flip heroes-only to paid
   Haiku via OpenRouter (~cents) for genuinely-smart heroes. Needs a key + config + restart.
-- **NCRI redeem-complete is GP-gated** — residents hold ~0 GP, so the final GP-burn /
-  print step can't fire yet. AP scarcity is OnionDAO-external (third-party DB) by design.
+- **GP is real but concentrated** (corrected 2026-06-01) — GP earning *works*: combat
+  residents loot real coins (`res:qa-guardian` holds **19,692 GP** from `combat_loot_pickup`,
+  qa-trader 1,368, qa-cook 225). The full **NCRI redeem→3D-print cash-in is verified e2e**
+  (qa-guardian NCRI: buy → redeem-intent → redeem-complete burned 500 real GP, 19,692→19,192,
+  print queue updated). The gap is *distribution*: skilling residents earn no coins, and
+  `res:agent` converts all its GP→AP via the self-initiated survival exchange (no reserve),
+  so most residents sit at 0. For an NCRI cash-in demo, use an NCRI owned by a GP-rich
+  resident (qa-guardian). AP scarcity is OnionDAO-external (third-party DB) by design.
 - **In-game tombstone / Library seal on attention-death** — `/v1/graveyard` works (reads
   runtime-state), but `library/<slug>/index.json` stays `currentState:living` on
   attention-death (the seal only fires on the Spark legacy path). In-game tombstones +
