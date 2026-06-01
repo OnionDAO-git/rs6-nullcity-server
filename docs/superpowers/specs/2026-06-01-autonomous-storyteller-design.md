@@ -429,6 +429,8 @@ Use this route shape for implementation planning:
 
 The first viewport is the product. It must be readable at room distance on a 16:9 projector without scrolling.
 
+The public voice should feel like a live news anchor with flair: quick to scan, specific about what changed, and vivid enough to make people want to keep watching. It should favor short current-state paragraphs over long chapter prose. The Storyteller can be funny and dramatic, but the first job is to keep the room oriented.
+
 Display hierarchy:
 
 1. One headline and short body that explain the main event.
@@ -438,6 +440,14 @@ Display hierarchy:
 5. Freshness/confidence indicator using public language such as "Live", "Updated 3m ago", "Story feed catching up", or "Corrected".
 
 Public copy must never expose raw statuses such as `held_model_error`, provider names, stack traces, file paths, or internal ids.
+
+Recommended wide-screen composition:
+
+- Left story column, about 40% width: Storyteller headline, one to three short paragraphs, the useful next action, and freshness.
+- Middle map column, about 35% width: current action cluster, lead resident pins, place labels, movement, and "where to look" context.
+- Right stakes/stat rail, about 25% width: AP pressure, online residents, GP/NCRI/print activity, human interventions, and watch-next signals.
+
+When a major spatial event occurs, the map may temporarily grow. When there is no useful map focus, the story column should grow instead.
 
 ## Autonomous Orchestrator
 
