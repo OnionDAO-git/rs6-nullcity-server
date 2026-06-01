@@ -924,6 +924,35 @@ export class CityIntegrationService {
         // Mark born after successful birth (idempotent — safe to call if already born).
         this.proposalStore.markBorn(proposalId);
 
+        // Promote the funded Soul's goal into a trackable GoalContract so the
+        // resident can later be marked achieved → Library 'saved' moment (the
+        // loop's climax). Without this, a born resident carried a goal in its
+        // proposal but had no contract, leaving accomplish-goal→Library
+        // unreachable. Idempotent: birthFromProposal is re-callable, so skip if
+        // the resident already has a contract. A goal failure must not fail the
+        // birth (the resident is already alive), so swallow + continue.
+        if (proposal.goalText) {
+            try {
+                const goalStore = new GoalContractStore(this.options.memoryRoot, this.now);
+                if (goalStore.listByResident(proposal.residentName).length === 0) {
+                    goalStore.create({
+                        residentName: proposal.residentName,
+                        goalText: proposal.goalText,
+                        completion: proposal.binaryCompletionCondition
+                            ? { condition: proposal.binaryCompletionCondition, evidenceSource: 'proposal:binary_completion_condition' }
+                            : undefined,
+                    });
+                }
+            } catch (err) {
+                // Best-effort: the birth already succeeded, so never fail it for a
+                // goal-contract problem. Log so operators get a signal instead of a
+                // silently missing goal. (Single-process controller: the
+                // listByResident read-before-create is safe; no concurrent birth.)
+                // eslint-disable-next-line no-console
+                console.error('[birthFromProposal] goal-contract creation failed', { proposalId, error: err });
+            }
+        }
+
         return result;
     }
 

@@ -4,6 +4,7 @@ import path from 'path';
 import { residentSlug, type RuntimeState } from '../memory/runtime-state';
 import { runCityDigest } from './cli';
 import { EconomyEventLog } from './economy-event';
+import { GoalContractStore } from './goal-contract';
 import { CityIntegrationError, CityIntegrationService, type CityRuntime } from './service';
 import { SoulProposalStore } from './soul-proposals';
 
@@ -1357,6 +1358,37 @@ describe('CityIntegrationService', () => {
         expect(after.bornAt).toBeDefined();
     });
 
+    it('birthFromProposal: creates a trackable GoalContract from the proposal goal', async () => {
+        const store = new SoulProposalStore(root);
+        const proposal = store.create({
+            residentName: 'res:test',
+            soulMarkdown: soulMarkdown('res:test'),
+            goalText: 'Make 100 GP/hour',
+            binaryCompletionCondition: 'gp earned >= 100',
+            apThreshold: 50,
+            proposerCityUserId: 'user:alice',
+        });
+        store.fund(proposal.id, 100, 'user:alice');
+        store.approve(proposal.id);
+
+        await service.birthFromProposal(proposal.id);
+
+        // The funded Soul's goal must become a trackable GoalContract so it can
+        // be marked achieved -> Library 'saved' moment (the loop's climax).
+        const goals = new GoalContractStore(root).listByResident('res:test');
+        expect(goals).toHaveLength(1);
+        expect(goals[0]).toMatchObject({
+            residentName: 'res:test',
+            goalText: 'Make 100 GP/hour',
+            status: 'active',
+            completion: { condition: 'gp earned >= 100' },
+        });
+
+        // Idempotent: birthFromProposal is re-callable; it must not duplicate the goal.
+        await service.birthFromProposal(proposal.id);
+        expect(new GoalContractStore(root).listByResident('res:test')).toHaveLength(1);
+    });
+
     it('birthFromProposal: idempotent — calling twice births only once', async () => {
         const store = new SoulProposalStore(root);
         const proposal = store.create({
@@ -1378,6 +1410,12 @@ describe('CityIntegrationService', () => {
 
         const after = store.get(proposal.id)!;
         expect(after.status).toBe('born');
+
+        // A proposal without binaryCompletionCondition still gets one goal, with
+        // completion undefined (exercises the else branch of the mapping).
+        const goals = new GoalContractStore(root).listByResident('res:test');
+        expect(goals).toHaveLength(1);
+        expect(goals[0]?.completion).toBeUndefined();
     });
 
     it('birthFromProposal: emits city_birth Library event with proposalId and fundedAttention', async () => {
