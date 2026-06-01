@@ -67,7 +67,7 @@ listed in `residents:` instead of auto-controlling every starter soul file.
 
 Current active cohort:
 
-- `res:agent` — canonical resident / general loop
+- `res:agent` — The Steward; canonical resident / general loop
 - `res:hans` — human-facing hero and patron demo anchor
 - `res:qa-woodcutter` — woodcutting, firemaking, XP and item loops
 - `res:qa-cook` — fishing, cooking, food and eating loops
@@ -145,3 +145,6 @@ curl -fsS -H 'Authorization: Bearer operator-token' http://127.0.0.1:43611/api/n
 curl -fsS http://127.0.0.1:8787/api/overview >/dev/null
 curl -fsS http://127.0.0.1:5174/ >/dev/null
 ```
+
+## Deploy note (2026-06-01 00:40 CDT, claude)
+- Controller restarted from HEAD (f52209b6) to ship FIX-BORN-RESIDENT-PERSIST-1 + FIX-BIRTH-GOAL-CONTRACT-1 (James-authorized). Old controller (pid 58896, screen `nullcity-controller-codex`) gracefully stopped; new controller now runs in screen **`nullcity-controller`** (log `/tmp/nullcity-runtime/controller-claude-deploy.log`). Same flags: `--mcp-http-port=43610 --letters-http-port=43596 --wall-redact --city-http-port=43611 --city-http-token=operator-token`. Game/gateway (`nullcity-game-codex`, 43594/43595) untouched. Both fixes live-verified end-to-end (born resident survives reconcile + thinks; goal->Library saved moment fires).
