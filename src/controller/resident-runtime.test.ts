@@ -3793,6 +3793,7 @@ describe('ResidentRuntime modules', () => {
             stop: jest.fn(),
         };
 
+        const onDeath = jest.fn();
         const runtime = new ResidentRuntime({
             soul: soul('res:pip'),
             gateway: {} as GatewayClient,
@@ -3802,6 +3803,7 @@ describe('ResidentRuntime modules', () => {
             actionLog: {} as ActionLog,
             inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
             thinking,
+            onDeath,
             evidence: {
                 store,
                 sessionId: 'session-1',
@@ -3832,6 +3834,8 @@ describe('ResidentRuntime modules', () => {
         });
 
         expect(state.deceased.processed).toBe(true);
+        // onDeath fires once so the host can prune a city-born resident (death must stick).
+        expect(onDeath).toHaveBeenCalledWith('res:pip', 'killed by guard');
 
         const lettersStore = new LettersStore(evidenceRoot);
         const aliceLetters = lettersStore.readInbox('patron:alice');

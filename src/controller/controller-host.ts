@@ -461,6 +461,7 @@ export class ControllerHost {
             loreBus: this.loreBus,
             factionStockpile: this.factionStockpile,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
+            onDeath: (name: string) => this.handleResidentDeath(name),
         };
         this.runtimes.set(
             soul.frontmatter.name,
@@ -565,6 +566,23 @@ export class ControllerHost {
         this.paused.add(name);
         this.desired.delete(name);
         this.stopRuntime(name, cause);
+    }
+
+    /**
+     * Invoked once when a managed resident is first observed deceased. For a
+     * city-born resident, prune it from the desired set + persisted manifest so
+     * the reconcile loop does not reconnect it (and its respawnPolicy un-die
+     * it) — a Soul whose attention ran out must stay dead and reach the
+     * graveyard. Authored cohort residents (config.residents) are left untouched
+     * and keep their existing respawn behavior.
+     */
+    private handleResidentDeath(name: string): void {
+        if (!this.cityBorn.has(name)) {
+            return;
+        }
+        this.cityBorn.delete(name);
+        this.desired.delete(name);
+        this.bornStore.remove(name);
     }
 
     private refreshDesiredResidents(): void {

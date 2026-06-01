@@ -52,13 +52,10 @@ export class BornResidentStore {
     }
 
     /**
-     * Drop a born resident from the manifest so it is not re-spawned on the next
-     * restart. Intended for retirement/permanent death — a dead resident belongs
-     * in the Library of Souls, not back in the live cohort.
-     *
-     * TODO (FIX-BORN-PERSIST-RESTART-1 follow-up): wire this into the death /
-     * retirement path so a born resident that dies is pruned here. Until then a
-     * born resident that dies could be re-spawned on a controller restart.
+     * Drop a born resident from the manifest so it is not re-spawned. Called by
+     * ControllerHost.handleResidentDeath (wired via ResidentRuntime onDeath) when
+     * a born resident dies — a dead Soul belongs in the Library of Souls, not
+     * back in the live cohort.
      */
     remove(name: string): void {
         const residents = new Set(this.list());

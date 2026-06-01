@@ -135,6 +135,13 @@ export interface ResidentRuntimeOptions {
         actionMs?: number;
     };
     loreBus?: LoreBus;
+    /**
+     * Fired exactly once when this resident is first observed deceased (after
+     * epitaphs are dispatched). Lets the ControllerHost prune a city-born
+     * resident so reconcile + respawn does not resurrect it — a Soul whose
+     * attention runs out must stay dead (and reach the graveyard), not respawn.
+     */
+    onDeath?: (residentName: string, cause: string) => void;
 }
 
 export interface ResidentRuntimeEvidence {
@@ -1180,6 +1187,16 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private checkDeceasedAndDispatchEpitaphs(perception: Perception): void {
         if (this.state.deceased && !this.state.deceased.processed) {
             this.state.deceased.processed = true;
+            // Notify the host so a city-born resident is pruned from the desired
+            // set + manifest; otherwise reconcile would reconnect it and its
+            // respawnPolicy would un-die it, so the death never sticks (this is
+            // why the graveyard stayed empty). Best-effort: a callback failure
+            // must not block epitaph dispatch.
+            try {
+                this.options.onDeath?.(this.name, this.state.deceased.cause);
+            } catch {
+                // ignore — death processing continues regardless
+            }
             const library = this.evidence?.library;
             const patronHandles = library ? library.getPatronHandles() : [];
             const root = record(perception);

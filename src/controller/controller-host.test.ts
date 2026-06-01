@@ -3,6 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from './config';
+import { BornResidentStore } from './born-resident-store';
 import { ControllerHost, type CityInventoryGateway, type ControllerHostOptions } from './controller-host';
 import { LettersStore } from './patron/letters-store';
 import { PatronStore } from './patron/patron-store';
@@ -448,6 +449,46 @@ describe('ControllerHost reconcile lifecycle', () => {
 
         expect(residentNames(host)).toContain('res:good');
         expect(residentNames(host)).not.toContain('res:bad');
+
+        await host.stop();
+    });
+
+    it('prunes a city-born resident on death so it stays dead (no resurrection)', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        const onDeathByName: Record<string, (name: string, cause: string) => void> = {};
+        deps.runtimeFactory = jest.fn((opts: { soul: { frontmatter: { name: string } }; onDeath?: (n: string, c: string) => void }) => {
+            if (opts.onDeath) {
+                onDeathByName[opts.soul.frontmatter.name] = opts.onDeath;
+            }
+            return fakeRuntime();
+        }) as unknown as ControllerHostOptions['runtimeFactory'];
+        const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-death-souls-'));
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-death-mem-'));
+        const host = new ControllerHost(
+            { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false }, memory: { dir: memoryDir, qmdBin: '' } },
+            deps,
+        );
+
+        await host.start();
+        await host.birthResidentFromCity({
+            proposalId: 'p1',
+            residentName: 'res:born',
+            soulMarkdown: '---\nname: res:born\narchetype: mentor\n---\nborn soul body',
+            fundedAttention: 100,
+        });
+        expect(residentNames(host)).toContain('res:born');
+        expect(new BornResidentStore(memoryDir).list()).toContain('res:born');
+
+        // The runtime observes the born resident's death and fires onDeath.
+        onDeathByName['res:born']?.('res:born', 'attention_exhausted');
+
+        // Pruned from the persisted manifest, and a reconcile must NOT resurrect
+        // it (without the prune, refreshDesiredResidents would re-add it and the
+        // resident would respawn — death would never stick).
+        expect(new BornResidentStore(memoryDir).list()).not.toContain('res:born');
+        await host.reconcile();
+        expect(residentNames(host)).not.toContain('res:born');
 
         await host.stop();
     });
