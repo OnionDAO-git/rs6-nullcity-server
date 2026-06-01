@@ -1407,6 +1407,24 @@ export const MAX_PROMPT_MEMORY_CHARS = 360;
 export const DEFAULT_FOLLOW_RADIUS = 2;
 export const BRAIN_TIMEOUT_BACKOFF_TICKS = 600;
 
+/**
+ * Default TTL (ticks) applied to a Brain-authored goal when the model omits
+ * `ttlTicks`. Matches the dominant hard-coded factory norm (600). LLM goals
+ * frequently omit a TTL, and {@link goalExpired} treats an undefined TTL as
+ * "never expires" — which made unsatisfiable goals ("Follow Codex" when Codex
+ * is absent, "Find an axe" when none exists) immortal, leaving residents stuck.
+ * A bounded default lets every goal self-retire so the Brain re-plans.
+ */
+export const DEFAULT_BRAIN_GOAL_TTL_TICKS = 600;
+
+/**
+ * Resolve the effective TTL for a Brain-authored goal. Non-positive / non-finite
+ * model values are treated as omitted and fall back to the bounded default.
+ */
+export function resolveBrainGoalTtl(modelTtl: number | undefined): number {
+    return typeof modelTtl === 'number' && Number.isFinite(modelTtl) && modelTtl > 0 ? modelTtl : DEFAULT_BRAIN_GOAL_TTL_TICKS;
+}
+
 export function goalExpired(ctx: HelperContext, goal: ActiveGoalState): boolean {
     return goal.ttlTicks !== undefined && ctx.options.state.tick - goal.createdAtTick > goal.ttlTicks;
 }
@@ -3377,7 +3395,7 @@ export async function runBrain(
             description: parsed.goal.description,
             steps: parsed.goal.steps,
             success: parsed.goal.success,
-            ttlTicks: parsed.goal.ttlTicks,
+            ttlTicks: resolveBrainGoalTtl(parsed.goal.ttlTicks),
             createdAtTick: ctx.options.state.tick,
         };
         planChange = { id: nextGoalId, steps: parsed.goal.steps?.length || 0 };
