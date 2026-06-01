@@ -90,15 +90,55 @@ pre-existing red `config.test.ts` canary, now fixed: qwen/60000 → qwopus/75000
 - The live "are plans smarter + residents lively" verdict is **PENDING deploy +
   observation**. NOT claiming residents are smarter yet.
 
+## 2026-05-31 pre-deploy guard — do not restart onto q8 yet
+
+Codex ran a runtime guard before deploying this split to the live controller. Result:
+**do not restart Monday/demo runtime onto `brain_q8` yet.** The routing code is valid,
+but the q8 host did not complete resident-sized Brain envelopes within the current
+runtime tolerance.
+
+Direct probes, all using a synthetic resident-sized Brain prompt:
+
+- `inf.nullcity.ai:1234` / `qwopus3.5-27b-v3@q8_0` / thinking ON / 4096 tokens:
+  **timeout at 180s**.
+- `inf.nullcity.ai:1234` / `qwopus3.5-27b-v3@q8_0` / thinking OFF / 1024 tokens:
+  **timeout at 90s**.
+- `inf.nullcity.ai:1234` / `qwopus3.5-27b-v3@q8_0` / thinking OFF / 512 tokens:
+  **timeout at 90s**.
+- `spacetower.nullcity.ai:8100` / `qwopus3.5-27b-v3` / thinking ON / 4096 tokens:
+  **timeout at 180s**.
+- `spacetower.nullcity.ai:8100` / `qwopus3.5-27b-v3` / thinking OFF / 512 tokens:
+  **timeout at 90s**.
+- After a 30s cool-down, tiny non-thinking probes recovered on both hosts:
+  `inf-q8-small` returned `200` in `14275ms`; `spacetower-small` returned `200` in
+  `12487ms`.
+
+Current deployed controller was therefore left untouched. It is still good enough to
+keep residents moving:
+
+- `npm run controller:smoke -- --observe-seconds 60 --allow-recent-visible`:
+  **10/10 OK**, no action timeouts/failures in the observation window.
+- `npm run controller:inference-audit -- --duration-ms 900000 --output-dir data/benchmarks/capability-qa-2026-05-31/s-infer-host-degraded-check`:
+  artifact `inference_health_audit_20260601T002420Z.json`, `206` brain decisions,
+  `95.2%` usable brain rate, `96.6%` goal follow-through.
+- `npm run controller:normal-life-audit -- --duration-ms 600000 --output-dir data/benchmarks/capability-qa-2026-05-31/s-runtime-health-check`:
+  artifact `normal_life_audit_20260601T002420Z.json`, `10` active residents,
+  `505/505` action attempts succeeded, `low_health_heal_wait=0`,
+  `organicSelfInitiatedApGpExchangeEvents=1`.
+
+Next safe path: keep the current robust q4/alias live stack for Monday unless a new
+full-envelope canary proves q8 resident Brain prompts complete reliably. Small `/v1`
+model and tiny chat probes are not enough.
+
 ## Steward / Dev notes
 
 - **Keep q8 hot on spark.** Ask Dev to keep `qwopus3.5-27b-v3@q8_0` resident/warm on
   `inf.nullcity.ai:1234` so the q8 brain stays nearer ~60s than ~150s.
 - **Verify inf serves @q8_0 first.** As of 2026-05-31 the inf host was rejecting
   qwopus probes ("Context size has been exceeded") and the LIVE `default` was failed
-  over to spacetower. If inf is still degraded, point `brain_q8.baseUrl` at
-  `spacetower:8100` (it serves `@q8_0` per `/v1/models`) so the q8 brain still works
-  while the tower carries both tiers.
+  over to spacetower. Re-check `/v1/models` before assuming a fallback host: Codex's
+  pre-deploy guard saw `inf` list `@q8_0`, while `spacetower` listed the q4 id and
+  the unsuffixed alias, not `@q8_0`.
 
 ## Watch plan (after deploy)
 
