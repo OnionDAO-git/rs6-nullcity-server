@@ -1755,3 +1755,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-05-31 19:20 CDT codex branch=agents/wip repo=server lane=QA packet=CQA10-post-ap-cycle-recurrence-90m HANDOFF - SHA=pending tests=normal-life-audit90m+smoke60+check:no-ui evidence=apgp8 organic8 controlled0 blockers=trade0 stuck389/378 next=trade-closure soak.
 2026-05-31 19:26 CDT codex branch=agents/wip repo=server packet=CQA10-post-ap-cycle-recurrence-90m CORRECTION - HANDOFF SHA=e1e38724.
 2026-05-31 19:31 CDT codex branch=agents/wip repo=server lane=RUNTIME packet=S-INFER-9-PREDEPLOY-GUARD-1 HANDOFF - SHA=pending docs-only. q8 full resident prompt timed out (180s thinking, 90s no-think); current live stack held. evidence=smoke 10/10 OK, inf-audit 206 brain 95.2%, life 505/505 + organic APGP. check:no-ui PASS. next=full-envelope q8 canary before deploy.
+2026-05-31 19:32 CDT codex branch=agents/wip packet=S-INFER-9-PREDEPLOY-GUARD-1 CORRECTION - HANDOFF SHA=ff47b826.
