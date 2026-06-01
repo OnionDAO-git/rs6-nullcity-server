@@ -91,10 +91,13 @@ describe('Spark evidence integration', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('emits end_tick reason=parse_failed when LLM returns non-JSON', async () => {
+    it('emits end_tick reason=parse_failed when LLM returns valid JSON of the wrong shape', async () => {
+        // S-INFER-1: a genuine parse failure is now JSON-that-fails-schema
+        // (e.g. an unsafe memo path), not plain prose. The robust salvage
+        // path reserves `parse_failed` for schema_mismatch.
         const { builder, trajectoryPath } = evidence();
         const llm = {
-            complete: jest.fn(async () => ({ text: 'this is not JSON at all', nooped: false })),
+            complete: jest.fn(async () => ({ text: JSON.stringify({ memo: { path: '../escape.md', text: 'bad' } }), nooped: false })),
         } as unknown as LlmClient;
         const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
 
@@ -103,6 +106,100 @@ describe('Spark evidence integration', () => {
         const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
         expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'parse_failed' });
         expect(llm.complete).toHaveBeenCalled();
+    });
+
+    it('treats non-JSON prose as a classified empty completion, not a hard parse failure (S-INFER-1)', async () => {
+        // Previously plain prose threw inside extractJson and surfaced as
+        // parse_failed. The salvage path classifies it as truly_empty so the
+        // tick completes normally with the ordinary empty_completion cause.
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: 'this is not JSON at all', nooped: false })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('empty_completion');
+        const endTick = readJsonl(trajectoryPath).find(l => l.kind === 'end_tick');
+        expect(endTick).toMatchObject({ kind: 'end_tick', reason: 'tick_complete' });
+    });
+
+    it('records a think-only completion with a precise empty_completion_think_only_no_answer cause (S-INFER-1)', async () => {
+        // Real Qwen3 thinking-mode failure (HD-033 / F20a): the model emits a
+        // (here truncated) <think> block and never produces a JSON answer.
+        // The classification surfaces the real reason instead of a blanket
+        // empty_completion.
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: '<think>Let me reason about what to do next, I think the player', nooped: true })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('empty_completion_think_only_no_answer');
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'decision', cause: 'empty_completion_think_only_no_answer', actionKinds: [] }),
+            ]),
+        );
+    });
+
+    it('records a reflex-cancelled think as thinking_cancelled, not empty_completion (S-INFER-2 D2)', async () => {
+        // A nervous reflex interrupted the think mid-flight: the completion is
+        // empty ONLY because it was aborted (bucket C), not because the model
+        // produced no decision. It must surface thinking_cancelled (carrying the
+        // reflex cause), never fold into the empty_completion buckets.
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: '', nooped: true, cancelledBy: 'nervous:flee_combat' })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('thinking_cancelled:nervous:flee_combat');
+        expect(result.cause).not.toBe('empty_completion');
+        expect(result.cause?.startsWith('empty_completion')).toBe(false);
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ kind: 'decision', cause: 'thinking_cancelled:nervous:flee_combat', actionKinds: [] }),
+            ]),
+        );
+    });
+
+    it('keeps a bare request_timeout cancel as its own cause, not thinking_cancelled (S-INFER-2 D2)', async () => {
+        // A genuine request timeout already has a historical label; do not relabel
+        // it thinking_cancelled — only reflex/watchdog interrupts get that tag.
+        const { builder } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({ text: '', nooped: true, cancelledBy: 'request_timeout' })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.cause).toBe('request_timeout');
+    });
+
+    it('recovers a think-wrapped JSON action completion that the old greedy parser discarded (S-INFER-1)', async () => {
+        // The answer is real but wrapped in a <think> block whose reasoning
+        // contains braces — exactly the shape the greedy first-{-to-last-}
+        // slice corrupted. Salvage strips the think block and runs the action.
+        const { builder } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: '<think>maybe {"say":"wrong"} hmm</think>\n{"cause":"chat_reply","actions":[{"kind":"say","text":"I am awake."}]}',
+                nooped: false,
+            })),
+        } as unknown as LlmClient;
+        const spark = new Spark(soul(), runtimeState(), memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 1, events: [{ kind: 'chat', text: 'hello' }] });
+
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am awake.' }]);
+        expect(result.cause).toBe('chat_reply');
     });
 
     it('emits end_tick reason=plan_continuation when an active plan advances on a subsequent tick', async () => {
@@ -317,6 +414,40 @@ describe('Spark evidence integration', () => {
         );
     });
 
+    it('records request timeouts before idle initiative fallbacks when hero idle reflection is due', async () => {
+        const { builder, trajectoryPath } = evidence();
+        const llm = {
+            complete: jest.fn(async () => ({
+                text: JSON.stringify({ actions: [] }),
+                nooped: true,
+                cancelledBy: 'request_timeout',
+            })),
+        } as unknown as LlmClient;
+        const state = runtimeState();
+        state.tick = 119;
+        const spark = new Spark(heroSoul(), state, memory(), llm, { evidence: builder });
+
+        const result = await spark.tick({ tick: 120, events: [] });
+
+        expect(result.cause).toBe('request_timeout');
+        expect(result.nooped).toBe(false);
+        expect(result.actions).toEqual([
+            { kind: 'say', text: 'Still here as Hans; watching the area.', cause: 'idle_initiative' },
+            { kind: 'move_to', target: { x: 3222, y: 3218, level: 0 }, range: 1, cause: 'idle_initiative' },
+        ]);
+        expect(readJsonl(trajectoryPath)).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    kind: 'decision',
+                    cause: 'request_timeout',
+                    actionKinds: ['say', 'move_to'],
+                }),
+                expect.objectContaining({ kind: 'say', text: 'Still here as Hans; watching the area.' }),
+                expect.objectContaining({ kind: 'action', actionKind: 'move_to', cause: 'idle_initiative' }),
+            ]),
+        );
+    });
+
     it('records empty no-action completions with a named cause when idle initiative is cooling down', async () => {
         const { builder, trajectoryPath } = evidence();
         const llm = {
@@ -400,6 +531,50 @@ describe('Spark evidence integration', () => {
 
             expect(result.cause).toBe('empty_completion_idle_initiative');
             expect(result.actions.map(action => action.kind)).toEqual(['say', 'move_to']);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
+    it('keeps a hero visible when a due brain turn only writes memory', async () => {
+        jest.useFakeTimers().setSystemTime(new Date('2026-05-25T05:15:31.000Z'));
+        try {
+            const { builder, trajectoryPath } = evidence();
+            const llm = {
+                complete: jest.fn(async () => ({
+                    text: JSON.stringify({
+                        memo: { path: 'journal.md', text: 'I noticed the courtyard growing quiet.' },
+                    }),
+                    nooped: false,
+                })),
+            } as unknown as LlmClient;
+            const state = runtimeState();
+            state.tick = 130;
+            state.lastIdleInitiativeTick = 120;
+            state.lastIdleInitiativeAt = new Date(Date.now() - 31_000).toISOString();
+            const store = memory();
+            const spark = new Spark(heroSoul(), state, store, llm, { evidence: builder });
+
+            const result = await spark.tick({ tick: 131, events: [] });
+
+            expect(store.write).toHaveBeenCalledWith('res:hans', 'journal.md', 'I noticed the courtyard growing quiet.', 'append');
+            expect(result.cause).toBe('completion_memory_update_idle_initiative');
+            expect(result.actions).toEqual([
+                { kind: 'say', text: 'Still here as Hans; watching the area.', cause: 'idle_initiative' },
+                { kind: 'move_to', target: { x: 3221, y: 3217, level: 0 }, range: 1, cause: 'idle_initiative' },
+            ]);
+            expect(readJsonl(trajectoryPath)).toEqual(
+                expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'decision',
+                        cause: 'completion_memory_update_idle_initiative',
+                        actionKinds: ['say', 'move_to'],
+                        memoUpdates: 1,
+                    }),
+                    expect.objectContaining({ kind: 'say', text: 'Still here as Hans; watching the area.' }),
+                    expect.objectContaining({ kind: 'action', actionKind: 'move_to', cause: 'idle_initiative' }),
+                ]),
+            );
         } finally {
             jest.useRealTimers();
         }

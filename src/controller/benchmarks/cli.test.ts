@@ -117,7 +117,10 @@ describe('benchmark CLI', () => {
         expect(output).toContain('"id":"make-fire-5m"');
         expect(output).toContain('"id":"equipment-prep-3m"');
         expect(output).toContain('"id":"combat-prayer-10m"');
+        expect(output).toContain('"id":"earn-gp-via-combat-5m"');
+        expect(output).toContain('"id":"starter-gp-harvest-choice-5m"');
         expect(output).toContain('"id":"cooks-assistant-complete-5m"');
+        expect(output).toContain('"id":"ap-gp-honesty-5m"');
         expect(output).toContain('"mode":"autonomous"');
         expect(GatewayClient).not.toHaveBeenCalled();
     });
@@ -178,6 +181,17 @@ describe('benchmark CLI', () => {
 
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"task":{"id":"starter-mining-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the starter GP pickup benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'starter-gp-pickup-3m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"starter-gp-pickup-3m","version":"0.1.0"');
     });
 
     it('can dry-run the Cooks Assistant quest-start benchmark task', async () => {
@@ -244,6 +258,70 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"combat-prayer-10m","version":"0.1.0"');
     });
 
+    it('can dry-run the earn-gp-via-combat benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'earn-gp-via-combat-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"earn-gp-via-combat-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the starter GP harvest choice benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'starter-gp-harvest-choice-5m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"starter-gp-harvest-choice-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the low-health cook/eat/reengage benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'low-health-cook-eat-reengage-5m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"low-health-cook-eat-reengage-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the self-initiated AP-for-GP exchange benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(
+            ['--task', 'self-initiated-ap-gp-exchange-5m', '--module', 'onion.runescape.standard', '--dry-run'],
+            {
+                stdout: text => writes.push(text),
+            },
+        );
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"self-initiated-ap-gp-exchange-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the goal-follow-through benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'goal-follow-through-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"goal-follow-through-5m","version":"0.1.0"');
+    });
+
     it('can dry-run the equipment-prep benchmark task', async () => {
         const writes: string[] = [];
 
@@ -288,6 +366,39 @@ describe('benchmark CLI', () => {
         expect(writes.join('')).toContain('"task":{"id":"memory-recall-3m","version":"0.1.0"');
     });
 
+    it('can dry-run the memory-route-recall benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'memory-route-recall-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"memory-route-recall-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the memory-write-recall benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'memory-write-recall-10m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"memory-write-recall-10m","version":"0.1.0"');
+    });
+
+    it('can dry-run the world-event-reaction benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'world-event-reaction-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"world-event-reaction-5m","version":"0.1.0"');
+    });
+
     it('can dry-run the trading-giving benchmark task', async () => {
         const writes: string[] = [];
 
@@ -297,6 +408,17 @@ describe('benchmark CLI', () => {
 
         expect(exitCode).toBe(0);
         expect(writes.join('')).toContain('"task":{"id":"trading-giving-5m","version":"0.1.0"');
+    });
+
+    it('can dry-run the AP/GP honesty benchmark task', async () => {
+        const writes: string[] = [];
+
+        const exitCode = await runBenchmarkCli(['--task', 'ap-gp-honesty-5m', '--module', 'onion.runescape.standard', '--dry-run'], {
+            stdout: text => writes.push(text),
+        });
+
+        expect(exitCode).toBe(0);
+        expect(writes.join('')).toContain('"task":{"id":"ap-gp-honesty-5m","version":"0.1.0"');
     });
 
     it('writes reward convention artifacts after a benchmark run', async () => {
@@ -439,16 +561,29 @@ describe('benchmark CLI', () => {
 
         const output = writes.join('');
         expect(exitCode).toBe(0);
-        expect(BenchmarkRunner).toHaveBeenCalledTimes(15);
+        expect(BenchmarkRunner).toHaveBeenCalledTimes(31);
         expect(output).toContain('"benchmark":{"taskId":"make-fire-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"earn-gp-via-combat-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"starter-gp-harvest-choice-5m"');
         expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-start-3m"');
         expect(output).toContain('"benchmark":{"taskId":"cooks-assistant-complete-5m"');
         expect(output).toContain('"benchmark":{"taskId":"bury-bones-prayer-3m"');
         expect(output).toContain('"benchmark":{"taskId":"level-up-firemaking-3m"');
+        expect(output).toContain('"benchmark":{"taskId":"starter-gp-pickup-3m"');
+        expect(output).toContain('"benchmark":{"taskId":"ap-gp-exchange-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"self-initiated-ap-gp-exchange-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"self-initiated-ap-gp-recurrence-10m"');
+        expect(output).toContain('"benchmark":{"taskId":"low-health-cook-eat-reengage-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"ap-gp-library-strategy-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"ap-topup-resume-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"memory-route-recall-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"memory-write-recall-10m"');
+        expect(output).toContain('"benchmark":{"taskId":"world-event-reaction-5m"');
+        expect(output).toContain('"benchmark":{"taskId":"orientation-bias-10m"');
         expect(output).toContain('"suite":{"id":"all"');
-        expect(output).toContain('"total":15');
-        expect(output).toContain('"passed":15');
-        expect(output).toContain('"averageScore":0.9666666666666667');
+        expect(output).toContain('"total":31');
+        expect(output).toContain('"passed":31');
+        expect(output).toContain('"averageScore":0.9838709677419355');
         expect(fs.existsSync(path.join(outputDir, 'bench_make_fire_5m.json'))).toBe(true);
         expect(fs.existsSync(path.join(outputDir, 'bench_combat_prayer_10m.json'))).toBe(true);
         expect(gateway.close).toHaveBeenCalledTimes(1);

@@ -22,6 +22,10 @@ goals:
 alignment: cheerful neutral, helpful by default, never picks fights
 aesthetic: worn linen tunic, mud on the boots, an easy crook in the smile
 model:
+  # S-INFER-9: Hans is a hook-driven hero (single thinking-off tier, no deliberative
+  # q8 Brain). Route its one model tier to the fast q4 (tower) so the embassy hero
+  # stays snappy. behavior.brain/body endpoints do not apply to a hook-hero.
+  endpoint: body_q4
   thinking: false
 attentionProfile:
   startingAttention: 14000

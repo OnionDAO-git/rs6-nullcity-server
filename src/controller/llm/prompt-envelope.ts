@@ -305,7 +305,13 @@ function outputContract(): unknown {
                 condition: { kind: 'perception_path_lte', value: { path: 'self.hpFraction', value: 0.35 } },
                 action: { kind: 'eat', slot: 0 },
                 cooldownTicks: 2,
-                interruptThinking: true,
+                // Brain is uninterruptible; this reflex still acts via the Body, it must
+                // not abort deliberation (S-INFER-5). This is the canonical low-HP eat
+                // example shown to the Brain: a resident at <=35% HP eats NOW via the
+                // Body (suppressThinking still skips the brain call this tick), but the
+                // example must not advertise interrupting an in-flight deliberation now
+                // that the architecture is fully uninterruptible.
+                interruptThinking: false,
                 suppressThinking: true,
             },
         ],

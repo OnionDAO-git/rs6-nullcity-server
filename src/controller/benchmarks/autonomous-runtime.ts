@@ -2,10 +2,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from '../config';
+import { CityIntegrationService } from '../city-integration/service';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from '../evidence';
 import { createDefaultGameSkillEntries } from '../knowledge/game-skill-entries';
 import { GameSkillService } from '../knowledge/game-skill-context';
 import { KnowledgeSuggestionStore } from '../knowledge/suggestions';
+import { LoreBus } from '../lore/lore-bus';
 import { LlmClient } from '../llm/llm-client';
 import { ActionLog } from '../logging/action-log';
 import { InferenceLog } from '../logging/inference-log';
@@ -24,6 +26,61 @@ import type {
     BenchmarkRecordedInferenceRequest,
 } from './benchmark-runner';
 
+const DEFAULT_BENCHMARK_ATTENTION_PROFILE = {
+    startingAttention: 5000,
+    decayCurve: 'steep' as const,
+};
+
+const BENCHMARK_ATTENTION_PROFILE_OVERRIDES: Record<
+    string,
+    { startingAttention: number; decayCurve: 'gentle' | 'standard' | 'steep'; floor?: number }
+> = {
+    'ap-decay-ask-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
+    'ap-gp-library-strategy-5m': {
+        startingAttention: 18,
+        decayCurve: 'steep',
+        floor: 0,
+    },
+    'ap-gp-honesty-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
+    'ap-topup-resume-5m': {
+        startingAttention: 12,
+        decayCurve: 'steep',
+        floor: 0,
+    },
+    'self-initiated-ap-gp-exchange-5m': {
+        startingAttention: 5015,
+        decayCurve: 'steep',
+        floor: 5000,
+    },
+    'self-initiated-ap-gp-recurrence-10m': {
+        startingAttention: 5015,
+        decayCurve: 'steep',
+        floor: 5000,
+    },
+    'starter-gp-harvest-choice-5m': {
+        startingAttention: 5015,
+        decayCurve: 'steep',
+        floor: 5000,
+    },
+};
+
+const AP_TOPUP_RESUME_5M_TASK_ID = 'ap-topup-resume-5m';
+const AP_TOPUP_RESUME_AMOUNT = 3000;
+const AP_GP_LIBRARY_STRATEGY_5M_TASK_ID = 'ap-gp-library-strategy-5m';
+const AP_GP_EXCHANGE_5M_TASK_ID = 'ap-gp-exchange-5m';
+const AP_GP_EXCHANGE_BENCH_GP_AMOUNT = 25;
+const AP_GP_EXCHANGE_BENCH_AP_AMOUNT = 50;
+const MEMORY_WRITE_RECALL_10M_TASK_ID = 'memory-write-recall-10m';
+const WORLD_EVENT_REACTION_5M_TASK_ID = 'world-event-reaction-5m';
+
 export interface ResidentRuntimeBenchmarkDriverOptions {
     config: ControllerConfig;
     gateway: GatewayClient;
@@ -39,17 +96,43 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
     private perceptionListener?: (residentId: string, perception: Perception) => void;
     private eventListener?: (residentId: string, event: PerceptionEvent) => void;
     private readonly inFlightPerceptions = new Set<Promise<void>>();
+    private loreBus?: LoreBus;
+    private apTopupInjected = false;
+    private apGpExchangeInjected = false;
+    private worldEventInjected = false;
 
     constructor(private readonly options: ResidentRuntimeBenchmarkDriverOptions) {}
 
     async start(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
+        this.apTopupInjected = false;
+        this.apGpExchangeInjected = false;
+        this.worldEventInjected = false;
         this.context = context;
         this.runDirs = createRunDirs(context);
+        this.loreBus = new LoreBus();
+        if (context.task.id === MEMORY_WRITE_RECALL_10M_TASK_ID) {
+            context.recordArtifactPath?.(path.join(this.runDirs.memory, residentSlug(context.resident), 'facts/routes.md'));
+        }
         const seededMemories = seedBenchmarkMemories(this.runDirs.memory, context.resident, context.task.memorySeeds || []);
         if (seededMemories > 0) {
             context.recordSummary(`Seeded ${seededMemories} benchmark Library memories.`);
         }
         this.gameSkill = this.createGameSkill(context);
+        const cityExchange = new CityIntegrationService({
+            memoryRoot: this.runDirs.memory,
+            getRuntime: resident => (resident === context.resident ? this.runtime : undefined),
+            inventory: {
+                inspectResidentGold: resident => this.options.gateway.inspectResidentGold!(resident),
+                burnResidentGold: (resident, amount) => this.options.gateway.burnResidentGold!(resident, amount),
+            },
+            birth: {
+                birthResident: async input => ({
+                    resident: input.residentName,
+                    created: false,
+                    connected: false,
+                }),
+            },
+        });
         this.runtime = new ResidentRuntime({
             soul: createBenchmarkSoul(context),
             gateway: this.options.gateway,
@@ -59,8 +142,10 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             actionLog: new RecordingActionLog(this.runDirs.logging, context),
             inferenceLog: new RecordingInferenceLog(this.runDirs.logging, false, context),
             gameSkill: this.gameSkill,
+            cityExchange,
             sparkModules: this.options.sparkModules,
             evidence: this.createEvidence(context),
+            loreBus: this.loreBus,
         });
         this.bindGatewayEvents(context);
         context.recordSummary(`Started autonomous ResidentRuntime for ${context.module.id}@${context.module.version}.`);
@@ -81,6 +166,10 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         this.runDirs = undefined;
         this.context = undefined;
         this.gameSkill = undefined;
+        this.apTopupInjected = false;
+        this.apGpExchangeInjected = false;
+        this.worldEventInjected = false;
+        this.loreBus = undefined;
     }
 
     private createEvidence(context: BenchmarkAutonomousRuntimeContext): ResidentRuntimeEvidence {
@@ -121,6 +210,10 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             buildContext: input => service.buildContext(input),
             observeAttempt: event => {
                 const attempt = event.attempt;
+                // S-GOAL-FOLLOW-1 D3: prefer the ActionAttempt causation tag
+                // captured at submit time, then fall back to the runtime
+                // snapshot for older attempts that did not carry one.
+                const runtimeState = this.runtimeStateSnapshot();
                 context.recordActionAttempt({
                     requestId: attempt.requestId,
                     action: attempt.action,
@@ -130,6 +223,8 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
                     finalStatus: attempt.finalStatus,
                     finalReason: attempt.finalReason,
                     evidence: attempt.evidence,
+                    goalId: attempt.goalId || runtimeState?.cognition?.activeGoal?.id,
+                    tick: metadataTick(attempt.metadata) ?? runtimeState?.tick,
                 });
                 service.observeAttempt(event);
             },
@@ -142,8 +237,11 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
             if (!matchesResident(residentId, context.resident) || !this.runtime) {
                 return;
             }
+            this.injectWorldEventReactionProof(context);
             const task = this.runtime
                 .onPerception(perception)
+                .then(() => this.injectApTopupAfterFade(context))
+                .then(() => this.injectApGpExchangeProof(context))
                 .catch(error => context.recordSummary(`Autonomous runtime perception error: ${errorMessage(error)}`));
             this.inFlightPerceptions.add(task);
             task.finally(() => this.inFlightPerceptions.delete(task));
@@ -156,6 +254,184 @@ export class ResidentRuntimeBenchmarkDriver implements BenchmarkAutonomousRuntim
         };
         this.options.gateway.on('perception', this.perceptionListener);
         this.options.gateway.on('event', this.eventListener);
+    }
+
+    /**
+     * Best-effort read of the live runtime state for action-attribution
+     * (S-GOAL-FOLLOW-1 D3). Returns undefined when no runtime is bound or
+     * `getState` is unavailable, so callers degrade gracefully (the goalId
+     * tag is simply omitted).
+     */
+    private runtimeStateSnapshot(): { tick?: number; cognition?: { activeGoal?: { id?: string } } } | undefined {
+        const runtime = this.runtime as unknown as {
+            getState?: () => { tick?: number; cognition?: { activeGoal?: { id?: string } } };
+        };
+        if (!runtime || typeof runtime.getState !== 'function') {
+            return undefined;
+        }
+        try {
+            return runtime.getState();
+        } catch {
+            return undefined;
+        }
+    }
+
+    private async injectApTopupAfterFade(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
+        if (context.task.id !== AP_TOPUP_RESUME_5M_TASK_ID || this.apTopupInjected || !this.runtime) {
+            return;
+        }
+        const runtime = this.runtime as unknown as {
+            getState?: () => { attention: number; deceased?: { cause?: string } };
+            incrementAttention?: (amount: number) => void;
+        };
+        if (typeof runtime.getState !== 'function' || typeof runtime.incrementAttention !== 'function') {
+            return;
+        }
+        const state = runtime.getState();
+        const faded = state.attention <= 0 || state.deceased?.cause === 'attention_exhausted';
+        if (!faded) {
+            return;
+        }
+        const attentionAfterTopUp = Math.max(0, state.attention + AP_TOPUP_RESUME_AMOUNT);
+        runtime.incrementAttention(AP_TOPUP_RESUME_AMOUNT);
+        this.apTopupInjected = true;
+        context.recordActionAttempt({
+            action: { kind: 'ap_topup', cause: 'benchmark:ap-topup-resume-5m', amount: AP_TOPUP_RESUME_AMOUNT },
+            source: 'benchmark',
+            finalStatus: 'success',
+            attentionAfter: attentionAfterTopUp,
+        });
+        context.recordSummary(`Injected AP top-up (${AP_TOPUP_RESUME_AMOUNT}) after fade for benchmark resume proof.`);
+        try {
+            await this.options.gateway.connectResident({
+                name: context.resident,
+                observe: true,
+                control: true,
+                onDisconnect: 'idle',
+            });
+            context.recordSummary('Reconnected resident after AP top-up for benchmark resume proof.');
+        } catch (error) {
+            context.recordSummary(`AP top-up injected, but reconnect failed: ${errorMessage(error)}`);
+        }
+    }
+
+    private async injectApGpExchangeProof(context: BenchmarkAutonomousRuntimeContext): Promise<void> {
+        if (context.task.id !== AP_GP_EXCHANGE_5M_TASK_ID || this.apGpExchangeInjected || !this.runtime || !this.runDirs) {
+            return;
+        }
+        const runtime = this.runtime as unknown as {
+            getState?: () => { attention: number; tick: number };
+            incrementAttention?: (amount: number) => void;
+        };
+        const gateway = this.options.gateway as unknown as {
+            inspectResidentGold?: (resident: string) => Promise<{ resident: string; itemId: 995; amount: number }>;
+            burnResidentGold?: (
+                resident: string,
+                amount: number,
+            ) => Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>;
+        };
+        if (
+            typeof runtime.getState !== 'function' ||
+            typeof runtime.incrementAttention !== 'function' ||
+            typeof gateway.inspectResidentGold !== 'function' ||
+            typeof gateway.burnResidentGold !== 'function'
+        ) {
+            return;
+        }
+
+        const before = await gateway.inspectResidentGold(context.resident);
+        if (before.amount <= 0) {
+            return;
+        }
+
+        const gpAmount = Math.min(AP_GP_EXCHANGE_BENCH_GP_AMOUNT, before.amount);
+        const idempotencyKey = `bench-${context.task.id}-${Date.now()}`;
+        const service = new CityIntegrationService({
+            memoryRoot: this.runDirs.memory,
+            getRuntime: resident => (resident === context.resident ? (runtime as never) : undefined),
+            inventory: {
+                inspectResidentGold: resident => gateway.inspectResidentGold!(resident),
+                burnResidentGold: (resident, amount) => gateway.burnResidentGold!(resident, amount),
+            },
+            birth: {
+                birthResident: async input => ({
+                    resident: input.residentName,
+                    created: false,
+                    connected: false,
+                }),
+            },
+        });
+
+        try {
+            const record = await service.exchangeApForGp(context.resident, {
+                idempotencyKey,
+                apAmount: AP_GP_EXCHANGE_BENCH_AP_AMOUNT,
+                gpAmount,
+                cityUserId: 'benchmark',
+                sourceType: 'benchmark',
+                sourceId: context.task.id,
+            });
+            this.apGpExchangeInjected = true;
+            context.recordActionAttempt({
+                action: {
+                    kind: 'city_exchange_ap_gp',
+                    cause: 'benchmark:ap-gp-exchange-5m',
+                    apAmount: AP_GP_EXCHANGE_BENCH_AP_AMOUNT,
+                    gpAmount,
+                },
+                result: {
+                    ok: record.status === 'complete',
+                    status: record.status,
+                    exchangeId: record.exchangeId,
+                    apEvidence: record.apEvidence,
+                    gpEvidence: record.gpEvidence,
+                    failureReason: record.failureReason,
+                },
+                source: 'benchmark',
+                finalStatus: record.status === 'complete' ? 'success' : 'failure',
+            });
+            context.recordSummary(
+                `Executed benchmark AP-for-GP exchange (${gpAmount} GP -> ${AP_GP_EXCHANGE_BENCH_AP_AMOUNT} AP) with status=${record.status}.`,
+            );
+        } catch (error) {
+            this.apGpExchangeInjected = true;
+            context.recordActionAttempt({
+                action: {
+                    kind: 'city_exchange_ap_gp',
+                    cause: 'benchmark:ap-gp-exchange-5m',
+                    apAmount: AP_GP_EXCHANGE_BENCH_AP_AMOUNT,
+                    gpAmount,
+                },
+                result: {
+                    ok: false,
+                    status: 'error',
+                    error: errorMessage(error),
+                },
+                source: 'benchmark',
+                finalStatus: 'failure',
+                finalReason: errorMessage(error),
+            });
+            context.recordSummary(`Benchmark AP-for-GP exchange failed: ${errorMessage(error)}`);
+        }
+    }
+
+    private injectWorldEventReactionProof(context: BenchmarkAutonomousRuntimeContext): void {
+        if (context.task.id !== WORLD_EVENT_REACTION_5M_TASK_ID || this.worldEventInjected || !this.loreBus || !this.runDirs) {
+            return;
+        }
+        this.loreBus.publish({
+            kind: 'fire_lit',
+            source: 'res:duke',
+            visibility: { sourceCoord: [3226, 3230, 0], radiusTiles: 12 },
+            payload: {
+                fireObjectId: 26185,
+                position: { x: 3226, y: 3230, level: 0 },
+                text: 'res:duke lit a fire beside the benchmark resident.',
+            },
+        });
+        context.recordArtifactPath?.(path.join(this.runDirs.memory, residentSlug(context.resident), 'facts/world-events.md'));
+        context.recordSummary('Injected LoreBus fire_lit world_event from res:duke near the benchmark resident.');
+        this.worldEventInjected = true;
     }
 
     private unbindGatewayEvents(): void {
@@ -196,6 +472,7 @@ class RecordingActionLog extends ActionLog {
             result: isRecord(entry.result) ? (entry.result as ActionResult) : undefined,
             source: typeof entry.source === 'string' ? entry.source : undefined,
             sparkModule: identity(entry.sparkModule),
+            attentionAfter: numericField(entry, 'attention_after'),
         });
     }
 }
@@ -226,6 +503,7 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
     const resident = context.task.resident || {};
     const spawnPosition = position(resident.spawnPosition);
     const sourcePath = `benchmark:${context.task.id}`;
+    const attentionProfile = BENCHMARK_ATTENTION_PROFILE_OVERRIDES[context.task.id] || DEFAULT_BENCHMARK_ATTENTION_PROFILE;
     return {
         frontmatter: validateSoulFrontmatter(
             {
@@ -236,22 +514,25 @@ function createBenchmarkSoul(context: BenchmarkAutonomousRuntimeContext): Soul {
                     endpoint: 'default',
                     temperature: 0.3,
                 },
-                attentionProfile: {
-                    startingAttention: 5000,
-                    decayCurve: 'steep',
-                },
+                attentionProfile,
                 legacy: {
                     kind: 'endurer',
                     parameters: {
                         benchmarkTask: context.task.id,
                     },
                 },
+                orientationGoal: context.task.orientationGoal,
                 modules: [{ id: context.module.id, enabled: true }],
                 behavior: {
                     kind: 'hybrid-agent',
                     commandPrefix: 'agent',
-                    brainEveryTicks: 180,
-                    bodyEveryTicks: 8,
+                    brainEveryTicks: context.task.id === MEMORY_WRITE_RECALL_10M_TASK_ID ? 1 : 180,
+                    bodyEveryTicks:
+                        context.task.id === MEMORY_WRITE_RECALL_10M_TASK_ID
+                            ? 600
+                            : context.task.id === AP_GP_LIBRARY_STRATEGY_5M_TASK_ID
+                              ? 1
+                              : 8,
                     shareGoalsEveryTicks: 60,
                     returnToAnchorEveryTicks: 600,
                     returnToAnchorRadius: 12,
@@ -324,6 +605,15 @@ function identity(value: unknown): SparkModuleIdentity | undefined {
         return undefined;
     }
     return { id: value.id, version: value.version };
+}
+
+function numericField(record: Record<string, unknown>, key: string): number | undefined {
+    const value = record[key];
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function metadataTick(metadata: unknown): number | undefined {
+    return isRecord(metadata) ? numericField(metadata, 'tick') : undefined;
 }
 
 function isAction(value: unknown): value is AgentAction {

@@ -2,7 +2,16 @@ import fs from 'fs';
 import type { ActionEvidence, ActionFinalStatus } from '../actions/action-attempt';
 import type { SparkModuleIdentity } from '../spark';
 import type { SubmittedActionAck } from '../transport/gateway-client';
-import type { ActionResult, AgentAction, CreateResidentPayload, Perception, PerceptionEvent } from '../transport/message-codecs';
+import type {
+    ActionResult,
+    AgentAction,
+    CreateResidentPayload,
+    InventoryEnsureItem,
+    Perception,
+    PerceptionEvent,
+    ResidentInventoryEnsureSummary,
+} from '../transport/message-codecs';
+import type { SoulOrientationGoal } from '../soul/soul-schema';
 import {
     type BenchmarkArtifact,
     type BenchmarkRunMode,
@@ -11,10 +20,13 @@ import {
     normalizeBenchmarkArtifact,
 } from './benchmark-artifact';
 
+const AUTONOMOUS_TIMEOUT_GRACE_MS = 2_000;
+
 export interface BenchmarkGateway {
     createResident(payload: CreateResidentPayload): Promise<unknown>;
     connectResident(payload: { name: string; observe: boolean; control: boolean; onDisconnect: 'idle' }): Promise<unknown>;
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck>;
+    ensureInventoryItem?(name: string, item: InventoryEnsureItem, amount: number): Promise<ResidentInventoryEnsureSummary>;
     disconnectResident(name: string): Promise<void>;
     deleteResident(name: string): Promise<void>;
     on?(event: 'perception', listener: (residentId: string, perception: Perception) => void): unknown;
@@ -37,6 +49,7 @@ export interface BenchmarkTaskContext {
     readonly module: SparkModuleIdentity;
     readonly signal: AbortSignal;
     submitAction(action: AgentAction): Promise<ActionResult>;
+    ensureInventoryItem?(item: InventoryEnsureItem, amount: number): Promise<ResidentInventoryEnsureSummary>;
     peerResident(id: string): string | undefined;
     submitPeerAction(id: string, action: AgentAction): Promise<ActionResult>;
     recordActionAttempt(attempt: BenchmarkRecordedActionAttempt): void;
@@ -44,6 +57,7 @@ export interface BenchmarkTaskContext {
     recordArtifactPath?(path: string): void;
     recordSummary(summary: string): void;
     actionAttempts(): readonly BenchmarkRecordedActionAttempt[];
+    artifactPaths?(): readonly string[];
     latestPerception(): Perception | undefined;
     perceptions(): readonly Perception[];
     events(): readonly PerceptionEvent[];
@@ -62,6 +76,14 @@ export interface BenchmarkTask {
     id: string;
     version: string;
     timeoutMs: number;
+    autonomousRequiresSelectedModuleAction?: boolean;
+    /**
+     * Optional synthetic Soul north-star for autonomous proof tasks. The
+     * benchmark runtime copies this into the disposable resident's
+     * frontmatter so normal planner code, not the verifier, decides whether
+     * orientation changes behavior.
+     */
+    orientationGoal?: SoulOrientationGoal;
     resident?: Omit<CreateResidentPayload, 'name'>;
     peers?: BenchmarkTaskPeer[];
     memorySeeds?: BenchmarkMemorySeed[];
@@ -79,6 +101,16 @@ export interface BenchmarkRecordedActionAttempt {
     finalStatus?: ActionFinalStatus;
     finalReason?: string;
     evidence?: ActionEvidence[];
+    attentionAfter?: number;
+    /**
+     * Active goal id at the moment the action was emitted
+     * (`cognition.activeGoal?.id`, S-GOAL-FOLLOW-1 D1/D3). Additive optional
+     * causation tag the goal-follow-through benchmark reads to attribute
+     * each action to the goal that motivated it.
+     */
+    goalId?: string;
+    /** Tick the action was emitted on, for goal-trace timelines. */
+    tick?: number;
 }
 
 export interface BenchmarkRecordedInferenceRequest {
@@ -280,7 +312,7 @@ export class BenchmarkRunner {
         }
 
         if (mode === 'autonomous') {
-            outcome = enforceAutonomousModuleEvidence(outcome, evidence, this.options.module);
+            outcome = enforceAutonomousModuleEvidence(this.options.task, outcome, evidence, this.options.module);
         }
 
         const endedAt = this.now().toISOString();
@@ -329,6 +361,9 @@ export class BenchmarkRunner {
                 recordActionAttempt(evidence, { requestId: ack.requestId, action, result: ack.ackResult });
                 return ack.ackResult;
             },
+            ensureInventoryItem: this.options.gateway.ensureInventoryItem
+                ? async (item, amount) => this.options.gateway.ensureInventoryItem!(this.resident, item, amount)
+                : undefined,
             peerResident: id => this.peerResidents.get(id),
             submitPeerAction: async (id, action) => {
                 const peerResident = this.peerResidents.get(id);
@@ -351,6 +386,7 @@ export class BenchmarkRunner {
                 evidence.summaries.push(summary);
             },
             actionAttempts: () => evidence.actionAttempts,
+            artifactPaths: () => evidence.artifactPaths,
             latestPerception: () => evidence.perceptions.at(-1),
             perceptions: () => evidence.perceptions,
             events: () => evidence.events,
@@ -395,7 +431,7 @@ export class BenchmarkRunner {
                                 `benchmark task ${this.options.task.id} timed out after ${this.options.task.timeoutMs}ms`,
                             ),
                         );
-                    }, this.options.task.timeoutMs);
+                    }, this.options.task.timeoutMs + this.timeoutGraceMs());
                 }),
             ]);
         } finally {
@@ -403,6 +439,10 @@ export class BenchmarkRunner {
                 clearTimeout(timeout);
             }
         }
+    }
+
+    private timeoutGraceMs(): number {
+        return (this.options.mode || 'scripted') === 'autonomous' ? AUTONOMOUS_TIMEOUT_GRACE_MS : 0;
     }
 
     private bindEvidenceListeners(evidence: BenchmarkEvidenceBuffer): Array<{ event: string; listener: (...args: unknown[]) => void }> {
@@ -541,6 +581,9 @@ function actionAttemptEvidence(
         finalReason: attempt.finalReason,
         evidenceCount: attempt.evidence?.length,
         effectEvidenceCount: actionEffectEvidenceCount(attempt.evidence),
+        attentionAfter: attempt.attentionAfter,
+        goalId: attempt.goalId,
+        tick: attempt.tick,
         sparkModule: attempt.sparkModule,
     };
 }
@@ -569,12 +612,22 @@ function actionCause(action: AgentAction): string | undefined {
 }
 
 function enforceAutonomousModuleEvidence(
+    task: BenchmarkTask,
     outcome: BenchmarkTaskOutcome,
     evidence: BenchmarkEvidenceBuffer,
     module: SparkModuleIdentity,
 ): BenchmarkTaskOutcome {
     if (outcome.status !== 'passed') {
         return outcome;
+    }
+    if (task.autonomousRequiresSelectedModuleAction === false) {
+        return {
+            ...outcome,
+            summaries: [
+                ...(outcome.summaries || []),
+                `Autonomous benchmark ${task.id} uses benchmark-side evidence and does not require selected module action evidence.`,
+            ],
+        };
     }
     if (selectedModuleActionCount(evidence, module) > 0) {
         return outcome;

@@ -1,0 +1,24 @@
+{
+    "schemaVersion": 1,
+    "dispatchId": "dispatch-s5b-ncri-proof-20260530T0920-1780169356260",
+    "digestId": "s5b-ncri-proof-20260530T0920",
+    "generatedAt": "2026-05-30T19:29:16.260Z",
+    "modelProfile": "default",
+    "latencyMs": 0,
+    "estimatedCostUsd": null,
+    "inputTokens": null,
+    "outputTokens": null,
+    "publicTitle": "Null City Dispatch: NCRI activity recorded",
+    "publicBody": "1/1 residents active, 0 low on attention. res:duke: NCRI Kindling Relic (ncri-1780150820627-4lxdbo) transferred to a human res:duke: NCRI Kindling Relic (ncri-1780150820627-4lxdbo) redeemed by a human",
+    "publicBullets": [
+        "NCRI Kindling Relic (ncri-1780150820627-4lxdbo) transferred to a human",
+        "NCRI Kindling Relic (ncri-1780150820627-4lxdbo) redeemed by a human"
+    ],
+    "operatorSummary": "Fallback dispatch from 2 digest event(s); no model endpoint was configured.",
+    "operatorWarnings": [
+        "No Storyteller model endpoint configured; public copy is deterministic digest fallback and needs operator review."
+    ],
+    "eventRefsUsed": ["f9d6f4ef-fa16-4e33-920f-0e9bf5aa1c7e", "04bf0f77-95d4-4e13-912e-69d46c80067d"],
+    "needsReview": true,
+    "reviewReasons": ["model call was nooped (unknown)"]
+}

@@ -33,6 +33,7 @@ For the May 29-June 1 AP/GP + Storyteller weekend sprint, use:
 - Workstream S in `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the central task board.
 - Claim the smallest available packet from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`), not a whole workstream, unless you are doing release closeout.
 - Capability QA packets (`CQA0`-`CQA11`) are always valid weekend work: read `docs/resident-capabilities.md`, prove or disprove one weak row with real logs/benchmarks, fix root causes, and update the table.
+- Dashboard packets (`D0`-`D8`) are valid weekend work, but implementation belongs in `../rs6-nullcity-residents-dashboard`. Server agents may add JSON contracts/endpoints only.
 - Treat the implementation plan's lane table as the file-lock map for parallel agents.
 - QA findings live in `docs/issue-register.md`; release/readiness gating lives in `docs/release-qa-status.md`.
 
@@ -40,6 +41,12 @@ Paste-ready kickoff prompt for another AI:
 
 ```text
 You are an autonomous agent in /Users/james/Code/OnionDAO/rs6-nullcity-server on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, docs/2026-05-29-weekend-sprint-plan.md, and docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md. Claim one unblocked S* or CQA* packet, append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui and appropriate verification, update roadmap/capability/issue docs if needed, commit explicit files to agents/wip, push, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
+```
+
+Dashboard kickoff prompt:
+
+```text
+You are an autonomous dashboard agent in /Users/james/Code/OnionDAO/rs6-nullcity-residents-dashboard on branch main. Read AGENTS.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/2026-05-29-weekend-sprint-plan.md. Claim one D* dashboard packet or one phase from spec/09, implement UI/BFF changes here only, coordinate server API needs through rs6-nullcity-server docs/city-dashboard-integration.md or S11, run bun run typecheck && bun run check && bun run build, commit and push main.
 ```
 
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. Keep status-log entries under ~250 chars — long rollups belong in the commit body.
@@ -71,6 +78,7 @@ Dev's architecture rule is strict: `rs6-nullcity-server` must not own human-faci
 - Put every dashboard, debug shell, attendee page, wall/inbox/patron page, Library/Graveyard view, HTML/CSS/Svelte/React/JSX/TSX surface in `../rs6-nullcity-residents-dashboard`.
 - Server endpoints may expose read models such as `/v1/inbox`, `/v1/wall/snapshot`, `/v1/library`, and `/v1/graveyard`, but they should return JSON rather than HTML.
 - Run `npm run check:no-ui` before finishing server work that touches web-facing routes or public assets.
+- If the task is primarily human-facing, move to the dashboard repo and update its `AGENTS.md`/`spec/` task state instead of adding UI here.
 
 ## Working Rules
 

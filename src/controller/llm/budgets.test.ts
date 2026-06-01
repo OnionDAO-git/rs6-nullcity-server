@@ -1,7 +1,16 @@
 import type { RuntimeState } from '../memory/runtime-state';
-import { type InferenceBudget, admitInference } from './budgets';
+import { type InferenceBudget, admitInference, defaultInferenceBudget } from './budgets';
 
 describe('inference budgets', () => {
+    it('keeps resident brain budgets bounded but high enough for all-day weekend operation', () => {
+        expect(defaultInferenceBudget()).toEqual({
+            maxRequestsPerTick: 1,
+            maxRequestsPerMinute: 60,
+            maxRequestsPerDay: 10000,
+            noInferenceMs: 20_000,
+        });
+    });
+
     it('denies a second inference in the same tick without pausing later ticks', () => {
         const now = new Date('2026-05-19T12:00:00.000Z');
         const state = stateAt(7, now);

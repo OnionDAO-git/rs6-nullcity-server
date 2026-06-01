@@ -13,17 +13,19 @@ describe('default game skill entries', () => {
     });
 
     it('optionally includes bounded RuneBench wiki snippets', () => {
+        // S-WIKI-1: STARTER_WIKI_PAGES references real docs/runescape-skill/ pages.
+        // Use one of those curated paths (skills/combat.md) so the importer looks for it.
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'runebench-wiki-'));
-        fs.mkdirSync(path.join(root, 'npcs'), { recursive: true });
-        fs.writeFileSync(path.join(root, 'npcs', 'chicken.md'), '# Chicken\n\nLow level monster that drops bones.');
+        fs.mkdirSync(path.join(root, 'skills'), { recursive: true });
+        fs.writeFileSync(path.join(root, 'skills', 'combat.md'), '# Combat\n\nFight low level monsters with a sword and food on hand.');
 
         const entries = createDefaultGameSkillEntries(root);
 
         expect(entries).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    id: 'runebench-wiki:npcs/chicken',
-                    title: 'RuneBench Wiki: Chicken',
+                    id: 'runebench-wiki:skills/combat',
+                    title: 'RuneBench Wiki: Combat',
                 }),
             ]),
         );

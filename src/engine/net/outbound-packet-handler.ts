@@ -32,12 +32,14 @@ export interface OutboundRsPacketFrame {
 export class OutboundPacketHandler {
     private static privateMessageCounter: number = Math.floor(Math.random() * 100000000);
     private static readonly spectatorHistoryLimit = 750;
+    private static readonly spectatorHistoryBytesLimit = 1_500_000;
 
     protected readonly player: Player;
     protected readonly socket: Socket;
     protected updatingQueue: Buffer[];
     protected packetQueue: Buffer[];
     private readonly spectatorPacketHistory: OutboundRsPacketFrame[] = [];
+    private spectatorPacketHistoryBytes = 0;
 
     public constructor(player: Player) {
         this.updatingQueue = [];
@@ -214,6 +216,9 @@ export class OutboundPacketHandler {
     }
 
     public setWorldItem(worldItem: WorldItem, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(175);
@@ -225,6 +230,9 @@ export class OutboundPacketHandler {
     }
 
     public removeWorldItem(worldItem: WorldItem, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(74);
@@ -235,6 +243,9 @@ export class OutboundPacketHandler {
     }
 
     public setLocationObject(locationObject: LandscapeObject, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(241);
@@ -246,6 +257,9 @@ export class OutboundPacketHandler {
     }
 
     public removeLocationObject(locationObject: LandscapeObject, position: Position, offset: number = 0): void {
+        if (!this.canReferencePosition(position)) {
+            return;
+        }
         this.updateReferencePosition(position);
 
         const packet = new Packet(143);
@@ -259,12 +273,24 @@ export class OutboundPacketHandler {
         const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
         const offsetX = position.x - loadedMapArea.baseTileX;
         const offsetY = position.y - loadedMapArea.baseTileY;
+        if (!this.isReferenceOffsetEncodable(offsetX, offsetY)) {
+            return;
+        }
 
         const packet = new Packet(254);
         packet.put(offsetY);
         packet.put(offsetX);
 
         this.queue(packet);
+    }
+
+    private canReferencePosition(position: Position): boolean {
+        const loadedMapArea = getLoadedMapBuildArea(this.player.lastMapRegionUpdatePosition, serverConfig.loadedZoneScale);
+        return this.isReferenceOffsetEncodable(position.x - loadedMapArea.baseTileX, position.y - loadedMapArea.baseTileY);
+    }
+
+    private isReferenceOffsetEncodable(offsetX: number, offsetY: number): boolean {
+        return offsetX >= 0 && offsetX <= 255 && offsetY >= 0 && offsetY <= 255;
     }
 
     // Text dialogs = 356, 359, 363, 368, 374
@@ -803,10 +829,26 @@ export class OutboundPacketHandler {
     private emitPacketFrame(packet: Packet, packetBuffer: Buffer, updateTask: boolean): void {
         const frame = this.createPacketFrame(packet, updateTask, packetBuffer);
         this.spectatorPacketHistory.push(frame);
-        if (this.spectatorPacketHistory.length > OutboundPacketHandler.spectatorHistoryLimit) {
-            this.spectatorPacketHistory.splice(0, this.spectatorPacketHistory.length - OutboundPacketHandler.spectatorHistoryLimit);
-        }
+        this.spectatorPacketHistoryBytes += this.spectatorFrameBytes(frame);
+        this.pruneSpectatorPacketHistory();
         this.player.playerEvents.emit('rs_packet_frame', frame);
+    }
+
+    private pruneSpectatorPacketHistory(): void {
+        while (
+            this.spectatorPacketHistory.length > 1 &&
+            (this.spectatorPacketHistory.length > OutboundPacketHandler.spectatorHistoryLimit ||
+                this.spectatorPacketHistoryBytes > OutboundPacketHandler.spectatorHistoryBytesLimit)
+        ) {
+            const removed = this.spectatorPacketHistory.shift();
+            if (removed) {
+                this.spectatorPacketHistoryBytes = Math.max(0, this.spectatorPacketHistoryBytes - this.spectatorFrameBytes(removed));
+            }
+        }
+    }
+
+    private spectatorFrameBytes(frame: OutboundRsPacketFrame): number {
+        return frame.payloadBase64.length + frame.frameBase64.length;
     }
 
     private createPacketFrame(packet: Packet, updateTask: boolean, packetBuffer?: Buffer): OutboundRsPacketFrame {

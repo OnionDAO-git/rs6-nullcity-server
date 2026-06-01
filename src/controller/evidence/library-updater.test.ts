@@ -3,6 +3,7 @@ import os from 'os';
 import path from 'path';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { LibraryUpdater } from './library-updater';
+import type { NcriLibraryEvent } from './library-updater';
 
 describe('LibraryUpdater', () => {
     it('appends only story-significant trajectory lines to timeline.jsonl', () => {
@@ -319,6 +320,302 @@ describe('LibraryUpdater', () => {
         expect(markdown).toContain('## In their own words');
         expect(markdown).toContain('### How it ended');
         expect(markdown).toContain('## Patrons');
+    });
+});
+
+describe('LibraryUpdater — observeNcriEvent', () => {
+    it('appends ncri_created to timeline with required fields', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeNcriEvent({
+            kind: 'ncri_created',
+            ts: '2026-05-29T17:10:00.000Z',
+            tick: 42,
+            ncriId: 'ncri-abc-123',
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            owner: 'user-james',
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'ncri_created',
+                ncriId: 'ncri-abc-123',
+                itemId: 4151,
+                displayName: 'Abyssal Whip',
+                owner: 'user-james',
+                lifeIndex: 1,
+                significanceReasons: ['ncri:ncri_created'],
+            }),
+        ]);
+    });
+
+    it('appends ncri_transferred with previousOwner', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeNcriEvent({
+            kind: 'ncri_transferred',
+            ts: '2026-05-29T17:15:00.000Z',
+            tick: 50,
+            ncriId: 'ncri-abc-123',
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            owner: 'user-recipient',
+            previousOwner: 'user-james',
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'ncri_transferred',
+                owner: 'user-recipient',
+                previousOwner: 'user-james',
+                significanceReasons: ['ncri:ncri_transferred'],
+            }),
+        ]);
+    });
+
+    it('appends ncri_redeemed to timeline without previousOwner', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeNcriEvent({
+            kind: 'ncri_redeemed',
+            ts: '2026-05-29T17:20:00.000Z',
+            tick: 60,
+            ncriId: 'ncri-abc-123',
+            itemId: 4151,
+            displayName: 'Abyssal Whip',
+            owner: 'user-recipient',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toEqual(
+            expect.objectContaining({
+                kind: 'ncri_redeemed',
+                ncriId: 'ncri-abc-123',
+                itemId: 4151,
+                significanceReasons: ['ncri:ncri_redeemed'],
+            }),
+        );
+        expect(timeline[0].previousOwner).toBeUndefined();
+    });
+});
+
+describe('LibraryUpdater — observeGoalAchieved', () => {
+    it('appends goal_achieved to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T10:00:00.000Z',
+            tick: 42,
+            goalId: 'goal-abc-123',
+            goalText: 'Find a reliable way to make 100 GP/hour and write the strategy into the Library.',
+            evidence: 'runtime:bank-balance',
+            apAtCompletion: 1500,
+            gpAtCompletion: 150,
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'goal_achieved',
+                ts: '2026-05-29T10:00:00.000Z',
+                tick: 42,
+                goalId: 'goal-abc-123',
+                goalText: 'Find a reliable way to make 100 GP/hour and write the strategy into the Library.',
+                evidence: 'runtime:bank-balance',
+                apAtCompletion: 1500,
+                gpAtCompletion: 150,
+                lifeIndex: 1,
+                significanceReasons: ['goal:achieved'],
+            }),
+        ]);
+    });
+
+    it('records goal_achieved without optional AP/GP context when not provided', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T11:00:00.000Z',
+            tick: 55,
+            goalId: 'goal-minimal',
+            goalText: 'Cook a meal for the chef.',
+            evidence: 'library:quest_complete',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toEqual(
+            expect.objectContaining({
+                kind: 'goal_achieved',
+                goalId: 'goal-minimal',
+                evidence: 'library:quest_complete',
+                lifeIndex: 1,
+            }),
+        );
+        expect(timeline[0].apAtCompletion).toBeUndefined();
+        expect(timeline[0].gpAtCompletion).toBeUndefined();
+    });
+
+    it('records multiple goal completions for the same resident independently', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T10:00:00.000Z',
+            tick: 10,
+            goalId: 'goal-first',
+            goalText: 'First goal',
+            evidence: 'e1',
+        });
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T11:00:00.000Z',
+            tick: 20,
+            goalId: 'goal-second',
+            goalText: 'Second goal',
+            evidence: 'e2',
+            gpAtCompletion: 500,
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toEqual(expect.objectContaining({ goalId: 'goal-first', tick: 10 }));
+        expect(timeline[1]).toEqual(expect.objectContaining({ goalId: 'goal-second', tick: 20, gpAtCompletion: 500 }));
+    });
+
+    it('goal_achieved uses lifeIndex from current index state', () => {
+        const { updater, root } = testUpdater();
+
+        // legacy_event(rebirth: false) keeps lives=1, sets state='ended'.
+        // observeRevival then bumps lives to 2.
+        updater.observeTrajectory(trajectory({ kind: 'legacy_event', tick: 5, event: { cause: 'death', rebirth: false } }));
+        updater.observeRevival({ ts: '2026-05-29T09:00:00.000Z', tick: 6, cause: 'restart' });
+
+        const indexAfterRevival = JSON.parse(fs.readFileSync(path.join(libraryDir(root), 'index.json'), 'utf8'));
+        expect(indexAfterRevival.lives).toBe(2);
+
+        updater.observeGoalAchieved({
+            kind: 'goal_achieved',
+            ts: '2026-05-29T10:00:00.000Z',
+            tick: 50,
+            goalId: 'goal-life2',
+            goalText: 'Goal achieved in second life',
+            evidence: 'live:bench',
+        });
+
+        const timeline = readTimeline(root);
+        const goalEvent = timeline.find(e => e.kind === 'goal_achieved');
+        expect(goalEvent).toEqual(expect.objectContaining({ lifeIndex: 2 }));
+    });
+});
+
+describe('LibraryUpdater — observeOrientationProgress', () => {
+    it('appends orientation_progress to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationProgress({
+            kind: 'orientation_progress',
+            ts: '2026-05-31T06:00:00.000Z',
+            tick: 77,
+            orientationGoalId: 'master-woodcutting',
+            orientationGoalDescription: 'Become a master woodcutter',
+            reason: 'goal_id_match',
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'orientation_progress',
+                ts: '2026-05-31T06:00:00.000Z',
+                tick: 77,
+                orientationGoalId: 'master-woodcutting',
+                orientationGoalDescription: 'Become a master woodcutter',
+                reason: 'goal_id_match',
+                lifeIndex: 1,
+                significanceReasons: ['orientation:progress'],
+            }),
+        ]);
+    });
+
+    it('records orientation_progress with action_tag_match reason', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationProgress({
+            kind: 'orientation_progress',
+            ts: '2026-05-31T07:00:00.000Z',
+            tick: 120,
+            orientationGoalId: 'kill-kbd',
+            orientationGoalDescription: 'Kill the King Black Dragon someday',
+            reason: 'action_tag_match',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toEqual(
+            expect.objectContaining({
+                kind: 'orientation_progress',
+                reason: 'action_tag_match',
+                orientationGoalId: 'kill-kbd',
+                significanceReasons: ['orientation:progress'],
+            }),
+        );
+    });
+});
+
+describe('LibraryUpdater — observeOrientationStalled', () => {
+    it('appends orientation_stalled to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationStalled({
+            kind: 'orientation_stalled',
+            ts: '2026-05-31T08:00:00.000Z',
+            tick: 200,
+            orientationGoalId: 'master-woodcutting',
+            orientationGoalDescription: 'Become a master woodcutter',
+            nonProgressTicks: 100,
+        });
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'orientation_stalled',
+                ts: '2026-05-31T08:00:00.000Z',
+                tick: 200,
+                orientationGoalId: 'master-woodcutting',
+                orientationGoalDescription: 'Become a master woodcutter',
+                nonProgressTicks: 100,
+                lifeIndex: 1,
+                significanceReasons: ['orientation:stalled'],
+            }),
+        ]);
+    });
+
+    it('progress then stall appear in correct timeline order with correct lifeIndex', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOrientationProgress({
+            kind: 'orientation_progress',
+            ts: '2026-05-31T08:00:00.000Z',
+            tick: 10,
+            orientationGoalId: 'kill-kbd',
+            orientationGoalDescription: 'Kill the King Black Dragon someday',
+            reason: 'goal_id_match',
+        });
+        updater.observeOrientationStalled({
+            kind: 'orientation_stalled',
+            ts: '2026-05-31T08:01:40.000Z',
+            tick: 110,
+            orientationGoalId: 'kill-kbd',
+            orientationGoalDescription: 'Kill the King Black Dragon someday',
+            nonProgressTicks: 100,
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toEqual(expect.objectContaining({ kind: 'orientation_progress', tick: 10, lifeIndex: 1 }));
+        expect(timeline[1]).toEqual(
+            expect.objectContaining({ kind: 'orientation_stalled', tick: 110, nonProgressTicks: 100, lifeIndex: 1 }),
+        );
     });
 });
 

@@ -7,6 +7,17 @@ export interface LlmRequest {
     temperature?: number;
     thinking?: boolean;
     timeoutMs?: number;
+    /**
+     * S-INFER-2 (D1): explicit completion-token ceiling. A thinking model must
+     * have room to emit its `<think>` reasoning AND the final JSON answer — an
+     * unknown/low server default truncates the answer mid-think and surfaces as
+     * a bogus `empty_completion`. When set, the client sends both `max_tokens`
+     * (OpenAI-classic) and `max_completion_tokens` (newer reasoning-model field)
+     * so either provider style honours the ceiling. Falls back to the endpoint
+     * `maxTokens` default when omitted; when both request and endpoint set a
+     * value, the endpoint acts as a hard compatibility cap.
+     */
+    maxTokens?: number;
     signal?: AbortSignal;
     priority?: number;
 }
@@ -62,16 +73,23 @@ export class LlmClient {
             return { text: JSON.stringify({ actions: [] }), model, nooped: true };
         }
 
+        // S-INFER-8/9: the endpoint can enforce host compatibility while still
+        // letting residents request smaller per-call limits. Spacetower's q4
+        // qwopus, for example, rejects large thinking-mode resident prompts even
+        // when tiny health probes pass.
+        const thinking = endpoint.forceThinking ?? request.thinking;
+        const maxTokens = capMaxTokens(request.maxTokens, endpoint.maxTokens);
         const body = {
             model,
             messages: [{ role: 'user', content: request.prompt }],
             temperature: request.temperature ?? 0.2,
-            ...(request.thinking === undefined
+            ...(thinking === undefined
                 ? {}
                 : {
-                      reasoning: { enabled: request.thinking },
-                      chat_template_kwargs: { enable_thinking: request.thinking },
+                      reasoning: { enabled: thinking },
+                      chat_template_kwargs: { enable_thinking: thinking },
                   }),
+            ...(maxTokens !== undefined && maxTokens > 0 ? { max_tokens: maxTokens, max_completion_tokens: maxTokens } : {}),
             response_format: responseFormatBody(endpoint.responseFormat),
         };
 
@@ -324,6 +342,13 @@ function responseFormatBody(format: LlmEndpointConfig['responseFormat'] = 'json_
             schema: { type: 'object' },
         },
     };
+}
+
+function capMaxTokens(requestMaxTokens?: number, endpointMaxTokens?: number): number | undefined {
+    if (requestMaxTokens !== undefined && endpointMaxTokens !== undefined) {
+        return Math.min(requestMaxTokens, endpointMaxTokens);
+    }
+    return requestMaxTokens ?? endpointMaxTokens;
 }
 
 function readCostUsd(usage: Record<string, unknown>): number | undefined {

@@ -4,7 +4,7 @@ import path from 'path';
 import { buildBenchmarkReport, formatBenchmarkReportMarkdown, runBenchmarkReportCli } from './report';
 
 describe('benchmark report', () => {
-    it('aggregates artifacts by profile, task, and mode', () => {
+    it('aggregates artifacts by profile, resident, endpoint, task, and mode', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'benchmark-report-'));
         writeJson(path.join(root, 'qwen-pass.json'), artifact({ status: 'passed', score: 1, durationMs: 1000 }));
         writeJson(
@@ -15,6 +15,25 @@ describe('benchmark report', () => {
                 score: 0.25,
                 durationMs: 3000,
                 failureReason: 'no useful recovery action',
+            }),
+        );
+        writeJson(
+            path.join(root, 'qwen-alt-endpoint.json'),
+            artifact({
+                runId: 'bench_qwen_alt_endpoint',
+                resident: 'res:bmk_qwen_alt',
+                inference: {
+                    profileId: 'local-qwen',
+                    endpointId: 'spacetower',
+                    provider: 'openai-compatible',
+                    model: 'qwen/qwen3.6-27b',
+                    promptTokens: 90,
+                    completionTokens: 30,
+                    pricing: {
+                        promptTokenUsd: 0.000001,
+                        completionTokenUsd: 0.000004,
+                    },
+                },
             }),
         );
         writeJson(
@@ -40,11 +59,13 @@ describe('benchmark report', () => {
 
         const report = buildBenchmarkReport(root, new Date('2026-05-28T12:00:00.000Z'));
 
-        expect(report.artifacts).toBe(3);
+        expect(report.artifacts).toBe(4);
         expect(report.skipped).toBe(1);
-        expect(report.rows).toHaveLength(2);
+        expect(report.rows).toHaveLength(3);
         expect(report.rows[0]).toMatchObject({
             profileId: 'local-qwen',
+            resident: 'res:bmk_qwen',
+            endpointId: 'inf',
             taskId: 'make-fire-5m',
             mode: 'autonomous',
             runs: 2,
@@ -58,7 +79,18 @@ describe('benchmark report', () => {
         });
         expect(report.rows[0].failureReasons).toEqual(['no useful recovery action']);
         expect(report.rows[1]).toMatchObject({
+            profileId: 'local-qwen',
+            resident: 'res:bmk_qwen_alt',
+            endpointId: 'spacetower',
+            provider: 'openai-compatible',
+            model: 'qwen/qwen3.6-27b',
+            runs: 1,
+            passed: 1,
+            estimatedCostUsd: 0.00021,
+        });
+        expect(report.rows[2]).toMatchObject({
             profileId: 'openrouter_haiku',
+            resident: 'res:bmk_qwen',
             endpointId: 'openrouter',
             provider: 'openrouter',
             model: 'anthropic/claude-3.5-haiku',
@@ -75,8 +107,12 @@ describe('benchmark report', () => {
         const markdown = formatBenchmarkReportMarkdown(buildBenchmarkReport(root, new Date('2026-05-28T12:00:00.000Z')));
 
         expect(markdown).toContain('# Null City benchmark report');
-        expect(markdown).toContain('| Profile | Task | Mode | Runs | Pass | Avg score | Avg sec | Tokens | Cost |');
-        expect(markdown).toContain('| local-qwen | make-fire-5m | autonomous | 1 | 100% | 1.000 | 1.0 | 160 | $0.000280 |');
+        expect(markdown).toContain(
+            '| Profile | Resident | Endpoint | Model | Task | Mode | Runs | Pass | Avg score | Avg sec | Tokens | Cost | Failure causes |',
+        );
+        expect(markdown).toContain(
+            '| local-qwen | res:bmk_qwen | inf | qwen/qwen3.6-27b | make-fire-5m | autonomous | 1 | 100% | 1.000 | 1.0 | 160 | $0.000280 | - |',
+        );
     });
 
     it('prints JSON or markdown from the CLI', async () => {

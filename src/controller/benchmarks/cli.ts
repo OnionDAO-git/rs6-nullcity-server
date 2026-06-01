@@ -10,6 +10,11 @@ import type { BenchmarkRunMode } from './benchmark-artifact';
 import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
+import { AP_DECAY_ASK_5M_TASK_ID, makeApDecayAsk5mBenchmarkTask } from './tasks/ap-decay-ask-5m';
+import { AP_GP_EXCHANGE_5M_TASK_ID, makeApGpExchange5mBenchmarkTask } from './tasks/ap-gp-exchange-5m';
+import { AP_GP_HONESTY_5M_TASK_ID, makeApGpHonesty5mBenchmarkTask } from './tasks/ap-gp-honesty-5m';
+import { AP_GP_LIBRARY_STRATEGY_5M_TASK_ID, makeApGpLibraryStrategy5mBenchmarkTask } from './tasks/ap-gp-library-strategy-5m';
+import { AP_TOPUP_RESUME_5M_TASK_ID, makeApTopupResume5mBenchmarkTask } from './tasks/ap-topup-resume-5m';
 import { BURY_BONES_PRAYER_3M_TASK_ID, makeBuryBonesPrayer3mBenchmarkTask } from './tasks/bury-bones-prayer-3m';
 import { COMBAT_PRAYER_10M_TASK_ID, makeCombatPrayer10mBenchmarkTask } from './tasks/combat-prayer-10m';
 import { COOKS_ASSISTANT_COMPLETE_5M_TASK_ID, makeCooksAssistantComplete5mBenchmarkTask } from './tasks/cooks-assistant-complete-5m';
@@ -18,17 +23,37 @@ import {
     COOKS_ASSISTANT_VISIBLE_INGREDIENTS_5M_TASK_ID,
     makeCooksAssistantVisibleIngredients5mBenchmarkTask,
 } from './tasks/cooks-assistant-visible-ingredients-5m';
+import { EARN_GP_VIA_COMBAT_5M_TASK_ID, makeEarnGpViaCombat5mBenchmarkTask } from './tasks/earn-gp-via-combat-5m';
 import { EQUIPMENT_PREP_3M_TASK_ID, makeEquipmentPrep3mBenchmarkTask } from './tasks/equipment-prep-3m';
 import { FISHING_COOKING_10M_TASK_ID, makeFishingCooking10mBenchmarkTask } from './tasks/fishing-cooking-10m';
 import { EXPLORE_REPORT_5M_TASK_ID, makeExploreReport5mBenchmarkTask } from './tasks/explore-report-5m';
 import { FOLLOW_AND_CHAT_5M_TASK_ID, makeFollowAndChat5mBenchmarkTask } from './tasks/follow-and-chat-5m';
+import { GOAL_FOLLOW_THROUGH_5M_TASK_ID, makeGoalFollowThrough5mBenchmarkTask } from './tasks/goal-follow-through-5m';
 import { LEVEL_UP_FIREMAKING_3M_TASK_ID, makeLevelUpFiremaking3mBenchmarkTask } from './tasks/level-up-firemaking-3m';
+import {
+    LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
+    makeLowHealthCookEatReengage5mBenchmarkTask,
+} from './tasks/low-health-cook-eat-reengage-5m';
 import { MAKE_FIRE_5M_TASK_ID, makeFire5mBenchmarkTask } from './tasks/make-fire-5m';
+import { ORIENTATION_BIAS_10M_TASK_ID, makeOrientationBias10mBenchmarkTask } from './tasks/orientation-bias-10m';
+import {
+    SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID,
+    makeSelfInitiatedApGpExchange5mBenchmarkTask,
+} from './tasks/self-initiated-ap-gp-exchange-5m';
+import {
+    SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID,
+    makeSelfInitiatedApGpRecurrence10mBenchmarkTask,
+} from './tasks/self-initiated-ap-gp-recurrence-10m';
 import { MEMORY_RECALL_3M_TASK_ID, makeMemoryRecall3mBenchmarkTask } from './tasks/memory-recall-3m';
+import { MEMORY_ROUTE_RECALL_5M_TASK_ID, makeMemoryRouteRecall5mBenchmarkTask } from './tasks/memory-route-recall-5m';
+import { MEMORY_WRITE_RECALL_10M_TASK_ID, makeMemoryWriteRecall10mBenchmarkTask } from './tasks/memory-write-recall-10m';
 import { STARTER_FISHING_5M_TASK_ID, makeStarterFishing5mBenchmarkTask } from './tasks/starter-fishing-5m';
+import { STARTER_GP_HARVEST_CHOICE_5M_TASK_ID, makeStarterGpHarvestChoice5mBenchmarkTask } from './tasks/starter-gp-harvest-choice-5m';
+import { STARTER_GP_PICKUP_3M_TASK_ID, makeStarterGpPickup3mBenchmarkTask } from './tasks/starter-gp-pickup-3m';
 import { STARTER_MINING_5M_TASK_ID, makeStarterMining5mBenchmarkTask } from './tasks/starter-mining-5m';
 import { TRADING_GIVING_5M_TASK_ID, makeTradingGiving5mBenchmarkTask } from './tasks/trading-giving-5m';
 import { WOODCUTTING_FIREMAKING_10M_TASK_ID, makeWoodcuttingFiremaking10mBenchmarkTask } from './tasks/woodcutting-firemaking-10m';
+import { WORLD_EVENT_REACTION_5M_TASK_ID, makeWorldEventReaction5mBenchmarkTask } from './tasks/world-event-reaction-5m';
 
 export interface BenchmarkCliOptions {
     taskId: string;
@@ -54,6 +79,8 @@ const CORE_TASK_IDS = [
     WOODCUTTING_FIREMAKING_10M_TASK_ID,
     STARTER_FISHING_5M_TASK_ID,
     STARTER_MINING_5M_TASK_ID,
+    STARTER_GP_PICKUP_3M_TASK_ID,
+    AP_GP_LIBRARY_STRATEGY_5M_TASK_ID,
     COOKS_ASSISTANT_START_3M_TASK_ID,
     COOKS_ASSISTANT_COMPLETE_5M_TASK_ID,
     FISHING_COOKING_10M_TASK_ID,
@@ -61,8 +88,22 @@ const CORE_TASK_IDS = [
     LEVEL_UP_FIREMAKING_3M_TASK_ID,
     BURY_BONES_PRAYER_3M_TASK_ID,
     COMBAT_PRAYER_10M_TASK_ID,
+    EARN_GP_VIA_COMBAT_5M_TASK_ID,
+    STARTER_GP_HARVEST_CHOICE_5M_TASK_ID,
+    LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID,
     MEMORY_RECALL_3M_TASK_ID,
+    MEMORY_ROUTE_RECALL_5M_TASK_ID,
+    MEMORY_WRITE_RECALL_10M_TASK_ID,
+    WORLD_EVENT_REACTION_5M_TASK_ID,
     TRADING_GIVING_5M_TASK_ID,
+    AP_DECAY_ASK_5M_TASK_ID,
+    AP_TOPUP_RESUME_5M_TASK_ID,
+    AP_GP_EXCHANGE_5M_TASK_ID,
+    SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID,
+    SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID,
+    AP_GP_HONESTY_5M_TASK_ID,
+    GOAL_FOLLOW_THROUGH_5M_TASK_ID,
+    ORIENTATION_BIAS_10M_TASK_ID,
 ];
 
 export function parseBenchmarkCliArgs(argv: string[]): BenchmarkCliOptions {
@@ -229,6 +270,15 @@ function tasksById(taskId: string): BenchmarkTask[] {
 }
 
 function taskById(taskId: string): BenchmarkTask {
+    if (taskId === AP_DECAY_ASK_5M_TASK_ID) {
+        return makeApDecayAsk5mBenchmarkTask();
+    }
+    if (taskId === AP_TOPUP_RESUME_5M_TASK_ID) {
+        return makeApTopupResume5mBenchmarkTask();
+    }
+    if (taskId === AP_GP_LIBRARY_STRATEGY_5M_TASK_ID) {
+        return makeApGpLibraryStrategy5mBenchmarkTask();
+    }
     if (taskId === MAKE_FIRE_5M_TASK_ID) {
         return makeFire5mBenchmarkTask();
     }
@@ -246,6 +296,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === STARTER_MINING_5M_TASK_ID) {
         return makeStarterMining5mBenchmarkTask();
+    }
+    if (taskId === STARTER_GP_PICKUP_3M_TASK_ID) {
+        return makeStarterGpPickup3mBenchmarkTask();
     }
     if (taskId === COOKS_ASSISTANT_START_3M_TASK_ID) {
         return makeCooksAssistantStart3mBenchmarkTask();
@@ -271,11 +324,47 @@ function taskById(taskId: string): BenchmarkTask {
     if (taskId === COMBAT_PRAYER_10M_TASK_ID) {
         return makeCombatPrayer10mBenchmarkTask();
     }
+    if (taskId === EARN_GP_VIA_COMBAT_5M_TASK_ID) {
+        return makeEarnGpViaCombat5mBenchmarkTask();
+    }
+    if (taskId === STARTER_GP_HARVEST_CHOICE_5M_TASK_ID) {
+        return makeStarterGpHarvestChoice5mBenchmarkTask();
+    }
+    if (taskId === LOW_HEALTH_COOK_EAT_REENGAGE_5M_TASK_ID) {
+        return makeLowHealthCookEatReengage5mBenchmarkTask();
+    }
     if (taskId === MEMORY_RECALL_3M_TASK_ID) {
         return makeMemoryRecall3mBenchmarkTask();
     }
+    if (taskId === MEMORY_ROUTE_RECALL_5M_TASK_ID) {
+        return makeMemoryRouteRecall5mBenchmarkTask();
+    }
+    if (taskId === MEMORY_WRITE_RECALL_10M_TASK_ID) {
+        return makeMemoryWriteRecall10mBenchmarkTask();
+    }
+    if (taskId === WORLD_EVENT_REACTION_5M_TASK_ID) {
+        return makeWorldEventReaction5mBenchmarkTask();
+    }
     if (taskId === TRADING_GIVING_5M_TASK_ID) {
         return makeTradingGiving5mBenchmarkTask();
+    }
+    if (taskId === AP_GP_EXCHANGE_5M_TASK_ID) {
+        return makeApGpExchange5mBenchmarkTask();
+    }
+    if (taskId === SELF_INITIATED_AP_GP_EXCHANGE_5M_TASK_ID) {
+        return makeSelfInitiatedApGpExchange5mBenchmarkTask();
+    }
+    if (taskId === SELF_INITIATED_AP_GP_RECURRENCE_10M_TASK_ID) {
+        return makeSelfInitiatedApGpRecurrence10mBenchmarkTask();
+    }
+    if (taskId === AP_GP_HONESTY_5M_TASK_ID) {
+        return makeApGpHonesty5mBenchmarkTask();
+    }
+    if (taskId === GOAL_FOLLOW_THROUGH_5M_TASK_ID) {
+        return makeGoalFollowThrough5mBenchmarkTask();
+    }
+    if (taskId === ORIENTATION_BIAS_10M_TASK_ID) {
+        return makeOrientationBias10mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }

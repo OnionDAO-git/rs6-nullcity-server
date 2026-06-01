@@ -1,6 +1,6 @@
 import http, { type IncomingMessage, type Server, type ServerResponse } from 'http';
 import type { AddressInfo } from 'net';
-import { CityIntegrationError, CityIntegrationService } from './service';
+import { CityIntegrationError, CityIntegrationService, STORYTELLER_QUEUE_DEFAULT_LIMIT, STORYTELLER_QUEUE_MAX_LIMIT } from './service';
 
 export interface CityIntegrationHttpOptions {
     service: CityIntegrationService;
@@ -8,6 +8,8 @@ export interface CityIntegrationHttpOptions {
     host?: string;
     pathPrefix?: string;
     bearerToken: string;
+    enableEconomyStream?: boolean;
+    economyStreamIntervalMs?: number;
 }
 
 export interface StartedCityIntegrationHttpServer {
@@ -16,6 +18,9 @@ export interface StartedCityIntegrationHttpServer {
 }
 
 const DEFAULT_CITY_PATH_PREFIX = '/api/nullcity';
+const DEFAULT_ECONOMY_STREAM_INTERVAL_MS = 2000;
+const MIN_ECONOMY_STREAM_INTERVAL_MS = 250;
+const MAX_ECONOMY_STREAM_INTERVAL_MS = 10000;
 
 export async function startCityIntegrationHttpServer(options: CityIntegrationHttpOptions): Promise<StartedCityIntegrationHttpServer> {
     const bindHost = options.host || '127.0.0.1';
@@ -64,9 +69,224 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/digest`) {
+        writeJson(response, 200, options.service.economyDigest(readDigestQuery(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/live`) {
+        writeJson(response, 200, options.service.economyLive(readLiveEconomyQuery(url)), { 'Cache-Control': 'max-age=2' });
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/totals`) {
+        writeJson(response, 200, options.service.economyTotals(readLiveEconomyQuery(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/events`) {
+        writeJson(response, 200, options.service.economyEvents(readLiveEconomyQuery(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/residents`) {
+        writeJson(response, 200, options.service.economyResidents(readLiveEconomyQuery(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/listings`) {
+        writeJson(response, 200, options.service.economyListings());
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/heartbeat`) {
+        writeJson(response, 200, options.service.economyHeartbeat(), { 'Cache-Control': 'max-age=2' });
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/economy/stream`) {
+        if (!options.enableEconomyStream) {
+            writeJson(response, 404, { error: 'Not Found' });
+            return;
+        }
+        const stream = readEconomyStreamQuery(url, options.economyStreamIntervalMs);
+        streamEconomy(response, options.service, stream.query, stream.intervalMs, stream.once);
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/latest`) {
+        writeJson(response, 200, options.service.storytellerLatest());
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/canon`) {
+        writeJson(response, 200, options.service.storytellerCanon(readListLimit(url)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/review`) {
+        writeJson(response, 200, options.service.storytellerReview(readListLimit(url)));
+        return;
+    }
+
+    if (request.method === 'POST' && path === `${pathPrefix}/proposals`) {
+        writeJson(response, 200, await options.service.createSoulProposal(await readJson(request)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/proposals`) {
+        writeJson(response, 200, await options.service.listSoulProposals());
+        return;
+    }
+
+    const proposalMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/proposals/([^/]+)(?:/(fund|approve|reject|birth))?$`));
+    if (proposalMatch) {
+        const proposalId = decodeURIComponent(proposalMatch[1]);
+        const action = proposalMatch[2];
+        if (request.method === 'GET' && action === undefined) {
+            writeJson(response, 200, await options.service.getSoulProposal(proposalId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'fund') {
+            writeJson(response, 200, await options.service.fundSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'approve') {
+            writeJson(response, 200, await options.service.approveSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'reject') {
+            writeJson(response, 200, await options.service.rejectSoulProposal(proposalId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'birth') {
+            writeJson(response, 200, await options.service.birthFromProposal(proposalId));
+            return;
+        }
+        writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
+    if (request.method === 'POST' && path === `${pathPrefix}/goals`) {
+        writeJson(response, 201, options.service.createGoalContract(await readJson(request)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/goals`) {
+        writeJson(response, 200, options.service.listGoalContracts());
+        return;
+    }
+
+    const goalMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/goals/([^/]+)(?:/(achieve))?$`));
+    if (goalMatch) {
+        const goalId = decodeURIComponent(goalMatch[1]);
+        const action = goalMatch[2];
+        if (request.method === 'GET' && action === undefined) {
+            writeJson(response, 200, options.service.getGoalContract(goalId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'achieve') {
+            writeJson(response, 200, options.service.markGoalAchieved(goalId, await readJson(request)));
+            return;
+        }
+        writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
+    if (request.method === 'POST' && path === `${pathPrefix}/ncri`) {
+        writeJson(response, 201, options.service.createNcri(await readJson(request)));
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/ncri`) {
+        writeJson(response, 200, options.service.listNcri());
+        return;
+    }
+
+    if (request.method === 'GET' && path === `${pathPrefix}/ncri/print-queue`) {
+        const status = url.searchParams.get('status') as 'awaiting_redemption' | 'redeemed' | 'all' | null;
+        writeJson(response, 200, options.service.ncriPrintQueue(status ? { status } : undefined));
+        return;
+    }
+
+    const ncriMatch = path.match(
+        new RegExp(
+            `^${escapeRegExp(pathPrefix)}/ncri/([^/]+)(?:/(approve|transfer|redeem|list|delist|buy|redeem-intent|redeem-complete))?$`,
+        ),
+    );
+    if (ncriMatch) {
+        const ncriId = decodeURIComponent(ncriMatch[1]);
+        const action = ncriMatch[2] as
+            | 'approve'
+            | 'transfer'
+            | 'redeem'
+            | 'list'
+            | 'delist'
+            | 'buy'
+            | 'redeem-intent'
+            | 'redeem-complete'
+            | undefined;
+        if (request.method === 'GET' && action === undefined) {
+            writeJson(response, 200, options.service.getNcri(ncriId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'approve') {
+            writeJson(response, 200, options.service.approveNcri(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'transfer') {
+            writeJson(response, 200, options.service.transferNcri(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'redeem') {
+            writeJson(response, 200, options.service.redeemNcri(ncriId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'list') {
+            writeJson(response, 200, options.service.listNcriForSale(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'delist') {
+            writeJson(response, 200, options.service.delistNcri(ncriId));
+            return;
+        }
+        if (request.method === 'POST' && action === 'buy') {
+            writeJson(response, 200, await options.service.buyNcri(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'redeem-intent') {
+            writeJson(response, 200, options.service.redeemNcriIntent(ncriId, await readJson(request)));
+            return;
+        }
+        if (request.method === 'POST' && action === 'redeem-complete') {
+            writeJson(response, 200, await options.service.completeNcriRedemption(ncriId, await readJson(request)));
+            return;
+        }
+        writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+        return;
+    }
+
+    // S-OBS-DRAIN-1: admin-only AP drain route. Kept on a separate
+    // `/admin/residents/:id/ap-drain` path so the normal user-facing
+    // `/residents/:id/attention-grants` surface stays positive-only.
+    // Auth is the same operator bearer token already enforced at the top of
+    // the handler (controller is local-only by config), but the explicit
+    // `admin/` path segment + dedicated service method + `ap_decay` economy
+    // event make it trivially auditable in the JSONL stream and the audit log.
+    const adminDrainMatch = path.match(new RegExp(`^${escapeRegExp(pathPrefix)}/admin/residents/([^/]+)/ap-drain$`));
+    if (adminDrainMatch) {
+        if (request.method !== 'POST') {
+            writeJson(response, 405, { error: `Method ${request.method} not allowed` });
+            return;
+        }
+        const resident = decodeURIComponent(adminDrainMatch[1]);
+        writeJson(response, 200, await options.service.adminDrainAttention(resident, await readJson(request)));
+        return;
+    }
+
     const match = path.match(
         new RegExp(
-            `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,
+            `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|ap-gp-exchanges|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,
         ),
     );
     if (!match) {
@@ -79,6 +299,11 @@ async function handle(
 
     if (request.method === 'POST' && route === 'attention-grants') {
         writeJson(response, 200, await options.service.creditAttention(resident, await readJson(request)));
+        return;
+    }
+    if (request.method === 'POST' && route === 'ap-gp-exchanges') {
+        const result = await options.service.exchangeApForGp(resident, await readJson(request));
+        writeJson(response, exchangeHttpStatus(result.status), result);
         return;
     }
     if (request.method === 'POST' && route === 'gold-burns') {
@@ -110,6 +335,16 @@ async function handle(
     writeJson(response, 405, { error: `Method ${request.method} not allowed` });
 }
 
+function exchangeHttpStatus(status: unknown): number {
+    if (status === 'complete') {
+        return 200;
+    }
+    if (status === 'failed_gp') {
+        return 409;
+    }
+    return 500;
+}
+
 async function readJson(request: IncomingMessage): Promise<unknown> {
     const chunks: Buffer[] = [];
     for await (const chunk of request) {
@@ -138,13 +373,107 @@ function writeError(response: ServerResponse, error: unknown): void {
     writeJson(response, 500, { error: error instanceof Error ? error.message : 'city integration request failed' });
 }
 
-function writeJson(response: ServerResponse, status: number, payload: unknown): void {
-    response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+function writeJson(response: ServerResponse, status: number, payload: unknown, headers: Record<string, string> = {}): void {
+    response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
     response.end(JSON.stringify(payload));
+}
+
+function streamEconomy(
+    response: ServerResponse,
+    service: CityIntegrationService,
+    query: { since?: string; limit?: number; residentLimit?: number },
+    intervalMs: number,
+    once: boolean,
+): void {
+    response.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+    });
+    response.write(`retry: ${intervalMs}\n`);
+    let closed = false;
+    let interval: NodeJS.Timeout | undefined;
+    const cleanup = () => {
+        if (closed) return;
+        closed = true;
+        if (interval) {
+            clearInterval(interval);
+            interval = undefined;
+        }
+    };
+
+    const emitSnapshot = () => {
+        if (closed) return;
+        const snapshot = service.economyStreamSnapshot(query);
+        response.write(`event: economy_snapshot\n`);
+        response.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+    };
+
+    emitSnapshot();
+    if (once) {
+        cleanup();
+        response.end();
+        return;
+    }
+
+    interval = setInterval(emitSnapshot, intervalMs);
+    response.on('close', cleanup);
+    response.on('error', cleanup);
 }
 
 function normalizePath(value: string): string {
     return value.startsWith('/') ? value : `/${value}`;
+}
+
+function readDigestQuery(url: URL): { since?: string; until?: string } {
+    const since = url.searchParams.get('since') ?? undefined;
+    const until = url.searchParams.get('until') ?? undefined;
+    return {
+        ...(since !== undefined ? { since } : {}),
+        ...(until !== undefined ? { until } : {}),
+    };
+}
+
+function readLiveEconomyQuery(url: URL): { since?: string; limit?: number; residentLimit?: number } {
+    const since = url.searchParams.get('since') ?? undefined;
+    const limit = parsePositiveInt(url.searchParams.get('limit'));
+    const residentLimit = parsePositiveInt(url.searchParams.get('residentLimit'));
+    return {
+        ...(since !== undefined ? { since } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(residentLimit !== undefined ? { residentLimit } : {}),
+    };
+}
+
+function readEconomyStreamQuery(
+    url: URL,
+    defaultIntervalMs: number | undefined,
+): { query: { since?: string; limit?: number; residentLimit?: number }; intervalMs: number; once: boolean } {
+    const query = readLiveEconomyQuery(url);
+    const parsedInterval = parsePositiveInt(url.searchParams.get('intervalMs'));
+    const seededDefault = defaultIntervalMs ?? DEFAULT_ECONOMY_STREAM_INTERVAL_MS;
+    const intervalMs = Math.min(MAX_ECONOMY_STREAM_INTERVAL_MS, Math.max(MIN_ECONOMY_STREAM_INTERVAL_MS, parsedInterval ?? seededDefault));
+    const once = url.searchParams.get('once') === '1';
+    return { query, intervalMs, once };
+}
+
+function readListLimit(url: URL): number {
+    const raw = url.searchParams.get('limit');
+    if (!raw || !/^\d+$/.test(raw)) {
+        return STORYTELLER_QUEUE_DEFAULT_LIMIT;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+        return STORYTELLER_QUEUE_DEFAULT_LIMIT;
+    }
+    return Math.min(parsed, STORYTELLER_QUEUE_MAX_LIMIT);
+}
+
+function parsePositiveInt(value: string | null): number | undefined {
+    if (value === null) return undefined;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function escapeRegExp(value: string): string {

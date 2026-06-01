@@ -21,6 +21,18 @@ import { Position } from '../position';
 import { Pathfinding } from './pathfinding';
 
 describe('Pathfinding.walkTo', () => {
+    it('treats the positive search boundary as out of range instead of dereferencing an undefined point', () => {
+        const pathfinding = new Pathfinding({
+            position: new Position(0, 0, 0),
+            walkingQueue: { clear: jest.fn(), add: jest.fn() },
+        } as any);
+
+        jest.spyOn(pathfinding as any, 'canPathNSEW').mockReturnValue(true);
+        jest.spyOn(pathfinding as any, 'canPathDiagonally').mockReturnValue(true);
+
+        expect(() => pathfinding.pathTo(2, 0, 2)).toThrow('Out of range.');
+    });
+
     it('walks to an adjacent tile when ignoreDestination is set and the target tile itself is unreachable', () => {
         const walkingQueue = {
             valid: false,

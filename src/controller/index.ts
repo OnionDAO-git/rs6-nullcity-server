@@ -1,10 +1,11 @@
 import { closeCityIntegrationHttpServer, startCityIntegrationHttpServer } from './city-integration/http-server';
-import { CityIntegrationService } from './city-integration/service';
 import { assertProductionControllerConfig, loadControllerConfig, parseControllerArgs, sanitizedControllerConfigSummary } from './config';
 import { ControllerHost } from './controller-host';
 import { acquireControllerLock } from './controller-lock';
-import { closeLettersHttpServer, startLettersHttpServer } from './letters/letters-http-server';
+import { closeLettersHttpServer, DEFAULT_HEALTH_TIMEOUT_MS, startLettersHttpServer } from './letters/letters-http-server';
 import { runInferenceHealthProbe } from './llm/inference-health';
+import { createHealthProbeTimer, type HealthProbeTimer } from './observability/health-probe-timer';
+import path from 'path';
 import { LlmClient } from './llm/llm-client';
 import { closeControllerMcpHttpServer, startControllerMcpHttpServer } from './mcp/http-server';
 import { LettersStore } from './patron/letters-store';
@@ -21,7 +22,16 @@ async function main(): Promise<void> {
     let lettersHttpServer: Awaited<ReturnType<typeof startLettersHttpServer>> | undefined;
     let cityHttpServer: Awaited<ReturnType<typeof startCityIntegrationHttpServer>> | undefined;
 
+    // Resident Observatory (Phase 1): timed inference-health probe → inference-health.json.
+    // Cadence-independent outage detector read by `npm run controller:status` + the dashboard.
+    const healthProbeTimer: HealthProbeTimer = createHealthProbeTimer({
+        outputPath: path.join(config.memory.dir, 'inference-health.json'),
+        probe: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints, timeoutMs: DEFAULT_HEALTH_TIMEOUT_MS }),
+        onError: error => process.stderr.write(`[health-probe] ${error instanceof Error ? error.message : String(error)}\n`),
+    });
+
     const shutdown = async () => {
+        healthProbeTimer.stop();
         if (cityHttpServer) {
             await closeCityIntegrationHttpServer(cityHttpServer.server);
             cityHttpServer = undefined;
@@ -43,7 +53,6 @@ async function main(): Promise<void> {
     process.once('SIGTERM', () => void shutdown());
 
     try {
-        await host.start();
         if (args.mcpHttpPort !== undefined) {
             mcpHttpServer = await startControllerMcpHttpServer(host, {
                 port: args.mcpHttpPort,
@@ -68,7 +77,8 @@ async function main(): Promise<void> {
                 residentIds: config.residents,
                 soulsDir: config.souls.dir,
                 wallRedact: args.lettersHttpWallRedact,
-                health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints }),
+                health: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints, timeoutMs: DEFAULT_HEALTH_TIMEOUT_MS }),
+                healthTimeoutMs: DEFAULT_HEALTH_TIMEOUT_MS,
                 patronMemoryRoot: config.memory.dir,
             });
             process.stderr.write(`[controller] letters HTTP listening at ${lettersHttpServer.url}\n`);
@@ -77,27 +87,22 @@ async function main(): Promise<void> {
             if (!args.cityHttpToken) {
                 throw new Error('CONTROLLER_CITY_HTTP_TOKEN is required when --city-http-port is set');
             }
-            const cityService = new CityIntegrationService({
-                memoryRoot: config.memory.dir,
-                getRuntime: resident => host.getRuntime(resident),
-                inventory: {
-                    inspectResidentGold: resident => host.inspectResidentGold(resident),
-                    burnResidentGold: (resident, amount) => host.burnResidentGold(resident, amount),
-                },
-                birth: {
-                    birthResident: input => host.birthResidentFromCity(input),
-                },
-            });
+            const cityService = host.getCityIntegrationService();
             cityHttpServer = await startCityIntegrationHttpServer({
                 service: cityService,
                 port: args.cityHttpPort,
                 host: args.cityHttpHost,
                 pathPrefix: args.cityHttpPathPrefix,
                 bearerToken: args.cityHttpToken,
+                enableEconomyStream: readEnvBoolean(process.env.CONTROLLER_CITY_ECONOMY_STREAM, false),
+                economyStreamIntervalMs: readOptionalPositiveInt(process.env.CONTROLLER_CITY_ECONOMY_STREAM_INTERVAL_MS),
             });
             process.stderr.write(`[controller] city integration HTTP listening at ${cityHttpServer.url}\n`);
         }
+        await host.start();
+        healthProbeTimer.start();
     } catch (error) {
+        healthProbeTimer.stop();
         if (cityHttpServer) {
             await closeCityIntegrationHttpServer(cityHttpServer.server).catch(closeError => {
                 process.stderr.write(`[controller] city integration HTTP close failed after startup error: ${errorMessage(closeError)}\n`);
@@ -149,4 +154,18 @@ main().catch(error => {
 
 function errorMessage(error: unknown): string {
     return error instanceof Error ? error.stack || error.message : String(error);
+}
+
+function readEnvBoolean(value: string | undefined, fallback: boolean): boolean {
+    if (value === undefined) return fallback;
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function readOptionalPositiveInt(value: string | undefined): number | undefined {
+    if (!value) return undefined;
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }

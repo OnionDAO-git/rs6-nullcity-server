@@ -63,4 +63,58 @@ describe('inferStoryArc', () => {
         expect(arc.latestEventKind).toBeUndefined();
         expect(arc.evidence.pitches).toBe(0);
     });
+
+    it('treats goal_achieved as a resolution event advancing the arc to resolve', () => {
+        const arc = inferStoryArc([
+            { kind: 'say', tick: 1, text: 'I need to find 100 GP per hour.' },
+            { kind: 'patron_gift', tick: 2, patronHandle: 'patron:alice', amount: 500 },
+            {
+                kind: 'goal_achieved',
+                tick: 10,
+                goalId: 'goal-abc',
+                goalText: 'Find a reliable way to make 100 GP/hour.',
+                evidence: 'runtime:bank-balance',
+            },
+        ]);
+
+        expect(arc.phase).toBe('resolve');
+        expect(arc.latestEventKind).toBe('goal_achieved');
+        expect(arc.latestEventTick).toBe(10);
+        expect(arc.evidence.resolutionEvents).toBe(1);
+    });
+
+    it('goal_achieved counts as a resolution but partial XP progress does not', () => {
+        const arcPartial = inferStoryArc([{ kind: 'first_xp', tick: 5, skill: 'Mining' }]);
+        expect(arcPartial.evidence.resolutionEvents).toBe(0);
+        expect(arcPartial.phase).toBe('progress');
+
+        const arcComplete = inferStoryArc([
+            { kind: 'first_xp', tick: 5, skill: 'Mining' },
+            { kind: 'goal_achieved', tick: 15, goalId: 'g1', goalText: 'Mine ore', evidence: 'bench' },
+        ]);
+        expect(arcComplete.evidence.resolutionEvents).toBe(1);
+        expect(arcComplete.phase).toBe('resolve');
+    });
+
+    it('arc advances to letter phase when a letter follows goal_achieved resolution', () => {
+        const arc = inferStoryArc([
+            { kind: 'goal_achieved', tick: 10, goalId: 'g1', goalText: 'Goal done', evidence: 'e1' },
+            { kind: 'epitaph', tick: 12, text: 'My goal is complete.' },
+        ]);
+
+        expect(arc.phase).toBe('letter');
+        expect(arc.evidence.resolutionEvents).toBe(1);
+        expect(arc.evidence.letterEvents).toBe(1);
+    });
+
+    it('does not treat quest_complete alone as a saved-state resolution event', () => {
+        const arc = inferStoryArc([
+            { kind: 'first_xp', tick: 4, skill: 'Cooking' },
+            { kind: 'quest_complete', tick: 9, questId: 'cooks_assistant' },
+        ]);
+
+        expect(arc.phase).toBe('progress');
+        expect(arc.latestEventKind).toBe('first_xp');
+        expect(arc.evidence.resolutionEvents).toBe(0);
+    });
 });

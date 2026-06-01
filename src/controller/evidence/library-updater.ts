@@ -4,6 +4,48 @@ import { residentSlug } from '../memory/runtime-state';
 import { renderPortrait, type PortraitIndex, type PortraitRenderOptions } from './portrait-template';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { classifyProgressLine, classifyTrajectoryLine, type PeerInteraction, peerInteractionFromTrajectoryLine } from './significance';
+import type {
+    OrientationProgressLibraryEvent,
+    OrientationStalledLibraryEvent,
+    OrientationNudgeLibraryEvent,
+    OrientationGoalEditedLibraryEvent,
+} from '../spark/orientation-scorer';
+
+export interface NcriLibraryEvent {
+    kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
+    ts: string;
+    tick: number;
+    ncriId: string;
+    /** Real RuneScape item id (coin item 995 = GP; other ids = special items). */
+    itemId: number;
+    displayName: string;
+    /** Current owner (cityUserId) after this event. */
+    owner: string;
+    /** Previous owner, set only for ncri_transferred events. */
+    previousOwner?: string;
+}
+
+/**
+ * Saved-state Library event emitted when a verified binary GoalContract is
+ * marked achieved. Only fires on confirmed completion — not on partial quest
+ * progress or aspirational goals. The caller (GoalContractStore.markAchieved)
+ * already enforces non-empty evidence before this is called.
+ */
+export interface GoalAchievedLibraryEvent {
+    kind: 'goal_achieved';
+    ts: string;
+    tick: number;
+    /** GoalContract.id — allows cross-referencing the stored contract. */
+    goalId: string;
+    /** Aspirational goal text at the time of completion. */
+    goalText: string;
+    /** Non-empty evidence source proving completion (e.g. "runtime:bank-balance"). */
+    evidence: string;
+    /** AP balance at time of completion, for Storyteller context. */
+    apAtCompletion?: number;
+    /** GP observed (coin item 995) at time of completion, for Storyteller context. */
+    gpAtCompletion?: number;
+}
 
 export interface PatronEvent {
     kind: 'patron_gift' | 'patron_witness' | 'patron_sponsor';
@@ -172,6 +214,146 @@ export class LibraryUpdater {
         });
         this.touchIndex(index);
         this.schedulePortraitRegeneration();
+    }
+
+    observeNcriEvent(event: NcriLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: event.kind,
+            ncriId: event.ncriId,
+            itemId: event.itemId,
+            displayName: event.displayName,
+            owner: event.owner,
+            previousOwner: event.previousOwner,
+            lifeIndex: index.lives,
+            significanceReasons: [`ncri:${event.kind}`],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record a verified binary goal completion as a durable saved-state Library
+     * moment. Only call after GoalContractStore.markAchieved succeeds — that
+     * method already enforces non-empty evidence so partial progress cannot reach
+     * here. The resulting timeline entry is queryable by the Storyteller digest
+     * as a `goal_achieved` resolution event.
+     */
+    observeGoalAchieved(event: GoalAchievedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'goal_achieved',
+            goalId: event.goalId,
+            goalText: event.goalText,
+            evidence: event.evidence,
+            apAtCompletion: event.apAtCompletion,
+            gpAtCompletion: event.gpAtCompletion,
+            lifeIndex: index.lives,
+            significanceReasons: ['goal:achieved'],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record orientation progress as a durable Library timeline moment (S-GOAL-2).
+     * Only call when `scoreOrientationAction` returns `progressDetected: true`.
+     * The Storyteller digest can query `orientation_progress` events to narrate
+     * advancement toward the resident's north-star goal without invention.
+     */
+    observeOrientationProgress(event: OrientationProgressLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_progress',
+            orientationGoalId: event.orientationGoalId,
+            orientationGoalDescription: event.orientationGoalDescription,
+            reason: event.reason,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:progress'],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record orientation stall as a durable Library timeline moment (S-GOAL-2).
+     * Only call when `OrientationStallTracker.record` returns `newStall: true`.
+     * Emitted at most once per stall episode; resets when progress is detected.
+     * Surfaces to the operator dashboard as a signal that the resident may need
+     * a goal nudge (operator action; residents cannot rewrite their own goal).
+     */
+    observeOrientationStalled(event: OrientationStalledLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_stalled',
+            orientationGoalId: event.orientationGoalId,
+            orientationGoalDescription: event.orientationGoalDescription,
+            nonProgressTicks: event.nonProgressTicks,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:stalled'],
+        });
+        this.touchIndex(index);
+        this.schedulePortraitRegeneration();
+    }
+
+    /**
+     * Record an operator goal nudge as a durable Library timeline moment (S-GOAL-4).
+     * Only operators may call this; residents cannot self-nudge. The nudge text is
+     * surfaced to the Brain prompt as a contextual hint on the next think() cycle.
+     */
+    observeOrientationNudge(event: OrientationNudgeLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_nudge',
+            text: event.text,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:nudge'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record an operator soul orientation-goal edit as a durable Library audit
+     * moment (S-GOAL-4). Records previous and new goal ids for accountability.
+     * Only operators may change a soul's orientation goal.
+     */
+    observeOrientationGoalEdited(event: OrientationGoalEditedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'orientation_goal_edited',
+            previousGoalId: event.previousGoalId,
+            newGoalId: event.newGoalId,
+            newGoalDescription: event.newGoalDescription,
+            newGoalTier: event.newGoalTier,
+            reason: event.reason,
+            lifeIndex: index.lives,
+            significanceReasons: ['orientation:goal_edited'],
+        });
+        this.touchIndex(index);
     }
 
     async regeneratePortrait(): Promise<void> {

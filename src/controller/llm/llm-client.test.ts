@@ -94,6 +94,30 @@ describe('LlmClient retry and endpoint pause', () => {
         });
     });
 
+    it('surfaces a reasoning_content trace with the answer at its tail as response.text (S-INFER-2 D3 layout b)', async () => {
+        // vLLM/Qwen layout (b): `content` is empty and the whole think trace +
+        // final JSON answer live in `reasoning_content`. The client must surface
+        // that string verbatim so the downstream salvage can recover the tail JSON.
+        const reasoningTail = 'I weigh the options.\nFishing is best right now.\n{"goal":{"description":"fish at the river"}}';
+        const fetchMock = jest.fn().mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    model: 'qwen-local',
+                    choices: [{ message: { content: '', reasoning_content: reasoningTail } }],
+                    usage: { prompt_tokens: 8, completion_tokens: 40 },
+                }),
+                { status: 200 },
+            ),
+        );
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        const response = await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true });
+
+        expect(response.text).toBe(reasoningTail);
+        expect(response.nooped).toBe(false);
+    });
+
     it('uses OpenRouter reasoning when providers return null content and no reasoning_content field', async () => {
         const fetchMock = jest.fn().mockResolvedValueOnce(
             new Response(
@@ -156,6 +180,96 @@ describe('LlmClient retry and endpoint pause', () => {
         const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
         expect(body.reasoning).toEqual({ enabled: true });
         expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+    });
+
+    it('sends an explicit per-request max_tokens ceiling sized for think + answer (S-INFER-2 D1)', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('roomy'));
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true, maxTokens: 1536 });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        // Send both the OpenAI-classic and the newer reasoning-model field so a
+        // thinking model has room to emit reasoning AND the final JSON answer.
+        expect(body.max_tokens).toBe(1536);
+        expect(body.max_completion_tokens).toBe(1536);
+    });
+
+    it('falls back to the endpoint maxTokens default when the request omits one (S-INFER-2 D1)', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('roomy'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: { baseUrl: 'https://llm.test', model: 'test-model', timeoutMs: 1000, maxTokens: 2048 },
+        });
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.max_tokens).toBe(2048);
+        expect(body.max_completion_tokens).toBe(2048);
+    });
+
+    it('omits max_tokens entirely when neither request nor endpoint sets one (S-INFER-2 D1)', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('ok'));
+        global.fetch = fetchMock;
+
+        const client = clientFor('default');
+        await client.complete({ endpoint: 'default', prompt: 'decide' });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body).not.toHaveProperty('max_tokens');
+        expect(body).not.toHaveProperty('max_completion_tokens');
+    });
+
+    it('prefers the per-request max_tokens over the endpoint default (S-INFER-2 D1)', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('ok'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: { baseUrl: 'https://llm.test', model: 'test-model', timeoutMs: 1000, maxTokens: 2048 },
+        });
+        await client.complete({ endpoint: 'default', prompt: 'decide', maxTokens: 1024 });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.max_tokens).toBe(1024);
+        expect(body.max_completion_tokens).toBe(1024);
+    });
+
+    it('caps an oversized request max_tokens at the endpoint compatibility ceiling', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('bounded'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: { baseUrl: 'https://llm.test', model: 'test-model', timeoutMs: 1000, maxTokens: 512 },
+        });
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true, maxTokens: 4096 });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.max_tokens).toBe(512);
+        expect(body.max_completion_tokens).toBe(512);
+    });
+
+    it('lets an endpoint force thinking off for model servers that reject thinking-mode prompts', async () => {
+        const fetchMock = jest.fn().mockResolvedValueOnce(completionResponse('bounded'));
+        global.fetch = fetchMock;
+
+        const client = new LlmClient({
+            default: {
+                baseUrl: 'https://llm.test',
+                model: 'test-model',
+                timeoutMs: 1000,
+                forceThinking: false,
+                maxTokens: 512,
+            },
+        });
+        await client.complete({ endpoint: 'default', prompt: 'decide', thinking: true, maxTokens: 4096 });
+
+        const body = JSON.parse(String(fetchMock.mock.calls[0][1].body));
+        expect(body.reasoning).toEqual({ enabled: false });
+        expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+        expect(body.max_tokens).toBe(512);
+        expect(body.max_completion_tokens).toBe(512);
     });
 
     it('lets an individual request override the endpoint model', async () => {

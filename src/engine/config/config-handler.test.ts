@@ -34,6 +34,20 @@ describe('findNpc', () => {
             name: 'Banker',
         });
     });
+
+    it('loads Lumbridge goblins with deterministic bones and coin drops for combat GP benchmarks', async () => {
+        const { loadNpcConfigurations } = require('@engine/config/npc-config');
+        const { npcs, npcPresets } = await loadNpcConfigurations('data/config/npcs/');
+        configHandler.npcMap = npcs;
+        configHandler.npcPresetMap = npcPresets;
+
+        expect(configHandler.findNpc('rs:goblin').dropTable).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ itemKey: 'rs:bones', frequency: 'always', amount: 1 }),
+                expect.objectContaining({ itemKey: 'rs:coins', frequency: 'always', amount: 20 }),
+            ]),
+        );
+    });
 });
 
 describe('item configuration', () => {
@@ -44,6 +58,13 @@ describe('item configuration', () => {
 
         expect(config.itemIds[7954]).toBe('rs:burnt_shrimp');
         expect(config.items['rs:burnt_shrimp']).toMatchObject({ gameId: 7954 });
+    });
+
+    it('registers ashes so firemaking residue does not flood the game log', async () => {
+        const config = await loadItemConfigurations('data/config/items/');
+
+        expect(config.itemIds[592]).toBe('rs:ashes');
+        expect(config.items['rs:ashes']).toMatchObject({ gameId: 592 });
     });
 
     it("registers Cook's Assistant ingredients used by resident quest benchmarks", async () => {

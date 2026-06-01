@@ -150,6 +150,7 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
                 expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'trade' }),
             );
+            expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('trading-giving-5m');
             expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(
                 expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'bank' }),
@@ -159,9 +160,19 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-forager').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
         });
 
+        it('gives the QA survivor a durable food-resupply tool for combat recovery', () => {
+            expect(loader.load('res:qa-survivor').frontmatter.initialInventory).toEqual(
+                expect.arrayContaining([expect.objectContaining({ itemId: 303 })]),
+            );
+        });
+
         it('uses only synthetic QA residents for the qwopus canary split', () => {
             expect(loader.load('res:agent').frontmatter.model?.endpoint).toBe('default');
-            expect(loader.load('res:hans').frontmatter.model?.endpoint ?? 'default').toBe('default');
+            // S-INFER-9 / S-INFER-10: the res:hans hook-hero routes its single
+            // thinking-off model tier to the fast q4 (tower) via model.endpoint=body_q4
+            // (it has no deliberative brain/body loop). Updated from the old 'default'.
+            // (S-INFER-10 reverted the cohort brain→q8 split: everything is on q4 now.)
+            expect(loader.load('res:hans').frontmatter.model?.endpoint ?? 'default').toBe('body_q4');
             expect(loader.load('res:qa-scout').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
             expect(loader.load('res:qa-forager').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
         });

@@ -27,6 +27,10 @@ export const systemHooks: HookDefinition[] = (
             id: 'attention_empty',
             priority: 100,
             condition: { kind: 'attention_lte', value: 0 },
+            // Survival: a fully-drained resident is dying. May abort the in-flight
+            // Brain (S-INFER-6: only interrupt:true hooks supersede an in-flight
+            // deliberation; trade_request/addressed_by_chat are interrupt:false).
+            interrupt: true,
         },
         {
             id: 'took_damage',
@@ -49,7 +53,7 @@ export const systemHooks: HookDefinition[] = (
             priority: 85,
             condition: { kind: 'event_kind', value: 'chat' },
             cooldownTicks: 2,
-            interrupt: true,
+            interrupt: false,
             contextHint: 'Recent chat may be directed at the resident. Respond in character if appropriate.',
         },
         {
@@ -57,7 +61,7 @@ export const systemHooks: HookDefinition[] = (
             priority: 80,
             condition: { kind: 'event_kind', value: 'trade_request' },
             cooldownTicks: 4,
-            interrupt: true,
+            interrupt: false,
             contextHint: 'A trade request requires an accept, decline, or social response decision.',
         },
         {

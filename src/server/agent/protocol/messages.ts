@@ -10,6 +10,7 @@ export type DisconnectPolicy = 'logout' | 'idle';
 export type SpectatorMode = 'follow' | 'free-camera' | 'picture-in-picture';
 export type SpectatorSubject = { kind: 'resident'; name: string } | { kind: 'player'; username: string };
 export type InitialContainerItem = number | string | { itemId: number; amount?: number } | null;
+export type InventoryEnsureItem = number | string | { itemId: number };
 export type InitialSkillSeed = number | { exp?: number; level?: number };
 export type SpectatorPacketType = 'FIXED' | 'DYNAMIC_SMALL' | 'DYNAMIC_LARGE';
 
@@ -65,6 +66,7 @@ export type ClientMessage =
     | AgentFrame<'connect_resident', { name: string; observe?: boolean; control?: boolean; onDisconnect?: DisconnectPolicy }>
     | AgentFrame<'attach', { name: string; observe?: boolean; control?: boolean }>
     | AgentFrame<'submit_action', { name: string; action: AgentAction }>
+    | AgentFrame<'ensure_inventory_item', { name: string; item: InventoryEnsureItem; amount: number }>
     | AgentFrame<'inspect_resident_gold', { name: string }>
     | AgentFrame<'burn_resident_gold', { name: string; amount: number }>
     | AgentFrame<'detach', { name: string }>
@@ -78,6 +80,17 @@ export type ServerMessage =
     | AgentFrame<'observable_subject_list', { subjects: ObservableSubjectSummary[] }>
     | AgentFrame<'resident_created', { resident: ResidentSummary }>
     | AgentFrame<'resident_connected', { resident: ResidentSummary; perception: Perception | null }>
+    | AgentFrame<
+          'resident_inventory_ensured',
+          {
+              resident: string;
+              itemId: number;
+              requestedAmount: number;
+              previousAmount: number;
+              amount: number;
+              addedAmount: number;
+          }
+      >
     | AgentFrame<'resident_gold', { resident: string; itemId: 995; amount: number }>
     | AgentFrame<'resident_gold_burned', { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }>
     | AgentFrame<'resident_disconnected', { name: string; cause?: string }>
@@ -121,6 +134,11 @@ const initialContainerItemSchema = z.union([
     z.string().min(1),
     z.object({ itemId: z.number().int().positive(), amount: z.number().int().positive().optional() }),
     z.null(),
+]);
+const inventoryEnsureItemSchema = z.union([
+    z.number().int().positive(),
+    z.string().min(1),
+    z.object({ itemId: z.number().int().positive() }),
 ]);
 const initialSkillSeedSchema = z.union([
     z.number().nonnegative(),
@@ -166,6 +184,11 @@ const clientPayloadSchemas = {
         control: z.boolean().optional(),
     }),
     submit_action: z.object({ name: z.string().min(1), action: AgentActionSchema }),
+    ensure_inventory_item: z.object({
+        name: z.string().min(1),
+        item: inventoryEnsureItemSchema,
+        amount: z.number().int().positive(),
+    }),
     inspect_resident_gold: z.object({ name: z.string().min(1) }),
     burn_resident_gold: z.object({ name: z.string().min(1), amount: z.number().int().positive() }),
     detach: z.object({ name: z.string().min(1) }),

@@ -30,6 +30,8 @@ import {
     lowHealthRecoveryAction,
     lowHealthHoldPositionAction,
     presenceBeaconAction,
+    agentKeepaliveAction,
+    heroKeepaliveAction,
     activeFollowAction,
     followListenHoldAction,
     visibilityStatus,
@@ -49,6 +51,7 @@ import {
     suppressRepeatedActions,
     pendingDirectTradeAction,
     proactiveTradeAction,
+    tradeStarterAction,
 } from './hybrid-agent-helpers';
 
 export interface HybridAgentThinkingModuleOptions {
@@ -61,11 +64,16 @@ export interface HybridAgentThinkingModuleOptions {
 
 const DEFAULT_BRAIN_EVERY_TICKS = 180;
 const DEFAULT_BODY_EVERY_TICKS = 8;
-const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
+// S-INFER-8: generous "inference server is broken" ALARM ceiling (~6x a real q4
+// ~40s deliberation), NOT a thinking bound. A brain timeout firing is a RARE
+// anomaly → investigate the inference server (src/controller/llm/inference-health.ts
+// degradedFlags). Body timeout stays modest (body runs thinking-OFF / fast).
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
 const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
 const REPEAT_ACTION_BACKOFF_TICKS = 30;
 const WORLD_TICK_RESET_DRIFT = 60;
+const CRITICAL_ATTENTION_BODY_THRESHOLD = 10;
 
 export class HybridAgentThinkingModule implements ThinkingModule {
     private nextThinkId = 0;
@@ -160,13 +168,17 @@ export class HybridAgentThinkingModule implements ThinkingModule {
                 return this.result([proactiveTrade.action], proactiveTrade.cause, 0, false);
             }
 
-            if ((perception as HybridPerception).resident?.busy) {
-                return { actions: [], cause: 'resident_busy', nooped: true };
-            }
-
+            const residentBusy = (perception as HybridPerception).resident?.busy === true;
             const lowHealthRecovery = lowHealthRecoveryAction(this, perception as HybridPerception);
             if (lowHealthRecovery) {
+                if (residentBusy && lowHealthRecovery.action.kind === 'move_to') {
+                    return { actions: [], cause: 'resident_busy', nooped: true };
+                }
                 return this.result([lowHealthRecovery.action], lowHealthRecovery.cause, 0, false);
+            }
+
+            if (residentBusy) {
+                return { actions: [], cause: 'resident_busy', nooped: true };
             }
 
             const lowHealthHold = lowHealthHoldPositionAction(this, perception as HybridPerception);
@@ -177,6 +189,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const combatNarration = combatNarrationAction(this);
             if (combatNarration) {
                 return this.result([combatNarration.action], combatNarration.cause, 0, false);
+            }
+
+            const starterTrade = tradeStarterAction(this, perception as HybridPerception);
+            if (starterTrade) {
+                return this.result([starterTrade.action], starterTrade.cause, 0, false);
             }
 
             const activeFollow = activeFollowAction(this, perception as HybridPerception);
@@ -191,7 +208,18 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             const brainDue = this.shouldRunBrain();
             if (this.shouldRunBody()) {
-                if (!brainDue) {
+                if (!brainDue || typeof this.options.state.stuckSince === 'number') {
+                    const visibility = visibilityStatus(this, perception as HybridPerception);
+                    const agentKeepalive = agentKeepaliveAction(this, perception as HybridPerception, visibility);
+                    if (agentKeepalive) {
+                        return this.result([agentKeepalive], 'agent_keepalive', 0, false);
+                    }
+
+                    const heroKeepalive = heroKeepaliveAction(this, perception as HybridPerception, visibility);
+                    if (heroKeepalive) {
+                        return this.result([heroKeepalive], 'hero_keepalive', 0, false);
+                    }
+
                     const presenceBeacon = presenceBeaconAction(this, perception as HybridPerception);
                     if (presenceBeacon) {
                         return this.result([presenceBeacon], 'presence_beacon', 0, false);
@@ -381,6 +409,15 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return profile?.timeoutMs ?? fallback;
     }
 
+    maxTokensFor(profile: any, fallback?: number): number | undefined {
+        // S-INFER-2 (D1): a behavior profile maxTokens wins; otherwise the
+        // caller's generous default. When this resolves to undefined the
+        // LlmClient falls back to the endpoint config maxTokens (then the
+        // server default), so the ceiling stays endpoint-configurable without
+        // touching the soul schema.
+        return profile?.maxTokens ?? fallback;
+    }
+
     modelFor(profile?: any): string | undefined {
         return profile?.model || this.options.soul.frontmatter.model?.model;
     }
@@ -427,6 +464,9 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     }
 
     private shouldRunBody(): boolean {
+        if (this.activeGoal() && this.options.state.attention <= CRITICAL_ATTENTION_BODY_THRESHOLD) {
+            return true;
+        }
         return (
             this.options.state.tick - (this.cognition().lastBodyTick || 0) >= (this.behavior().bodyEveryTicks ?? DEFAULT_BODY_EVERY_TICKS)
         );

@@ -18,7 +18,7 @@ export interface ActionCoordinatorSubmitInput {
     routineRunId?: string;
     traceId?: string;
     metadata?: unknown;
-    waitForEffect?: (signal: AbortSignal) => Promise<EffectWaitResult>;
+    waitForEffect?: (signal: AbortSignal, attempt: ActionAttempt) => Promise<EffectWaitResult>;
     onAckReady?: (attempt: ActionAttempt) => void;
     onEffectResolved?: (attempt: ActionAttempt) => void;
 }
@@ -66,7 +66,7 @@ export class ActionCoordinator {
                 return attempt;
             }
             if (input.waitForEffect) {
-                const effectResult = await input.waitForEffect(active.abort.signal);
+                const effectResult = await input.waitForEffect(active.abort.signal, attempt);
                 if (finalStatus(attempt) === 'interrupted_after_submit') {
                     this.notifyEffectResolved(active);
                     return attempt;
@@ -146,7 +146,7 @@ export class ActionCoordinator {
             return;
         }
         attempt.finalStatus = effectReasonToStatus(result.reason);
-        attempt.finalReason = result.reason;
+        attempt.finalReason = result.finalReason || result.reason;
     }
 
     private notifyEffectResolved(active: ActiveAction): void {

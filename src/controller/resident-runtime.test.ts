@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { EventEmitter } from 'events';
 import os from 'os';
 import path from 'path';
 import type { ResidentBody } from './body';
@@ -13,7 +14,11 @@ import type { RuntimeState, RuntimeStateStore } from './memory/runtime-state';
 import { upsertNervousRulesMd } from './nervous-system';
 import { LettersStore } from './patron/letters-store';
 import {
+    ACK_ONLY_ACTION_WATCHDOG_MS,
+    ACTION_EFFECT_WATCHDOG_GRACE_MS,
+    DEFAULT_THINKING_WATCHDOG_MS,
     ResidentRuntime,
+    SAY_ACTION_WATCHDOG_MS,
     actionEffectTimeoutMs,
     type ResidentRuntimeEvidence,
     type ResidentRuntimeFactionStockpile,
@@ -21,7 +26,7 @@ import {
 } from './resident-runtime';
 import type { Soul } from './soul/soul-schema';
 import type { SparkModule } from './spark/modules';
-import type { ThinkingModule } from './thinking';
+import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
 import { loadControllerConfig } from './config';
 import { LoreBus } from './lore/lore-bus';
@@ -272,6 +277,383 @@ describe('ResidentRuntime modules', () => {
         });
     });
 
+    it('records authoritative gateway action_result failures before empty effect waits time out', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-action-result-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-action-result-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-30T19:45:00.000Z') });
+        const session = store.beginSession('session-gateway-action-result', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-30T19:45:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 88;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        let effectSignal: AbortSignal | undefined;
+        let effectAbortObserved = false;
+        const staleCook = {
+            id: 'npc:85',
+            kind: 'npc',
+            key: 'rs:lumbridge_castle_cook',
+            name: 'Cook',
+            position: { x: 3206, y: 3215, level: 0 },
+        };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'interact', target: staleCook, option: 'talk-to', cause: 'explore_talk_to_npc' }],
+                cause: 'explore_talk_to_npc',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => {
+                setImmediate(() => {
+                    gateway.emit('actionResult', 'res:pip', 'request-stale-cook', { ok: false, reason: 'target_not_found' });
+                });
+                return { ok: true, status: 'queued', requestId: 'request-stale-cook' };
+            }),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn((_predicate: unknown, options: { signal: AbortSignal }) => {
+                effectSignal = options.signal;
+                options.signal.addEventListener('abort', () => {
+                    effectAbortObserved = true;
+                });
+                return new Promise(() => undefined);
+            }),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 50 },
+        });
+
+        await runtime.onPerception({ tick: 88, resident: { position: { x: 3206, y: 3215, level: 0 } }, events: [] });
+
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-stale-cook',
+                status: 'failure',
+                reason: 'target_not_found',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'action_result',
+                        detail: expect.objectContaining({
+                            kind: 'gateway_action_result',
+                            requestId: 'request-stale-cook',
+                            result: { ok: false, reason: 'target_not_found' },
+                        }),
+                    }),
+                ],
+            }),
+        );
+        expect(effectSignal?.aborted).toBe(true);
+        expect(effectAbortObserved).toBe(true);
+    });
+
+    it('matches gateway action_result failures with the resident: prefix before movement waits time out', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-prefixed-action-result-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-prefixed-action-result-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-31T17:30:00.000Z') });
+        const session = store.beginSession('session-prefixed-action-result', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T17:30:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 120;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3208, y: 3213, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'low_health_cook_food' }],
+                cause: 'low_health_cook_food',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => {
+                setImmediate(() => {
+                    gateway.emit('actionResult', 'resident:res:pip', 'request-prefixed-move', { ok: false, reason: 'target_not_found' });
+                });
+                return { ok: true, status: 'queued', requestId: 'request-prefixed-move' };
+            }),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(() => new Promise(resolve => setTimeout(() => resolve({ ok: false, reason: 'timeout' }), 25))),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 100 },
+        });
+
+        await runtime.onPerception({
+            tick: 120,
+            resident: { position: { x: 3208, y: 3208, level: 0 } },
+            events: [],
+        });
+
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-prefixed-move',
+                status: 'failure',
+                reason: 'target_not_found',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'action_result',
+                        detail: expect.objectContaining({
+                            kind: 'gateway_action_result',
+                            requestId: 'request-prefixed-move',
+                            result: { ok: false, reason: 'target_not_found' },
+                        }),
+                    }),
+                ],
+            }),
+        );
+    });
+
+    it('does not treat successful gateway action_result as movement completion without effect evidence', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-success-waits-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-success-waits-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-31T17:31:00.000Z') });
+        const session = store.beginSession('session-gateway-success-waits', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T17:31:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 121;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3208, y: 3213, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'low_health_cook_food' }],
+                cause: 'low_health_cook_food',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => {
+                setImmediate(() => {
+                    gateway.emit('actionResult', 'resident:res:pip', 'request-successful-move-submit', {
+                        ok: true,
+                        cause: 'applied_on_tick',
+                    });
+                });
+                return { ok: true, status: 'queued', requestId: 'request-successful-move-submit' };
+            }),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(() => new Promise(resolve => setTimeout(() => resolve({ ok: false, reason: 'timeout' }), 25))),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 100 },
+        });
+
+        await runtime.onPerception({
+            tick: 121,
+            resident: { position: { x: 3208, y: 3208, level: 0 } },
+            events: [],
+        });
+
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-successful-move-submit',
+                status: 'timeout',
+                reason: 'timeout',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'perception',
+                        detail: expect.objectContaining({
+                            kind: 'movement_timeout',
+                            target,
+                        }),
+                    }),
+                ],
+            }),
+        );
+    });
+
+    it('does not reuse stale gateway action_result cache when a request id repeats later', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-request-id-reuse-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-gateway-request-id-reuse-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-30T20:02:00.000Z') });
+        const session = store.beginSession('session-gateway-request-id-reuse', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-30T20:02:01.000Z') }),
+        };
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const state = stateFor('res:pip');
+        state.tick = 99;
+        let eventSeq = 0;
+        let submitCount = 0;
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'say', text: 'hello', cause: 'social_probe' }],
+                cause: 'social_probe',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(() => {
+                eventSeq += 1;
+            }),
+            submit: jest.fn(async () => {
+                submitCount += 1;
+                if (submitCount === 1) {
+                    setImmediate(() => {
+                        gateway.emit('actionResult', 'res:pip', 'request-reused', { ok: false, reason: 'muted' });
+                    });
+                }
+                return { ok: true, status: 'queued', requestId: 'request-reused' };
+            }),
+            getLatestEventSeq: jest.fn(() => eventSeq),
+            waitForEvent: jest.fn(async () => {
+                if (submitCount === 1) {
+                    return new Promise(() => undefined);
+                }
+                return { ok: false, reason: 'timeout' };
+            }),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+            watchdog: { actionMs: 40 },
+        });
+
+        await runtime.onPerception({ tick: 99, resident: { position: { x: 3206, y: 3215, level: 0 } }, events: [] });
+        await runtime.onPerception({ tick: 100, resident: { position: { x: 3206, y: 3215, level: 0 } }, events: [] });
+
+        const actionResults = readJsonl(session.trajectoryPath).filter(
+            line => line.kind === 'action_result' && line.requestId === 'request-reused',
+        );
+        expect(actionResults).toHaveLength(2);
+        expect(actionResults[0]).toEqual(expect.objectContaining({ status: 'failure', reason: 'muted' }));
+        expect(actionResults[1]).toEqual(expect.objectContaining({ status: 'timeout', reason: 'timeout' }));
+    });
+
+    it('removes actionResult listeners on stop to avoid runtime listener leaks', () => {
+        const gateway = new EventEmitter() as GatewayClient & EventEmitter;
+        const stateStore = { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore;
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        const runtimeA = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+        expect(gateway.listenerCount('actionResult')).toBe(1);
+        runtimeA.stop();
+        expect(gateway.listenerCount('actionResult')).toBe(0);
+
+        const runtimeB = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway,
+            memory: { ensureResident: jest.fn(() => '/tmp'), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+        });
+        expect(gateway.listenerCount('actionResult')).toBe(1);
+        runtimeB.stop();
+        expect(gateway.listenerCount('actionResult')).toBe(0);
+    });
+
     it('records movement timeout distance evidence for coordinate target failures', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-failure-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-timeout-evidence-'));
@@ -439,6 +821,92 @@ describe('ResidentRuntime modules', () => {
         );
     });
 
+    it('treats a same-distance timed out movement as detour progress when the resident moved', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-detour-timeout-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-move-detour-evidence-'));
+        const store = new EvidenceStore('res:pip', evidenceRoot, { now: () => new Date('2026-05-24T12:58:00.000Z') });
+        const session = store.beginSession('session-move-detour', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-24T12:58:01.000Z') }),
+        };
+        const state = stateFor('res:pip');
+        state.tick = 42;
+        let latestPerception: Record<string, unknown> | undefined;
+        let perceptionSeq = 0;
+        const target = { x: 3202, y: 3221, level: 0 };
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({
+                actions: [{ kind: 'move_to', target, range: 1, cause: 'explore_patrol' }],
+                cause: 'explore_patrol',
+                nooped: false,
+            })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn((perception: Record<string, unknown>) => {
+                latestPerception = perception;
+                perceptionSeq += 1;
+            }),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-move-detour' })),
+            getLatestPerception: jest.fn(() => latestPerception),
+            getLatestPerceptionSeq: jest.fn(() => perceptionSeq),
+            waitForPerception: jest.fn(async () => {
+                latestPerception = { tick: 43, resident: { position: { x: 3205, y: 3220, level: 0 } }, events: [] };
+                perceptionSeq += 1;
+                return { ok: false, reason: 'timeout' };
+            }),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        await runtime.onPerception({
+            tick: 42,
+            resident: { position: { x: 3205, y: 3221, level: 0 } },
+            events: [],
+        });
+
+        expect(state.cognition?.targetFailureCooldowns).toBeUndefined();
+        expect(readJsonl(session.trajectoryPath)).toContainEqual(
+            expect.objectContaining({
+                kind: 'action_result',
+                requestId: 'request-move-detour',
+                status: 'success',
+                evidence: [
+                    expect.objectContaining({
+                        source: 'perception',
+                        detail: expect.objectContaining({
+                            kind: 'movement_detour',
+                            target,
+                            range: 1,
+                            startPosition: { x: 3205, y: 3221, level: 0 },
+                            finalPosition: { x: 3205, y: 3220, level: 0 },
+                            startDistance: 3,
+                            finalDistance: 3,
+                            improved: false,
+                            detoured: true,
+                            waitOutcome: 'timeout',
+                        }),
+                    }),
+                ],
+            }),
+        );
+    });
+
     it('writes runtime progress evidence and updates progress state from perceptions', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-progress-'));
@@ -520,7 +988,7 @@ describe('ResidentRuntime modules', () => {
         });
 
         await runtime.onPerception(progressPerception(10, 3200, 3200, 0, 1, 10));
-        await runtime.onPerception(progressPerception(31, 3200, 3200, 0, 1, 10));
+        await runtime.onPerception(progressPerception(55, 3200, 3200, 0, 1, 10));
 
         expect(state.lastMeaningfulProgressAt).toBe(500);
         expect(state.stuckSince).toBe(500);
@@ -554,12 +1022,221 @@ describe('ResidentRuntime modules', () => {
         });
 
         await runtime.onPerception(progressPerception(120, 3200, 3200, 0, 1, 10));
-        await runtime.onPerception(progressPerception(141, 3200, 3200, 0, 1, 10));
+        await runtime.onPerception(progressPerception(165, 3200, 3200, 0, 1, 10));
 
-        expect(state.tick).toBe(141);
-        expect(state.stuckSince).toBe(141);
+        expect(state.tick).toBe(165);
+        expect(state.stuckSince).toBe(165);
         expect(state.stuckSince).toBeLessThanOrEqual(state.tick);
     });
+
+    it.each(['social_keepalive', 'trade_keepalive', 'agent_keepalive', 'hero_keepalive', 'faction_landmark_recovery'] as const)(
+        'counts successful %s speech as visible runtime progress',
+        async cause => {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-memory-'));
+            const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-visible-speech-'));
+            const resident =
+                cause === 'trade_keepalive'
+                    ? 'res:qa-trader'
+                    : cause === 'agent_keepalive'
+                      ? 'res:agent'
+                      : cause === 'hero_keepalive'
+                        ? 'res:hans'
+                        : cause === 'faction_landmark_recovery'
+                          ? 'res:the-hush'
+                          : 'res:qa-social';
+            const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:20:00.000Z') });
+            const session = store.beginSession('session-visible-speech', 'soul-v1');
+            const evidence = {
+                store,
+                sessionId: session.sessionId,
+                trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:20:01.000Z') }),
+            };
+            const state = stateFor(resident);
+            const line = 'No tester visible. I am staying by the trade post and waiting for a real player.';
+            const thinking: ThinkingModule = {
+                think: jest
+                    .fn()
+                    .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
+                    .mockResolvedValueOnce({ actions: [{ kind: 'say', text: line, cause }], cause, nooped: false }),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true, requestId: 'request-social-keepalive' })),
+                getLatestEventSeq: jest.fn(() => 0),
+                waitForEvent: jest.fn(async () => ({
+                    ok: true,
+                    observation: {
+                        seq: 1,
+                        observedAt: Date.now(),
+                        value: { kind: 'chat', text: line, from: { name: resident } },
+                    },
+                })),
+            } as unknown as ResidentBody;
+
+            const runtime = new ResidentRuntime({
+                soul: soul(resident),
+                gateway: {} as GatewayClient,
+                memory: {
+                    ensureResident: jest.fn(() => memoryDir),
+                    retrieve: jest.fn(() => []),
+                    write: jest.fn(),
+                } as unknown as MemoryStore,
+                stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                llm: {} as LlmClient,
+                actionLog: {} as ActionLog,
+                inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+                thinking,
+                body,
+                evidence,
+            });
+
+            await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
+            await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
+
+            expect(readJsonl(session.progressPath)).toContainEqual(
+                expect.objectContaining({
+                    kind: 'progress',
+                    tick: 46,
+                    meaningful: true,
+                    reasons: [`visible_say:${cause}`],
+                    stuckSince: null,
+                }),
+            );
+            expect(state.lastMeaningfulProgressAt).toBe(46);
+            expect(state.stuckSince).toBeUndefined();
+        },
+    );
+
+    it('does not count generic successful speech as visible runtime progress', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-generic-speech-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-generic-speech-'));
+        const store = new EvidenceStore('res:hans', evidenceRoot, { now: () => new Date('2026-05-31T12:25:00.000Z') });
+        const session = store.beginSession('session-generic-speech', 'soul-v1');
+        const evidence = {
+            store,
+            sessionId: session.sessionId,
+            trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:25:01.000Z') }),
+        };
+        const state = stateFor('res:hans');
+        const line = 'Still here as Hans; watching the area.';
+        const thinking: ThinkingModule = {
+            think: jest
+                .fn()
+                .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
+                .mockResolvedValueOnce({
+                    actions: [{ kind: 'say', text: line, cause: 'idle_initiative' }],
+                    cause: 'idle_initiative',
+                    nooped: false,
+                }),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-generic-say' })),
+            getLatestEventSeq: jest.fn(() => 0),
+            waitForEvent: jest.fn(async () => ({
+                ok: true,
+                observation: {
+                    seq: 1,
+                    observedAt: Date.now(),
+                    value: { kind: 'chat', text: line, from: { name: 'res:hans' } },
+                },
+            })),
+        } as unknown as ResidentBody;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:hans'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            evidence,
+        });
+
+        await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
+        await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
+
+        expect(readJsonl(session.progressPath)).not.toContainEqual(expect.objectContaining({ reasons: ['visible_say:idle_initiative'] }));
+        expect(state.lastMeaningfulProgressAt).toBe(1);
+        expect(state.stuckSince).toBe(46);
+    });
+
+    it.each(['social_keepalive', 'agent_keepalive', 'hero_keepalive', 'faction_landmark_recovery'] as const)(
+        'does not count failed %s speech as visible runtime progress',
+        async cause => {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-memory-'));
+            const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-failed-speech-'));
+            const resident =
+                cause === 'agent_keepalive'
+                    ? 'res:agent'
+                    : cause === 'hero_keepalive'
+                      ? 'res:hans'
+                      : cause === 'faction_landmark_recovery'
+                        ? 'res:the-hush'
+                        : 'res:qa-social';
+            const store = new EvidenceStore(resident, evidenceRoot, { now: () => new Date('2026-05-31T12:27:00.000Z') });
+            const session = store.beginSession('session-failed-speech', 'soul-v1');
+            const evidence = {
+                store,
+                sessionId: session.sessionId,
+                trajectory: new TrajectoryBuilder(store, { now: () => new Date('2026-05-31T12:27:01.000Z') }),
+            };
+            const state = stateFor(resident);
+            const line = 'No tester visible. I am staying by the trade post.';
+            const thinking: ThinkingModule = {
+                think: jest
+                    .fn()
+                    .mockResolvedValueOnce({ actions: [], cause: 'initial-idle', nooped: true })
+                    .mockResolvedValueOnce({
+                        actions: [{ kind: 'say', text: line, cause }],
+                        cause,
+                        nooped: false,
+                    }),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: false, requestId: 'request-failed-keepalive', reason: 'chat_blocked' })),
+                getLatestEventSeq: jest.fn(() => 0),
+                waitForEvent: jest.fn(),
+            } as unknown as ResidentBody;
+
+            const runtime = new ResidentRuntime({
+                soul: soul(resident),
+                gateway: {} as GatewayClient,
+                memory: {
+                    ensureResident: jest.fn(() => memoryDir),
+                    retrieve: jest.fn(() => []),
+                    write: jest.fn(),
+                } as unknown as MemoryStore,
+                stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                llm: {} as LlmClient,
+                actionLog: {} as ActionLog,
+                inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+                thinking,
+                body,
+                evidence,
+            });
+
+            await runtime.onPerception(progressPerception(1, 3200, 3200, 0, 1, 10));
+            await runtime.onPerception(progressPerception(46, 3200, 3200, 0, 1, 10));
+
+            expect(readJsonl(session.progressPath)).not.toContainEqual(expect.objectContaining({ reasons: [`visible_say:${cause}`] }));
+            expect(state.lastMeaningfulProgressAt).toBe(1);
+            expect(state.stuckSince).toBe(46);
+        },
+    );
 
     it('updates Library of Souls story artifacts from runtime speech', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-library-memory-'));
@@ -703,6 +1380,138 @@ describe('ResidentRuntime modules', () => {
             expect.objectContaining({ cause: 'thinking_watchdog_timeout', timeoutMs: 5 }),
         );
         expect(thinking.think).toHaveBeenCalledTimes(2);
+    });
+
+    describe('S-INFER-8: timeout/watchdog are generous failure alarms, not thinking bounds', () => {
+        it('sets the thinking watchdog to a generous 250s last-resort backstop (above the 240s request timeout)', () => {
+            // Real q4 qwopus full-envelope brain runs ~40s; the previous 45s watchdog
+            // was the REAL guillotine cutting legitimate thinking. The watchdog is now a
+            // pure last-resort backstop ABOVE the 240s request timeout so the cleaner
+            // request-timeout signal fires first.
+            expect(DEFAULT_THINKING_WATCHDOG_MS).toBe(250_000);
+            expect(DEFAULT_THINKING_WATCHDOG_MS).toBeGreaterThan(240_000);
+        });
+
+        it('leaves the fast action watchdogs (ack/say/action-effect) tight and unchanged', () => {
+            // These guard fast action EXECUTION, not deliberation — keep them tight.
+            expect(ACK_ONLY_ACTION_WATCHDOG_MS).toBe(15_000);
+            expect(SAY_ACTION_WATCHDOG_MS).toBe(10_000);
+            expect(ACTION_EFFECT_WATCHDOG_GRACE_MS).toBe(10_000);
+        });
+
+        it.each([40_000, 150_000])(
+            'does NOT cut a legitimate ~%dms brain deliberation (the old 45s watchdog cut is gone)',
+            async simulatedThinkMs => {
+                jest.useFakeTimers();
+                try {
+                    const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-long-think-'));
+                    const state = stateFor('res:pip');
+                    let resolveThink: ((value: ThoughtResult) => void) | undefined;
+                    const thinking: ThinkingModule = {
+                        think: jest.fn(
+                            () =>
+                                new Promise<ThoughtResult>(resolve => {
+                                    resolveThink = resolve;
+                                }),
+                        ),
+                        considerInterrupt: jest.fn(() => false),
+                        stop: jest.fn(),
+                    };
+                    const body = {
+                        observePerception: jest.fn(),
+                        observeEvent: jest.fn(),
+                        submit: jest.fn(async () => ({ ok: true })),
+                    } as unknown as ResidentBody;
+                    const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+
+                    const runtime = new ResidentRuntime({
+                        soul: soul('res:pip'),
+                        gateway: {} as GatewayClient,
+                        memory: {
+                            ensureResident: jest.fn(() => memoryDir),
+                            retrieve: jest.fn(() => []),
+                            write: jest.fn(),
+                        } as unknown as MemoryStore,
+                        stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                        llm: {} as LlmClient,
+                        actionLog: {} as ActionLog,
+                        inferenceLog,
+                        thinking,
+                        body,
+                        // No watchdog override → uses DEFAULT_THINKING_WATCHDOG_MS (250s).
+                    });
+
+                    const pending = runtime.onPerception({ tick: 1, events: [] });
+
+                    // Advance virtual time PAST the old 45s guillotine and a long (~150s)
+                    // deliberation, but still under the 250s backstop.
+                    jest.advanceTimersByTime(simulatedThinkMs);
+
+                    // The watchdog must NOT have fired: no stop, no watchdog inference log.
+                    expect(thinking.stop).not.toHaveBeenCalledWith('thinking_watchdog_timeout');
+                    expect(inferenceLog.append).not.toHaveBeenCalledWith(
+                        'res:pip',
+                        expect.objectContaining({ cause: 'thinking_watchdog_timeout' }),
+                    );
+
+                    // The brain finally returns; the deliberation completes normally.
+                    resolveThink?.({ actions: [], cause: 'deliberated', nooped: true });
+                    await Promise.resolve();
+                    await pending;
+
+                    expect(thinking.stop).not.toHaveBeenCalledWith('thinking_watchdog_timeout');
+                } finally {
+                    jest.useRealTimers();
+                }
+            },
+        );
+
+        it('emits a LOUD alarm log when the thinking watchdog actually fires (rare = investigate the inference server)', async () => {
+            const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-watchdog-alarm-'));
+            const state = stateFor('res:pip');
+            const thinking: ThinkingModule = {
+                think: jest
+                    .fn()
+                    .mockImplementationOnce(() => new Promise(() => undefined))
+                    .mockResolvedValueOnce({ actions: [], cause: 'recovered', nooped: true }),
+                considerInterrupt: jest.fn(() => false),
+                stop: jest.fn(),
+            };
+            const body = {
+                observePerception: jest.fn(),
+                observeEvent: jest.fn(),
+                submit: jest.fn(async () => ({ ok: true })),
+            } as unknown as ResidentBody;
+            const inferenceLog = { append: jest.fn() } as unknown as InferenceLog;
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+            try {
+                const runtime = new ResidentRuntime({
+                    soul: soul('res:pip'),
+                    gateway: {} as GatewayClient,
+                    memory: {
+                        ensureResident: jest.fn(() => memoryDir),
+                        retrieve: jest.fn(() => []),
+                        write: jest.fn(),
+                    } as unknown as MemoryStore,
+                    stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+                    llm: {} as LlmClient,
+                    actionLog: {} as ActionLog,
+                    inferenceLog,
+                    thinking,
+                    body,
+                    watchdog: { thinkingMs: 5 },
+                });
+
+                await runtime.onPerception({ tick: 1, events: [] });
+
+                expect(warnSpy).toHaveBeenCalled();
+                const loud = warnSpy.mock.calls.map(args => args.join(' ')).join('\n');
+                expect(loud).toMatch(/inference server may be degraded|thinking_watchdog_timeout/i);
+            } finally {
+                warnSpy.mockRestore();
+            }
+        });
     });
 
     it('uses a module watchdog fallback decision when thinking times out', async () => {
@@ -1178,6 +1987,213 @@ describe('ResidentRuntime modules', () => {
                 source: 'nervous-system',
                 ruleId: 'wave-on-hit',
                 sparkModule: { id: 'onion.reflex', version: '0.1.0' },
+            }),
+        );
+        expect(thinking.think).not.toHaveBeenCalled();
+    });
+
+    it('S-INFER-5: a survival reflex during an in-flight brain decision STILL acts via the Body but does NOT abort deliberation (uninterruptible brain + execution-priority invariant)', async () => {
+        // Architectural endpoint: Brain=deliberative/uninterruptible, Body=reactive,
+        // Nervous=reflexive-safety. A low-health resident's survival eat reflex
+        // (interruptThinking:false) is ALWAYS submitted to the Body, so the resident
+        // still eats — but it must NOT call thinking.stop() on the in-flight brain.
+        // The Nervous/Body layer retains EXECUTION priority (the eat happens NOW),
+        // so a stale brain plan cannot make the resident deliberate itself to death;
+        // the redundant brain-abort is dropped (it was a top thinking_cancelled cause).
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-uninterruptible-test-'));
+        const state = stateFor('res:pip');
+
+        // think() never resolves, so `deciding` stays true across the next perception
+        // (the brain is mid-flight when the survival reflex fires).
+        let releaseThink: (() => void) | undefined;
+        const thinking: ThinkingModule = {
+            think: jest.fn(
+                () =>
+                    new Promise(resolve => {
+                        releaseThink = () => resolve({ actions: [], cause: 'never', nooped: true });
+                    }),
+            ),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+
+        // Legacy memory/module rules can still carry interruptThinking:true from
+        // before S-INFER-5. The runtime boundary must ignore that stale flag:
+        // the reflex ACTS (kind:'eat') but the Brain remains uninterruptible.
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.reflex' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            body,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.reflex',
+                        version: '0.1.0',
+                        displayName: 'Reflex',
+                        capabilities: ['thinking', 'nervous-rules'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: () => thinking,
+                    createNervousSystem: () => ({
+                        react: (perception: { events?: Array<{ kind?: string }> }) => {
+                            // Only the SECOND perception (the one that carries the
+                            // low-health signal) fires the survival reflex; the first
+                            // perception starts the brain deliberation.
+                            const lowHealth = (perception.events || []).some(event => event.kind === 'hp_low');
+                            if (!lowHealth) {
+                                return undefined;
+                            }
+                            return {
+                                rule: {
+                                    id: 'eat-when-low-health',
+                                    priority: 100,
+                                    condition: { kind: 'always' },
+                                    action: { kind: 'noop' },
+                                },
+                                action: { kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' },
+                                suppressThinking: true,
+                                // Legacy/stale value from memory or a module.
+                                interruptThinking: true,
+                            };
+                        },
+                    }),
+                },
+            ],
+        });
+
+        // Tick 1: no reflex → brain starts deliberating. think() never resolves, so we
+        // do NOT await this perception; we let microtasks flush so `deciding` becomes
+        // true while the brain is mid-flight.
+        const pendingTick1 = runtime.onPerception({ tick: 1, events: [] });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(thinking.think).toHaveBeenCalledTimes(1);
+
+        // Tick 2: low-health survival reflex fires WHILE the brain is mid-flight.
+        await runtime.onPerception({ tick: 2, events: [{ kind: 'hp_low' }] });
+
+        // The Body ACTS in real time — the resident eats. EXECUTION priority held.
+        expect(body.submit).toHaveBeenCalledWith(
+            { kind: 'eat', slot: 0, cause: 'nervous:eat-when-low-health' },
+            expect.objectContaining({ source: 'nervous-system', ruleId: 'eat-when-low-health' }),
+        );
+        // ...but the in-flight brain deliberation was NOT aborted (uninterruptible).
+        expect(thinking.stop).not.toHaveBeenCalled();
+
+        releaseThink?.();
+        await pendingTick1;
+    });
+
+    it('routes city_exchange_ap_gp nervous actions through the city exchange service instead of the game body', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-city-exchange-test-'));
+        const state = stateFor('res:pip');
+        state.attention = 5015;
+        const thinking = thinkingModule();
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+        } as unknown as ResidentBody;
+        const cityExchange = {
+            exchangeApForGp: jest.fn(async () => ({
+                status: 'complete',
+                exchangeId: 'exchange-1',
+                apEvidence: { creditedAmount: 100, attentionBefore: 5014, attentionAfter: 5114 },
+                gpEvidence: { itemId: 995, burnedAmount: 50, remainingAmount: 50 },
+            })),
+        };
+        const gameSkill = {
+            buildContext: jest.fn(() => ({ knowledgeResults: [], workflowAvailability: [], brainSection: '', bodySection: '' })),
+            observeAttempt: jest.fn(),
+        } as unknown as ResidentRuntimeGameSkill;
+
+        const actionLog = { append: jest.fn() } as unknown as ActionLog;
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', { modules: [{ id: 'onion.exchange-reflex' }] }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            body,
+            cityExchange,
+            gameSkill,
+            sparkModules: [
+                {
+                    manifest: {
+                        id: 'onion.exchange-reflex',
+                        version: '0.1.0',
+                        displayName: 'Exchange Reflex',
+                        capabilities: ['thinking', 'nervous-rules'],
+                        risk: 'reviewed',
+                    },
+                    createThinkingModule: () => thinking,
+                    createNervousSystem: () => ({
+                        react: () => ({
+                            rule: {
+                                id: 'self-initiated-ap-gp-exchange',
+                                priority: 86,
+                                condition: { kind: 'always' },
+                                action: { kind: 'noop' },
+                            },
+                            action: {
+                                kind: 'city_exchange_ap_gp',
+                                cause: 'nervous:self-initiated-ap-gp-exchange',
+                                gpAmount: 50,
+                                apAmount: 100,
+                                idempotencyKey: 'self-ap-gp:res:pip:1',
+                            },
+                            suppressThinking: true,
+                            interruptThinking: true,
+                        }),
+                    }),
+                },
+            ],
+        });
+
+        await runtime.onPerception({ tick: 1, events: [] });
+
+        expect(cityExchange.exchangeApForGp).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({
+                idempotencyKey: 'self-ap-gp:res:pip:1',
+                gpAmount: 50,
+                apAmount: 100,
+                sourceType: 'resident',
+                sourceId: 'nervous:self-initiated-ap-gp-exchange',
+            }),
+        );
+        expect(body.submit).not.toHaveBeenCalled();
+        expect(gameSkill.observeAttempt).toHaveBeenCalledWith(
+            expect.objectContaining({
+                producer: 'nervous-system',
+                attempt: expect.objectContaining({
+                    action: expect.objectContaining({ kind: 'city_exchange_ap_gp' }),
+                    finalStatus: 'success',
+                    ackResult: expect.objectContaining({ status: 'complete', exchangeId: 'exchange-1' }),
+                }),
+            }),
+        );
+        expect(actionLog.append).toHaveBeenCalledWith(
+            'res:pip',
+            expect.objectContaining({
+                tick: 0,
+                attention_after: state.attention,
+                source: 'nervous-system',
+                ruleId: 'self-initiated-ap-gp-exchange',
+                action: expect.objectContaining({ kind: 'city_exchange_ap_gp' }),
+                result: expect.objectContaining({ ok: true, status: 'complete', exchangeId: 'exchange-1' }),
             }),
         );
         expect(thinking.think).not.toHaveBeenCalled();
@@ -2777,6 +3793,17 @@ describe('ResidentRuntime modules', () => {
             stop: jest.fn(),
         };
 
+        const onDeath = jest.fn();
+        const sealTrajectory = {
+            beginTick: jest.fn(),
+            endTick: jest.fn(),
+            recordDecision: jest.fn(),
+            recordLegacy: jest.fn((event: unknown) => ({ kind: 'legacy_event', event })),
+        };
+        const sealLibrary = {
+            getPatronHandles: jest.fn(() => ['patron:alice', 'patron:bob']),
+            observeTrajectory: jest.fn(),
+        };
         const runtime = new ResidentRuntime({
             soul: soul('res:pip'),
             gateway: {} as GatewayClient,
@@ -2786,17 +3813,12 @@ describe('ResidentRuntime modules', () => {
             actionLog: {} as ActionLog,
             inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
             thinking,
+            onDeath,
             evidence: {
                 store,
                 sessionId: 'session-1',
-                trajectory: {
-                    beginTick: jest.fn(),
-                    endTick: jest.fn(),
-                    recordDecision: jest.fn(),
-                } as unknown as TrajectoryBuilder,
-                library: {
-                    getPatronHandles: jest.fn(() => ['patron:alice', 'patron:bob']),
-                } as unknown as LibraryUpdater,
+                trajectory: sealTrajectory as unknown as TrajectoryBuilder,
+                library: sealLibrary as unknown as LibraryUpdater,
             },
         });
 
@@ -2816,6 +3838,12 @@ describe('ResidentRuntime modules', () => {
         });
 
         expect(state.deceased.processed).toBe(true);
+        // onDeath fires once so the host can prune a city-born resident (death must stick).
+        expect(onDeath).toHaveBeenCalledWith('res:pip', 'killed by guard');
+        // Death seals the Library (currentState -> 'ended' via a legacy_event), so the
+        // portrait + in-game tombstone reflect the death (QA-20260601-066).
+        expect(sealTrajectory.recordLegacy).toHaveBeenCalled();
+        expect(sealLibrary.observeTrajectory).toHaveBeenCalledWith(expect.objectContaining({ kind: 'legacy_event' }));
 
         const lettersStore = new LettersStore(evidenceRoot);
         const aliceLetters = lettersStore.readInbox('patron:alice');
@@ -3056,9 +4084,10 @@ describe('ResidentRuntime modules', () => {
         };
         const stateStore = { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore;
 
+        const gateway = { connectResident: jest.fn(async () => ({})) } as unknown as GatewayClient;
         const runtime = new ResidentRuntime({
             soul: soul('res:pip'),
-            gateway: {} as GatewayClient,
+            gateway,
             memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
             stateStore,
             llm: {} as LlmClient,
@@ -3071,6 +4100,12 @@ describe('ResidentRuntime modules', () => {
 
         expect(state.attention).toBe(20);
         expect(state.deceased).toBeUndefined();
+        expect(gateway.connectResident).toHaveBeenCalledWith({
+            name: 'res:pip',
+            observe: true,
+            control: true,
+            onDisconnect: 'idle',
+        });
         expect(stateStore.save).toHaveBeenCalledWith(state);
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
@@ -3649,6 +4684,69 @@ describe('ResidentRuntime modules', () => {
                             position: { x: 10, y: 20, level: 0 },
                         }),
                         to: 'res:pip',
+                    }),
+                ]),
+            }),
+        );
+
+        runtime.stop();
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('persists drained LoreBus world events as durable memory facts', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-world-event-memory-'));
+        const bus = new LoreBus({ now: () => new Date('2026-05-30T11:00:00.000Z') });
+        const memoryStore = {
+            ensureResident: jest.fn(() => memoryDir),
+            retrieve: jest.fn(() => []),
+            write: jest.fn(),
+        } as unknown as MemoryStore;
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true })),
+            getLatestPerception: jest.fn(() => undefined),
+        } as unknown as ResidentBody;
+        const thinking = thinkingModule();
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: memoryStore,
+            stateStore: { load: jest.fn(() => stateFor('res:pip')), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            loreBus: bus,
+        });
+
+        bus.publish({
+            kind: 'fire_lit',
+            source: 'res:duke',
+            visibility: { sourceCoord: [3201, 3200, 0], radiusTiles: 10 },
+            payload: { fireObjectId: 26185, position: { x: 3201, y: 3200, level: 0 } },
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 } },
+            events: [],
+        });
+
+        expect(memoryStore.write).toHaveBeenCalledWith(
+            'res:pip',
+            'facts/world-events.md',
+            expect.stringContaining('Observed res:duke lit a fire at 3201,3200,0.'),
+        );
+        expect(body.observePerception).toHaveBeenCalledWith(
+            expect.objectContaining({
+                events: expect.arrayContaining([
+                    expect.objectContaining({
+                        kind: 'world_event',
+                        loreKind: 'fire_lit',
+                        source: 'res:duke',
                     }),
                 ]),
             }),

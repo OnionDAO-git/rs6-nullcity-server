@@ -73,7 +73,19 @@ export class TrajectoryBuilder {
         return this.append('decision', decision as Record<string, unknown>);
     }
 
-    recordAction(action: AgentAction, requestId: string): TrajectoryLine {
+    /**
+     * Record an action (or say) line.
+     *
+     * `goalId` (S-GOAL-FOLLOW-1) is an OPTIONAL causation tag: the id of the
+     * resident's active goal at the moment the action was emitted
+     * (`cognition.activeGoal?.id`). When supplied it is attached as an
+     * additive `goalId` field so downstream analyzers (and the
+     * goal-follow-through benchmark) can attribute each action to the goal
+     * that motivated it. When omitted (or undefined) no `goalId` field is
+     * written, keeping legacy line shapes byte-stable. The trajectory schema
+     * is `.passthrough()`, so this additive field needs no schema change.
+     */
+    recordAction(action: AgentAction, requestId: string, goalId?: string): TrajectoryLine {
         const actionKind = action.kind;
         return this.append(actionKind === 'say' ? 'say' : 'action', {
             requestId,
@@ -81,6 +93,7 @@ export class TrajectoryBuilder {
             action,
             text: actionKind === 'say' ? action.text : undefined,
             cause: action.cause,
+            ...(goalId ? { goalId } : {}),
         });
     }
 

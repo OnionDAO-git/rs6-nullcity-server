@@ -136,7 +136,11 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
     const options: PatronCliOptions = {
         action,
         humanId: process.env.CONTROLLER_PATRON_HUMAN || '',
-        amount: process.env.CONTROLLER_PATRON_AMOUNT ? Number(process.env.CONTROLLER_PATRON_AMOUNT) : 0,
+        amount: process.env.CONTROLLER_PATRON_AMOUNT
+            ? Number(process.env.CONTROLLER_PATRON_AMOUNT)
+            : process.env.CONTROLLER_PATRON_SHARDS
+              ? Number(process.env.CONTROLLER_PATRON_SHARDS)
+              : 0,
         residentName: process.env.CONTROLLER_PATRON_RESIDENT || '',
         text: process.env.CONTROLLER_PATRON_TEXT || '',
         artifact: process.env.CONTROLLER_PATRON_ARTIFACT || '',
@@ -215,6 +219,13 @@ export function parsePatronCliArgs(argv: string[]): PatronCliOptions {
             i += 1;
         } else if (arg.startsWith('--amount=')) {
             options.amount = Number(arg.slice('--amount='.length));
+        } else if (arg === '--shards') {
+            const next = argv[i + 1];
+            if (!next) throw new Error('--shards requires a value');
+            options.amount = Number(next);
+            i += 1;
+        } else if (arg.startsWith('--shards=')) {
+            options.amount = Number(arg.slice('--shards='.length));
         } else if (arg === '--resident') {
             const next = argv[i + 1];
             if (!next) throw new Error('--resident requires a value');
@@ -790,8 +801,8 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
                 ts: new Date().toISOString(),
             });
             store.saveCurrency(ledger);
-            console.log(`[patron:grant] Successfully credited ${options.amount} Shards to human "${options.humanId}".`);
-            console.log(`[patron:grant] New balance: ${ledger.balance(options.humanId)} Shards.`);
+            console.log(`[patron:grant] Successfully credited ${options.amount} AP to human "${options.humanId}".`);
+            console.log(`[patron:grant] New balance: ${ledger.balance(options.humanId)} AP.`);
             return 0;
         }
 
@@ -802,11 +813,11 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             store.saveCurrency(ledger);
             store.saveCheckIn(tracker);
             if (result.credited) {
-                console.log(`[patron:checkin] Credited +${result.shards} Shard(s) to "${options.humanId}" (daily check-in).`);
-                console.log(`[patron:checkin] New balance: ${ledger.balance(options.humanId)} Shards.`);
+                console.log(`[patron:checkin] Credited +${result.shards} AP to "${options.humanId}" (daily check-in).`);
+                console.log(`[patron:checkin] New balance: ${ledger.balance(options.humanId)} AP.`);
             } else {
                 console.log(`[patron:checkin] "${options.humanId}" already checked in today (UTC). No change.`);
-                console.log(`[patron:checkin] Balance: ${ledger.balance(options.humanId)} Shards.`);
+                console.log(`[patron:checkin] Balance: ${ledger.balance(options.humanId)} AP.`);
             }
             return 0;
         }
@@ -818,15 +829,13 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             store.saveCurrency(ledger);
             store.saveCheckIn(tracker);
             if (result.referralCredited) {
-                console.log(
-                    `[patron:referral] Credited +2 Shards to referrer "${options.humanId}" for introducing "${options.referredId}".`,
-                );
-                console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} Shards.`);
+                console.log(`[patron:referral] Credited +2 AP to referrer "${options.humanId}" for introducing "${options.referredId}".`);
+                console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} AP.`);
             } else {
                 console.log(
                     `[patron:referral] No bonus credited — "${options.referredId}" was already referred, or self-referral attempted.`,
                 );
-                console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} Shards.`);
+                console.log(`[patron:referral] Referrer balance: ${ledger.balance(options.humanId)} AP.`);
             }
             return 0;
         }
@@ -834,7 +843,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
         if (options.action === 'balance') {
             const ledger = store.loadCurrency();
             const bal = ledger.balance(options.humanId);
-            console.log(`[patron:balance] ${options.humanId}: ${bal} Shards`);
+            console.log(`[patron:balance] ${options.humanId}: ${bal} AP`);
             return 0;
         }
 
@@ -871,7 +880,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
 
                 console.log('[patron:offer] Live controller accepted the offer.');
                 console.log(
-                    `[patron:offer] Successfully offered ${options.amount} Shards from human "${options.humanId}" to resident "${residentName}".`,
+                    `[patron:offer] Successfully offered ${options.amount} AP from human "${options.humanId}" to resident "${residentName}".`,
                 );
                 console.log(`[patron:offer] Event ID: ${outcome.eventId}`);
                 if (outcome.standingDelta) {
@@ -893,7 +902,7 @@ export async function runPatronCli(argv: string[], deps: PatronCliRuntimeDeps = 
             if (outcome.ok) {
                 bundle.persistLedgers();
                 console.log(
-                    `[patron:offer] Successfully offered ${options.amount} Shards from human "${options.humanId}" to resident "${bundle.residentName}".`,
+                    `[patron:offer] Successfully offered ${options.amount} AP from human "${options.humanId}" to resident "${bundle.residentName}".`,
                 );
                 console.log(`[patron:offer] Event ID: ${outcome.eventId}`);
                 if (outcome.standingDelta) {

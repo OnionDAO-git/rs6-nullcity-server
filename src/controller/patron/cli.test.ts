@@ -26,7 +26,7 @@ describe('Patron CLI', () => {
             residents: ['res:pip'],
             gateway: { url: 'ws://127.0.0.1:1234', controllerId: 'test-controller' },
             inference: { maxConcurrent: 4 },
-            souls: { dir: soulsDir },
+            souls: { dir: soulsDir, discoverResidents: true },
             memory: { dir: memoryDir, qmdBin: 'qmd' },
             logging: { dir: path.join(tempDir, 'logs'), fullPerceptions: false },
             knowledge: { dir: path.join(tempDir, 'knowledge'), enableSuggestions: false, emitStdout: false, storageMode: 'ephemeral' },
@@ -80,6 +80,12 @@ describe('Patron CLI', () => {
                 filePath: '',
                 configPath: 'controller.yml',
             });
+        });
+
+        it('accepts legacy --shards as an alias for --amount', () => {
+            const parsed = parsePatronCliArgs(['--grant', '--human', 'james', '--shards', '10']);
+            expect(parsed.amount).toBe(10);
+            expect(parsed.action).toBe('grant');
         });
 
         it('parses --ask options correctly', () => {
@@ -368,6 +374,17 @@ describe('Patron CLI', () => {
                     configPath: 'controller.env.yml',
                 });
             });
+
+            it('accepts CONTROLLER_PATRON_SHARDS when CONTROLLER_PATRON_AMOUNT is unset', () => {
+                process.env.CONTROLLER_PATRON_ACTION = 'grant';
+                process.env.CONTROLLER_PATRON_HUMAN = 'james';
+                process.env.CONTROLLER_PATRON_SHARDS = '7';
+
+                const parsed = parsePatronCliArgs([]);
+                expect(parsed.action).toBe('grant');
+                expect(parsed.humanId).toBe('james');
+                expect(parsed.amount).toBe(7);
+            });
         });
     });
 
@@ -485,7 +502,7 @@ describe('Patron CLI', () => {
     });
 
     describe('runPatronCli', () => {
-        it('grants shards to a human player and writes to currency file', async () => {
+        it('grants AP to a human player and writes to currency file', async () => {
             const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
             const code = await runPatronCli(['--grant', '--human', 'james', '--amount', '50', '-c', configPath]);
@@ -920,8 +937,8 @@ describe('Patron CLI', () => {
         });
 
         // J7: daily check-in + referral drips
-        describe('J7 check-in (daily +1 Shard)', () => {
-            it('credits +1 Shard on first check-in and writes patron-check-in.json', async () => {
+        describe('J7 check-in (daily +1 AP)', () => {
+            it('credits +1 AP on first check-in and writes patron-check-in.json', async () => {
                 const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
                 const code = await runPatronCli(['--checkin', '--human', 'alice', '-c', configPath]);
@@ -956,8 +973,8 @@ describe('Patron CLI', () => {
             });
         });
 
-        describe('J7 referral (+2 Shards to referrer)', () => {
-            it('credits +2 Shards to referrer for a first-time referred human', async () => {
+        describe('J7 referral (+2 AP to referrer)', () => {
+            it('credits +2 AP to referrer for a first-time referred human', async () => {
                 const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
 
                 const code = await runPatronCli(['--referral', '--human', 'bob', '--referred', 'alice', '-c', configPath]);
@@ -968,7 +985,7 @@ describe('Patron CLI', () => {
                 expect(currency.balances.bob).toBe(2);
                 expect(currency.balances.alice ?? 0).toBe(0);
 
-                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:referral] Credited +2 Shards'));
+                expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('[patron:referral] Credited +2 AP'));
                 logSpy.mockRestore();
             });
 
@@ -1003,13 +1020,13 @@ describe('Patron CLI', () => {
         });
 
         describe('HD-016 patron:balance + patron:standing', () => {
-            it('balance shows 0 Shards for unknown patron', async () => {
+            it('balance shows 0 AP for unknown patron', async () => {
                 const logs: string[] = [];
                 const logSpy = jest.spyOn(console, 'log').mockImplementation(msg => logs.push(msg));
                 const code = await runPatronCli(['--balance', '--human', 'nobody@onion', '-c', configPath]);
                 logSpy.mockRestore();
                 expect(code).toBe(0);
-                expect(logs.join('\n')).toMatch(/nobody@onion.*0 Shards/);
+                expect(logs.join('\n')).toMatch(/nobody@onion.*0 AP/);
             });
 
             it('balance shows correct balance after grant', async () => {
@@ -1020,7 +1037,7 @@ describe('Patron CLI', () => {
                 const code = await runPatronCli(['--balance', '--human', 'alice@onion', '-c', configPath]);
                 logSpy.mockRestore();
                 expect(code).toBe(0);
-                expect(logs.join('\n')).toMatch(/alice@onion.*42 Shards/);
+                expect(logs.join('\n')).toMatch(/alice@onion.*42 AP/);
             });
 
             it('standing shows stranger tier and 0 pts for unknown patron', async () => {

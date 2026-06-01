@@ -3,6 +3,7 @@ import type { Soul, SoulArchetype, SoulFrontmatter } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
 import { bodyPlaybookPrompt, brainPlaybookPrompt } from './runebench-playbook';
+import { DEFAULT_PERCEPTION_SUMMARY_BUDGET_CHARS, renderBudgetedPerception } from '../llm/prompt-budget';
 
 export interface BrainPromptInput {
     soul: Soul;
@@ -46,6 +47,12 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         '- Survivor: keep food available, eat when hurt, avoid risky combat without food.',
         '- Local explorer: describe useful nearby NPCs, items, objects, and return near the visibility anchor so Codex can find you.',
         '- Basic combat: only fight safe low-level NPCs when healthy or when attacked; eat or retreat when hurt.',
+        'Needs hierarchy (always in this order):',
+        '- 1) Survive on AP (Attention Points) first.',
+        '- 2) Earn/preserve real RuneScape GP coins (item 995) using observable evidence.',
+        '- 3) Pursue Soul goals with practical next steps.',
+        '- 4) Write useful strategy discoveries into the Library.',
+        'Never claim or offer GP without coin/trade evidence; redirect to a practical AP/GP step instead.',
         '',
         brainPlaybookPrompt(),
         input.gameSkill?.brainSection || '',
@@ -53,8 +60,9 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         memorySection(input.memories, 'brain'),
         soulIdentitySection(input.soul.frontmatter, 'brain'),
         'Return JSON only with this shape:',
-        '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars","memo":{"path":"events/YYYY-MM-DD.md","text":"short first-person memory of what changed or what you learned","mode":"append"}}',
-        'Only include memo when you learned something useful, changed goals, met/responded to a player, completed a step, failed and changed tactic, or noticed a place/item/NPC worth remembering.',
+        '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars","memo":{"path":"events/YYYY-MM-DD.md","text":"short first-person memory of what changed or what you learned","mode":"append"},"rememberFact":{"topic":"routes","fact":"durable fact worth recalling later","reason":"why this fact matters"}}',
+        'Only include memo or rememberFact when you learned something useful, changed goals, met/responded to a player, completed a step, failed and changed tactic, or noticed a place/item/NPC worth remembering.',
+        'Use rememberFact for durable facts such as routes, quest requirements, danger locations, patron promises, NPC names, and useful AP/GP discoveries; do not use it for routine status chatter.',
         '',
         `Resident: ${input.soul.frontmatter.display || input.soul.frontmatter.name}`,
         `Command prefix: ${input.commandPrefix}`,
@@ -75,6 +83,8 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         'Allowed action examples: {"kind":"move_to","target":{"x":3222,"y":3219,"level":0}}, {"kind":"say","text":"..."}, {"kind":"interact","target":...,"option":"talk-to"}, {"kind":"use_item_on_item","itemSlot":0,"targetSlot":1}, {"kind":"item_action","slot":2,"option":"bury"}, {"kind":"attack","target":...}.',
         'When interacting with an object, use one of the option names shown in available actions, such as "chop down".',
         'If addressed in chat, answer or act. If the goal involves an item/tool and matching inventory slots are visible, use them.',
+        'Needs hierarchy for action choice: AP survival first, then real GP evidence, then Soul goal progression, then Library strategy note.',
+        'Never claim or offer GP unless coins must be observed in inventory/trade evidence right now.',
         '',
         bodyPlaybookPrompt(),
         input.gameSkill?.bodySection || '',
@@ -97,13 +107,35 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
 const MAX_PROMPT_MEMORIES = 6;
 const MAX_PROMPT_MEMORY_CHARS = 360;
 
+// S-INFER-3: the brain prompt's Perception section used to be a blind char-slice
+// of the upstream `compressed` blob (~110-113 KB raw for a dense embassy scene),
+// front-loaded almost entirely with floor `nearby.objects` and crowding out the
+// survival spine (resident HP/inventory, nearby NPCs/items, chat/combat events).
+// A local thinking model could not ingest+reason+answer that within its 20s
+// timeout. We now build a BOUNDED, STRUCTURED summary: the resident's own state
+// and recent events are kept intact and each nearby-entity list is capped to the
+// closest N. The old compressed string is only a fallback when the structured
+// `nearby`/`resident` fields are absent, and even then it is capped.
+const COMPRESSED_PERCEPTION_FALLBACK_CHARS = DEFAULT_PERCEPTION_SUMMARY_BUDGET_CHARS;
+
 function summarizePerception(perception: Perception): string {
-    const compressed = typeof perception.compressed === 'string' ? perception.compressed : undefined;
-    if (compressed) {
-        return compressed.slice(0, 12000);
+    if (hasStructuredPerception(perception)) {
+        return renderBudgetedPerception(perception);
     }
 
-    return JSON.stringify(perception, null, 2).slice(0, 12000);
+    const compressed = typeof perception.compressed === 'string' ? perception.compressed : undefined;
+    if (compressed) {
+        return compressed.slice(0, COMPRESSED_PERCEPTION_FALLBACK_CHARS);
+    }
+
+    return renderBudgetedPerception(perception);
+}
+
+function hasStructuredPerception(perception: Perception): boolean {
+    const record = perception as Record<string, unknown>;
+    return (
+        (typeof record.nearby === 'object' && record.nearby !== null) || (typeof record.resident === 'object' && record.resident !== null)
+    );
 }
 
 function memorySection(memories: string[] | undefined, role: 'brain' | 'body'): string {
@@ -116,7 +148,8 @@ function memorySection(memories: string[] | undefined, role: 'brain' | 'body'): 
         return '';
     }
     return [
-        'Recent Library memories and resident notes:',
+        'Memory:',
+        'Persistent resident memory: qmd facts, Library notes, patron events, route/social promises, and unfinished story threads.',
         role === 'brain'
             ? 'Use these as continuity: keep promises, remember patrons/players, and bias goal choice toward unfinished story threads.'
             : 'Use these as continuity: if you speak or act, respect recent promises, patrons, and unfinished player requests.',

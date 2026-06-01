@@ -1,6 +1,6 @@
 import type { RuntimeState } from '../memory/runtime-state';
 import { HookEvaluator } from './hook-evaluator';
-import type { HookDefinition } from './hooks';
+import { systemHooks, type HookDefinition } from './hooks';
 
 describe('HookEvaluator', () => {
     it('uses priority then id as deterministic tie-break and records shadowed hooks', () => {
@@ -23,6 +23,24 @@ describe('HookEvaluator', () => {
 
         expect(evaluator.evaluate(hooks, state, {}, {})[0]?.id).toBe('cooling');
         expect(evaluator.evaluate(hooks, state, {}, {})).toEqual([]);
+    });
+
+    it('does not let social or trade hooks interrupt in-flight deliberation', () => {
+        expect(systemHooks.find(hook => hook.id === 'addressed_by_chat')?.interrupt).toBe(false);
+        expect(systemHooks.find(hook => hook.id === 'trade_request')?.interrupt).toBe(false);
+        expect(systemHooks.find(hook => hook.id === 'took_damage')?.interrupt).toBe(true);
+        expect(systemHooks.find(hook => hook.id === 'death_seen')?.interrupt).toBe(true);
+    });
+
+    it('S-INFER-6: only survival hooks carry interrupt:true; everything else preserves the Brain', () => {
+        // Survival hooks may abort the in-flight Brain.
+        for (const id of ['took_damage', 'death_seen', 'attention_empty']) {
+            expect(systemHooks.find(hook => hook.id === id)?.interrupt).toBe(true);
+        }
+        // Non-survival hooks must NOT abort the in-flight Brain (interrupt false/unset).
+        for (const id of ['addressed_by_chat', 'trade_request', 'new_actor_or_chunk', 'idle_reflection']) {
+            expect(systemHooks.find(hook => hook.id === id)?.interrupt ?? false).toBe(false);
+        }
     });
 });
 

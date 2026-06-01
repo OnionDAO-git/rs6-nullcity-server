@@ -79,6 +79,28 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toContain('decision_loop_without_actions:low_health_hold_position');
     });
 
+    it('accepts follow listen holds when the resident keeps visible speech alive', () => {
+        writeResidentState('res:qa-trader', { tick: 300, lastMeaningfulProgressAt: 299, stuckSince: 299 });
+        writeTrajectory('res:qa-trader', [
+            { tick: 260, kind: 'say', text: 'I have starter supplies ready. Say "trade trade me" to trade.' },
+            { tick: 261, kind: 'action_result', status: 'success', reason: 'success' },
+            ...Array.from({ length: 30 }, (_, index) => ({
+                tick: 262 + index,
+                kind: 'decision',
+                cause: 'follow_listen_hold',
+                actionKinds: [],
+            })),
+            { tick: 292, kind: 'say', text: 'I have starter supplies ready. Say "trade inventory" to inspect them.' },
+            { tick: 293, kind: 'action_result', status: 'success', reason: 'success' },
+        ]);
+
+        const [summary] = summarizeLiveResidents({ memoryDir, residents: ['res:qa-trader'], windowTicks: 50, maxStuckTicks: 90 });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.recent).toMatchObject({ actions: 0, decisions: 30, says: 2, results: 2 });
+        expect(summary.issues).not.toContain('decision_loop_without_actions:follow_listen_hold');
+    });
+
     it('auto-discovers only resident directories with runtime state', () => {
         fs.mkdirSync(path.join(memoryDir, 'library'), { recursive: true });
         fs.mkdirSync(path.join(memoryDir, 'data'), { recursive: true });
@@ -521,6 +543,132 @@ describe('live smoke CLI helpers', () => {
         expect(summary.issues).toContain('observed_actions_not_succeeding');
     });
 
+    it('separates no-action, before-submit cancellation, effect timeout, and after-submit interruption evidence', () => {
+        writeResidentState('res:agent', { tick: 1060, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [
+            { tick: 1001, kind: 'decision', cause: 'budget_exhausted:pause', actionKinds: [], sessionId: 'same-session' },
+            { tick: 1002, kind: 'action', requestId: 'request-unpaired', action: { kind: 'move_to' }, sessionId: 'same-session' },
+            {
+                tick: 1010,
+                kind: 'action_result',
+                requestId: 'attempt-before-submit',
+                status: 'cancelled_before_submit',
+                reason: 'action_watchdog_timeout',
+                sessionId: 'same-session',
+            },
+            { tick: 1020, kind: 'action', requestId: 'request-effect-timeout', action: { kind: 'move_to' }, sessionId: 'same-session' },
+            {
+                tick: 1030,
+                kind: 'action_result',
+                requestId: 'request-effect-timeout',
+                status: 'timeout',
+                reason: 'timeout',
+                sessionId: 'same-session',
+            },
+            { tick: 1040, kind: 'action', requestId: 'request-interrupt', action: { kind: 'move_to' }, sessionId: 'same-session' },
+            {
+                tick: 1050,
+                kind: 'action_result',
+                requestId: 'request-interrupt',
+                status: 'interrupted_after_submit',
+                reason: 'interrupted_by:nervous-system',
+                sessionId: 'same-session',
+            },
+        ]);
+
+        const [summary] = summarizeLiveResidents({ memoryDir, residents: ['res:agent'], windowTicks: 80 });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.recent).toMatchObject({
+            actions: 3,
+            results: 3,
+            timeouts: 1,
+            decisions: 1,
+            noActionDecisions: 1,
+            dominantNoActionDecision: 'budget_exhausted:pause',
+            beforeSubmitCancellations: 1,
+            effectTimeouts: 1,
+            afterSubmitInterruptions: 1,
+            unpairedActions: 1,
+        });
+        expect(summary.issues).toEqual(
+            expect.arrayContaining(['before_submit_cancellations:1', 'effect_timeouts:1', 'after_submit_interruptions:1']),
+        );
+    });
+
+    it('records the same trajectory classes for timed observation deltas', async () => {
+        writeResidentState('res:agent', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:agent', [{ tick: 990, kind: 'action_result', status: 'success', sessionId: 'same-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:agent'],
+            observeMs: 50,
+            sleep: async () => {
+                writeResidentState('res:agent', { tick: 1060, lastMeaningfulProgressAt: 999 });
+                writeTrajectory('res:agent', [
+                    { tick: 990, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                    { tick: 1001, kind: 'decision', cause: 'hook_noop', actionKinds: [], sessionId: 'same-session' },
+                    { tick: 1002, kind: 'action', requestId: 'request-unpaired', action: { kind: 'move_to' }, sessionId: 'same-session' },
+                    {
+                        tick: 1010,
+                        kind: 'action_result',
+                        requestId: 'attempt-before-submit',
+                        status: 'cancelled_before_submit',
+                        reason: 'action_watchdog_timeout',
+                        sessionId: 'same-session',
+                    },
+                    {
+                        tick: 1020,
+                        kind: 'action',
+                        requestId: 'request-effect-timeout',
+                        action: { kind: 'move_to' },
+                        sessionId: 'same-session',
+                    },
+                    {
+                        tick: 1030,
+                        kind: 'action_result',
+                        requestId: 'request-effect-timeout',
+                        status: 'timeout',
+                        reason: 'timeout',
+                        sessionId: 'same-session',
+                    },
+                    { tick: 1040, kind: 'action', requestId: 'request-interrupt', action: { kind: 'move_to' }, sessionId: 'same-session' },
+                    {
+                        tick: 1050,
+                        kind: 'action_result',
+                        requestId: 'request-interrupt',
+                        status: 'interrupted_after_submit',
+                        reason: 'interrupted_by:nervous-system',
+                        sessionId: 'same-session',
+                    },
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('warn');
+        expect(summary.observed).toMatchObject({
+            actions: 3,
+            results: 3,
+            timeouts: 1,
+            decisions: 1,
+            noActionDecisions: 1,
+            dominantNoActionDecision: 'hook_noop',
+            beforeSubmitCancellations: 1,
+            effectTimeouts: 1,
+            afterSubmitInterruptions: 1,
+            unpairedActions: 1,
+            tickDelta: 60,
+        });
+        expect(summary.issues).toEqual(
+            expect.arrayContaining([
+                'observed_before_submit_cancellations:1',
+                'observed_effect_timeouts:1',
+                'observed_after_submit_interruptions:1',
+            ]),
+        );
+    });
+
     it.each(['hook_noop', 'budget_exhausted:pause'])(
         'warns when timed observation is dominated by inert %s decisions despite sparse visible events',
         async cause => {
@@ -553,6 +701,47 @@ describe('live smoke CLI helpers', () => {
             expect(summary.issues).toContain(`observed_inert_decision_loop:${cause}`);
         },
     );
+
+    it('accepts sustained visible cadence despite many no-action budget decisions', async () => {
+        writeResidentState('res:the-hush', { tick: 1000, lastMeaningfulProgressAt: 999 });
+        writeTrajectory('res:the-hush', [{ tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' }]);
+
+        const [summary] = await observeLiveResidents({
+            memoryDir,
+            residents: ['res:the-hush'],
+            observeMs: 90_000,
+            sleep: async () => {
+                writeResidentState('res:the-hush', { tick: 1140, lastMeaningfulProgressAt: 1120 });
+                writeTrajectory('res:the-hush', [
+                    { tick: 900, kind: 'action_result', status: 'success', sessionId: 'same-session' },
+                    ...Array.from({ length: 136 }, (_, index) => ({
+                        tick: 1001 + index,
+                        kind: 'decision',
+                        cause: 'budget_exhausted:pause',
+                        sessionId: 'same-session',
+                    })),
+                    ...Array.from({ length: 7 }, (_, index) => [
+                        {
+                            tick: 1020 + index * 15,
+                            kind: 'say',
+                            text: 'I am checking the landmark at 2938,3321.',
+                            sessionId: 'same-session',
+                        },
+                        {
+                            tick: 1021 + index * 15,
+                            kind: 'action_result',
+                            status: 'success',
+                            sessionId: 'same-session',
+                        },
+                    ]).flat(),
+                ]);
+            },
+        });
+
+        expect(summary.status).toBe('ok');
+        expect(summary.observed).toMatchObject({ inertDecisions: 136, says: 7, visibleEvents: 14, tickDelta: 140 });
+        expect(summary.issues).not.toContain('observed_inert_decision_loop:budget_exhausted:pause');
+    });
 
     it('flags missing observed progress when the resident only keeps old evidence', async () => {
         writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
@@ -596,6 +785,11 @@ describe('live smoke CLI helpers', () => {
                     timeouts: 1,
                     says: 1,
                     decisions: 4,
+                    noActionDecisions: 0,
+                    beforeSubmitCancellations: 0,
+                    effectTimeouts: 0,
+                    afterSubmitInterruptions: 0,
+                    unpairedActions: 0,
                 },
                 observed: {
                     durationMs: 60000,
@@ -610,6 +804,11 @@ describe('live smoke CLI helpers', () => {
                     says: 1,
                     decisions: 3,
                     inertDecisions: 0,
+                    noActionDecisions: 0,
+                    beforeSubmitCancellations: 0,
+                    effectTimeouts: 1,
+                    afterSubmitInterruptions: 0,
+                    unpairedActions: 0,
                     visibleEvents: 5,
                 },
                 issues: [],
@@ -617,6 +816,7 @@ describe('live smoke CLI helpers', () => {
         ]);
 
         expect(output).toContain('observed=60000ms/+50t actions=2 results=2 success=1 timeout=1 fail=0 says=1');
+        expect(output).toContain('preAckCancel=0 effectTimeout=1 afterSubmitInterrupt=0 unpaired=0');
     });
 
     it('returns a failing exit code for timed observations with warnings', async () => {
@@ -665,6 +865,23 @@ describe('live smoke CLI helpers', () => {
         logSpy.mockRestore();
     });
 
+    it('can smoke only the configured cohort when soul discovery is disabled', async () => {
+        const configPath = writeControllerConfig(['res:agent'], { discoverResidents: false });
+        writeSoul('res:mother-anvil');
+        writeResidentState('res:agent', { tick: 120, lastMeaningfulProgressAt: 119 });
+        writeTrajectory('res:agent', [{ tick: 119, kind: 'action_result', status: 'success' }]);
+        writeResidentState('res:mother-anvil', { tick: 120, lastMeaningfulProgressAt: 119 });
+        writeTrajectory('res:mother-anvil', [{ tick: 119, kind: 'say', text: 'Hot metal will not wait.' }]);
+        const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+
+        const code = await runLiveSmokeCli(['--config', configPath, '--json']);
+
+        expect(code).toBe(0);
+        const payload = JSON.parse(String(logSpy.mock.calls.at(-1)?.[0])) as { summaries: Array<{ resident: string }> };
+        expect(payload.summaries.map(summary => summary.resident)).toEqual(['res:agent']);
+        logSpy.mockRestore();
+    });
+
     function writeResidentState(resident: string, state: Record<string, unknown>): void {
         const dir = residentDir(resident);
         fs.mkdirSync(dir, { recursive: true });
@@ -677,7 +894,7 @@ describe('live smoke CLI helpers', () => {
         fs.writeFileSync(path.join(trajectoryDir, file), `${entries.map(entry => JSON.stringify(entry)).join('\n')}\n`, 'utf8');
     }
 
-    function writeControllerConfig(residents: string[]): string {
+    function writeControllerConfig(residents: string[], options: { discoverResidents?: boolean } = {}): string {
         const configPath = path.join(memoryDir, 'controller.yml');
         fs.writeFileSync(
             configPath,
@@ -686,7 +903,10 @@ describe('live smoke CLI helpers', () => {
                 residents,
                 gateway: { url: 'ws://127.0.0.1:1234', controllerId: 'test-controller' },
                 inference: { maxConcurrent: 4 },
-                souls: { dir: path.join(memoryDir, 'souls') },
+                souls: {
+                    dir: path.join(memoryDir, 'souls'),
+                    ...(options.discoverResidents === undefined ? {} : { discoverResidents: options.discoverResidents }),
+                },
                 memory: { dir: memoryDir, qmdBin: 'qmd' },
                 logging: { dir: path.join(memoryDir, 'logs'), fullPerceptions: false },
                 knowledge: {

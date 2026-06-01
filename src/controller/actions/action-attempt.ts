@@ -36,6 +36,6 @@ export interface ActionAttempt {
 
 export type EffectWaitResult =
     | { ok: true; evidence?: ActionEvidence[] }
-    | { ok: false; reason: 'timeout' | 'aborted' | 'blocked' | 'failure'; evidence?: ActionEvidence[] };
+    | { ok: false; reason: 'timeout' | 'aborted' | 'blocked' | 'failure'; finalReason?: string; evidence?: ActionEvidence[] };
 
 export type EffectFailureReason = Extract<EffectWaitResult, { ok: false }>['reason'];

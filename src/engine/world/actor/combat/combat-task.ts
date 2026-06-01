@@ -112,7 +112,7 @@ export class CombatTask extends Task {
         // 3. out of attack range — walk toward defender, don't attack this tick
         if (distance > this.strategy.attackRange) {
             attacker.pathfinding.walkTo(defender.position, {
-                pathingSearchRadius: 5,
+                pathingSearchRadius: Math.max(5, distance + 2),
                 ignoreDestination: true,
             });
             return;

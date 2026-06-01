@@ -18,6 +18,7 @@ export interface ControllerConfig {
     };
     souls: {
         dir: string;
+        discoverResidents: boolean;
     };
     memory: {
         dir: string;
@@ -52,6 +53,20 @@ export interface LlmEndpointConfig {
     profileId?: string;
     responseFormat?: LlmResponseFormat;
     timeoutMs: number;
+    /**
+     * S-INFER-2 (D1): default completion-token ceiling for this endpoint. Sized
+     * to fit a thinking model's `<think>` reasoning plus its final JSON answer
+     * (see DEFAULT_BRAIN_MAX_TOKENS in hybrid-agent-helpers). Optional — when
+     * unset the server's own default applies. A per-request `maxTokens` is capped
+     * by this endpoint ceiling when both are present.
+     */
+    maxTokens?: number;
+    /**
+     * Endpoint compatibility override for owned/quantized servers whose loaded
+     * model rejects thinking-mode requests regardless of the resident's SOUL.
+     * Undefined preserves the per-request/resident choice.
+     */
+    forceThinking?: boolean;
     cost?: LlmCostConfig;
 }
 
@@ -255,6 +270,7 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
         },
         souls: {
             dir: resolveFrom(baseDir, readString(readPath(source, ['souls', 'dir']), './data/souls')),
+            discoverResidents: readBoolean(readPath(source, ['souls', 'discoverResidents']), true),
         },
         memory: {
             dir: resolveFrom(baseDir, readString(readPath(source, ['memory', 'dir']), './data/memory')),
@@ -327,6 +343,7 @@ export function sanitizedControllerConfigSummary(config: ControllerConfig): stri
         `controllerId=${config.gateway.controllerId}`,
         `instanceId=${config.controller.instanceId}`,
         `residents=${config.residents.length}`,
+        `soulDiscovery=${config.souls.discoverResidents ? 'enabled' : 'disabled'}`,
         `knowledgeMode=${config.knowledge.storageMode}`,
         `suggestions=${config.knowledge.enableSuggestions ? 'enabled' : 'disabled'}`,
         `wiki=${config.knowledge.runebenchWikiDir ? 'configured' : 'disabled'}`,
@@ -432,6 +449,8 @@ function readLlmEndpoints(value: unknown): Record<string, LlmEndpointConfig> {
             endpointId: name,
             responseFormat: readLlmResponseFormat(endpoint.responseFormat),
             timeoutMs: readNumber(endpoint.timeoutMs, 30000),
+            maxTokens: readOptionalNumber(endpoint.maxTokens),
+            forceThinking: readOptionalBoolean(endpoint.forceThinking),
             cost: readLlmCost(endpoint.cost),
         };
     }
@@ -461,6 +480,8 @@ function readLlmProfiles(value: unknown, endpoints: Record<string, LlmEndpointCo
             profileId: name,
             responseFormat: readLlmResponseFormat(profile.responseFormat) ?? endpoint.responseFormat,
             timeoutMs: readNumber(profile.timeoutMs, endpoint.timeoutMs ?? 30000),
+            maxTokens: readOptionalNumber(profile.maxTokens) ?? endpoint.maxTokens,
+            forceThinking: readOptionalBoolean(profile.forceThinking) ?? endpoint.forceThinking,
             cost: readLlmCost(profile.cost) ?? endpoint.cost,
         };
     }
@@ -490,6 +511,10 @@ function readLlmCost(value: unknown): LlmCostConfig | undefined {
 
 function readOptionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+    return typeof value === 'boolean' ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

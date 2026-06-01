@@ -35,7 +35,7 @@ const PROGRESS_KINDS = new Set([
     'relationship_repeated',
     'stuck_recovered',
 ]);
-const RESOLUTION_KINDS = new Set(['legacy_event', 'prepared_epitaph', 'wants_unfulfilled']);
+const RESOLUTION_KINDS = new Set(['legacy_event', 'prepared_epitaph', 'wants_unfulfilled', 'goal_achieved']);
 const LETTER_KINDS = new Set([
     'civic_milestone',
     'epitaph',

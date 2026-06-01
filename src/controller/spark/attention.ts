@@ -24,6 +24,26 @@ export interface AttentionProfile {
     floor?: number;
 }
 
+export type AttentionLedgerEventKind = 'grant' | 'spend' | 'decay' | 'top_up' | 'fade';
+
+export interface AttentionLedgerEvent {
+    kind: AttentionLedgerEventKind;
+    amount?: number;
+}
+
+export interface AttentionLedgerReplayStep {
+    kind: AttentionLedgerEventKind;
+    amount: number;
+    before: number;
+    after: number;
+}
+
+export interface AttentionLedgerReplay {
+    currentAttention: number;
+    faded: boolean;
+    steps: AttentionLedgerReplayStep[];
+}
+
 const decayByCurve: Record<DecayCurve, number> = {
     gentle: 0.5,
     standard: 1,
@@ -80,4 +100,49 @@ export function spendForAction(current: number, actionKind: string, floor?: numb
 
 export function spendForLlm(current: number, outcome: keyof typeof llmSpend, floor?: number): number {
     return clampToFloor(current - llmSpend[outcome], floor);
+}
+
+function normalizeAmount(value: number | undefined): number {
+    return Number.isFinite(value) ? Math.max(0, value as number) : 0;
+}
+
+/**
+ * Replays AP lifecycle events into a deterministic attention balance.
+ * This is a pure helper used by tests and replay/reporting layers.
+ */
+export function replayAttentionLedger(startingAttention: number, events: AttentionLedgerEvent[]): AttentionLedgerReplay {
+    let currentAttention = clampToFloor(startingAttention, 0);
+    let faded = currentAttention <= 0;
+    const steps: AttentionLedgerReplayStep[] = [];
+
+    for (const event of events) {
+        const amount = normalizeAmount(event.amount);
+        const before = currentAttention;
+        switch (event.kind) {
+            case 'grant':
+            case 'top_up':
+                currentAttention = before + amount;
+                faded = currentAttention <= 0;
+                break;
+            case 'spend':
+            case 'decay':
+                currentAttention = clampToFloor(before - amount, 0);
+                faded = currentAttention <= 0;
+                break;
+            case 'fade':
+                currentAttention = 0;
+                faded = true;
+                break;
+            default:
+                break;
+        }
+        steps.push({
+            kind: event.kind,
+            amount,
+            before,
+            after: currentAttention,
+        });
+    }
+
+    return { currentAttention, faded, steps };
 }

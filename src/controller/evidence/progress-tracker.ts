@@ -24,7 +24,7 @@ const DEFAULT_THRESHOLDS: ProgressThresholds = {
     xpDelta: 1,
     inventoryDelta: 1,
     hpDelta: 1,
-    stuckThresholdTicks: 20,
+    stuckThresholdTicks: 45,
 };
 
 export class ProgressTracker {
@@ -63,6 +63,12 @@ export class ProgressTracker {
         }
 
         return { meaningful: false, reasons: [], newStuck, stuckSince: this.stuckSinceTick };
+    }
+
+    recordMeaningful(tick: number, reason: string): ProgressDelta {
+        this.lastMeaningfulTick = tick;
+        this.stuckSinceTick = null;
+        return { meaningful: true, reasons: [reason], newStuck: false, stuckSince: null };
     }
 
     reset(): void {

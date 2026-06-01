@@ -48,9 +48,13 @@ behavior:
   returnToAnchorEveryTicks: 600
   returnToAnchorRadius: 12
   brain:
+    # S-INFER-10: deliberate planner → qwopus q4 (tower host). q8 dropped — unusable at ~1.4 tok/s (see HD-053).
+    endpoint: body_q4
     thinking: true
     temperature: 0.65
   body:
+    # S-INFER-9: fast every-few-seconds executor → qwopus q4 (tower host).
+    endpoint: body_q4
     thinking: false
     temperature: 0.12
 nervousSystem:

@@ -19,6 +19,22 @@ describe('MemoryRouter durable facts', () => {
         ]);
     });
 
+    it('routes explicit rememberFact topic instructions into the named facts topic', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'chat',
+            from: { id: 'player:codex', kind: 'player', name: 'Codex' },
+            text: 'agent, durable fact: west gate passphrase is ember-vellum. Use rememberFact topic routes.',
+            to: 'public',
+        });
+
+        expect(facts).toEqual([
+            expect.objectContaining({
+                path: 'facts/routes.md',
+                content: expect.stringContaining('Codex taught: "west gate passphrase is ember-vellum."'),
+            }),
+        ]);
+    });
+
     it('does not promote ambient resident status loops into durable facts', () => {
         const facts = router.routeDurableFacts('res:hans', {
             kind: 'chat',
@@ -46,6 +62,19 @@ describe('MemoryRouter durable facts', () => {
         ]);
     });
 
+    it('renders patron_gift memory with AP terminology (S0a)', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'patron_gift',
+            patronHandle: 'alice@onion',
+            amount: 10,
+        });
+
+        expect(facts).toHaveLength(1);
+        expect(facts[0].path).toBe('facts/patrons.md');
+        expect(facts[0].content).toContain('Patron alice@onion gave 10 AP.');
+        expect(facts[0].content).not.toContain('Shards');
+    });
+
     it('extracts death locations into danger facts', () => {
         const facts = router.routeDurableFacts('res:hans', {
             kind: 'died',
@@ -63,5 +92,31 @@ describe('MemoryRouter durable facts', () => {
                 content: expect.stringContaining('Died near Goblin at 3238,3296,0'),
             }),
         ]);
+    });
+
+    it('extracts cross-resident fire lore events into durable world-event facts', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'world_event',
+            loreKind: 'fire_lit',
+            source: 'res:duke',
+            sourcePosition: { x: 3243, y: 3209, level: 0 },
+            payload: { fireObjectId: 26185 },
+        });
+
+        expect(facts).toEqual([
+            expect.objectContaining({
+                path: 'facts/world-events.md',
+                content: expect.stringContaining('Observed res:duke lit a fire at 3243,3209,0.'),
+            }),
+        ]);
+    });
+
+    it('ignores malformed world events when lore kind or source is missing', () => {
+        expect(
+            router.routeDurableFacts('res:hans', {
+                kind: 'world_event',
+                payload: { text: 'something happened' },
+            }),
+        ).toEqual([]);
     });
 });

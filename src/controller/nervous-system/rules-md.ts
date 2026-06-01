@@ -10,6 +10,7 @@ export interface NervousRulesMdState {
 
 const stateFence = '<!-- controller-nervous-rules-json';
 const stateFenceEnd = '-->';
+const MEMORY_TRADE_DECLINE_COOLDOWN_TICKS = 120;
 
 export function readNervousRulesMd(memoryDir: string): NervousRulesMdState {
     const file = path.join(memoryDir, 'nervous-rules.md');
@@ -94,6 +95,8 @@ function normalizeRule(value: unknown, retired: string[]): NervousRule[] {
     if (!action.success) {
         return [];
     }
+    const cooldownTicks = sanitizedCooldownTicks(value, action.data);
+    const interruptThinking = sanitizedInterruptThinking(value, action.data);
 
     return [
         clampNervousRulePriority({
@@ -101,13 +104,33 @@ function normalizeRule(value: unknown, retired: string[]): NervousRule[] {
             priority: value.priority,
             condition: { kind: value.condition.kind as NervousRule['condition']['kind'], value: value.condition.value },
             action: action.data,
-            cooldownTicks: typeof value.cooldownTicks === 'number' ? value.cooldownTicks : undefined,
-            interruptThinking: typeof value.interruptThinking === 'boolean' ? value.interruptThinking : undefined,
+            cooldownTicks,
+            interruptThinking,
             suppressThinking: typeof value.suppressThinking === 'boolean' ? value.suppressThinking : undefined,
             contextHint: typeof value.contextHint === 'string' ? value.contextHint : undefined,
             source: 'memory',
         }),
     ];
+}
+
+function sanitizedCooldownTicks(value: Record<string, unknown>, action: NervousRule['action']): number | undefined {
+    const cooldownTicks = typeof value.cooldownTicks === 'number' ? value.cooldownTicks : undefined;
+    if (!isTradeDeclineMemoryRule(value, action)) {
+        return cooldownTicks;
+    }
+    return Math.max(cooldownTicks || 0, MEMORY_TRADE_DECLINE_COOLDOWN_TICKS);
+}
+
+function sanitizedInterruptThinking(value: Record<string, unknown>, action: NervousRule['action']): boolean | undefined {
+    if (isTradeDeclineMemoryRule(value, action)) {
+        return false;
+    }
+    return typeof value.interruptThinking === 'boolean' ? value.interruptThinking : undefined;
+}
+
+function isTradeDeclineMemoryRule(value: Record<string, unknown>, action: NervousRule['action']): boolean {
+    const condition = isRecord(value.condition) ? value.condition : {};
+    return action.kind === 'trade_decline' && condition.kind === 'event_kind' && condition.value === 'trade_request';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -135,23 +135,23 @@ function renderEventAsMemory(event: Record<string, unknown>): string {
                 return `Gave gift to ${handle}: ${amount}${artifact} (${ts})`;
             }
             // E7 (intelligence-verification-log.md § E7): when the CLI /
-            // PatronGateway path forwards `amount` (Shards) and
-            // `standingTier` (the tier the patron crossed into), prefer
-            // the enriched rendering so the Brain can react meaningfully.
-            // Fall back to legacy `artifact`-based rendering for in-world
-            // gifts that carry a tangible item instead.
+            // PatronGateway path forwards `amount` (AP) and `standingTier`
+            // (the tier the patron crossed into), prefer the enriched rendering
+            // so the Brain can react meaningfully. Fall back to legacy
+            // `artifact`-based rendering for in-world gifts that carry a
+            // tangible item instead.
             const amount = typeof event.amount === 'number' && Number.isFinite(event.amount) ? event.amount : undefined;
             const tier = typeof event.standingTier === 'string' && event.standingTier.length > 0 ? event.standingTier : undefined;
             if (amount !== undefined) {
-                const shards = `${amount} Shard${amount === 1 ? '' : 's'}`;
+                const ap = `${amount} AP`;
                 const tierClause = tier ? ` (you are now ${tier} to them)` : '';
                 // HD-027 gap (b): include attentionDelta so Brain understands the
-                // magnitude of support beyond the raw Shard count.
+                // magnitude of AP support beyond the raw count.
                 const attnDelta =
                     typeof event.attentionDelta === 'number' && Number.isFinite(event.attentionDelta) && event.attentionDelta > 0
                         ? ` +${event.attentionDelta} attention`
                         : '';
-                return `Patron gift from ${handle}: ${shards}${attnDelta}${tierClause} (${ts})`;
+                return `Patron gift from ${handle}: ${ap}${attnDelta}${tierClause} (${ts})`;
             }
             const artifact = typeof event.artifact === 'string' ? event.artifact : 'a gift';
             return `Patron gift from ${handle}: ${artifact} (${ts})`;

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Resident } from '@engine/world/actor/resident/resident';
@@ -17,6 +17,21 @@ jest.mock('@engine/world', () => ({
         playerSlotsRemaining: jest.fn(() => 2000),
         registerPlayer: jest.fn(() => true),
     },
+}));
+
+jest.mock('@engine/config/config-handler', () => ({
+    findItem: jest.fn((item: number | string) => {
+        const itemId = typeof item === 'number' ? item : item === 'coins' ? 995 : Number(item);
+        if (!Number.isInteger(itemId) || itemId <= 0) {
+            return null;
+        }
+        return {
+            gameId: itemId,
+            key: `item:${itemId}`,
+            stackable: itemId === 995,
+            bankNoteId: null,
+        };
+    }),
 }));
 
 describe('ResidentRegistry', () => {
@@ -143,6 +158,120 @@ describe('ResidentRegistry', () => {
             'EINITIAL_INVENTORY_TOO_LARGE',
         );
         expect(Resident.prototype.save).not.toHaveBeenCalled();
+    });
+
+    it('ensures a missing item in an offline resident inventory without duplicating it on later calls', () => {
+        writeFileSync(join(saveDir, 'res:offline.json'), JSON.stringify({ inventory: [null, { itemId: 315, amount: 1 }] }));
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(registry.ensureInventoryItem('res:offline', 303, 1)).toEqual({
+            resident: 'res:offline',
+            itemId: 303,
+            requestedAmount: 1,
+            previousAmount: 0,
+            amount: 1,
+            addedAmount: 1,
+        });
+        expect(registry.ensureInventoryItem('res:offline', 303, 1)).toEqual({
+            resident: 'res:offline',
+            itemId: 303,
+            requestedAmount: 1,
+            previousAmount: 1,
+            amount: 1,
+            addedAmount: 0,
+        });
+
+        const save = JSON.parse(readFileSync(join(saveDir, 'res:offline.json'), 'utf8')) as { inventory: Array<{ itemId: number } | null> };
+        expect(save.inventory.filter(item => item?.itemId === 303)).toHaveLength(1);
+    });
+
+    it('stacks an ensured coin amount in an offline resident inventory', () => {
+        writeFileSync(join(saveDir, 'res:coins.json'), JSON.stringify({ inventory: [{ itemId: 995, amount: 5 }] }));
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(registry.ensureInventoryItem('res:coins', 995, 25)).toMatchObject({
+            previousAmount: 5,
+            amount: 25,
+            addedAmount: 20,
+        });
+
+        const save = JSON.parse(readFileSync(join(saveDir, 'res:coins.json'), 'utf8')) as {
+            inventory: Array<{ itemId: number; amount: number } | null>;
+        };
+        expect(save.inventory[0]).toEqual({ itemId: 995, amount: 25 });
+    });
+
+    it('refuses to ensure a non-stackable item when the offline inventory is full', () => {
+        writeFileSync(join(saveDir, 'res:full.json'), JSON.stringify({ inventory: new Array(28).fill({ itemId: 315, amount: 1 }) }));
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(() => registry.ensureInventoryItem('res:full', 303, 1)).toThrow('EINVENTORY_FULL');
+    });
+
+    it('refuses to rewrite oversized offline inventories instead of truncating save data', () => {
+        writeFileSync(
+            join(saveDir, 'res:oversized.json'),
+            JSON.stringify({ inventory: new Array(29).fill(null).map((_, index) => ({ itemId: 315 + index, amount: 1 })) }),
+        );
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(() => registry.ensureInventoryItem('res:oversized', 303, 1)).toThrow('EINVENTORY_OVERSIZED');
+        const save = JSON.parse(readFileSync(join(saveDir, 'res:oversized.json'), 'utf8')) as { inventory: unknown[] };
+        expect(save.inventory).toHaveLength(29);
+        expect(save.inventory[28]).toEqual({ itemId: 343, amount: 1 });
+    });
+
+    it('refuses impossible stack-size ensures before mutating a resident save', () => {
+        writeFileSync(join(saveDir, 'res:stack-cap.json'), JSON.stringify({ inventory: [{ itemId: 995, amount: 5 }] }));
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+
+        expect(() => registry.ensureInventoryItem('res:stack-cap', 995, 2_147_483_648)).toThrow('EBAD_AMOUNT');
+        const save = JSON.parse(readFileSync(join(saveDir, 'res:stack-cap.json'), 'utf8')) as {
+            inventory: Array<{ itemId: number; amount: number }>;
+        };
+        expect(save.inventory[0]).toEqual({ itemId: 995, amount: 5 });
+    });
+
+    it('ensures a missing item for an online resident and emits observable item evidence', () => {
+        const registry = new ResidentRegistry(saveDir, playerSaveDir);
+        const inventory: {
+            items: Array<{ itemId: number; amount: number } | null>;
+            amount: jest.Mock;
+            add: jest.Mock;
+            getOpenSlotCount: jest.Mock;
+            hasSpace: jest.Mock;
+        } = {
+            items: [null],
+            amount: jest.fn(() => 0),
+            add: jest.fn((item: { itemId: number; amount: number }) => {
+                inventory.items[0] = item;
+                return { item, slot: 0 };
+            }),
+            getOpenSlotCount: jest.fn(() => 1),
+            hasSpace: jest.fn(() => true),
+        };
+        const resident = {
+            isActive: true,
+            inventory,
+            emitPerceptionEvent: jest.fn(),
+            save: jest.fn(),
+        };
+        const internals = registry as unknown as { online: Map<string, Resident> };
+        internals.online.set('res:online', resident as unknown as Resident);
+
+        expect(registry.ensureInventoryItem('res:online', 303, 1)).toMatchObject({
+            resident: 'res:online',
+            itemId: 303,
+            previousAmount: 0,
+            amount: 1,
+            addedAmount: 1,
+        });
+        expect(inventory.add).toHaveBeenCalledWith({ itemId: 303, amount: 1 }, false);
+        expect(resident.emitPerceptionEvent).toHaveBeenCalledWith({
+            kind: 'item_received',
+            item: { itemId: 303, key: 'item:303', amount: 1 },
+        });
+        expect(resident.save).toHaveBeenCalled();
     });
 
     it('ignores non-resident files when listing resident saves', () => {

@@ -65,11 +65,13 @@ npm run inference:canary -- --config config/controller.model-benchmark.yml \
 
 ## Report Raw Benchmark Artifacts
 
-Generate a human-readable pass-rate/latency/token/cost table from any benchmark artifact directory:
+Generate a human-readable comparison table from any benchmark artifact directory:
 
 ```bash
 npm run benchmark:report -- --input data/benchmarks/model-intelligence-paid-2026-05-27
 ```
+
+The markdown report now groups rows by `profile + resident + endpoint + model + task + mode` and includes pass rate, average duration, token totals, estimated cost, and failure causes.
 
 Use JSON output for spreadsheets or follow-up analysis:
 

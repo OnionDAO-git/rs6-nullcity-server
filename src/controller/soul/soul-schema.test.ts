@@ -261,6 +261,89 @@ describe('validateSoulFrontmatter modules', () => {
             expect(() => validateSoulFrontmatter({ name: 'res:test', archetype: 'endurer', factionId: '' }, '/tmp/test.md')).toThrow();
         });
     });
+
+    // ---- orientationGoal (S-GOAL-1) -----------------------------------
+    // Soul-level "north star" goal that biases the needs-hierarchy ranker
+    // beyond just survive-tier. See
+    // `docs/superpowers/specs/2026-05-30-goal-as-orientation-design.md`
+    // and `src/controller/spark/needs-hierarchy.ts` for the ranker bonus.
+    describe('orientationGoal (S-GOAL-1)', () => {
+        it('accepts a soul with id + description (minimum orientation goal)', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:qa-woodcutter',
+                    archetype: 'achiever',
+                    orientationGoal: {
+                        id: 'master-woodcutting',
+                        description: 'Master woodcutting and supply the city with logs.',
+                    },
+                },
+                '/tmp/qa-woodcutter.md',
+            );
+            expect(frontmatter.orientationGoal?.id).toBe('master-woodcutting');
+            expect(frontmatter.orientationGoal?.description).toBe('Master woodcutting and supply the city with logs.');
+            expect(frontmatter.orientationGoal?.tier).toBeUndefined();
+        });
+
+        it('accepts an optional tier ("pursue" — most common orientation)', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:qa-woodcutter',
+                    archetype: 'achiever',
+                    orientationGoal: {
+                        id: 'master-woodcutting',
+                        description: 'Master woodcutting and supply the city with logs.',
+                        tier: 'pursue',
+                    },
+                },
+                '/tmp/qa-woodcutter.md',
+            );
+            expect(frontmatter.orientationGoal?.tier).toBe('pursue');
+        });
+
+        it('accepts a soul without orientationGoal (back-compat: existing souls still load)', () => {
+            const frontmatter = validateSoulFrontmatter(
+                {
+                    name: 'res:agent',
+                    archetype: 'endurer',
+                },
+                '/tmp/agent.md',
+            );
+            expect(frontmatter.orientationGoal).toBeUndefined();
+        });
+
+        it('rejects an orientationGoal missing id', () => {
+            expect(() =>
+                validateSoulFrontmatter(
+                    {
+                        name: 'res:bad',
+                        archetype: 'endurer',
+                        orientationGoal: { description: 'no id here' },
+                    },
+                    '/tmp/bad.md',
+                ),
+            ).toThrow('Invalid soul frontmatter');
+        });
+
+        it('rejects an unknown orientationGoal.tier value (must be earn|pursue|reflect)', () => {
+            expect(() =>
+                validateSoulFrontmatter(
+                    {
+                        name: 'res:bad',
+                        archetype: 'endurer',
+                        orientationGoal: {
+                            id: 'x',
+                            description: 'y',
+                            // 'survive' deliberately rejected: orientation is never a
+                            // survive override — survival always wins via tier check.
+                            tier: 'survive',
+                        },
+                    },
+                    '/tmp/bad.md',
+                ),
+            ).toThrow('Invalid soul frontmatter');
+        });
+    });
 });
 
 describe('dominantFaction', () => {

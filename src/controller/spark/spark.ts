@@ -41,7 +41,7 @@ const IDLE_INITIATIVE_FIRST_TICK = 120;
 const IDLE_INITIATIVE_INTERVAL_TICKS = 120;
 const IDLE_INITIATIVE_INTERVAL_MS = 45_000;
 const HERO_IDLE_INITIATIVE_INTERVAL_MS = 12_000;
-const DEFAULT_SPARK_INFERENCE_TIMEOUT_MS = 10_000;
+const DEFAULT_SPARK_INFERENCE_TIMEOUT_MS = 75_000;
 
 export interface SparkTickResult {
     actions: AgentAction[];
@@ -192,6 +192,24 @@ export class Spark {
                 };
             }
 
+            // S-INFER-7: debounce the Brain. The Brain is a deliberate, infrequent
+            // planner (~40s qwopus) that must run to completion; the Body runs every
+            // tick on the current goal. While a deliberation is already in-flight, a
+            // NEW *non-survival* trigger from the next tick/decision cycle must NOT
+            // supersede it — `mailbox.start()` would otherwise abort the in-flight
+            // request (`replaced_by:`), producing a `thinking_cancelled`. Skip the new
+            // think (no mailbox.start, no abort) so the slow deliberation finishes and
+            // only the NEXT think may start after it completes. Survival hooks
+            // (HookDefinition.interrupt:true: took_damage/death_seen/attention_empty)
+            // are exempt — they abort via considerInterrupt() to preserve the
+            // life-saving reflex — and the watchdog still stops a parked brain via
+            // watchdogFallback(). Live residual before this fix: usable-brain-rate
+            // ~60%, cancelled=360 (~38%) from supersede.
+            if (this.mailbox.current() && !winner.hook.interrupt) {
+                endReason = 'hook_noop';
+                return { actions: [], cause: 'brain_inflight_debounced', nooped: true };
+            }
+
             if (this.activePlan) {
                 this.state.previousIntent = remainingIntent(this.activePlan);
                 this.activePlan = undefined;
@@ -319,17 +337,50 @@ export class Spark {
                 return true;
             });
             if (isEmptyParsedCompletion(parsed, actions)) {
-                const idleInitiative = this.idleInitiative(perception);
-                if (idleInitiative) {
-                    actions = idleInitiative.actions;
-                    decisionCause = 'empty_completion_idle_initiative';
-                    actionsAlreadySpent = true;
-                    endReason = 'idle_initiative';
+                if (response.cancelledBy) {
+                    // S-INFER-2 (D2 / bucket C): the completion is empty because
+                    // the think was CANCELLED mid-flight (a reflex interrupt, the
+                    // watchdog, attention exhaustion, or a request timeout) — NOT
+                    // because the model produced no decision. Record it as
+                    // `thinking_cancelled` (carrying the cancel reason) so the
+                    // live breakdown never folds an interrupted think into the
+                    // empty_completion buckets and inflates the "no decision" rate.
+                    decisionCause = cancelledDecisionCause(response.cancelledBy);
+                    const idleInitiative = this.idleInitiative(perception);
+                    if (idleInitiative) {
+                        actions = idleInitiative.actions;
+                        actionsAlreadySpent = true;
+                        endReason = 'idle_initiative';
+                    }
                 } else {
-                    decisionCause = 'empty_completion';
+                    const idleInitiative = this.idleInitiative(perception);
+                    if (idleInitiative) {
+                        actions = idleInitiative.actions;
+                        decisionCause = 'empty_completion_idle_initiative';
+                        actionsAlreadySpent = true;
+                        endReason = 'idle_initiative';
+                    } else {
+                        // S-INFER-1: record WHY the completion was empty using the
+                        // salvage classification, so live action logs reveal the
+                        // real breakdown (Qwen3 think_only_no_answer vs
+                        // schema_mismatch vs truly_empty) instead of a blanket
+                        // `empty_completion`. Genuinely-empty completions keep the
+                        // bare `empty_completion` cause so existing telemetry/tests
+                        // do not break.
+                        decisionCause = emptyCompletionCause(parsed.parseClass);
+                    }
                 }
             }
             decisionCause ??= inferUnnamedCompletionCause(parsed, actions);
+            if (actions.length === 0 && this.soul.frontmatter.heroProfile) {
+                const visibleCadence = this.idleInitiative(perception);
+                if (visibleCadence) {
+                    actions = visibleCadence.actions;
+                    actionsAlreadySpent = true;
+                    decisionCause = `${decisionCause}_idle_initiative`;
+                    endReason = 'idle_initiative';
+                }
+            }
             this.options.evidence?.recordDecision({
                 cause: decisionCause,
                 moduleId: this.options.moduleIdentity?.id,
@@ -533,6 +584,43 @@ function isEmptyParsedCompletion(parsed: ParsedCompletion, actions: AgentAction[
         !parsed.retireNervousRule?.length &&
         !parsed.proposeVariables?.length
     );
+}
+
+/**
+ * S-INFER-1: map a salvage parse-classification onto the SPARK decisionCause
+ * for an otherwise-empty completion. `truly_empty` (and an unset class, for
+ * back-compat with callers/parsers that do not yet set it) stays the bare
+ * `empty_completion` so existing telemetry/tests keep working; every other
+ * class is suffixed so the live action logs distinguish the real reason
+ * (e.g. `empty_completion_think_only_no_answer`,
+ * `empty_completion_schema_mismatch`).
+ */
+function emptyCompletionCause(parseClass: ParsedCompletion['parseClass']): string {
+    // `clean` (e.g. a well-formed `{}` with no actions) and `truly_empty`
+    // (and an unset class) are the ordinary empty completion — keep the bare
+    // cause so existing telemetry/tests stay stable. Only the salvage /
+    // failure classes that previously hid behind `empty_completion` get a
+    // suffix so the live breakdown is visible.
+    if (!parseClass || parseClass === 'clean' || parseClass === 'truly_empty') {
+        return 'empty_completion';
+    }
+    return `empty_completion_${parseClass}`;
+}
+
+/**
+ * S-INFER-2 (D2): build the decisionCause for a think that was CANCELLED rather
+ * than empty. A bare `request_timeout` keeps its own historical label (it is a
+ * genuine timeout, not a reflex interrupt); every other cancel reason is tagged
+ * `thinking_cancelled` so bucket C is visible and distinct from the
+ * `empty_completion` buckets in the live action log. The original reason is
+ * appended (e.g. `thinking_cancelled:nervous:flee_combat`) for triage.
+ */
+function cancelledDecisionCause(cancelledBy: string): string {
+    const reason = cancelledBy.trim();
+    if (!reason || reason === 'request_timeout') {
+        return reason || 'thinking_cancelled';
+    }
+    return `thinking_cancelled:${reason}`;
 }
 
 function inferUnnamedCompletionCause(parsed: ParsedCompletion, actions: AgentAction[]): string {

@@ -74,6 +74,25 @@ describe('MemoryStore', () => {
         expect(shrimp.join('\n')).not.toContain('Still here watching the area');
     });
 
+    it('writes Brain remember facts through the formal facts store', () => {
+        const store = new MemoryStore(root, '', { telemetry: false });
+
+        const stored = store.rememberFact(
+            'res:agent',
+            'Quest Notes',
+            'Cook asked for an egg, flour, and milk.',
+            'Brain heard NPC dialogue',
+        );
+
+        expect(stored.path).toBe('facts/quest-notes.md');
+        const topic = fs.readFileSync(path.join(root, 'res-agent', 'facts', 'quest-notes.md'), 'utf8');
+        expect(topic).toContain('Cook asked for an egg, flour, and milk.');
+        expect(topic).toContain('[why: Brain heard NPC dialogue]');
+        expect(store.retrieve('res:agent', 'what did Cook ask me to gather?', 3).join('\n')).toContain(
+            'Cook asked for an egg, flour, and milk.',
+        );
+    });
+
     it('logs retrieval source counts for memory engine comparisons', () => {
         const logPath = path.join(root, 'logs', 'memory-usage.jsonl');
         const timelineDir = path.join(root, 'library', 'res-agent');

@@ -54,12 +54,17 @@ export interface CognitiveState {
     lastDirectChatKey?: string;
     manualPauseSinceTick?: number;
     lastPresenceBeaconTick?: number;
+    lastSocialKeepaliveTick?: number;
+    lastTradeKeepaliveTick?: number;
+    lastAgentKeepaliveTick?: number;
+    lastHeroKeepaliveTick?: number;
     lastLowHealthSpeechTick?: number;
     routineLoopKey?: string;
     routineLoopCount?: number;
     lastRoutineLoopBreakTick?: number;
     lastExplorationReportTick?: number;
     lastScoutingSkillOpportunityTick?: number;
+    lastApGpStrategySayTick?: number;
     pickupCooldowns?: Record<string, number>;
     explorationCooldowns?: Record<string, number>;
     targetFailureCooldowns?: Record<string, number>;

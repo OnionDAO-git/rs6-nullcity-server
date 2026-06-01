@@ -1,0 +1,84 @@
+{
+    "schemaVersion": 1,
+    "digestId": "s5b-ncri-proof-20260530T0920",
+    "windowStart": "2026-05-30T14:00:00.000Z",
+    "windowEnd": "2026-05-30T14:20:00.000Z",
+    "builtAt": "2026-05-30T14:20:00.000Z",
+    "apEvents": [],
+    "gpEvents": [],
+    "exchangeEvents": [],
+    "ncriEvents": [
+        {
+            "ref": "f9d6f4ef-fa16-4e33-920f-0e9bf5aa1c7e",
+            "kind": "ncri_created",
+            "residentName": "res:duke",
+            "ts": "2026-05-30T14:13:00.000Z",
+            "note": "NCRI Kindling Relic (ncri-1780150820627-4lxdbo) transferred to human:event-demo",
+            "importance": "high",
+            "evidence": {
+                "ncriId": "ncri-1780150820627-4lxdbo",
+                "refId": "ncri-1780150820627-4lxdbo",
+                "cityUserId": "human:event-demo"
+            }
+        },
+        {
+            "ref": "04bf0f77-95d4-4e13-912e-69d46c80067d",
+            "kind": "ncri_redeemed",
+            "residentName": "res:duke",
+            "ts": "2026-05-30T14:14:00.000Z",
+            "note": "NCRI Kindling Relic (ncri-1780150820627-4lxdbo) redeemed by human:event-demo",
+            "importance": "high",
+            "evidence": {
+                "ncriId": "ncri-1780150820627-4lxdbo",
+                "refId": "ncri-1780150820627-4lxdbo",
+                "cityUserId": "human:event-demo"
+            }
+        }
+    ],
+    "goalEvents": [],
+    "stuckEvents": [],
+    "miscEvents": [],
+    "topEvents": [
+        {
+            "ref": "f9d6f4ef-fa16-4e33-920f-0e9bf5aa1c7e",
+            "kind": "ncri_created",
+            "residentName": "res:duke",
+            "ts": "2026-05-30T14:13:00.000Z",
+            "note": "NCRI Kindling Relic (ncri-1780150820627-4lxdbo) transferred to human:event-demo",
+            "importance": "high",
+            "evidence": {
+                "ncriId": "ncri-1780150820627-4lxdbo",
+                "refId": "ncri-1780150820627-4lxdbo",
+                "cityUserId": "human:event-demo"
+            }
+        },
+        {
+            "ref": "04bf0f77-95d4-4e13-912e-69d46c80067d",
+            "kind": "ncri_redeemed",
+            "residentName": "res:duke",
+            "ts": "2026-05-30T14:14:00.000Z",
+            "note": "NCRI Kindling Relic (ncri-1780150820627-4lxdbo) redeemed by human:event-demo",
+            "importance": "high",
+            "evidence": {
+                "ncriId": "ncri-1780150820627-4lxdbo",
+                "refId": "ncri-1780150820627-4lxdbo",
+                "cityUserId": "human:event-demo"
+            }
+        }
+    ],
+    "residents": [
+        {
+            "residentName": "res:duke",
+            "attention": 0,
+            "isLowAp": false,
+            "isFaded": false,
+            "gpObserved": null
+        }
+    ],
+    "systemHealth": {
+        "totalResidents": 1,
+        "activeResidents": 1,
+        "fadedResidents": 0,
+        "lowApResidents": 0
+    }
+}

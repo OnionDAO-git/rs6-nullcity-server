@@ -54,7 +54,13 @@ export class MemoryRouter {
 
         if ((kind === 'chat' || kind === 'whisper') && typeof event.text === 'string') {
             const text = cleanText(event.text);
-            if (isDurableChat(text) && !isAmbientStatus(text)) {
+            const explicit = explicitRememberFact(text);
+            if (explicit && !isAmbientStatus(text)) {
+                writes.push({
+                    path: `facts/${explicit.topic}.md`,
+                    content: `- ${timestamp} ${actorDisplay(event.from)} taught: "${explicit.fact}"\n`,
+                });
+            } else if (isDurableChat(text) && !isAmbientStatus(text)) {
                 writes.push({
                     path: 'facts/social.md',
                     content: `- ${timestamp} ${actorDisplay(event.from)} said: "${text}"\n`,
@@ -103,6 +109,16 @@ export class MemoryRouter {
             });
         }
 
+        if (kind === 'world_event') {
+            const fact = renderWorldEventFact(event);
+            if (fact) {
+                writes.push({
+                    path: 'facts/world-events.md',
+                    content: `- ${timestamp} ${fact}\n`,
+                });
+            }
+        }
+
         return writes;
     }
 }
@@ -131,6 +147,31 @@ function isDurableChat(text: string): boolean {
             text,
         )
     );
+}
+
+function explicitRememberFact(text: string): { topic: string; fact: string } | undefined {
+    if (!/\brememberfact\b/i.test(text) && !/\bdurable fact\b/i.test(text)) {
+        return undefined;
+    }
+    const topic = safeTopic((text.match(/\b(?:rememberfact\s+topic|topic)\s+([a-z0-9_-]+)/i) || [])[1] || 'social');
+    const durableFact = text.match(/\bdurable fact:\s*(.+?)(?:\s+use\s+rememberfact\b|$)/i)?.[1];
+    const fact = cleanFact(durableFact || text.replace(/\buse\s+rememberfact\b.*$/i, '').replace(/^agent[:,]?\s*/i, ''));
+    if (!topic || !fact) {
+        return undefined;
+    }
+    return { topic, fact };
+}
+
+function safeTopic(value: string): string {
+    return slug(value).replace(/_/g, '-').slice(0, 48) || 'social';
+}
+
+function cleanFact(value: string): string {
+    const fact = cleanText(value)
+        .replace(/^durable fact:\s*/i, '')
+        .replace(/[;,\s]+$/g, '')
+        .trim();
+    return fact && !/[.!?]$/.test(fact) ? `${fact}.` : fact;
 }
 
 function actorDisplay(value: unknown): string {
@@ -163,7 +204,7 @@ function renderPatronFact(event: Record<string, unknown>): string {
         return `Patron ${handle} asked: "${question}"`;
     }
     if (event.kind === 'patron_gift') {
-        const amount = typeof event.amount === 'number' ? `${event.amount} Shards` : undefined;
+        const amount = typeof event.amount === 'number' ? `${event.amount} AP` : undefined;
         const artifact = typeof event.artifact === 'string' ? event.artifact : undefined;
         const gift = amount || artifact || 'a gift';
         return `Patron ${handle} gave ${gift}.`;
@@ -173,6 +214,26 @@ function renderPatronFact(event: Record<string, unknown>): string {
         return `Patron ${handle} witnessed this resident${place}.`;
     }
     return `Patron ${handle} sponsored this resident.`;
+}
+
+function renderWorldEventFact(event: Record<string, unknown>): string | undefined {
+    const loreKind = typeof event.loreKind === 'string' ? cleanText(event.loreKind) : '';
+    const source = typeof event.source === 'string' ? cleanText(event.source) : '';
+    if (!loreKind || !source) {
+        return undefined;
+    }
+
+    const sourcePosition = firstRecord(event.sourcePosition);
+    const position = positionText(sourcePosition);
+    const payload = firstRecord(event.payload);
+    const payloadText = payload && typeof payload.text === 'string' ? cleanText(payload.text) : undefined;
+
+    if (loreKind === 'fire_lit') {
+        return `Observed ${source} lit a fire${position ? ` at ${position}` : ''}.`;
+    }
+
+    const detail = payloadText ? `: "${payloadText}"` : '';
+    return `Observed world event ${loreKind} from ${source}${position ? ` at ${position}` : ''}${detail}.`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -39,16 +39,32 @@ inference:
 
 llm:
   endpoints:
-    # Proven demo baseline. Keep as default for merge/showoff stability.
+    # Serving demo baseline. The exact q4 id can pass small/3K bounded probes,
+    # but the live controller's full resident prompts produced 400s in minutes.
+    # Use the unsuffixed serving alias for robust resident traffic until a
+    # full-envelope resident canary proves the exact id safe.
     default:
-      baseUrl: http://inf.nullcity.ai:1234
-      model: qwen/qwen3.6-27b
-      timeoutMs: 60000
-    # Dev's new canary URL + quantized model. Fast enough for live resident experiments.
+      baseUrl: http://spacetower.nullcity.ai:8100
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      # Spacetower's q4 qwopus currently rejects resident-sized thinking-mode
+      # prompts. Keep live canaries bounded until Dev changes the serving stack.
+      maxTokens: 512
+      forceThinking: false
     spacetower_qwopus_q4:
       baseUrl: http://spacetower.nullcity.ai:8100
-      model: qwopus3.5-27b-v3@q4_k_s
+      model: qwopus3.5-27b-v3
       timeoutMs: 30000
+      maxTokens: 512
+      forceThinking: false
+    # Keep the inf host named for explicit diagnostics/benchmarking, but do not
+    # use it as default unless the operator wants to spread load to the other box.
+    inf_qwopus_q4:
+      baseUrl: http://inf.nullcity.ai:1234
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      maxTokens: 512
+      forceThinking: false
 
 patrons:
   - handle: demo@onion

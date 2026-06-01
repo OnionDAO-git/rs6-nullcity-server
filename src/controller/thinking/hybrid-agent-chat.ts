@@ -60,6 +60,7 @@ import { fleeTarget } from '../spark/runescape-nervous-rules';
 import {
     statusSpeech,
     DEFAULT_FOLLOW_RADIUS,
+    MAX_PROMPT_MEMORIES,
     rememberPendingDirectTrade,
     starterFishingCookingAction,
     type HelperContext,
@@ -68,9 +69,13 @@ import {
 // --- Shared Constants ---
 export const WINDOW_TICKS = 10;
 export const CHAT_REPLIES_PER_WINDOW = 3;
-export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
+// S-INFER-8: generous "inference server is broken" ALARM ceiling, NOT a thinking
+// bound. Real q4 qwopus thinking is ~40s; 240s is ~6x headroom. A brain timeout
+// firing = investigate the inference server (src/controller/llm/inference-health.ts).
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000;
 export const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 export const FOOD_KEY_PATTERN = /(shrimp|bread|fish|meat)/i;
+export const LOW_AP_EXCHANGE_THRESHOLD = 10;
 
 export type ChatContext = HelperContext;
 
@@ -117,7 +122,7 @@ export function resumeManualPause(ctx: ChatContext): void {
 
 export function currentFollowTarget(ctx: ChatContext): { name?: string; id?: string; kind?: string } | undefined {
     const target = ctx.cognition().followTarget;
-    if (target?.paused) {
+    if (target?.paused && (target.name || target.id || ctx.cognition().manualPauseSinceTick !== undefined)) {
         return undefined;
     }
     if (target?.name || target?.id) {
@@ -231,6 +236,33 @@ export async function nonCommandChatReaction(
     }
 
     return undefined;
+}
+
+function directRecallMemories(ctx: ChatContext, perception: HybridPerception, normalizedQuestion: string): string[] {
+    const promptMemories = ctx.promptMemories(perception, 'body');
+    try {
+        const targeted = ctx.options.memory
+            .retrieve(ctx.options.soul.frontmatter.name, normalizedQuestion, Math.max(12, MAX_PROMPT_MEMORIES * 2))
+            .map((memory: string) => memory.trim())
+            .filter(Boolean);
+        return uniqueMemories([...targeted, ...promptMemories]);
+    } catch {
+        return promptMemories;
+    }
+}
+
+function uniqueMemories(memories: string[]): string[] {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const memory of memories) {
+        const key = memory.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (!key || seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        result.push(memory);
+    }
+    return result;
 }
 
 export function cleanSmallTalkReply(text: string | undefined, normalizedQuestion: string, memories: string[]): string | undefined {
@@ -357,6 +389,7 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isHelpIntent(command, fullText) ||
         isLookIntent(command, fullText) ||
         isInventoryIntent(command, fullText) ||
+        isMemoryRecallIntent(command, fullText) ||
         Boolean(pickupIntent(command)) ||
         Boolean(dropIntent(command)) ||
         isPrayerTrainingIntent(command, fullText) ||
@@ -579,6 +612,14 @@ export async function directChatAction(
         return clarifyingQuestionReaction(ctx, perception, commandLower);
     }
 
+    if (isDurableMemoryInstruction(command, chat.normalizedText)) {
+        cognition.tickTelemetry = {
+            chat_reply_emitted: false,
+            chat_reply_suppressed: 'memory_instruction_deferred_to_brain',
+        };
+        return undefined;
+    }
+
     let refusalReason: string | undefined;
     let missingTool: string | undefined;
 
@@ -614,7 +655,9 @@ export async function directChatAction(
     if (isStopFollowingIntent(command, chat.normalizedText)) {
         const target = currentFollowTarget(ctx);
         ctx.clearGoalMomentum();
-        cognition.followTarget = { paused: true, setAtTick: ctx.options.state.tick };
+        cognition.followTarget = target
+            ? { ...target, paused: true, setAtTick: ctx.options.state.tick }
+            : { paused: true, setAtTick: ctx.options.state.tick };
         if (isFollowGoal(cognition.activeGoal)) {
             cognition.activeGoal = undefined;
         }
@@ -798,6 +841,21 @@ export async function directChatAction(
         };
     }
 
+    if (isMemoryRecallIntent(command, chat.normalizedText)) {
+        const memories = directRecallMemories(ctx, perception, chat.normalizedText);
+        const text = memoryRecallFallback(memories) || 'I do not have a clear Library memory for that yet.';
+        recordChatReplyEmit(ctx);
+        cognition.tickTelemetry = {
+            chat_reply_emitted: true,
+            chat_reply_kind: 'memory_recall',
+            voiceSource: 'scripted',
+        };
+        return {
+            action: { kind: 'say', text, voiceSource: 'scripted' },
+            cause: 'direct_chat_memory_recall',
+        };
+    }
+
     const pickup = pickupIntent(command);
     if (pickup) {
         resumeManualPause(ctx);
@@ -833,7 +891,7 @@ export async function directChatAction(
         resumeManualPause(ctx);
         cognition.activeGoal = prayerGoal(ctx.options.state.tick);
         return {
-            action: prayerTrainingAction(perception) || {
+            action: prayerTrainingAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick) || {
                 kind: 'say',
                 text: statusSpeech(ctx, perception, 'I will look for a safe creature, collect bones, then bury them'),
             },
@@ -857,7 +915,12 @@ export async function directChatAction(
         resumeManualPause(ctx);
         cognition.activeGoal = combatGoal(ctx.options.state.tick);
         return {
-            action: combatTrainingAction(perception) || {
+            action: combatTrainingAction(
+                perception,
+                ctx.pickupCooldowns(),
+                ctx.options.state.tick,
+                ctx.cognition().targetFailureCooldowns,
+            ) || {
                 kind: 'say',
                 text: statusSpeech(ctx, perception, 'I will look for a safe low-level creature to fight'),
             },
@@ -899,6 +962,33 @@ export async function directChatAction(
 
     if (isTradeIntent(command, chat.normalizedText)) {
         resumeManualPause(ctx);
+        if (isApGpExchangeIntent(command, chat.normalizedText)) {
+            const coinAmount = carriedGpCoinAmount(perception);
+            if (coinAmount <= 0) {
+                return {
+                    action: {
+                        kind: 'say',
+                        text: 'I cannot promise GP right now because I do not carry RuneScape coins. I can gather coins first or ask for AP support.',
+                    },
+                    cause: 'direct_chat_trade_exchange_no_gp',
+                };
+            }
+
+            const residentRecord = isRecord(perception.resident) ? (perception.resident as Record<string, unknown>) : undefined;
+            const residentAttention =
+                typeof residentRecord?.attention === 'number' ? residentRecord.attention : ctx.options.state.attention;
+            const lowAp = residentAttention <= LOW_AP_EXCHANGE_THRESHOLD;
+            return {
+                action: {
+                    kind: 'say',
+                    text: lowAp
+                        ? `AP is low. I can safely trade up to ${coinAmount} GP coins for AP through a trusted exchange.`
+                        : `I carry ${coinAmount} GP coins and can trade some for AP through a trusted exchange.`,
+                },
+                cause: 'direct_chat_trade_exchange_proposal',
+            };
+        }
+
         const action = tradeRequestOrApproach(perception, chat.from, 'direct_chat_trade');
         if (action?.kind === 'move_to') {
             rememberPendingDirectTrade(ctx, chat.from);
@@ -1108,6 +1198,19 @@ export function isInventoryIntent(command: string, fullText: string): boolean {
     );
 }
 
+export function isMemoryRecallIntent(command: string, fullText: string): boolean {
+    const combined = `${command} ${fullText}`;
+    return (
+        /\b(remember|memory|memories|recall)\b/.test(combined) ||
+        /\b(how do i get|where did|what did|who gave|what happened)\b/.test(command)
+    );
+}
+
+export function isDurableMemoryInstruction(command: string, fullText: string): boolean {
+    const combined = `${command} ${fullText}`.toLowerCase();
+    return /\brememberfact\b/.test(combined) || /\bdurable fact\b/.test(combined) || /\bstore\b.*\bmemory\b/.test(combined);
+}
+
 export function isFiremakingIntent(command: string, fullText: string): boolean {
     return (
         /^(make a fire|make fire|light a fire|light fire|start a fire|burn logs|firemaking)\b/.test(command) ||
@@ -1191,6 +1294,15 @@ export function isTradeIntent(command: string, fullText: string): boolean {
     return /^(trade|trade me|start trade|request trade)\b/.test(command) || /\b(trade me|start trade|request trade)\b/.test(fullText);
 }
 
+export function isApGpExchangeIntent(command: string, fullText: string): boolean {
+    const combined = `${command} ${fullText}`;
+    return (
+        /\b(ap|attention)\b/.test(combined) &&
+        /\b(gp|coin|coins|gold)\b/.test(combined) &&
+        /\b(trade|exchange|swap|buy|sell)\b/.test(combined)
+    );
+}
+
 export function tradeOfferIntent(command: string): string | undefined {
     const match = command.match(/^offer(?:\s+(.+))?/);
     if (!match) {
@@ -1265,7 +1377,7 @@ export function latestAddressedChat(
             continue;
         }
 
-        const key = `${perception.tick ?? 0}:${from?.id || 'unknown'}:${normalizedText}`;
+        const key = `${chatEventIdentity(event, index)}:${from?.id || 'unknown'}:${normalizedText}`;
         if (key === lastKey) {
             return undefined;
         }
@@ -1274,6 +1386,18 @@ export function latestAddressedChat(
     }
 
     return undefined;
+}
+
+function chatEventIdentity(event: Record<string, unknown>, index: number): string {
+    const tick = event.tick;
+    if (typeof tick === 'number' || typeof tick === 'string') {
+        return `tick:${tick}`;
+    }
+    const ts = event.ts;
+    if (typeof ts === 'number' || typeof ts === 'string') {
+        return `ts:${ts}`;
+    }
+    return `index:${index}`;
 }
 
 export function isSelfActor(actor: Actor, perception: HybridPerception): boolean {
@@ -1301,6 +1425,18 @@ export function safeTradeOfferSlot(inventory: Array<Item | null>, query?: string
         findSlot(inventory, item => !isEssentialTool(item) && FOOD_KEY_PATTERN.test(item.key || '')) ??
         findSlot(inventory, item => !isEssentialTool(item))
     );
+}
+
+export function carriedGpCoinAmount(perception: HybridPerception): number {
+    return (perception.resident?.inventory || []).reduce((total, item) => {
+        if (!item) {
+            return total;
+        }
+        if (item.itemId === 995 || /coins?/i.test(item.key || '')) {
+            return total + item.amount;
+        }
+        return total;
+    }, 0);
 }
 
 export function isEssentialTool(item: Item): boolean {
@@ -1423,6 +1559,19 @@ export function looksLikeStructuredEcho(text: string): boolean {
 
 export function memoryRecallFallback(memories: string[]): string | undefined {
     const lines = memories.map(memory => memory.replace(/\s+/g, ' ').trim()).filter(Boolean);
+    const route = routeMemoryRecallFallback(lines);
+    if (route) {
+        return route;
+    }
+    const worldEvent = worldEventMemoryRecallFallback(lines);
+    if (worldEvent) {
+        return worldEvent;
+    }
+    const factualMemory = factualMemoryRecallFallback(lines);
+    if (factualMemory) {
+        return factualMemory;
+    }
+
     const gift = lines.find(line => /patron gift from/i.test(line));
     const promise = lines.find(line => /\b(promise|promised|shrimp|codex)\b/i.test(line));
     const parts: string[] = [];
@@ -1449,6 +1598,105 @@ export function memoryRecallFallback(memories: string[]): string | undefined {
         return undefined;
     }
     return `I remember ${parts.join(', and ')}.`;
+}
+
+function routeMemoryRecallFallback(lines: string[]): string | undefined {
+    const routeLine = lines.find(line => /\broute\b/i.test(line) && (line.includes('->') || /\b(lumbridge|varrock|bank)\b/i.test(line)));
+    if (!routeLine) {
+        return undefined;
+    }
+
+    const cleaned = routeLine
+        .replace(/^story_note:\s*/i, '')
+        .replace(/^route memory:\s*/i, '')
+        .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.!?]+$/g, '')
+        .trim();
+    const steps = cleaned
+        .split(/\s*->\s*/)
+        .map(step => step.trim())
+        .filter(Boolean);
+
+    if (steps.length >= 2) {
+        const [from, ...rest] = steps;
+        const destination = rest.pop();
+        const path = rest.map(routeStepPhrase);
+        if (destination && path.length > 0) {
+            return `From ${from}, follow ${joinRouteSteps(path)} to ${destination}.`;
+        }
+        if (destination) {
+            return `From ${from}, go to ${destination}.`;
+        }
+    }
+
+    return `I remember this route: ${cleaned}.`;
+}
+
+function worldEventMemoryRecallFallback(lines: string[]): string | undefined {
+    const fireLine = lines.find(line => /\bobserved\s+.+\blit a fire\b/i.test(line));
+    if (!fireLine) {
+        return undefined;
+    }
+
+    const cleaned = fireLine
+        .replace(/^Fact memory \([^)]*\):\s*/i, '')
+        .replace(/^[-*]\s+\d{4}-\d{2}-\d{2}T[^\s]+\s+/i, '')
+        .replace(/^world_event:\s*/i, '')
+        .replace(/^observed\s+/i, '')
+        .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.!?]+$/g, '')
+        .trim();
+    if (!cleaned) {
+        return undefined;
+    }
+
+    return `I remember ${cleaned}.`;
+}
+
+function factualMemoryRecallFallback(lines: string[]): string | undefined {
+    const factLine =
+        lines.find(line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\btaught:\s*"/i.test(line)) ||
+        lines.find(
+            line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\b(learned|remembered|found|discovered)\b/i.test(line),
+        ) ||
+        lines.find(line => /^Fact memory \((?!social\.md\))[^)]*\):/i.test(line) && /\b[a-z][a-z0-9 -]+\s+is\s+[a-z0-9 -]+\b/i.test(line));
+    if (!factLine) {
+        return undefined;
+    }
+
+    const quoted = factLine.match(/\btaught:\s*"([^"]+)"/i)?.[1];
+    const cleaned = (quoted || factLine)
+        .replace(/^Fact memory \([^)]*\):\s*/i, '')
+        .replace(/^[-*]\s+\d{4}-\d{2}-\d{2}T[^\s]+\s+/i, '')
+        .replace(/^[^:]+:\s*/i, '')
+        .replace(/\s+at\s+\d{4}-\d{2}-\d{2}.*$/i, '')
+        .replace(/\s*\([^)]*\)\s*$/g, '')
+        .replace(/[.!?]+$/g, '')
+        .trim();
+    if (!cleaned || looksLikeStructuredEcho(cleaned) || /\bwhat do you remember\b/i.test(cleaned)) {
+        return undefined;
+    }
+
+    return `I remember ${cleaned}.`;
+}
+
+function routeStepPhrase(step: string): string {
+    if (/^(north|south|east|west)\s+road$/i.test(step)) {
+        return `the ${step.toLowerCase()}`;
+    }
+    return step;
+}
+
+function joinRouteSteps(steps: string[]): string {
+    if (steps.length === 1) {
+        return steps[0];
+    }
+    if (steps.length === 2) {
+        return `${steps[0]}, then ${steps[1]}`;
+    }
+    return `${steps.slice(0, -1).join(', ')}, then ${steps[steps.length - 1]}`;
 }
 
 export function helpSpeech(): string {

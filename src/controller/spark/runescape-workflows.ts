@@ -61,7 +61,7 @@ export const SAFE_BONE_SOURCE_PATTERN = /\b(chicken|cow|goblin|rat|giant rat|spi
 export const LOW_RISK_BONE_SOURCE_PATTERN = /\b(chicken|cow|rat|giant rat)\b/i;
 export const MEDIUM_RISK_BONE_SOURCE_PATTERN = /\b(goblin|spider)\b/i;
 export const HUMAN_BONE_SOURCE_PATTERN = /\b(man|woman)\b/i;
-export const SAFE_COMBAT_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin)\b/i;
+export const SAFE_COMBAT_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin|man|woman)\b/i;
 
 // --- Item-type predicates (moved verbatim from the monolith) ---
 

@@ -29,6 +29,7 @@ import { buildWallSnapshot, readGraveyardEntries, readLibraryEntries, redactWall
 export const DEFAULT_LETTERS_PATH = '/v1/inbox';
 export const DEFAULT_WALL_PATH = '/v1/wall/snapshot';
 export const DEFAULT_HEALTH_PATH = '/v1/health';
+export const DEFAULT_HEALTH_TIMEOUT_MS = 30_000;
 export const DEFAULT_PATRON_BALANCE_PATH = '/v1/patron/balance';
 export const DEFAULT_PATRON_STANDING_PATH = '/v1/patron/standing';
 export const DEFAULT_PATRON_CHECKIN_PATH = '/v1/patron/checkin';
@@ -65,6 +66,8 @@ export interface LettersHttpServerOptions {
     wallPath?: string;
     /** Real inference health probe for {@link DEFAULT_HEALTH_PATH}. */
     health?: () => Promise<InferenceHealthResult>;
+    /** Maximum time the HTTP health route may wait for the inference probe. */
+    healthTimeoutMs?: number;
     /** Health route path. Defaults to {@link DEFAULT_HEALTH_PATH}. */
     healthPath?: string;
     /**
@@ -208,7 +211,10 @@ async function handle(
 
     if (isHealthRoute) {
         try {
-            const inference = await (options.health as () => Promise<InferenceHealthResult>)();
+            const inference = await runHealthWithTimeout(
+                options.health as () => Promise<InferenceHealthResult>,
+                options.healthTimeoutMs ?? DEFAULT_HEALTH_TIMEOUT_MS,
+            );
             writeJson(response, inference.ok ? 200 : 503, {
                 ok: inference.ok,
                 controller: 'ok',
@@ -352,6 +358,29 @@ async function handle(
 function writeJson(response: ServerResponse, status: number, payload: unknown): void {
     response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     response.end(JSON.stringify(payload));
+}
+
+async function runHealthWithTimeout(health: () => Promise<InferenceHealthResult>, timeoutMs: number): Promise<InferenceHealthResult> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+        return await Promise.race([
+            health(),
+            new Promise<InferenceHealthResult>(resolve => {
+                timer = setTimeout(() => {
+                    resolve({
+                        ok: false,
+                        status: 'health_timeout',
+                        endpoint: 'letters-http',
+                        error: `health probe timed out after ${timeoutMs}ms`,
+                    });
+                }, timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
 }
 
 function normalizePath(value: string): string {

@@ -132,6 +132,43 @@ describe('agent protocol messages', () => {
         expect(message.payload.initialSkills).toEqual({ firemaking: { exp: 82, level: 1 }, cooking: 81 });
     });
 
+    it('parses operator inventory ensure requests', () => {
+        const message = parseClientMessage(
+            JSON.stringify({
+                v: 1,
+                id: 'ensure-net',
+                kind: 'ensure_inventory_item',
+                payload: {
+                    name: 'res:qa-survivor',
+                    item: 303,
+                    amount: 1,
+                },
+            }),
+        );
+
+        expect(message.kind).toBe('ensure_inventory_item');
+        if (message.kind !== 'ensure_inventory_item') {
+            throw new Error('Expected ensure_inventory_item');
+        }
+        expect(message.payload).toEqual({ name: 'res:qa-survivor', item: 303, amount: 1 });
+    });
+
+    it('rejects malformed operator inventory ensure amounts', () => {
+        expect(() =>
+            parseClientMessage(
+                JSON.stringify({
+                    v: 1,
+                    kind: 'ensure_inventory_item',
+                    payload: {
+                        name: 'res:qa-survivor',
+                        item: 303,
+                        amount: 0,
+                    },
+                }),
+            ),
+        ).toThrow();
+    });
+
     it('parses observable subject list requests', () => {
         const message = parseClientMessage(
             JSON.stringify({

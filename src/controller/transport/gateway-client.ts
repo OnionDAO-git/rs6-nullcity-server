@@ -6,8 +6,10 @@ import {
     type AgentAction,
     type ConnectResidentPayload,
     type CreateResidentPayload,
+    type InventoryEnsureItem,
     type Perception,
     type PerceptionEvent,
+    type ResidentInventoryEnsureSummary,
     type ResidentFilter,
     type ResidentSummary,
     decodeMessage,
@@ -23,8 +25,35 @@ export interface GatewayClientOptions {
     version?: string;
     capabilities?: string[];
     requestTimeoutMs?: number;
+    /**
+     * Optional per-call override applied to inventory-side gateway requests
+     * (`inspect_resident_gold`, `burn_resident_gold`). The default request
+     * timeout of 10s assumes the game-server's WS message loop can schedule
+     * within ~1 tick (600ms), but observed live-stack tick saturation
+     * (LLM-driven brain calls + multi-resident pathfinding) can push handler
+     * scheduling past 10s, surfacing as `Gateway request timed out` even
+     * though the server eventually processes the burn correctly. Raising the
+     * inventory timeout to 30s preserves the demo path during heavy ticks
+     * without changing snappy default timeouts for non-inventory requests.
+     * Packet S-DEMO-P0-1 (QA-20260530-018).
+     */
+    inventoryRequestTimeoutMs?: number;
+    listResidentsRequestTimeoutMs?: number;
+    connectResidentRequestTimeoutMs?: number;
+    actionRequestTimeoutMs?: number;
+    actionQueueTimeoutMs?: number;
+    maxConcurrentActions?: number;
     reconnect?: boolean;
 }
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_INVENTORY_TIMEOUT_MS = 30_000;
+const DEFAULT_LIST_RESIDENTS_TIMEOUT_MS = 30_000;
+const DEFAULT_CONNECT_RESIDENT_TIMEOUT_MS = 30_000;
+const DEFAULT_ACTION_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_ACTION_QUEUE_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_CONCURRENT_ACTIONS = 4;
+const DEFAULT_MAX_EVENT_LISTENERS = 128;
 
 export interface GatewayClientEvents {
     perception: [residentId: string, perception: Perception];
@@ -47,6 +76,12 @@ type PendingRequest = {
     timeout: NodeJS.Timeout;
 };
 
+type QueuedActionSlot = {
+    start: () => void;
+    reject: (reason: Error) => void;
+    timeout: NodeJS.Timeout;
+};
+
 export declare interface GatewayClient {
     on<U extends keyof GatewayClientEvents>(event: U, listener: (...args: GatewayClientEvents[U]) => void): this;
     emit<U extends keyof GatewayClientEvents>(event: U, ...args: GatewayClientEvents[U]): boolean;
@@ -57,10 +92,13 @@ export class GatewayClient extends EventEmitter {
     private requestSeq = 0;
     private readonly pending = new Map<string, PendingRequest>();
     private readonly backoff = new Backoff();
+    private readonly queuedActionSlots: QueuedActionSlot[] = [];
+    private activeActionSlots = 0;
     private closed = false;
 
     constructor(private readonly options: GatewayClientOptions) {
         super();
+        this.setMaxListeners(Math.max(this.getMaxListeners(), DEFAULT_MAX_EVENT_LISTENERS));
     }
 
     async connect(): Promise<void> {
@@ -75,6 +113,10 @@ export class GatewayClient extends EventEmitter {
             pending.reject(new Error('Gateway client closed'));
         }
         this.pending.clear();
+        for (const queued of this.queuedActionSlots.splice(0)) {
+            clearTimeout(queued.timeout);
+            queued.reject(new Error('Gateway client closed'));
+        }
         this.socket?.close();
         this.socket = undefined;
     }
@@ -92,7 +134,7 @@ export class GatewayClient extends EventEmitter {
     }
 
     listResidents(filter: ResidentFilter = 'all'): Promise<ResidentSummary[]> {
-        return this.request('list_residents', { filter }).then(value => {
+        return this.request('list_residents', { filter }, { timeoutMs: this.listResidentsTimeoutMs() }).then(value => {
             const payload = readPayload(value);
             const residents = Array.isArray(payload.residents) ? payload.residents : [];
             return residents as ResidentSummary[];
@@ -104,7 +146,7 @@ export class GatewayClient extends EventEmitter {
     }
 
     connectResident(payload: ConnectResidentPayload): Promise<ResidentSummary> {
-        return this.request('connect_resident', payload).then(value => readResident(value));
+        return this.request('connect_resident', payload, { timeoutMs: this.connectResidentTimeoutMs() }).then(value => readResident(value));
     }
 
     attach(payload: ConnectResidentPayload): Promise<ResidentSummary> {
@@ -115,8 +157,14 @@ export class GatewayClient extends EventEmitter {
         return this.submitActionWithRequestId(name, action).then(value => value.ackResult);
     }
 
+    ensureInventoryItem(name: string, item: InventoryEnsureItem, amount: number): Promise<ResidentInventoryEnsureSummary> {
+        return this.request('ensure_inventory_item', { name, item, amount }, { timeoutMs: this.inventoryTimeoutMs() }).then(
+            value => readPayload(value) as unknown as ResidentInventoryEnsureSummary,
+        );
+    }
+
     inspectResidentGold(name: string): Promise<{ resident: string; itemId: 995; amount: number }> {
-        return this.request('inspect_resident_gold', { name }).then(
+        return this.request('inspect_resident_gold', { name }, { timeoutMs: this.inventoryTimeoutMs() }).then(
             value => readPayload(value) as { resident: string; itemId: 995; amount: number },
         );
     }
@@ -125,19 +173,43 @@ export class GatewayClient extends EventEmitter {
         name: string,
         amount: number,
     ): Promise<{ resident: string; itemId: 995; burnedAmount: number; remainingAmount: number }> {
-        return this.request('burn_resident_gold', { name, amount }).then(
+        return this.request('burn_resident_gold', { name, amount }, { timeoutMs: this.inventoryTimeoutMs() }).then(
             value => readPayload(value) as { resident: string; itemId: 995; burnedAmount: number; remainingAmount: number },
         );
     }
 
+    private inventoryTimeoutMs(): number {
+        return this.options.inventoryRequestTimeoutMs ?? DEFAULT_INVENTORY_TIMEOUT_MS;
+    }
+
+    private listResidentsTimeoutMs(): number {
+        const configured = this.options.listResidentsRequestTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_LIST_RESIDENTS_TIMEOUT_MS;
+    }
+
+    private connectResidentTimeoutMs(): number {
+        const configured = this.options.connectResidentRequestTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_CONNECT_RESIDENT_TIMEOUT_MS;
+    }
+
     submitActionWithRequestId(name: string, action: AgentAction): Promise<SubmittedActionAck> {
-        return this.requestWithId('submit_action', { name, action }).then(({ requestId, value }) => {
-            const payload = readPayload(value);
-            return {
-                requestId,
-                ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
-            };
-        });
+        return this.withActionSlot(() =>
+            this.requestWithId('submit_action', { name, action }, { timeoutMs: this.actionRequestTimeoutMs() }).then(
+                ({ requestId, value }) => {
+                    const payload = readPayload(value);
+                    return {
+                        requestId,
+                        ackResult: (payload.result || { ok: true, cause: payload.cause }) as ActionResult,
+                    };
+                },
+            ),
+        );
     }
 
     detach(name: string): Promise<void> {
@@ -170,17 +242,18 @@ export class GatewayClient extends EventEmitter {
         });
     }
 
-    private request(type: string, payload?: unknown): Promise<unknown> {
-        return this.requestWithId(type, payload).then(({ value }) => value);
+    private request(type: string, payload?: unknown, opts?: { timeoutMs?: number }): Promise<unknown> {
+        return this.requestWithId(type, payload, opts).then(({ value }) => value);
     }
 
-    private requestWithId(type: string, payload?: unknown): Promise<{ requestId: string; value: unknown }> {
+    private requestWithId(type: string, payload?: unknown, opts?: { timeoutMs?: number }): Promise<{ requestId: string; value: unknown }> {
         const socket = this.socket;
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             return Promise.reject(new Error('Gateway socket is not open'));
         }
 
         const requestId = `controller-${Date.now()}-${++this.requestSeq}`;
+        const timeoutMs = opts?.timeoutMs ?? this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
         const timeout = setTimeout(() => {
             const pending = this.pending.get(requestId);
             if (!pending) {
@@ -188,14 +261,93 @@ export class GatewayClient extends EventEmitter {
             }
             this.pending.delete(requestId);
             pending.reject(new Error(`Gateway request timed out: ${type}`));
-        }, this.options.requestTimeoutMs || 10000);
+        }, timeoutMs);
 
         const promise = new Promise<unknown>((resolve, reject) => {
             this.pending.set(requestId, { resolve, reject, timeout });
         });
 
-        socket.send(encodeMessage(makeRequest(type, requestId, payload)));
+        try {
+            socket.send(encodeMessage(makeRequest(type, requestId, payload)));
+        } catch (error) {
+            this.rejectPendingRequest(requestId, asError(error));
+        }
         return promise.then(value => ({ requestId, value }));
+    }
+
+    private withActionSlot<T>(operation: () => Promise<T>): Promise<T> {
+        return new Promise<T>((resolve, reject) => {
+            let timeout: NodeJS.Timeout | undefined;
+            const start = () => {
+                if (timeout) {
+                    clearTimeout(timeout);
+                    timeout = undefined;
+                }
+                this.activeActionSlots += 1;
+                let operationPromise: Promise<T>;
+                try {
+                    operationPromise = operation();
+                } catch (error) {
+                    this.activeActionSlots = Math.max(0, this.activeActionSlots - 1);
+                    this.drainActionQueue();
+                    reject(asError(error));
+                    return;
+                }
+                operationPromise.then(resolve, reject).finally(() => {
+                    this.activeActionSlots = Math.max(0, this.activeActionSlots - 1);
+                    this.drainActionQueue();
+                });
+            };
+
+            if (this.activeActionSlots < this.maxConcurrentActions()) {
+                start();
+                return;
+            }
+
+            const queued: QueuedActionSlot = {
+                start,
+                reject,
+                timeout: setTimeout(() => {
+                    const index = this.queuedActionSlots.indexOf(queued);
+                    if (index >= 0) {
+                        this.queuedActionSlots.splice(index, 1);
+                    }
+                    reject(new Error('Gateway action queue timed out: submit_action'));
+                }, this.actionQueueTimeoutMs()),
+            };
+            timeout = queued.timeout;
+            this.queuedActionSlots.push(queued);
+        });
+    }
+
+    private drainActionQueue(): void {
+        while (this.activeActionSlots < this.maxConcurrentActions() && this.queuedActionSlots.length > 0) {
+            this.queuedActionSlots.shift()?.start();
+        }
+    }
+
+    private maxConcurrentActions(): number {
+        const configured = this.options.maxConcurrentActions;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_MAX_CONCURRENT_ACTIONS;
+    }
+
+    private actionQueueTimeoutMs(): number {
+        const configured = this.options.actionQueueTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_ACTION_QUEUE_TIMEOUT_MS;
+    }
+
+    private actionRequestTimeoutMs(): number {
+        const configured = this.options.actionRequestTimeoutMs;
+        if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+            return Math.max(1, Math.floor(configured));
+        }
+        return DEFAULT_ACTION_REQUEST_TIMEOUT_MS;
     }
 
     private handleMessage(raw: WebSocket.RawData): void {
@@ -289,6 +441,16 @@ export class GatewayClient extends EventEmitter {
         const delay = this.backoff.nextDelayMs();
         setTimeout(() => this.openSocket().catch(error => this.emit('error', error)), delay);
     }
+
+    private rejectPendingRequest(requestId: string, error: Error): void {
+        const pending = this.pending.get(requestId);
+        if (!pending) {
+            return;
+        }
+        this.pending.delete(requestId);
+        clearTimeout(pending.timeout);
+        pending.reject(error);
+    }
 }
 
 function readResident(value: unknown): ResidentSummary {
@@ -306,4 +468,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringifyRequestId(value: unknown): string | undefined {
     return typeof value === 'string' || typeof value === 'number' ? String(value) : undefined;
+}
+
+function asError(error: unknown): Error {
+    return error instanceof Error ? error : new Error(String(error));
 }

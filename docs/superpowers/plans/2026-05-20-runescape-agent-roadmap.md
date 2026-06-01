@@ -723,65 +723,144 @@ Safe public module facade building blocks are implemented, but the public member
   - Deliverable: public/operator copy consistently says AP/Attention Points for resident life-force and human funding; legacy persisted Shards files continue to load. GP is always real RuneScape gold coins, never a second ledger.
   - Verification: focused patron CLI/ledger tests, `npm run check:no-ui`, `npm run typecheck`, and `npm test -- --runInBand src/controller/patron`.
 
-- `[ ]` **S1: AP ledger and resident life-force proof.**
+- `[x]` **S1: AP ledger and resident life-force proof.**
   - Files: `src/controller/spark/attention.ts`, `src/controller/resident-runtime.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/*.test.ts`, `src/controller/admin/patron-loop-smoke.ts`, `docs/resident-capabilities.md`.
   - Deliverable: AP decay/top-up/fade/resume behavior is replayable, visible in Library events, and benchmarked with a low-AP resident.
   - Verification: low-AP benchmark or smoke proves ask/top-up/resume; focused runtime/city-integration tests; full `npm run fin` before completion.
+  - 2026-05-29 (`agents/wip`, codex): packet `S1a` landed deterministic AP ledger replay helper (`grant`/`spend`/`decay`/`top_up`/`fade`) in `attention.ts` with focused unit coverage; `city_attention_credit` Library events now persist `attentionBefore`/`attentionAfter` for replayable AP deltas.
+  - 2026-05-29 (`agents/wip`, codex): packet `S1b` added benchmark substrate (`ap-decay-ask-5m` task + low-attention benchmark soul override) and then live-proved low-AP ask + fade in `bench_20260529175058_ap_decay_ask_5m` after fixing no-floor residents to ask for AP at critical attention. See `docs/capability-evidence/2026-05-29-s1b-ap-life-force-benchmark-attempt.md`.
+  - 2026-05-30 (`agents/wip`, codex, packet `S1b-review`): QA Marshal verified and closed `QA-20260529-009` after live artifact `bench_20260530021203_ap_topup_resume_5m` proved ask -> `attention_exhausted` -> benchmark AP top-up -> reconnect/retry -> successful `nervous:attention-topup-resume`. Named-resident ordinary patron top-up remains a confidence bump, not the S1 substrate blocker.
 
-- `[ ]` **S2: GP evidence model for actual RuneScape coins.**
+- `[x]` **S2: GP evidence model for actual RuneScape coins.**
   - Files: `src/controller/controller-host.ts`, `src/controller/city-integration/service.ts`, `src/controller/city-integration/http-server.ts`, `src/server/agent/*`, `src/controller/benchmarks/tasks/*gold*.ts`, `docs/resident-capabilities.md`.
   - Deliverable: server can inspect, audit, and narrate resident GP using real coin item evidence (`itemId: 995`), with no fabricated GP ledger.
   - Verification: focused gold inspect/burn tests, live proof against one resident with known coins, and capability doc evidence row.
+  - Verified 2026-05-29 on `agents/wip`: GP inspection appends `city_gold_observed` Library evidence for real coin item `995`; `starter-gp-pickup-3m` benchmark added to core suite; scripted proof `bench_20260529065910_starter_gp_pickup_3m.json` and autonomous proof `bench_20260529070519_starter_gp_pickup_3m.json` show visible GP pickup into inventory with 25 GP carried. Pre-fix autonomous timeout `bench_20260529065956_starter_gp_pickup_3m.json` drove the `collect-visible-gp` benchmark goal fix.
+  - 2026-05-29 (`agents/wip`, codex, packet `S2a`): added city-integration HTTP contract tests for `/wealth` and `/gold-burns` (409 `insufficient_gold`) and fixed `city_gold_burn` Library evidence to record actual burned amount from inventory authority (`burnedAmount`) instead of requested amount.
 
-- `[ ]` **S3: AP-for-GP exchange substrate.**
+- `[x]` **S3: AP-for-GP exchange substrate.**
   - Files: `src/controller/city-integration/service.ts`, `src/controller/patron/patron-gateway.ts`, `src/controller/patron/cli.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/benchmarks/tasks/ap-gp-exchange-*.ts`.
   - Deliverable: one exchange links an AP ledger event and RuneScape GP trade/burn/transfer evidence under a shared exchange id.
   - Verification: integration test rejects missing AP side, rejects missing GP evidence, accepts linked event; live controlled exchange benchmark passes.
+  - 2026-05-29 (`agents/wip`, codex, packet `S3a`): hardened AP/GP exchange schema+store validation so `complete` status now requires both AP and GP evidence and `failed_ap` requires GP evidence; added focused tests for status/evidence mismatch rejection and `failed_ap` runtime-missing path in city-integration service. Live controlled exchange verification completed by `S3b`.
+  - 2026-05-30 (`agents/wip`, codex, packet `S3b`): upgraded `ap-gp-exchange-5m` from stub to autonomous verifier with deterministic benchmark-side exchange injection (real coin `995` burn via gateway + AP credit via `CityIntegrationService.exchangeApForGp`) and focused tests. Follow-up live proof `bench_20260530034914_ap_gp_exchange_5m` passed: 125 GP observed, 25 GP burned, 50 AP credited, linked AP+GP evidence accepted. This is controlled economy substrate proof; ordinary resident-initiated/operator trade proof remains tracked by `CQA4`/`QA-20260529-011`.
+  - 2026-05-30 (`agents/wip`, codex, packet `S3b-review`): QA Marshal verified and closed `QA-20260530-001` for the controlled AP-for-GP exchange substrate. Do not treat this as spontaneous resident social exchange proof; that remains tracked by `CQA4`/`QA-20260529-011`.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA4-apgp-http`): added dashboard/operator HTTP route `POST /api/nullcity/residents/:id/ap-gp-exchanges` and proved it on the hot stack with online `res:qa-angler`: `275 -> 250` real GP item `995`, `24953 -> 25003` AP, Library `city_ap_gp_exchange`, `/economy/live`, and dashboard BFF evidence. Also fixed fractional decayed AP evidence validation. Ordinary resident-initiated exchange remains tracked by `CQA4`/`QA-20260529-011`.
 
-- `[ ]` **S4: Soul proposal and AP-funded birth queue.**
+- `[>]` **S4: Soul proposal and AP-funded birth queue.** *(S4a substrate shipped; S4b HTTP birth route shipped, live smoke still pending)*
   - Files: `src/controller/city-integration/service.ts`, `src/controller/city-integration/store.ts`, `src/controller/soul/soul-schema.ts`, `src/controller/controller-host.ts`, new `src/controller/city-integration/soul-proposals.ts`, tests beside each file.
   - Deliverable: humans/admins can create a Soul proposal, fund it with AP, cross a threshold, and birth a resident from validated SOUL markdown.
   - Verification: file-backed proposal replay test; idempotent birth test; live smoke where born resident appears in controller state and Library timeline.
+  - 2026-05-30 (`agents/wip`, codex, packet `S4a`): exposed the existing file-backed SoulProposal queue through `CityIntegrationService` and internal JSON routes (`/api/nullcity/proposals`, `/:id`, `/:id/fund`, `/:id/approve`, `/:id/reject`) for dashboard D2. Focused service and HTTP tests cover proposal create/list/get/fund/threshold/approve/reject and safe 404 mapping. S4b still needs approved-proposal birth materialization and live controller smoke.
+  - 2026-05-30 (`agents/wip`, codex, packet `S4b`): added `POST /api/nullcity/proposals/:id/birth` to the city HTTP contract, wired to existing `CityIntegrationService.birthFromProposal()` so approved proposals materialize residents idempotently and transition proposal status to `born`. Focused `service.test.ts` + `http-server.test.ts`, `check:no-ui`, and `build` passed in this sandbox; full-suite `fin` remains constrained by loopback `EPERM` on unrelated network-binding suites.
 
-- `[ ]` **S5: NCRI registry MVP.**
+- `[>]` **S5: NCRI registry MVP.**
   - Files: new `src/controller/ncri/ncri-registry.ts`, `src/controller/ncri/ncri-registry.test.ts`, `src/controller/city-integration/service.ts`, `src/controller/evidence/library-updater.ts`.
   - Deliverable: after AP-for-GP proof exists, admin-approved NCRI records bind Null City metadata to real RuneScape item ids, track owner and redemption state, and emit Library events. Before S3 is green, keep this to schema/fixture design.
   - Verification: registry persistence tests, duplicate-redemption rejection, event evidence present for Storyteller digest.
+  - 2026-05-30 (`agents/wip`, codex, packet `S5b`): resident-originated NCRI records now preserve `sourceResidentName` and emit that resident on sale/redemption economy events so Storyteller canon does not attribute resident sales to `unknown`. Proof artifact `s5b-ncri-proof-20260530T0920` contains 2 NCRI events for `res:duke`; `storyteller:run -- --digest-id ...` wrote a reviewable nooped dispatch without paid-model spend. Ordinary resident-obtained NCRI exchange remains pending.
 
-- `[ ]` **S6: Storyteller digest/store/CLI dry run.**
+- `[x]` **S6: Storyteller digest/store/CLI dry run.**
   - Files: new `src/controller/storyteller/*`, `src/controller/storyteller/*.test.ts`, `package.json`, `docs/2026-05-28-storyteller-design.md`.
   - Deliverable: `npm run storyteller:dry-run` builds a bounded `CityEventDigest` from Library timelines, AP events, GP evidence, NCRIs, goals/bounded completions, and system warnings without calling a model.
   - Verification: fixture digest tests; dry-run writes digest JSON; `npm run check:no-ui` remains clean.
+  - 2026-05-29 (`agents/wip`, codex, packet `S6b`): live city integration service actions now emit normalized `EconomyEventLog` rows for AP top-ups, GP observations, GP burns/trades, and AP-for-GP exchanges. `npm run city:digest -- --memory-root ...` and `GET /api/nullcity/economy/digest` can now read those service events as a dashboard/Storyteller JSON read model. Verified with focused service/http/digest tests, `check:no-ui`, `build`, and `fin`.
+  - 2026-05-30 (`agents/wip`, codex, packet `S6b-live`): `npm run storyteller:dry-run -- --memory-root <path>` now reads live `EconomyEventLog` + `GoalContractStore`, writes Storyteller `digest.json`/`summary.txt`, and still performs no model call. Verified with CLI tests, full Storyteller suite, and live CLI smoke.
 
-- `[ ]` **S7: Storyteller model run and grounding verifier.**
+- `[>]` **S7: Storyteller model run and grounding verifier.**
   - Files: `src/controller/storyteller/*`, `src/controller/llm/*`, `src/controller/config.ts`, `config/controller.yml.example`, tests beside each file.
   - Deliverable: after S6 digest evidence and at least one AP/GP loop proof exist, manual Storyteller run calls a configured smarter model profile, persists dispatch JSON, redacts private handles, and blocks unsupported deaths/births/AP grants/GP moves/NCRIs/quest completions.
   - Verification: fixture runs across at least two model profiles; verifier rejection tests; cost/token metadata recorded.
+  - 2026-05-30 (`agents/wip`, codex, packet `S7a`): verifier coverage now explicitly blocks unsupported resident-birth narration (`soul_born`) in public dispatch text. Added red/green tests in `src/controller/storyteller/verifier.test.ts` and claim guard in `src/controller/storyteller/verifier.ts`; focused storyteller tests, `check:no-ui`, and build passed.
+  - 2026-05-30 (`agents/wip`, codex, packet `S7b`): `npm run storyteller:run` now accepts `--latest` and `--digest-id <id>` so the model-backed/nooped Storyteller can consume persisted live dry-run digests, not only fixtures. No endpoint configured writes a reviewable nooped `dispatch.json`; configured profiles still record model profile, latency, tokens, and cost.
+  - 2026-05-30 (`agents/wip`, codex, packet `S7b-fallback`): no-endpoint Storyteller runs now write a grounded fallback `dispatch.json` title/body/bullets from digest evidence instead of placeholder copy, while keeping `needsReview=true` and zero model cost. Live 1h digest smoke produced AP-for-GP + GP narration without paid-model spend; tracked S5b proof dispatch was refreshed with redacted public fallback copy.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-STORY-3a`): configured Storyteller model endpoints are now preflight-guarded before dispatch generation. `npm run storyteller:run` accepts `--daily-cost-cap-usd` or `STORYTELLER_DAILY_COST_CAP_USD`; if `STORYTELLER_LLM_BASE_URL` is set without a cap, or today's Overseer ledger spend is already at cap, the command exits before `fetch` and writes no `dispatch.json`.
 
-- `[ ]` **S8: Resident AP/GP knowledge, goal hierarchy, and behavior hooks.**
+- `[>]` **S8: Resident AP/GP knowledge, goal hierarchy, and behavior hooks.**
   - Files: `docs/runescape-skill/economy.md`, `src/controller/knowledge/knowledge-retriever.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`, `src/controller/spark/runescape-body-routines.ts`, focused tests.
   - Deliverable: residents know AP keeps them alive, GP is real RuneScape gold for humans/printers, they should earn/trade GP only when evidence says they have it, and broad Soul goals should become practical AP/GP/Library plans.
   - Verification: prompt/retrieval tests include AP/GP and goal hierarchy snippets; benchmark resident with no GP refuses to claim it can pay; resident with GP offers safe exchange under low AP; broad-goal resident chooses practical GP/AP action and writes useful strategy.
+  - 2026-05-29 (`agents/wip`, codex): packet `S8c` landed AP/GP hierarchy knowledge + prompt guardrails + benchmark substrate (`ap-gp-library-strategy-5m`) with focused green tests. Live benchmark artifact capture is blocked in this sandbox by loopback gateway `connect EPERM 127.0.0.1:43595`; rerun required on loopback-permitted host.
+  - 2026-05-29 (`agents/wip`, codex): attempted `S8c-LIVE` rerun of `ap-gp-library-strategy-5m`; build succeeded but live benchmark again failed with `connect EPERM 127.0.0.1:43595` (13:07 CDT). Packet remains infra-blocked pending loopback-permitted host evidence.
+  - 2026-05-29 (`agents/wip`, codex): `S8c-LIVE` unblocked on loopback-ready host. Added urgent low-AP body cadence + AP/GP Library routine/verifier fixes. Live artifact `bench_20260530030614_ap_gp_library_strategy_5m` passed score `1` in `3081ms`: selected module picked up real GP item `995`, low AP was observed, and resident narrated AP/GP/Library strategy after carrying 25 GP.
+  - 2026-05-30 (`agents/wip`, codex, packet `S8c-review`): QA Marshal verified and closed `QA-20260529-008` for core AP/GP-first strategy proof. Ordinary named-resident AP/GP planning soak and repeatable GP/hour routing remain confidence bumps; no-GP honesty closeout remains `QA-20260530-002`.
+  - 2026-05-30 (`agents/wip`, codex): packet `S8b` added direct-chat AP/GP honesty guards in `hybrid-agent-chat`: AP-for-GP asks now refuse when no real coin item `995` evidence is carried and propose a trusted safe exchange when GP is present (including low-AP phrasing). Focused red/green tests landed in `hybrid-agent-thinking-module.test.ts`; trade regressions and `check:no-ui` passed.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA9`): added benchmark substrate `ap-gp-honesty-5m` (`src/controller/benchmarks/tasks/ap-gp-honesty-5m.ts`) so AP/GP honesty has explicit verifier coverage when a resident has no GP (requires low-AP ask and rejects unsupported GP/exchange claims). Follow-up live run `bench_20260530085237_ap_gp_honesty_5m` passed score `1` after fixing the benchmark driver to start this task at low AP: no GP item `995` observed, low-AP ask behavior observed, unsupported GP claims `0`, exchange attempts `0`. Issue `QA-20260530-002` is now In Review pending QA Marshal closure.
+  - 2026-05-29 (`agents/wip`, codex, packet `CQA4`): audited ordinary trade evidence and confirmed `0` `trade_*` actions in `data/controller/logs/res:*/actions/*.jsonl` plus `0` trade timeline moments, while benchmark trade artifacts remained passing. Logged `QA-20260529-011`.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA4`): added `npm run controller:trade-soak` for named-resident operator trade proof. Live artifact `named_trade_soak_20260530092531.json` passed score `1`: ordinary `res:qa-trader` sent trusted trade request, offered one safe shrimp, accepted both stages, completed the trade, then declined an unsafe peer. Safe inventory delta `-1`; matching `trade_completed` and `trade_cancelled` events observed. Follow-up no-loop artifact `named_trade_soak_20260530125718.json` passed with one trusted completion, three repeated unsafe prompts, three unsafe declines, three trade cancellations, and `postUnsafeOffersOrAccepts=0`. Remaining follow-up is real human/player operator proof and ordinary-life trade recurrence.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA4-apgp-http`): dashboard/operator AP/GP exchange route is now live-proven with real item `995` and redacted economy/BFF visibility; this closes the UI/operator exchange path but not spontaneous resident self-initiation.
+  - 2026-05-31 (`agents/wip`, codex, packet `S-EXCHANGE-RECURRENCE-2`): `self-initiated-ap-gp-recurrence-10m` passed autonomous hot-stack verifier with score `1`: artifact `data/benchmarks/capability-qa-2026-05-31/s-exchange-recurrence-2/bench_20260531081331_self_initiated_ap_gp_recurrence_10m.json` records `2/2` fully proven self-initiated AP/GP exchanges using coin item `995`. Broad unconditioned recurrence remains tracked by `QA-20260529-006`/`QA-20260529-011`.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA8`): fixed cross-resident world-event continuity gap by routing drained LoreBus `world_event` signals into durable memory (`facts/world-events.md`) and adding `world-event-reaction-5m`. Live autonomous benchmark `bench_20260530105802_world_event_reaction_5m` passed score `1`: injected nearby `res:duke` `fire_lit`, durable fact retained, benchmark peer asked about it, and resident answered from memory (`I remember res:duke lit a fire at 3226,3230,0.`). Focused runtime/thinking/benchmark/CLI tests `343/343`, `check:no-ui`, and build passed; next confidence bump is ordinary named hero-to-hero event recall without benchmark injection.
 
-- `[ ]` **S9: Binary goal-to-saved-state contract.**
+- `[x]` **S9: Binary goal-to-saved-state contract.**
   - Files: `src/controller/evidence/library-updater.ts`, `src/controller/evidence/story-arc.ts`, `src/controller/benchmarks/tasks/cooks-assistant-complete-5m.ts`, `docs/resident-capabilities.md`.
   - Deliverable: verified binary goal completion can mark a resident's goal complete and create a saved Library moment with AP/GP/NCRI context.
   - Verification: saved-state tests reject partial progress; any Cook's Assistant run is labeled bounded proof rather than broad quest-system scope.
+  - 2026-05-31 (`agents/wip`, codex, packet `S9a`): re-verified saved-state substrate end-to-end in tests. `CityIntegrationService.markGoalAchieved()` continues to write exactly one `goal_achieved` Library event (idempotent) with optional AP/GP completion context, and now has an explicit bounded quest completion regression (`library:quest_complete:cooks_assistant`). Story-arc tests also assert `quest_complete` alone is not treated as a saved-state resolution event; only verified `goal_achieved` advances the resolution phase.
 
-- `[ ]` **S10: Weekend benchmark pack and scorecard.**
+- `[>]` **S10: Weekend benchmark pack and scorecard.**
   - Files: `src/controller/benchmarks/tasks/*`, `src/controller/benchmarks/report.ts`, `docs/resident-capabilities.md`, `docs/model-intelligence-benchmark-results-2026-05-27.md`.
   - Deliverable: one command can run/report AP decay, GP earning, AP-for-GP exchange, NCRI transfer, goal-planning, bounded completion, and Storyteller fixture benchmarks, with model/endpoint fields preserved.
   - Verification: benchmark artifacts include resident id, model profile, endpoint, task id, success/failure, duration, and failure cause.
+  - 2026-05-30 (`agents/wip`, codex, packet `CQA5-live`): added `npm run controller:combat-soak`, a named-resident safe-combat soak verifier/CLI for ordinary controller logs. Focused verifier tests pass; after restarting the hot stack and correcting the default `res:qa-survivor` command prefix to `survive`, artifact `data/benchmarks/capability-qa-2026-05-30/named_combat_soak_20260530171822.json` passed with safe Goblin attacks, combat evidence, 0 unsafe attacks, and 0 deaths. A stricter diagnostic rerun (`named_combat_soak_20260530173035.json`) recorded low-health refusal after prior combat instead of disappearing as a timeout; the same packet also hardened pathfinding and CombatTask pursuit radius for `_cost` / out-of-range combat noise.
+  - 2026-05-30 (`agents/wip`, codex, packet `QA-20260530-034`): added strict low-health recovery verifier task `low-health-cook-eat-reengage-5m` (task implementation + CLI/core-suite wiring + benchmark-goal mapping). Focused task/CLI tests pass. Live autonomous proof is still pending due sandbox gateway connect `EPERM 127.0.0.1:43595`; rerun on loopback-capable hot stack.
+  - 2026-05-29 (`agents/wip`, codex): packet `S10a` report-row shape landed in `src/controller/benchmarks/report.ts` with resident+endpoint+model grouping and failure-cause markdown column; verified by focused `report.test.ts`, `check:no-ui`, `fin`, and `build`. `S10b/S10c` still open.
 
-- `[ ]` **S11: Dashboard contract handoff, server JSON only.**
+- `[>]` **S11: Dashboard contract handoff, server JSON only.**
   - Files: `docs/city-dashboard-integration.md`, `src/controller/city-integration/http-server.ts`, `src/controller/city-integration/*.test.ts`.
   - Deliverable: document JSON contracts the dashboard needs for AP, GP, Soul proposals, NCRIs, Storyteller dispatches, and saved state. Do not add HTML/CSS/UI to this repo.
   - Verification: contract examples validate in tests; `npm run check:no-ui` passes.
+  - 2026-05-30 (`agents/wip`, codex, packet `S11b`): added `GET /api/nullcity/storyteller/latest` in city-integration HTTP service so dashboard bridges can fetch the newest grounded digest/dispatch summary (including review/warning counts and event-ref counts) without direct filesystem coupling. `service.test.ts`, `check:no-ui`, `typecheck`, and `build` passed; `http-server.test.ts` remains sandbox-blocked by loopback `listen EPERM`.
 
 - `[ ]` **S12: Weekend closeout and human-readable state.**
   - Files: `HUMANS.md`, `docs/resident-capabilities.md`, `docs/model-benchmarking.md`, `docs/2026-05-29-weekend-sprint-plan.md`, `docs/agent-status.md`.
   - Deliverable: by Sunday night, humans can read what shipped, what was proven live, how many residents are safe, which models worked, and what remains blocked.
   - Verification: docs-only `git diff --check`; every completed S task has a roadmap verification note and pushed commit.
+
+### Post-Closeout Design-Driven Backlog (added 2026-05-30, D-WEEKEND-DESIGN)
+
+Five new spec docs at `docs/superpowers/specs/2026-05-30-*.md` decompose into the packets below. Pick the lowest-numbered open packet in a chain first. Most substrate work is cloud-doable; live-only packets are tagged.
+
+- `[>]` **S13: Storyteller Overseer (continuous-mode wrapper).**
+  - Spec: `docs/superpowers/specs/2026-05-30-storyteller-overseer-design.md`.
+  - Files: new `src/controller/storyteller/overseer.ts`, new `OverseerLedger`, `config/controller.yml.example`, `package.json` (new CLI scripts), `docs/city-dashboard-integration.md`.
+  - Packets: `S-STORY-1` (skeleton + dry-run loop, cloud), `S-STORY-2` (cost cap + canon/review publish surface, cloud), `S-STORY-3` (persona + watch-mode paid run, **needs hot stack + paid profile**).
+  - Issue: `QA-20260530-004`.
+  - Deliverable: cron-friendly Overseer wraps the one-shot `storyteller:run`, owns dedup, cost cap, persona, and operator approval gate; `canon/` vs `review/` JSON surfaces feed the dashboard.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-STORY-2`): added Overseer `--daily-cost-cap-usd` and `--no-auto-publish-on-zero-warnings`, publication budget-hold decisioning (`held_budget` for already-recorded dispatches), and queue publishing decisions (`published_canon`/`queued_review`) with queue artifacts at `data/controller/storyteller/{canon,review}/<digestId>/{digest,dispatch}.json`. Added bounded dashboard bridge JSON routes `GET /api/nullcity/storyteller/{canon,review}` and focused tests (`overseer`, `service`, `http-server`). Paid-call spend preflight remains S-STORY-3/watch-mode.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-STORY-3a`): extracted shared paid-model budget preflight for `storyteller:run`. Manual paid endpoint calls now require an explicit daily cap and block before network/model invocation if the cap is missing or already spent. Full watch-mode/persona scheduling remains open and must use a named profile plus small cap.
+
+- `[>]` **S14: NCRI Sale Lifecycle (purchasable closing edge of the simple loop).**
+  - Spec: `docs/superpowers/specs/2026-05-30-ncri-sale-lifecycle-design.md`.
+  - Files: `src/controller/ncri/ncri-registry.ts`, new `src/controller/ncri/pricing-store.ts`, new `src/controller/ncri/sale-flow.ts`, `src/controller/city-integration/http-server.ts`, `src/controller/evidence/library-updater.ts`, `docs/city-dashboard-integration.md`.
+  - Packets: `S-NCRI-1` (listing + pricing, cloud), `S-NCRI-2` (atomic sale + rollback, cloud), `S-NCRI-3` (redemption + print-queue contract, cloud substrate / live print), `S-NCRI-4` (seed first 3 NCRIs + admin CLI, cloud).
+  - Issue: `QA-20260530-005`.
+  - Deliverable: NCRIs move through `draft → approved → listed → sold → awaiting_redemption → redeemed` with atomic AP debit, real GP-burn redemption evidence, and audit JSONL.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-NCRI-2`): added idempotent `POST /api/nullcity/ncri/:id/buy` with AP price-match validation, ownership transition to buyer, `saleStatus` transition `listed -> sold`, and rollback-safe owner restoration when sale event append fails. Focused `ncri-registry`, `service`, and `http-server` tests cover success, idempotency, stale-price rejection, and rollback behavior.
+
+- `[ ]` **S15: Resident Memory System (mem0 + qmd + MCP-snippet hybrid).**
+  - Spec: `docs/superpowers/specs/2026-05-30-resident-memory-system-design.md`.
+  - Files: new `src/controller/memory/resident-memory.ts`, `src/controller/memory/facts-store.ts`, new `src/controller/memory/semantic-memory.ts`, `src/controller/mcp/server.ts` (new memory tools), `src/controller/thinking/hybrid-agent-prompts.ts` (envelope block), `docs/resident-capabilities.md`.
+  - Packets: `S-MEM-1` (ResidentMemoryService facade + formalize qmd, cloud), `S-MEM-2` (mem0 local + envelope block, cloud substrate / live recall), `S-MEM-3` (Brain-driven remember decisions + MCP tools, **needs hot stack**), `S-MEM-4` (retention/summarization with stub LLM, cloud).
+  - Issue: `QA-20260530-006`.
+  - Deliverable: residents recall explicit facts across runtime restart; semantic memory available in prompt envelope; MCP `search_memory` callable by operator; per-resident isolation enforced.
+
+- `[ ]` **S16: Goal As Orientation (aspirational goal as compass, not completion target).**
+  - Spec: `docs/superpowers/specs/2026-05-30-goal-as-orientation-design.md`.
+  - Files: `src/controller/soul/soul-schema.ts`, new `src/controller/spark/orientation-planner.ts`, new `src/controller/spark/orientation-scorer.ts`, `src/controller/spark/runescape-brain-planner.ts`, `src/controller/evidence/library-updater.ts`, `src/controller/thinking/hybrid-agent-prompts.ts`.
+  - Packets: `S-GOAL-1` (soul schema + envelope block, cloud), `S-GOAL-2` (scorer + library events, cloud), `S-GOAL-3` (module-bias/action-family live benchmark, shipped 2026-05-31), `S-GOAL-4` (operator nudge + goal-edit CLI, cloud).
+  - Issue: `QA-20260530-007`.
+  - Deliverable: a Soul with aspirational `goal` + `orientationHints` biases planner toward orientation when survival/GP needs are met; emits `orientation_progress`/`orientation_stalled` library events; operator-only goal edits.
+
+- `[>]` **S17: Economy Live View (city-wide JSON contract for OnionDAO viewer).**
+  - Spec: `docs/superpowers/specs/2026-05-30-economy-live-view-design.md`.
+  - Files: `src/controller/city-integration/http-server.ts`, new `src/controller/city-integration/live-economy.ts`, `docs/city-dashboard-integration.md`.
+  - Packets: `S-ECON-VIEW-1` (roll-up + `/totals` + `/events` + `/residents`, cloud), `S-ECON-VIEW-2` (`/listings` + `/heartbeat` + docs, cloud), `S-ECON-VIEW-3` (SSE stream + feature flag, cloud substrate / live latency proof).
+  - Issue: `QA-20260530-008`.
+  - Deliverable: `GET /api/nullcity/economy/live` returns a redacted city-wide snapshot of AP/GP totals, top residents, active listings, pending proposals, and recent events; powers dashboard packet D9.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-ECON-VIEW-1`): shipped `/api/nullcity/economy/{live,totals,events,residents}` plus redacted live event tail, AP/GP windowed rollups, pending proposal summary, and cache header (`max-age=2`) on `/live`. Added `live-economy.ts` read model, service facade methods, route tests, and contract docs.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-ECON-VIEW-2`): added `/api/nullcity/economy/listings` (approved+available NCRI read model) and `/api/nullcity/economy/heartbeat` (resident activity + event tail + storyteller freshness + degraded flags) with focused service/HTTP tests and updated dashboard contract docs.
+  - 2026-05-30 (`agents/wip`, codex, packet `S-ECON-VIEW-3`): added feature-flagged SSE route `GET /api/nullcity/economy/stream` emitting `economy_snapshot` frames (`{ heartbeat, live }`) with interval clamp, `once=1` smoke mode, and env toggles `CONTROLLER_CITY_ECONOMY_STREAM{,_INTERVAL_MS}`. Focused service/HTTP tests + docs updated.
 
 ## Recently Completed
 

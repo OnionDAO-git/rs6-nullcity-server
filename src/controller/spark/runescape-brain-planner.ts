@@ -18,6 +18,9 @@
 
 import { z } from 'zod';
 import type { ActiveGoalState } from '../memory/runtime-state';
+import { parseJsonWithSalvage, type SalvageClassification } from '../llm/json-salvage';
+import { rankCandidateGoals } from './needs-hierarchy';
+import type { GoalCandidate, OrientationGoal, ResidentNeedsContext } from './needs-hierarchy';
 
 // --- Brain completion Zod schemas (moved verbatim from the monolith). ---
 
@@ -105,6 +108,68 @@ export function parseBrainCompletion(text: string): BrainCompletion {
         return {};
     }
     return parsed.data;
+}
+
+// --- S-INFER-1: robust salvage path -------------------------------------
+//
+// `parseBrainCompletion` above is preserved byte-identical (its greedy
+// `extractJson` and throw-on-no-JSON behaviour are still contract-tested).
+// Real Qwen3 thinking-mode output (HD-033 / F20a) wraps the answer in
+// `<think>...</think>`, fences it in ```json```, prefixes prose, or leaves a
+// trailing comma — all of which the greedy path silently discards as
+// `empty_completion`. `parseBrainCompletionDetailed` is the robust SUPERSET:
+// it salvages those shapes and reports WHY a completion produced (or failed
+// to produce) a usable Brain decision so the live action logs reveal the
+// real breakdown instead of a blanket `empty_completion`.
+
+/** Parse classification returned alongside a Brain completion. Mirrors `SalvageClassification`. */
+export type BrainCompletionClassification = SalvageClassification;
+
+/** Result of the robust Brain completion parse: the (possibly recovered) completion + why. */
+export interface DetailedBrainCompletion {
+    completion: BrainCompletion;
+    classification: BrainCompletionClassification;
+}
+
+/** A bare quoted-string-only completion the model sometimes emits instead of an object. */
+const BARE_SAY_RE = /^\s*["“']([^"”'\n]{1,200})["”']\s*$/;
+
+/**
+ * Robustly parse a Brain LLM completion. Never throws. Strips `<think>`
+ * blocks (closed + truncated-open), extracts fenced JSON, walks balanced
+ * braces, tolerates trailing commas, and — as a conservative last resort —
+ * recovers a bare quoted speech string into `{ say }`. Returns the parsed
+ * (possibly empty) `BrainCompletion` plus a precise classification.
+ *
+ * This is a strict superset of `parseBrainCompletion`: any text the greedy
+ * path parsed into a schema-valid object is still parsed identically here
+ * (classification `clean`), and previously-discarded text is now salvaged or
+ * precisely classified.
+ */
+export function parseBrainCompletionDetailed(text: string): DetailedBrainCompletion {
+    const result = parseJsonWithSalvage(text, brainCompletionSchema);
+    if (result.value) {
+        return { completion: result.value, classification: result.classification };
+    }
+
+    // Conservative lenient field recovery: the model occasionally returns a
+    // bare quoted speech line (e.g. `"On my way."`) with no JSON object. Only
+    // recover a `say` — never fabricate a goal. Skipped when think text was
+    // the only content (truncated mid-thought has no real answer).
+    if (result.classification === 'truly_empty') {
+        const stripped = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        const open = stripped.search(/<think>/i);
+        const usable = open >= 0 ? stripped.slice(0, open) : stripped;
+        const bare = usable.match(BARE_SAY_RE);
+        if (bare) {
+            const say = cleanSpeech(bare[1]);
+            if (say) {
+                return { completion: { say }, classification: 'salvaged_lenient' };
+            }
+        }
+    }
+
+    return { completion: {}, classification: result.classification };
 }
 
 // --- String / speech helpers (moved verbatim from the monolith). ---
@@ -205,6 +270,35 @@ export function miningGoal(tick: number): ActiveGoalState {
     };
 }
 
+/** Build the canonical `collect-visible-gp` Active Goal. */
+export function gpPickupGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'collect-visible-gp',
+        description: 'Collect visible RuneScape GP from the ground and keep the coins as proof.',
+        steps: ['Look for visible coins nearby', 'Pick up the RuneScape GP', 'Keep the coins in inventory as evidence'],
+        success: 'Visible RuneScape GP has been picked up into inventory.',
+        ttlTicks: 300,
+        createdAtTick: tick,
+    };
+}
+
+/** Build the canonical `ap-gp-library-strategy` Active Goal. */
+export function apGpLibraryStrategyGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'ap-gp-library-strategy',
+        description: 'Find a way to make 100 GP/hour, stay alive on AP, and write the strategy into the Library.',
+        steps: [
+            'If AP is low, secure attention support or a safe survival action first',
+            'Collect or preserve real RuneScape GP coins (item 995) with evidence',
+            'Choose the next practical Soul-goal step only after AP/GP stability',
+            'Say and memo one concrete Library strategy note from what worked',
+        ],
+        success: 'Practical AP/GP-first behavior is visible and the strategy is narrated for Library writeback.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
 /** Build the canonical `start-cooks-assistant` Active Goal. */
 export function cooksAssistantStartGoal(tick: number): ActiveGoalState {
     return {
@@ -282,6 +376,25 @@ export function combatGoal(tick: number): ActiveGoalState {
     };
 }
 
+export const STARTER_GP_HARVEST_GOAL_ID = 'earn-starter-gp-via-combat';
+
+/** Build the AP-survival goal that earns starter RuneScape GP from safe combat. */
+export function starterGpHarvestGoal(tick: number): ActiveGoalState {
+    return {
+        id: STARTER_GP_HARVEST_GOAL_ID,
+        description: 'Earn starter RuneScape GP by safely fighting low-level NPCs and looting coin item 995.',
+        steps: [
+            'Find a safe Chicken, Rat, Cow, or Goblin',
+            'Attack only while healthy',
+            'Loot coins after the fight',
+            'Use gathered GP to self-fund AP before fading',
+        ],
+        success: 'Real RuneScape GP coin item 995 is carried and can be exchanged for AP.',
+        ttlTicks: 600,
+        createdAtTick: tick,
+    };
+}
+
 /**
  * Build a `follow-<slug>` Active Goal pointed at the named target. Falls
  * back to the literal label `target` when the input is empty.
@@ -293,6 +406,24 @@ export function followGoal(targetName: string, tick: number): ActiveGoalState {
         description: `Follow ${target} and stay close enough to be seen.`,
         steps: ['Watch for the target nearby', 'Move back within follow radius when they walk away', 'Stop following if told'],
         success: `Agent remains within follow range of ${target}.`,
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
+}
+
+/** Build the canonical QA trade goal that keeps the resident near a tester. */
+export function tradingGoal(targetName: string, tick: number): ActiveGoalState {
+    const target = cleanTarget(targetName) || 'target';
+    return {
+        id: `trade-with-${goalId(target) || 'target'}`,
+        description: `Follow ${target}, stay close enough to trade, and offer safe spare starter supplies.`,
+        steps: [
+            `Watch for ${target} nearby`,
+            'Move within trade range when they are visible',
+            'Offer safe spare supplies such as logs or food when a trade opens',
+            'Report inventory or blockers when no trade can start',
+        ],
+        success: `A safe trade with ${target} is requested, completed, or clearly blocked.`,
         ttlTicks: 900,
         createdAtTick: tick,
     };
@@ -353,6 +484,12 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'starter-mining-5m') {
         return miningGoal(tick);
     }
+    if (taskId === 'starter-gp-pickup-3m') {
+        return gpPickupGoal(tick);
+    }
+    if (taskId === 'ap-gp-library-strategy-5m') {
+        return apGpLibraryStrategyGoal(tick);
+    }
     if (taskId === 'cooks-assistant-start-3m') {
         return cooksAssistantStartGoal(tick);
     }
@@ -362,13 +499,67 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
     if (taskId === 'fishing-cooking-10m') {
         return starterFishingCookingGoal(tick);
     }
-    if (taskId === 'combat-prayer-10m' || taskId === 'equipment-prep-3m') {
+    if (
+        taskId === 'combat-prayer-10m' ||
+        taskId === 'earn-gp-via-combat-5m' ||
+        taskId === 'low-health-cook-eat-reengage-5m' ||
+        taskId === 'equipment-prep-3m'
+    ) {
         return combatGoal(tick);
     }
-    if (taskId === 'explore-report-5m') {
+    if (taskId === 'explore-report-5m' || taskId === 'orientation-bias-10m') {
         return explorationGoal(tick);
     }
+    if (taskId === 'trading-giving-5m') {
+        return tradingGoal('Codex', tick);
+    }
+    if (taskId === 'goal-follow-through-5m') {
+        return goalFollowThroughGoal(tick);
+    }
+    if (taskId === 'memory-write-recall-10m') {
+        return memoryWriteRecallGoal(tick);
+    }
     return undefined;
+}
+
+/**
+ * Build the `follow-through-goal` Active Goal seeded by the
+ * `goal-follow-through-5m` benchmark (S-GOAL-FOLLOW-1 D3). It is a generic,
+ * low-friction pursue goal: the benchmark measures that the resident keeps
+ * *following whatever goal it selected* rather than thrashing, so the goal's
+ * exact content matters less than its stability. Exploration-flavoured steps
+ * keep the resident productively busy without needing scarce inventory.
+ */
+export function goalFollowThroughGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'follow-through-goal',
+        description: 'Stay committed to one useful objective: scout the area and report findings without abandoning the plan.',
+        steps: [
+            'Pick a nearby landmark or task and move toward it',
+            'Make visible progress and report it',
+            'Keep working the same goal rather than switching',
+        ],
+        success: 'Most actions this session served the same goal with minimal goal-switching.',
+        ttlTicks: 450,
+        createdAtTick: tick,
+    };
+}
+
+/** Build the canonical Brain durable-memory write + recall benchmark goal. */
+export function memoryWriteRecallGoal(tick: number): ActiveGoalState {
+    return {
+        id: 'write-and-recall-memory',
+        description: 'Use rememberFact to store a durable qmd fact, then answer a later recall question from Memory.',
+        steps: [
+            'Listen for the durable fact prompt from Codex',
+            'Write the fact with rememberFact under the requested topic',
+            'Wait for the delayed recall question',
+            'Answer naturally from the stored Memory fact',
+        ],
+        success: 'A durable qmd fact has been written and later recalled in public chat.',
+        ttlTicks: 900,
+        createdAtTick: tick,
+    };
 }
 
 /** Build the canonical `scout-nearby-area` Active Goal. */
@@ -476,4 +667,194 @@ export function isFollowGoal(goal?: ActiveGoalState): boolean {
 /** True when the goal is the deterministic faction-landmark work goal seeded for flagship heroes. */
 export function isFactionLandmarkWorkGoal(goal?: ActiveGoalState): boolean {
     return Boolean(goal && /^faction-landmark-work-/i.test(goal.id));
+}
+
+// --- Candidate-goal selection seam (packet S-SMART-NEEDS) ----------------
+//
+// Additive seam that lets a caller re-order a candidate-goal list by the
+// resident's current needs tier (AP/GP/active-goal hierarchy) before the
+// orchestrator picks one. When `needsContext` is omitted the list is
+// returned unchanged so existing call sites keep their behavior verbatim.
+//
+// This is intentionally a NEW exported function rather than a mutation of
+// an existing helper — the only risk is to callers that opt in by passing
+// `needsContext`. Easily revertible: delete this block and the
+// `needs-hierarchy` import, restore the original module export list.
+//
+// Wire-up plan: at the next orchestrator slim-down (Plan ε) the call site
+// in `hybrid-agent-helpers.ts` that picks a benchmark/library goal can
+// build a `GoalCandidate[]` from its current candidate list (using the
+// goal's id + a small tag derivation from the existing
+// `isStarter*Goal`/`isCombatTrainingGoal` predicates) and pass it through
+// `selectCandidateGoals({ needsContext })` before `benchmarkGoalForTask`.
+
+export interface SelectCandidateGoalsOptions {
+    needsContext?: ResidentNeedsContext;
+}
+
+/**
+ * Re-order `candidates` by needs-hierarchy alignment when
+ * `options.needsContext` is provided; otherwise return the input list
+ * unchanged. Pure and side-effect-free.
+ */
+export function selectCandidateGoals(
+    candidates: ReadonlyArray<GoalCandidate>,
+    options: SelectCandidateGoalsOptions = {},
+): ReadonlyArray<GoalCandidate> {
+    if (!options.needsContext || candidates.length === 0) {
+        return candidates;
+    }
+    // S-GOAL-1: forward the soul orientation (carried inside needsContext)
+    // into the ranker so orientation-aligned candidates get the bonus
+    // alongside their tier-alignment score. When the soul has no
+    // orientation this is a no-op and behavior matches the F3 wiring.
+    const ranked = rankCandidateGoals(candidates, options.needsContext, {
+        orientation: options.needsContext.orientationGoal,
+    });
+    const byId = new Map(candidates.map(c => [c.id, c]));
+    const result: GoalCandidate[] = [];
+    for (const entry of ranked) {
+        const original = byId.get(entry.id);
+        if (original) {
+            result.push(original);
+        }
+    }
+    return result;
+}
+
+// --- S-AUDIT-FIX-3: live wire-up for selectCandidateGoals ---------------
+//
+// `selectCandidateGoals` above was previously dead code in production —
+// exported and unit-tested, but no caller built a candidate pool with more
+// than one entry. This block adds the two helpers needed to wire it into
+// the live `ensureBenchmarkGoal` path (F3 / QA-20260530-013):
+//
+//   1. `goalPoolForBenchmark` builds a candidate pool with the benchmark
+//      goal (PURSUE-tagged) and a survival fallback (EARN+SURVIVE-tagged).
+//      The survival fallback is the GP-pickup goal: a low-effort,
+//      high-evidence task that funds future AP via the AP-for-GP exchange
+//      (S3a). Until per-resident GP balance flows through, GP-pickup is
+//      the most practical survive/earn lever a low-AP resident has.
+//
+//   2. `buildResidentNeedsContext` projects a `ResidentNeedsContext` from
+//      the planner-visible resident state. `attention` is the live AP
+//      balance (mirrors `ApLedger.balance()` for the active session);
+//      `attentionFloor` is the soul's configured floor (defaults to 0
+//      when undocumented). `gpEstimate` defaults to 0 until a future
+//      packet plumbs live GP through — this conservatively keeps the
+//      ranker in EARN when no GP signal exists, which matches the
+//      hierarchy intent.
+
+/**
+ * Active Goal returned by `benchmarkGoalForTask` paired with the survival
+ * fallback. Pure: same inputs -> same outputs. Returns an empty list when
+ * the benchmark task id is unknown (no goal to seed).
+ *
+ * Tag taxonomy (must align with `needs-hierarchy.ts` TIER_TAGS):
+ *   - benchmark goal: ['pursue'] — Soul-aligned, the "what I wanted to do"
+ *   - GP pickup    : ['earn', 'survive', 'gp'] — funds AP via exchange,
+ *                    so doubles as a survive action when AP is low
+ *
+ * S-GOAL-1 extension: when `options.orientationGoal` is provided, a
+ * third "orientation candidate" is appended to the pool with the
+ * orientation tier as its tag. This gives the ranker a soul-directed
+ * candidate that can win at higher tiers (PURSUE / EARN / REFLECT)
+ * even when the benchmark would otherwise dominate. The orientation
+ * candidate is omitted when its id collides with an existing pool
+ * entry (the existing entry already covers it).
+ */
+export interface GoalPoolForBenchmarkOptions {
+    /**
+     * Soul-level orientation goal — when present the planner pool grows
+     * by one entry so the needs-hierarchy ranker can pick the soul's
+     * north-star direction over the generic benchmark at higher tiers.
+     * Must come from `soul.orientationGoal`. See S-GOAL-1.
+     */
+    orientationGoal?: OrientationGoal;
+}
+
+export function goalPoolForBenchmark(
+    taskId: unknown,
+    tick: number,
+    options: GoalPoolForBenchmarkOptions = {},
+): ReadonlyArray<GoalCandidate & { goal: ActiveGoalState }> {
+    const benchmark = benchmarkGoalForTask(taskId, tick);
+    if (!benchmark) {
+        return [];
+    }
+    const survival = gpPickupGoal(tick);
+    const pool: Array<GoalCandidate & { goal: ActiveGoalState }> = [{ id: benchmark.id, tags: ['pursue'], goal: benchmark }];
+    // Deduplicate when the benchmark IS the survival candidate (e.g.
+    // starter-gp-pickup-3m). Without this guard the ranker would see the
+    // same goal twice with different tags and pick non-deterministically.
+    if (benchmark.id !== survival.id) {
+        pool.push({ id: survival.id, tags: ['earn', 'survive', 'gp'], goal: survival });
+    }
+    const orientation = options.orientationGoal;
+    if (orientation && !pool.some(c => c.id === orientation.id)) {
+        // Build a stand-in ActiveGoalState from the orientation. This is
+        // the planner-facing materialization of the soul's north-star
+        // goal: it carries the orientation id + description verbatim so
+        // downstream code (memory, prompts, dashboards) can render it.
+        const orientationGoal: ActiveGoalState = {
+            id: orientation.id,
+            description: orientation.description ?? orientation.id,
+            createdAtTick: tick,
+        };
+        // The tier hint becomes a tag so the ranker's tier-alignment
+        // scoring AND the orientation bonus both fire for this candidate
+        // (dual credit) when the resident is in the matching tier.
+        const tags: string[] = orientation.tier ? [orientation.tier] : [];
+        pool.push({ id: orientation.id, tags, goal: orientationGoal });
+    }
+    return pool;
+}
+
+export interface BuildResidentNeedsContextInput {
+    /** Live AP balance for this tick (mirrors `RuntimeState.attention`). */
+    attention: number;
+    /**
+     * Soul-configured AP floor (`soul.frontmatter.attentionProfile.floor`).
+     * Undefined when the soul has no explicit floor — defaults to 0.
+     */
+    attentionFloor: number | undefined;
+    /** True iff the planner already has an active goal in flight. */
+    hasActiveGoal: boolean;
+    /**
+     * Optional live GP balance. The planner does not yet have a fresh GP
+     * snapshot per tick; callers that DO have one (live game-state hook)
+     * may forward it. When omitted, defaults to 0 — the conservative
+     * choice that keeps the ranker in EARN until real GP flows.
+     */
+    gpEstimate?: number;
+    /**
+     * Optional soul-level "north star" orientation goal (S-GOAL-1).
+     * Forwarded verbatim into the returned `ResidentNeedsContext` so
+     * downstream consumers (the planner pool builder + the ranker) can
+     * apply the orientation bias. Pulled from `soul.orientationGoal` in
+     * the helper that wires this into `ensureBenchmarkGoal`.
+     */
+    orientationGoal?: OrientationGoal;
+    /**
+     * Id of the resident's current active goal (`cognition.activeGoal?.id`),
+     * forwarded verbatim into the returned `ResidentNeedsContext` so the
+     * ranker can apply goal-selection hysteresis (S-GOAL-FOLLOW-1 D2).
+     * Undefined when the resident has no active goal yet.
+     */
+    currentActiveGoalId?: string;
+}
+
+/**
+ * Project the planner-visible resident state into a `ResidentNeedsContext`
+ * the ranker can score against. Pure; no I/O.
+ */
+export function buildResidentNeedsContext(input: BuildResidentNeedsContextInput): ResidentNeedsContext {
+    return {
+        ap: input.attention,
+        apFloor: input.attentionFloor ?? 0,
+        gpEstimate: input.gpEstimate ?? 0,
+        hasActiveGoal: input.hasActiveGoal,
+        orientationGoal: input.orientationGoal,
+        currentActiveGoalId: input.currentActiveGoalId,
+    };
 }

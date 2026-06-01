@@ -215,9 +215,21 @@ export const EXPLORATION_PATROL_MAX_DISTANCE = 12;
 /** Range (in tiles) within which a prayer-training waypoint is considered reached. */
 export const PRAYER_TRAINING_WAYPOINT_RANGE = 6;
 
-/** Fixed waypoints the prayer/combat routines walk between when no safe target is in sight. */
+/** Combat needs a tighter arrival radius so residents actually reveal nearby targets. */
+export const COMBAT_TRAINING_WAYPOINT_RANGE = 1;
+
+/** Fixed waypoints the prayer routine walks between when no safe bone source is in sight. */
 export const PRAYER_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
     { x: 3222, y: 3218, level: 0 },
+    { x: 3249, y: 3238, level: 0 },
+];
+
+/** Fixed waypoints the combat routine uses when no safe target is in sight. */
+export const COMBAT_TRAINING_WAYPOINTS: ReadonlyArray<BodyPos> = [
+    { x: 3222, y: 3218, level: 0 },
+    { x: 3230, y: 3226, level: 0 },
+    { x: 3238, y: 3230, level: 0 },
+    { x: 3245, y: 3234, level: 0 },
     { x: 3249, y: 3238, level: 0 },
 ];
 
@@ -301,11 +313,17 @@ export function isTargetFailureCooldownActive(
             keys.add(`actor-name:${actorName}`);
         }
     }
-    keys.add(`target:${coordinate}`);
+    const hasActorIdentity = typeof targetRecord.id === 'string' || actorKind === 'npc' || actorKind === 'player';
+    if (!hasActorIdentity) {
+        keys.add(`target:${coordinate}`);
+    }
 
     return Object.entries(cooldowns).some(([key, failedAt]) => {
         if (currentTick - failedAt >= TARGET_FAILURE_COOLDOWN_TICKS) {
             return false;
+        }
+        if (hasActorIdentity) {
+            return keys.has(key);
         }
         return keys.has(key) || key === `target:${coordinate}` || key.endsWith(`:${coordinate}`);
     });
@@ -405,13 +423,7 @@ function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPercept
         return undefined;
     }
 
-    const shouldPrioritizeCastleEntry =
-        shouldRouteViaLumbridgeKitchenEntry(here, target) &&
-        (here.x > LUMBRIDGE_CASTLE_KITCHEN_ENTRY.x || here.y > LUMBRIDGE_CASTLE_KITCHEN_ENTRY.y);
-    if (shouldPrioritizeCastleEntry) {
-        return lumbridgeKitchenEntryRouteAction(perception, here, true);
-    }
-
+    const shouldPrioritizeCastleEntry = shouldContinueThroughLumbridgeKitchenEntry(here, target);
     const adjacentOpenable = (perception.nearby?.objects || [])
         .filter(
             candidate =>
@@ -421,8 +433,12 @@ function starterFishingLumbridgeKitchenRouteAction(perception: BodyHybridPercept
                 distance(candidate.position, target) <= distance(here, target),
         )
         .sort((a, b) => distance(a.position, target) - distance(b.position, target))[0];
-    if (adjacentOpenable) {
+    if (adjacentOpenable && (!shouldPrioritizeCastleEntry || isLumbridgeKitchenRouteOpenable(adjacentOpenable.position, target))) {
         return openCookingRouteAction(here, adjacentOpenable);
+    }
+
+    if (shouldPrioritizeCastleEntry) {
+        return lumbridgeKitchenEntryRouteAction(perception, here, true);
     }
 
     if (!shouldRouteViaLumbridgeKitchenEntry(here, target)) {
@@ -504,6 +520,18 @@ function shouldRouteViaLumbridgeKitchenEntry(here: BodyPos, target: BodyPos): bo
     );
 }
 
+function shouldContinueThroughLumbridgeKitchenEntry(here: BodyPos, target: BodyPos): boolean {
+    return (
+        shouldRouteViaLumbridgeKitchenEntry(here, target) &&
+        distance(here, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) > 0 &&
+        !isLumbridgeKitchenTarget(here)
+    );
+}
+
+function isLumbridgeKitchenRouteOpenable(position: BodyPos, target: BodyPos): boolean {
+    return distance(position, target) <= 5 || distance(position, LUMBRIDGE_CASTLE_KITCHEN_ENTRY) <= 1;
+}
+
 function isLumbridgeCastleKitchenEntryOpen(perception: BodyHybridPerception): boolean {
     const objects = perception.nearby?.objects || [];
     const closedEntryVisible = objects.some(
@@ -523,17 +551,83 @@ function isLumbridgeCastleKitchenEntryOpen(perception: BodyHybridPerception): bo
     );
 }
 
-function isVisibleCombatThreat(actor: BodyActor): boolean {
+function isVisibleCombatThreat(actor: BodyActor, perception?: BodyHybridPerception): boolean {
     const name = `${actor.key || ''} ${actor.name || ''}`;
-    const combatLevel = Number(actor.combatLevel || 0);
     const alive = actor.hpFraction === undefined || actor.hpFraction > 0;
-    return alive && (combatLevel > 1 || /\b(goblin|spider|zombie|skeleton|guard)\b/i.test(name));
+    if (!alive) {
+        return false;
+    }
+    if (isCurrentCombatThreat(actor, perception)) {
+        return true;
+    }
+    return /\b(goblin|spider|zombie|skeleton|scorpion|wolf|bear)\b/i.test(name);
 }
 
 function hasNearbyRecoveryThreat(perception: BodyHybridPerception, here: BodyPos): boolean {
     return (perception.nearby?.npcs || []).some(
-        actor => isVisibleCombatThreat(actor) && distance(here, actor.position) <= LOW_HEALTH_RECOVERY_THREAT_RADIUS,
+        actor => isVisibleCombatThreat(actor, perception) && distance(here, actor.position) <= LOW_HEALTH_RECOVERY_THREAT_RADIUS,
     );
+}
+
+function isCurrentCombatThreat(actor: BodyActor, perception: BodyHybridPerception | undefined): boolean {
+    if (!perception) {
+        return false;
+    }
+    const actorKey = actorRefKey(actor);
+    if (!actorKey) {
+        return false;
+    }
+    const target = perception.resident?.combatTarget;
+    if (target && actorRefKey(target) === actorKey) {
+        return true;
+    }
+    return (perception.events || []).some(event => {
+        if (event.kind !== 'hit_taken') {
+            return false;
+        }
+        const from = event.from;
+        return isRecord(from) && actorRefKey(from) === actorKey;
+    });
+}
+
+function actorRefKey(actor: Pick<BodyActor, 'id' | 'key' | 'name'> | Record<string, unknown>): string | undefined {
+    const id = typeof actor.id === 'string' ? actor.id : '';
+    const key = typeof actor.key === 'string' ? actor.key : '';
+    const name = typeof actor.name === 'string' ? actor.name : '';
+    const ref = [id, key, name].filter(Boolean).join('|').toLowerCase();
+    return ref || undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function visibleFoodPickupAction(
+    perception: BodyHybridPerception,
+    residentId: string | undefined,
+    pickupCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    cause: string,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    const inventory = perception.resident?.inventory || [];
+    if (!here || !inventoryHasFreeSlot(inventory)) {
+        return undefined;
+    }
+
+    const food = (perception.nearby?.worldItems || [])
+        .filter(
+            candidate =>
+                sameLevel(here, candidate.position) &&
+                isEdibleFood(candidate) &&
+                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
+                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick) &&
+                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+
+    return food ? { kind: 'interact', target: food, option: 'pick-up', cause } : undefined;
 }
 
 /**
@@ -769,8 +863,12 @@ function nearLumbridgeStarterFishingDiscovery(here: BodyPos): boolean {
  * this only routes Lumbridge-area anglers back toward the server river
  * spot so they can rediscover a net-capable NPC instead of generic patrolling.
  */
-export function starterFishingRouteAction(perception: BodyHybridPerception): AgentAction | undefined {
-    const visibleSpotAction = starterFishingAction(perception);
+export function starterFishingRouteAction(
+    perception: BodyHybridPerception,
+    targetFailureCooldowns?: Record<string, number>,
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const visibleSpotAction = starterFishingAction(perception, targetFailureCooldowns, currentTick);
     if (visibleSpotAction) {
         return visibleSpotAction;
     }
@@ -925,12 +1023,14 @@ export function starterFishingCookingAction(
                 return routeAction;
             }
         }
-        return {
-            kind: 'move_to',
-            target: LUMBRIDGE_CASTLE_RANGE,
-            range: COOKING_RANGE_APPROACH_RADIUS,
-            cause: 'starter_fishing_find_range',
-        };
+        if (!isTargetFailureCooldownActive(LUMBRIDGE_CASTLE_RANGE, targetFailureCooldowns, currentTick)) {
+            return {
+                kind: 'move_to',
+                target: LUMBRIDGE_CASTLE_RANGE,
+                range: COOKING_RANGE_APPROACH_RADIUS,
+                cause: 'starter_fishing_find_range',
+            };
+        }
     }
 
     return { kind: 'say', text: 'I have raw fish now. I need a fire or range to cook it.', cause: 'starter_fishing_missing_heat' };
@@ -1109,7 +1209,7 @@ export function lowHealthRecoveryAction(
         return actionWithCause(cookingAction, 'low_health_cook_food');
     }
 
-    const fishingAction = nearbyThreat ? undefined : starterFishingAction(perception, targetFailureCooldowns, currentTick);
+    const fishingAction = nearbyThreat ? undefined : starterFishingRouteAction(perception, targetFailureCooldowns, currentTick);
     if (fishingAction) {
         return actionWithCause(fishingAction, 'low_health_fish_food');
     }
@@ -1126,19 +1226,16 @@ export function lowHealthRecoveryAction(
             : undefined;
     }
 
-    const food = (perception.nearby?.worldItems || [])
-        .filter(
-            candidate =>
-                sameLevel(here, candidate.position) &&
-                isEdibleFood(candidate) &&
-                !isOwnedByAnotherActor(candidate, residentId, perception.resident?.id) &&
-                !isPickupOnCooldown(candidate, pickupCooldowns, currentTick) &&
-                !isTargetFailureCooldownActive(candidate, targetFailureCooldowns, currentTick),
-        )
-        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
-
-    if (food) {
-        return { kind: 'interact', target: food, option: 'pick-up', cause: 'low_health_pickup_food' };
+    const foodPickup = visibleFoodPickupAction(
+        perception,
+        residentId,
+        pickupCooldowns,
+        currentTick,
+        targetFailureCooldowns,
+        'low_health_pickup_food',
+    );
+    if (foodPickup) {
+        return foodPickup;
     }
 
     const recoveryWaypoint = nearestLowHealthRecoveryWaypoint(here);
@@ -1155,6 +1252,60 @@ export function lowHealthRecoveryAction(
 /** Returns the nearest fixed prayer-training waypoint to the given position. */
 export function nearestPrayerTrainingWaypoint(here: BodyPos): BodyPos {
     return [...PRAYER_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+/** Returns the nearest fixed combat-training waypoint to the given position. */
+export function nearestCombatTrainingWaypoint(here: BodyPos): BodyPos {
+    return [...COMBAT_TRAINING_WAYPOINTS].sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+function nearestAvailableTrainingWaypoint(
+    here: BodyPos,
+    waypoints: ReadonlyArray<BodyPos>,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): BodyPos | undefined {
+    return [...waypoints]
+        .filter(waypoint => !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick))
+        .sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+function nearestUnreachedTrainingWaypoint(
+    here: BodyPos,
+    waypoints: ReadonlyArray<BodyPos>,
+    reachedRange: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): BodyPos | undefined {
+    return [...waypoints]
+        .filter(
+            waypoint =>
+                distance(here, waypoint) > reachedRange && !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick),
+        )
+        .sort((a, b) => distance(here, a) - distance(here, b))[0];
+}
+
+function nextRouteTrainingWaypoint(
+    here: BodyPos,
+    waypoints: ReadonlyArray<BodyPos>,
+    reachedRange: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+): BodyPos | undefined {
+    const reachedIndex = waypoints.reduce((best, waypoint, index) => (distance(here, waypoint) <= reachedRange ? index : best), -1);
+    if (reachedIndex >= 0) {
+        const forward = waypoints
+            .slice(reachedIndex + 1)
+            .find(waypoint => !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick));
+        if (forward) {
+            return forward;
+        }
+    }
+
+    return waypoints.find(
+        waypoint =>
+            distance(here, waypoint) > reachedRange && !isTargetFailureCooldownActive(waypoint, targetFailureCooldowns, currentTick),
+    );
 }
 
 /** Lower number = higher-priority NPC kill choice for prayer (bone) sourcing. */
@@ -1226,7 +1377,10 @@ export function prayerTrainingAction(
 
     const target = safeBoneSourceTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
-        const waypoint = nearestPrayerTrainingWaypoint(here);
+        const waypoint = nearestAvailableTrainingWaypoint(here, PRAYER_TRAINING_WAYPOINTS, targetFailureCooldowns, currentTick);
+        if (!waypoint) {
+            return undefined;
+        }
         return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
             ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'prayer_seek_safe_bone_source' }
             : undefined;
@@ -1335,13 +1489,69 @@ export function combatTrainingAction(
 
     const target = safeCombatTarget(perception, targetFailureCooldowns, currentTick);
     if (!target) {
-        const waypoint = nearestPrayerTrainingWaypoint(here);
-        return distance(here, waypoint) > PRAYER_TRAINING_WAYPOINT_RANGE
-            ? { kind: 'move_to', target: waypoint, range: PRAYER_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
+        const waypoint = nextRouteTrainingWaypoint(
+            here,
+            COMBAT_TRAINING_WAYPOINTS,
+            COMBAT_TRAINING_WAYPOINT_RANGE,
+            targetFailureCooldowns,
+            currentTick,
+        );
+        return waypoint
+            ? { kind: 'move_to', target: waypoint, range: COMBAT_TRAINING_WAYPOINT_RANGE, cause: 'combat_seek_safe_target' }
             : undefined;
     }
 
+    const resupply = combatRecoverySupplyAction(perception, target, pickupCooldowns, currentTick, targetFailureCooldowns);
+    if (resupply) {
+        return resupply;
+    }
+
     return { kind: 'attack', target, cause: 'combat_attack_safe_target' };
+}
+
+function combatRecoverySupplyAction(
+    perception: BodyHybridPerception,
+    target: BodyActor,
+    pickupCooldowns: Record<string, number> | undefined,
+    currentTick: number,
+    targetFailureCooldowns: Record<string, number> | undefined,
+): AgentAction | undefined {
+    if (!combatTargetNeedsRecoverySupply(target) || firstFoodSlot(perception.resident?.inventory || []) !== undefined) {
+        return undefined;
+    }
+
+    const foodPickup = visibleFoodPickupAction(
+        perception,
+        undefined,
+        pickupCooldowns,
+        currentTick,
+        targetFailureCooldowns,
+        'combat_resupply_food',
+    );
+    if (foodPickup) {
+        return foodPickup;
+    }
+
+    const cookingAction = starterFishingCookingAction(perception, targetFailureCooldowns, currentTick);
+    if (cookingAction) {
+        return actionWithCause(cookingAction, 'combat_resupply_food');
+    }
+
+    const fishingAction = starterFishingRouteAction(perception, targetFailureCooldowns, currentTick);
+    if (fishingAction) {
+        return actionWithCause(fishingAction, 'combat_resupply_food');
+    }
+
+    return {
+        kind: 'say',
+        text: 'I need food or a way to get food before I train combat safely.',
+        cause: 'combat_need_food_before_training',
+    };
+}
+
+function combatTargetNeedsRecoverySupply(target: BodyActor): boolean {
+    const label = [target.name, target.key, target.id].filter(Boolean).join(' ');
+    return HUMAN_BONE_SOURCE_PATTERN.test(label);
 }
 
 export interface FactionLandmarkWorkInput {
@@ -1831,6 +2041,7 @@ export function explorationAction(
             .filter(
                 candidate =>
                     sameLevel(here, candidate.position) &&
+                    candidate.hpFraction !== 0 &&
                     !isFishingSpot(candidate) &&
                     !isExplorationOnCooldown(explorationActorCooldownKey(candidate), explorationCooldowns, currentTick) &&
                     !isExplorationOnCooldown(explorationActorFamilyCooldownKey(candidate), explorationCooldowns, currentTick) &&

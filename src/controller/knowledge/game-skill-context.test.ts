@@ -94,6 +94,23 @@ describe('GameSkillService', () => {
         );
     });
 
+    it('injects AP/GP hierarchy + Library strategy knowledge for broad goal planning under low AP', () => {
+        const service = new GameSkillService();
+
+        const context = service.buildContext({
+            resident: 'res:agent',
+            tick: 10,
+            activeGoal: goal('earn-100-gp-hour', 'Find a way to make 100 gp/hour and write the strategy into the Library.'),
+            perception: perception('Attention 6/100. Inventory has no rs:coins. Nearby: chicken, tree.'),
+        });
+
+        const knowledgeIds = context.knowledgeResults.map(result => result.entry.id);
+        expect(knowledgeIds).toContain('economy-ap-gp-goal-hierarchy');
+        const hierarchy = context.knowledgeResults.find(result => result.entry.id === 'economy-ap-gp-goal-hierarchy')?.entry;
+        expect(hierarchy?.summary).toMatch(/library/i);
+        expect(context.brainSection).toMatch(/attention points|ap/i);
+    });
+
     it('uses structured inventory slots for firemaking action hints', () => {
         const service = new GameSkillService();
 

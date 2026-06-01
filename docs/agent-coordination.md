@@ -1,12 +1,12 @@
 # Multi-Agent Coordination Protocol
 
 **Audience:** Any agent (Claude, Codex, future) or human working in this repo or the residents-dashboard repo.
-**Date:** 2026-05-21.
-**Status:** Draft; revise as the team learns what actually prevents collisions.
+**Date:** 2026-05-21; tightened 2026-05-30.
+**Status:** Live rules below; historical context further down.
 
 **Current rule:** if this file conflicts with `AGENTS.md`, `docs/README.md`, or `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`, the newer docs win for current weekend packet work.
 
-**New here?** Start with `AGENTS.md`, `docs/README.md`, `docs/agent-status.md`, `docs/issue-register.md`, and the Workstream S implementation plan. Then use this file for coordination rules and historical context.
+**New here?** Start with `AGENTS.md`, `docs/README.md`, `docs/agent-status.md`, `docs/issue-register.md`, and the Workstream S implementation plan. Pre-Chicago, also read `docs/2026-05-30-final-32hr-sprint-plan.md`. Then use this file for coordination rules and historical context.
 
 ## Why This Exists
 
@@ -36,27 +36,12 @@ If these disagree, the roadmap wins for planned intent, `git status` wins for in
 
 ## Historical Workstream Ownership (2026-05-21 Snapshot)
 
-This table is historical. Routine server work now targets `agents/wip` (see Rule 3), and Workstream S plus CQA packets are the active weekend claim units.
-
-| Workstream | Owner | Status |
-|---|---|---|
-| A: SPARK Capability Facades | done; no current owner | `[x]` |
-| B: Standard RuneScape Module Extraction | unassigned | `[ ]` |
-| C: Benchmark Harness — `combat-prayer-10m` | Codex | `[>]` |
-| D: Dashboard Debugging | Dev (separate repo) | `[>]` |
-| E: Knowledge & Agent Skill | done | `[x]` |
-| F: Human-Like Behavior | unassigned | `[~]` partial |
-| G: Real Gameplay Workflows | unassigned | `[ ]` |
-| H: Railgun & Operations | unassigned | `[~]` partial |
-| **I: Evidence Layer & Library of Souls** | merged | `[x]` mostly done — see roadmap |
-| **J: Patron / Human-Attention Loop** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-patron-loop-design.md` |
-| **K: Factions Adapted For Runescape** | unassigned | `[!]` spec exists, blocked on maintainer creative input |
-| **L: Cross-Resident Memory & Lore** | unassigned | `[ ]` no spec yet — deferred |
-| **M: Hero Residents & Story Arcs** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-hero-residents-design.md` |
-| **N: Physical Event & Embassy** | unassigned | `[ ]` spec exists, see `specs/2026-05-22-embassy-and-event-design.md` |
-| **O: Engineering & Tooling Polish** | unassigned | `[ ]` no spec needed — independently scoped tasks |
-
-This table is preserved only to explain older status-log entries. Current workstreams, including Workstream S, live in the roadmap file.
+The original workstream-ownership table (workstreams A–O with `[x]`/`[>]`/`[ ]`/`[!]` markers) lived
+here through the 2026-05-30 tightening pass. It was preserved only to explain older status-log entries,
+and is now redundant — current active workstreams live in
+`docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` (Workstream S + CQA packets) and in
+`docs/2026-05-30-final-32hr-sprint-plan.md`. To recover the original table, see
+`git show e74064c1:docs/agent-coordination.md` or earlier.
 
 ## Conflict Avoidance Rules
 
@@ -81,20 +66,21 @@ Exception: while Codex has the roadmap dirty, other agents propose roadmap chang
 
 ### Rule 3 — Shared agent branch, curated milestones to default
 
-**Revised 2026-05-23** after the default-branch history (`nullcity`) grew too noisy for Dev to read — ~3 commits per slice (STARTING / work / HANDOFF) plus correction commits and format-only commits.
+**Revised 2026-05-23** after the default-branch history (`nullcity`) grew too noisy for Dev to read — ~3 commits per slice (STARTING / work / HANDOFF) plus correction commits and format-only commits. **Sharpened 2026-05-30** with explicit no-feature-branches statement per maintainer MEMORY.
 
-The workflow now has two layers:
+The workflow has two layers:
 
 **Layer 1 — `agents/wip` (shared agent branch):** all claude / codex / antigravity in-progress work goes here. Push freely. Small commits, STARTING/HANDOFF lines, status-log appends, format fixes, correction lines — all fine on this branch. This is where coordination happens.
 
 **Layer 2 — `nullcity` (default branch):** Dev reads this. Only curated milestones land here, via **squash-merge from `agents/wip` → `nullcity`** with one descriptive commit subject and a detailed body. Per-slice breakdown lives in the commit body. The default branch should read as a milestone log, not an in-progress sync channel.
 
+**No feature branches** (maintainer rule, 2026-05-30): do NOT create `claude/<topic>`, `codex/<topic>`, or other per-agent feature branches. Push directly to `agents/wip`. The only sanctioned exceptions are: (a) a short-lived personal worktree (see Rule 10) that exists only between cycles and is folded back into `agents/wip` before HANDOFF, and (b) a single-commit critical hotfix that goes direct to `nullcity` (judgment call).
+
 Implications:
 
-- Daily work: commit to `agents/wip` and push. Pull `agents/wip` before pushing to avoid non-fast-forwards.
+- Daily work: commit to `agents/wip` and push. **Fetch + rebase on `origin/agents/wip` before pushing** to avoid non-fast-forwards. On a rebase conflict in `docs/agent-status.md`, prefer "accept both" (append both entries) — never overwrite another agent's STARTING line.
 - On milestone completion (workstream slice done + tests + lint + typecheck green), squash-merge `agents/wip` → `nullcity` with a curated commit. Cadence: workstream completion, every ~24h, or on maintainer ask.
 - `docs/agent-status.md` lives on `agents/wip` and **does not get merged to `nullcity`**. It's a coordination artifact, not a deliverable.
-- Per-agent topic branches (`claude/<foo>`, `codex/<foo>`) are still discouraged — they fragment history. Bigger experimental work uses a branch off `agents/wip` and merges back there.
 - File-level collision avoidance still primary. Read `git status` + the status log on `agents/wip` before editing.
 - The dashboard repo (`rs6-nullcity-residents-dashboard`) has its own conventions — follow Dev's existing pattern there.
 - Single-commit critical fixes that Dev needs to see immediately (security patch, hotfix) can still go direct to `nullcity` — judgment call. Default to `agents/wip`.
@@ -242,27 +228,38 @@ Conventions (from the file's own "How To Add A Decision" section):
 
 **On accidental duplication (2026-05-24 CORRECTION):** claude initially created `docs/maintainer-decisions.md` with the same intent before noticing `human-decisions.md` already existed. The new file was deleted; the 12 entries migrated into `human-decisions.md` as `HD-007` through `HD-018`. Same lesson encoded here: search before you scaffold.
 
+### Rule 12 — Parallel-worktree pattern + idle fallback (added 2026-05-30)
+
+After multiple multi-agent overnight cycles where same-cwd edits caused phantom `M` modifications, `--amend` swept Codex WIP into Claude commits, and `git add -A` swept untracked files (HD-010 + Rule 10 history):
+
+**Parallel-worktree pattern (recommended for any multi-file slice when another agent is active):**
+
+```bash
+cd <repo-root>
+git fetch -q origin
+WT=/tmp/<repo>-<topic>
+git worktree remove --force "$WT" 2>/dev/null || true
+git worktree add --detach "$WT" origin/agents/wip
+ln -sfn <repo-root>/node_modules "$WT/node_modules"
+cd "$WT"
+# work, commit, push to agents/wip (rebase if push race)
+```
+
+The worktree isolates your file edits from another agent's in-progress edits in the main checkout. After push, the worktree is disposable. This is the workflow this `agent-coordination.md` itself was edited in.
+
+**Idle fallback (when fired by cron with no obvious cloud-doable packet):**
+
+Do NOT idle and do NOT pick speculative refactors. Instead, in priority order:
+1. Pick a P0 from `docs/issue-register.md`.
+2. Pick a `next=<packet>` from the most recent HANDOFF in `docs/agent-status.md`.
+3. Pick an unproven row from `docs/resident-capabilities.md` (standing CQA lane).
+4. **If nothing fits, DESIGN + SPEC a new packet** — output a 50-150 line design doc to `docs/superpowers/specs/YYYY-MM-DD-<topic>-design.md` plus an issue-register row, then HANDOFF.
+
+This rule is reinforced in the proposed cron prompt v2 (`docs/cron-prompt-v2-proposed.md`); it is repeated here so it applies to any fire (cron, manual, packet-driven).
+
 ## Historical: Specific Coordination For Workstream I (Evidence Layer)
 
-This section is historical and should not guide current weekend work.
-
-Until Codex's in-flight `combat-prayer-10m` work merges:
-
-- Claude does **not** edit:
-  - `src/controller/benchmarks/cli.ts`
-  - `src/controller/benchmarks/tasks/combat-prayer-10m.ts`
-  - `src/controller/thinking/hybrid-agent-thinking-module.ts`
-  - The roadmap file itself
-- Claude **does** edit:
-  - new files under `src/controller/evidence/`
-  - `src/controller/benchmarks/verifier-conventions.ts` (NEW file; does not conflict with cli.ts)
-  - new docs under `docs/`
-- Claude proposes:
-  - roadmap delta in `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`, to be applied after Codex merges
-
-After Codex finishes their combat-prayer-10m work:
-
-- Historical note: Claude would have pulled `nullcity`, applied the roadmap delta, marked Workstream I tasks `[>]`, and proceeded with P1 under the old direct-push convention. Current work uses `agents/wip`.
+The detailed Workstream I file-ownership table that lived here through the 2026-05-30 tightening pass is historical — Workstream I is `[x]` per the roadmap, `combat-prayer-10m` is closed (CQA5), and the roadmap delta was applied long ago. To recover the original section, see `git show e74064c1:docs/agent-coordination.md`.
 
 ## Coordination With Dev (Dashboard)
 

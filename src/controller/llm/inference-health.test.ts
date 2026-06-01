@@ -187,6 +187,28 @@ describe('runInferenceHealthProbe', () => {
         });
     });
 
+    it('rejects two adjacent objects via the shared balanced-brace scan, not a greedy slice (S-INFER-2 D4)', async () => {
+        // The old greedy first-{-to-last-} extractor sliced these two objects into
+        // one malformed string and rejected it incidentally. The shared scan now
+        // yields two distinct objects; the strict whole-text equality gate rejects
+        // the trailing junk object so the probe still fails — proving delegation to
+        // json-salvage without weakening the contract.
+        const complete = jest.fn(async () => ({
+            text: '{"health":"ok","probe":"nullcity-inference-health"}{"junk":1}',
+            model: 'qwen-health',
+            nooped: false,
+        }));
+
+        const result = await runInferenceHealthProbe({
+            complete,
+            endpoints: {
+                default: { baseUrl: 'http://localhost:1234', model: 'qwen-health', timeoutMs: 60000 },
+            },
+        });
+
+        expect(result).toMatchObject({ ok: false, status: 'unexpected_completion' });
+    });
+
     it('honors endpoint text response format and reads provider reasoning/cost fields', async () => {
         const fetchMock = jest.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
             const body = JSON.parse(String(init?.body));
@@ -227,6 +249,49 @@ describe('runInferenceHealthProbe', () => {
             promptTokens: 9,
             completionTokens: 4,
             costUsd: 0.00012,
+        });
+    });
+
+    it('bounds the direct health probe completion for local qwopus compatibility', async () => {
+        const fetchMock = jest.fn(async (_url: URL | RequestInfo, init?: RequestInit) => {
+            const body = JSON.parse(String(init?.body));
+            expect(body.response_format).toMatchObject({ type: 'json_schema' });
+            expect(body.reasoning).toEqual({ enabled: false });
+            expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+            expect(body.max_tokens).toBe(128);
+            expect(body.max_completion_tokens).toBe(128);
+            return new Response(
+                JSON.stringify({
+                    model: 'qwopus3.5-27b-v3@q4_k_s',
+                    choices: [
+                        {
+                            message: {
+                                content: '',
+                                reasoning_content: '{"health":"ok","probe":"nullcity-inference-health"}',
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 9, completion_tokens: 6 },
+                }),
+                { status: 200 },
+            );
+        });
+        global.fetch = fetchMock;
+
+        const result = await runInferenceHealthProbe({
+            endpoints: {
+                default: {
+                    baseUrl: 'http://inf.nullcity.ai:1234',
+                    model: 'qwopus3.5-27b-v3@q4_k_s',
+                    timeoutMs: 60000,
+                },
+            },
+        });
+
+        expect(result).toMatchObject({
+            ok: true,
+            status: 'ok',
+            model: 'qwopus3.5-27b-v3@q4_k_s',
         });
     });
 });

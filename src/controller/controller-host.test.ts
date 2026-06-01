@@ -3,7 +3,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { ControllerConfig } from './config';
-import { ControllerHost, type ControllerHostOptions } from './controller-host';
+import { BornResidentStore } from './born-resident-store';
+import { ControllerHost, type CityInventoryGateway, type ControllerHostOptions } from './controller-host';
 import { LettersStore } from './patron/letters-store';
 import { PatronStore } from './patron/patron-store';
 import type { LlmClient } from './llm/llm-client';
@@ -39,6 +40,13 @@ class FakeGateway extends EventEmitter {
         return resident;
     });
     submitAction = jest.fn(async () => ({ ok: true }));
+    inspectResidentGold = jest.fn(async (resident: string) => ({ resident, itemId: 995 as const, amount: 125 }));
+    burnResidentGold = jest.fn(async (resident: string, amount: number) => ({
+        resident,
+        itemId: 995 as const,
+        burnedAmount: amount,
+        remainingAmount: 125 - amount,
+    }));
 }
 
 describe('ControllerHost reconcile lifecycle', () => {
@@ -129,6 +137,120 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('routes GP inventory calls through an isolated city gateway when provided', async () => {
+        const gateway = new FakeGateway();
+        const cityGateway = new FakeGateway();
+        gateway.inspectResidentGold.mockRejectedValue(new Error('shared resident gateway overloaded'));
+        gateway.burnResidentGold.mockRejectedValue(new Error('shared resident gateway overloaded'));
+        cityGateway.inspectResidentGold.mockResolvedValue({ resident: 'res:pip', itemId: 995, amount: 777 });
+        cityGateway.burnResidentGold.mockResolvedValue({
+            resident: 'res:pip',
+            itemId: 995,
+            burnedAmount: 25,
+            remainingAmount: 752,
+        });
+        const host = new ControllerHost(config(), {
+            ...dependencies(gateway),
+            cityGateway: cityGateway as unknown as ControllerHostOptions['cityGateway'],
+        });
+
+        await host.start();
+
+        await expect(host.inspectResidentGold('res:pip')).resolves.toEqual({ resident: 'res:pip', itemId: 995, amount: 777 });
+        await expect(host.burnResidentGold('res:pip', 25)).resolves.toEqual({
+            resident: 'res:pip',
+            itemId: 995,
+            burnedAmount: 25,
+            remainingAmount: 752,
+        });
+
+        expect(gateway.inspectResidentGold).not.toHaveBeenCalled();
+        expect(gateway.burnResidentGold).not.toHaveBeenCalled();
+        expect(cityGateway.connect).toHaveBeenCalledTimes(1);
+        expect(cityGateway.hello).toHaveBeenCalledTimes(1);
+
+        await host.stop();
+
+        expect(cityGateway.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the host-owned city exchange service into resident runtimes', async () => {
+        const gateway = new FakeGateway();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-city-exchange-'));
+        const runtimeState = {
+            resident: 'res:pip',
+            attention: 100,
+            tick: 7,
+            legacy: { kind: 'mentor', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: new Date(0).toISOString(),
+                dayStartedAt: new Date(0).toISOString(),
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+            variables: {},
+            hookCooldowns: {},
+            shadowedHooks: [],
+        } satisfies RuntimeState;
+        const runtime = {
+            ...fakeRuntime(),
+            getState: jest.fn(() => runtimeState),
+            incrementAttention: jest.fn((amount: number) => {
+                runtimeState.attention += amount;
+            }),
+        } as unknown as ResidentRuntime;
+        const runtimeFactory = jest.fn((options: ConstructorParameters<typeof ResidentRuntime>[0]) => {
+            void options;
+            return runtime;
+        });
+        const host = new ControllerHost(
+            { ...config(), memory: { dir: memoryDir, qmdBin: '' } },
+            { ...dependencies(gateway), runtimeFactory },
+        );
+
+        await host.start();
+
+        const runtimeOptions = runtimeFactory.mock.calls[0]?.[0];
+        expect(runtimeOptions?.cityExchange).toBeDefined();
+        await runtimeOptions?.cityExchange?.exchangeApForGp('res:pip', {
+            idempotencyKey: 'host-city-exchange',
+            gpAmount: 25,
+            apAmount: 50,
+            cityUserId: 'resident:self',
+            sourceType: 'resident',
+            sourceId: 'test',
+        });
+        expect(gateway.burnResidentGold).toHaveBeenCalledWith('res:pip', 25);
+
+        await host.stop();
+    });
+
+    it('uses a fresh retryable city gateway for GP inventory calls when the live host owns the gateway', async () => {
+        const gateway = new FakeGateway();
+        const firstCityGateway = new FakeGateway();
+        const secondCityGateway = new FakeGateway();
+        const cityGateways = [firstCityGateway, secondCityGateway];
+        firstCityGateway.inspectResidentGold.mockRejectedValue(new Error('Gateway socket is not open'));
+        secondCityGateway.inspectResidentGold.mockResolvedValue({ resident: 'res:pip', itemId: 995, amount: 321 });
+        const host = new ControllerHost(config(), {
+            ...dependencies(gateway),
+            cityGatewayFactory: jest.fn(() => cityGateways.shift() as unknown as CityInventoryGateway),
+        });
+
+        await host.start();
+
+        await expect(host.inspectResidentGold('res:pip')).resolves.toEqual({ resident: 'res:pip', itemId: 995, amount: 321 });
+
+        expect(firstCityGateway.connect).toHaveBeenCalledTimes(1);
+        expect(firstCityGateway.hello).toHaveBeenCalledTimes(1);
+        expect(firstCityGateway.close).toHaveBeenCalledTimes(1);
+        expect(secondCityGateway.connect).toHaveBeenCalledTimes(1);
+        expect(secondCityGateway.hello).toHaveBeenCalledTimes(1);
+        expect(secondCityGateway.close).toHaveBeenCalledTimes(1);
+
+        await host.stop();
+    });
+
     it('normalizes resident-prefixed ids when enqueuing external perception events', async () => {
         const gateway = new FakeGateway();
         const runtime = fakeRuntime();
@@ -200,6 +322,188 @@ describe('ControllerHost reconcile lifecycle', () => {
         });
         expect(gateway.connectResident).toHaveBeenCalledWith({ name: 'res:newcomer', observe: true, control: true, onDisconnect: 'idle' });
         expect(runtimeCount(host)).toBe(1);
+
+        await host.stop();
+    });
+
+    it('can run only the configured cohort when soul discovery is disabled', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => ['res:newcomer']),
+            load: jest.fn((name: string) => soul(name)),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const host = new ControllerHost(
+            {
+                ...config(),
+                residents: ['res:pip'],
+                souls: { ...config().souls, discoverResidents: false },
+            },
+            deps,
+        );
+
+        await host.start();
+
+        expect(gateway.createResident).toHaveBeenCalledTimes(1);
+        expect(gateway.createResident).toHaveBeenCalledWith({
+            name: 'res:pip',
+            spawnPosition: undefined,
+            initialInventory: undefined,
+            initialEquipment: undefined,
+        });
+        expect(gateway.connectResident).toHaveBeenCalledWith({ name: 'res:pip', observe: true, control: true, onDisconnect: 'idle' });
+        expect(gateway.createResident).not.toHaveBeenCalledWith(expect.objectContaining({ name: 'res:newcomer' }));
+        expect(runtimeCount(host)).toBe(1);
+
+        await host.stop();
+    });
+
+    it('keeps a city-born resident desired across reconcile even with soul discovery disabled', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => []),
+            load: jest.fn((name: string) => soul(name)),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-mem-'));
+        const host = new ControllerHost(
+            {
+                ...config(),
+                residents: ['res:pip'],
+                souls: { dir: soulsDir, discoverResidents: false },
+                memory: { dir: memoryDir, qmdBin: '' },
+            },
+            deps,
+        );
+
+        await host.start();
+        expect(runtimeCount(host)).toBe(1);
+
+        await host.birthResidentFromCity({
+            proposalId: 'proposal-1',
+            residentName: 'res:born',
+            soulMarkdown: '---\nname: res:born\narchetype: mentor\n---\nborn soul body',
+            fundedAttention: 100,
+        });
+        expect(runtimeCount(host)).toBe(2);
+
+        // A reconcile rebuilds the desired set from the configured cohort (and
+        // soul discovery when enabled). A human-funded, city-born resident is in
+        // neither, so before the cityBorn fix it was torn down as
+        // "no_longer_desired" and orphaned. It must survive reconcile.
+        await host.reconcile();
+        expect(runtimeCount(host)).toBe(2);
+
+        await host.stop();
+    });
+
+    it('re-manages a city-born resident after a controller restart (persisted born manifest)', async () => {
+        const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-mem-'));
+        const cfg = {
+            ...config(),
+            residents: ['res:pip'],
+            souls: { dir: soulsDir, discoverResidents: false },
+            memory: { dir: memoryDir, qmdBin: '' },
+        };
+
+        // First controller process: birth a resident, then shut down.
+        const host1 = new ControllerHost(cfg, dependencies(new FakeGateway()));
+        await host1.start();
+        await host1.birthResidentFromCity({
+            proposalId: 'proposal-1',
+            residentName: 'res:born',
+            soulMarkdown: '---\nname: res:born\narchetype: mentor\n---\nborn soul body',
+            fundedAttention: 100,
+        });
+        await host1.stop();
+
+        // Second controller process (restart) sharing the same memory dir: the
+        // born resident must be restored from the persisted manifest and managed
+        // again, even though it is absent from config.residents and discovery.
+        const host2 = new ControllerHost(cfg, dependencies(new FakeGateway()));
+        await host2.start();
+        expect(residentNames(host2)).toContain('res:born');
+
+        await host2.stop();
+    });
+
+    it('isolates a failing resident during reconcile so the rest of the cohort still connects', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        deps.soulLoader = {
+            listResidentNames: jest.fn(() => []),
+            load: jest.fn((name: string) => {
+                if (name === 'res:bad') {
+                    throw new Error('missing soul for res:bad');
+                }
+                return soul(name);
+            }),
+        } as unknown as ControllerHostOptions['soulLoader'];
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-resil-mem-'));
+        // res:bad is iterated first (insertion order); before the per-resident
+        // try/catch it would throw and abort the whole reconcile, leaving res:good
+        // unmanaged. With isolation, res:good still connects.
+        const host = new ControllerHost(
+            {
+                ...config(),
+                residents: ['res:bad', 'res:good'],
+                souls: { ...config().souls, discoverResidents: false },
+                memory: { dir: memoryDir, qmdBin: '' },
+            },
+            deps,
+        );
+
+        await host.start();
+
+        expect(residentNames(host)).toContain('res:good');
+        expect(residentNames(host)).not.toContain('res:bad');
+
+        await host.stop();
+    });
+
+    it('prunes a city-born resident on death so it stays dead (no resurrection)', async () => {
+        const gateway = new FakeGateway();
+        const deps = dependencies(gateway);
+        const onDeathByName: Record<string, (name: string, cause: string) => void> = {};
+        deps.runtimeFactory = jest.fn((opts: { soul: { frontmatter: { name: string } }; onDeath?: (n: string, c: string) => void }) => {
+            if (opts.onDeath) {
+                onDeathByName[opts.soul.frontmatter.name] = opts.onDeath;
+            }
+            return fakeRuntime();
+        }) as unknown as ControllerHostOptions['runtimeFactory'];
+        const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-death-souls-'));
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-death-mem-'));
+        const host = new ControllerHost(
+            {
+                ...config(),
+                residents: ['res:pip'],
+                souls: { dir: soulsDir, discoverResidents: false },
+                memory: { dir: memoryDir, qmdBin: '' },
+            },
+            deps,
+        );
+
+        await host.start();
+        await host.birthResidentFromCity({
+            proposalId: 'p1',
+            residentName: 'res:born',
+            soulMarkdown: '---\nname: res:born\narchetype: mentor\n---\nborn soul body',
+            fundedAttention: 100,
+        });
+        expect(residentNames(host)).toContain('res:born');
+        expect(new BornResidentStore(memoryDir).list()).toContain('res:born');
+
+        // The runtime observes the born resident's death and fires onDeath.
+        onDeathByName['res:born']?.('res:born', 'attention_exhausted');
+
+        // Pruned from the persisted manifest, and a reconcile must NOT resurrect
+        // it (without the prune, refreshDesiredResidents would re-add it and the
+        // resident would respawn — death would never stick).
+        expect(new BornResidentStore(memoryDir).list()).not.toContain('res:born');
+        await host.reconcile();
+        expect(residentNames(host)).not.toContain('res:born');
 
         await host.stop();
     });
@@ -640,7 +944,7 @@ function config(): ControllerConfig {
         residents: ['res:pip'],
         gateway: { url: 'ws://controller-host.test', controllerId: 'test-controller' },
         inference: { maxConcurrent: 1 },
-        souls: { dir: '/tmp/souls' },
+        souls: { dir: '/tmp/souls', discoverResidents: true },
         memory: { dir: '/tmp/memory', qmdBin: '' },
         logging: { dir: '/tmp/logs', fullPerceptions: false },
         knowledge: { dir: '/tmp/knowledge', enableSuggestions: true, emitStdout: false, storageMode: 'ephemeral' },
@@ -663,6 +967,10 @@ function soul(name: string): Soul {
 
 function runtimeCount(host: ControllerHost): number {
     return (host as unknown as { runtimes: Map<string, unknown> }).runtimes.size;
+}
+
+function residentNames(host: ControllerHost): string[] {
+    return [...(host as unknown as { runtimes: Map<string, unknown> }).runtimes.keys()];
 }
 
 async function flushPromises(): Promise<void> {

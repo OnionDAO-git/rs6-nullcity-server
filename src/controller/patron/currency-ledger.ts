@@ -1,12 +1,13 @@
 import { z } from 'zod';
 
 /**
- * Canonical patron-currency name. From OnionDAO Notion (`Narrative V2` +
- * `Onion DAO 2026 Guide`): "Shards — the embassy's official unit of
- * attention". Non-transferable between humans; stored on the badge as
- * ESP-NOW packets in the IRL layer, mirrored here for in-game effects.
+ * Canonical patron-currency name. "AP" (Attention Points) — the Null City
+ * unit of human attention that sustains residents.
+ * Previously called "Shards" in early OnionDAO docs; legacy persistence files
+ * (patron-currency.json) still use that schema and remain readable without
+ * migration. Only public/operator-facing copy and generated messages now say AP.
  */
-export const CURRENCY_NAME = 'Shards';
+export const CURRENCY_NAME = 'AP';
 
 /** A single mutation on a human's Shard balance. */
 export interface CurrencyLedgerEntry {
@@ -58,13 +59,12 @@ export class InsufficientBalanceError extends Error {
 }
 
 /**
- * In-memory ledger of Shard balances + history per human.
+ * In-memory ledger of AP (Attention Point) balances + history per human.
  *
- * Deliberately does NOT expose a `transfer()` method: per OnionDAO Notion
- * canonical, Shards are bound to the badge holder. Inter-human flow happens
- * only via gateway-mediated `mercy_infusion` / `birth_sponsorship` events,
- * which debit one human and credit a resident's attention/standing — never
- * another human's balance.
+ * Deliberately does NOT expose a `transfer()` method: AP is bound to the
+ * badge holder. Inter-human flow happens only via gateway-mediated
+ * `mercy_infusion` / `birth_sponsorship` events, which debit one human and
+ * credit a resident's attention/standing — never another human's balance.
  *
  * Persistence (file write / atomic rename) is layered in {@link J-α-3}; this
  * file is the in-memory substrate only.

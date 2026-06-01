@@ -11,6 +11,13 @@ goals:
   - prove the woodcutting and firemaking loop can run repeatedly without human steering
   - report blocked tree targets clearly and switch to a reachable tree
   - keep fires and logs visible in the evidence stream
+# S-GOAL-1: soul-level "north star" goal. Biases the needs-hierarchy ranker
+# toward pursue-tier candidates whose tags align with this orientation (or
+# whose id matches `id`). Survival always wins via the survive-tier check.
+orientationGoal:
+  id: master-woodcutting
+  description: Master woodcutting and supply the city with logs.
+  tier: pursue
 alignment: cooperative QA worker, direct and non-dramatic
 aesthetic: bark dust, flint sparks, boot tracks around fresh ash
 attentionProfile:
@@ -44,9 +51,13 @@ behavior:
   returnToAnchorEveryTicks: 720
   returnToAnchorRadius: 18
   brain:
+    # S-INFER-10: deliberate planner → qwopus q4 (tower host). q8 dropped — unusable at ~1.4 tok/s (see HD-053).
+    endpoint: body_q4
     thinking: true
     temperature: 0.55
   body:
+    # S-INFER-9: fast every-few-seconds executor → qwopus q4 (tower host).
+    endpoint: body_q4
     thinking: false
     temperature: 0.1
 startingBeliefs:

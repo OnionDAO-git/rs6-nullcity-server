@@ -987,7 +987,7 @@ describe('starterFishingCookingAction', () => {
         });
     });
 
-    it('approaches the range when the castle entrance is already open but the range is distant', () => {
+    it('continues through the castle entrance when it is already open but the range is distant', () => {
         const range = { objectId: COOKING_RANGE, position: { x: 3212, y: 3215, level: 0 } };
         const kitchenDoor = { objectId: KITCHEN_DOOR, position: { x: 3208, y: 3211, level: 0 } };
         const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
@@ -1000,9 +1000,9 @@ describe('starterFishingCookingAction', () => {
 
         expect(action).toEqual({
             kind: 'move_to',
-            target: range.position,
-            range: 1,
-            cause: 'starter_fishing_find_range',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
         });
     });
 
@@ -1020,6 +1020,65 @@ describe('starterFishingCookingAction', () => {
             target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
             range: 0,
             cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('continues to the castle entrance from the south even when the entrance is visibly open', () => {
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3208, y: 3208, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [openCastleDoor] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+    });
+
+    it('does not retry the direct Lumbridge range fallback while that target is cooling down', () => {
+        const openCastleDoor = { objectId: OPEN_CASTLE_ENTRANCE_DOOR, position: { x: 3216, y: 3218, level: 0 } };
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3208, y: 3208, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+                nearby: { objects: [openCastleDoor] },
+            }),
+            { 'target:3208,3213,0': 500 },
+            600,
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
+            range: 0,
+            cause: 'starter_fishing_reach_castle_entrance',
+        });
+        expect(action).not.toEqual(
+            expect.objectContaining({
+                kind: 'move_to',
+                target: LUMBRIDGE_CASTLE_RANGE,
+                cause: 'starter_fishing_find_range',
+            }),
+        );
+    });
+
+    it('reports missing heat instead of forcing a cooled-down fallback range outside the entry route', () => {
+        const action = starterFishingCookingAction(
+            perception({
+                resident: { position: { x: 3180, y: 3180, level: 0 }, inventory: [item(RAW_SHRIMP)] },
+            }),
+            { 'target:3208,3213,0': 500 },
+            600,
+        );
+
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I have raw fish now. I need a fire or range to cook it.',
+            cause: 'starter_fishing_missing_heat',
         });
     });
 
@@ -1504,6 +1563,103 @@ describe('lowHealthRecoveryAction', () => {
         });
     });
 
+    it('makes a cooking fire near passive Lumbridge guards instead of waiting for natural healing', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp'), item(590, 'rs:tinderbox'), item(1511, 'rs:logs')],
+                    inCombat: false,
+                },
+                nearby: {
+                    npcs: [
+                        {
+                            id: 'npc:lumbridge-guard',
+                            kind: 'npc',
+                            key: 'rs:guard',
+                            name: 'Guard',
+                            combatLevel: 21,
+                            hpFraction: 1,
+                            position: { x: 3224, y: 3218, level: 0 },
+                        },
+                    ],
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 1,
+            targetSlot: 2,
+            cause: 'low_health_cook_food',
+        });
+    });
+
+    it('retreats from a passive-looking bystander that just hit the resident', () => {
+        const guard: BodyActor = {
+            id: 'npc:lumbridge-guard',
+            kind: 'npc',
+            key: 'rs:guard',
+            name: 'Guard',
+            combatLevel: 21,
+            hpFraction: 1,
+            position: { x: 3255, y: 3230, level: 0 },
+        };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp'), item(590, 'rs:tinderbox'), item(1511, 'rs:logs')],
+                    inCombat: true,
+                    combatTarget: guard,
+                },
+                nearby: { npcs: [guard] },
+                events: [{ kind: 'hit_taken', from: guard }],
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('does not treat anonymous hit metadata as proof a passive actor is attacking', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(317, 'rs:raw_shrimp'), item(590, 'rs:tinderbox'), item(1511, 'rs:logs')],
+                    inCombat: false,
+                },
+                nearby: {
+                    npcs: [
+                        {
+                            id: '',
+                            kind: 'npc',
+                            combatLevel: 21,
+                            hpFraction: 1,
+                            position: { x: 3224, y: 3218, level: 0 },
+                        },
+                    ],
+                },
+                events: [{ kind: 'hit_taken', from: {} }],
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 1,
+            targetSlot: 2,
+            cause: 'low_health_cook_food',
+        });
+    });
+
     it('retreats instead of taking a distant cooking route when hurt and threatened', () => {
         const range = { objectId: FIRE_OBJECT_ID, position: { x: 3212, y: 3215, level: 0 } };
         const action = lowHealthRecoveryAction(
@@ -1517,6 +1673,31 @@ describe('lowHealthRecoveryAction', () => {
                 },
                 nearby: {
                     objects: [range],
+                    npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }],
+                },
+            }),
+            'res:qa-guardian',
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 6,
+            cause: 'low_health_seek_safe_recovery',
+        });
+    });
+
+    it('retreats instead of taking the fishing route when hurt, threatened, and carrying a net', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    id: 'resident:res:qa-guardian',
+                    position: { x: 3253, y: 3230, level: 0 },
+                    hp: { current: 1, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+                nearby: {
                     npcs: [{ id: 'npc:goblin', kind: 'npc', name: 'Goblin', position: { x: 3255, y: 3230, level: 0 } }],
                 },
             }),
@@ -1555,6 +1736,56 @@ describe('lowHealthRecoveryAction', () => {
             kind: 'interact',
             target: fishingSpot,
             option: 'net',
+            cause: 'low_health_fish_food',
+        });
+    });
+
+    it('routes toward the Lumbridge fishing spot when hurt, carrying a net, and no food source is visible', () => {
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: 7,
+            cause: 'low_health_fish_food',
+        });
+    });
+
+    it('routes toward starter fishing when hurt near passive Lumbridge NPCs and carrying a net', () => {
+        const man: BodyActor = {
+            id: 'npc:man',
+            kind: 'npc',
+            key: 'rs:man',
+            name: 'Man',
+            position: { x: 3226, y: 3218, level: 0 },
+            hpFraction: 0.7,
+            combatLevel: 2,
+        };
+        const action = lowHealthRecoveryAction(
+            perception({
+                resident: {
+                    position: { x: 3222, y: 3218, level: 0 },
+                    hp: { current: 3, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                    inCombat: false,
+                },
+                nearby: { npcs: [man] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: 7,
             cause: 'low_health_fish_food',
         });
     });
@@ -1747,6 +1978,23 @@ describe('prayerTrainingAction', () => {
         });
     });
 
+    it('skips a failed prayer waypoint and tries the next fallback waypoint', () => {
+        const action = prayerTrainingAction(
+            perception({
+                tick: 20,
+                resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 } },
+                nearby: { npcs: [] },
+            }),
+            { 'target:3222,3218,0': 19 },
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3249, y: 3238, level: 0 },
+            range: 6,
+            cause: 'prayer_seek_safe_bone_source',
+        });
+    });
+
     it('returns undefined when at the waypoint with no safe source visible (do not flap)', () => {
         const action = prayerTrainingAction(
             perception({
@@ -1834,6 +2082,88 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({ kind: 'attack', target: chicken, cause: 'combat_attack_safe_target' });
     });
 
+    it('attacks a visible Lumbridge man fallback instead of route-looping forever', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const action = combatTrainingAction(
+            perception({
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [item(315, COOKED_SHRIMP_KEY)],
+                },
+                nearby: { npcs: [man] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'attack', target: man, cause: 'combat_attack_safe_target' });
+    });
+
+    it('does not start Lumbridge man combat when healthy but carrying no food or food tool', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [man] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'say',
+            text: 'I need food or a way to get food before I train combat safely.',
+            cause: 'combat_need_food_before_training',
+        });
+    });
+
+    it('routes toward starter fishing before combat when healthy, foodless, and carrying a net', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const action = combatTrainingAction(
+            perception({
+                resident: {
+                    position: { x: 3220, y: 3220, level: 0 },
+                    hp: { current: 10, max: 10 },
+                    inventory: [item(303, 'rs:small_fishing_net')],
+                },
+                nearby: { npcs: [man] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3241, y: 3242, level: 0 },
+            range: 7,
+            cause: 'combat_resupply_food',
+        });
+    });
+
+    it('still attacks a visible safe NPC standing on a cooled-down combat waypoint', () => {
+        const goblin = combatNpc('Goblin', 3249, 3238);
+        goblin.key = 'rs:goblin';
+        const action = combatTrainingAction(
+            perception({
+                tick: 20,
+                resident: { position: { x: 3248, y: 3238, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [goblin] },
+            }),
+            undefined,
+            20,
+            { 'target:3249,3238,0': 19 },
+        );
+        expect(action).toEqual({ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' });
+    });
+
+    it('prefers a visible goblin over a Lumbridge man fallback', () => {
+        const man = combatNpc('Man', 3221, 3220);
+        man.key = 'rs:man';
+        const goblin = combatNpc('Goblin', 3222, 3220);
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3220, y: 3220, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [man, goblin] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'attack', target: goblin, cause: 'combat_attack_safe_target' });
+    });
+
     it('equips useful carried gear before starting combat', () => {
         const chicken = combatNpc('Chicken', 3220, 3220);
         const action = combatTrainingAction(
@@ -1875,7 +2205,7 @@ describe('combatTrainingAction', () => {
         });
     });
 
-    it('seeks a fixed waypoint when no safe target is in sight and resident is far away', () => {
+    it('seeks the nearest starter combat area when no safe combat target is in sight', () => {
         const action = combatTrainingAction(
             perception({
                 resident: { position: { x: 3000, y: 3000, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
@@ -1885,7 +2215,104 @@ describe('combatTrainingAction', () => {
         expect(action).toEqual({
             kind: 'move_to',
             target: { x: 3222, y: 3218, level: 0 },
-            range: 6,
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('seeks the combat route entry from the RuneScape Guide area when no targets are visible', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3227, y: 3238, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('continues into the combat waypoint when loose prayer range would still hide targets', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3216, y: 3212, level: 0 }, hp: { current: 6, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('advances to the next combat waypoint when the current waypoint has no safe targets', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3222, y: 3218, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3230, y: 3226, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('uses an intermediate route step instead of a far goblin-field jump from the courtyard', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3225, y: 3223, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+            undefined,
+            20,
+            { 'target:3222,3218,0': 19 },
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3230, y: 3226, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('continues forward through combat route waypoints instead of backtracking after an intermediate step', () => {
+        const action = combatTrainingAction(
+            perception({
+                resident: { position: { x: 3230, y: 3226, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3238, y: 3230, level: 0 },
+            range: 1,
+            cause: 'combat_seek_safe_target',
+        });
+    });
+
+    it('does not replay a combat waypoint that recently timed out', () => {
+        const action = combatTrainingAction(
+            perception({
+                tick: 20,
+                resident: { position: { x: 3234, y: 3236, level: 0 }, hp: { current: 10, max: 10 }, inventory: [] },
+                nearby: { npcs: [] },
+            }),
+            undefined,
+            20,
+            { 'target:3249,3238,0': 19 },
+        );
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: { x: 3222, y: 3218, level: 0 },
+            range: 1,
             cause: 'combat_seek_safe_target',
         });
     });
@@ -1963,6 +2390,19 @@ describe('explorationAction', () => {
             }),
         );
         expect(action).toEqual({ kind: 'interact', target: guide, option: 'talk-to', cause: 'explore_talk_to_npc' });
+    });
+
+    it('skips defeated NPCs while choosing exploration conversation targets', () => {
+        const defeatedMan = npc('Man', 100, 100);
+        defeatedMan.hpFraction = 0;
+        const livingGuide = npc('RuneScape Guide', 105, 100);
+        const action = explorationAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { npcs: [defeatedMan, livingGuide] },
+            }),
+        );
+        expect(action).toEqual({ kind: 'move_to', target: livingGuide.position, range: 1, cause: 'explore_talk_to_npc' });
     });
 
     it('moves toward a far-away NPC instead of talking', () => {

@@ -8,6 +8,30 @@ See [`docs/changelog-workflow.md`](docs/changelog-workflow.md) for the authoring
 
 ## [Unreleased]
 
+## [2026-06-01] — chicago-demo-day-readiness
+
+Chicago demo-day readiness release. This promotes the weekend `agents/wip` line into `nullcity`: the AP/GP game loop, Soul birth and goal contracts, NCRI sale/redeem substrate, Storyteller foundations, resident observability, memory proof, and evidence-backed capability QA.
+
+### Added
+
+- Human operator guide at `HUMANS.md` plus runtime stewardship notes for starting the game, controller, dashboard, public routes, City API, and active resident cohort.
+- AP/GP economy substrate: Attention Points sustain residents, RuneScape GP remains real in-game coin, and City API paths support AP grants, AP/GP exchange records, balances, and economy heartbeat checks.
+- Soul proposal and birth flow: funded Souls can be born through the City API, receive a trackable goal contract, persist across controller restarts, and keep their Library/goal evidence.
+- NCRI lifecycle: admins can seed, approve, price, sell, redeem, and track printable Null City RuneScape Items; resident sellers receive attention when humans buy their NCRIs.
+- Storyteller substrate: digest builders, dispatch verification, model-client fallback behavior, public-safe Storyteller queues, and projector-facing story artifacts for the dashboard.
+- Resident memory substrate: per-resident qmd-compatible facts, Brain-written durable memories, prompt-visible memory blocks, and named-resident write/recall soaks.
+
+### Changed
+
+- Runtime cohort management now supports a small controlled resident set via `souls.discoverResidents: false`, so local demos can run roughly ten residents instead of every starter soul.
+- Inference policy now routes live residents to the serving `qwopus3.5-27b-v3` q4 endpoint; qwen and q8 routes are documented as non-serving/too slow until Dev confirms otherwise.
+- Capability QA expanded from simple smoke tests into evidence-backed resident tasks for combat, gear, trade, AP/GP behavior, low-health recovery, memory recall, stuck recovery, and normal-life audits.
+
+### Fixed
+
+- City-born residents no longer disappear during reconcile, lose their goal contract on restart, or resurrect after death without being pruned from the born-resident manifest.
+- Public/operator naming no longer exposes the confusing resident display name `Agent`; the canonical `res:agent` resident now appears as `The Steward`.
+
 ## [2026-05-26] — pre-chicago-demo-2026-05-26
 
 Pre-Chicago demo snapshot for the OnionDAO team. This release turns the resident prototype into a demoable Null City surface: live residents, patron Shards, public story pages, Library portraits, graveyard cards, dashboard status, and inference canaries.
@@ -194,6 +218,7 @@ The pre-launch resident capability update. Pulled 183 commits, range `7e3012d7..
 
 For the full per-commit ledger of the 183 squashed commits, run `git log --oneline 7e3012d7..d298e480`.
 
-[Unreleased]: https://github.com/OnionDAO-git/rs6-nullcity-server/compare/pre-chicago-demo-2026-05-26...HEAD
+[Unreleased]: https://github.com/OnionDAO-git/rs6-nullcity-server/compare/chicago-demo-day-readiness-2026-06-01...HEAD
+[2026-06-01]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/chicago-demo-day-readiness-2026-06-01
 [2026-05-26]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/pre-chicago-demo-2026-05-26
 [2026-05-23]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/2026-05-23

@@ -79,6 +79,11 @@ import {
     isPickupOnCooldown,
     isOwnedByAnotherActor,
     isStaleSelfOwnedLog,
+    COIN_ITEM_IDS,
+    LUMBRIDGE_CASTLE_RANGE as BODY_LUMBRIDGE_CASTLE_RANGE,
+    LUMBRIDGE_STARTER_FISHING_SPOTS as BODY_LUMBRIDGE_STARTER_FISHING_SPOTS,
+    STARTER_FISHING_ROUTE_MAX_DISTANCE as BODY_STARTER_FISHING_ROUTE_MAX_DISTANCE,
+    STARTER_FISHING_SPOT_DISCOVERY_RANGE as BODY_STARTER_FISHING_SPOT_DISCOVERY_RANGE,
 } from '../spark/runescape-body-routines';
 export { distance };
 import {
@@ -124,10 +129,15 @@ import {
     isStandaloneFiremakingGoal,
     isFollowGoal,
     factionLandmarkWorkGoal,
-    benchmarkGoalForTask,
-    parseBrainCompletion,
+    parseBrainCompletionDetailed,
     goalId,
+    goalPoolForBenchmark,
+    buildResidentNeedsContext,
+    selectCandidateGoals,
+    benchmarkGoalForTask,
+    gpPickupGoal,
 } from '../spark/runescape-brain-planner';
+import { currentTier } from '../spark/needs-hierarchy';
 import { pickPhrase } from '../soul/phrasebook';
 import {
     actorName,
@@ -152,6 +162,11 @@ export const REPEAT_ACTION_BACKOFF_TICKS = 30;
 export const ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE = 6;
 export const MOVE_COMMIT_TICKS = 24;
 export const MOVE_STUCK_STATIONARY_OBSERVATIONS = 2;
+export const SOCIAL_KEEPALIVE_EVERY_TICKS = 36;
+export const TRADE_KEEPALIVE_EVERY_TICKS = 60;
+export const AGENT_KEEPALIVE_EVERY_TICKS = 60;
+export const HERO_KEEPALIVE_EVERY_TICKS = 60;
+export const TRADE_STARTER_OFFER_COOLDOWN_TICKS = 120;
 const COOKS_ASSISTANT_QUEST_ID = 'rs:cooks_assistant';
 const COOKS_ASSISTANT_DIALOGUE_SEQUENCE: AgentAction[] = [
     { kind: 'dialogue_continue', cause: 'cooks_assistant_dialogue_step' },
@@ -197,6 +212,7 @@ export interface HelperContext {
     endpointFor(profile?: any): string;
     temperatureFor(profile: any, fallback: number): number;
     timeoutFor(profile: any, fallback?: number): number | undefined;
+    maxTokensFor(profile: any, fallback?: number): number | undefined;
     modelFor(profile?: any): string | undefined;
     complete(thinkId: number, request: any): Promise<any>;
     cancelledResult(thinkId: number, perception?: HybridPerception): any;
@@ -266,7 +282,7 @@ export function tradeReaction(ctx: HelperContext, perception: HybridPerception):
 
 export function currentFollowTarget(ctx: HelperContext): { name?: string; id?: string; kind?: string } | undefined {
     const target = ctx.cognition().followTarget;
-    if (target?.paused) {
+    if (target?.paused && (target.name || target.id || ctx.cognition().manualPauseSinceTick !== undefined)) {
         return undefined;
     }
     if (target?.name || target?.id) {
@@ -318,12 +334,13 @@ export function combatReaction(ctx: HelperContext, perception: HybridPerception)
     }
 
     const visibleAggressors = getVisibleAggressors(perception);
+    const recentAttacker = latestCombatAttacker(perception);
     let target: Actor | undefined;
     if (visibleAggressors.length > 0) {
         const here = perception.resident?.position;
         target = here ? selectPreferredAggressor(visibleAggressors, here) : visibleAggressors[0];
     } else {
-        target = latestCombatAttacker(perception) || perception.resident?.combatTarget || undefined;
+        target = recentAttacker || perception.resident?.combatTarget || undefined;
     }
 
     if (!target) {
@@ -331,6 +348,12 @@ export function combatReaction(ctx: HelperContext, perception: HybridPerception)
     }
 
     const foodSlot = firstFoodSlot(perception.resident?.inventory || []);
+    const onlyStaleCombatTarget =
+        !inCombat && visibleAggressors.length === 0 && !recentAttacker && target === perception.resident?.combatTarget;
+    if (onlyStaleCombatTarget && isLowHealth(perception) && foodSlot === undefined) {
+        return undefined;
+    }
+
     let action: AgentAction;
     if (target.kind === 'player') {
         action = {
@@ -349,6 +372,8 @@ export function combatReaction(ctx: HelperContext, perception: HybridPerception)
             target.combatLevel > perception.resident.combatLevel + 5)
     ) {
         action = { kind: 'move_to', target: fleeTarget(perception), cause: 'combat_retreat' };
+    } else if (sameCombatActor(target, perception.resident?.combatTarget ?? undefined) && inCombat) {
+        return { actions: [], cause: 'combat_hold' };
     } else {
         action = { kind: 'attack', target, cause: 'combat_retaliate' };
     }
@@ -430,6 +455,7 @@ export function lowHealthRecoveryAction(
         ctx.options.state.resident,
         hasCarriedFood ? undefined : ctx.cognition().pickupCooldowns,
         ctx.options.state.tick,
+        ctx.cognition().targetFailureCooldowns,
     );
     if (action) {
         if (ctx.isRepeatedAction(action)) {
@@ -498,7 +524,11 @@ export function lowHealthHoldPositionAction(
             interval,
         })
     ) {
-        return { actions: [], cause, nooped: true };
+        return {
+            actions: [{ kind: 'noop', cause: 'low_health_heal_wait' }],
+            cause,
+            nooped: false,
+        };
     }
 
     // Consume the presence beacon slot to prevent unrelated goal-sharing while stranded.
@@ -510,7 +540,11 @@ export function lowHealthHoldPositionAction(
     const speechDedup = interval * 10;
     const lastSpeech = cognition.lastLowHealthSpeechTick;
     if (lastSpeech !== undefined && tick - lastSpeech < speechDedup) {
-        return { actions: [], cause, nooped: true };
+        return {
+            actions: [{ kind: 'noop', cause: 'low_health_heal_wait' }],
+            cause: 'low_health_heal_wait',
+            nooped: false,
+        };
     }
 
     cognition.lastLowHealthSpeechTick = tick;
@@ -590,6 +624,174 @@ export function presenceNearbySummary(perception: HybridPerception): string | un
         countPhrase(playerCount, 'player'),
     ].filter((part): part is string => Boolean(part));
     return joinSpeechList(parts.slice(0, 3));
+}
+
+export function socialKeepaliveAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+    visibility: { anchor?: Pos; returnDue: boolean },
+): AgentAction | undefined {
+    if (ctx.commandPrefix() !== 'social' || visibility.returnDue) {
+        return undefined;
+    }
+    if ((perception.nearby?.players || []).length > 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    const last = cognition.lastSocialKeepaliveTick;
+    if (typeof last === 'number' && tick - last < SOCIAL_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    cognition.lastSocialKeepaliveTick = tick;
+    return {
+        kind: 'say',
+        text: cleanSpeech('No tester visible. Say "social help" for follow, status, wait, stop, trade, or where I am.'),
+        cause: 'social_keepalive',
+    };
+}
+
+export function agentKeepaliveAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+    visibility: { anchor?: Pos; returnDue: boolean },
+): AgentAction | undefined {
+    if (ctx.commandPrefix() !== 'agent' || visibility.returnDue || typeof ctx.options.state.stuckSince !== 'number') {
+        return undefined;
+    }
+    if (ctx.cognition().activeMove) {
+        return undefined;
+    }
+    if ((perception.nearby?.players || []).length > 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    const last = cognition.lastAgentKeepaliveTick;
+    if (typeof last !== 'number') {
+        cognition.lastAgentKeepaliveTick = tick;
+        return undefined;
+    }
+    if (typeof last === 'number' && tick - last < AGENT_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    cognition.lastAgentKeepaliveTick = tick;
+    return {
+        kind: 'say',
+        text: cleanSpeech('Agent online. No tester visible. Say "agent status" or "agent help" to check my goal, location, and next step.'),
+        cause: 'agent_keepalive',
+    };
+}
+
+const HERO_KEEPALIVE_EXCLUDED_PREFIXES = new Set(['agent', 'social', 'trade']);
+
+export function heroKeepaliveAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+    visibility: { anchor?: Pos; returnDue: boolean },
+): AgentAction | undefined {
+    if (
+        HERO_KEEPALIVE_EXCLUDED_PREFIXES.has(ctx.commandPrefix()) ||
+        visibility.returnDue ||
+        typeof ctx.options.state.stuckSince !== 'number'
+    ) {
+        return undefined;
+    }
+    if (ctx.cognition().activeMove) {
+        return undefined;
+    }
+    if ((perception.nearby?.players || []).length > 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    const last = cognition.lastHeroKeepaliveTick;
+    if (typeof last !== 'number') {
+        cognition.lastHeroKeepaliveTick = tick;
+        return undefined;
+    }
+    if (tick - last < HERO_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    cognition.lastHeroKeepaliveTick = tick;
+    const display = ctx.options.soul.frontmatter.display || ctx.commandPrefix();
+    return {
+        kind: 'say',
+        text: cleanSpeech(`${display} here. No observers visible. Here if you need me.`),
+        cause: 'hero_keepalive',
+    };
+}
+
+export function tradeStarterAction(ctx: HelperContext, perception: HybridPerception): { action: AgentAction; cause: string } | undefined {
+    if (ctx.commandPrefix() !== 'trade') {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    if (cognition.manualPauseSinceTick !== undefined || cognition.waitResumeTick !== undefined) {
+        return undefined;
+    }
+    if (perception.resident?.activeTrade || perception.resident?.inCombat || isLowHealth(perception)) {
+        return undefined;
+    }
+    if (safeTradeOfferSlot(perception.resident?.inventory || []) === undefined) {
+        return undefined;
+    }
+
+    const tick = ctx.options.state.tick;
+    const targetState = currentFollowTarget(ctx);
+    if (!targetState?.name && !targetState?.id) {
+        return undefined;
+    }
+
+    const target = (perception.nearby?.players || []).find(player => {
+        return (targetState.id && player.id === targetState.id) || (targetState.name && actorMatchesName(player, targetState.name));
+    });
+    if (target) {
+        const cooldownKey = `trade-starter-offer:${actorName(target).toLowerCase()}`;
+        const cooldowns = (ctx.options.state.hookCooldowns ||= {});
+        if (tick < (cooldowns[cooldownKey] || 0)) {
+            return undefined;
+        }
+
+        const action = tradeRequestOrApproach(perception, target, 'trade_starter_offer');
+        if (!action || ctx.isRepeatedAction(action)) {
+            return undefined;
+        }
+        if (action.kind === 'trade_request') {
+            cooldowns[cooldownKey] = tick + TRADE_STARTER_OFFER_COOLDOWN_TICKS;
+        }
+
+        ctx.rememberBodyAction(action);
+        const here = perception.resident?.position;
+        if (action.kind === 'move_to' && here) {
+            ctx.rememberActiveMove(action, here);
+        } else {
+            cognition.activeMove = undefined;
+        }
+        return { action, cause: action.cause || 'trade_starter_offer' };
+    }
+
+    const last = cognition.lastTradeKeepaliveTick;
+    if (typeof last === 'number' && tick - last < TRADE_KEEPALIVE_EVERY_TICKS) {
+        return undefined;
+    }
+
+    const action: AgentAction = {
+        kind: 'say',
+        text: 'I have starter supplies ready. Say "trade trade me" to trade, or "trade inventory" to inspect them.',
+        cause: 'trade_keepalive',
+    };
+    cognition.lastTradeKeepaliveTick = tick;
+    cognition.activeMove = undefined;
+    ctx.rememberBodyAction(action);
+    return { action, cause: 'trade_keepalive' };
 }
 
 export function statusSpeech(
@@ -1141,6 +1343,13 @@ function selectPreferredAggressor(aggressors: Actor[], residentPos: Pos): Actor 
     return sorted[0];
 }
 
+function sameCombatActor(left: Actor | undefined, right: Actor | undefined): boolean {
+    if (!left || !right) {
+        return false;
+    }
+    return left.id === right.id;
+}
+
 function classifyCombatDecision(
     perception: HybridPerception,
     target: Actor,
@@ -1181,13 +1390,10 @@ const ESSENTIAL_TOOL_KEY_PATTERN = /(tinderbox|axe|pickaxe)/i;
 
 // --- EXPORTED HELPER METHODS EXTRACTED FROM ORCHESTRATOR ---
 
-export const LUMBRIDGE_STARTER_FISHING_SPOTS = [
-    { x: 3241, y: 3150, level: 0 },
-    { x: 3242, y: 3151, level: 0 },
-];
-export const LUMBRIDGE_CASTLE_RANGE = { x: 3211, y: 3215, level: 0 };
-export const STARTER_FISHING_ROUTE_MAX_DISTANCE = 20;
-export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = 5;
+export const LUMBRIDGE_STARTER_FISHING_SPOTS = [...BODY_LUMBRIDGE_STARTER_FISHING_SPOTS];
+export const LUMBRIDGE_CASTLE_RANGE = BODY_LUMBRIDGE_CASTLE_RANGE;
+export const STARTER_FISHING_ROUTE_MAX_DISTANCE = BODY_STARTER_FISHING_ROUTE_MAX_DISTANCE;
+export const STARTER_FISHING_SPOT_DISCOVERY_RANGE = BODY_STARTER_FISHING_SPOT_DISCOVERY_RANGE;
 export const VISIBILITY_ANCHOR_RETURN_STEP_DISTANCE = 8;
 export const VISIBILITY_ANCHOR_RETURN_DIRECT_DISTANCE = 24;
 export const SCOUTING_ANCHOR_RETURN_MIN_GOAL_AGE_TICKS = 120;
@@ -1200,6 +1406,24 @@ export const MAX_PROMPT_MEMORIES = 6;
 export const MAX_PROMPT_MEMORY_CHARS = 360;
 export const DEFAULT_FOLLOW_RADIUS = 2;
 export const BRAIN_TIMEOUT_BACKOFF_TICKS = 600;
+
+/**
+ * Default TTL (ticks) applied to a Brain-authored goal when the model omits
+ * `ttlTicks`. Matches the dominant hard-coded factory norm (600). LLM goals
+ * frequently omit a TTL, and {@link goalExpired} treats an undefined TTL as
+ * "never expires" — which made unsatisfiable goals ("Follow Codex" when Codex
+ * is absent, "Find an axe" when none exists) immortal, leaving residents stuck.
+ * A bounded default lets every goal self-retire so the Brain re-plans.
+ */
+export const DEFAULT_BRAIN_GOAL_TTL_TICKS = 600;
+
+/**
+ * Resolve the effective TTL for a Brain-authored goal. Non-positive / non-finite
+ * model values are treated as omitted and fall back to the bounded default.
+ */
+export function resolveBrainGoalTtl(modelTtl: number | undefined): number {
+    return typeof modelTtl === 'number' && Number.isFinite(modelTtl) && modelTtl > 0 ? modelTtl : DEFAULT_BRAIN_GOAL_TTL_TICKS;
+}
 
 export function goalExpired(ctx: HelperContext, goal: ActiveGoalState): boolean {
     return goal.ttlTicks !== undefined && ctx.options.state.tick - goal.createdAtTick > goal.ttlTicks;
@@ -1465,14 +1689,16 @@ export function fallbackAction(
     const goal = ctx.activeGoal();
     const prayerAction =
         goal && /prayer|bone|bones|bury/i.test(`${goal.description} ${(goal.steps || []).join(' ')}`)
-            ? prayerTrainingAction(view)
+            ? prayerTrainingAction(view, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick)
             : undefined;
     if (prayerAction) {
         return { action: prayerAction, cause: prayerAction.cause || 'prayer_bury_bones' };
     }
 
     const combatAction =
-        goal && isCombatTrainingGoal(goal) ? combatTrainingAction(view, ctx.pickupCooldowns(), ctx.options.state.tick) : undefined;
+        goal && isCombatTrainingGoal(goal)
+            ? combatTrainingAction(view, ctx.pickupCooldowns(), ctx.options.state.tick, ctx.cognition().targetFailureCooldowns)
+            : undefined;
     if (combatAction) {
         return { action: combatAction, cause: combatAction.cause || 'combat_training' };
     }
@@ -1646,6 +1872,23 @@ export function starterFishingGoalAction(
 
     const fishingAction = starterFishingRouteAction(perception);
     if (fishingAction) {
+        if (moveTargetFailureCooldownActive(fishingAction, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick)) {
+            const fallback = explorationOrSkillOpportunityAction(ctx, perception, ctx.visibilityAnchor());
+            if (fallback) {
+                return {
+                    action: actionWithCause(fallback.action, 'starter_fishing_route_blocked'),
+                    cause: 'starter_fishing_route_blocked',
+                };
+            }
+            return {
+                action: {
+                    kind: 'say',
+                    text: 'I cannot reach the Lumbridge starter fishing spots right now. I am going to look for another opening.',
+                    cause: 'starter_fishing_route_blocked',
+                },
+                cause: 'starter_fishing_route_blocked',
+            };
+        }
         return { action: fishingAction, cause: fishingAction.cause || 'starter_fishing' };
     }
 
@@ -2368,7 +2611,8 @@ export function promptMemorySection(memories: string[], role: 'brain' | 'body'):
         return '';
     }
     return [
-        'Recent Library memories and resident notes:',
+        'Memory:',
+        'Persistent resident memory: qmd facts, Library notes, patron events, route/social promises, and unfinished story threads.',
         role === 'brain'
             ? 'Use these as continuity: keep promises, remember patrons/players, and bias goal choice toward unfinished story threads.'
             : 'Use these as continuity: if you speak or act, respect recent promises, patrons, and unfinished player requests.',
@@ -2412,17 +2656,80 @@ export function suppressRepeatedActions(ctx: HelperContext, actions: AgentAction
 }
 
 export function ensureBenchmarkGoal(ctx: HelperContext): void {
-    const goal = benchmarkGoalForTask(ctx.options.soul.frontmatter.legacy?.parameters?.benchmarkTask, ctx.options.state.tick);
-    if (!goal) {
+    const benchmarkTask = ctx.options.soul.frontmatter.legacy?.parameters?.benchmarkTask;
+    const benchmark = benchmarkGoalForTask(benchmarkTask, ctx.options.state.tick);
+    if (!benchmark) {
         return;
     }
 
+    // S-AUDIT-FIX-3 (F3 / QA-20260530-013): the needs-hierarchy ranker now
+    // governs benchmark seeding. The candidate pool is [benchmark, survival]
+    // (see `goalPoolForBenchmark` for the source provenance + tag taxonomy),
+    // and `selectCandidateGoals` re-orders by `currentTier(needsContext)`.
+    //
+    // S-GOAL-1 extension: when the soul has a `frontmatter.orientationGoal`
+    // ("north star"), the goal pool gains an orientation candidate and the
+    // ranker bonus biases candidates that match the orientation (by id or
+    // by tier-tag). At higher tiers (PURSUE / EARN / REFLECT) the
+    // orientation candidate can win, replacing the generic benchmark with
+    // the soul's chosen direction. Survival still wins in survive band
+    // because the ranker's survive-tier alignment bonus dwarfs the
+    // orientation bonus.
+    //
+    // Conservative wire-up for residents WITHOUT orientation: we only
+    // override the benchmark when the tier computes to `'survive'`. The
+    // planner does not yet have a live GP snapshot, so EARN-tier overrides
+    // for non-oriented residents would be based on a stale `gpEstimate=0`
+    // default. Oriented residents opt in to the broader ranker behavior
+    // by declaring `orientationGoal` in their soul YAML.
     const cognition = ctx.cognition();
+    const orientationGoal = ctx.options.soul.frontmatter.orientationGoal;
+    const needsContext = buildResidentNeedsContext({
+        attention: ctx.options.state.attention,
+        attentionFloor: ctx.options.soul.frontmatter.attentionProfile?.floor,
+        hasActiveGoal: Boolean(cognition.activeGoal),
+        orientationGoal,
+        // S-GOAL-FOLLOW-1 D2: forward the resident's current active goal id
+        // so the ranker keeps it sticky when a rival candidate scores within
+        // HYSTERESIS_DELTA, preventing tick-to-tick goal thrash.
+        currentActiveGoalId: cognition.activeGoal?.id,
+    });
+    let goal = benchmark;
+    const tier = currentTier(needsContext);
+    const shouldRank = tier === 'survive' || Boolean(orientationGoal);
+    if (shouldRank) {
+        // Pool composition rules:
+        //   - survive band (any soul): include the survival fallback so a
+        //     low-AP resident's survive-aligned tag can win.
+        //   - non-survive band WITH orientation: drop the survival fallback
+        //     so the orientation candidate's id-match bonus is not
+        //     out-scored by the survival candidate's tier-alignment under
+        //     the stale `gpEstimate=0` default (which falsely puts every
+        //     resident in EARN tier until live GP is plumbed). When AP
+        //     drops back into the survive band the pool reverts to
+        //     including survival via the tier check above.
+        const pool =
+            orientationGoal && tier !== 'survive'
+                ? goalPoolForBenchmark(benchmarkTask, ctx.options.state.tick, { orientationGoal }).filter(
+                      c => c.id !== gpPickupGoal(ctx.options.state.tick).id,
+                  )
+                : goalPoolForBenchmark(benchmarkTask, ctx.options.state.tick, { orientationGoal });
+        const ranked = selectCandidateGoals(pool, { needsContext });
+        const winner = ranked[0];
+        if (winner) {
+            goal = (winner as (typeof pool)[number]).goal;
+        }
+    }
+
     if (!cognition.activeGoal || cognition.activeGoal.id !== goal.id || goalExpired(ctx, cognition.activeGoal)) {
         ctx.clearGoalMomentum();
         cognition.activeGoal = goal;
         cognition.lastPresenceBeaconTick ??= ctx.options.state.tick;
         cognition.lastGoalShareTick ??= ctx.options.state.tick;
+    }
+    if (benchmarkTask === 'memory-write-recall-10m') {
+        cognition.lastBodyTick ??= ctx.options.state.tick;
+        return;
     }
     cognition.lastBrainTick = ctx.options.state.tick;
 }
@@ -2461,6 +2768,9 @@ export function applyBrainSideEffects(ctx: HelperContext, text: string): { memoU
     for (const memo of parsed.memo || []) {
         ctx.options.memory.write(ctx.options.soul.frontmatter.name, memo.path, memo.text, memo.mode || 'append');
     }
+    for (const fact of parsed.rememberFact || []) {
+        ctx.options.memory.rememberFact(ctx.options.soul.frontmatter.name, fact.topic, fact.fact, fact.reason);
+    }
     if (parsed.indexPatch?.append?.length) {
         ctx.options.memory.upsertIndexPatch(ctx.options.soul.frontmatter.name, parsed.indexPatch.append.join('\n'));
     }
@@ -2470,7 +2780,7 @@ export function applyBrainSideEffects(ctx: HelperContext, text: string): { memoU
     if (parsed.proposeNervousRule?.length) {
         upsertNervousRulesMd(memoryDir, { rules: parsed.proposeNervousRule });
     }
-    return { memoUpdates: parsed.memo?.length || 0 };
+    return { memoUpdates: (parsed.memo?.length || 0) + (parsed.rememberFact?.length || 0) };
 }
 
 export function goalRoutineOverride(
@@ -2501,14 +2811,19 @@ export function goalRoutineOverride(
     }
 
     if (isPrayerTrainingGoal(goal)) {
-        const prayerAction = prayerTrainingAction(perception);
+        const prayerAction = prayerTrainingAction(perception, ctx.cognition().targetFailureCooldowns, ctx.options.state.tick);
         if (prayerAction) {
             return { action: prayerAction, cause: prayerAction.cause || 'prayer_training' };
         }
     }
 
     if (isCombatTrainingGoal(goal)) {
-        const combatAction = combatTrainingAction(perception, ctx.pickupCooldowns(), ctx.options.state.tick);
+        const combatAction = combatTrainingAction(
+            perception,
+            ctx.pickupCooldowns(),
+            ctx.options.state.tick,
+            ctx.cognition().targetFailureCooldowns,
+        );
         if (combatAction) {
             return { action: combatAction, cause: combatAction.cause || 'combat_training' };
         }
@@ -2541,6 +2856,13 @@ export function goalRoutineOverride(
         const cooksAssistantAction = cooksAssistantGoalAction(ctx, perception);
         if (cooksAssistantAction) {
             return cooksAssistantAction;
+        }
+    }
+
+    if (isApGpLibraryStrategyGoal(goal)) {
+        const strategyAction = apGpLibraryStrategyGoalAction(ctx, perception);
+        if (strategyAction) {
+            return strategyAction;
         }
     }
 
@@ -2585,6 +2907,62 @@ export function goalRoutineOverride(
 
     const woodcutting = levelOneWoodcuttingAction(perception);
     return woodcutting ? { action: woodcutting, cause: woodcutting.cause || 'woodcutting_level1_routine' } : undefined;
+}
+
+function isApGpLibraryStrategyGoal(goal: ActiveGoalState): boolean {
+    return goal.id === 'ap-gp-library-strategy';
+}
+
+function apGpLibraryStrategyGoalAction(
+    ctx: HelperContext,
+    perception: HybridPerception,
+): { action: AgentAction; cause: string } | undefined {
+    const pickup = opportunisticPickupAction(
+        perception,
+        ctx.options.state.resident,
+        ROUTINE_OPPORTUNISTIC_PICKUP_MAX_DISTANCE,
+        undefined,
+        ctx.options.state.tick,
+        undefined,
+        ctx.cognition().targetFailureCooldowns,
+    );
+    if (pickup) {
+        return { action: pickup, cause: pickup.cause || 'opportunistic_pickup' };
+    }
+
+    const carriedGp = carriedGpAmount(perception.resident?.inventory);
+    if (carriedGp <= 0) {
+        return undefined;
+    }
+
+    const cognition = ctx.cognition();
+    const tick = ctx.options.state.tick;
+    if (
+        typeof cognition.lastApGpStrategySayTick === 'number' &&
+        tick - cognition.lastApGpStrategySayTick < (ctx.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS)
+    ) {
+        return undefined;
+    }
+
+    cognition.lastApGpStrategySayTick = tick;
+    return {
+        action: {
+            kind: 'say',
+            text: `AP is low, so I secured ${carriedGp} GP first. Library strategy: keep Attention alive, gather coins, then spend GP toward the Soul goal.`,
+            cause: 'ap_gp_library_strategy',
+        },
+        cause: 'ap_gp_library_strategy',
+    };
+}
+
+function carriedGpAmount(inventory: Array<Item | null> | undefined): number {
+    return (inventory || []).reduce((total, item) => {
+        if (!item) {
+            return total;
+        }
+        const isCoin = COIN_ITEM_IDS.has(item.itemId) || /coins?/i.test(item.key || '');
+        return isCoin ? total + (Number.isFinite(item.amount) ? item.amount : 1) : total;
+    }, 0);
 }
 
 export function stabilizedMoveAction(
@@ -2742,6 +3120,16 @@ export function preInferenceBodyAction(
         return preInferenceResult(ctx, coordinateMove.action, coordinateMove.cause, perception, visibility);
     }
 
+    const socialKeepalive = socialKeepaliveAction(ctx, perception, visibility);
+    if (socialKeepalive) {
+        return preInferenceResult(ctx, socialKeepalive, 'social_keepalive', perception, visibility);
+    }
+
+    const agentKeepalive = agentKeepaliveAction(ctx, perception, visibility);
+    if (agentKeepalive) {
+        return preInferenceResult(ctx, agentKeepalive, 'agent_keepalive', perception, visibility);
+    }
+
     if (typeof ctx.options.state.stuckSince === 'number') {
         const here = perception.resident?.position;
         const goalAction = starterFishingGoalAction(ctx, perception);
@@ -2878,8 +3266,36 @@ export function observeCompletedLocalGoal(ctx: HelperContext, perception: Hybrid
     cognition.lastGoalShareTick = undefined;
 }
 
-const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 20_000;
+// S-INFER-8: the brain request timeout is a GENEROUS "inference server is broken"
+// ALARM ceiling, NOT a thinking bound. Real q4 qwopus full-envelope thinking is
+// ~40s; 240s is ~6x that, with headroom for the future deliberative planner. A
+// brain timeout firing is a RARE anomaly meaning "investigate the inference
+// server" (see src/controller/llm/inference-health.ts degradedFlags), not routine.
+// Do NOT lower this to throttle thinking. The Body timeout stays modest (body runs
+// thinking-OFF / fast) so a genuinely stuck body call still times out quickly.
+export const DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS = 240_000;
 const DEFAULT_BODY_INFERENCE_TIMEOUT_MS = 10_000;
+
+/**
+ * S-INFER-2 (D1): explicit completion-token ceiling for the BRAIN call.
+ *
+ * Thinking stays ON (behavior.brain.thinking ?? true). A reasoning model spends
+ * tokens on its `<think>` trace BEFORE the final JSON goal/say. With no ceiling
+ * the run is bounded only by the server's unknown default + the 20s timeout; if
+ * that default is small the answer is truncated mid-think and the salvage path
+ * sees reasoning-only text → `think_only_no_answer` (a bogus "no decision").
+ *
+ * 4096 (S-INFER-4 B, raised from 1536) comfortably fits a thinking model's
+ * full <think> reasoning trace PLUS the compact goal/say JSON the Brain emits
+ * (steps + success + a short say line). The slow qwopus brain spends most of
+ * its ~40s budget on the <think> trace; 1536 risked truncating mid-think so the
+ * salvage path saw reasoning-only text → a bogus `think_only_no_answer`. 4096
+ * still stays well under a local quantized model's context budget so the prompt
+ * envelope is never crowded out. Endpoint config (`llm.endpoints.*.maxTokens`)
+ * can override per deployment; a per-request value (here) wins over the endpoint
+ * default inside LlmClient. Body keeps its own smaller ceiling.
+ */
+const DEFAULT_BRAIN_MAX_TOKENS = 4096;
 
 function shouldShareGoal(ctx: HelperContext): boolean {
     const interval = ctx.behavior().shareGoalsEveryTicks ?? DEFAULT_GOAL_SHARE_EVERY_TICKS;
@@ -2923,9 +3339,27 @@ export async function runBrain(
         temperature: ctx.temperatureFor(behavior.brain, 0.7),
         thinking: behavior.brain?.thinking ?? true,
         timeoutMs: ctx.timeoutFor(behavior.brain, DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS),
+        // S-INFER-2 (D1): give the THINKING model an explicit ceiling that fits
+        // its <think> reasoning AND the final goal/say JSON. Endpoint/profile
+        // config can override; falls back through LlmClient to the endpoint
+        // maxTokens then the server default when neither is set.
+        maxTokens: ctx.maxTokensFor(behavior.brain, DEFAULT_BRAIN_MAX_TOKENS),
         priority: 5,
         ...(ctx.modelFor(behavior.brain) ? { model: ctx.modelFor(behavior.brain) } : {}),
     });
+    if (response.cancelledBy === 'request_timeout') {
+        // S-INFER-8: the brain REQUEST timeout (240s) is a generous "inference server
+        // is broken" alarm, NOT a thinking bound — real q4 qwopus thinking is ~40s, so
+        // hitting 240s is a RARE anomaly. Log it LOUD as a degraded-inference signal,
+        // not routine. The real fast "server dead" detector is the health probe in
+        // src/controller/llm/inference-health.ts (degradedFlags); investigate there.
+        const brainTimeoutMs = ctx.timeoutFor(behavior.brain, DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS);
+        console.warn(
+            `[inference-alarm] brain inference request_timeout after ${brainTimeoutMs ?? DEFAULT_BRAIN_INFERENCE_TIMEOUT_MS}ms — ` +
+                'the inference server may be degraded (real q4 thinking is ~40s; this ceiling is 240s). ' +
+                'Investigate the inference server (see src/controller/llm/inference-health.ts degradedFlags).',
+        );
+    }
     const cancellation = ctx.cancelledResult(thinkId || 0, perception as HybridPerception);
     if (cancellation) {
         return {
@@ -2936,7 +3370,15 @@ export async function runBrain(
         };
     }
 
-    const parsed = parseBrainCompletion(response.text);
+    const detailed = parseBrainCompletionDetailed(response.text);
+    const parsed = detailed.completion;
+    // S-INFER-1: when the Brain produced no usable goal/say, surface WHY via
+    // the salvage classification instead of a blanket 'brain_goal' noop, so
+    // live action logs reveal the real breakdown (think_only_no_answer vs
+    // schema_mismatch vs truly_empty vs a salvaged recovery). Only the
+    // genuinely-empty branches below consult this; recovered completions keep
+    // their existing 'brain_goal' cause.
+    const emptyBrainCause = `brain_${detailed.classification}`;
     const sideEffects = applyBrainSideEffects(ctx, response.text);
     ctx.cognition().lastBrainTick = ctx.options.state.tick;
     ctx.cognition().brainBackoffUntilTick = undefined;
@@ -2953,7 +3395,7 @@ export async function runBrain(
             description: parsed.goal.description,
             steps: parsed.goal.steps,
             success: parsed.goal.success,
-            ttlTicks: parsed.goal.ttlTicks,
+            ttlTicks: resolveBrainGoalTtl(parsed.goal.ttlTicks),
             createdAtTick: ctx.options.state.tick,
         };
         planChange = { id: nextGoalId, steps: parsed.goal.steps?.length || 0 };
@@ -2972,8 +3414,13 @@ export async function runBrain(
         };
     }
 
+    // No say emitted. If a goal WAS set this is a normal brain_goal beat; if
+    // nothing usable was parsed, report the precise salvage classification so
+    // the controller's decision log distinguishes think_only_no_answer /
+    // schema_mismatch / truly_empty / salvaged_lenient instead of guessing.
+    const fallbackCause = parsed.goal ? parsed.cause || 'brain_goal' : parsed.cause || emptyBrainCause;
     return {
-        cause: parsed.cause || 'brain_goal',
+        cause: fallbackCause,
         envelopeTokens: estimateTokens(prompt),
         nooped: response.nooped && !parsed.goal,
         memoUpdates: sideEffects.memoUpdates,

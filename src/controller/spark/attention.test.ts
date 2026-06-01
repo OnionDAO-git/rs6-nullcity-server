@@ -1,4 +1,4 @@
-import { initialAttention, spendAttention, spendForAction, spendForLlm } from './attention';
+import { initialAttention, replayAttentionLedger, spendAttention, spendForAction, spendForLlm } from './attention';
 
 describe('attention spend functions', () => {
     describe('without floor (default behavior)', () => {
@@ -89,6 +89,53 @@ describe('attention spend functions', () => {
             expect(initialAttention({})).toBe(5000);
             expect(initialAttention({ startingAttention: 0, decayCurve: 'standard' })).toBe(5000);
             expect(initialAttention(undefined)).toBe(5000);
+        });
+    });
+
+    describe('replayAttentionLedger', () => {
+        it('replays grant, spend, decay, top_up, and fade in order', () => {
+            const replay = replayAttentionLedger(10, [
+                { kind: 'grant', amount: 5 },
+                { kind: 'spend', amount: 3 },
+                { kind: 'decay', amount: 2 },
+                { kind: 'top_up', amount: 4 },
+                { kind: 'fade' },
+            ]);
+
+            expect(replay.currentAttention).toBe(0);
+            expect(replay.faded).toBe(true);
+            expect(replay.steps).toEqual([
+                { kind: 'grant', amount: 5, before: 10, after: 15 },
+                { kind: 'spend', amount: 3, before: 15, after: 12 },
+                { kind: 'decay', amount: 2, before: 12, after: 10 },
+                { kind: 'top_up', amount: 4, before: 10, after: 14 },
+                { kind: 'fade', amount: 0, before: 14, after: 0 },
+            ]);
+        });
+
+        it('clamps spend and decay at 0, then resumes after top_up', () => {
+            const replay = replayAttentionLedger(3, [
+                { kind: 'spend', amount: 10 },
+                { kind: 'top_up', amount: 7 },
+            ]);
+            expect(replay.currentAttention).toBe(7);
+            expect(replay.faded).toBe(false);
+            expect(replay.steps).toEqual([
+                { kind: 'spend', amount: 10, before: 3, after: 0 },
+                { kind: 'top_up', amount: 7, before: 0, after: 7 },
+            ]);
+        });
+
+        it('normalizes invalid amounts to 0', () => {
+            const replay = replayAttentionLedger(2, [
+                { kind: 'grant', amount: Number.NaN },
+                { kind: 'spend', amount: -5 },
+            ]);
+            expect(replay.currentAttention).toBe(2);
+            expect(replay.steps).toEqual([
+                { kind: 'grant', amount: 0, before: 2, after: 2 },
+                { kind: 'spend', amount: 0, before: 2, after: 2 },
+            ]);
         });
     });
 });

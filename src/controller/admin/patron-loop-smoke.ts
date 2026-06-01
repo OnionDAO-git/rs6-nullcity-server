@@ -92,7 +92,7 @@ export async function runPatronLoopSmokeCli(argv: string[]): Promise<number> {
         const residentName = normalizeResidentName(options.residentName);
         const startedAt = new Date().toISOString();
 
-        console.log(`[patron:smoke] proving patron loop for ${options.humanId} -> ${residentName} (${options.amount} Shards)`);
+        console.log(`[patron:smoke] proving patron loop for ${options.humanId} -> ${residentName} (${options.amount} AP)`);
 
         await requireCliSuccess(
             'grant',

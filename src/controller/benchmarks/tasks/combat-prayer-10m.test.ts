@@ -232,6 +232,49 @@ describe('verifyCombatPrayer10m', () => {
         expect(outcome.metrics?.unsafeLoops).toBe(1);
     });
 
+    it('does not abort as an unsafe loop once combat-supplied bones appear', () => {
+        const outcome = verifyCombatPrayer10m({
+            elapsedMs: 120_000,
+            actions: Array.from({ length: 12 }, () => attempt({ kind: 'attack', target: goblin() })),
+            perceptions: [
+                perception({ inventory: [shrimp()], npcs: [goblin()], skills: { prayer: { xp: 0 } } }),
+                perception({ inventory: [shrimp()], npcs: [{ ...goblin(), hpFraction: 0.2 }], events: [hitDealt()] }),
+                perception({ inventory: [shrimp()], worldItems: [bonesOnGround()], events: [hitDealt()] }),
+            ],
+            events: [],
+        });
+
+        expect(outcome.status).toBe('failed');
+        expect(outcome.score).toBe(0.55);
+        expect(outcome.metrics?.combatEvidence).toBe(1);
+        expect(outcome.metrics?.bonesEvidence).toBe(1);
+        expect(outcome.metrics?.unsafeLoops).toBe(0);
+        expect(outcome.failureReason).toContain('No ordered combat-prayer action chain');
+    });
+
+    it('does not treat repeated safe attacks as unsafe loop once prayer progress is completed', () => {
+        const outcome = verifyCombatPrayer10m({
+            elapsedMs: 220_000,
+            actions: [
+                ...Array.from({ length: 12 }, () => attempt({ kind: 'attack', target: goblin() })),
+                attempt({ kind: 'interact', target: bonesOnGround(), option: 'pick-up' }),
+                attempt({ kind: 'item_action', slot: 0, option: 'bury' }),
+            ],
+            perceptions: [
+                perception({ inventory: [shrimp()], npcs: [goblin()], skills: { prayer: { xp: 0 } } }),
+                perception({ inventory: [shrimp()], npcs: [{ ...goblin(), hpFraction: 0.2 }], events: [hitDealt()] }),
+                perception({ inventory: [shrimp()], worldItems: [bonesOnGround()], events: [hitDealt()] }),
+                perception({ inventory: [bones()], worldItems: [], skills: { prayer: { xp: 0 } } }),
+                perception({ inventory: [], skills: { prayer: { xp: 4.5 } }, events: [{ kind: 'item_lost', item: bones() }] }),
+            ],
+            events: [],
+        });
+
+        expect(outcome.status).toBe('passed');
+        expect(outcome.metrics?.prayerSuccess).toBe(1);
+        expect(outcome.metrics?.unsafeLoops).toBe(0);
+    });
+
     it('autonomous mode observes only the selected module actions', async () => {
         const submitAction = jest.fn();
         const controller = new AbortController();

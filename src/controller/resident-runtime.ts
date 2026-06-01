@@ -38,7 +38,7 @@ import { InferenceLog } from './logging/inference-log';
 import { MemoryRouter } from './memory/memory-router';
 import type { MemoryStore } from './memory/memory-store';
 import { type RuntimeState, RuntimeStateStore, addAttention, markDeceased } from './memory/runtime-state';
-import { NervousSystem } from './nervous-system';
+import { NervousSystem, type NervousReaction } from './nervous-system';
 import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import { type Soul, dominantFaction } from './soul/soul-schema';
@@ -66,16 +66,29 @@ import { whisperInboxFor, type WhisperInbox } from './lore/whisper';
 import { loreBusInboxFor, type LoreBusInbox } from './lore/lore-bus-inbox';
 
 const MAX_PENDING_EVENTS = 50;
-const DEFAULT_THINKING_WATCHDOG_MS = 45_000;
-const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
-const SAY_ACTION_WATCHDOG_MS = 10_000;
-const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
+// S-INFER-8: the thinking watchdog is a GENEROUS last-resort backstop for an
+// "inference server is broken" condition — NOT a thinking bound. Real q4 qwopus
+// full-envelope deliberation runs ~40s; the previous 45s watchdog was the REAL
+// guillotine cutting legitimate thinking (it fired before the request timeout).
+// It is now set slightly ABOVE the 240s brain request timeout so the cleaner
+// request-timeout signal fires first; this watchdog only fires if even that fails.
+// A watchdog firing is a RARE anomaly → investigate the inference server (see
+// src/controller/llm/inference-health.ts degradedFlags). Do NOT lower it to
+// throttle thinking. The fast ACTION watchdogs below stay tight — they guard fast
+// action EXECUTION (ack/say/effect), not deliberation.
+export const DEFAULT_THINKING_WATCHDOG_MS = 250_000;
+export const ACK_ONLY_ACTION_WATCHDOG_MS = 15_000;
+export const SAY_ACTION_WATCHDOG_MS = 10_000;
+export const ACTION_EFFECT_WATCHDOG_GRACE_MS = 10_000;
 const MOVE_EFFECT_TIMEOUT_MIN_MS = 5_000;
 const MOVE_EFFECT_TIMEOUT_PER_TILE_MS = 1_200;
 const MOVE_EFFECT_TIMEOUT_BUFFER_MS = 4_000;
 const MOVE_EFFECT_TIMEOUT_MAX_MS = 30_000;
 const STARTER_FISHING_EFFECT_TIMEOUT_MS = 45_000;
 const THINKING_VISIBILITY_DELAY_MS = 1_000;
+const ATTENTION_TOPUP_RECONNECT_RETRY_MS = 750;
+const ATTENTION_TOPUP_RESUME_RULE_ID = 'attention-topup-resume';
+const ATTENTION_TOPUP_RESUME_COOLDOWN_KEY = 'attention-topup:resume-ack';
 
 export interface ResidentRuntimeGameSkill {
     buildContext(input: GameSkillContextInput): GameSkillContext;
@@ -93,6 +106,10 @@ export interface ResidentRuntimeFactionStockpile {
     recordAttempt(input: RecordFactionAttemptInput): unknown;
 }
 
+export interface ResidentRuntimeCityExchange {
+    exchangeApForGp(resident: string, input: unknown): Promise<unknown>;
+}
+
 export interface ResidentRuntimeOptions {
     soul: Soul;
     gateway: GatewayClient;
@@ -106,6 +123,7 @@ export interface ResidentRuntimeOptions {
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
     factionStockpile?: ResidentRuntimeFactionStockpile;
+    cityExchange?: ResidentRuntimeCityExchange;
     sparkModules?: SparkModule[];
     evidence?: ResidentRuntimeEvidence;
     patrons?: PatronConfig[];
@@ -117,6 +135,13 @@ export interface ResidentRuntimeOptions {
         actionMs?: number;
     };
     loreBus?: LoreBus;
+    /**
+     * Fired exactly once when this resident is first observed deceased (after
+     * epitaphs are dispatched). Lets the ControllerHost prune a city-born
+     * resident so reconcile + respawn does not resurrect it — a Soul whose
+     * attention runs out must stay dead (and reach the graveyard), not respawn.
+     */
+    onDeath?: (residentName: string, cause: string) => void;
 }
 
 export interface ResidentRuntimeEvidence {
@@ -130,6 +155,15 @@ interface PerceptionArrival {
     perception: Perception;
     preemption?: { preempted: RoutinePreemptionReason };
 }
+
+interface GatewayActionResultObservation {
+    requestId: string;
+    result: ActionResult;
+    cause?: string;
+    observedAt: number;
+}
+
+type GatewayActionResultListener = (residentId: string, requestId: string | undefined, result: ActionResult, cause?: string) => void;
 
 export class ResidentRuntime implements RoutineCapableRuntime {
     readonly name: string;
@@ -164,6 +198,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly momentLabeler?: MomentLabeler;
     private readonly whisperInbox?: WhisperInbox;
     private readonly loreBusInbox?: LoreBusInbox;
+    private readonly gatewayActionResults = new Map<string, GatewayActionResultObservation>();
+    private readonly gatewayActionResultWaiters = new Map<string, Set<(observation: GatewayActionResultObservation) => void>>();
+    private readonly gatewayActionResultListener?: GatewayActionResultListener;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
@@ -209,6 +246,14 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     submit: (action, metadata) => this.body.submit(action, metadata as Omit<BodyActionLogEntry, 'action' | 'result'>),
                 },
             });
+        if (typeof options.gateway.on === 'function') {
+            this.gatewayActionResultListener = (residentId, requestId, result, cause) => {
+                if (normalizeGatewayResidentId(residentId) === this.name && requestId) {
+                    this.observeGatewayActionResult(requestId, result, cause);
+                }
+            };
+            options.gateway.on('actionResult', this.gatewayActionResultListener);
+        }
         if (options.loreBus) {
             this.loreBus = options.loreBus;
             this.fireLitReflex = new FireLitReflex({ bus: options.loreBus });
@@ -257,8 +302,48 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         return this.evidence;
     }
 
+    /**
+     * Admin-only on-demand AP drain (S-OBS-DRAIN-1). Drops AP by `amount`
+     * (clamped at 0) so an operator can push a resident into the SURVIVE band
+     * of the needs-hierarchy ranker to live-verify F3 behavior on-demand. Does
+     * NOT mark the resident deceased — that path is reserved for the per-tick
+     * `attention_exhausted` flow inside `handlePerception`. Returns the actual
+     * amount drained (so the caller can distinguish a 22000 → 0 over-drain
+     * from a 22000 → 5 precise drain).
+     */
+    decrementAttention(amount: number): number {
+        const before = this.state.attention;
+        this.state.attention = Math.max(0, this.state.attention - amount);
+        this.options.stateStore.save(this.state);
+        return before - this.state.attention;
+    }
+
     incrementAttention(amount: number): void {
+        const attentionBefore = this.state.attention;
+        const wasAttentionExhausted = this.state.deceased?.cause === 'attention_exhausted';
         addAttention(this.state, amount);
+        if (wasAttentionExhausted && this.state.attention > 0) {
+            this.pendingEvents.push({
+                kind: 'attention_topup',
+                amount,
+                attentionBefore,
+                attentionAfter: this.state.attention,
+                ts: new Date().toISOString(),
+            });
+            if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
+                this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
+            }
+            this.state.stuckSince = undefined;
+            if (this.state.cognition?.activeMove) {
+                this.state.cognition.activeMove = undefined;
+            }
+            this.evidence?.library?.observeRevival({
+                ts: new Date().toISOString(),
+                tick: this.state.tick,
+                cause: 'attention_topup',
+            });
+            this.scheduleAttentionTopupReconnect();
+        }
         this.options.stateStore.save(this.state);
     }
 
@@ -315,14 +400,16 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const observerPos = (perception as { resident?: { position?: { x: number; y: number; level: number } } })?.resident?.position;
             const drainedLoreEvents = this.loreBusInbox.drain(observerPos);
             for (const event of drainedLoreEvents) {
-                this.pendingEvents.push({
+                const worldEvent = {
                     kind: 'world_event',
                     loreKind: event.kind,
                     source: event.source,
                     payload: event.payload,
                     sourcePosition: event.sourcePosition,
                     ts: event.ts,
-                });
+                } as PerceptionEvent;
+                this.pendingEvents.push(worldEvent);
+                this.persistEventMemory(worldEvent);
             }
         }
 
@@ -381,6 +468,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     this.history.push(decisionPerception);
                     this.body.observePerception(decisionPerception);
 
+                    this.preemptForNervousReaction(reaction);
                     const attempt = await this.submitActionWithWatchdog({
                         producer: 'nervous-system',
                         action: reaction.action,
@@ -395,6 +483,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         ...this.evidenceCallbacks(),
                     });
                     this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+                    this.requeueAttentionTopupIfResumeFailed(reaction, decisionPerception, attempt);
 
                     resolve({
                         perception,
@@ -414,13 +503,11 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const nervousPerception = this.peekWithPendingEvents(perception);
             const reaction = this.nervousSystem.react(nervousPerception);
             if (reaction) {
-                if (this.deciding && reaction.interruptThinking) {
-                    this.thinking.stop(`nervous:${reaction.rule.id}`);
-                }
                 const decisionPerception = this.withPendingEvents(perception);
                 this.history.push(decisionPerception);
                 this.body.observePerception(decisionPerception);
 
+                this.preemptForNervousReaction(reaction);
                 const attempt = await this.submitActionWithWatchdog({
                     producer: 'nervous-system',
                     action: reaction.action,
@@ -435,6 +522,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     ...this.evidenceCallbacks(),
                 });
                 this.observeGameSkillAttempt('nervous-system', decisionPerception, undefined, attempt);
+                this.requeueAttentionTopupIfResumeFailed(reaction, decisionPerception, attempt);
                 if (reaction.suppressThinking) {
                     return;
                 }
@@ -511,7 +599,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         const tick = typeof compressedPerception.tick === 'number' ? compressedPerception.tick : this.state.tick;
                         const requestId = `gate:${tick}:${action.kind}`;
                         this.recordEvidence(trajectory => {
-                            const line = trajectory.recordAction(action, requestId);
+                            const line = trajectory.recordAction(action, requestId, this.state.cognition?.activeGoal?.id);
                             this.evidence?.library?.observeTrajectory(line);
                             trajectory.recordActionResult(requestId, {
                                 status: 'failure',
@@ -670,6 +758,55 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         }
     }
 
+    private preemptForNervousReaction(reaction: NervousReaction): void {
+        if (reaction.rule.id !== ATTENTION_TOPUP_RESUME_RULE_ID) {
+            return;
+        }
+        this.actionCoordinator.cancelCurrent('attention_topup_resume');
+    }
+
+    private requeueAttentionTopupIfResumeFailed(reaction: NervousReaction, decisionPerception: Perception, attempt: ActionAttempt): void {
+        if (reaction.rule.id !== ATTENTION_TOPUP_RESUME_RULE_ID) {
+            return;
+        }
+        if (attempt.finalStatus === 'success' || attempt.finalStatus === 'accepted') {
+            return;
+        }
+        const topUpEvent = (Array.isArray(decisionPerception.events) ? decisionPerception.events : [])
+            .filter(event => event.kind === 'attention_topup')
+            .at(-1);
+        if (!topUpEvent) {
+            return;
+        }
+        this.state.hookCooldowns = this.state.hookCooldowns || {};
+        delete this.state.hookCooldowns[ATTENTION_TOPUP_RESUME_COOLDOWN_KEY];
+        this.pendingEvents.push(topUpEvent);
+        if (this.pendingEvents.length > MAX_PENDING_EVENTS) {
+            this.pendingEvents.splice(0, this.pendingEvents.length - MAX_PENDING_EVENTS);
+        }
+    }
+
+    private scheduleAttentionTopupReconnect(): void {
+        const gateway = this.options.gateway as {
+            connectResident?: (payload: { name: string; observe: boolean; control: boolean; onDisconnect: 'idle' }) => Promise<unknown>;
+        };
+        if (typeof gateway.connectResident !== 'function') {
+            return;
+        }
+        const reconnect = () => {
+            gateway.connectResident?.({ name: this.name, observe: true, control: true, onDisconnect: 'idle' }).catch(error =>
+                this.options.inferenceLog.append(this.name, {
+                    tick: this.state.tick,
+                    cause: 'attention_topup_reconnect_failed',
+                    error: error instanceof Error ? error.message : String(error),
+                }),
+            );
+        };
+        reconnect();
+        const retry = setTimeout(reconnect, ATTENTION_TOPUP_RECONNECT_RETRY_MS);
+        retry.unref?.();
+    }
+
     private async submitAttentionLogout(perception: Perception): Promise<void> {
         if (this.deciding) {
             this.thinking.stop('attention_exhausted');
@@ -700,6 +837,16 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             timer = setTimeout(() => {
                 this.thinking.stop('thinking_watchdog_timeout');
                 const fallback = this.thinking.onWatchdogTimeout?.(perception, gameSkillContext);
+                // S-INFER-8: the watchdog is a generous last-resort backstop ABOVE the
+                // 240s brain request timeout. Real q4 qwopus thinking is ~40s, so reaching
+                // this is a RARE anomaly — log it LOUD as a degraded-inference ALARM, not a
+                // routine event. The real fast "server dead" detector is the health probe in
+                // src/controller/llm/inference-health.ts (degradedFlags); investigate there.
+                console.warn(
+                    `[inference-alarm] ${this.name}: thinking_watchdog_timeout after ${timeoutMs}ms — ` +
+                        'the inference server may be degraded (real q4 thinking is ~40s; this backstop is 250s). ' +
+                        'Investigate the inference server (see src/controller/llm/inference-health.ts degradedFlags).',
+                );
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'thinking_watchdog_timeout',
@@ -727,20 +874,24 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     }
 
     private async submitActionWithWatchdog(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
-        if (input.action.kind === 'trade_resource') {
-            return this.executeTradeResource(input);
+        const attributedInput = input.goalId ? input : { ...input, goalId: this.state.cognition?.activeGoal?.id };
+        if (attributedInput.action.kind === 'city_exchange_ap_gp') {
+            return this.executeCityExchangeApForGp(attributedInput);
         }
-        const timeoutMs = this.actionWatchdogTimeoutMs(input.action);
+        if (attributedInput.action.kind === 'trade_resource') {
+            return this.executeTradeResource(attributedInput);
+        }
+        const timeoutMs = this.actionWatchdogTimeoutMs(attributedInput.action);
         let timer: NodeJS.Timeout | undefined;
         const timeout = new Promise<ActionAttempt>(resolve => {
             timer = setTimeout(() => {
                 const attempt =
                     this.actionCoordinator.cancelCurrent('action_watchdog_timeout') ||
-                    fallbackTimedOutAttempt(this.name, input, 'action_watchdog_timeout');
+                    fallbackTimedOutAttempt(this.name, attributedInput, 'action_watchdog_timeout');
                 this.options.inferenceLog.append(this.name, {
                     tick: this.state.tick,
                     cause: 'action_watchdog_timeout',
-                    actionKind: input.action.kind,
+                    actionKind: attributedInput.action.kind,
                     timeoutMs,
                     sparkModule: this.thinkingSparkModule,
                 });
@@ -748,7 +899,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             }, timeoutMs);
         });
         try {
-            return await Promise.race([this.actionCoordinator.submit(input), timeout]);
+            return await Promise.race([this.actionCoordinator.submit(attributedInput), timeout]);
         } finally {
             if (timer) {
                 clearTimeout(timer);
@@ -811,6 +962,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 }
             }
         }
+        this.persistEventMemory(event);
+    }
+
+    private persistEventMemory(event: PerceptionEvent): void {
         const routed = this.memoryRouter.routeEvent(this.name, event);
         if (routed) {
             this.options.memory.write(this.name, routed.path, routed.content);
@@ -864,7 +1019,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             onAckReady: attempt => {
                 const requestId = attempt.requestId || attempt.attemptId;
                 this.recordEvidence(trajectory => {
-                    const line = trajectory.recordAction(attempt.action, requestId);
+                    const line = trajectory.recordAction(attempt.action, requestId, this.state.cognition?.activeGoal?.id);
                     this.evidence?.library?.observeTrajectory(line);
                 });
             },
@@ -877,8 +1032,21 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                         evidence: attempt.evidence,
                     }),
                 );
+                this.observeActionProgress(attempt);
             },
         };
+    }
+
+    private observeActionProgress(attempt: ActionAttempt): void {
+        const reason = visibleSpeechProgressReason(attempt);
+        if (!reason) {
+            return;
+        }
+        const tick = Math.max(this.state.tick, actionAttemptTick(attempt) ?? 0, this.progressTracker.current()?.tick ?? 0);
+        const delta = this.progressTracker.recordMeaningful(tick, reason);
+        this.state.lastMeaningfulProgressAt = this.runtimeProgressTick(tick);
+        this.state.stuckSince = undefined;
+        this.recordProgressEvidence(tick, delta);
     }
 
     private observeRuntimeProgress(tick: number, perception: Perception): void {
@@ -1019,6 +1187,32 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private checkDeceasedAndDispatchEpitaphs(perception: Perception): void {
         if (this.state.deceased && !this.state.deceased.processed) {
             this.state.deceased.processed = true;
+            // Notify the host so a city-born resident is pruned from the desired
+            // set + manifest; otherwise reconcile would reconnect it and its
+            // respawnPolicy would un-die it, so the death never sticks (this is
+            // why the graveyard stayed empty). Best-effort: a callback failure
+            // must not block epitaph dispatch.
+            try {
+                this.options.onDeath?.(this.name, this.state.deceased.cause);
+            } catch {
+                // ignore — death processing continues regardless
+            }
+            // Seal the Library on death so the portrait + in-game tombstone reflect
+            // it: emit a legacy_event (rebirth absent => applyLegacyEvent sets
+            // currentState 'ended'). Without this, attention-exhaustion deaths left
+            // the soul showing 'living' forever — only the Spark legacy-complete path
+            // (spark.ts) sealed (QA-20260601-066). Best-effort: never block epitaphs.
+            try {
+                const legacyLine = this.evidence?.trajectory?.recordLegacy({
+                    cause: this.state.deceased.cause,
+                    state: this.state.legacy,
+                });
+                if (legacyLine) {
+                    this.evidence?.library?.observeTrajectory(legacyLine);
+                }
+            } catch {
+                // ignore — death processing continues regardless
+            }
             const library = this.evidence?.library;
             const patronHandles = library ? library.getPatronHandles() : [];
             const root = record(perception);
@@ -1111,7 +1305,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         }
     }
 
-    private effectWaitFor(action: AgentAction): ((signal: AbortSignal) => Promise<EffectWaitResult>) | undefined {
+    private effectWaitFor(action: AgentAction): ((signal: AbortSignal, attempt: ActionAttempt) => Promise<EffectWaitResult>) | undefined {
         if (action.kind === 'move_to' && isPosition(action.target)) {
             const target = action.target;
             const range = typeof action.range === 'number' ? Math.max(0, action.range) : 0;
@@ -1119,40 +1313,48 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const latestPerception = this.body.getLatestPerception();
             const startPosition = latestPerception ? perceptionPosition(latestPerception) : undefined;
             const timeoutMs = movementEffectTimeoutMs(startPosition, target);
-            return async signal => {
-                const wait = await this.body.waitForPerception(
-                    perception => positionMatches(perceptionPosition(perception), target, range),
-                    {
-                        afterSeq,
-                        timeoutMs,
-                        signal,
+            return async (signal, attempt) => {
+                return this.effectOrGatewayResult(
+                    effectSignal =>
+                        this.body.waitForPerception(perception => positionMatches(perceptionPosition(perception), target, range), {
+                            afterSeq,
+                            timeoutMs,
+                            signal: effectSignal,
+                        }),
+                    attempt.requestId,
+                    signal,
+                    waitResult => {
+                        const latestAfterWait = this.body.getLatestPerception();
+                        return movementWaitToEffect(waitResult, {
+                            target,
+                            range,
+                            startPosition,
+                            finalPosition: latestAfterWait ? perceptionPosition(latestAfterWait) : undefined,
+                            timeoutMs,
+                        });
                     },
                 );
-                const latestAfterWait = this.body.getLatestPerception();
-                return movementWaitToEffect(wait, {
-                    target,
-                    range,
-                    startPosition,
-                    finalPosition: latestAfterWait ? perceptionPosition(latestAfterWait) : undefined,
-                    timeoutMs,
-                });
             };
         }
 
         if (action.kind === 'say' && typeof action.text === 'string') {
             const text = action.text;
             const afterSeq = this.body.getLatestEventSeq();
-            return async signal =>
-                eventWaitToEffect(
-                    await this.body.waitForEvent(event => event.kind === 'chat' && event.text === text, {
-                        afterSeq,
-                        timeoutMs: 3000,
-                        signal,
-                    }),
-                    event => ({
-                        source: 'event',
-                        detail: { kind: 'chat_observed', text: event.text },
-                    }),
+            return async (signal, attempt) =>
+                this.effectOrGatewayResult(
+                    effectSignal =>
+                        this.body.waitForEvent(event => event.kind === 'chat' && event.text === text, {
+                            afterSeq,
+                            timeoutMs: 3000,
+                            signal: effectSignal,
+                        }),
+                    attempt.requestId,
+                    signal,
+                    wait =>
+                        eventWaitToEffect(wait, event => ({
+                            source: 'event',
+                            detail: { kind: 'chat_observed', text: event.text },
+                        })),
                 );
         }
 
@@ -1160,29 +1362,152 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             const before = this.body.getLatestPerception();
             const afterSeq = this.body.getLatestPerceptionSeq();
             const timeoutMs = actionEffectTimeoutMs(action, before);
-            return async signal =>
-                perceptionWaitToEffect(
-                    await this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
-                        afterSeq,
-                        timeoutMs,
-                        signal,
-                    }),
-                    perception => ({
-                        source: 'perception',
-                        detail: {
-                            kind: 'action_effect_observed',
-                            actionKind: action.kind,
-                            changed: changedEffectSections(before, perception, action),
-                            events: eventSummaries(perception, action),
-                        },
-                    }),
+            return async (signal, attempt) =>
+                this.effectOrGatewayResult(
+                    effectSignal =>
+                        this.body.waitForPerception(perception => actionEffectObserved(action, before, perception), {
+                            afterSeq,
+                            timeoutMs,
+                            signal: effectSignal,
+                        }),
+                    attempt.requestId,
+                    signal,
+                    wait =>
+                        perceptionWaitToEffect(wait, perception => ({
+                            source: 'perception',
+                            detail: {
+                                kind: 'action_effect_observed',
+                                actionKind: action.kind,
+                                changed: changedEffectSections(before, perception, action),
+                                events: eventSummaries(perception, action),
+                            },
+                        })),
                 );
         }
 
         return undefined;
     }
 
+    private async effectOrGatewayResult<TWait>(
+        waitForEffect: (signal: AbortSignal) => Promise<TWait>,
+        requestId: string | undefined,
+        signal: AbortSignal,
+        toEffect: (wait: TWait) => EffectWaitResult,
+    ): Promise<EffectWaitResult> {
+        const effectAbort = new AbortController();
+        const abortEffect = () => effectAbort.abort();
+        if (signal.aborted) {
+            effectAbort.abort();
+        } else {
+            signal.addEventListener('abort', abortEffect, { once: true });
+        }
+        const effectPromise = waitForEffect(effectAbort.signal);
+        const gatewayWatch = requestId ? this.watchGatewayActionResult(requestId, signal) : undefined;
+        try {
+            if (!gatewayWatch) {
+                return toEffect(await effectPromise);
+            }
+            const winner = await Promise.race([
+                effectPromise.then(wait => ({ kind: 'effect' as const, wait })),
+                gatewayWatch.promise.then(observation => ({ kind: 'gateway' as const, observation })),
+            ]);
+            if (winner.kind === 'gateway' && winner.observation) {
+                if (winner.observation.result.ok === false) {
+                    effectAbort.abort();
+                    return gatewayActionResultToEffect(winner.observation);
+                }
+                return toEffect(await effectPromise);
+            }
+            if (winner.kind === 'gateway') {
+                effectAbort.abort();
+                return { ok: false, reason: 'aborted' };
+            }
+            return toEffect(winner.wait);
+        } finally {
+            signal.removeEventListener('abort', abortEffect);
+            gatewayWatch?.cancel();
+        }
+    }
+
+    private observeGatewayActionResult(requestId: string, result: ActionResult, cause: string | undefined): void {
+        const observation = { requestId, result, cause, observedAt: Date.now() };
+        this.gatewayActionResults.set(requestId, observation);
+        while (this.gatewayActionResults.size > 100) {
+            const oldest = this.gatewayActionResults.keys().next().value;
+            if (!oldest) {
+                break;
+            }
+            this.gatewayActionResults.delete(oldest);
+        }
+        const waiters = this.gatewayActionResultWaiters.get(requestId);
+        if (!waiters) {
+            return;
+        }
+        this.gatewayActionResults.delete(requestId);
+        this.gatewayActionResultWaiters.delete(requestId);
+        for (const waiter of waiters) {
+            waiter(observation);
+        }
+    }
+
+    private watchGatewayActionResult(
+        requestId: string,
+        signal: AbortSignal,
+    ): { promise: Promise<GatewayActionResultObservation | null>; cancel: () => void } {
+        const existing = this.gatewayActionResults.get(requestId);
+        if (existing) {
+            this.gatewayActionResults.delete(requestId);
+            return { promise: Promise.resolve(existing), cancel: () => undefined };
+        }
+        if (signal.aborted) {
+            return { promise: Promise.resolve(null), cancel: () => undefined };
+        }
+
+        let settle: (observation: GatewayActionResultObservation | null) => void = () => undefined;
+        const promise = new Promise<GatewayActionResultObservation | null>(resolve => {
+            settle = resolve;
+        });
+        const waiter = (observation: GatewayActionResultObservation) => settle(observation);
+        const abort = () => {
+            cleanup();
+            settle(null);
+        };
+        const cleanup = () => {
+            const waiters = this.gatewayActionResultWaiters.get(requestId);
+            if (waiters) {
+                waiters.delete(waiter);
+                if (waiters.size === 0) {
+                    this.gatewayActionResultWaiters.delete(requestId);
+                }
+            }
+            signal.removeEventListener('abort', abort);
+        };
+
+        const waiters = this.gatewayActionResultWaiters.get(requestId) || new Set();
+        waiters.add(waiter);
+        this.gatewayActionResultWaiters.set(requestId, waiters);
+        signal.addEventListener('abort', abort, { once: true });
+
+        return {
+            promise,
+            cancel: cleanup,
+        };
+    }
+
     stop(cause = 'runtime_stopped'): void {
+        if (this.gatewayActionResultListener) {
+            const gateway = this.options.gateway as unknown as {
+                off?: (event: string, listener: GatewayActionResultListener) => void;
+                removeListener?: (event: string, listener: GatewayActionResultListener) => void;
+            };
+            if (typeof gateway.off === 'function') {
+                gateway.off('actionResult', this.gatewayActionResultListener);
+            } else if (typeof gateway.removeListener === 'function') {
+                gateway.removeListener('actionResult', this.gatewayActionResultListener);
+            }
+        }
+        this.gatewayActionResultWaiters.clear();
+        this.gatewayActionResults.clear();
         if (this.whisperInbox) {
             this.whisperInbox.unsubscribe();
         }
@@ -1319,7 +1644,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                     if (targetNpc) {
                         action = { kind: 'attack', target: targetNpc, cause: 'routine:safe_combat' };
                     } else {
-                        action = combatTrainingAction(perception);
+                        action = combatTrainingAction(perception, undefined, this.state.tick, this.state.cognition?.targetFailureCooldowns);
                     }
                 }
                 break;
@@ -1395,6 +1720,111 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         return 'no_progress';
     }
 
+    private async executeCityExchangeApForGp(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
+        const attempt: ActionAttempt = {
+            attemptId: `attempt-city_exchange_ap_gp-${Date.now()}`,
+            resident: this.name,
+            producer: input.producer,
+            action: input.action,
+            submittedAt: new Date().toISOString(),
+            cause: input.action.cause,
+            evidence: [],
+            finalStatus: 'accepted',
+            metadata: input.metadata,
+        };
+
+        this.safeActionCallback(input.onAckReady, attempt, 'city_exchange_ap_gp_ack_callback_failed');
+
+        const action = record(input.action);
+        const gpAmount = positiveInt(action.gpAmount);
+        const apAmount = positiveInt(action.apAmount);
+        const idempotencyKey =
+            typeof action.idempotencyKey === 'string' ? action.idempotencyKey : `runtime-city-exchange:${this.name}:${this.state.tick}`;
+        const sourceId = typeof input.action.cause === 'string' ? input.action.cause : 'city_exchange_ap_gp';
+
+        if (!this.options.cityExchange) {
+            attempt.ackResult = { ok: false, status: 'error', reason: 'city_exchange_unavailable' };
+            attempt.finalStatus = 'failure';
+            attempt.finalReason = 'city_exchange_unavailable';
+            this.appendCityExchangeActionLog(input, attempt);
+            this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
+            return attempt;
+        }
+        if (gpAmount === undefined || apAmount === undefined) {
+            attempt.ackResult = { ok: false, status: 'error', reason: 'invalid_exchange_amount' };
+            attempt.finalStatus = 'failure';
+            attempt.finalReason = 'invalid_exchange_amount';
+            this.appendCityExchangeActionLog(input, attempt);
+            this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
+            return attempt;
+        }
+
+        try {
+            const recordResult = await this.options.cityExchange.exchangeApForGp(this.name, {
+                idempotencyKey,
+                gpAmount,
+                apAmount,
+                cityUserId: 'resident:self',
+                sourceType: 'resident',
+                sourceId,
+            });
+            const result = record(recordResult);
+            const status = typeof result.status === 'string' ? result.status : undefined;
+            attempt.ackResult = {
+                ok: status === 'complete',
+                status,
+                exchangeId: result.exchangeId,
+                apEvidence: result.apEvidence,
+                gpEvidence: result.gpEvidence,
+                failureReason: result.failureReason,
+            };
+            attempt.finalStatus = status === 'complete' ? 'success' : 'failure';
+            attempt.finalReason = status === 'complete' ? undefined : stringReason(result.failureReason) || status || 'exchange_failed';
+            attempt.evidence.push({ source: 'action_result', detail: attempt.ackResult });
+        } catch (error) {
+            attempt.ackResult = {
+                ok: false,
+                status: 'error',
+                reason: error instanceof Error ? error.message : String(error),
+            };
+            attempt.finalStatus = 'failure';
+            attempt.finalReason = stringReason(attempt.ackResult.reason) || 'exchange_failed';
+        }
+
+        this.appendCityExchangeActionLog(input, attempt);
+        this.safeActionCallback(input.onEffectResolved, attempt, 'city_exchange_ap_gp_effect_callback_failed');
+        return attempt;
+    }
+
+    private appendCityExchangeActionLog(input: ActionCoordinatorSubmitInput, attempt: ActionAttempt): void {
+        this.options.actionLog.append(this.name, {
+            ...record(input.metadata),
+            action: input.action,
+            result:
+                attempt.ackResult ??
+                ({
+                    ok: attempt.finalStatus === 'success',
+                    status: attempt.finalStatus,
+                    reason: attempt.finalReason,
+                } satisfies Record<string, unknown>),
+        });
+    }
+
+    private safeActionCallback(callback: ((attempt: ActionAttempt) => void) | undefined, attempt: ActionAttempt, cause: string): void {
+        if (!callback) {
+            return;
+        }
+        try {
+            callback(attempt);
+        } catch (error) {
+            this.options.inferenceLog.append(this.name, {
+                tick: this.state.tick,
+                cause,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
     private async executeTradeResource(input: ActionCoordinatorSubmitInput): Promise<ActionAttempt> {
         const action = input.action as {
             kind: 'trade_resource';
@@ -1428,7 +1858,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 metadata: input.metadata,
             };
             this.recordEvidence(trajectory => {
-                const line = trajectory.recordAction(action, failAttempt.attemptId);
+                const line = trajectory.recordAction(action, failAttempt.attemptId, this.state.cognition?.activeGoal?.id);
                 this.evidence?.library?.observeTrajectory(line);
                 trajectory.recordActionResult(failAttempt.attemptId, {
                     status: 'failure',
@@ -1465,7 +1895,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         this.options.stateStore.save(this.state);
 
         this.recordEvidence(trajectory => {
-            const line = trajectory.recordAction(action, attemptId);
+            const line = trajectory.recordAction(action, attemptId, this.state.cognition?.activeGoal?.id);
             this.evidence?.library?.observeTrajectory(line);
         });
 
@@ -1909,6 +2339,11 @@ function movementWaitToEffect(
             ? chebyshevDistance(detail.finalPosition, detail.target)
             : undefined;
     const improved = typeof startDistance === 'number' && typeof finalDistance === 'number' && finalDistance < startDistance;
+    const detoured =
+        typeof startDistance === 'number' &&
+        typeof finalDistance === 'number' &&
+        finalDistance === startDistance &&
+        Boolean(detail.startPosition && detail.finalPosition && movedOnSamePlane(detail.startPosition, detail.finalPosition));
 
     if (wait.reason === 'timeout' && improved) {
         return {
@@ -1925,6 +2360,30 @@ function movementWaitToEffect(
                         startDistance,
                         finalDistance,
                         improved,
+                        waitOutcome: wait.reason,
+                        timeoutMs: detail.timeoutMs,
+                    },
+                },
+            ],
+        };
+    }
+
+    if (wait.reason === 'timeout' && detoured) {
+        return {
+            ok: true,
+            evidence: [
+                {
+                    source: 'perception',
+                    detail: {
+                        kind: 'movement_detour',
+                        target: detail.target,
+                        range: detail.range,
+                        startPosition: detail.startPosition,
+                        finalPosition: detail.finalPosition,
+                        startDistance,
+                        finalDistance,
+                        improved,
+                        detoured,
                         waitOutcome: wait.reason,
                         timeoutMs: detail.timeoutMs,
                     },
@@ -1965,6 +2424,31 @@ function eventWaitToEffect(
     return { ok: true, evidence: [evidence(wait.observation.value)] };
 }
 
+function normalizeGatewayResidentId(residentId: string): string {
+    return residentId.startsWith('resident:') ? residentId.slice('resident:'.length) : residentId;
+}
+
+function gatewayActionResultToEffect(observation: GatewayActionResultObservation): EffectWaitResult {
+    const evidence: ActionEvidence = {
+        source: 'action_result',
+        detail: {
+            kind: 'gateway_action_result',
+            requestId: observation.requestId,
+            cause: observation.cause,
+            result: observation.result,
+        },
+    };
+    if (observation.result.ok === false) {
+        return {
+            ok: false,
+            reason: 'failure',
+            finalReason: typeof observation.result.reason === 'string' ? observation.result.reason : 'action_result_failed',
+            evidence: [evidence],
+        };
+    }
+    return { ok: true, evidence: [evidence] };
+}
+
 function perceptionPosition(perception: Perception): Position | undefined {
     const resident = record(perception.resident);
     const position = record(resident.position);
@@ -1995,6 +2479,10 @@ function positionMatches(position: Position | undefined, target: Position, range
 
 function samePlane(a: Position, b: Position): boolean {
     return b.level === undefined || a.level === b.level || a.level === undefined;
+}
+
+function movedOnSamePlane(a: Position, b: Position): boolean {
+    return samePlane(a, b) && (a.x !== b.x || a.y !== b.y);
 }
 
 function movementEffectTimeoutMs(position: Position | undefined, target: Position): number {
@@ -2064,6 +2552,13 @@ function numberField(value: unknown): number | undefined {
     return typeof value === 'number' ? value : undefined;
 }
 
+function positiveInt(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        return undefined;
+    }
+    return value;
+}
+
 function waitsForPerceptionEffect(kind: string): boolean {
     return ['interact', 'use_item_on', 'use_item_on_item', 'attack', 'item_action', 'equip', 'drop', 'eat'].includes(kind);
 }
@@ -2078,6 +2573,23 @@ function supportsPerceptionEffectWait(body: ResidentBody): boolean {
 
 function stringReason(reason: unknown): string | undefined {
     return typeof reason === 'string' ? reason : undefined;
+}
+
+function visibleSpeechProgressReason(attempt: ActionAttempt): string | undefined {
+    if (attempt.finalStatus !== 'success' || attempt.action.kind !== 'say') {
+        return undefined;
+    }
+    const cause = stringReason((attempt.action as { cause?: unknown }).cause) || stringReason(attempt.cause);
+    if (
+        cause === 'social_keepalive' ||
+        cause === 'trade_keepalive' ||
+        cause === 'agent_keepalive' ||
+        cause === 'hero_keepalive' ||
+        cause === 'faction_landmark_recovery'
+    ) {
+        return `visible_say:${cause}`;
+    }
+    return undefined;
 }
 
 function actionEffectObserved(action: AgentAction, before: Perception | undefined, after: Perception): boolean {
