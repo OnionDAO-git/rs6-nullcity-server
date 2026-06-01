@@ -46,6 +46,13 @@ describe('buildStorytellerPrompt — required output fields', () => {
         expect(prompt).toContain('publicBullets');
     });
 
+    it('requires non-empty public copy instead of empty JSON placeholders', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+        expect(prompt).toMatch(/must not return \{\}/i);
+        expect(prompt).toMatch(/publicTitle, publicBody, and publicBullets must be non-empty/i);
+    });
+
     it('requests operatorSummary in the output schema', () => {
         const { digest } = buildFixtureDigest();
         const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
@@ -56,6 +63,13 @@ describe('buildStorytellerPrompt — required output fields', () => {
         const { digest } = buildFixtureDigest();
         const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
         expect(prompt).toContain('operatorWarnings');
+    });
+
+    it('limits operatorWarnings to publish-blocking public safety issues', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+        expect(prompt).toMatch(/operatorWarnings should only include publish-blocking/i);
+        expect(prompt).toMatch(/Do not add routine caveats/i);
     });
 
     it('requests eventRefsUsed in the output schema', () => {
@@ -115,5 +129,27 @@ describe('buildStorytellerPrompt — no-invent rule', () => {
         const { digest } = buildFixtureDigest();
         const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
         expect(prompt).toMatch(/eventRefsUsed.*digest|only.*refs.*digest|refs.*provided/i);
+    });
+});
+
+describe('buildStorytellerPrompt — public voice', () => {
+    it('asks for a cyberpunk-fantasy dungeon-broadcast voice that creates curiosity', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(prompt).toMatch(/cyberpunk-fantasy/i);
+        expect(prompt).toMatch(/dungeon-crawl/i);
+        expect(prompt).toMatch(/why humans should care/i);
+        expect(prompt).toMatch(/want to watch next|want to know more/i);
+    });
+
+    it('rejects old-fashioned newscaster openings and filler drama', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(prompt).toMatch(/good evening/i);
+        expect(prompt).toMatch(/big news tonight/i);
+        expect(prompt).toMatch(/old-fashioned news-anchor/i);
+        expect(prompt).toMatch(/do not overhype quiet windows/i);
     });
 });

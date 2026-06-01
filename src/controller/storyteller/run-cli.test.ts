@@ -167,4 +167,50 @@ describe('storyteller:run CLI digest sources', () => {
         expect(fs.existsSync(path.join(outputDir, 'spent-digest', 'dispatch.json'))).toBe(false);
         fetchSpy.mockRestore();
     });
+
+    it('uses text response format for configured Storyteller endpoints', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest, refs } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'text-format-digest' });
+        const modelPayload = {
+            publicTitle: 'AP Alarm in the Dungeon Stack',
+            publicBody:
+                'Alice is low on AP while Bob moved real RuneScape GP. The city has a live resource problem, not a bedtime bulletin.',
+            publicBullets: ['Alice is below the AP survival threshold.', 'Bob has real RuneScape GP evidence.'],
+            operatorSummary: 'Paid Storyteller text-mode JSON response.',
+            operatorWarnings: [],
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+        };
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    choices: [{ message: { content: JSON.stringify(modelPayload) } }],
+                    usage: { prompt_tokens: 100, completion_tokens: 60, cost: 0.01 },
+                }),
+                { status: 200 },
+            ),
+        );
+
+        await runStoryteller(
+            {
+                source: 'digest-id',
+                digestId: 'text-format-digest',
+                outputDir,
+                modelProfile: 'storyteller-smart',
+                dailyCostCapUsd: 1,
+            },
+            {
+                env: {
+                    STORYTELLER_LLM_BASE_URL: 'http://paid-model.invalid',
+                    STORYTELLER_LLM_MODEL: 'paid-storyteller',
+                },
+                now: () => new Date('2026-05-30T20:30:00.000Z'),
+            },
+        );
+
+        const requestInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+        const body = JSON.parse(String(requestInit.body)) as { response_format?: unknown };
+        expect(body.response_format).toEqual({ type: 'text' });
+        fetchSpy.mockRestore();
+    });
 });

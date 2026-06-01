@@ -143,12 +143,12 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-angler').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-guardian').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-social').frontmatter.behavior).toEqual(
-                expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'social' }),
+                expect.objectContaining({ followPlayer: 'res:qa-trader', commandPrefix: 'social' }),
             );
             expect(loader.load('res:qa-cook').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-scout').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
             expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
-                expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'trade' }),
+                expect.objectContaining({ followPlayer: 'res:qa-social', commandPrefix: 'trade' }),
             );
             expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('trading-giving-5m');
             expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');

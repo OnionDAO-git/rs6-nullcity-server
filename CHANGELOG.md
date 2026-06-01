@@ -8,9 +8,7 @@ See [`docs/changelog-workflow.md`](docs/changelog-workflow.md) for the authoring
 
 ## [Unreleased]
 
-## [2026-06-01] — chicago-demo-day-readiness
-
-Chicago demo-day readiness release. This promotes the weekend `agents/wip` line into `nullcity`: the AP/GP game loop, Soul birth and goal contracts, NCRI sale/redeem substrate, Storyteller foundations, resident observability, memory proof, and evidence-backed capability QA.
+Draft for the current `agents/wip` line since the pre-Chicago demo snapshot. These items are not a dated `nullcity` release yet; use this as the human-readable reference for what the working branch now contains and what a curated release should explain.
 
 ### Added
 
@@ -26,11 +24,14 @@ Chicago demo-day readiness release. This promotes the weekend `agents/wip` line 
 - Runtime cohort management now supports a small controlled resident set via `souls.discoverResidents: false`, so local demos can run roughly ten residents instead of every starter soul.
 - Inference policy now routes live residents to the serving `qwopus3.5-27b-v3` q4 endpoint; qwen and q8 routes are documented as non-serving/too slow until Dev confirms otherwise.
 - Capability QA expanded from simple smoke tests into evidence-backed resident tasks for combat, gear, trade, AP/GP behavior, low-health recovery, memory recall, stuck recovery, and normal-life audits.
+- Storyteller public dispatch prompts now ask for grounded, non-empty, cyberpunk-fantasy status copy and treat routine uncertainty separately from publish-blocking safety warnings.
 
 ### Fixed
 
 - City-born residents no longer disappear during reconcile, lose their goal contract on restart, or resurrect after death without being pruned from the born-resident manifest.
 - Public/operator naming no longer exposes the confusing resident display name `Agent`; the canonical `res:agent` resident now appears as `The Steward`.
+- Storyteller model parsing now accepts fenced or text-wrapped JSON, sends text-response requests to OpenAI-compatible endpoints, marks missing public copy for review, and avoids treating "no one died" as an unsupported death claim.
+- QA social/trader residents no longer target an absent `codex` player; they now form a deterministic reciprocal trade pair for capability testing.
 
 ## [2026-05-26] — pre-chicago-demo-2026-05-26
 
@@ -218,7 +219,6 @@ The pre-launch resident capability update. Pulled 183 commits, range `7e3012d7..
 
 For the full per-commit ledger of the 183 squashed commits, run `git log --oneline 7e3012d7..d298e480`.
 
-[Unreleased]: https://github.com/OnionDAO-git/rs6-nullcity-server/compare/chicago-demo-day-readiness-2026-06-01...HEAD
-[2026-06-01]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/chicago-demo-day-readiness-2026-06-01
+[Unreleased]: https://github.com/OnionDAO-git/rs6-nullcity-server/compare/pre-chicago-demo-2026-05-26...HEAD
 [2026-05-26]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/pre-chicago-demo-2026-05-26
 [2026-05-23]: https://github.com/OnionDAO-git/rs6-nullcity-server/releases/tag/2026-05-23

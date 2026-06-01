@@ -34,6 +34,7 @@ This file tells humans and AI agents which docs are canonical today and which do
 | `docs/2026-05-26-meeting-decisions.md` | Latest James/Dev/Adam meeting decisions and constraints. |
 | `docs/2026-05-28-attention-loop-and-storyteller-tasks.md` | AP/GP loop and Storyteller task seed. |
 | `docs/2026-05-28-storyteller-design.md` | Storyteller feature design. |
+| `docs/2026-06-01-storyteller-dashboard-backlog.md` | Active James-controlled Storyteller + `/overview` projector backlog. |
 | `docs/city-dashboard-integration.md` | Server-to-dashboard JSON contracts. |
 
 ## Evidence And Benchmarks
