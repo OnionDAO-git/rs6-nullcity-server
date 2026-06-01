@@ -33,6 +33,7 @@
         "controller:memory-recall-soak": "ts-node -r tsconfig-paths/register src/controller/admin/named-memory-recall-soak.ts",
         "controller:normal-life-audit": "ts-node -r tsconfig-paths/register src/controller/admin/normal-life-audit.ts",
         "controller:inference-audit": "ts-node -r tsconfig-paths/register src/controller/admin/inference-health-audit.ts",
+        "controller:status": "ts-node -r tsconfig-paths/register src/controller/admin/status-cli.ts",
         "controller:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/live-smoke.ts",
         "inference:canary": "ts-node -r tsconfig-paths/register src/controller/admin/inference-canary-smoke.ts",
         "patron:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/patron-loop-smoke.ts",

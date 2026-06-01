@@ -4,6 +4,8 @@ import { ControllerHost } from './controller-host';
 import { acquireControllerLock } from './controller-lock';
 import { closeLettersHttpServer, DEFAULT_HEALTH_TIMEOUT_MS, startLettersHttpServer } from './letters/letters-http-server';
 import { runInferenceHealthProbe } from './llm/inference-health';
+import { createHealthProbeTimer, type HealthProbeTimer } from './observability/health-probe-timer';
+import path from 'path';
 import { LlmClient } from './llm/llm-client';
 import { closeControllerMcpHttpServer, startControllerMcpHttpServer } from './mcp/http-server';
 import { LettersStore } from './patron/letters-store';
@@ -20,7 +22,16 @@ async function main(): Promise<void> {
     let lettersHttpServer: Awaited<ReturnType<typeof startLettersHttpServer>> | undefined;
     let cityHttpServer: Awaited<ReturnType<typeof startCityIntegrationHttpServer>> | undefined;
 
+    // Resident Observatory (Phase 1): timed inference-health probe → inference-health.json.
+    // Cadence-independent outage detector read by `npm run controller:status` + the dashboard.
+    const healthProbeTimer: HealthProbeTimer = createHealthProbeTimer({
+        outputPath: path.join(config.memory.dir, 'inference-health.json'),
+        probe: () => runInferenceHealthProbe({ endpoints: config.llm.endpoints, timeoutMs: DEFAULT_HEALTH_TIMEOUT_MS }),
+        onError: error => process.stderr.write(`[health-probe] ${error instanceof Error ? error.message : String(error)}\n`),
+    });
+
     const shutdown = async () => {
+        healthProbeTimer.stop();
         if (cityHttpServer) {
             await closeCityIntegrationHttpServer(cityHttpServer.server);
             cityHttpServer = undefined;
@@ -89,7 +100,9 @@ async function main(): Promise<void> {
             process.stderr.write(`[controller] city integration HTTP listening at ${cityHttpServer.url}\n`);
         }
         await host.start();
+        healthProbeTimer.start();
     } catch (error) {
+        healthProbeTimer.stop();
         if (cityHttpServer) {
             await closeCityIntegrationHttpServer(cityHttpServer.server).catch(closeError => {
                 process.stderr.write(`[controller] city integration HTTP close failed after startup error: ${errorMessage(closeError)}\n`);
