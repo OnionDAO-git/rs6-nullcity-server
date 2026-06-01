@@ -461,7 +461,7 @@ export class ControllerHost {
             loreBus: this.loreBus,
             factionStockpile: this.factionStockpile,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
-            onDeath: (name: string) => this.handleResidentDeath(name),
+            onDeath: (name: string, cause: string) => this.handleResidentDeath(name, cause),
         };
         this.runtimes.set(
             soul.frontmatter.name,
@@ -576,13 +576,15 @@ export class ControllerHost {
      * graveyard. Authored cohort residents (config.residents) are left untouched
      * and keep their existing respawn behavior.
      */
-    private handleResidentDeath(name: string): void {
+    private handleResidentDeath(name: string, cause: string): void {
         if (!this.cityBorn.has(name)) {
             return;
         }
         this.cityBorn.delete(name);
         this.desired.delete(name);
         this.bornStore.remove(name);
+        // eslint-disable-next-line no-console
+        console.log(`[controller-host] city-born resident ${name} died (${cause}); pruned from cohort — death stays in the graveyard.`);
     }
 
     private refreshDesiredResidents(): void {
