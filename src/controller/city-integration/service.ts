@@ -706,6 +706,25 @@ export class CityIntegrationService {
                         refId: request.sourceId ?? `ncri-sale:${id}:${request.idempotencyKey}`,
                     },
                 });
+
+                // Loop mechanic (Dev's spec): a resident "gets more attention from
+                // humans by selling them NCRIs". transfer() records the ncri_sale
+                // economy event with apDelta for accounting, but does not move live
+                // attention. Credit the seller resident's runtime here so a sale
+                // actually extends its life. This runs inside the idempotent buy
+                // closure, so a replay returns the cached result without
+                // re-crediting. Best-effort: only when the previous owner is a live
+                // resident runtime (skip human resellers / offline residents); never
+                // fail a completed sale on an attention-credit problem.
+                if (previousOwner.startsWith('res:')) {
+                    try {
+                        this.options.getRuntime(previousOwner)?.incrementAttention(pricing.apPrice);
+                    } catch (err) {
+                        // eslint-disable-next-line no-console
+                        console.error('[buyNcri] seller attention credit failed', { ncriId: id, previousOwner, error: err });
+                    }
+                }
+
                 return {
                     ok: true as const,
                     ncriId: id,

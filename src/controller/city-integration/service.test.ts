@@ -819,6 +819,75 @@ describe('CityIntegrationService', () => {
         expect(replay).toMatchObject({ ok: true, ncriId: ncri.id, idempotent: true });
     });
 
+    it('buyNcri credits the selling resident attention by the AP price (sell-for-attention loop)', async () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Tinderbox of the Flame',
+            lore: 'Null City fire starter.',
+            owner: 'res:test',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 150, gpRedemptionCost: 500 });
+
+        const before = runtime.getState().attention;
+        await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-attn-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+        });
+        // Dev's loop mechanic: a resident "gets more attention from humans by
+        // selling them NCRIs". The sale must credit the seller resident's live
+        // attention by the AP price.
+        expect(runtime.getState().attention).toBe(before + 150);
+
+        // Idempotent replay must NOT double-credit (credit lives inside the
+        // idempotent buy closure).
+        await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-attn-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 150,
+        });
+        expect(runtime.getState().attention).toBe(before + 150);
+    });
+
+    it('buyNcri does not throw when the seller is not a live resident runtime', async () => {
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Drifter relic',
+            lore: 'Owned by a human reseller, not a resident.',
+            owner: 'city-user:bob',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 75, gpRedemptionCost: 200 });
+
+        const result = await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-noattn-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 75,
+        });
+        expect(result).toMatchObject({ ok: true, previousOwner: 'city-user:bob' });
+    });
+
+    it('buyNcri completes when the seller is a resident with no live runtime (offline)', async () => {
+        // owner has the res: prefix but getRuntime only resolves 'res:test', so
+        // the optional-chain credit is skipped without throwing.
+        const ncri = service.createNcri({
+            itemId: 590,
+            displayName: 'Relic of an offline soul',
+            lore: 'Seller resident is not currently managed.',
+            owner: 'res:offline',
+        });
+        service.approveNcri(ncri.id, {});
+        service.listNcriForSale(ncri.id, { apPrice: 90, gpRedemptionCost: 300 });
+
+        const result = await service.buyNcri(ncri.id, {
+            idempotencyKey: 'buy-offline-1',
+            cityUserId: 'city-user:alice',
+            apPrice: 90,
+        });
+        expect(result).toMatchObject({ ok: true, previousOwner: 'res:offline' });
+    });
+
     it('buyNcri rejects stale AP price mismatches', async () => {
         const ncri = service.createNcri({
             itemId: 4151,
