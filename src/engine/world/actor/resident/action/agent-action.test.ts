@@ -16,4 +16,13 @@ describe('AgentActionSchema', () => {
             }),
         ).not.toThrow();
     });
+
+    it('accepts a buy_from_shop action (residents can purchase a needed tool)', () => {
+        expect(() => AgentActionSchema.parse({ kind: 'buy_from_shop', itemId: 1351, quantity: 1 })).not.toThrow();
+    });
+
+    it('rejects buy_from_shop missing itemId or quantity', () => {
+        expect(() => AgentActionSchema.parse({ kind: 'buy_from_shop', quantity: 1 })).toThrow();
+        expect(() => AgentActionSchema.parse({ kind: 'buy_from_shop', itemId: 1351 })).toThrow();
+    });
 });

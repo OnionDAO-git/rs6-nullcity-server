@@ -1,4 +1,4 @@
-import { findItem } from '@engine/config/config-handler';
+import { findItem, findShop } from '@engine/config/config-handler';
 import { widgets } from '@engine/config/config-handler';
 import { activeWorld } from '@engine/world';
 import { findSpellByKey } from '@engine/world/actor/magic';
@@ -23,6 +23,8 @@ import {
     isObjectRef,
     isWorldItemRef,
 } from './agent-action';
+
+const COINS_ITEM_ID = 995;
 
 export class ActionAdapter {
     public apply(resident: Resident, action: AgentAction): ActionResult {
@@ -69,6 +71,8 @@ export class ActionAdapter {
                 return this.castSpell(resident, action.spellKey, action.target);
             case 'item_action':
                 return this.itemAction(resident, action.slot, action.option);
+            case 'buy_from_shop':
+                return this.buyFromShop(resident, action.itemId, action.quantity);
             case 'trade_request':
                 return this.tradeRequest(resident, action.target);
             case 'trade_offer_item':
@@ -87,6 +91,61 @@ export class ActionAdapter {
             default:
                 return { ok: false, reason: 'unknown_action' };
         }
+    }
+
+    /**
+     * Resident shop purchase. The resident must have opened the shop first via
+     * interact(shopkeeper, 'trade') — which sets metadata.lastOpenedShopKey. Buys
+     * up to `quantity` of `itemId` from the open shop's stock, deducting coins and
+     * adding the item. This is the missing capability that let a tool-less resident
+     * (e.g. a woodcutter with no axe) stall forever instead of buying one at Bob's.
+     */
+    private buyFromShop(resident: Resident, itemId: number, quantity: number): ActionResult {
+        const shopKey = (resident as unknown as { metadata?: { lastOpenedShopKey?: string } }).metadata?.lastOpenedShopKey;
+        if (!shopKey) {
+            return { ok: false, reason: 'no_shop_open' };
+        }
+        const shop = findShop(shopKey);
+        if (!shop) {
+            return { ok: false, reason: 'shop_not_found' };
+        }
+        const stockSlot = shop.container.items.findIndex(item => item?.itemId === itemId);
+        if (stockSlot === -1) {
+            return { ok: false, reason: 'item_not_in_shop' };
+        }
+        const stockItem = shop.container.items[stockSlot];
+        if (!stockItem || stockItem.amount <= 0) {
+            return { ok: false, reason: 'out_of_stock' };
+        }
+        const details = findItem(itemId);
+        if (!details) {
+            return { ok: false, reason: 'item_not_found' };
+        }
+        const unitPrice = shop.getBuyFromShopPrice(details);
+        if (unitPrice < 0) {
+            return { ok: false, reason: 'not_sold_here' };
+        }
+        const inventory = resident.inventory;
+        const coinsSlot = inventory.items.findIndex(item => item?.itemId === COINS_ITEM_ID);
+        const coins = coinsSlot >= 0 ? inventory.items[coinsSlot] : undefined;
+        if (!coins || coins.amount < unitPrice) {
+            return { ok: false, reason: 'insufficient_coins' };
+        }
+        const affordable = Math.min(Math.max(1, quantity), stockItem.amount, Math.floor(coins.amount / unitPrice));
+        let bought = 0;
+        for (let i = 0; i < affordable; i++) {
+            if (inventory.add({ itemId, amount: 1 }) !== null) {
+                bought++;
+            } else {
+                break;
+            }
+        }
+        if (bought === 0) {
+            return { ok: false, reason: 'inventory_full' };
+        }
+        inventory.set(coinsSlot, { itemId: COINS_ITEM_ID, amount: coins.amount - unitPrice * bought });
+        shop.container.set(stockSlot, { itemId, amount: stockItem.amount - bought });
+        return { ok: true };
     }
 
     private moveTo(resident: Resident, target: Pos, range = 0): ActionResult {
