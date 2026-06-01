@@ -1,3 +1,4 @@
+import { BornResidentStore } from './born-resident-store';
 import { EconomyEventLog } from './city-integration/economy-event';
 import { CityIntegrationService, type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
 import { ControllerConfig } from './config';
@@ -93,8 +94,10 @@ export class ControllerHost {
     // their runtime down as `no_longer_desired` the tick after birth, orphaning
     // a funded Soul (connected to the world but unmanaged: no evidence session,
     // city API getRuntime() returns undefined). In-memory for now; cross-restart
-    // persistence is a follow-up (see FIX-BORN-RESIDENT-PERSIST-1).
+    // persistence is handled by BornResidentStore (loaded in the constructor,
+    // appended on birth) so born residents survive a controller restart.
     private readonly cityBorn = new Set<string>();
+    private readonly bornStore: BornResidentStore;
     private readonly soulLoader: SoulLoader;
     private readonly memory: MemoryStore;
     private readonly stateStore: RuntimeStateStore;
@@ -148,6 +151,13 @@ export class ControllerHost {
         this.cityGatewayIsShared = this.cityGateway === this.gateway;
         this.configuredDesired = new Set(config.residents);
         this.desired = new Set(config.residents);
+        // Restore city-born residents persisted from prior runs so a controller
+        // restart re-manages them instead of orphaning them ("none erased").
+        this.bornStore = new BornResidentStore(config.memory.dir);
+        for (const name of this.bornStore.list()) {
+            this.cityBorn.add(name);
+            this.desired.add(name);
+        }
         this.soulLoader = options.soulLoader || new SoulLoader(config.souls.dir);
         this.memory = options.memory || new MemoryStore(config.memory.dir, config.memory.qmdBin);
         this.stateStore = options.stateStore || new RuntimeStateStore(config.memory.dir);
@@ -300,6 +310,7 @@ export class ControllerHost {
             await this.connectWithSoul(soul);
         }
         this.cityBorn.add(input.residentName);
+        this.bornStore.add(input.residentName);
         this.desired.add(input.residentName);
         return { resident: input.residentName, created, connected: true };
     }

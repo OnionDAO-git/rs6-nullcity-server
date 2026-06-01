@@ -365,8 +365,9 @@ describe('ControllerHost reconcile lifecycle', () => {
             load: jest.fn((name: string) => soul(name)),
         } as unknown as ControllerHostOptions['soulLoader'];
         const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-mem-'));
         const host = new ControllerHost(
-            { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false } },
+            { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false }, memory: { dir: memoryDir, qmdBin: '' } },
             deps,
         );
 
@@ -389,6 +390,32 @@ describe('ControllerHost reconcile lifecycle', () => {
         expect(runtimeCount(host)).toBe(2);
 
         await host.stop();
+    });
+
+    it('re-manages a city-born resident after a controller restart (persisted born manifest)', async () => {
+        const soulsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-souls-'));
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ch-born-mem-'));
+        const cfg = { ...config(), residents: ['res:pip'], souls: { dir: soulsDir, discoverResidents: false }, memory: { dir: memoryDir, qmdBin: '' } };
+
+        // First controller process: birth a resident, then shut down.
+        const host1 = new ControllerHost(cfg, dependencies(new FakeGateway()));
+        await host1.start();
+        await host1.birthResidentFromCity({
+            proposalId: 'proposal-1',
+            residentName: 'res:born',
+            soulMarkdown: '---\nname: res:born\narchetype: mentor\n---\nborn soul body',
+            fundedAttention: 100,
+        });
+        await host1.stop();
+
+        // Second controller process (restart) sharing the same memory dir: the
+        // born resident must be restored from the persisted manifest and managed
+        // again, even though it is absent from config.residents and discovery.
+        const host2 = new ControllerHost(cfg, dependencies(new FakeGateway()));
+        await host2.start();
+        expect(residentNames(host2)).toContain('res:born');
+
+        await host2.stop();
     });
 
     it('passes configured SPARK modules into created runtimes', async () => {
@@ -850,6 +877,10 @@ function soul(name: string): Soul {
 
 function runtimeCount(host: ControllerHost): number {
     return (host as unknown as { runtimes: Map<string, unknown> }).runtimes.size;
+}
+
+function residentNames(host: ControllerHost): string[] {
+    return [...(host as unknown as { runtimes: Map<string, unknown> }).runtimes.keys()];
 }
 
 async function flushPromises(): Promise<void> {
