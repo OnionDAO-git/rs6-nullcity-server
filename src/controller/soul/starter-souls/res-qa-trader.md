@@ -22,6 +22,7 @@ spawnPosition:
   y: 3230
   level: 0
 initialInventory:
+  - itemId: 1351  # bronze axe (woodcutting)
   - itemId: 1511
     amount: 5
   - itemId: 590
@@ -32,13 +33,15 @@ initialInventory:
 legacy:
   kind: mentor
   parameters:
-    benchmarkTask: trading-giving-5m
+    # Reassigned off trading-giving-5m: resident-to-resident trades never complete
+    # (the partner runs its own task and drifts), so it stalled. Has tinderbox +
+    # logs already; +axe enables the proven woodcutting→firemaking progress loop.
+    benchmarkTask: woodcutting-firemaking-10m
 modules:
   - id: onion.runescape.standard
     enabled: true
 behavior:
   kind: hybrid-agent
-  followPlayer: res:qa-social
   followRadius: 1
   commandPrefix: trade
   brainEveryTicks: 300

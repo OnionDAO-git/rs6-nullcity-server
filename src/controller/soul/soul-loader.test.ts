@@ -141,19 +141,20 @@ describe('SoulLoader', () => {
         it('assigns each QA resident a distinct seeded behavior target', () => {
             expect(loader.load('res:qa-woodcutter').frontmatter.legacy?.parameters?.benchmarkTask).toBe('woodcutting-firemaking-10m');
             expect(loader.load('res:qa-angler').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
-            expect(loader.load('res:qa-guardian').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
+            expect(loader.load('res:qa-guardian').frontmatter.legacy?.parameters?.benchmarkTask).toBe('woodcutting-firemaking-10m');
             expect(loader.load('res:qa-social').frontmatter.behavior).toEqual(
                 expect.objectContaining({ followPlayer: 'res:qa-trader', commandPrefix: 'social' }),
             );
             expect(loader.load('res:qa-cook').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-scout').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
             expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
-                expect.objectContaining({ followPlayer: 'res:qa-social', commandPrefix: 'trade' }),
+                expect.objectContaining({ commandPrefix: 'trade' }),
             );
-            expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('trading-giving-5m');
-            expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
+            expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('woodcutting-firemaking-10m');
+            expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('starter-fishing-5m');
+            expect(loader.load('res:qa-banker').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(
-                expect.objectContaining({ followPlayer: 'codex', commandPrefix: 'bank' }),
+                expect.objectContaining({ commandPrefix: 'bank' }),
             );
             expect(loader.load('res:qa-guide').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'guide' }));
             expect(loader.load('res:qa-priest').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');

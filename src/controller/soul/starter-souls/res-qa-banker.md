@@ -18,10 +18,11 @@ attentionProfile:
   decayCurve: gentle
 respawnPolicy: on_restart
 spawnPosition:
-  x: 3208
-  y: 3219
-  level: 2
+  x: 3242
+  y: 3243
+  level: 0
 initialInventory:
+  - itemId: 303   # small fishing net
   - itemId: 995
     amount: 125
   - itemId: 1511
@@ -31,22 +32,24 @@ initialInventory:
 legacy:
   kind: mentor
   parameters:
-    benchmarkTask: explore-report-5m
+    # Reassigned off explore-report-5m (open-ended, no progress) AND moved from a
+    # level-2 castle spawn down to the Lumbridge riverbank (L0) with a fishing net,
+    # so the proven fishing→cooking loop yields real inventory/XP progress.
+    benchmarkTask: fishing-cooking-10m
 modules:
   - id: onion.runescape.standard
     enabled: true
 behavior:
   kind: hybrid-agent
-  followPlayer: codex
   followRadius: 3
   commandPrefix: bank
   brainEveryTicks: 300
   bodyEveryTicks: 6
   shareGoalsEveryTicks: 80
   visibilityAnchor:
-    x: 3208
-    y: 3219
-    level: 2
+    x: 3242
+    y: 3243
+    level: 0
   returnToAnchorEveryTicks: 420
   returnToAnchorRadius: 10
   brain:

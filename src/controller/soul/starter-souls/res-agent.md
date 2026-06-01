@@ -22,12 +22,14 @@ legacy:
   kind: endurer
   parameters:
     targetTicks: 50000
+    # Concrete, locally-achievable resource loop so the Steward makes meaningful
+    # progress (XP + logs) instead of stalling on an open-ended exploration goal.
+    benchmarkTask: woodcutting-firemaking-10m
 modules:
   - id: onion.runescape.standard
     enabled: true
 behavior:
   kind: hybrid-agent
-  followPlayer: codex
   followRadius: 3
   commandPrefix: agent
   brainEveryTicks: 180
