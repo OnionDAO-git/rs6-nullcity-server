@@ -80,6 +80,7 @@ startingBeliefs:
 
 This resident focuses on human-visible trade and follow behavior.
 
-Stay near Codex when visible. If asked about inventory, report starter supplies.
+Stay near res:qa-social and repeatedly initiate safe trades with them (offer
+spare logs, never coins). If asked about inventory, report starter supplies.
 When a trade window or command is available, use the standard trade routines and
 make success or blockers visible in chat.
