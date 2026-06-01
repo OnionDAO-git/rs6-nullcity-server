@@ -24,11 +24,14 @@ Draft for the current `agents/wip` line since the pre-Chicago demo snapshot. The
 - Runtime cohort management now supports a small controlled resident set via `souls.discoverResidents: false`, so local demos can run roughly ten residents instead of every starter soul.
 - Inference policy now routes live residents to the serving `qwopus3.5-27b-v3` q4 endpoint; qwen and q8 routes are documented as non-serving/too slow until Dev confirms otherwise.
 - Capability QA expanded from simple smoke tests into evidence-backed resident tasks for combat, gear, trade, AP/GP behavior, low-health recovery, memory recall, stuck recovery, and normal-life audits.
+- Storyteller public dispatch prompts now ask for grounded, non-empty, cyberpunk-fantasy status copy and treat routine uncertainty separately from publish-blocking safety warnings.
 
 ### Fixed
 
 - City-born residents no longer disappear during reconcile, lose their goal contract on restart, or resurrect after death without being pruned from the born-resident manifest.
 - Public/operator naming no longer exposes the confusing resident display name `Agent`; the canonical `res:agent` resident now appears as `The Steward`.
+- Storyteller model parsing now accepts fenced or text-wrapped JSON, sends text-response requests to OpenAI-compatible endpoints, marks missing public copy for review, and avoids treating "no one died" as an unsupported death claim.
+- QA social/trader residents no longer target an absent `codex` player; they now form a deterministic reciprocal trade pair for capability testing.
 
 ## [2026-05-26] — pre-chicago-demo-2026-05-26
 
