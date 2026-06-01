@@ -1197,6 +1197,22 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             } catch {
                 // ignore — death processing continues regardless
             }
+            // Seal the Library on death so the portrait + in-game tombstone reflect
+            // it: emit a legacy_event (rebirth absent => applyLegacyEvent sets
+            // currentState 'ended'). Without this, attention-exhaustion deaths left
+            // the soul showing 'living' forever — only the Spark legacy-complete path
+            // (spark.ts) sealed (QA-20260601-066). Best-effort: never block epitaphs.
+            try {
+                const legacyLine = this.evidence?.trajectory?.recordLegacy({
+                    cause: this.state.deceased.cause,
+                    state: this.state.legacy,
+                });
+                if (legacyLine) {
+                    this.evidence?.library?.observeTrajectory(legacyLine);
+                }
+            } catch {
+                // ignore — death processing continues regardless
+            }
             const library = this.evidence?.library;
             const patronHandles = library ? library.getPatronHandles() : [];
             const root = record(perception);

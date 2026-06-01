@@ -3794,6 +3794,16 @@ describe('ResidentRuntime modules', () => {
         };
 
         const onDeath = jest.fn();
+        const sealTrajectory = {
+            beginTick: jest.fn(),
+            endTick: jest.fn(),
+            recordDecision: jest.fn(),
+            recordLegacy: jest.fn((event: unknown) => ({ kind: 'legacy_event', event })),
+        };
+        const sealLibrary = {
+            getPatronHandles: jest.fn(() => ['patron:alice', 'patron:bob']),
+            observeTrajectory: jest.fn(),
+        };
         const runtime = new ResidentRuntime({
             soul: soul('res:pip'),
             gateway: {} as GatewayClient,
@@ -3807,14 +3817,8 @@ describe('ResidentRuntime modules', () => {
             evidence: {
                 store,
                 sessionId: 'session-1',
-                trajectory: {
-                    beginTick: jest.fn(),
-                    endTick: jest.fn(),
-                    recordDecision: jest.fn(),
-                } as unknown as TrajectoryBuilder,
-                library: {
-                    getPatronHandles: jest.fn(() => ['patron:alice', 'patron:bob']),
-                } as unknown as LibraryUpdater,
+                trajectory: sealTrajectory as unknown as TrajectoryBuilder,
+                library: sealLibrary as unknown as LibraryUpdater,
             },
         });
 
@@ -3836,6 +3840,10 @@ describe('ResidentRuntime modules', () => {
         expect(state.deceased.processed).toBe(true);
         // onDeath fires once so the host can prune a city-born resident (death must stick).
         expect(onDeath).toHaveBeenCalledWith('res:pip', 'killed by guard');
+        // Death seals the Library (currentState -> 'ended' via a legacy_event), so the
+        // portrait + in-game tombstone reflect the death (QA-20260601-066).
+        expect(sealTrajectory.recordLegacy).toHaveBeenCalled();
+        expect(sealLibrary.observeTrajectory).toHaveBeenCalledWith(expect.objectContaining({ kind: 'legacy_event' }));
 
         const lettersStore = new LettersStore(evidenceRoot);
         const aliceLetters = lettersStore.readInbox('patron:alice');
