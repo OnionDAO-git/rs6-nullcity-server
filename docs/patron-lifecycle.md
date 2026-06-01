@@ -1,5 +1,7 @@
 # Patron Lifecycle — first encounter to legacy
 
+> ⚠️ **Currency + path note (2026-05-31, packet `E2E-DOC-COHERENCE-1`):** this doc predates the pivot. Read **"Shards" as "AP" (Attention Points)** throughout — same ledger, renamed. The canonical economy path is now the **City API on `43611`** (`/api/nullcity`, `Bearer <city-http-token>`), which is what the dashboard uses; see `HUMANS.md` § Patron flow. The `patron:offer` MCP flow below still produces standing + tier letters, but is **rejected by the live stack unless the controller was started with `CONTROLLER_MCP_TOKENS`** — and the City API `attention-grants` path does **not** yet emit standing/letters. The two halves are not unified yet; verify against `HUMANS.md` before relying on the exact stdout shown here.
+
 > **Audience:** OnionDAO Chicago staff, volunteers, and Tuesday-morning maintainers picking this up cold. If you've never run the patron CLI before, start here, then keep `docs/embassy-staff-runbook.md` open on a second tab for the door-side cheat sheet.
 
 This is the **narrative companion** to the runbook. Where the runbook is a laminated reference card for the door, this is the story arc: what happens to a patron from the moment they walk up to the embassy table, through their first tier crossings, into the deep weeks where Standing persists across restarts, and finally — if a resident they sponsored dies — through the death-loop epitaph that lands in their inbox naming them by handle.

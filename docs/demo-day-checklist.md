@@ -89,6 +89,8 @@ curl -s -o /dev/null -w '%{http_code} %{size_download}\n' http://127.0.0.1:43596
 
 Pick a handle you'll use for the walkthrough. Tradition: `demo@onion`.
 
+> ⚠️ **`patron:offer` (step 3) is auth-rejected unless the controller was started with `CONTROLLER_MCP_TOKENS`** — the live stack usually is not, so this step errors with `Unauthorized: invalid token`. The canonical AP-spend path is the City API on `43611` (see `HUMANS.md` § Patron flow). `patron:offer` is currently the only path that dispatches tier letters, so if the inbox must show a *patron* letter, either (a) ask the runtime steward to restart with MCP tokens, or (b) use a handle that already has letters (e.g. `codex-live`). See packet `E2E-DOC-COHERENCE-1`.
+
 ```bash
 # 1. Register
 npm run patron:register -- --human demo@onion --kind patron_gift
@@ -97,6 +99,7 @@ npm run patron:register -- --human demo@onion --kind patron_gift
 npm run patron:grant -- --human demo@onion --amount 5
 
 # 3. Offer + witness a hero so the inbox has at least one letter
+#    (offer needs MCP tokens — see warning above; witness works without them)
 CONTROLLER_MCP_HTTP_PORT=43610 CONTROLLER_MCP_TOKENS=operator-token \
   npm run patron:offer -- --human demo@onion --resident res:hans --amount 5
 npm run patron:witness -- --human demo@onion --resident res:hans

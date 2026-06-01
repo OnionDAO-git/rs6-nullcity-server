@@ -90,20 +90,36 @@ curl -fsS http://127.0.0.1:43596/v1/health
 
 ## Patron flow (the demoable loop)
 
+> **Canonical path is the City API on `43611`** (`/api/nullcity/...`, `Authorization: Bearer <city-http-token>`; the live token is whatever the controller was started with via `--city-http-token`, currently `operator-token`). This is the path the dashboard "Support with AP" button actually uses. The older `patron:offer` MCP flow (port `43610`) is **legacy** and is rejected unless the controller was started with `CONTROLLER_MCP_TOKENS` set — the live stack usually is not. See the ⚠️ caveat below before relying on standing/letters.
+
+Known-good live sequence (verified against the running stack):
+
 ```bash
-npm run patron:grant -- --human demo@onion --amount 5
+TOK='Authorization: Bearer operator-token'      # = controller --city-http-token
+API='http://127.0.0.1:43611/api/nullcity'
 
-CONTROLLER_MCP_HTTP_PORT=43610 CONTROLLER_MCP_TOKENS=operator-token \
-  npm run patron:offer -- --human demo@onion --resident res:hans --amount 5
+# 1. Credit a human's AP wallet (ledger write; works without MCP tokens)
+npm run patron:grant -- --human demo@onion --amount 50
 
-npm run patron:witness -- --human demo@onion --resident res:hans
+# 2. Support a resident with AP — refills their attention (the dashboard's action)
+curl -fsS -X POST "$API/residents/res:agent/attention-grants" -H "$TOK" \
+  -H 'Content-Type: application/json' \
+  -d '{"idempotencyKey":"demo-'"$(date +%s)"'","amount":50,"cityUserId":"demo@onion","note":"support"}'
+
+# 3. Inspect the effect
+curl -fsS -H "$TOK" "$API/economy/residents"        # per-resident attention + GP
+curl -fsS -H "$TOK" "$API/economy/totals"           # system-wide AP/GP deltas
+curl -fsS -H "$TOK" "$API/storyteller/latest"       # latest canon dispatch (may be empty if no live producer)
 ```
 
-Then use the dashboard inbox/patron surfaces to view the result, or inspect the controller JSON directly:
+Inbox / standing read APIs still live on the letters server (`43596`):
 
 ```bash
 curl -s 'http://127.0.0.1:43596/v1/inbox?human=demo@onion' | jq .
+curl -s 'http://127.0.0.1:43596/v1/patron/standing?human=demo@onion' | jq .
 ```
+
+> ⚠️ **Known split (filed 2026-05-31, packet `E2E-DOC-COHERENCE-1`):** the City API `attention-grants` path moves attention and logs an `ap_topup` economy event but does **NOT** increment patron standing or dispatch tier letters. Standing tiers + tier-crossing letters (the Pride/Attachment payoff) currently come only from `patron:offer` (MCP `43610`), which needs the controller started with `CONTROLLER_MCP_TOKENS=operator-token CONTROLLER_MCP_OPERATOR_FOR_operator_token=operator-codex`. Until the two are unified, a dashboard "Support with AP" produces no letter. `patron:witness` does grant +3 standing without MCP tokens.
 
 Full CLI list: `patron:register / bulk-register / grant / offer / gift / witness / ask / whisper / checkin / referral / balance / standing / smoke`.
 
