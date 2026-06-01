@@ -79,3 +79,38 @@ heroes need HD-052).
 2. **One full dress rehearsal** in a real browser (Chrome ext was offline tonight) +
    a clean restart to prove recovery.
 3. **Decide the physical takeaway story** (GP→print can't fire; what does a person leave with?).
+
+---
+
+## Event-day operator levers (added after the 14:xx game-hang incident)
+
+**Recover the whole stack (after a host lockup/reboot) — ONE command:**
+```bash
+cd rs6-nullcity-server && bash scripts/runtime/start-all-supervised.sh   # infra+game+controller+dashboard, all supervised
+bash scripts/post-restart-smoke.sh                                       # verify
+# stop: bash scripts/runtime/stop-all.sh
+```
+Both game and controller now run under supervisors (auto-restart on crash). The 2026-06-01 dead-city incident was a bare (unsupervised) game server hanging at 99% CPU with a frozen world tick for ~1h — start-all-supervised prevents that recurrence.
+
+**If residents look frozen (not moving) but the dashboard is up:** that's a stalled world feed, usually a hung game server. The supervised game auto-restarts on crash, but a *hang* (not crash) may need a manual bounce:
+```bash
+screen -X -S nullcity-game quit; sleep 3; bash scripts/runtime/start-all-supervised.sh  # or just re-run the game line
+```
+The health watchdog now alerts on a FROZEN WORLD (tick not advancing / 0 fresh feeds), not just a down controller.
+
+**Demo the climax (goal → saved to Library):** goals are operator-marked (no auto-detection). Pick a resident with an active goal and mark it achieved:
+```bash
+TOK='Authorization: Bearer operator-token'; API='http://127.0.0.1:43611/api/nullcity'
+curl -s -H "$TOK" "$API/goals" | jq '.[]|select(.status=="active")|{id,residentName,goalText}'   # pick one
+curl -s -X POST "$API/goals/<ID>/achieve" -H "$TOK" -H 'Content-Type: application/json' -d '{"evidence":"<what it did>","tick":1}'
+```
+
+**Demo a death / grief beat (no natural deaths happen in a short window):** drain a resident's AP to 0 → epitaph + graveyard tombstone + Library seals to 'ended':
+```bash
+curl -s -X POST "$API/admin/residents/<res:name>/ap-drain" -H "$TOK" -H 'Content-Type: application/json' -d '{"amount":99999,"reason":"demo"}'
+```
+
+**Support that produces a LETTER (the Pride/Attachment payoff):** the dashboard "Support with AP" button only refills attention (no letter — loop-split QA-20260601-065). For a support that ALSO grants standing + dispatches a letter, use the CLI (MCP tokens are now set live):
+```bash
+CONTROLLER_MCP_HTTP_PORT=43610 CONTROLLER_MCP_TOKENS=operator-token npm run patron:offer -- --human <handle> --resident <res:name> --amount 10
+```

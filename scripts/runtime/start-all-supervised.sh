@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+#
+# One-command full-stack bring-up for Null City — recover the whole city after a
+# host reboot/lockup in a single step, always using the SUPERVISED runners so a
+# game or controller crash auto-restarts (instead of going dark, as happened
+# 2026-06-01 when the bare game server hung for ~1h with no recovery).
+#
+# Usage:   bash scripts/runtime/start-all-supervised.sh
+# Stop:    bash scripts/runtime/stop-all.sh   (or quit each screen)
+# Watch:   screen -ls   /   tail -f /tmp/nullcity-runtime/*.log
+#
+# Brings up (each in its own detached screen):
+#   nullcity-infra        login + update servers
+#   nullcity-game         game server (SUPERVISED, 4GB heap, auto-restart)
+#   nullcity-controller   controller (SUPERVISED, auto-restart) + MCP + City API
+#   nullcity-dashboard-server / -web   the dashboard BFF + SPA
+#
+# Idempotent: quits any existing same-named screens first.
+set -uo pipefail
+SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DASH_DIR="$SERVER_DIR/../rs6-nullcity-residents-dashboard"
+LOG=/tmp/nullcity-runtime; mkdir -p "$LOG"
+
+quit() { screen -X -S "$1" quit >/dev/null 2>&1 || true; }
+up() { lsof -tiTCP:"$1" -sTCP:LISTEN -nP >/dev/null 2>&1; }
+
+echo "[bring-up] stopping any existing Null City screens…"
+for s in nullcity-infra nullcity-game nullcity-controller nullcity-dashboard-server nullcity-dashboard-web; do quit "$s"; done
+sleep 3
+# clear a stale controller lock if no process holds the port
+if [ -f "$SERVER_DIR/data/controller/memory/nullcity-controller.lock" ] && ! up 43596; then
+  rm -f "$SERVER_DIR/data/controller/memory/nullcity-controller.lock"; echo "[bring-up] cleared stale controller lock"
+fi
+
+echo "[bring-up] 1/4 infra (login+update)…"
+screen -dmS nullcity-infra bash -lc "cd '$SERVER_DIR' && npm run start:infra >> '$LOG/infra.log' 2>&1"
+
+echo "[bring-up] 2/4 game (supervised, 4GB heap, auto-restart)…"
+screen -dmS nullcity-game bash -lc "cd '$SERVER_DIR' && bash scripts/runtime/start-game-supervised.sh >> '$LOG/game-supervised.log' 2>&1"
+echo "[bring-up]   waiting for game gateway :43594…"
+for _ in $(seq 1 60); do up 43594 && break; sleep 2; done
+up 43594 && echo "[bring-up]   game gateway up ✓" || echo "[bring-up]   WARN game gateway not up yet (check $LOG/game-supervised.log)"
+
+echo "[bring-up] 3/4 controller (supervised, MCP + City API)…"
+screen -dmS nullcity-controller bash -lc "cd '$SERVER_DIR' && CONTROLLER_MCP_TOKENS=operator-token CONTROLLER_MCP_OPERATOR_FOR_operator_token=operator-codex bash scripts/start-controller-supervised.sh"
+echo "[bring-up]   waiting for controller :43596…"
+for _ in $(seq 1 40); do up 43596 && break; sleep 2; done
+up 43596 && echo "[bring-up]   controller up ✓" || echo "[bring-up]   WARN controller not up yet (check $LOG/controller-supervised.log)"
+
+echo "[bring-up] 4/4 dashboard (BFF + web)…"
+if [ -d "$DASH_DIR" ]; then
+  screen -dmS nullcity-dashboard-server bash -lc "cd '$DASH_DIR/packages/server' && DASHBOARD_WEB_DEV_ORIGIN=http://127.0.0.1:5174 bun --watch src/index.ts >> '$LOG/dashboard-server.log' 2>&1"
+  screen -dmS nullcity-dashboard-web bash -lc "cd '$DASH_DIR' && bun run dev:web >> '$LOG/dashboard-web.log' 2>&1"
+  echo "[bring-up]   dashboard started (City API wiring comes from packages/server/.env)"
+else
+  echo "[bring-up]   WARN dashboard repo not found at $DASH_DIR — start it manually"
+fi
+
+echo "[bring-up] done. Verify:  bash scripts/post-restart-smoke.sh"
+echo "[bring-up] screens:"; screen -ls 2>/dev/null | grep nullcity || true
