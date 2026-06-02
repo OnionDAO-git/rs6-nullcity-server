@@ -8,3 +8,4 @@
 2026-06-02 16:45 codex agents/wip QA-20260602-003 HANDOFF dashboard=e52cf00 server_docs=pending tests="bun test resident-story 41/41; bun typecheck/check/build ok" evidence=non-canon Storyteller previews now static held-for-review copy; issue-register rows still dirty/local-only next=QA-20260602-004
 2026-06-02 16:02 CDT codex agents/wip PROCESS-CLEANUP-A STARTING Files: AGENTS.md,docs/README.md,docs/START-HERE-AGENTS.md,docs/agent-coordination.md,docs/runtime-stewardship.md collision=clean-worktree
 2026-06-02 16:02 CDT codex agents/wip PROCESS-CLEANUP-B STARTING Files: docs/release-qa-status.md,docs/issue-register.md,docs/resident-capabilities.md,docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md collision=clean-worktree
+2026-06-02 16:18 CDT codex agents/wip PROCESS-CLEANUP HANDOFF sha=46c32cd6 docs-only; aligned onboarding, issue queue, runtime requests, release delta 36/0. git diff --check PASS. Dashboard AGENTS patch separate.
