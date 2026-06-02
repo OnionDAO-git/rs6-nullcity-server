@@ -22,6 +22,8 @@ spawnPosition:
   y: 3230
   level: 0
 initialInventory:
+  - itemId: 1351  # bronze axe (woodcutting)
+  - itemId: 590   # tinderbox (firemaking)
   - itemId: 315
   - itemId: 315
   - itemId: 315
@@ -35,7 +37,10 @@ initialEquipment:
 legacy:
   kind: endurer
   parameters:
-    benchmarkTask: combat-prayer-10m
+    # Reassigned off combat-prayer-10m (empty-courtyard waypoints → no fights).
+    # Given an axe + tinderbox so the proven woodcutting→firemaking loop yields
+    # real XP + logs progress.
+    benchmarkTask: woodcutting-firemaking-10m
 modules:
   - id: onion.runescape.standard
     enabled: true

@@ -511,7 +511,11 @@ export function benchmarkGoalForTask(taskId: unknown, tick: number): ActiveGoalS
         return explorationGoal(tick);
     }
     if (taskId === 'trading-giving-5m') {
-        return tradingGoal('Codex', tick);
+        // Trade with a present resident partner (res:qa-social), not the absent
+        // 'Codex' human anchor — otherwise the trade goal targets someone who is
+        // never in the world and no trade_request ever fires. res:qa-social is
+        // repointed to trust res:qa-trader back so the handshake completes.
+        return tradingGoal('res:qa-social', tick);
     }
     if (taskId === 'goal-follow-through-5m') {
         return goalFollowThroughGoal(tick);

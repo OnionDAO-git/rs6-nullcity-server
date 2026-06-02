@@ -33,7 +33,11 @@ initialEquipment:
 legacy:
   kind: endurer
   parameters:
-    benchmarkTask: combat-prayer-10m
+    # Reassigned off combat-prayer-10m: the combat waypoints sit in the empty
+    # Lumbridge courtyard (no safe NPCs) → zero attacks → no progress. This
+    # resident already carries a small fishing net (303), so a fishing loop
+    # yields real inventory/XP progress.
+    benchmarkTask: starter-fishing-5m
 modules:
   - id: onion.runescape.standard
     enabled: true

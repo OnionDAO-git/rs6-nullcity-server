@@ -46,6 +46,7 @@ export type AgentAction =
     | { kind: 'attack'; target: ActorRef }
     | { kind: 'cast_spell'; spellKey: string; target?: ActorRef }
     | { kind: 'item_action'; slot: number; option: string }
+    | { kind: 'buy_from_shop'; itemId: number; quantity: number; cause?: string }
     | { kind: 'equip'; slot: number }
     | { kind: 'unequip'; equipmentSlot: EquipmentSlot }
     | { kind: 'drop'; slot: number }
@@ -169,6 +170,12 @@ export const AgentActionSchema = z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('attack'), target: ActorRefSchema }),
     z.object({ kind: z.literal('cast_spell'), spellKey: z.string().min(1), target: ActorRefSchema.optional() }),
     z.object({ kind: z.literal('item_action'), slot: z.number().int().nonnegative(), option: z.string().min(1) }),
+    z.object({
+        kind: z.literal('buy_from_shop'),
+        itemId: z.number().int().positive(),
+        quantity: z.number().int().positive(),
+        cause: z.string().optional(),
+    }),
     z.object({ kind: z.literal('equip'), slot: z.number().int().nonnegative() }),
     z.object({ kind: z.literal('unequip'), equipmentSlot: equipmentSlotSchema }),
     z.object({ kind: z.literal('drop'), slot: z.number().int().nonnegative() }),

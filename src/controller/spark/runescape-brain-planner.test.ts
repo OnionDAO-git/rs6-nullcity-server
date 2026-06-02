@@ -496,10 +496,13 @@ describe('benchmarkGoalForTask', () => {
         expect(g?.description).toMatch(/rememberFact|durable/i);
     });
 
-    it("returns a trade tester goal for 'trading-giving-5m'", () => {
+    it("returns a trade tester goal targeting a present partner for 'trading-giving-5m'", () => {
+        // Repointed off the absent 'Codex' human anchor to a present resident
+        // (res:qa-social) so the trade goal targets someone actually in the world.
         const g = benchmarkGoalForTask('trading-giving-5m', 0);
-        expect(g?.id).toBe('trade-with-codex');
-        expect(g?.description).toMatch(/trade|Codex/i);
+        expect(g?.id).toBe('trade-with-res-qa-social');
+        expect(g?.description).toMatch(/trade/i);
+        expect(g?.description).not.toMatch(/Codex/i);
         expect(isFollowGoal(g)).toBe(true);
     });
 

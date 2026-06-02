@@ -1,7 +1,8 @@
-import { findItem } from '@engine/config/config-handler';
+import { findItem, findShop } from '@engine/config/config-handler';
 import { activeWorld } from '@engine/world';
 import { findSpellByKey } from '@engine/world/actor/magic';
 import type { Resident } from '@engine/world/actor/resident/resident';
+import { ItemContainer } from '@engine/world/items/item-container';
 import { filestore } from '@server/game/game-server';
 import { ActionAdapter } from './action-adapter';
 import type { ActorRef } from './agent-action';
@@ -10,6 +11,7 @@ const mockActionPipelineCall = jest.fn();
 
 jest.mock('@engine/config/config-handler', () => ({
     findItem: jest.fn(),
+    findShop: jest.fn(),
     widgets: { inventory: { widgetId: 3214, containerId: 0 } },
 }));
 
@@ -663,3 +665,48 @@ function residentActor(overrides: {
     };
     return actor as unknown as Resident;
 }
+
+describe('ActionAdapter buy_from_shop (residents can acquire a needed tool)', () => {
+    const COINS = 995;
+    const AXE = 1351;
+
+    beforeEach(() => {
+        jest.mocked(findItem).mockReturnValue({ gameId: AXE, key: 'rs:bronze_axe', value: 16 } as never);
+    });
+
+    function shopResident(coins: number, shopKey?: string): Resident {
+        const inventory = new ItemContainer(28);
+        if (coins > 0) inventory.set(0, { itemId: COINS, amount: coins });
+        return { metadata: shopKey ? { lastOpenedShopKey: shopKey } : {}, inventory } as unknown as Resident;
+    }
+
+    function openShopWithAxe(stock = 10): ItemContainer {
+        const container = new ItemContainer(40);
+        container.set(0, { itemId: AXE, amount: stock });
+        jest.mocked(findShop).mockReturnValue({ container, getBuyFromShopPrice: () => 5 } as never);
+        return container;
+    }
+
+    it('buys the item: adds it to inventory, deducts coins, decrements stock', () => {
+        const resident = shopResident(100, 'rs:lumbridge_bobs_axes');
+        const shopContainer = openShopWithAxe(10);
+        const result = new ActionAdapter().apply(resident, { kind: 'buy_from_shop', itemId: AXE, quantity: 1 });
+        const inv = (resident as unknown as { inventory: ItemContainer }).inventory;
+        expect(result.ok).toBe(true);
+        expect(inv.has(AXE)).toBe(true);
+        expect(inv.amount(COINS)).toBe(95);
+        expect(shopContainer.amount(AXE)).toBe(9);
+    });
+
+    it('fails with no_shop_open when no shop is open', () => {
+        const result = new ActionAdapter().apply(shopResident(100), { kind: 'buy_from_shop', itemId: AXE, quantity: 1 });
+        expect(result).toEqual({ ok: false, reason: 'no_shop_open' });
+    });
+
+    it('fails with insufficient_coins when the resident cannot afford it', () => {
+        const resident = shopResident(2, 'rs:lumbridge_bobs_axes');
+        openShopWithAxe(10);
+        const result = new ActionAdapter().apply(resident, { kind: 'buy_from_shop', itemId: AXE, quantity: 1 });
+        expect(result).toEqual({ ok: false, reason: 'insufficient_coins' });
+    });
+});
