@@ -15,6 +15,7 @@ import { MemoryStore } from './memory/memory-store';
 import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/runtime-state';
 import { CurrencyLedger } from './patron/currency-ledger';
 import { LettersStore } from './patron/letters-store';
+import { produceStandingTierLetter } from './patron/letters-producer';
 import { PatronGateway } from './patron/patron-gateway';
 import { PatronStore } from './patron/patron-store';
 import { StandingLedger } from './patron/standing-ledger';
@@ -116,6 +117,9 @@ export class ControllerHost {
     public readonly patronGateway: PatronGateway;
     private readonly currencyLedger: CurrencyLedger;
     private readonly standingLedger: StandingLedger;
+    // Extracted so both PatronGateway and the onPatronSupport callback share
+    // the same LettersStore instance (same inbox root → same dedup index).
+    private readonly lettersStore: LettersStore;
     public readonly loreBus: LoreBus;
     public readonly factionStockpile: FactionStockpileLedger;
     private readonly economyEventLog: EconomyEventLog;
@@ -184,6 +188,11 @@ export class ControllerHost {
         this.patronStore = options.patronStore || new PatronStore(config.memory.dir);
         this.currencyLedger = this.patronStore.loadCurrency();
         this.standingLedger = this.patronStore.loadStanding();
+        // Shared LettersStore: used by both PatronGateway (offer/sponsor/witness)
+        // and the onPatronSupport callback (creditAttention via city API) so
+        // tier-crossing letters from both paths land in the same inbox root and
+        // the LettersStore's natural dedup works across both flows.
+        this.lettersStore = new LettersStore(config.memory.dir);
         // EVENT-D1a: wire LettersStore rooted at memory.dir so every
         // tier-crossing offer/sponsor/witness/gift produces a Letter that
         // actually reaches disk. Prior to this wiring, PatronGateway was
@@ -196,7 +205,7 @@ export class ControllerHost {
                 standingLedger: this.standingLedger,
                 runtimes: this.runtimes,
                 soulsDir: config.souls.dir,
-                lettersStore: new LettersStore(config.memory.dir),
+                lettersStore: this.lettersStore,
                 memoryDir: config.memory.dir,
             });
         this.loreBus = options.loreBus || new LoreBus();
@@ -221,6 +230,30 @@ export class ControllerHost {
                 birthResident: input => this.birthResidentFromCity(input),
             },
             economyEventLog: this.economyEventLog,
+            // QA-20260601-065: wire patron standing + tier letters for city-API
+            // support grants so the dashboard "Support with AP" button produces
+            // the same standing/letter effects as the patron:offer CLI path.
+            onPatronSupport: event => {
+                const result = this.standingLedger.recordSupport(event.cityUserId, event.faction, event.amount, {
+                    reason: event.note,
+                    ts: event.ts,
+                });
+                if (result.tiersCrossed.length > 0) {
+                    for (const tierCrossed of result.tiersCrossed) {
+                        const letter = produceStandingTierLetter({
+                            humanId: event.cityUserId,
+                            faction: event.faction,
+                            residentName: event.residentName,
+                            tierCrossed,
+                            amount: event.amount,
+                            ts: event.ts,
+                        });
+                        if (letter) {
+                            this.lettersStore.append(letter);
+                        }
+                    }
+                }
+            },
         });
         this.bindGatewayEvents();
     }

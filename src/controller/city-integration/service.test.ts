@@ -5,7 +5,7 @@ import { residentSlug, type RuntimeState } from '../memory/runtime-state';
 import { runCityDigest } from './cli';
 import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
-import { CityIntegrationError, CityIntegrationService, type CityRuntime } from './service';
+import { CityIntegrationError, CityIntegrationService, type CityRuntime, type PatronSupportEvent } from './service';
 import { SoulProposalStore } from './soul-proposals';
 
 class FakeRuntime implements CityRuntime {
@@ -129,6 +129,104 @@ describe('CityIntegrationService', () => {
             tick: 7,
             lifeIndex: 1,
             significanceReasons: ['city:attention_credit'],
+        });
+    });
+
+    describe('onPatronSupport callback (QA-20260601-065)', () => {
+        it('calls onPatronSupport with cityUserId, residentName, faction, amount, ts, and note', async () => {
+            const events: PatronSupportEvent[] = [];
+            const serviceWithHook = new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-06-02T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => ({
+                        resident,
+                        itemId: 995,
+                        burnedAmount: amount,
+                        remainingAmount: gold - amount,
+                    }),
+                },
+                birth: { birthResident: async input => ({ resident: input.residentName, created: true, connected: true }) },
+                onPatronSupport: event => events.push(event),
+            });
+
+            await serviceWithHook.creditAttention('res:test', {
+                idempotencyKey: 'patron-hook-1',
+                amount: 10,
+                cityUserId: 'user-alice',
+                note: 'dashboard support',
+            });
+
+            expect(events).toHaveLength(1);
+            expect(events[0]).toMatchObject({
+                cityUserId: 'user-alice',
+                residentName: 'res:test',
+                faction: 'embassy', // FakeRuntime state has no faction → falls back to 'embassy'
+                amount: 10,
+                ts: '2026-06-02T12:00:00.000Z',
+                note: 'dashboard support',
+            });
+        });
+
+        it('does NOT call onPatronSupport when cityUserId is absent', async () => {
+            let called = false;
+            const serviceWithHook = new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-06-02T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => ({
+                        resident,
+                        itemId: 995,
+                        burnedAmount: amount,
+                        remainingAmount: gold - amount,
+                    }),
+                },
+                birth: { birthResident: async input => ({ resident: input.residentName, created: true, connected: true }) },
+                onPatronSupport: () => {
+                    called = true;
+                },
+            });
+
+            await serviceWithHook.creditAttention('res:test', {
+                idempotencyKey: 'no-user-id-1',
+                amount: 5,
+                // no cityUserId
+            });
+
+            expect(called).toBe(false);
+        });
+
+        it('still credits attention if onPatronSupport throws', async () => {
+            const serviceWithHook = new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-06-02T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => ({
+                        resident,
+                        itemId: 995,
+                        burnedAmount: amount,
+                        remainingAmount: gold - amount,
+                    }),
+                },
+                birth: { birthResident: async input => ({ resident: input.residentName, created: true, connected: true }) },
+                onPatronSupport: () => {
+                    throw new Error('standing service unavailable');
+                },
+            });
+
+            const result = await serviceWithHook.creditAttention('res:test', {
+                idempotencyKey: 'hook-throws-1',
+                amount: 7,
+                cityUserId: 'user-bob',
+            });
+
+            expect(result).toMatchObject({ ok: true, creditedAmount: 7, attentionAfter: 17 });
         });
     });
 
