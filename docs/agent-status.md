@@ -1874,3 +1874,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-02 15:45 UTC cron-cloud branch=agents/wip packet=RIQ-3-3 HANDOFF sha=bf58123a tests=SANDBOX-BLOCKED check:no-ui=PASS. PlanCreated+PlanReplanned Library events; libraryUpdater? in HelperContext; +12 tests. prod-wiring pending S-TOOL-ACQUIRE-4. collision=none.
 
 2026-06-02 16:00 UTC cron-cloud branch=agents/wip packet=RIQ-2-SMOKE STARTING — Phase 2 planner-pass smoke CLI. Files=src/controller/admin/planner-pass-smoke.ts,src/controller/admin/planner-pass-smoke.test.ts,package.json,docs/agent-status.md. collision=none.
+
+2026-06-02 16:30 UTC cron-cloud branch=agents/wip packet=RIQ-2-SMOKE HANDOFF sha=d0107db3 tests=13 check:no-ui=PASS. planner-pass-smoke.ts Phase 2 acceptance test CLI; --dry-run stub + llmClientOverride; 13 unit tests. live-verify pending planner_haiku on hot stack. next=S-TOOL-ACQUIRE-4-expiry → RIQ-3-2B/ResidentRuntime wiring.
