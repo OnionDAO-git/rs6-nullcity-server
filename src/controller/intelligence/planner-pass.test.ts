@@ -67,9 +67,7 @@ describe('parsePlannerPassOutput — schema validation', () => {
     });
 
     it('rejects plan with more than MAX_STAGES', () => {
-        const stages = Array.from({ length: PLANNER_PASS_MAX_STAGES + 1 }, (_, i) =>
-            baseStage(`s${i}`),
-        );
+        const stages = Array.from({ length: PLANNER_PASS_MAX_STAGES + 1 }, (_, i) => baseStage(`s${i}`));
         const json = makeJson(stages);
         const result = parsePlannerPassOutput(json, 'g', 'desc', 0);
         expect(result.plan).toBeUndefined();
@@ -77,9 +75,7 @@ describe('parsePlannerPassOutput — schema validation', () => {
     });
 
     it('accepts plan with exactly MAX_STAGES stages', () => {
-        const stages = Array.from({ length: PLANNER_PASS_MAX_STAGES }, (_, i) =>
-            baseStage(`s${i}`),
-        );
+        const stages = Array.from({ length: PLANNER_PASS_MAX_STAGES }, (_, i) => baseStage(`s${i}`));
         const json = makeJson(stages);
         const result = parsePlannerPassOutput(json, 'g', 'desc', 0);
         expect(result.plan).toBeDefined();
@@ -267,7 +263,12 @@ const VALID_PLAN_JSON = JSON.stringify({
     stages: [
         { id: 'acquire-axe', subgoal: 'Get a bronze axe', requirements: ['10 GP'], successCriteria: 'bronze axe in inventory' },
         { id: 'chop-logs', subgoal: 'Chop logs to level 15', requirements: ['bronze axe'], successCriteria: 'Woodcutting XP ≥ 1154' },
-        { id: 'light-fires', subgoal: 'Light fires to level 20', requirements: ['tinderbox', 'logs'], successCriteria: 'Firemaking XP ≥ 3258' },
+        {
+            id: 'light-fires',
+            subgoal: 'Light fires to level 20',
+            requirements: ['tinderbox', 'logs'],
+            successCriteria: 'Firemaking XP ≥ 3258',
+        },
     ],
 });
 
@@ -315,9 +316,7 @@ describe('runPlannerPass — end-to-end with mock LLM', () => {
 
     it('returns success=false when LLM emits too few stages', async () => {
         const shortPlan = JSON.stringify({
-            stages: [
-                { id: 's1', subgoal: 'do s1', requirements: [], successCriteria: 'done s1' },
-            ],
+            stages: [{ id: 's1', subgoal: 'do s1', requirements: [], successCriteria: 'done s1' }],
         });
         const client = makeMockClient([shortPlan]);
         const result = await runPlannerPass({
