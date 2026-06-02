@@ -9154,9 +9154,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: pick up coins at 3219,3201.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9342,9 +9340,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9381,9 +9377,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9421,9 +9415,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });

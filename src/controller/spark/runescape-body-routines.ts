@@ -725,11 +725,12 @@ function isAxeShopkeeper(actor: BodyActor): boolean {
  * `interact 'trade'`, then `buy_from_shop` a bronze axe. Returns undefined when
  * the resident already has an axe (defer to the skill routine) or cannot afford
  * one (the caller reports blocked). `shopState` sequences the open->buy handshake
- * across ticks since perception carries no shop-open signal.
+ * and the "arrived but Bob is not visible" report across ticks since perception
+ * carries no shop-open signal.
  */
 export function acquireWoodcuttingAxeAction(
     perception: BodyHybridPerception,
-    shopState?: { lastShopOpenTick?: number },
+    shopState?: { lastShopOpenTick?: number; lastShopkeeperMissingTick?: number },
     currentTick = perception.tick ?? 0,
 ): AgentAction | undefined {
     const here = perception.resident?.position;
@@ -759,6 +760,19 @@ export function acquireWoodcuttingAxeAction(
     }
     const bob = (perception.nearby?.npcs || []).find(npc => isAxeShopkeeper(npc) && sameLevel(here, npc.position));
     if (!bob) {
+        const atKnownShop = sameLevel(here, BOB_AXE_SHOP.position) && distance(here, BOB_AXE_SHOP.position) <= INTERACTION_APPROACH_RADIUS;
+        if (atKnownShop) {
+            const lastMissing = shopState?.lastShopkeeperMissingTick;
+            if (shopState && (lastMissing === undefined || currentTick - lastMissing > SHOP_OPEN_WINDOW_TICKS)) {
+                shopState.lastShopkeeperMissingTick = currentTick;
+                return {
+                    kind: 'say',
+                    text: "I reached Bob's axe shop, but I cannot see Bob yet. I need to wait, look around, or try another tool source.",
+                    cause: 'acquire_axe_shopkeeper_missing',
+                };
+            }
+            return undefined;
+        }
         return {
             kind: 'move_to',
             target: { ...BOB_AXE_SHOP.position },
@@ -792,10 +806,16 @@ export function levelOneWoodcuttingAction(
         // No axe but a woodcutting goal: instead of stalling forever, go buy one at
         // Bob's shop. The shop-open tick is persisted via the cooldown record so the
         // open->buy handshake sequences across body ticks.
-        const shopState = { lastShopOpenTick: targetFailureCooldowns?.['acquire_axe_shop_open'] };
+        const shopState = {
+            lastShopOpenTick: targetFailureCooldowns?.['acquire_axe_shop_open'],
+            lastShopkeeperMissingTick: targetFailureCooldowns?.['acquire_axe_shopkeeper_missing'],
+        };
         const acquire = acquireWoodcuttingAxeAction(perception, shopState, currentTick);
         if (targetFailureCooldowns && shopState.lastShopOpenTick !== undefined) {
             targetFailureCooldowns['acquire_axe_shop_open'] = shopState.lastShopOpenTick;
+        }
+        if (targetFailureCooldowns && shopState.lastShopkeeperMissingTick !== undefined) {
+            targetFailureCooldowns['acquire_axe_shopkeeper_missing'] = shopState.lastShopkeeperMissingTick;
         }
         return acquire;
     }

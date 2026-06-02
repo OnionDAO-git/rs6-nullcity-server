@@ -839,9 +839,7 @@ export function statusSpeech(
  */
 export function composeStatusLine(parts: { prefix: string; goal?: string; next?: string; need: string }): string {
     const { prefix, goal, next, need } = parts;
-    return (
-        cleanSpeech(goal ? `${prefix}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${prefix}.${need}`) || prefix
-    );
+    return cleanSpeech(goal ? `${prefix}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${prefix}.${need}`) || prefix;
 }
 
 export function visibilityReturnNextStep(ctx: HelperContext, perception: HybridPerception): string | undefined {
