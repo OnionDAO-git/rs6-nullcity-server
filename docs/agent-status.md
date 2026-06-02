@@ -1878,3 +1878,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-02 16:30 UTC cron-cloud branch=agents/wip packet=RIQ-2-SMOKE HANDOFF sha=d0107db3 tests=13 check:no-ui=PASS. planner-pass-smoke.ts Phase 2 acceptance test CLI; --dry-run stub + llmClientOverride; 13 unit tests. live-verify pending planner_haiku on hot stack. next=S-TOOL-ACQUIRE-4-expiry → RIQ-3-2B/ResidentRuntime wiring.
 
 2026-06-02 18:18 UTC cron-cloud branch=agents/wip packet=RIQ-3-2B-SPEC STARTING — Rule-12 fallback: design spec for Phase3 Body-PlanStore integration (code blocked by S-TOOL-ACQUIRE-4 lock on runescape-body-routines.ts/resident-runtime.ts). Files=docs/superpowers/specs/2026-06-02-riq-3-2b-body-plan-integration.md,docs/issue-register.md,docs/agent-status.md. collision=none.
+
+2026-06-02 18:35 UTC cron-cloud branch=agents/wip packet=RIQ-3-2B-SPEC HANDOFF — docs-only. spec=docs/superpowers/specs/2026-06-02-riq-3-2b-body-plan-integration.md; QA-20260602-076 Open P1. check:no-ui PASS. No code (blocked by S-TOOL-ACQUIRE-4). next=RIQ-3-2B code after S-TOOL-ACQUIRE-4 HANDOFF. collision=none.
