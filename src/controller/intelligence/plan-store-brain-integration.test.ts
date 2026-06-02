@@ -15,6 +15,7 @@ jest.mock('./planner-pass', () => ({
     runPlannerPass: jest.fn(),
     currentStage: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').currentStage,
     advancePlan: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').advancePlan,
+    blockCurrentStage: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').blockCurrentStage,
 }));
 
 import { maybeTriggerPlannerPass, runBody } from '../thinking/hybrid-agent-helpers';
