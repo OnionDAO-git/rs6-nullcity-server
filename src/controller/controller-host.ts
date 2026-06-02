@@ -253,6 +253,7 @@ export class ControllerHost {
                         }
                     }
                 }
+                this.persistPatronLedgers();
             },
         });
         this.bindGatewayEvents();

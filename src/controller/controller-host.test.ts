@@ -225,6 +225,53 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('persists city attention-grant patron standing immediately for dashboard standing reads', async () => {
+        const gateway = new FakeGateway();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-city-standing-'));
+        const runtimeState = {
+            resident: 'res:pip',
+            attention: 100,
+            tick: 7,
+            legacy: { kind: 'mentor', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: new Date(0).toISOString(),
+                dayStartedAt: new Date(0).toISOString(),
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+            variables: {},
+            hookCooldowns: {},
+            shadowedHooks: [],
+        } satisfies RuntimeState;
+        const runtime = {
+            ...fakeRuntime(),
+            getState: jest.fn(() => runtimeState),
+            incrementAttention: jest.fn((amount: number) => {
+                runtimeState.attention += amount;
+            }),
+        } as unknown as ResidentRuntime;
+        const host = new ControllerHost(
+            { ...config(), memory: { dir: memoryDir, qmdBin: '' } },
+            { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) },
+        );
+
+        await host.start();
+
+        await host.getCityIntegrationService().creditAttention('res:pip', {
+            idempotencyKey: 'dashboard-support-1',
+            amount: 10,
+            cityUserId: 'alice@onion',
+            note: 'dashboard support',
+        });
+
+        const store = new PatronStore(memoryDir);
+        const standing = store.loadStanding();
+        expect(standing.points('alice@onion', 'embassy')).toBe(10);
+        expect(new LettersStore(memoryDir).readInbox('alice@onion')).toHaveLength(1);
+
+        await host.stop();
+    });
+
     it('uses a fresh retryable city gateway for GP inventory calls when the live host owns the gateway', async () => {
         const gateway = new FakeGateway();
         const firstCityGateway = new FakeGateway();
