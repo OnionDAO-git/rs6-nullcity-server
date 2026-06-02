@@ -1882,3 +1882,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-02 18:35 UTC cron-cloud branch=agents/wip packet=RIQ-3-2B-SPEC HANDOFF — docs-only. spec=docs/superpowers/specs/2026-06-02-riq-3-2b-body-plan-integration.md; QA-20260602-076 Open P1. check:no-ui PASS. No code (blocked by S-TOOL-ACQUIRE-4). next=RIQ-3-2B code after S-TOOL-ACQUIRE-4 HANDOFF. collision=none.
 
 2026-06-02 19:19 UTC cron-cloud branch=agents/wip packet=RIQ-3-2B-TESTS STARTING — fix smoke regex (planner-pass-smoke.test.ts:186 /stages/→/stage/); add survival-preserves-plan invariant tests to plan-store-brain-integration.test.ts per RIQ-3-2B spec. Files=src/controller/admin/planner-pass-smoke.test.ts,src/controller/intelligence/plan-store-brain-integration.test.ts,docs/agent-status.md. collision=none.
+
+2026-06-02 19:30 UTC cron-cloud branch=agents/wip packet=RIQ-3-2B-TESTS HANDOFF — sha=c8636a39 tests=3749/3749 check:no-ui PASS. Fixed 1 failing smoke regex; added 5 survival-preserves-plan invariant tests (RIQ-3-2B spec §4). next=RIQ-3-2B code after S-TOOL-ACQUIRE-4 HANDOFF. collision=none.
