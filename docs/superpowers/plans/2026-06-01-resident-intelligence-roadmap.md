@@ -327,8 +327,8 @@ evidence note + flip to `In Review`.
 | Phase | State | Acceptance test | Last update |
 |---|---|---|---|
 | 0 — Stabilize & enable | **Done** — (a) qwopus brain+75s timeout committed (S-INFER-10, RIQ-0-1); (b) wiki RAG enabled (S-WIKI-1, RIQ-0-2); (c) runtime ownership: born-persist + supervised controller scripts landed; (d) planner model decision recorded (RIQ-0-3, 2026-06-02). Acceptance test PASSES: usable-brain-rate ≥80% (`data/benchmarks/capability-qa-2026-05-31/s-cohort-10-1-inference-30m/inference_health_audit_20260531T225236Z.json` shows 96.5% usable, 97.1% goal-follow-through); wiki fact retrieval proven (QA-20260601-061 / S-WIKI-1); planner model recorded below. | usable-brain-rate ≥80% post-restart on committed config + wiki fact retrieved + planner model recorded | 2026-06-02 |
-| 1 — Tool-calling | Not started | tool call pulls non-RAG fact + used in next decision | — |
-| 2 — Deliberative planner pass | Not started | ≥3-stage validated plan from one rare planner call | — |
+| 1 — Tool-calling | **Done** — RIQ-1-1-A (PlannerToolLoop substrate + lookup_skill + brain-tool-call-5m task, +34 tests, sha=2aeefdc7); RIQ-1-1-B (runBrain routed through runPlannerToolLoop, brainLlmAdapter, lookup_skill injected into brain prompt, +5 tests, sha=4ec64d40). Live-verify PENDING (cloud sandbox). | tool call pulls non-RAG fact + used in next decision | 2026-06-02 |
+| 2 — Deliberative planner pass | **In Progress** — RIQ-2-1 (Plan schema + PlannerPass prompt + parser + runPlannerPass + plan helpers + 30 unit tests, sha=TBD). Substrate: cloud-only unit tests pass; live planner call requires hot stack + `planner_haiku` or `planner_local` profile. | ≥3-stage validated plan from one rare planner call | 2026-06-02 |
 | 3 — Durable plan + progress | Not started | A1 (Firemaking plan, ≥2 stages, 0 deaths, survives restart) | — |
 | 4 — Arbitrary-goal support | Not started | A2 + A3 | — |
 | 5 — Polish / scale | Not started | N≥10 residents, bounded spend, plan dashboard | — |
