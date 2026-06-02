@@ -20,6 +20,7 @@ import { maybeTriggerPlannerPass } from '../thinking/hybrid-agent-helpers';
 import { runPlannerPass } from './planner-pass';
 import type { Plan } from './planner-pass';
 import type { HelperContext } from '../thinking/hybrid-agent-helpers';
+import type { LibraryUpdater } from '../evidence/library-updater';
 
 const mockRunPlannerPass = runPlannerPass as jest.MockedFunction<typeof runPlannerPass>;
 
@@ -63,13 +64,27 @@ function makePlanStore(plan: Plan | null): {
     };
 }
 
+function makeLibraryUpdaterMock(): jest.Mocked<Pick<LibraryUpdater, 'observePlanCreated' | 'observePlanReplanned'>> {
+    return {
+        observePlanCreated: jest.fn(),
+        observePlanReplanned: jest.fn(),
+    };
+}
+
 function makeCtx(overrides: {
     planStore?: ReturnType<typeof makePlanStore> | null;
     orientationGoal?: { id: string; description: string } | null;
     plannerProfile?: object | null;
     residentId?: string;
+    libraryUpdater?: ReturnType<typeof makeLibraryUpdaterMock> | null;
 }): HelperContext {
-    const { planStore = null, orientationGoal = null, plannerProfile = null, residentId = 'res:test' } = overrides;
+    const {
+        planStore = null,
+        orientationGoal = null,
+        plannerProfile = null,
+        residentId = 'res:test',
+        libraryUpdater = null,
+    } = overrides;
 
     const complete = jest.fn(async () => ({ text: '{"stages":[]}', nooped: false }));
 
@@ -97,6 +112,7 @@ function makeCtx(overrides: {
             memory: {},
             llm: {},
             planStore: planStore ?? undefined,
+            libraryUpdater: libraryUpdater ?? undefined,
         },
         cognition: () => ({}),
         commandPrefix: () => 'test',
@@ -271,5 +287,126 @@ describe('maybeTriggerPlannerPass — failure handling', () => {
         await maybeTriggerPlannerPass(ctx);
         // Second call should not trigger because the plan is now healthy.
         expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('maybeTriggerPlannerPass — Library events (RIQ-3-3)', () => {
+    it('emits observePlanCreated when no prior plan exists', async () => {
+        const planStore = makePlanStore(null);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'master-firemaking', description: 'Become a master of Firemaking' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
+
+        await maybeTriggerPlannerPass(ctx);
+
+        expect(library.observePlanCreated).toHaveBeenCalledTimes(1);
+        expect(library.observePlanReplanned).not.toHaveBeenCalled();
+        const call = library.observePlanCreated.mock.calls[0][0];
+        expect(call.kind).toBe('plan_created');
+        expect(call.goalId).toBe('test-goal'); // from makeActivePlan()
+        expect(call.stageCount).toBe(3);
+        expect(call.stageSubgoals).toEqual(['get axe', 'chop logs', 'reach level 99']);
+    });
+
+    it('emits observePlanReplanned with "completed" when prior plan was completed', async () => {
+        const completedPlan = makeActivePlan({ status: 'completed' });
+        const planStore = makePlanStore(completedPlan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'master-firemaking', description: 'Become a master of Firemaking' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
+
+        await maybeTriggerPlannerPass(ctx);
+
+        expect(library.observePlanCreated).not.toHaveBeenCalled();
+        expect(library.observePlanReplanned).toHaveBeenCalledTimes(1);
+        const call = library.observePlanReplanned.mock.calls[0][0];
+        expect(call.kind).toBe('plan_replanned');
+        expect(call.replannedReason).toBe('completed');
+    });
+
+    it('emits observePlanReplanned with "abandoned" when prior plan was abandoned', async () => {
+        const abandonedPlan = makeActivePlan({ status: 'abandoned' });
+        const planStore = makePlanStore(abandonedPlan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
+
+        await maybeTriggerPlannerPass(ctx);
+
+        expect(library.observePlanReplanned).toHaveBeenCalledTimes(1);
+        expect(library.observePlanReplanned.mock.calls[0][0].replannedReason).toBe('abandoned');
+    });
+
+    it('emits observePlanReplanned with "stage_blocked:<id>" when active plan has a blocked stage', async () => {
+        const blockedPlan = makeActivePlan({
+            status: 'active',
+            stages: [
+                { id: 'acquire-axe', subgoal: 'get axe', requirements: [], successCriteria: 'axe in inventory', status: 'blocked' },
+                { id: 'chop-logs', subgoal: 'chop logs', requirements: ['axe'], successCriteria: 'logs', status: 'pending' },
+                { id: 'light-fires', subgoal: 'light fires', requirements: ['logs'], successCriteria: 'level 99', status: 'pending' },
+            ],
+            currentStageIndex: 0,
+        });
+        const planStore = makePlanStore(blockedPlan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
+
+        await maybeTriggerPlannerPass(ctx);
+
+        expect(library.observePlanReplanned).toHaveBeenCalledTimes(1);
+        expect(library.observePlanReplanned.mock.calls[0][0].replannedReason).toBe('stage_blocked:acquire-axe');
+    });
+
+    it('does not emit library events when PlannerPass fails', async () => {
+        mockRunPlannerPass.mockResolvedValueOnce({
+            success: false,
+            error: 'parse failed',
+            toolCallsMade: 0,
+            fellBackToRag: false,
+            elapsedMs: 10,
+        });
+        const planStore = makePlanStore(null);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
+
+        await maybeTriggerPlannerPass(ctx);
+
+        expect(library.observePlanCreated).not.toHaveBeenCalled();
+        expect(library.observePlanReplanned).not.toHaveBeenCalled();
+    });
+
+    it('does not throw when libraryUpdater is absent (backward-compatible)', async () => {
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            // no libraryUpdater
+        });
+
+        await expect(maybeTriggerPlannerPass(ctx)).resolves.toBeUndefined();
+        expect(planStore.save).toHaveBeenCalledTimes(1);
     });
 });

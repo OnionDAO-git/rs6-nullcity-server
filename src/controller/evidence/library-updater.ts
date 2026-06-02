@@ -11,6 +11,42 @@ import type {
     OrientationGoalEditedLibraryEvent,
 } from '../spark/orientation-scorer';
 
+// ---------------------------------------------------------------------------
+// RIQ-3-3: Plan lifecycle Library event types
+// ---------------------------------------------------------------------------
+
+/**
+ * Emitted when PlannerPass creates the first durable plan for a resident.
+ * The Storyteller can narrate "resident X is now pursuing: stage1, stage2…"
+ */
+export interface PlanCreatedLibraryEvent {
+    kind: 'plan_created';
+    ts: string;
+    tick: number;
+    goalId: string;
+    goalDescription: string;
+    stageCount: number;
+    /** Ordered subgoal labels — enough for the Storyteller to narrate the arc. */
+    stageSubgoals: string[];
+}
+
+/**
+ * Emitted when PlannerPass replaces an existing plan (plan completed, abandoned,
+ * or a stage blocked). Includes why the replan was triggered so the Storyteller
+ * can frame it as adaptation rather than failure.
+ */
+export interface PlanReplannedLibraryEvent {
+    kind: 'plan_replanned';
+    ts: string;
+    tick: number;
+    goalId: string;
+    goalDescription: string;
+    stageCount: number;
+    stageSubgoals: string[];
+    /** Previous plan status ('completed'|'abandoned') or 'stage_blocked:<stageId>'. */
+    replannedReason: string;
+}
+
 export interface NcriLibraryEvent {
     kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
     ts: string;
@@ -352,6 +388,52 @@ export class LibraryUpdater {
             reason: event.reason,
             lifeIndex: index.lives,
             significanceReasons: ['orientation:goal_edited'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a new durable plan as a Library timeline moment (RIQ-3-3).
+     * Call only when PlannerPass creates the resident's first plan (no prior plan).
+     */
+    observePlanCreated(event: PlanCreatedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_created',
+            goalId: event.goalId,
+            goalDescription: event.goalDescription,
+            stageCount: event.stageCount,
+            stageSubgoals: event.stageSubgoals,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:created'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a plan replacement as a Library timeline moment (RIQ-3-3).
+     * Call when PlannerPass replaces an existing plan because it was completed,
+     * abandoned, or a stage became blocked.
+     */
+    observePlanReplanned(event: PlanReplannedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_replanned',
+            goalId: event.goalId,
+            goalDescription: event.goalDescription,
+            stageCount: event.stageCount,
+            stageSubgoals: event.stageSubgoals,
+            replannedReason: event.replannedReason,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:replanned'],
         });
         this.touchIndex(index);
     }

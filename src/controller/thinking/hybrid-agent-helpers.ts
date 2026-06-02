@@ -156,6 +156,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
 import { runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
+import type { LibraryUpdater } from '../evidence/library-updater';
 
 // --- Shared Constants ---
 export const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
@@ -203,6 +204,8 @@ export interface HelperContext {
         patronRegistry?: any;
         /** RIQ-3-2: per-resident durable plan store; absent for residents without planner config. */
         planStore?: PlanStore;
+        /** RIQ-3-3: Library updater for plan lifecycle events; absent until wired from ResidentRuntime. */
+        libraryUpdater?: LibraryUpdater;
     };
     cognition(): any;
     commandPrefix(): string;
@@ -3380,6 +3383,39 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
         });
         if (result.success && result.plan) {
             planStore.save(residentId, result.plan);
+            // RIQ-3-3: emit plan lifecycle Library event so the Storyteller can narrate
+            // when a resident forms or adapts their multi-stage plan.
+            const { libraryUpdater } = ctx.options;
+            if (libraryUpdater) {
+                const ts = new Date().toISOString();
+                const stageSubgoals = result.plan.stages.map(s => s.subgoal);
+                if (!plan) {
+                    libraryUpdater.observePlanCreated({
+                        kind: 'plan_created',
+                        ts,
+                        tick: ctx.options.state.tick,
+                        goalId: result.plan.goalId,
+                        goalDescription: result.plan.goalDescription,
+                        stageCount: result.plan.stages.length,
+                        stageSubgoals,
+                    });
+                } else {
+                    const replannedReason =
+                        plan.status !== 'active'
+                            ? plan.status
+                            : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
+                    libraryUpdater.observePlanReplanned({
+                        kind: 'plan_replanned',
+                        ts,
+                        tick: ctx.options.state.tick,
+                        goalId: result.plan.goalId,
+                        goalDescription: result.plan.goalDescription,
+                        stageCount: result.plan.stages.length,
+                        stageSubgoals,
+                        replannedReason,
+                    });
+                }
+            }
         } else {
             process.stderr.write(`[RIQ-3-2] PlannerPass failed for ${residentId}: ${result.error ?? 'unknown'}\n`);
         }
