@@ -53,6 +53,7 @@
         "storyteller:dry-run": "ts-node -r tsconfig-paths/register src/controller/storyteller/cli.ts",
         "storyteller:run": "ts-node -r tsconfig-paths/register src/controller/storyteller/run-cli.ts",
         "storyteller:overseer": "ts-node -r tsconfig-paths/register src/controller/storyteller/overseer-cli.ts",
+        "storyteller:scheduler": "ts-node -r tsconfig-paths/register src/controller/storyteller/scheduler-cli.ts",
         "ncri:list": "ts-node -r tsconfig-paths/register src/controller/ncri/cli.ts list",
         "ncri:approve": "ts-node -r tsconfig-paths/register src/controller/ncri/cli.ts approve",
         "ncri:price": "ts-node -r tsconfig-paths/register src/controller/ncri/cli.ts price",
