@@ -14,6 +14,7 @@ import { LoreBus } from './lore/lore-bus';
 import { MemoryStore } from './memory/memory-store';
 import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/runtime-state';
 import { CurrencyLedger } from './patron/currency-ledger';
+import { PlanStore } from './intelligence/plan-store';
 import { LettersStore } from './patron/letters-store';
 import { produceStandingTierLetter } from './patron/letters-producer';
 import { PatronGateway } from './patron/patron-gateway';
@@ -101,6 +102,7 @@ export class ControllerHost {
     private readonly bornStore: BornResidentStore;
     private readonly soulLoader: SoulLoader;
     private readonly memory: MemoryStore;
+    private readonly planStore: PlanStore;
     private readonly stateStore: RuntimeStateStore;
     private readonly llm: LlmClient;
     private readonly actionLog: ActionLog;
@@ -164,6 +166,7 @@ export class ControllerHost {
         }
         this.soulLoader = options.soulLoader || new SoulLoader(config.souls.dir);
         this.memory = options.memory || new MemoryStore(config.memory.dir, config.memory.qmdBin);
+        this.planStore = new PlanStore(config.memory.dir);
         this.stateStore = options.stateStore || new RuntimeStateStore(config.memory.dir);
         this.llm = options.llm || new LlmClient(config.llm.endpoints, config.inference.maxConcurrent);
         this.actionLog = options.actionLog || new ActionLog(config.logging.dir);
@@ -487,6 +490,7 @@ export class ControllerHost {
             actionLog: this.actionLog,
             inferenceLog: this.inferenceLog,
             gameSkill: this.gameSkill,
+            planStore: this.planStore,
             sparkModules: this.sparkModules,
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,

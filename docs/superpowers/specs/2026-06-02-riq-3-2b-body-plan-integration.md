@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-02
 **Author:** cron-cloud (Rule-12 design fallback — code blocked by S-TOOL-ACQUIRE-4 lock)
-**Status:** Design only — no code changes. Implement after S-TOOL-ACQUIRE-4 HANDOFF.
+**Status:** Source implemented by RIQ-3-2B on 2026-06-02; live A1 verification pending on hot stack.
 **Packet id:** `RIQ-3-2B`
 **Phase:** 3 (Durable plan + progress tracking)
 **Issue row:** QA-20260602-076
@@ -23,11 +23,15 @@ Supersedes nothing. Extends `docs/superpowers/plans/2026-06-01-resident-intellig
 - `maybeTriggerPlannerPass` — fires PlannerPass when plan is `null | completed | abandoned | stage_blocked`
 - `HelperContext.options.planStore?: PlanStore` — field exists but **not wired from ResidentRuntime**
 
-### Missing (this spec defines):
-1. **Production wiring**: `ResidentRuntime` instantiates `PlanStore`, passes it via `HelperContext.options`
-2. **Body reads currentStage**: a `planStageRouter` function maps `Stage.subgoal` text to body routines
-3. **Stage advancement**: the Body reports `stage_done | stage_blocked`; caller writes `advancePlan / blockCurrentStage` back to PlanStore
-4. **Survival-preserves-plan invariant**: explicit proof that Nervous reflexes never clear the plan
+### Implemented source-side by RIQ-3-2B:
+1. **Production wiring**: `ControllerHost` owns a memory-rooted `PlanStore`; `ResidentRuntime` passes `PlanStore` and `LibraryUpdater` into hybrid thinking.
+2. **Body reads currentStage**: `planStageRouter` maps `Stage.subgoal` text to existing body routines.
+3. **Stage advancement**: `runBody` advances observable `stage_done` stages and emits routed plan-stage actions before body LLM inference.
+4. **Survival-preserves-plan invariant**: explicit tests prove planner/plan-store paths do not clear healthy plans; Nervous still runs before Body routing.
+
+### Still missing:
+1. Tick-budget/blocking persistence for non-observable activity criteria.
+2. Live A1 hot-stack proof with planner_haiku/planner_local and real XP/action-result evidence.
 
 ---
 
@@ -199,7 +203,7 @@ if (stage && stage.status === 'active') {
 | `src/controller/spark/runescape-body-routines.test.ts` | Tests for `planStageRouter` per recognized subgoal pattern |
 | `src/controller/intelligence/plan-store-brain-integration.test.ts` | Survival-preserves-plan integration test |
 
-> **Note:** `resident-runtime.ts` and `runescape-body-routines.ts` are currently locked by S-TOOL-ACQUIRE-4. Wait for its HANDOFF before implementing. The files above are the ONLY files that should change for RIQ-3-2B.
+> **Note:** The original S-TOOL-ACQUIRE-4 lock was stale when RIQ-3-2B source work landed. The implementation also needed the helper/type seams in `src/controller/thinking/*`, `src/controller/spark/runtime-facets.ts`, and `src/controller/controller-host.ts` so the tested plan path exists in production.
 
 ---
 

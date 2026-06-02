@@ -3,6 +3,8 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { ActiveGoalState, RuntimeState } from '../memory/runtime-state';
 import type { HybridAgentBehaviorDefinition, Soul } from '../soul/soul-schema';
+import type { LibraryUpdater } from '../evidence/library-updater';
+import type { PlanStore } from '../intelligence/plan-store';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { PatronRegistry } from '../patron/patron-registry';
 import type { ThinkingModule, ThoughtResult } from './thinking-module';
@@ -59,6 +61,8 @@ export interface HybridAgentThinkingModuleOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+    planStore?: PlanStore;
+    libraryUpdater?: LibraryUpdater;
     patronRegistry?: PatronRegistry;
 }
 

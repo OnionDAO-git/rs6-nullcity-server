@@ -43,6 +43,7 @@ import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import { type Soul, dominantFaction } from './soul/soul-schema';
 import { LettersStore } from './patron/letters-store';
+import type { PlanStore } from './intelligence/plan-store';
 import {
     buildEpitaphDispatchRequests,
     dispatchEpitaphs,
@@ -122,6 +123,7 @@ export interface ResidentRuntimeOptions {
     body?: ResidentBody;
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
+    planStore?: PlanStore;
     factionStockpile?: ResidentRuntimeFactionStockpile;
     cityExchange?: ResidentRuntimeCityExchange;
     sparkModules?: SparkModule[];
@@ -227,6 +229,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 state: this.state,
                 memory: options.memory,
                 llm: options.llm,
+                planStore: options.planStore,
+                libraryUpdater: this.evidence?.library,
                 sparkModules: options.sparkModules,
                 moduleTelemetry: entry => options.inferenceLog.append(this.name, { ...entry }),
                 patronRegistry: this.patronRegistry,

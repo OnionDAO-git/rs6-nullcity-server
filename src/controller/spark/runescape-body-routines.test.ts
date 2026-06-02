@@ -25,6 +25,7 @@ import {
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
     opportunisticPickupAction,
+    planStageRouter,
     prayerTrainingAction,
     cooksAssistantStartAction,
     cooksAssistantQuestAction,
@@ -39,6 +40,7 @@ import {
     type BodyItem,
     type BodyWorldItem,
 } from './runescape-body-routines';
+import type { Stage } from '../intelligence/planner-pass';
 
 const FIRE_OBJECT_ID = objectIds.fire;
 
@@ -70,6 +72,17 @@ function perception(overrides: Partial<BodyHybridPerception> = {}): BodyHybridPe
             ...(overrides.nearby || {}),
         },
         events: overrides.events ?? [],
+    };
+}
+
+function stage(subgoal: string, overrides: Partial<Stage> = {}): Stage {
+    return {
+        id: 'stage-1',
+        subgoal,
+        requirements: [],
+        successCriteria: 'observable progress',
+        status: 'active',
+        ...overrides,
     };
 }
 
@@ -145,6 +158,124 @@ describe('firemakingAction', () => {
             targetSlot: 1,
             cause: 'firemaking_fallback',
         });
+    });
+});
+
+describe('planStageRouter', () => {
+    it('marks an axe-acquisition stage done when an axe is already carried', () => {
+        const result = planStageRouter(
+            stage('Acquire a woodcutting axe'),
+            perception({
+                resident: { inventory: [item(1351)] },
+            }),
+        );
+
+        expect(result).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('routes an axe-acquisition stage to the free Lumbridge axe action when no axe is carried', () => {
+        const axe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 103, y: 100, level: 0 } };
+        const result = planStageRouter(
+            stage('Acquire an axe for woodcutting'),
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [axe] },
+            }),
+        );
+
+        expect(result).toEqual({
+            action: {
+                kind: 'move_to',
+                target: axe.position,
+                range: 1,
+                cause: 'acquire_axe_approach_free_lumbridge_axe',
+            },
+        });
+    });
+
+    it('routes log-gathering stages to level-one woodcutting', () => {
+        const tree = { objectId: 1276, position: { x: 100, y: 100, level: 0 } };
+        const result = planStageRouter(
+            stage('Chop logs from a tree'),
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1351)] },
+                nearby: { objects: [tree] },
+            }),
+        );
+
+        expect(result?.action).toEqual({
+            kind: 'interact',
+            target: tree,
+            option: 'chop down',
+            cause: 'woodcutting_level1_routine',
+        });
+    });
+
+    it('routes firemaking stages to tinderbox-on-logs', () => {
+        const result = planStageRouter(
+            stage('Light a fire using logs and a tinderbox'),
+            perception({
+                resident: { inventory: [item(590), item(1511)] },
+            }),
+        );
+
+        expect(result?.action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 0,
+            targetSlot: 1,
+            cause: 'firemaking_fallback',
+        });
+    });
+
+    it('routes fishing, cooking, mining, and prayer stages to existing starter routines', () => {
+        const fishingSpot = {
+            id: 'npc:fishing-spot',
+            kind: 'npc' as const,
+            name: 'Fishing spot',
+            key: 'rs:fishing_spot_net_bait',
+            position: { x: 100, y: 100, level: 0 },
+        };
+        const rock = { objectId: objectIds.default.clay[0].default, position: { x: 100, y: 100, level: 0 } };
+
+        expect(
+            planStageRouter(
+                stage('Fish shrimp at a net fishing spot'),
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(303)] },
+                    nearby: { npcs: [fishingSpot] },
+                }),
+            )?.action?.cause,
+        ).toBe('starter_fishing_net');
+        expect(
+            planStageRouter(
+                stage('Cook food for the next leg'),
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(317), item(590), item(1511)] },
+                    nearby: { objects: [{ objectId: FIRE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } }] },
+                }),
+            )?.action?.kind,
+        ).toBe('use_item_on');
+        expect(
+            planStageRouter(
+                stage('Mine starter ore'),
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1265)] },
+                    nearby: { objects: [rock] },
+                }),
+            )?.action?.cause,
+        ).toBe('starter_mining_routine');
+        expect(
+            planStageRouter(
+                stage('Bury bones for Prayer'),
+                perception({
+                    resident: { inventory: [item(526)] },
+                }),
+            )?.action,
+        ).toEqual({ kind: 'item_action', slot: 0, option: 'bury', cause: 'prayer_bury_bones' });
+    });
+
+    it('returns undefined for unknown stages so callers can fall back to normal body selection', () => {
+        expect(planStageRouter(stage('Compose a poem about Lumbridge'), perception())).toBeUndefined();
     });
 });
 

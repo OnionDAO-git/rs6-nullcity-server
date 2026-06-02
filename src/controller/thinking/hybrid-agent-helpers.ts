@@ -67,6 +67,7 @@ import {
     starterFishingAction,
     firemakingAction,
     acquireWoodcuttingAxeAction,
+    planStageRouter,
     stuckRecoveryPatrolTarget,
     isUsefulGroundItem,
     usefulGroundItemPriority,
@@ -155,7 +156,7 @@ import {
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
-import { runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
+import { advancePlan, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
 import type { LibraryUpdater } from '../evidence/library-updater';
 
 // --- Shared Constants ---
@@ -3590,6 +3591,11 @@ export async function runBody(
         return preInference;
     }
 
+    const routedPlanStage = routeActivePlanStage(ctx, bodyPerception);
+    if (routedPlanStage) {
+        return routedPlanStage;
+    }
+
     const prompt = buildBodyPrompt({
         soul: ctx.options.soul,
         perception: bodyPerception,
@@ -3670,6 +3676,56 @@ export async function runBody(
         envelopeTokens: estimateTokens(prompt),
         nooped: response.nooped || actions.length === 0,
     };
+}
+
+function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPerception): ThoughtResult | undefined {
+    const planStore = ctx.options.planStore;
+    if (!planStore) {
+        return undefined;
+    }
+
+    const residentId = ctx.options.soul.frontmatter.name;
+    if (!residentId) {
+        return undefined;
+    }
+
+    const plan = planStore.load(residentId);
+    if (!plan || plan.status !== 'active') {
+        return undefined;
+    }
+
+    const stage = currentPlanStage(plan);
+    if (!stage || stage.status !== 'active') {
+        return undefined;
+    }
+
+    const routed = planStageRouter(stage, bodyPerception);
+    if (!routed) {
+        return undefined;
+    }
+
+    if (routed.planSignal === 'stage_done') {
+        planStore.save(residentId, advancePlan(plan));
+        return {
+            actions: [],
+            cause: `plan_stage_done:${stage.id}`,
+            envelopeTokens: 0,
+            nooped: true,
+            planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_done' },
+        };
+    }
+
+    if (routed.action) {
+        return {
+            actions: [routed.action],
+            cause: `plan_stage:${stage.id}`,
+            envelopeTokens: 0,
+            nooped: false,
+            planChange: { goalId: plan.goalId, stageId: stage.id, routed: true },
+        };
+    }
+
+    return undefined;
 }
 
 export function clearGoalMomentum(ctx: HelperContext): void {
