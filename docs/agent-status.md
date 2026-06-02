@@ -1868,3 +1868,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-02 14:05 UTC cron-cloud branch=agents/wip packet=RIQ-3-2 STARTING wire PlanStore+PlannerPass into runBrain. Files=hybrid-agent-helpers.ts,soul-schema.ts,plan-store-brain-integration.test.ts,roadmap.md,issue-register.md. collision=none(S-TOOL-ACQUIRE-4 disjoint).
 
 2026-06-02 14:32 UTC cron-cloud branch=agents/wip packet=RIQ-3-2 HANDOFF sha=15510437 tests=3713/3713 check:no-ui PASS. maybeTriggerPlannerPass wired into runBrain; planner opt-in via behavior.planner; triggers on null/completed/abandoned/blocked plan; +12 tests. RIQ-3-2B(Body reads currentStage) deferred pending S-TOOL-ACQUIRE-4 resolution. collision=none.
+
+2026-06-02 15:00 UTC cron-cloud branch=agents/wip packet=RIQ-3-3 STARTING plan Library events: observePlanCreated+Replanned; libraryUpdater in HelperContext. Files=library-updater{.ts,.test.ts},hybrid-agent-helpers.ts,brain-integration.test.ts,agent-status.md. collision=none.
