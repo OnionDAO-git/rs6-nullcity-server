@@ -133,6 +133,18 @@ export interface CityIntegrationBirthAuthority {
     birthResident(input: BirthResidentRequest): Promise<{ resident: string; created: boolean; connected: boolean }>;
 }
 
+/** Event fired by {@link CityIntegrationService.creditAttention} when a patron supports a resident. */
+export interface PatronSupportEvent {
+    cityUserId: string;
+    residentName: string;
+    /** Resident faction, e.g. `'embassy'`. Derived from runtime state at the moment of support. */
+    faction: string;
+    /** AP amount credited (positive integer, same value as `creditedAmount`). */
+    amount: number;
+    ts: string;
+    note: string;
+}
+
 export interface CityIntegrationOptions {
     memoryRoot: string;
     getRuntime(resident: string): CityRuntime | undefined;
@@ -140,6 +152,17 @@ export interface CityIntegrationOptions {
     birth: CityIntegrationBirthAuthority;
     now?: () => Date;
     economyEventLog?: EconomyEventLog;
+    /**
+     * Called synchronously after every successful {@link creditAttention} that
+     * carries a `cityUserId`. Allows the host to credit patron standing and
+     * dispatch tier letters without introducing a direct dependency on the
+     * patron subsystem inside CityIntegrationService. Best-effort: errors
+     * thrown by the callback are NOT propagated; log them and return normally.
+     *
+     * QA-20260601-065: wires the dashboard "Support with AP" path to the same
+     * standing/letter flow as the patron gateway CLI path (`patron:offer`).
+     */
+    onPatronSupport?: (event: PatronSupportEvent) => void;
 }
 
 export interface CityStorytellerDispatchSummary {
@@ -1016,6 +1039,26 @@ export class CityIntegrationService {
                 refId: request.sourceId ?? request.idempotencyKey,
                 note: request.note ?? `credited ${request.amount} AP from ${request.sourceType ?? 'city_attention_credit'}`,
             });
+            // QA-20260601-065: when the dashboard "Support with AP" button calls
+            // creditAttention with a cityUserId, the patron should also receive
+            // standing credit + tier letters — same as the patron:offer CLI path.
+            if (request.cityUserId && this.options.onPatronSupport) {
+                const faction = (runtime.getState() as { faction?: string }).faction ?? 'embassy';
+                try {
+                    this.options.onPatronSupport({
+                        cityUserId: request.cityUserId,
+                        residentName,
+                        faction,
+                        amount: request.amount,
+                        ts,
+                        note: request.note ?? 'city_attention_credit',
+                    });
+                } catch (err) {
+                    // Best-effort: never block attention credit for standing issues.
+                    // eslint-disable-next-line no-console
+                    console.error('[creditAttention] onPatronSupport failed', err);
+                }
+            }
             return result;
         });
     }
