@@ -78,13 +78,7 @@ function makeCtx(overrides: {
     residentId?: string;
     libraryUpdater?: ReturnType<typeof makeLibraryUpdaterMock> | null;
 }): HelperContext {
-    const {
-        planStore = null,
-        orientationGoal = null,
-        plannerProfile = null,
-        residentId = 'res:test',
-        libraryUpdater = null,
-    } = overrides;
+    const { planStore = null, orientationGoal = null, plannerProfile = null, residentId = 'res:test', libraryUpdater = null } = overrides;
 
     const complete = jest.fn(async () => ({ text: '{"stages":[]}', nooped: false }));
 
@@ -408,5 +402,95 @@ describe('maybeTriggerPlannerPass — Library events (RIQ-3-3)', () => {
 
         await expect(maybeTriggerPlannerPass(ctx)).resolves.toBeUndefined();
         expect(planStore.save).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Survival-preserves-plan invariant (RIQ-3-2B)
+//
+// The spec guarantees: a Nervous-system interrupt (eat-when-low-HP, flee-on-attack)
+// must NOT call planStore.clear(), blockCurrentStage(), or advancePlan().
+//
+// At the maybeTriggerPlannerPass level this means:
+//   1. Only planStore.save() is ever called — never planStore.clear().
+//   2. The original plan object is not mutated (only atomically replaced via save).
+//   3. When the plan is healthy (active stage), nothing modifies the plan at all.
+//   4. When no planStore is present (Nervous path short-circuits before Brain),
+//      no plan state changes can occur.
+//
+// The structural guarantee is: maybeTriggerPlannerPass is called only from runBrain;
+// the Nervous system never calls runBrain (or this function). These tests prove the
+// maybeTriggerPlannerPass contract is sound so the structural guarantee is sufficient.
+// ---------------------------------------------------------------------------
+
+describe('survival-preserves-plan invariant (RIQ-3-2B)', () => {
+    it('never calls planStore.clear() even when triggering a new plan', async () => {
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'master woodcutting' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        expect(planStore.clear).not.toHaveBeenCalled();
+        expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
+    });
+
+    it('never calls planStore.clear() when replacing a completed plan', async () => {
+        const completedPlan = makeActivePlan({ status: 'completed' });
+        const planStore = makePlanStore(completedPlan);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'master firemaking' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        expect(planStore.clear).not.toHaveBeenCalled();
+        expect(planStore.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not mutate the existing plan object — replacement is atomic via save', async () => {
+        const completedPlan = makeActivePlan({ status: 'completed' });
+        const originalStatus = completedPlan.status;
+        const originalStagesLength = completedPlan.stages.length;
+        const planStore = makePlanStore(completedPlan);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        // The original plan object is not mutated
+        expect(completedPlan.status).toBe(originalStatus);
+        expect(completedPlan.stages.length).toBe(originalStagesLength);
+        // A new plan was saved (not the old plan modified in place)
+        expect(planStore.save).toHaveBeenCalledWith('res:test', expect.not.objectContaining({ status: 'completed' }));
+    });
+
+    it('does not modify the plan when it is healthy (active stage — normal body execution)', async () => {
+        const healthyPlan = makeActivePlan();
+        const planStore = makePlanStore(healthyPlan);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        // Healthy plan: no trigger, no save, no clear
+        expect(mockRunPlannerPass).not.toHaveBeenCalled();
+        expect(planStore.save).not.toHaveBeenCalled();
+        expect(planStore.clear).not.toHaveBeenCalled();
+    });
+
+    it('no plan state changes when planStore is absent (structural Nervous-path guarantee)', async () => {
+        // When no planStore is wired (the Nervous system never sets one up),
+        // maybeTriggerPlannerPass is a no-op — nothing can touch plan state.
+        const ctx = makeCtx({
+            planStore: null,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).not.toHaveBeenCalled();
     });
 });
