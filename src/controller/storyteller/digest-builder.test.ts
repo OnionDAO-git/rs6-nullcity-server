@@ -186,6 +186,10 @@ describe('buildDigest — maxResidentMentions cap', () => {
             windowStart: WIN_START,
             windowEnd: WIN_END,
             residents,
+            apEvents: [
+                ...Array.from({ length: 10 }, (_, i) => ({ ...makeEvent(`active-a${i}`, 'ap_granted', 'low'), residentName: `res:a${i}` })),
+                { ...makeEvent('active-low', 'ap_low', 'medium'), residentName: 'res:low' },
+            ],
             config: { maxResidentMentions: 3 },
         });
 
@@ -262,6 +266,10 @@ describe('buildDigest — systemHealth', () => {
             windowStart: WIN_START,
             windowEnd: WIN_END,
             residents,
+            apEvents: [
+                { ...makeEvent('active-a', 'ap_granted', 'low'), residentName: 'res:a' },
+                { ...makeEvent('active-b', 'ap_low', 'medium'), residentName: 'res:b' },
+            ],
         });
         expect(systemHealth.totalResidents).toBe(4);
         expect(systemHealth.activeResidents).toBe(2);
