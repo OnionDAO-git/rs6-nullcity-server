@@ -75,6 +75,44 @@ llm:
       cost:
         promptTokenUsd: 0.0000008
         completionTokenUsd: 0.000004
+
+    # --- DELIBERATIVE PLANNER (Phase 2 of resident-intelligence-roadmap) ---------
+    # RIQ-0-3 decision (2026-06-02): Haiku is the Phase-2 planner model.
+    #
+    # Rationale:
+    #   • Benchmark: Haiku 9/9 full suite vs qwopus 8/9; clean parse on structured JSON
+    #     (docs/capability-evidence/2026-05-31-inference-model-comparison.md).
+    #   • Planner calls are RARE (stage-boundary only, not per-tick) so paid cost is bounded.
+    #   • qwopus q4 is the fallback when offline or over cost cap.
+    #
+    # Cost estimate (per planner call at ~10K prompt + ~2K completion tokens):
+    #   10K × $0.0000008 + 2K × $0.000004 = $0.016/plan
+    #   5 plans/resident/day × 10 residents = ~$0.80/day = ~$24/month
+    #
+    # Usage (Phase 2 PlannerPass, when implemented):
+    #   Configure a soul or the PlannerPass implementation with:
+    #     endpoint: planner_haiku
+    #   The planner timeout is generous (90s) because planning deliberates; it does NOT
+    #   fire every tick.  The Body continues executing the current plan while the Brain plans.
+    planner_haiku:
+      endpoint: default            # same openrouter baseUrl/provider/apiKey
+      model: anthropic/claude-3.5-haiku
+      timeoutMs: 90000             # planners deliberate; 90s ceiling (rare call)
+      cost:
+        promptTokenUsd: 0.0000008  # $0.80 / 1M prompt tokens
+        completionTokenUsd: 0.000004 # $4.00 / 1M completion tokens
+
+    # --- PLANNER FALLBACK (local, free, offline-safe) ---
+    # Wire this via `endpoint: planner_local` in the PlannerPass implementation
+    # when OPENROUTER_API_KEY is absent or when daily cost cap is reached.
+    # qwopus produces usable plans but plans slower (~40s p50) and less reliably
+    # on multi-step reasoning.  Acceptable fallback for cost-constrained operation.
+    planner_local:
+      baseUrl: http://spacetower.nullcity.ai:8100
+      provider: openai-compatible
+      model: qwopus3.5-27b-v3@q4_k_s
+      timeoutMs: 120000            # local model deliberates slowly; 120s ceiling
+
     # Storyteller: smarter/slower, NOT a tick-by-tick body loop (see model-benchmarking.md).
     openrouter_storyteller:
       endpoint: default
