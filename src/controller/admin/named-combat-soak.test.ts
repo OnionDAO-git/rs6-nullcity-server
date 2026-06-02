@@ -227,7 +227,7 @@ describe('named combat soak verifier', () => {
             entries: [
                 log({
                     kind: 'say',
-                    text: 'I am scouting. Nearby I see 4 NPCs and 10 players at 3215,3212. Goal: Train combat on safe low-level NPCs and stop when hurt.',
+                    text: 'I am scouting. Nearby I see 4 NPCs and 10 players. Goal: Train combat on safe low-level NPCs and stop when hurt.',
                 }),
             ],
             events: [],

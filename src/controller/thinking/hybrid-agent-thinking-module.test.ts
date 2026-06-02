@@ -3893,7 +3893,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('direct_chat_status');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -4118,7 +4118,7 @@ describe('HybridAgentThinkingModule', () => {
                 events: [
                     chatFromCodex('agent, what do you remember about the west gate passphrase?', 3187, 3222),
                     chatFromResidentPeer(
-                        'I am scouting. Nearby I see 15 trees and 2 players at 3197,3216. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                        'I am scouting. Nearby I see 15 trees and 2 players. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find.',
                         3197,
                         3216,
                     ),
@@ -5763,7 +5763,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I will look for a safe creature, collect bones, then bury them at 3234,3236. Goal: Pick up bones and bury them to train Prayer after safe combat.',
+                text: 'I will look for a safe creature, collect bones, then bury them. Goal: Pick up bones and bury them to train Prayer after safe combat.',
             },
         ]);
         expect(result.cause).toBe('direct_chat_train_prayer');
@@ -7975,7 +7975,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -8004,7 +8004,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9083,7 +9083,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net at a visible Fishing spot. Next: fish at 3219,3201 with my small net.',
+                text: 'I am online. Goal: Catch shrimp with a small fishing net at a visible Fishing spot. Next: fish at 3219,3201 with my small net.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9123,7 +9123,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net, then cook the catch on a fire or range. Next: find a fire or range to cook my raw fish.',
+                text: 'I am online. Goal: Catch shrimp with a small fishing net, then cook the catch on a fire or range. Next: find a fire or range to cook my raw fish.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9155,7 +9155,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
+            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
         ]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -9185,7 +9185,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9220,7 +9220,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: scout the tree stand at 3224,3201.',
+                text: 'I am online. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: scout the tree stand at 3224,3201.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9266,7 +9266,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3192,3229. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: return toward my findable point at 3200,3200.',
+                text: 'I am online. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: return toward my findable point at 3200,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9305,7 +9305,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions[0].kind).toBe('say');
         const text = String((result.actions[0] as { text?: string }).text);
         // phase 2 (Math.floor(2522/20)%4=2): Goal shown, Next suppressed for variety
-        expect(text).toBe('I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC at 3218,3201. Goal: Practice scouting.');
+        expect(text).toBe('I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC. Goal: Practice scouting.');
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9343,7 +9343,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
+            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
         ]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -9382,7 +9382,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
+            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
         ]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -9422,7 +9422,7 @@ describe('HybridAgentThinkingModule', () => {
         );
 
         expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
+            { kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
         ]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
@@ -9459,7 +9459,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Practice scouting.',
+                text: 'I am online. Goal: Practice scouting.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9500,7 +9500,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: chop the tree at 3221,3201.',
+                text: 'I am online. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: chop the tree at 3221,3201.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9537,7 +9537,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9578,7 +9578,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Gather ordinary logs and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
+                text: 'I am online. Goal: Gather ordinary logs and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9620,7 +9620,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Gather logs from a nearby ordinary tree and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
+                text: 'I am online. Goal: Gather logs from a nearby ordinary tree and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9657,7 +9657,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net. Next: fish at 3219,3201 with my small net.',
+                text: 'I am online. Goal: Catch shrimp with a small fishing net. Next: fish at 3219,3201 with my small net.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9691,7 +9691,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: look for an ordinary tree to chop.',
+                text: 'I am online. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: look for an ordinary tree to chop.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9775,7 +9775,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('F9a: phase-3 beacon shows only prefix and position (no Goal, no Next)', async () => {
+    it('F9a: phase-3 beacon shows only prefix and nearby summary (no Goal, no Next, no raw coordinates)', async () => {
         // tick=1100 → phase Math.floor(1100/20)%4 = 55%4 = 3
         const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
         const llm = scriptedLlm([]);
@@ -9794,7 +9794,9 @@ describe('HybridAgentThinkingModule', () => {
         const text = String((result.actions[0] as { text?: string }).text);
         expect(text).not.toContain('Goal:');
         expect(text).not.toContain('Next:');
-        expect(text).toContain('at 3218,3201');
+        // Toned down for human viewers: no raw tile coordinates in the chat feed.
+        expect(text).not.toMatch(/\d{3,4}\s*,\s*\d{3,4}/);
+        expect(text).toMatch(/Nearby I see|working my route|checking|scouting/);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 

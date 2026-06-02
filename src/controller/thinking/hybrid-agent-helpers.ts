@@ -160,7 +160,7 @@ import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as current
 import type { LibraryUpdater } from '../evidence/library-updater';
 
 // --- Shared Constants ---
-export const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
+export const DEFAULT_GOAL_SHARE_EVERY_TICKS = 600;
 export const DEFAULT_RETURN_TO_ANCHOR_EVERY_TICKS = 600;
 export const DEFAULT_RETURN_TO_ANCHOR_RADIUS = 12;
 export const PRESENCE_BEACON_VARIETY_AFTER_TICKS = 1000;
@@ -812,7 +812,6 @@ export function statusSpeech(
     includeNextStep = false,
     includeGoal = true,
 ): string {
-    const here = perception.resident?.position;
     const cognition = ctx.cognition();
     const next = includeNextStep
         ? (visibilityReturnNextStep(ctx, perception) ??
@@ -829,8 +828,20 @@ export function statusSpeech(
         ? summarizeGoalForSpeech(ctx.activeGoal()?.description || 'staying findable and looking for useful actions', Boolean(next))
         : undefined;
     const need = survivalNeedSpeech(perception);
-    const loc = `${prefix}${here ? ` at ${here.x},${here.y}` : ''}`;
-    return cleanSpeech(goal ? `${loc}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${loc}.${need}`) || prefix;
+    return composeStatusLine({ prefix, goal, next, need });
+}
+
+/**
+ * Assemble a resident's spoken status line from its parts. Deliberately omits
+ * raw tile coordinates — `at 3231,3202` read as debug output in the live chat
+ * feed (the dashboard map already shows position). Keeps the line legible for
+ * human viewers: "<prefix>. Goal: <goal>. Next: <next><need>".
+ */
+export function composeStatusLine(parts: { prefix: string; goal?: string; next?: string; need: string }): string {
+    const { prefix, goal, next, need } = parts;
+    return (
+        cleanSpeech(goal ? `${prefix}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${prefix}.${need}`) || prefix
+    );
 }
 
 export function visibilityReturnNextStep(ctx: HelperContext, perception: HybridPerception): string | undefined {
