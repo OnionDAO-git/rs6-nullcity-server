@@ -10853,6 +10853,58 @@ describe('HybridAgentThinkingModule', () => {
     });
 });
 
+describe('RIQ-1-1-B: Brain tool-call loop wired into runBrain', () => {
+    it('sets goal from the follow-up completion when Brain emits a lookup_skill tool call', async () => {
+        const toolCallJson = '{"tool":"lookup_skill","query":"firemaking training methods"}';
+        const goalJson =
+            '{"goal":{"id":"train-fm","description":"Train Firemaking by lighting logs","steps":["gather logs","use tinderbox on logs"]}}';
+        const llm = scriptedLlm([
+            { text: toolCallJson }, // brain turn 1: tool call detected
+            { text: goalJson }, // brain turn 2: goal JSON after tool result injected
+            { text: JSON.stringify({ actions: [] }) }, // body
+        ]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(perception({ tick: 0 }));
+
+        // Two brain completions + one body completion
+        expect(llm.complete).toHaveBeenCalledTimes(3);
+        expect(state.cognition?.activeGoal?.id).toBe('train-fm');
+        expect(state.cognition?.activeGoal?.description).toContain('Firemaking');
+    });
+
+    it('sets goal after one Brain completion when no tool call is emitted (fast path)', async () => {
+        const goalJson = '{"goal":{"id":"scout","description":"Scout nearby area","steps":["walk around the spawn"]}}';
+        const llm = scriptedLlm([
+            { text: goalJson }, // brain: plain goal (no tool call)
+            { text: JSON.stringify({ actions: [] }) }, // body
+        ]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(perception({ tick: 0 }));
+
+        expect(llm.complete).toHaveBeenCalledTimes(2); // 1 brain + 1 body
+        expect(state.cognition?.activeGoal?.id).toBe('scout');
+    });
+
+    it('injects lookup_skill tool instructions into the Brain prompt', async () => {
+        const capturedPrompts: string[] = [];
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(req => {
+            capturedPrompts.push(req.prompt);
+            return Promise.resolve({ text: '{"goal":{"id":"test","description":"test goal"}}', nooped: false });
+        });
+        const agent = hybridAgent({ complete });
+
+        await agent.think(perception({ tick: 0 }));
+
+        // First captured prompt is the brain prompt (no direct-chat events in perception)
+        expect(capturedPrompts[0]).toContain('lookup_skill');
+        expect(capturedPrompts[0]).toContain('ONE tool before your final answer');
+    });
+});
+
 function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), memoryStore = memory()): HybridAgentThinkingModule {
     return new HybridAgentThinkingModule({
         soul: agentSoul,
