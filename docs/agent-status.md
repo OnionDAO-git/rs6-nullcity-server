@@ -1845,3 +1845,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-01 21:18 CDT codex branch=agents/wip repo=server lane=RUNTIME packet=RUNTIME-LOG-GUARD-CARRY-FORWARD HANDOFF - sha=0c36f43e bounded supervised logs: stream rotation + startup copy-truncate. Tests: bash -n, synthetic stream/copy rotation, check:no-ui, build, typecheck. Live not restarted. next=deploy from clean checkout if needed.
 
 2026-06-02 02:45 UTC cron-cloud branch=agents/wip packet=PATRON-STANDING-ON-GRANT-1 STARTING — wire creditAttention->patron standing+tier letters (QA-20260601-065). Files=src/controller/city-integration/service.ts,src/controller/city-integration/service.test.ts,src/controller/controller-host.ts. collision=none.
+
+2026-06-02 03:20 UTC cron-cloud branch=agents/wip packet=PATRON-STANDING-ON-GRANT-1 HANDOFF — sha=5e52cba9 tests=SANDBOX-BLOCKED(no jest) check:no-ui PASS. onPatronSupport callback wired: creditAttention->standingLedger.recordSupport+tier letters. QA-20260601-065 In Review. QA-20260601-066 closed(confirmed live). collision=none.
