@@ -94,6 +94,8 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
 ]);
+/** Free bronze axe in Lumbridge, exposed by the logs object pick-up plugin. */
+export const LUMBRIDGE_FREE_AXE_OBJECT_ID = objectIds.lumbridgeAxeInLogs;
 
 /** Level-1 ore rocks the starter mining routine may mine. Empty/depleted rock ids are intentionally excluded. */
 export const STARTER_ORE_IDS: ReadonlySet<number> = new Set([
@@ -707,6 +709,32 @@ export function levelOneWoodcuttingAction(
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
+}
+
+/** Take or approach a visible free Lumbridge axe when the resident lacks one. */
+export function acquireWoodcuttingAxeAction(perception: BodyHybridPerception): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here || hasWoodcuttingAxe(perception)) {
+        return undefined;
+    }
+
+    const freeAxe = (perception.nearby?.objects || [])
+        .filter(object => object.objectId === LUMBRIDGE_FREE_AXE_OBJECT_ID && sameLevel(here, object.position))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (!freeAxe) {
+        return undefined;
+    }
+
+    if (distance(here, freeAxe.position) > INTERACTION_APPROACH_RADIUS) {
+        return {
+            kind: 'move_to',
+            target: freeAxe.position,
+            range: INTERACTION_APPROACH_RADIUS,
+            cause: 'acquire_axe_approach_free_lumbridge_axe',
+        };
+    }
+
+    return { kind: 'interact', target: freeAxe, option: 'take-axe', cause: 'acquire_axe_take_free_lumbridge_axe' };
 }
 
 /** Approach and mine the nearest level-1 clay/copper/tin rock when carrying a pickaxe. */
