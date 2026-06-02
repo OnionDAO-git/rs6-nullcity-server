@@ -109,7 +109,7 @@ Add rows here only when `Status` is `Open` and the `Next action` is directly cla
 
 | ID | Severity | Area | Status | Packet | Capability row | Evidence refs | Owner | Opened | Next action |
 |---|---|---|---|---|---|---|---|---|---|
-| QA-20260602-082 | P1 | Trading / AP-for-GP recurrence | Open | CQA4-CQA10-TRADE-RECURRENCE-SPLIT | Safe trading FSM; AP-for-GP exchange | split-from:QA-20260529-011; ordinary AP/GP exchange recurrence is proven, but ordinary trade closure recurrence, true human/player operator proof, fresh GP scans, GP earning/distribution cadence, and 500 AP/250 GP cap review remain open. | unclaimed | 2026-06-02 | Dev or QA agent: prove or improve one ordinary trade/AP-GP recurrence gap with a bounded live or benchmark artifact. Prefer ordinary trade closure recurrence first; no live restart or resident mutation without steward approval. |
+| QA-20260602-082 | P1 | Trading / AP-for-GP recurrence | Claimed | CQA4-CQA10-TRADE-RECURRENCE-SPLIT | Safe trading FSM; AP-for-GP exchange | split-from:QA-20260529-011; ordinary AP/GP exchange recurrence is proven, but ordinary trade closure recurrence, true human/player operator proof, fresh GP scans, GP earning/distribution cadence, and 500 AP/250 GP cap review remain open. | codex | 2026-06-02 | Codex is tracing the ordinary trade recurrence gap from fresh audit/log evidence and will land a focused test/fix if the root cause is code-owned; no live restart or resident mutation. |
 
 ## Review, Fixed, And Historical Rows
 
