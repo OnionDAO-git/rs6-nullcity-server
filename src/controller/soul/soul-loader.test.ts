@@ -147,15 +147,11 @@ describe('SoulLoader', () => {
             );
             expect(loader.load('res:qa-cook').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-scout').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
-            expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
-                expect.objectContaining({ commandPrefix: 'trade' }),
-            );
+            expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'trade' }));
             expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('woodcutting-firemaking-10m');
             expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('starter-fishing-5m');
             expect(loader.load('res:qa-banker').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
-            expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(
-                expect.objectContaining({ commandPrefix: 'bank' }),
-            );
+            expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'bank' }));
             expect(loader.load('res:qa-guide').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'guide' }));
             expect(loader.load('res:qa-priest').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-forager').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
