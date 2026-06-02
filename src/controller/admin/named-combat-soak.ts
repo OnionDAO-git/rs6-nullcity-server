@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { loadControllerConfig } from '../config';
+import type { ControllerConfig } from '../config';
 import type { AgentAction, Perception, PerceptionEvent } from '../transport/message-codecs';
 import { GatewayClient } from '../transport/gateway-client';
 import { isoDate } from '../util/clock';
@@ -24,6 +25,11 @@ export interface NamedCombatSoakOptions {
     keepPeer: boolean;
     requireLowHealthRecoveryChain: boolean;
     commandSpawn: { x: number; y: number; level: number };
+    expHardTrajectory: boolean;
+    expHardInferenceCapture: boolean;
+    expHardTickProfile: boolean;
+    expHardNoFood: boolean;
+    expHardCatatonicAbortAfter: number;
 }
 
 export interface NamedCombatSoakVerificationInput {
@@ -35,6 +41,8 @@ export interface NamedCombatSoakVerificationInput {
     perceptionCount: number;
     requireLowHealthRecoveryChain?: boolean;
     recoveryTargetName?: string;
+    catatonicLoopDetected?: boolean;
+    catatonicActionCount?: number;
 }
 
 export interface NamedCombatSoakActorRef {
@@ -78,6 +86,11 @@ export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date())
             process.env.CONTROLLER_COMBAT_SOAK_REQUIRE_LOW_HEALTH_RECOVERY_CHAIN === '1' ||
             process.env.CONTROLLER_COMBAT_SOAK_REQUIRE_LOW_HEALTH_RECOVERY_CHAIN === 'true',
         commandSpawn: { x: 3253, y: 3230, level: 0 },
+        expHardTrajectory: process.env.EXP_HARD_TRAJECTORY === '1',
+        expHardInferenceCapture: process.env.EXP_HARD_INFERENCE_CAPTURE === '1',
+        expHardTickProfile: process.env.EXP_HARD_TICK_PROFILE === '1',
+        expHardNoFood: process.env.EXP_HARD_NO_FOOD === '1',
+        expHardCatatonicAbortAfter: readPositiveInt(process.env.EXP_HARD_CATATONIC_ABORT_AFTER, 500),
     };
 
     for (let i = 0; i < argv.length; i += 1) {
@@ -120,6 +133,18 @@ export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date())
             options.keepPeer = true;
         } else if (arg === '--require-low-health-recovery-chain') {
             options.requireLowHealthRecoveryChain = true;
+        } else if (arg === '--exp-hard-trajectory') {
+            options.expHardTrajectory = true;
+        } else if (arg === '--exp-hard-inference-capture') {
+            options.expHardInferenceCapture = true;
+        } else if (arg === '--exp-hard-tick-profile') {
+            options.expHardTickProfile = true;
+        } else if (arg === '--exp-hard-no-food') {
+            options.expHardNoFood = true;
+        } else if (arg === '--exp-hard-catatonic-abort-after') {
+            options.expHardCatatonicAbortAfter = readPositiveInt(readRequiredValue(argv, ++i, arg), 500);
+        } else if (arg.startsWith('--exp-hard-catatonic-abort-after=')) {
+            options.expHardCatatonicAbortAfter = readPositiveInt(arg.slice('--exp-hard-catatonic-abort-after='.length), 500);
         } else {
             throw new Error(`Unknown named combat soak argument ${arg}`);
         }
@@ -131,8 +156,45 @@ export function parseNamedCombatSoakArgs(argv: string[], now: Date = new Date())
     return options;
 }
 
+export function detectCatatonicLoop(entries: NamedCombatSoakLogEntry[], threshold: number): boolean {
+    if (threshold <= 0 || entries.length < threshold) {
+        return false;
+    }
+    let consecutive = 1;
+    for (let i = 1; i < entries.length; i++) {
+        const prev = entries[i - 1].action;
+        const curr = entries[i].action;
+        if (prev && curr && prev.kind === curr.kind && actionDiscriminator(prev) === actionDiscriminator(curr)) {
+            consecutive += 1;
+            if (consecutive >= threshold) {
+                return true;
+            }
+        } else {
+            consecutive = 1;
+        }
+    }
+    return false;
+}
+
+function actionDiscriminator(action: Record<string, unknown>): string {
+    const parts: string[] = [String(action.kind ?? '')];
+    if (typeof action.cause === 'string') {
+        parts.push(action.cause);
+    }
+    if (typeof action.text === 'string') {
+        parts.push(action.text.slice(0, 40));
+    }
+    return parts.join('|');
+}
+
 export function verifyNamedCombatSoakEvidence(input: NamedCombatSoakVerificationInput): NamedCombatSoakOutcome {
     const metrics = namedCombatSoakMetrics(input);
+    if (input.catatonicLoopDetected) {
+        return failed(
+            `Catatonic loop detected: ${input.catatonicActionCount ?? 0}+ consecutive identical actions (BODY:catatonic_loop)`,
+            metrics,
+        );
+    }
     if (metrics.commandSubmitted === 0) {
         return failed('No command-peer combat prompt was submitted', metrics);
     }
@@ -265,6 +327,7 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
         await sleep(options.pollMs * 2);
 
         const entries = readActionLogEntriesSince(actionLogPath, baselineSize);
+        const catatonicLoopDetected = detectCatatonicLoop(entries, options.expHardCatatonicAbortAfter);
         const outcome = verifyNamedCombatSoakEvidence({
             resident: options.resident,
             commandPeer: options.commandPeer,
@@ -274,7 +337,13 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
             perceptionCount: targetPerceptions.length,
             requireLowHealthRecoveryChain: options.requireLowHealthRecoveryChain,
             recoveryTargetName: options.targetName,
+            catatonicLoopDetected,
+            catatonicActionCount: catatonicLoopDetected ? options.expHardCatatonicAbortAfter : 0,
         });
+        const expHardSources =
+            options.expHardTrajectory || options.expHardInferenceCapture || options.expHardTickProfile
+                ? copyExpHardFiles(config, options, stdout)
+                : {};
         const artifactPath = writeArtifact(options.outputDir, {
             schemaVersion: 1,
             kind: 'named_combat_soak',
@@ -290,6 +359,8 @@ export async function runNamedCombatSoakCli(argv: string[], runtime: NamedCombat
             summaries: outcome.summaries,
             entries,
             events: targetEvents,
+            catatonicLoopDetected,
+            expHard: expHardSources,
         });
         stdout(`${JSON.stringify({ artifactPath, status: outcome.status, score: outcome.score, metrics: outcome.metrics })}\n`);
         return outcome.status === 'passed' ? 0 : 1;
@@ -324,6 +395,7 @@ function namedCombatSoakMetrics(input: NamedCombatSoakVerificationInput): Record
         prayerEvidence: events.some(isPrayerEvent) || input.entries.some(isBuryAction) ? 1 : 0,
         survivalActions: input.entries.filter(entry => entry.action?.kind === 'eat' || isSurvivalCause(entry.action?.cause)).length,
         deathEvents: events.filter(isDeathEvent).length,
+        catatonicLoopDetected: input.catatonicLoopDetected ? 1 : 0,
         ...recovery,
     };
 }
@@ -565,7 +637,59 @@ function publicOptions(options: NamedCombatSoakOptions): Record<string, unknown>
         pollMs: options.pollMs,
         requireLowHealthRecoveryChain: options.requireLowHealthRecoveryChain,
         commandSpawn: options.commandSpawn,
+        expHardTrajectory: options.expHardTrajectory,
+        expHardInferenceCapture: options.expHardInferenceCapture,
+        expHardTickProfile: options.expHardTickProfile,
+        expHardNoFood: options.expHardNoFood,
+        expHardCatatonicAbortAfter: options.expHardCatatonicAbortAfter,
     };
+}
+
+function copyExpHardFiles(
+    config: ControllerConfig,
+    options: NamedCombatSoakOptions,
+    stdout: (line: string) => void,
+): Record<string, string> {
+    const sources: Record<string, string> = {};
+    const memoryRoot = path.join('data', 'controller', 'memory');
+    const residentSlug = options.resident.replace(/^res:/, '');
+
+    if (options.expHardTrajectory) {
+        const trajectoryDir = path.join(memoryRoot, `res:${residentSlug}`, 'evidence', 'trajectory');
+        const destDir = path.join(options.outputDir, 'exp-hard-trajectory');
+        sources.trajectoryDir = copyDirIfExists(trajectoryDir, destDir, stdout);
+    }
+
+    if (options.expHardInferenceCapture) {
+        const inferenceDir = path.join(config.logging.dir, options.resident, 'inference');
+        const destDir = path.join(options.outputDir, 'exp-hard-inference');
+        sources.inferenceDir = copyDirIfExists(inferenceDir, destDir, stdout);
+    }
+
+    if (options.expHardTickProfile) {
+        sources.tickProfileNote =
+            'tick-profile capture requires per-tick instrumentation not yet implemented in controller; this field is reserved';
+        stdout(`[combat-soak] EXP_HARD_TICK_PROFILE: tick-profile capture is a future harness slice\n`);
+    }
+
+    return sources;
+}
+
+function copyDirIfExists(src: string, dest: string, stdout: (line: string) => void): string {
+    if (!fs.existsSync(src)) {
+        stdout(`[combat-soak] exp-hard source not found (ok if controller not running): ${src}\n`);
+        return 'not_found';
+    }
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+        const srcPath = path.join(src, entry);
+        const destPath = path.join(dest, entry);
+        if (fs.statSync(srcPath).isFile()) {
+            fs.copyFileSync(srcPath, destPath);
+        }
+    }
+    stdout(`[combat-soak] copied exp-hard files: ${src} → ${dest}\n`);
+    return dest;
 }
 
 function fileSize(filePath: string): number {
