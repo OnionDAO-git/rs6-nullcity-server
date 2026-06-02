@@ -62,6 +62,12 @@ export const LOW_RISK_BONE_SOURCE_PATTERN = /\b(chicken|cow|rat|giant rat)\b/i;
 export const MEDIUM_RISK_BONE_SOURCE_PATTERN = /\b(goblin|spider)\b/i;
 export const HUMAN_BONE_SOURCE_PATTERN = /\b(man|woman)\b/i;
 export const SAFE_COMBAT_TARGET_PATTERN = /\b(chicken|cow|rat|giant rat|goblin|man|woman)\b/i;
+/** Starter ore item IDs (clay, copper ore, tin ore) — the mined products. */
+export const STARTER_ORE_ITEM_IDS: ReadonlySet<number> = new Set([434, 436, 438]);
+export const STARTER_ORE_KEY_PATTERN = /^rs:(clay|copper_ore|tin_ore)$/i;
+/** Starter cooked fish safe to eat (cooked shrimp, cooked anchovies). */
+export const STARTER_COOKED_FISH_ITEM_IDS: ReadonlySet<number> = new Set([315, 319]);
+export const STARTER_COOKED_FISH_KEY_PATTERN = /^rs:cooked_(shrimp|anchovies)$/i;
 
 // --- Item-type predicates (moved verbatim from the monolith) ---
 
@@ -93,6 +99,14 @@ export function isBones(item: WorkflowItem): boolean {
     return BONE_ITEM_IDS.has(item.itemId) || BONE_KEY_PATTERN.test(item.key || '');
 }
 
+export function isStarterOre(item: WorkflowItem): boolean {
+    return STARTER_ORE_ITEM_IDS.has(item.itemId) || STARTER_ORE_KEY_PATTERN.test(item.key || '');
+}
+
+export function isStarterCookedFish(item: WorkflowItem): boolean {
+    return STARTER_COOKED_FISH_ITEM_IDS.has(item.itemId) || STARTER_COOKED_FISH_KEY_PATTERN.test(item.key || '');
+}
+
 // --- Inventory-scan helpers (moved verbatim from the monolith) ---
 
 export function hasWoodcuttingAxe(perception: WorkflowInventoryCarrier): boolean {
@@ -105,6 +119,35 @@ export function hasPickaxe(perception: WorkflowInventoryCarrier): boolean {
 
 export function hasSmallFishingNet(perception: WorkflowInventoryCarrier): boolean {
     return carriedAndEquippedItems(perception).some(item => isSmallFishingNet(item));
+}
+
+/** True when inventory contains at least one firemaking log (plan stage: gather-logs done). */
+export function hasFiremakingLogsInInventory(perception: WorkflowInventoryCarrier): boolean {
+    return inventoryItems(perception).some(item => isFiremakingLog(item));
+}
+
+/** True when inventory contains at least one starter raw fish (plan stage: fish done). */
+export function hasStarterRawFishInInventory(perception: WorkflowInventoryCarrier): boolean {
+    return inventoryItems(perception).some(item => isStarterRawFish(item));
+}
+
+/** True when inventory contains at least one starter cooked fish (plan stage: cook done). */
+export function hasStarterCookedFishInInventory(perception: WorkflowInventoryCarrier): boolean {
+    return inventoryItems(perception).some(item => isStarterCookedFish(item));
+}
+
+/** True when inventory contains at least one starter ore (plan stage: mine done). */
+export function hasStarterOreInInventory(perception: WorkflowInventoryCarrier): boolean {
+    return inventoryItems(perception).some(item => isStarterOre(item));
+}
+
+/** True when inventory contains at least one bone item (plan stage: bury-bones NOT yet done). */
+export function hasBonesInInventory(perception: WorkflowInventoryCarrier): boolean {
+    return inventoryItems(perception).some(item => isBones(item));
+}
+
+function inventoryItems(perception: WorkflowInventoryCarrier): WorkflowItem[] {
+    return (perception.resident?.inventory || []).filter((item): item is WorkflowItem => Boolean(item));
 }
 
 function carriedAndEquippedItems(perception: WorkflowInventoryCarrier): WorkflowItem[] {

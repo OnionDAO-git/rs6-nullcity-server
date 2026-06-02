@@ -234,6 +234,50 @@ describe('runBody — durable plan stage routing (RIQ-3-2B)', () => {
         expect(result.cause).toBe('plan_stage:s1');
         expect(result.planChange).toEqual({ goalId: 'test-goal', stageId: 's1', routed: true });
     });
+
+    it('marks the current stage blocked and saves the plan when the router signals stage_blocked', async () => {
+        const plan = makeActivePlan({
+            stages: [
+                {
+                    id: 's1',
+                    subgoal: 'Chop logs from nearby trees',
+                    requirements: ['axe'],
+                    successCriteria: 'logs gained',
+                    status: 'active',
+                },
+                { id: 's2', subgoal: 'Light a fire', requirements: ['logs'], successCriteria: 'fire lit', status: 'pending' },
+                { id: 's3', subgoal: 'Cook food', requirements: ['fire'], successCriteria: 'food cooked', status: 'pending' },
+            ],
+        });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'firemaking', description: 'learn firemaking' } });
+
+        // No tree nearby, no logs in inventory → stage_blocked
+        const result = await runBody(ctx, {
+            tick: 100,
+            resident: {
+                position: { x: 100, y: 100, level: 0 },
+                inventory: [{ itemId: 1351, amount: 1 }],
+            },
+            nearby: { objects: [], npcs: [], worldItems: [], players: [] },
+            events: [],
+        } as any);
+
+        expect(ctx.complete).not.toHaveBeenCalled();
+        expect(planStore.save).toHaveBeenCalledWith(
+            'res:test',
+            expect.objectContaining({
+                stages: expect.arrayContaining([expect.objectContaining({ id: 's1', status: 'blocked' })]),
+            }),
+        );
+        expect(result).toEqual({
+            actions: [],
+            cause: 'plan_stage_blocked:s1',
+            envelopeTokens: 0,
+            nooped: true,
+            planChange: { goalId: 'test-goal', stageId: 's1', signal: 'stage_blocked' },
+        });
+    });
 });
 
 describe('maybeTriggerPlannerPass — no-op conditions', () => {

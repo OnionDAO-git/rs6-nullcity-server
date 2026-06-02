@@ -277,6 +277,86 @@ describe('planStageRouter', () => {
     it('returns undefined for unknown stages so callers can fall back to normal body selection', () => {
         expect(planStageRouter(stage('Compose a poem about Lumbridge'), perception())).toBeUndefined();
     });
+
+    it('signals stage_done for log-gathering when logs already in inventory (already satisfied)', () => {
+        expect(
+            planStageRouter(stage('Chop logs from a tree'), perception({ resident: { inventory: [item(1511, 'rs:logs')] } })),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('signals stage_blocked for log-gathering when no tree nearby and no logs gathered yet', () => {
+        expect(
+            planStageRouter(
+                stage('Chop logs from a tree'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1351)] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for firemaking when no logs remain (all consumed)', () => {
+        // No logs + no tinderbox → firemakingAction is undefined → no logs in inventory → done
+        expect(planStageRouter(stage('Light a fire using logs and a tinderbox'), perception({ resident: { inventory: [] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for firemaking when logs exist but tinderbox is missing', () => {
+        // firemakingAction is undefined (no tinderbox), but logs exist → blocked
+        expect(
+            planStageRouter(stage('Light a fire using logs and a tinderbox'), perception({ resident: { inventory: [item(1511)] } })),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for fishing when already carrying raw fish', () => {
+        expect(planStageRouter(stage('Fish shrimp at a net fishing spot'), perception({ resident: { inventory: [item(317)] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for fishing when no spot visible and no fish yet', () => {
+        expect(
+            planStageRouter(
+                stage('Fish shrimp at a net fishing spot'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(303)] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for cooking when already carrying cooked fish', () => {
+        expect(planStageRouter(stage('Cook food for the next leg'), perception({ resident: { inventory: [item(315)] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for cooking when no raw fish and no cooked fish', () => {
+        expect(
+            planStageRouter(
+                stage('Cook food for the next leg'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for mining when ore already in inventory', () => {
+        expect(planStageRouter(stage('Mine starter ore'), perception({ resident: { inventory: [item(436)] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for mining when no rock visible and no ore yet', () => {
+        expect(
+            planStageRouter(
+                stage('Mine starter ore'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1265)] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for prayer when all bones have been buried (empty inventory)', () => {
+        expect(planStageRouter(stage('Bury bones for Prayer'), perception({ resident: { inventory: [] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
 });
 
 describe('levelOneWoodcuttingAction', () => {

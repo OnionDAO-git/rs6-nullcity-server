@@ -156,7 +156,7 @@ import {
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
-import { advancePlan, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
+import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
 import type { LibraryUpdater } from '../evidence/library-updater';
 
 // --- Shared Constants ---
@@ -3712,6 +3712,17 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
             envelopeTokens: 0,
             nooped: true,
             planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_done' },
+        };
+    }
+
+    if (routed.planSignal === 'stage_blocked') {
+        planStore.save(residentId, blockCurrentStage(plan));
+        return {
+            actions: [],
+            cause: `plan_stage_blocked:${stage.id}`,
+            envelopeTokens: 0,
+            nooped: true,
+            planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_blocked' },
         };
     }
 

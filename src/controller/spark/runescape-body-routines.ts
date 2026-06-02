@@ -24,8 +24,13 @@ import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
     MEDIUM_RISK_BONE_SOURCE_PATTERN,
+    hasBonesInInventory,
+    hasFiremakingLogsInInventory,
     hasPickaxe,
     hasSmallFishingNet,
+    hasStarterCookedFishInInventory,
+    hasStarterOreInInventory,
+    hasStarterRawFishInInventory,
     hasWoodcuttingAxe,
     isBones,
     isFiremakingLog,
@@ -831,33 +836,57 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
     }
 
     if (/chop.*log|gather.*log|woodcutting.*log/.test(subgoal)) {
+        // Already have logs in inventory → stage satisfied
+        if (hasFiremakingLogsInInventory(perception)) return { planSignal: 'stage_done' };
         const action = levelOneWoodcuttingAction(perception);
-        return action ? { action } : undefined;
+        if (action) return { action };
+        // No tree visible and no logs gathered → blocked (can't make progress)
+        return { planSignal: 'stage_blocked' };
     }
 
     if (/light.*fire|firemaking/.test(subgoal)) {
         const action = firemakingAction(perception);
-        return action ? { action } : undefined;
+        if (action) return { action };
+        // Firemaking routine returns null only when no logs+tinderbox combo exists
+        if (!hasFiremakingLogsInInventory(perception)) return { planSignal: 'stage_done' };
+        // Has logs but can't light fire (missing tinderbox, or on cooldown) → blocked
+        return { planSignal: 'stage_blocked' };
     }
 
     if (/fish|gather.*shrimp|fishing/.test(subgoal)) {
+        // Already caught fish → stage satisfied
+        if (hasStarterRawFishInInventory(perception)) return { planSignal: 'stage_done' };
         const action = starterFishingAction(perception);
-        return action ? { action } : undefined;
+        if (action) return { action };
+        // No fishing spot visible and no fish yet → blocked
+        return { planSignal: 'stage_blocked' };
     }
 
     if (/cook|prepare.*food/.test(subgoal)) {
+        // Already have cooked food → stage satisfied
+        if (hasStarterCookedFishInInventory(perception)) return { planSignal: 'stage_done' };
         const action = starterFishingCookingAction(perception);
-        return action ? { action } : undefined;
+        if (action) return { action };
+        // Can't cook (no raw fish + fire combo) and no cooked food yet → blocked
+        return { planSignal: 'stage_blocked' };
     }
 
     if (/mine|mining|ore/.test(subgoal)) {
+        // Already mined ore → stage satisfied
+        if (hasStarterOreInInventory(perception)) return { planSignal: 'stage_done' };
         const action = starterMiningAction(perception);
-        return action ? { action } : undefined;
+        if (action) return { action };
+        // No rock visible and no ore yet → blocked
+        return { planSignal: 'stage_blocked' };
     }
 
     if (/bury.*bone|prayer/.test(subgoal)) {
         const action = buryBonesAction(perception);
-        return action ? { action } : undefined;
+        if (action) return { action };
+        // buryBonesAction returns null when there are no bones — stage done
+        if (!hasBonesInInventory(perception)) return { planSignal: 'stage_done' };
+        // Has bones but can't bury (shouldn't happen normally) → blocked
+        return { planSignal: 'stage_blocked' };
     }
 
     return undefined;
