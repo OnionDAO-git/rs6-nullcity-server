@@ -3401,9 +3401,7 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
                     });
                 } else {
                     const replannedReason =
-                        plan.status !== 'active'
-                            ? plan.status
-                            : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
+                        plan.status !== 'active' ? plan.status : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
                     libraryUpdater.observePlanReplanned({
                         kind: 'plan_replanned',
                         ts,
