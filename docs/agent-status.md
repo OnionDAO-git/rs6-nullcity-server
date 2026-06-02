@@ -1,0 +1,1 @@
+2026-06-02 20:19 claude agents/wip RIQ-3-4 STARTING inventory stage done/blocked for planStageRouter. Files: src/controller/spark/runescape-workflows.ts,src/controller/spark/runescape-body-routines.ts,src/controller/spark/runescape-body-routines.test.ts,src/controller/thinking/hybrid-agent-helpers.ts,docs/issue-register.md collision=none
