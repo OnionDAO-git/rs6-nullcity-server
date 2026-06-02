@@ -1872,3 +1872,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-02 15:00 UTC cron-cloud branch=agents/wip packet=RIQ-3-3 STARTING plan Library events: observePlanCreated+Replanned; libraryUpdater in HelperContext. Files=library-updater{.ts,.test.ts},hybrid-agent-helpers.ts,brain-integration.test.ts,agent-status.md. collision=none.
 
 2026-06-02 15:45 UTC cron-cloud branch=agents/wip packet=RIQ-3-3 HANDOFF sha=bf58123a tests=SANDBOX-BLOCKED check:no-ui=PASS. PlanCreated+PlanReplanned Library events; libraryUpdater? in HelperContext; +12 tests. prod-wiring pending S-TOOL-ACQUIRE-4. collision=none.
+
+2026-06-02 16:00 UTC cron-cloud branch=agents/wip packet=RIQ-2-SMOKE STARTING — Phase 2 planner-pass smoke CLI. Files=src/controller/admin/planner-pass-smoke.ts,src/controller/admin/planner-pass-smoke.test.ts,package.json,docs/agent-status.md. collision=none.
