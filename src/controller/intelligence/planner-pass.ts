@@ -23,12 +23,7 @@
 import { z } from 'zod';
 import type { LlmClient, LlmRequest } from '../llm/llm-client';
 import { parseJsonWithSalvage } from '../llm/json-salvage';
-import {
-    runPlannerToolLoop,
-    LOOKUP_SKILL_TOOL,
-    defaultToolRegistry,
-    buildToolInstructions,
-} from './planner-tool-loop';
+import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from './planner-tool-loop';
 
 // ---------------------------------------------------------------------------
 // Plan schema
@@ -134,12 +129,7 @@ export interface PlannerPassParseResult {
  * Parse the raw LLM text into a validated Plan.
  * Fills in `status: 'pending'` for all stages and sets `currentStageIndex: 0`.
  */
-export function parsePlannerPassOutput(
-    raw: string,
-    goalId: string,
-    goalDescription: string,
-    tick: number,
-): PlannerPassParseResult {
+export function parsePlannerPassOutput(raw: string, goalId: string, goalDescription: string, tick: number): PlannerPassParseResult {
     const parsed = parseJsonWithSalvage(raw, planDraftSchema);
     if (!parsed.value) {
         return { error: `plan JSON parse/validation failed (classification: ${parsed.classification})` };
@@ -249,12 +239,7 @@ export async function runPlannerPass(opts: PlannerPassOptions): Promise<PlannerP
         };
     }
 
-    const parseResult = parsePlannerPassOutput(
-        toolLoopResult.finalText,
-        opts.goalId,
-        opts.goalDescription,
-        opts.tick,
-    );
+    const parseResult = parsePlannerPassOutput(toolLoopResult.finalText, opts.goalId, opts.goalDescription, opts.tick);
 
     if (!parseResult.plan) {
         return {
@@ -300,8 +285,6 @@ export function advancePlan(plan: Plan): Plan {
 
 /** Mark the current stage as blocked. Returns the new plan (does not mutate). */
 export function blockCurrentStage(plan: Plan): Plan {
-    const stages = plan.stages.map((s, i) =>
-        i === plan.currentStageIndex ? { ...s, status: 'blocked' as StageStatus } : s,
-    );
+    const stages = plan.stages.map((s, i) => (i === plan.currentStageIndex ? { ...s, status: 'blocked' as StageStatus } : s));
     return { ...plan, stages };
 }
