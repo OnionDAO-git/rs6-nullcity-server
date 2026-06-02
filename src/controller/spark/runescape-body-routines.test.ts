@@ -25,6 +25,7 @@ import {
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
     opportunisticPickupAction,
+    parseStageLevelTarget,
     planStageRouter,
     prayerTrainingAction,
     cooksAssistantStartAction,
@@ -34,6 +35,8 @@ import {
     starterFishingRouteAction,
     safeCombatTarget,
     safeBoneSourceTarget,
+    stageReachedLevelTarget,
+    stageSubgoalSkill,
     starterMiningAction,
     type BodyActor,
     type BodyHybridPerception,
@@ -279,9 +282,9 @@ describe('planStageRouter', () => {
     });
 
     it('signals stage_done for log-gathering when logs already in inventory (already satisfied)', () => {
-        expect(
-            planStageRouter(stage('Chop logs from a tree'), perception({ resident: { inventory: [item(1511, 'rs:logs')] } })),
-        ).toEqual({ planSignal: 'stage_done' });
+        expect(planStageRouter(stage('Chop logs from a tree'), perception({ resident: { inventory: [item(1511, 'rs:logs')] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
     });
 
     it('signals stage_blocked for log-gathering when no tree nearby and no logs gathered yet', () => {
@@ -356,6 +359,153 @@ describe('planStageRouter', () => {
         expect(planStageRouter(stage('Bury bones for Prayer'), perception({ resident: { inventory: [] } }))).toEqual({
             planSignal: 'stage_done',
         });
+    });
+
+    it('signals stage_done for firemaking when a level_up event satisfies successCriteria level target', () => {
+        expect(
+            planStageRouter(
+                stage('Light fires to train Firemaking', { successCriteria: 'reach level 5 Firemaking' }),
+                perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'firemaking', level: 5 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('does not signal stage_done for firemaking when level_up level is below the successCriteria target', () => {
+        // level 4 gained, but need level 5 → keep executing
+        const result = planStageRouter(
+            stage('Light fires to train Firemaking', { successCriteria: 'reach level 5 Firemaking' }),
+            perception({ resident: { inventory: [item(1511), item(590)] }, events: [{ kind: 'level_up', skill: 'firemaking', level: 4 }] }),
+        );
+        expect(result?.planSignal).toBeUndefined();
+        expect(result?.action).toBeDefined(); // still firing
+    });
+
+    it('signals stage_done for fishing when a level_up event satisfies the successCriteria level', () => {
+        expect(
+            planStageRouter(
+                stage('Fish shrimp until level 10 Fishing', { successCriteria: 'Fishing level 10' }),
+                perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'fishing', level: 10 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('signals stage_done for mining via level_up event even when no ore in inventory yet', () => {
+        expect(
+            planStageRouter(
+                stage('Mine ore to level 5 Mining', { successCriteria: 'level 5 Mining' }),
+                perception({ resident: { inventory: [item(1265)] }, events: [{ kind: 'level_up', skill: 'mining', level: 5 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('does not signal stage_done when level_up is for a different skill', () => {
+        // fishing level_up should not satisfy a firemaking stage
+        const result = planStageRouter(
+            stage('Light fires to train Firemaking', { successCriteria: 'reach level 5 Firemaking' }),
+            perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'fishing', level: 5 }] }),
+        );
+        // no logs → falls through to 'stage_done' from resource check, not from level event
+        expect(result).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('signals stage_done on any level_up for the skill when successCriteria has no numeric level', () => {
+        expect(
+            planStageRouter(
+                stage('Light fires', { successCriteria: 'gain Firemaking XP' }),
+                perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'firemaking', level: 2 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+});
+
+describe('parseStageLevelTarget', () => {
+    it('extracts a level number from "reach level 5 Firemaking"', () => {
+        expect(parseStageLevelTarget('reach level 5 Firemaking')).toBe(5);
+    });
+
+    it('extracts a level number from "Firemaking level 10"', () => {
+        expect(parseStageLevelTarget('Firemaking level 10')).toBe(10);
+    });
+
+    it('returns undefined when no level target is present', () => {
+        expect(parseStageLevelTarget('gain some Firemaking XP')).toBeUndefined();
+        expect(parseStageLevelTarget('observable progress')).toBeUndefined();
+    });
+});
+
+describe('stageSubgoalSkill', () => {
+    it('maps firemaking subgoals to "firemaking"', () => {
+        expect(stageSubgoalSkill('Light fires to train Firemaking')).toBe('firemaking');
+        expect(stageSubgoalSkill('Firemaking training')).toBe('firemaking');
+    });
+
+    it('maps fishing subgoals to "fishing"', () => {
+        expect(stageSubgoalSkill('Fish shrimp at a net fishing spot')).toBe('fishing');
+    });
+
+    it('maps woodcutting subgoals to "woodcutting"', () => {
+        expect(stageSubgoalSkill('Chop logs from a tree')).toBe('woodcutting');
+        expect(stageSubgoalSkill('Gather logs for firemaking')).toBe('woodcutting');
+    });
+
+    it('returns undefined for unrecognised subgoals', () => {
+        expect(stageSubgoalSkill('Compose a poem about Lumbridge')).toBeUndefined();
+    });
+});
+
+describe('stageReachedLevelTarget', () => {
+    it('returns true when level_up event matches skill and meets target level', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 5 }] }),
+            ),
+        ).toBe(true);
+    });
+
+    it('returns false when event level is below target', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 4 }] }),
+            ),
+        ).toBe(false);
+    });
+
+    it('returns false when event skill does not match stage subgoal', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'fishing', level: 5 }] }),
+            ),
+        ).toBe(false);
+    });
+
+    it('returns false when no level_up events are present', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [] }),
+            ),
+        ).toBe(false);
+    });
+
+    it('returns true for any level_up when successCriteria has no numeric target', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'gain some XP', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 2 }] }),
+            ),
+        ).toBe(true);
+    });
+
+    it('returns false for subgoals with no recognisable skill', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Compose a poem', requirements: [], successCriteria: 'level 5', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 5 }] }),
+            ),
+        ).toBe(false);
     });
 });
 

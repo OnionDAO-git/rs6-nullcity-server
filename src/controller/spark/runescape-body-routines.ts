@@ -819,6 +819,46 @@ export function levelOneWoodcuttingAction(
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
 }
 
+/** Returns the normalised RuneScape skill name implied by a stage subgoal, or undefined if unrecognised. */
+export function stageSubgoalSkill(subgoal: string): string | undefined {
+    const s = subgoal.toLowerCase();
+    // Check log/woodcutting before firemaking so "gather logs for firemaking" maps to woodcutting
+    if (/chop.*log|gather.*log|woodcutting.*log|woodcutting/.test(s)) return 'woodcutting';
+    if (/light.*fire|firemaking/.test(s)) return 'firemaking';
+    if (/fish|gather.*shrimp|fishing/.test(s)) return 'fishing';
+    if (/cook|prepare.*food/.test(s)) return 'cooking';
+    if (/mine|mining|ore/.test(s)) return 'mining';
+    if (/bury.*bone|prayer/.test(s)) return 'prayer';
+    return undefined;
+}
+
+/** Extracts a numeric level target from a successCriteria string, e.g. "reach level 5 Firemaking" → 5. */
+export function parseStageLevelTarget(criteria: string): number | undefined {
+    const m = /\blevel\s+(\d+)\b/i.exec(criteria);
+    return m ? parseInt(m[1], 10) : undefined;
+}
+
+/**
+ * Returns true when perception.events contains a level_up event for the skill
+ * implied by stage.subgoal, at or above the level target in stage.successCriteria
+ * (if any target is specified; if none, any level_up for the skill counts).
+ */
+export function stageReachedLevelTarget(stage: Stage, perception: BodyHybridPerception): boolean {
+    const skill = stageSubgoalSkill(stage.subgoal);
+    if (!skill) return false;
+    const targetLevel = parseStageLevelTarget(stage.successCriteria);
+    const normalise = (raw: unknown): string => (typeof raw === 'string' ? raw.toLowerCase().replace(/[\s_]+/g, '') : '');
+    return (perception.events ?? []).some(ev => {
+        if (typeof ev !== 'object' || ev === null) return false;
+        const kind = typeof ev.kind === 'string' ? ev.kind : '';
+        if (!['level_up', 'skill_level', 'skill_level_up'].includes(kind)) return false;
+        if (normalise(ev.skill) !== normalise(skill)) return false;
+        const evLevel = typeof ev.level === 'number' ? ev.level : undefined;
+        if (evLevel === undefined) return false;
+        return targetLevel === undefined || evLevel >= targetLevel;
+    });
+}
+
 /**
  * Maps a durable PlannerPass stage into existing deterministic Body routines.
  * Unknown stage text returns undefined so callers can fall back to ordinary
@@ -845,6 +885,8 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
     }
 
     if (/light.*fire|firemaking/.test(subgoal)) {
+        // Level-up event from this tick takes priority: level goal achieved
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
         const action = firemakingAction(perception);
         if (action) return { action };
         // Firemaking routine returns null only when no logs+tinderbox combo exists
@@ -854,7 +896,9 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
     }
 
     if (/fish|gather.*shrimp|fishing/.test(subgoal)) {
-        // Already caught fish → stage satisfied
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
+        // Already caught fish → stage satisfied (resource-collection variant)
         if (hasStarterRawFishInInventory(perception)) return { planSignal: 'stage_done' };
         const action = starterFishingAction(perception);
         if (action) return { action };
@@ -863,6 +907,8 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
     }
 
     if (/cook|prepare.*food/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
         // Already have cooked food → stage satisfied
         if (hasStarterCookedFishInInventory(perception)) return { planSignal: 'stage_done' };
         const action = starterFishingCookingAction(perception);
@@ -872,6 +918,8 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
     }
 
     if (/mine|mining|ore/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
         // Already mined ore → stage satisfied
         if (hasStarterOreInInventory(perception)) return { planSignal: 'stage_done' };
         const action = starterMiningAction(perception);
@@ -881,6 +929,8 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
     }
 
     if (/bury.*bone|prayer/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
         const action = buryBonesAction(perception);
         if (action) return { action };
         // buryBonesAction returns null when there are no bones — stage done
