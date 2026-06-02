@@ -154,6 +154,8 @@ import {
 } from './hybrid-agent-chat';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
+import type { PlanStore } from '../intelligence/plan-store';
+import { runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
 
 // --- Shared Constants ---
 export const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
@@ -199,6 +201,8 @@ export interface HelperContext {
         memory: any;
         llm: any;
         patronRegistry?: any;
+        /** RIQ-3-2: per-resident durable plan store; absent for residents without planner config. */
+        planStore?: PlanStore;
     };
     cognition(): any;
     commandPrefix(): string;
@@ -3313,6 +3317,79 @@ function shouldShareGoal(ctx: HelperContext): boolean {
     return lastShared === undefined || ctx.options.state.tick - lastShared >= interval;
 }
 
+// Per-process lock: tracks residents with a PlannerPass currently in flight so
+// concurrent runBrain calls don't double-trigger the deliberative planner.
+const _plannerPassInFlight = new Set<string>();
+
+/**
+ * RIQ-3-2: PlannerPass trigger.
+ *
+ * Runs before the per-tick goal picker. Checks whether the resident needs a
+ * new deliberative plan (first run, plan completed, or current stage blocked)
+ * and, if so, invokes runPlannerPass via the soul's `behavior.planner` profile.
+ *
+ * No-ops when:
+ *   - No planStore is configured in the context
+ *   - The soul has no orientationGoal
+ *   - The behavior has no `planner` profile (planner profile = opt-in)
+ *   - A PlannerPass is already in flight for this resident
+ *   - The active plan is healthy (active + current stage not blocked)
+ */
+export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: number): Promise<void> {
+    const { planStore } = ctx.options;
+    if (!planStore) return;
+
+    const soul = ctx.options.soul;
+    const orientationGoal = soul.frontmatter.orientationGoal;
+    if (!orientationGoal) return;
+
+    const behavior = ctx.behavior() as HybridAgentBehaviorDefinition;
+    const plannerProfile = behavior.planner;
+    if (!plannerProfile) return;
+
+    const residentId = ctx.options.state.resident;
+    if (_plannerPassInFlight.has(residentId)) return;
+
+    const plan = planStore.load(residentId);
+    const stage = plan ? currentPlanStage(plan) : undefined;
+    const needsReplan = !plan || plan.status === 'completed' || plan.status === 'abandoned' || stage?.status === 'blocked';
+    if (!needsReplan) return;
+
+    _plannerPassInFlight.add(residentId);
+    const plannerLlmAdapter = {
+        complete: async (req: LlmRequest): Promise<LlmResponse> => {
+            return ctx.complete(thinkId || 0, {
+                ...req,
+                endpoint: ctx.endpointFor(plannerProfile),
+                temperature: ctx.temperatureFor(plannerProfile, 0.3),
+                thinking: plannerProfile.thinking ?? false,
+                timeoutMs: ctx.timeoutFor(plannerProfile, 90_000),
+                ...(ctx.modelFor(plannerProfile) ? { model: ctx.modelFor(plannerProfile) } : {}),
+            });
+        },
+    } as unknown as LlmClient;
+
+    try {
+        const result = await runPlannerPass({
+            residentName: soul.frontmatter.display || residentId,
+            goalId: orientationGoal.id,
+            goalDescription: orientationGoal.description,
+            tick: ctx.options.state.tick,
+            llmClient: plannerLlmAdapter,
+            request: { endpoint: ctx.endpointFor(plannerProfile), priority: 3 },
+        });
+        if (result.success && result.plan) {
+            planStore.save(residentId, result.plan);
+        } else {
+            process.stderr.write(`[RIQ-3-2] PlannerPass failed for ${residentId}: ${result.error ?? 'unknown'}\n`);
+        }
+    } catch (err) {
+        process.stderr.write(`[RIQ-3-2] PlannerPass threw for ${residentId}: ${err instanceof Error ? err.message : String(err)}\n`);
+    } finally {
+        _plannerPassInFlight.delete(residentId);
+    }
+}
+
 export async function runBrain(
     ctx: HelperContext,
     perception: Perception,
@@ -3326,6 +3403,10 @@ export async function runBrain(
     memoUpdates?: number;
     planChange?: unknown;
 }> {
+    // RIQ-3-2: trigger deliberative PlannerPass before per-tick goal-picking
+    // when the resident has an orientationGoal and a planner profile configured.
+    await maybeTriggerPlannerPass(ctx, thinkId);
+
     const behavior = ctx.behavior();
     const toolInstructions = buildToolInstructions([LOOKUP_SKILL_TOOL]);
     const prompt = buildBrainPrompt({

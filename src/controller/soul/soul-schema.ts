@@ -261,6 +261,8 @@ export interface HybridAgentBehaviorDefinition {
     visibilityAnchor?: { x: number; y: number; level?: number };
     brain?: InferenceProfileDefinition;
     body?: InferenceProfileDefinition;
+    /** RIQ-3-2: rare deliberative planner profile (Haiku or local fallback). */
+    planner?: InferenceProfileDefinition;
 }
 
 export interface InferenceProfileDefinition {
@@ -341,6 +343,7 @@ const hybridAgentBehaviorSchema = z.object({
     visibilityAnchor: behaviorPositionSchema.optional(),
     brain: inferenceProfileSchema.optional(),
     body: inferenceProfileSchema.optional(),
+    planner: inferenceProfileSchema.optional(),
 });
 const soulBehaviorSchema = z.discriminatedUnion('kind', [basicAgentBehaviorSchema, hybridAgentBehaviorSchema]);
 const soulSparkModuleSchema = z
