@@ -13,6 +13,8 @@ export interface BrainPromptInput {
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
     progress?: RuntimeProgressPromptInput;
     memories?: string[];
+    /** RIQ-1-1-B: injected by runBrain when the planner tool loop is active. */
+    toolInstructions?: string;
 }
 
 export interface BodyPromptInput {
@@ -59,6 +61,7 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         runtimeProgressSection(input.progress, 'brain'),
         memorySection(input.memories, 'brain'),
         soulIdentitySection(input.soul.frontmatter, 'brain'),
+        input.toolInstructions || '',
         'Return JSON only with this shape:',
         '{"goal":{"id":"short-id","description":"clear current ambition","steps":["step one","step two"],"success":"how we know it worked","ttlTicks":300},"say":"optional public chat <= 160 chars","memo":{"path":"events/YYYY-MM-DD.md","text":"short first-person memory of what changed or what you learned","mode":"append"},"rememberFact":{"topic":"routes","fact":"durable fact worth recalling later","reason":"why this fact matters"}}',
         'Only include memo or rememberFact when you learned something useful, changed goals, met/responded to a player, completed a step, failed and changed tactic, or noticed a place/item/NPC worth remembering.',

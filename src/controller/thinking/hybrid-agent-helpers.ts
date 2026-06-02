@@ -152,6 +152,8 @@ import {
     actorMatchesName,
     safeTradeOfferSlot,
 } from './hybrid-agent-chat';
+import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
+import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 
 // --- Shared Constants ---
 export const DEFAULT_GOAL_SHARE_EVERY_TICKS = 120;
@@ -3325,6 +3327,7 @@ export async function runBrain(
     planChange?: unknown;
 }> {
     const behavior = ctx.behavior();
+    const toolInstructions = buildToolInstructions([LOOKUP_SKILL_TOOL]);
     const prompt = buildBrainPrompt({
         soul: ctx.options.soul,
         perception,
@@ -3337,8 +3340,21 @@ export async function runBrain(
             stuckSince: ctx.options.state.stuckSince,
         },
         memories: ctx.promptMemories(perception as HybridPerception, 'brain'),
+        toolInstructions,
     });
-    const response = await ctx.complete(thinkId || 0, {
+
+    // RIQ-1-1-B: route the brain completion through the planner tool loop so the
+    // Brain can emit a lookup_skill call before its final goal/say JSON. The adapter
+    // wraps ctx.complete so the loop respects the existing abort/cancel machinery.
+    let lastRawResponse: LlmResponse = { text: '', nooped: false };
+    const brainLlmAdapter = {
+        complete: async (req: LlmRequest): Promise<LlmResponse> => {
+            const resp = await ctx.complete(thinkId || 0, req);
+            lastRawResponse = resp;
+            return resp;
+        },
+    } as unknown as LlmClient;
+    const brainRequest: LlmRequest = {
         endpoint: ctx.endpointFor(behavior.brain),
         prompt,
         temperature: ctx.temperatureFor(behavior.brain, 0.7),
@@ -3351,7 +3367,15 @@ export async function runBrain(
         maxTokens: ctx.maxTokensFor(behavior.brain, DEFAULT_BRAIN_MAX_TOKENS),
         priority: 5,
         ...(ctx.modelFor(behavior.brain) ? { model: ctx.modelFor(behavior.brain) } : {}),
+    };
+    const toolLoopResult = await runPlannerToolLoop({
+        llmClient: brainLlmAdapter,
+        request: brainRequest,
+        tools: [LOOKUP_SKILL_TOOL],
+        toolRegistry: defaultToolRegistry(),
     });
+    const response = { ...lastRawResponse, text: toolLoopResult.finalText };
+
     if (response.cancelledBy === 'request_timeout') {
         // S-INFER-8: the brain REQUEST timeout (240s) is a generous "inference server
         // is broken" alarm, NOT a thinking bound — real q4 qwopus thinking is ~40s, so
