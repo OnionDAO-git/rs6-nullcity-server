@@ -115,7 +115,7 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(fs.existsSync(path.join(outputDir, 'live-test-digest', 'summary.txt'))).toBe(true);
     });
 
-    it('includes runtime-state residents even when no economy event fired in the digest window', () => {
+    it('filters stale runtime-state-only residents but preserves faded residents in CLI dry-runs', () => {
         writeRuntimeState(memoryRoot, 'res:hans', {
             resident: 'res:hans',
             attention: 4_950,
@@ -162,8 +162,8 @@ describe('storyteller:dry-run CLI live source', () => {
         );
 
         expect(result.digest.systemHealth).toMatchObject({
-            totalResidents: 2,
-            activeResidents: 1,
+            totalResidents: 1,
+            activeResidents: 0,
             fadedResidents: 1,
             lowApResidents: 0,
         });
@@ -173,14 +173,9 @@ describe('storyteller:dry-run CLI live source', () => {
                 attention: 0,
                 isFaded: true,
             }),
-            expect.objectContaining({
-                residentName: 'res:hans',
-                attention: 4_950,
-                goalText: 'Greet patrons in the Lumbridge courtyard.',
-                isFaded: false,
-            }),
         ]);
-        expect(result.summary).toContain('System health: 2 residents total, 1 active, 1 faded, 0 low-AP');
+        expect(result.summary).toContain('System health: 1 residents total, 0 active, 1 faded, 0 low-AP');
+        expect(result.summary).not.toContain('res:hans');
     });
 
     it('adds grounded Library activity events when the economy window is quiet', () => {
@@ -239,6 +234,19 @@ describe('storyteller:dry-run CLI live source', () => {
                 note: 'res:hans recovered from being stuck.',
             }),
         );
+        expect(result.digest.systemHealth).toMatchObject({
+            totalResidents: 1,
+            activeResidents: 1,
+            fadedResidents: 0,
+            lowApResidents: 0,
+        });
+        expect(result.digest.residents).toEqual([
+            expect.objectContaining({
+                residentName: 'res:hans',
+                attention: 5_000,
+                isFaded: false,
+            }),
+        ]);
         expect(result.digest.topEvents.map(event => event.kind)).toEqual(['stuck_recovered', 'library_writeback']);
         expect(result.summary).toContain('Stuck/recovered events: 1');
         expect(result.summary).toContain('Misc events: 1');

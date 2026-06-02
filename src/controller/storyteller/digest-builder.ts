@@ -86,7 +86,8 @@ export function buildDigest(input: DigestBuilderInput): CityEventDigest {
 
     const fadedResidents = input.residents.filter(r => r.isFaded).length;
     const lowApResidents = input.residents.filter(r => r.isLowAp && !r.isFaded).length;
-    const activeResidents = input.residents.filter(r => !r.isFaded).length;
+    const activeResidentNames = new Set(allEvents.map(event => event.residentName));
+    const activeResidents = input.residents.filter(r => !r.isFaded && activeResidentNames.has(r.residentName)).length;
 
     return {
         schemaVersion: 1,

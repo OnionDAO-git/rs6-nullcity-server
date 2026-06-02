@@ -146,6 +146,7 @@ function buildResidentSnapshots(
     goals: GoalContract[],
     windowStart: Date,
     windowEnd: Date,
+    evidenceResidentNames: ReadonlySet<string>,
 ): ResidentSnapshot[] {
     const residents = new Map<string, ResidentSnapshot>();
     const runtimeBackedResidents = new Set<string>();
@@ -167,6 +168,9 @@ function buildResidentSnapshots(
     };
 
     for (const runtimeResident of readRuntimeResidentSnapshots(memoryRoot)) {
+        if (!runtimeResident.isFaded && !evidenceResidentNames.has(runtimeResident.residentName)) {
+            continue;
+        }
         residents.set(runtimeResident.residentName, runtimeResident);
         runtimeBackedResidents.add(runtimeResident.residentName);
     }
@@ -193,6 +197,9 @@ function buildResidentSnapshots(
 
     for (const goal of goals) {
         if (isSyntheticResidentName(goal.residentName)) {
+            continue;
+        }
+        if (!evidenceResidentNames.has(goal.residentName)) {
             continue;
         }
         const resident = ensure(goal.residentName);
@@ -413,13 +420,14 @@ function buildLiveDigest(args: StorytellerDryRunArgs, options: Required<RunStory
     const economyBuckets = economyEventsToDigestBuckets(events);
     const goalEvents = goalContractsToDigestGoalEvents(goals);
     const libraryEvents = readLibraryDigestEvents(args.memoryRoot, windowStart, windowEnd);
+    const evidenceResidentNames = buildEvidenceResidentNames(events, goalEvents, libraryEvents, windowStart, windowEnd);
 
     return buildDigest({
         digestId: args.digestId ?? defaultLiveDigestId(windowEnd),
         windowStart,
         windowEnd,
         now,
-        residents: buildResidentSnapshots(args.memoryRoot, events, goals, windowStart, windowEnd),
+        residents: buildResidentSnapshots(args.memoryRoot, events, goals, windowStart, windowEnd, evidenceResidentNames),
         apEvents: economyBuckets.apEvents,
         gpEvents: economyBuckets.gpEvents,
         exchangeEvents: economyBuckets.exchangeEvents,
@@ -428,6 +436,30 @@ function buildLiveDigest(args: StorytellerDryRunArgs, options: Required<RunStory
         stuckEvents: libraryEvents.stuckEvents,
         miscEvents: libraryEvents.miscEvents,
     });
+}
+
+function buildEvidenceResidentNames(
+    events: EconomyEvent[],
+    goalEvents: DigestEvent[],
+    libraryEvents: DigestBuilderEventBuckets,
+    windowStart: Date,
+    windowEnd: Date,
+): Set<string> {
+    const names = new Set<string>();
+    for (const event of events.filter(event => inWindow(event, windowStart, windowEnd))) {
+        if (event.residentName && !isSyntheticResidentName(event.residentName)) {
+            names.add(event.residentName);
+        }
+    }
+    for (const event of [...goalEvents, ...libraryEvents.stuckEvents, ...libraryEvents.miscEvents]) {
+        if (event.ts < windowStart.toISOString() || event.ts > windowEnd.toISOString()) {
+            continue;
+        }
+        if (!isSyntheticResidentName(event.residentName)) {
+            names.add(event.residentName);
+        }
+    }
+    return names;
 }
 
 export function runStorytellerDryRun(args: StorytellerDryRunArgs, options: RunStorytellerDryRunOptions = {}): StorytellerDryRunResult {

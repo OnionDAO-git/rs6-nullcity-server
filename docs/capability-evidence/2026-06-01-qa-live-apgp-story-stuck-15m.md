@@ -64,6 +64,27 @@ This conflicts with the live controller/normal-life evidence for the same window
 
 Issue registered: `QA-20260601-070`.
 
+## Fix Verification
+
+`S-STORY-ACTIVE-FILTER-1` changes the source path so:
+
+- `buildDigest()` counts active residents only when they have in-window digest evidence.
+- `storyteller:dry-run -- --memory-root ...` filters stale runtime-state-only residents out of the public resident snapshot list.
+- True faded/deceased residents are still preserved for health reporting.
+
+Patched same-window dry-run:
+
+```bash
+npm run storyteller:dry-run -- \
+  --memory-root /Users/james/Code/OnionDAO/rs6-nullcity-server/data/controller/memory \
+  --since 2026-06-02T02:56:26Z \
+  --until 2026-06-02T03:11:26Z \
+  --digest-id story-active-filter-check \
+  --output-dir /tmp/nullcity-story-active-filter-check-...
+```
+
+Result: `systemHealth.totalResidents=2`, `activeResidents=2`, residents `res:agent` and `res:hans`; stale/test residents no longer appear in the dry-run summary for this window.
+
 ## Recommended Fix Packet
 
 `S-STORY-ACTIVE-FILTER-1`:
