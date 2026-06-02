@@ -5359,7 +5359,7 @@ describe('HybridAgentThinkingModule', () => {
 
         expect(state.cognition?.activeGoal).toEqual(
             expect.objectContaining({
-                id: 'trade-with-codex',
+                id: 'trade-with-res-qa-social',
                 description: expect.stringContaining('trade'),
             }),
         );
@@ -5384,7 +5384,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(state.cognition?.activeGoal?.id).toBe('trade-with-codex');
+        expect(state.cognition?.activeGoal?.id).toBe('trade-with-res-qa-social');
         expect(result.actions).toEqual([{ kind: 'move_to', target: codex.position, range: 1, cause: 'follow_player_active' }]);
         expect(result.cause).toBe('follow_player_active');
         expect(llm.complete).not.toHaveBeenCalled();
