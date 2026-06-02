@@ -66,6 +66,7 @@ import {
     buryBonesAction,
     starterFishingAction,
     firemakingAction,
+    acquireWoodcuttingAxeAction,
     stuckRecoveryPatrolTarget,
     isUsefulGroundItem,
     usefulGroundItemPriority,
@@ -2895,6 +2896,10 @@ export function goalRoutineOverride(
 
     if (fireGoalLike) {
         const explicitWoodcuttingGoalId = /woodcut|chop/i.test(goal.id);
+        const acquireAxe = explicitWoodcuttingGoalId ? undefined : acquireWoodcuttingAxeAction(perception);
+        if (acquireAxe) {
+            return { action: acquireAxe, cause: acquireAxe.cause || 'firemaking_acquire_axe' };
+        }
         const woodcutting = explicitWoodcuttingGoalId ? undefined : levelOneWoodcuttingAction(perception);
         if (woodcutting) {
             return { action: woodcutting, cause: 'firemaking_gather_logs' };

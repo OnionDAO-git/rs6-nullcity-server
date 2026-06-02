@@ -7,6 +7,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import {
+    acquireWoodcuttingAxeAction,
     buryBonesAction,
     combatLootOrPrayerAction,
     combatTrainingAction,
@@ -17,6 +18,7 @@ import {
     explorationPatrolCooldownKey,
     factionLandmarkWorkAction,
     firemakingAction,
+    LUMBRIDGE_FREE_AXE_OBJECT_ID,
     LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
     STARTER_FISHING_SPOT_DISCOVERY_RANGE,
@@ -228,6 +230,54 @@ describe('levelOneWoodcuttingAction', () => {
                 nearby: { objects: [{ objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } }] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('acquireWoodcuttingAxeAction', () => {
+    it('takes the free Lumbridge axe when visible and adjacent', () => {
+        const axe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } };
+        const action = acquireWoodcuttingAxeAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [axe] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: axe,
+            option: 'take-axe',
+            cause: 'acquire_axe_take_free_lumbridge_axe',
+        });
+    });
+
+    it('approaches the free Lumbridge axe when visible but not adjacent', () => {
+        const axe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 103, y: 100, level: 0 } };
+        const action = acquireWoodcuttingAxeAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [axe] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: axe.position,
+            range: 1,
+            cause: 'acquire_axe_approach_free_lumbridge_axe',
+        });
+    });
+
+    it('does nothing when the resident already has a woodcutting axe', () => {
+        const freeAxe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } };
+        const action = acquireWoodcuttingAxeAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1351, 'rs:bronze_axe')] },
+                nearby: { objects: [freeAxe] },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });

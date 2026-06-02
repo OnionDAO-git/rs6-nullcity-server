@@ -1759,6 +1759,44 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('firemaking_gather_logs');
     });
 
+    it('takes the free Lumbridge axe for a fire goal when it has tinderbox but no axe or logs', async () => {
+        const freeAxe = { objectId: objectIds.lumbridgeAxeInLogs, position: { x: 3225, y: 3230, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                steps: ['Find a tree', 'Chop it for logs', 'Use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                objects: [freeAxe],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'interact',
+                target: freeAxe,
+                option: 'take-axe',
+                cause: 'acquire_axe_take_free_lumbridge_axe',
+            },
+        ]);
+        expect(result.cause).toBe('acquire_axe_take_free_lumbridge_axe');
+    });
+
     it('does not re-light stale logs when a fresh fire is already visible nearby', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const fire = { objectId: 2732, position: { x: 3225, y: 3230, level: 0 }, orientation: 0 };
