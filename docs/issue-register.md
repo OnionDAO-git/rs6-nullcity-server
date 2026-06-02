@@ -111,6 +111,8 @@ Add rows here only when `Status` is `Open` and the `Next action` is directly cla
 |---|---|---|---|---|---|---|---|---|---|
 ## Review, Fixed, And Historical Rows
 
+| QA-20260602-084 | P2 | Resident intelligence / Phase 3 A1 | In Review | RIQ-A1-SOUL | Phase 3 A1 live verification | soul:src/controller/soul/starter-souls/res-qa-firemaker.md; test:src/controller/soul/soul-loader.test.ts (+4); sha=pending; fin=3811/3811 | cron | 2026-06-02 | RIQ-A1-SOUL: res:qa-firemaker soul added with orientationGoal=master-firemaking + behavior.planner=planner_local (120s timeout). Unblocks Phase 3 A1 live verification. Next: deploy res:qa-firemaker on hot stack with planner_local or planner_haiku, monitor active-plan.json, confirm ≥2 stage_done events + Firemaking XP increase + plan survives restart. |
+
 | ID | Severity | Area | Status | Packet | Capability row | Evidence refs | Owner | Opened | Next action |
 |---|---|---|---|---|---|---|---|---|---|
 | QA-20260602-082 | P1 | Trading / AP-for-GP recurrence | In Review | CQA4-CQA10-TRADE-RECURRENCE-SPLIT | Safe trading FSM; AP-for-GP exchange | doc:docs/capability-evidence/2026-06-02-qa082-trade-recurrence-analysis.md; code:src/controller/soul/starter-souls/res-qa-trader.md; test:src/controller/soul/soul-loader.test.ts; sha=f8fc9250; fin PASS | codex | 2026-06-02 | Source fixed for the ordinary-trade precondition: QA Trader had drifted to `woodcutting-firemaking-10m` and no `followPlayer`; it is restored to `trading-giving-5m` + `followPlayer: codex` and test-pinned. Post-deploy normal-life/trade audit should verify trade keepalive/starter-offer recurrence. |

@@ -176,4 +176,39 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-forager').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
         });
     });
+
+    describe('Phase 3 A1 and EXP-HARD-1 test residents', () => {
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        it('res:qa-firemaker has orientationGoal + behavior.planner for Phase 3 A1 verification', () => {
+            const soul = loader.load('res:qa-firemaker');
+            expect(soul.frontmatter.orientationGoal).toBeDefined();
+            expect(soul.frontmatter.orientationGoal?.id).toBe('master-firemaking');
+            expect(soul.frontmatter.orientationGoal?.tier).toBe('pursue');
+            const planner = (soul.frontmatter.behavior as any)?.planner;
+            expect(planner).toBeDefined();
+            expect(planner?.endpoint).toBe('planner_local');
+            expect(planner?.timeoutMs).toBeGreaterThanOrEqual(90000);
+            expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
+            expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
+            expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+        });
+
+        it('res:qa-firemaker starts with axe and tinderbox for the chop-fire loop', () => {
+            const soul = loader.load('res:qa-firemaker');
+            const inventory = soul.frontmatter.initialInventory ?? [];
+            expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 590 })])); // tinderbox
+            expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 1351 })])); // bronze axe
+        });
+
+        it('res:qa-survivor-foodless loads and has a fishing net but no cooked starter food', () => {
+            const soul = loader.load('res:qa-survivor-foodless');
+            expect(soul.frontmatter.name).toBe('res:qa-survivor-foodless');
+            expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
+            expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+            const inventory = soul.frontmatter.initialInventory ?? [];
+            expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 303 })])); // small net
+            expect(inventory).not.toContainEqual(expect.objectContaining({ itemId: 315 })); // no cooked shrimp
+        });
+    });
 });
