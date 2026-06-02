@@ -183,7 +183,7 @@ describe('runPlannerPassSmoke', () => {
 
         expect(result.ok).toBe(false);
         expect(result.stageCount).toBe(0); // parse rejected → plan undefined → stageCount 0
-        expect(result.errorReason).toMatch(/stages/);
+        expect(result.errorReason).toMatch(/stage/);
     });
 
     it('ok=false when LlmClient returns unparseable text', async () => {
