@@ -1,6 +1,6 @@
 # Null City Runtime Stewardship
 
-Last updated: 2026-05-31 17:11 CDT
+Last updated: 2026-06-01 21:20 CDT
 
 This file is the coordination point for running processes on James's machine.
 
@@ -32,7 +32,13 @@ Codex currently runs these in named `screen` sessions because detached child pro
 
 Inspect with `screen -ls`. Attach with `screen -r <name>`, detach with `Ctrl-a d`.
 
-Latest log paths are written to `/tmp/nullcity-runtime/*.log`.
+Latest log paths are written to `/tmp/nullcity-runtime/*.log`. Supervised
+runtime logs are bounded: each `*.log` is copy-truncated on supervisor startup
+when it exceeds `NULLCITY_RUNTIME_LOG_MAX_BYTES` (default 500 MiB, preserving a
+tail snapshot under `/tmp/nullcity-runtime/snapshots`), and supervised process
+stdout/stderr streams rotate at `NULLCITY_LOG_MAX_BYTES` (default 64 MiB, five
+backups). This prevents a repeat of the 2026-06-01 `game.log` disk-pressure
+incident while preserving the newest evidence for diagnosis.
 
 The runtime game session should use the supervised game runner, not the dev
 nodemon runner. The supervised runner starts the compiled game server with a
