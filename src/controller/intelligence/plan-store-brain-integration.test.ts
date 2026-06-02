@@ -14,9 +14,10 @@ import { jest } from '@jest/globals';
 jest.mock('./planner-pass', () => ({
     runPlannerPass: jest.fn(),
     currentStage: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').currentStage,
+    advancePlan: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').advancePlan,
 }));
 
-import { maybeTriggerPlannerPass } from '../thinking/hybrid-agent-helpers';
+import { maybeTriggerPlannerPass, runBody } from '../thinking/hybrid-agent-helpers';
 import { runPlannerPass } from './planner-pass';
 import type { Plan } from './planner-pass';
 import type { HelperContext } from '../thinking/hybrid-agent-helpers';
@@ -87,7 +88,7 @@ function makeCtx(overrides: {
             soul: {
                 frontmatter: {
                     display: 'Test Resident',
-                    residentId,
+                    name: residentId,
                     orientationGoal: orientationGoal ?? undefined,
                 } as any,
             } as any,
@@ -153,6 +154,85 @@ beforeEach(() => {
         toolCallsMade: 0,
         fellBackToRag: false,
         elapsedMs: 100,
+    });
+});
+
+describe('runBody — durable plan stage routing (RIQ-3-2B)', () => {
+    it('advances an already-satisfied axe acquisition stage without calling the body LLM', async () => {
+        const plan = makeActivePlan({
+            stages: [
+                { id: 's1', subgoal: 'Acquire a woodcutting axe', requirements: [], successCriteria: 'has axe', status: 'active' },
+                { id: 's2', subgoal: 'Chop logs', requirements: ['axe'], successCriteria: 'logs gained', status: 'pending' },
+                { id: 's3', subgoal: 'Light a fire', requirements: ['logs'], successCriteria: 'fire lit', status: 'pending' },
+            ],
+        });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'firemaking', description: 'learn firemaking' } });
+
+        const result = await runBody(ctx, {
+            tick: 100,
+            resident: { inventory: [{ itemId: 1351, amount: 1 }] },
+            nearby: { objects: [], npcs: [], worldItems: [], players: [] },
+            events: [],
+        } as any);
+
+        expect(ctx.complete).not.toHaveBeenCalled();
+        expect(planStore.save).toHaveBeenCalledWith(
+            'res:test',
+            expect.objectContaining({
+                currentStageIndex: 1,
+                status: 'active',
+            }),
+        );
+        expect(result).toEqual({
+            actions: [],
+            cause: 'plan_stage_done:s1',
+            envelopeTokens: 0,
+            nooped: true,
+            planChange: { goalId: 'test-goal', stageId: 's1', signal: 'stage_done' },
+        });
+    });
+
+    it('routes the current stage to a deterministic body action before body LLM inference', async () => {
+        const plan = makeActivePlan({
+            stages: [
+                {
+                    id: 's1',
+                    subgoal: 'Chop logs from nearby trees',
+                    requirements: ['axe'],
+                    successCriteria: 'logs gained',
+                    status: 'active',
+                },
+                { id: 's2', subgoal: 'Light a fire', requirements: ['logs'], successCriteria: 'fire lit', status: 'pending' },
+                { id: 's3', subgoal: 'Cook food', requirements: ['fire'], successCriteria: 'food cooked', status: 'pending' },
+            ],
+        });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'firemaking', description: 'learn firemaking' } });
+        const tree = { objectId: 1276, position: { x: 100, y: 100, level: 0 } };
+
+        const result = await runBody(ctx, {
+            tick: 100,
+            resident: {
+                position: { x: 100, y: 100, level: 0 },
+                inventory: [{ itemId: 1351, amount: 1 }],
+            },
+            nearby: { objects: [tree], npcs: [], worldItems: [], players: [] },
+            events: [],
+        } as any);
+
+        expect(ctx.complete).not.toHaveBeenCalled();
+        expect(planStore.save).not.toHaveBeenCalled();
+        expect(result.actions).toEqual([
+            {
+                kind: 'interact',
+                target: tree,
+                option: 'chop down',
+                cause: 'woodcutting_level1_routine',
+            },
+        ]);
+        expect(result.cause).toBe('plan_stage:s1');
+        expect(result.planChange).toEqual({ goalId: 'test-goal', stageId: 's1', routed: true });
     });
 });
 

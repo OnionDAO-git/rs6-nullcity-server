@@ -1,6 +1,8 @@
 import type { LlmClient } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
+import type { LibraryUpdater } from '../evidence';
+import type { PlanStore } from '../intelligence/plan-store';
 import { NervousSystem } from '../nervous-system';
 import type { Soul } from '../soul/soul-schema';
 import { createThinkingModuleSelection, type ThinkingModule } from '../thinking';
@@ -20,6 +22,8 @@ export interface SparkRuntimeFacetOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+    planStore?: PlanStore;
+    libraryUpdater?: LibraryUpdater;
     sparkModules?: SparkModule[];
     moduleTelemetry?: (entry: SparkModuleTelemetryLogEntry) => void;
     patronRegistry?: PatronRegistry;

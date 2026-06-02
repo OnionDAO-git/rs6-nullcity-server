@@ -19,6 +19,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
+import type { Stage } from '../intelligence/planner-pass';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
@@ -204,6 +205,19 @@ export const COMBAT_LOOT_MAX_DISTANCE = 6;
 
 /** Default body tick cadence; participates in the patrol-direction hash. Mirrors the monolith constant. */
 export const DEFAULT_BODY_EVERY_TICKS = 8;
+
+/** Maximum active body-routing ticks before a non-observable plan stage is considered complete enough for replanning. */
+export const PLAN_STAGE_TICK_BUDGET = 600;
+
+/** Consecutive plan-stage ticks with no body action before the stage is considered blocked. */
+export const PLAN_STAGE_STUCK_THRESHOLD = 120;
+
+export type PlanBodySignal = 'stage_done' | 'stage_blocked' | undefined;
+
+export interface PlanBodyResult {
+    action?: AgentAction;
+    planSignal?: PlanBodySignal;
+}
 
 /** Ticks before an exploration target is considered eligible again after a recent visit or blocked approach. */
 export const EXPLORATION_TARGET_COOLDOWN_TICKS = 600;
@@ -735,6 +749,55 @@ export function acquireWoodcuttingAxeAction(perception: BodyHybridPerception): A
     }
 
     return { kind: 'interact', target: freeAxe, option: 'take-axe', cause: 'acquire_axe_take_free_lumbridge_axe' };
+}
+
+/**
+ * Maps a durable PlannerPass stage into existing deterministic Body routines.
+ * Unknown stage text returns undefined so callers can fall back to ordinary
+ * goal/body selection instead of getting trapped in an unrecognized plan.
+ */
+export function planStageRouter(stage: Stage, perception: BodyHybridPerception): PlanBodyResult | undefined {
+    const subgoal = stage.subgoal.toLowerCase();
+
+    if (/axe|woodcutting.*tool|acquire.*axe/.test(subgoal)) {
+        if (hasWoodcuttingAxe(perception)) {
+            return { planSignal: 'stage_done' };
+        }
+        const action = acquireWoodcuttingAxeAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/chop.*log|gather.*log|woodcutting.*log/.test(subgoal)) {
+        const action = levelOneWoodcuttingAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/light.*fire|firemaking/.test(subgoal)) {
+        const action = firemakingAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/fish|gather.*shrimp|fishing/.test(subgoal)) {
+        const action = starterFishingAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/cook|prepare.*food/.test(subgoal)) {
+        const action = starterFishingCookingAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/mine|mining|ore/.test(subgoal)) {
+        const action = starterMiningAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/bury.*bone|prayer/.test(subgoal)) {
+        const action = buryBonesAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    return undefined;
 }
 
 /** Approach and mine the nearest level-1 clay/copper/tin rock when carrying a pickaxe. */
