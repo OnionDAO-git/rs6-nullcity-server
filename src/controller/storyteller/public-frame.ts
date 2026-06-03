@@ -41,8 +41,8 @@ export function buildProjectorStoryFrame(digest: CityEventDigest, options: Build
     const freshnessStatus = freshnessMs === null ? 'unknown' : freshnessMs > staleAfterMs ? 'stale' : 'fresh';
 
     const rankedEvents = rankedDigestEvents(digest);
-    const frameEvents = rankedEvents.slice(0, maxEvents).map(toProjectorEvent);
-    const residents = digest.residents.slice(0, maxResidents).map(toProjectorResident);
+    const frameEvents = rankedEvents.slice(0, maxEvents).map(event => toProjectorEvent(event, digest));
+    const residents = digest.residents.slice(0, maxResidents).map(resident => toProjectorResident(resident, digest));
     const leadEvent = frameEvents[0] ?? null;
     const dispatchDecision = chooseDispatch(options.dispatch ?? null, digest);
     const narration = buildNarration(digest, leadEvent, dispatchDecision);
@@ -138,9 +138,9 @@ function buildNarration(
     if (decision.dispatch) {
         return {
             source: 'verified_dispatch',
-            title: decision.dispatch.publicTitle,
-            body: decision.dispatch.publicBody,
-            bullets: decision.dispatch.publicBullets,
+            title: publicFrameText(decision.dispatch.publicTitle, digest),
+            body: publicFrameText(decision.dispatch.publicBody, digest),
+            bullets: decision.dispatch.publicBullets.map(bullet => publicFrameText(bullet, digest)),
             ...(decision.dispatch.confidence !== undefined ? { confidence: decision.dispatch.confidence } : {}),
         };
     }
@@ -309,23 +309,23 @@ function rankedDigestEvents(digest: CityEventDigest): DigestEvent[] {
     return result;
 }
 
-function toProjectorEvent(event: DigestEvent): ProjectorStoryFrameEvent {
+function toProjectorEvent(event: DigestEvent, digest: CityEventDigest): ProjectorStoryFrameEvent {
     return {
         ref: event.ref,
         label: eventLabel(event.kind),
         residentName: event.residentName,
         happenedAt: event.ts,
         importance: event.importance,
-        note: sanitizePublicText(event.note),
+        note: publicFrameText(event.note, digest),
         whyItMatters: eventWhyItMatters(event),
     };
 }
 
-function toProjectorResident(resident: CityEventDigest['residents'][number]): ProjectorStoryFrameResident {
+function toProjectorResident(resident: CityEventDigest['residents'][number], digest: CityEventDigest): ProjectorStoryFrameResident {
     const status: ProjectorStoryFrameResident['status'] = resident.isFaded ? 'faded' : resident.isLowAp ? 'low_attention' : 'active';
     const speech =
         typeof resident.recentSpeech === 'string' && resident.recentSpeech.trim().length > 0
-            ? sanitizePublicText(resident.recentSpeech.trim())
+            ? publicFrameText(resident.recentSpeech.trim(), digest)
             : undefined;
     return {
         residentName: resident.residentName,
@@ -333,7 +333,7 @@ function toProjectorResident(resident: CityEventDigest['residents'][number]): Pr
         attention: resident.attention,
         status,
         gpObserved: resident.gpObserved,
-        ...(resident.goalText ? { goal: sanitizePublicText(resident.goalText) } : {}),
+        ...(resident.goalText ? { goal: publicFrameText(resident.goalText, digest) } : {}),
         ...(speech ? { latestSpeechSummary: speech } : {}),
     };
 }
@@ -442,7 +442,7 @@ function buildEffectiveWatchNext(
     leadEvent: ProjectorStoryFrameEvent | null,
 ): string[] {
     if (decision.dispatch?.watchNext?.length) {
-        const sanitized = decision.dispatch.watchNext.map(sanitizePublicText).filter(Boolean);
+        const sanitized = decision.dispatch.watchNext.map(item => publicFrameText(item, digest)).filter(Boolean);
         if (sanitized.length > 0) return sanitized.slice(0, 4);
     }
     return buildWatchNext(digest, leadEvent);
@@ -532,11 +532,93 @@ function freshnessAgeMs(value: string | undefined, now: Date): number | null {
 function displayName(residentName: string): string {
     const withoutPrefix = residentName.replace(/^res[:_-]/, '');
     if (!withoutPrefix || withoutPrefix === residentName) return residentName;
+    if (withoutPrefix === 'agent') return 'The Steward';
     return withoutPrefix
         .split(/[-_:]+/)
         .filter(Boolean)
         .map(part => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
         .join(' ');
+}
+
+function publicFrameText(value: string, digest: CityEventDigest): string {
+    let result = sanitizePublicText(value);
+    for (const alias of publicResidentAliases(digest)) {
+        result = result.replace(alias.pattern, (match: string, boundary: string, offset: number, fullText: string) => {
+            const aliasStart = offset + boundary.length;
+            if (!shouldHumanizeResidentAlias(alias.alias, fullText, aliasStart)) return match;
+            const prefix = boundary === '/' ? '' : boundary;
+            return `${prefix}${alias.displayName}`;
+        });
+    }
+    return result;
+}
+
+function publicResidentAliases(digest: CityEventDigest): Array<{
+    alias: string;
+    displayName: string;
+    pattern: RegExp;
+}> {
+    const residentNames = new Set<string>();
+    for (const resident of digest.residents) residentNames.add(resident.residentName);
+    for (const event of allDigestEvents(digest)) residentNames.add(event.residentName);
+
+    const aliases: Array<{ alias: string; displayName: string }> = [];
+    for (const residentName of residentNames) {
+        const display = displayName(residentName);
+        const withoutPrefix = residentName.replace(/^res[:_-]/, '');
+        const words = withoutPrefix.replace(/[-_:]+/g, ' ');
+        aliases.push({ alias: residentName, displayName: display });
+        if (withoutPrefix && withoutPrefix !== residentName) aliases.push({ alias: withoutPrefix, displayName: display });
+        if (words && words !== withoutPrefix && words !== residentName) aliases.push({ alias: words, displayName: display });
+    }
+
+    const seen = new Set<string>();
+    return aliases
+        .filter(({ alias }) => alias.startsWith('res:') || alias.length >= 3)
+        .sort((a, b) => b.alias.length - a.alias.length)
+        .flatMap(({ alias, displayName }) => {
+            const key = alias.toLowerCase();
+            if (seen.has(key)) return [];
+            seen.add(key);
+            return [
+                {
+                    alias,
+                    displayName,
+                    pattern: residentAliasPattern(alias),
+                },
+            ];
+        });
+}
+
+function residentAliasPattern(alias: string): RegExp {
+    const boundary = alias.startsWith('res:') ? '[^A-Za-z0-9:_-]' : '[^A-Za-z0-9_-]';
+    return new RegExp(`(^|${boundary})${escapeRegExp(alias)}(?=$|${boundary})`, 'gi');
+}
+
+function shouldHumanizeResidentAlias(alias: string, value: string, aliasStart: number): boolean {
+    if (alias.toLowerCase() !== 'agent') return true;
+    const previousWord = value
+        .slice(0, aliasStart)
+        .match(/([A-Za-z]+)\s*$/)?.[1]
+        ?.toLowerCase();
+    return previousWord !== 'field';
+}
+
+function allDigestEvents(digest: CityEventDigest): DigestEvent[] {
+    return [
+        ...digest.apEvents,
+        ...digest.gpEvents,
+        ...digest.exchangeEvents,
+        ...digest.ncriEvents,
+        ...digest.goalEvents,
+        ...digest.stuckEvents,
+        ...digest.miscEvents,
+        ...digest.topEvents,
+    ];
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function sanitizePublicText(value: string): string {

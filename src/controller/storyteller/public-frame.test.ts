@@ -34,7 +34,7 @@ describe('buildProjectorStoryFrame', () => {
         expect(frame.narration.source).toBe('verified_dispatch');
         expect(frame.narration.title).toBe(dispatch.publicTitle);
         expect(frame.narration.body).toBe(dispatch.publicBody);
-        expect(frame.narration.bullets).toEqual(dispatch.publicBullets);
+        expect(frame.narration.bullets).toEqual(['Alice is low on attention.', 'Bob has fresh RuneScape gold evidence.']);
         expect(frame.publicHealth.status).toBe('ok');
         expect(frame.source.dispatchId).toBe(dispatch.dispatchId);
     });
@@ -171,6 +171,95 @@ describe('buildProjectorStoryFrame', () => {
 
         expect(frame.narration.source).toBe('verified_dispatch');
         expect(frame.narration.confidence).toBe('high');
+    });
+
+    it('humanizes resident ids and known lowercase slugs in verified narration copy', () => {
+        const { digest } = buildFixtureDigest();
+        digest.residents = [
+            { residentName: 'res:agent', attention: 1200, isLowAp: false, isFaded: false, gpObserved: null },
+            { residentName: 'res:hans', attention: 900, isLowAp: false, isFaded: false, gpObserved: null },
+        ];
+        digest.stuckEvents = [
+            {
+                ref: 'evt-agent-stuck',
+                kind: 'stuck_recovered',
+                residentName: 'res:agent',
+                ts: '2026-05-29T05:59:00.000Z',
+                note: 'res:agent recovered from being stuck.',
+                importance: 'medium',
+            },
+            {
+                ref: 'evt-hans-stuck',
+                kind: 'stuck_recovered',
+                residentName: 'res:hans',
+                ts: '2026-05-29T05:59:30.000Z',
+                note: 'res:hans recovered from being stuck.',
+                importance: 'medium',
+            },
+        ];
+        digest.topEvents = digest.stuckEvents;
+        const dispatch = makeDispatch({
+            publicTitle: 'res:agent and res:hans recovered',
+            publicBody: 'res:agent and res:hans recovered from static. agent kept moving; hans mentioned AP and GP.',
+            publicBullets: ['res:agent recovered.', 'hans mentioned AP.'],
+            eventRefsUsed: ['evt-agent-stuck', 'evt-hans-stuck'],
+            watchNext: ['Whether agent keeps moving.', 'Whether hans finds GP.'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+        const serialized = JSON.stringify({
+            narration: frame.narration,
+            watchNext: frame.watchNext,
+        });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.narration.title).toBe('The Steward and Hans recovered');
+        expect(serialized).not.toContain('res:agent');
+        expect(serialized).not.toContain('res:hans');
+        expect(serialized).not.toMatch(/\bagent\b/);
+        expect(serialized).not.toMatch(/\bhans\b/);
+        expect(serialized).not.toContain('AP');
+        expect(serialized).not.toContain('GP');
+        expect(serialized).toContain('The Steward');
+        expect(serialized).toContain('Hans');
+        expect(serialized).toContain('attention');
+        expect(serialized).toContain('RuneScape gold');
+    });
+
+    it('humanizes slug-shaped resident mentions without corrupting ordinary English nouns', () => {
+        const { digest } = buildFixtureDigest();
+        digest.residents = [{ residentName: 'res:agent', attention: 1200, isLowAp: false, isFaded: false, gpObserved: null }];
+        digest.stuckEvents = [
+            {
+                ref: 'evt-agent-stuck',
+                kind: 'stuck_recovered',
+                residentName: 'res:agent',
+                ts: '2026-05-29T05:59:00.000Z',
+                note: 'res:agent recovered from being stuck.',
+                importance: 'medium',
+            },
+        ];
+        digest.topEvents = digest.stuckEvents;
+        const dispatch = makeDispatch({
+            publicTitle: 'A field agent saw res:agent, recover',
+            publicBody: 'A field agent watched /agent and agent: move again.',
+            publicBullets: ['res:agent, recovered.', 'A field agent kept notes.'],
+            eventRefsUsed: ['evt-agent-stuck'],
+            watchNext: ['Whether /agent keeps moving.', 'Whether the field agent writes it down.'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+        const serialized = JSON.stringify({
+            narration: frame.narration,
+            watchNext: frame.watchNext,
+        });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(serialized).toContain('field agent');
+        expect(serialized).toContain('The Steward');
+        expect(serialized).not.toContain('res:agent');
+        expect(serialized).not.toContain('/agent');
+        expect(serialized).not.toContain('agent:');
     });
 
     it('omits confidence from narration when dispatch has no confidence field', () => {
