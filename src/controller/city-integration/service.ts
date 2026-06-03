@@ -136,6 +136,8 @@ export interface CityIntegrationBirthAuthority {
 /** Event fired by {@link CityIntegrationService.creditAttention} when a patron supports a resident. */
 export interface PatronSupportEvent {
     cityUserId: string;
+    /** Canonical patron handle/personId resolved by the caller (T0.ID); standing/letters key on this when present. */
+    patronHandle?: string;
     residentName: string;
     /** Resident faction, e.g. `'embassy'`. Derived from runtime state at the moment of support. */
     faction: string;
@@ -225,6 +227,7 @@ const attentionGrantRequestSchema = z
         amount: z.number().int().positive(),
         cityUserId: z.string().min(1).optional(),
         personId: z.string().min(1).optional(),
+        patronHandle: z.string().min(1).optional(),
         sourceType: z.string().min(1).optional(),
         sourceId: z.string().min(1).optional(),
         note: z.string().max(500).optional(),
@@ -1049,6 +1052,7 @@ export class CityIntegrationService {
                 try {
                     this.options.onPatronSupport({
                         cityUserId: request.cityUserId,
+                        patronHandle: request.patronHandle,
                         residentName,
                         faction,
                         amount: request.amount,

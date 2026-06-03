@@ -16,7 +16,7 @@ import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/run
 import { CurrencyLedger } from './patron/currency-ledger';
 import { PlanStore } from './intelligence/plan-store';
 import { LettersStore } from './patron/letters-store';
-import { produceStandingTierLetter } from './patron/letters-producer';
+import { recordSettledSupport } from './patron/settled-support';
 import { PatronGateway } from './patron/patron-gateway';
 import { PatronStore } from './patron/patron-store';
 import { StandingLedger } from './patron/standing-ledger';
@@ -237,25 +237,27 @@ export class ControllerHost {
             // support grants so the dashboard "Support with AP" button produces
             // the same standing/letter effects as the patron:offer CLI path.
             onPatronSupport: event => {
-                const result = this.standingLedger.recordSupport(event.cityUserId, event.faction, event.amount, {
-                    reason: event.note,
-                    ts: event.ts,
-                });
-                if (result.tiersCrossed.length > 0) {
-                    for (const tierCrossed of result.tiersCrossed) {
-                        const letter = produceStandingTierLetter({
-                            humanId: event.cityUserId,
-                            faction: event.faction,
-                            residentName: event.residentName,
-                            tierCrossed,
-                            amount: event.amount,
-                            ts: event.ts,
-                        });
-                        if (letter) {
-                            this.lettersStore.append(letter);
-                        }
-                    }
-                }
+                // T0.0b: Shards-free settled-support seam. Keys on the canonical
+                // identity (patronHandle/personId) when resolved upstream, else the
+                // cityUserId fallback. onionsPerStandingPoint scales onions->standing.
+                // TODO(James, decision): onionsPerStandingPoint defaults to 1 (legacy
+                // 1:1). 1:1 makes one 500-onion check-in instantly top-tier (tiers
+                // 10/30/75) — set the real scale once product decides it.
+                recordSettledSupport(
+                    {
+                        patronId: event.patronHandle ?? event.cityUserId,
+                        faction: event.faction,
+                        residentName: event.residentName,
+                        onionsSettled: event.amount,
+                        ts: event.ts,
+                        reason: event.note,
+                    },
+                    {
+                        standingLedger: this.standingLedger,
+                        lettersStore: this.lettersStore,
+                        onionsPerStandingPoint: 1,
+                    },
+                );
                 this.persistPatronLedgers();
             },
         });
