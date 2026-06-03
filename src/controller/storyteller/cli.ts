@@ -147,6 +147,7 @@ function buildResidentSnapshots(
     windowStart: Date,
     windowEnd: Date,
     evidenceResidentNames: ReadonlySet<string>,
+    now?: Date,
 ): ResidentSnapshot[] {
     const residents = new Map<string, ResidentSnapshot>();
     const runtimeBackedResidents = new Set<string>();
@@ -167,7 +168,7 @@ function buildResidentSnapshots(
         return created;
     };
 
-    for (const runtimeResident of readRuntimeResidentSnapshots(memoryRoot)) {
+    for (const runtimeResident of readRuntimeResidentSnapshots(memoryRoot, now)) {
         if (!runtimeResident.isFaded && !evidenceResidentNames.has(runtimeResident.residentName)) {
             continue;
         }
@@ -216,11 +217,15 @@ function buildResidentSnapshots(
         .sort((a, b) => a.residentName.localeCompare(b.residentName));
 }
 
-function readRuntimeResidentSnapshots(memoryRoot: string): ResidentSnapshot[] {
+/** Max age in ms for "recent" speech included in resident snapshots (1 hour). */
+export const RECENT_SPEECH_MAX_AGE_MS = 60 * 60 * 1000;
+
+function readRuntimeResidentSnapshots(memoryRoot: string, now?: Date): ResidentSnapshot[] {
     if (!fs.existsSync(memoryRoot)) {
         return [];
     }
 
+    const cutoff = new Date((now ?? new Date()).getTime() - RECENT_SPEECH_MAX_AGE_MS).toISOString();
     const snapshots: ResidentSnapshot[] = [];
     for (const entry of fs.readdirSync(memoryRoot, { withFileTypes: true })) {
         if (!entry.isDirectory()) {
@@ -244,6 +249,7 @@ function readRuntimeResidentSnapshots(memoryRoot: string): ResidentSnapshot[] {
         }
         const attention = typeof state.attention === 'number' && Number.isFinite(state.attention) ? state.attention : 0;
         const isFaded = Boolean(state.deceased);
+        const recentSpeech = readResidentRecentSpeech(memoryRoot, entry.name, cutoff);
         snapshots.push({
             residentName,
             attention,
@@ -253,10 +259,50 @@ function readRuntimeResidentSnapshots(memoryRoot: string): ResidentSnapshot[] {
             ...(typeof state.cognition?.activeGoal?.description === 'string' && state.cognition.activeGoal.description.length > 0
                 ? { goalText: state.cognition.activeGoal.description }
                 : {}),
+            ...(recentSpeech !== undefined ? { recentSpeech } : {}),
         });
     }
 
     return snapshots.sort((a, b) => a.residentName.localeCompare(b.residentName));
+}
+
+/**
+ * Read the most recent `say` event text from a resident's Library timeline that
+ * falls within the given cutoff ISO timestamp. Returns undefined when no
+ * qualifying speech is found or the timeline file is absent/unreadable.
+ */
+export function readResidentRecentSpeech(memoryRoot: string, slug: string, cutoff: string): string | undefined {
+    const timelinePath = path.join(memoryRoot, 'library', slug, 'timeline.jsonl');
+    if (!fs.existsSync(timelinePath)) {
+        return undefined;
+    }
+    let latestSpeech: string | undefined;
+    let latestTs = '';
+    try {
+        const lines = fs.readFileSync(timelinePath, 'utf8').split('\n');
+        for (const raw of lines) {
+            const line = raw.trim();
+            if (!line) continue;
+            let event: Record<string, unknown>;
+            try {
+                event = JSON.parse(line) as Record<string, unknown>;
+            } catch {
+                continue;
+            }
+            if (typeof event['kind'] !== 'string' || event['kind'] !== 'say') continue;
+            const ts = typeof event['ts'] === 'string' ? event['ts'] : '';
+            if (!ts || ts < cutoff) continue;
+            const text = typeof event['text'] === 'string' ? event['text'].trim() : '';
+            if (!text) continue;
+            if (ts >= latestTs) {
+                latestTs = ts;
+                latestSpeech = text.length > 140 ? `${text.slice(0, 137)}...` : text;
+            }
+        }
+    } catch {
+        return undefined;
+    }
+    return latestSpeech;
 }
 
 function readRuntimeState(statePath: string): Partial<RuntimeState> | undefined {
@@ -427,7 +473,7 @@ function buildLiveDigest(args: StorytellerDryRunArgs, options: Required<RunStory
         windowStart,
         windowEnd,
         now,
-        residents: buildResidentSnapshots(args.memoryRoot, events, goals, windowStart, windowEnd, evidenceResidentNames),
+        residents: buildResidentSnapshots(args.memoryRoot, events, goals, windowStart, windowEnd, evidenceResidentNames, now),
         apEvents: economyBuckets.apEvents,
         gpEvents: economyBuckets.gpEvents,
         exchangeEvents: economyBuckets.exchangeEvents,

@@ -368,6 +368,81 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(result.digest.topEvents.map(event => event.ref)).toEqual(result.digest.ncriEvents.map(event => event.ref));
         expect(result.summary).toContain('NCRI events: 2');
     });
+
+    it('enriches resident snapshot with most recent speech from Library timeline within 1 hour', () => {
+        const now = new Date('2026-05-30T00:10:00.000Z');
+        writeRuntimeState(memoryRoot, 'res-hans', {
+            resident: 'res:hans',
+            attention: 4_000,
+            tick: 50,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeLibraryEvents(memoryRoot, 'res-hans', [
+            { kind: 'say', ts: '2026-05-30T00:01:00.000Z', tick: 10, text: 'Guarding the gate.' },
+            { kind: 'say', ts: '2026-05-30T00:05:00.000Z', tick: 30, text: 'The square is quiet tonight.' },
+        ]);
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T00:00:00.000Z',
+                until: '2026-05-30T00:10:00.000Z',
+                digestId: 'speech-enrich-test',
+            },
+            { now: () => now },
+        );
+
+        const hans = result.digest.residents.find(r => r.residentName === 'res:hans');
+        expect(hans).toBeDefined();
+        expect((hans as any).recentSpeech).toBe('The square is quiet tonight.');
+    });
+
+    it('excludes speech older than 1 hour from resident snapshot', () => {
+        const now = new Date('2026-05-30T02:00:00.000Z');
+        writeRuntimeState(memoryRoot, 'res-pip', {
+            resident: 'res:pip',
+            attention: 3_000,
+            tick: 200,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T02:00:00.000Z',
+                dayStartedAt: '2026-05-30T02:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        // Economy event within the window ensures res:pip appears in the digest.
+        const log = new EconomyEventLog(memoryRoot, () => new Date('2026-05-30T01:55:00.000Z'));
+        log.append({ kind: 'ap_topup', residentName: 'res:pip', apDelta: 10, note: 'Pip received AP.' });
+        // Say event older than 1 hour before now — should be excluded from recentSpeech.
+        writeLibraryEvents(memoryRoot, 'res-pip', [
+            { kind: 'say', ts: '2026-05-29T23:00:00.000Z', tick: 5, text: 'Old speech, more than an hour ago.' },
+        ]);
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T01:50:00.000Z',
+                until: '2026-05-30T02:00:00.000Z',
+                digestId: 'speech-exclude-test',
+            },
+            { now: () => now },
+        );
+
+        const pip = result.digest.residents.find(r => r.residentName === 'res:pip');
+        expect(pip).toBeDefined();
+        expect((pip as any).recentSpeech).toBeUndefined();
+    });
 });
 
 function writeRuntimeState(memoryRoot: string, slug: string, state: Record<string, unknown>): void {

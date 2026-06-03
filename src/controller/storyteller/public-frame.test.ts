@@ -125,4 +125,41 @@ describe('buildProjectorStoryFrame', () => {
             events: 2,
         });
     });
+
+    it('includes latestSpeechSummary in frame resident when snapshot has recentSpeech', () => {
+        const { digest } = buildFixtureDigest();
+        digest.residents[0] = { ...digest.residents[0], recentSpeech: 'Looking for coins near the courtyard.' } as any;
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        const lead = frame.residents[0];
+        expect(lead.latestSpeechSummary).toBe('Looking for coins near the courtyard.');
+    });
+
+    it('sanitizes hostile text in recentSpeech before publishing as latestSpeechSummary', () => {
+        const { digest } = buildFixtureDigest();
+        digest.residents[0] = {
+            ...digest.residents[0],
+            recentSpeech: 'I found sk-or-v1-1234567890abcdef near patron:james.',
+        } as any;
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        const lead = frame.residents[0];
+        expect(lead.latestSpeechSummary).toBeDefined();
+        expect(lead.latestSpeechSummary).not.toContain('sk-or-v1-1234567890abcdef');
+        expect(lead.latestSpeechSummary).not.toContain('patron:james');
+        expect(lead.latestSpeechSummary).toContain('[redacted]');
+    });
+
+    it('omits latestSpeechSummary when recentSpeech is absent', () => {
+        const { digest } = buildFixtureDigest();
+        // Ensure no recentSpeech on the first resident
+        const { recentSpeech: _dropped, ...rest } = digest.residents[0] as any;
+        digest.residents[0] = rest;
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.residents[0].latestSpeechSummary).toBeUndefined();
+    });
 });

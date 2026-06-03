@@ -55,6 +55,8 @@ export interface ResidentSnapshot {
     gpObserved: number | null;
     /** Resident's current Soul goal text, if available. */
     goalText?: string;
+    /** Most recent say event text from the Library timeline within the recent-speech window (max 140 chars). */
+    recentSpeech?: string;
 }
 
 /**
@@ -286,6 +288,8 @@ export interface ProjectorStoryFrameResident {
     status: 'active' | 'low_attention' | 'faded';
     gpObserved: number | null;
     goal?: string;
+    /** Most recent public speech from the Library timeline (sanitized, max 140 chars). */
+    latestSpeechSummary?: string;
 }
 
 export interface ProjectorStoryFrameAction {

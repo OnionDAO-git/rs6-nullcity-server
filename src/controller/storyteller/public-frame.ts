@@ -216,6 +216,9 @@ function toProjectorEvent(event: DigestEvent): ProjectorStoryFrameEvent {
 
 function toProjectorResident(resident: CityEventDigest['residents'][number]): ProjectorStoryFrameResident {
     const status: ProjectorStoryFrameResident['status'] = resident.isFaded ? 'faded' : resident.isLowAp ? 'low_attention' : 'active';
+    const speech = typeof resident.recentSpeech === 'string' && resident.recentSpeech.trim().length > 0
+        ? sanitizePublicText(resident.recentSpeech.trim())
+        : undefined;
     return {
         residentName: resident.residentName,
         displayName: displayName(resident.residentName),
@@ -223,6 +226,7 @@ function toProjectorResident(resident: CityEventDigest['residents'][number]): Pr
         status,
         gpObserved: resident.gpObserved,
         ...(resident.goalText ? { goal: sanitizePublicText(resident.goalText) } : {}),
+        ...(speech ? { latestSpeechSummary: speech } : {}),
     };
 }
 
