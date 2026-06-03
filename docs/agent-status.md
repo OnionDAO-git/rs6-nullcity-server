@@ -35,3 +35,21 @@
 2026-06-03 05:10 cron agents/wip RIQ-A1-OBS STARTING plan_stage_done/blocked Library events + planSummary for A1 audit. Files: src/controller/evidence/library-updater.ts,library-updater.test.ts,hybrid-agent-helpers.ts,normal-life-audit.ts,normal-life-audit.test.ts collision=none
 
 [>] hybrid-agent-thinking-module.ts — convreply slices 7-8 (detection+emission wiring), claude 2026-06-02 ~01:00
+
+[x] hybrid-agent-thinking-module.ts — convreply slices 7-8 LOCK LIFTED (slice 9 complete)
+
+## DONE — resident conversational-reply feature (2026-06-02, claude overnight loop)
+Built 9/9 slices (feat(social-reply) slices 1-8 + slice 9 coverage), full gate green (~3888 tests).
+Residents now reply in-character when a HUMAN PLAYER says their display name:
+- detached, never-freeze Body inference (off the decision loop); resident keeps acting
+- in-voice deflection fallback (soul deflections + phrasebook), content-screened
+- rate-limited (reuses chatReplyTicks) + global in-flight cap (SocialReplyCoordinator)
+- player-only trigger (detectSocialReply) — resident speech never triggers, no A<->B loops
+- speech-only (autonomy): emits a say, never an action; goal never changes
+- combat cancels in-flight/pending; emission gated on asker still present + freshness
+Footprint: social-reply.ts (new) + social-reply.test.ts (new); edits to hybrid-agent-chat.ts,
+hybrid-agent-thinking-module.ts(+test), runtime-state.ts (CognitiveState), soul-schema.ts,
+phrasebook.ts. resident-runtime.ts / llm-client.ts UNTOUCHED.
+**LIVE-VERIFY PENDING** a steward-run game restart (runtime owned by Codex) — NOT done.
+Spec: docs/superpowers/specs/2026-06-02-resident-conversational-reply-design.md (v4).
+Plan: docs/superpowers/plans/2026-06-02-resident-conversational-reply.md.

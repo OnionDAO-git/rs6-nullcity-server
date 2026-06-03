@@ -11019,6 +11019,49 @@ describe('social-reply detection wiring (slice 7)', () => {
         expect(state.cognition?.socialReplyInFlight).toBeUndefined();
         expect(state.cognition?.pendingSocialReply).toBeUndefined();
     });
+
+    // A social inference is identifiable by its guard-railed prompt — used to assert none fired.
+    const socialInferenceCalls = (llm: MockLlm) =>
+        llm.complete.mock.calls.filter(call => /not a helpful assistant/i.test(String(call[0]?.prompt)));
+
+    it('a conversational reply only ever produces a say and never changes the goal (autonomy)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Aye.', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 20, players: [player('codex', 3201, 3200)] }) as never);
+
+        expect(result.cause).toBe('social_reply_emit');
+        expect((result.actions[0] as { kind?: string }).kind).toBe('say');
+        expect(state.cognition?.activeGoal?.id).toBe('g-oaks');
+    });
+
+    it('does not start a second social inference while one is already in flight (dedup)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.socialReplyInFlight = { key: 'x', startedAtTick: 1 };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, you busy?', 3201, 3200)] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(state.cognition?.socialReplyInFlight?.key).toBe('x');
+        expect(socialInferenceCalls(llm)).toHaveLength(0);
+    });
+
+    it('rate-limits social replies (no inference once the chat-reply window is full)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.chatReplyTicks = [5, 5, 5]; // >= CHAT_REPLIES_PER_WINDOW within the window
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, what now?', 3201, 3200)] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(state.cognition?.socialReplyInFlight).toBeUndefined();
+        expect(socialInferenceCalls(llm)).toHaveLength(0);
+    });
 });
 
 function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), memoryStore = memory()): HybridAgentThinkingModule {
