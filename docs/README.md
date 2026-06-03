@@ -11,6 +11,7 @@ This file tells humans and AI agents which docs are canonical today and which do
 | AI coding agent | `AGENTS.md` | Current repo rules, sprint pointers, safety boundaries. |
 | Deep AI onboarding | `docs/START-HERE-AGENTS.md` | Longer architecture and workstream context. |
 | Multi-agent worker | `docs/agent-coordination.md` | Branch workflow, file locks, status log, issue rules. |
+| Launch readiness | `docs/launch-blockers.md` | Canonical cross-repo registry of everything gating OnionDAO launch (P0/P1/P2), across all repos. |
 
 ## Active Source Of Truth
 
@@ -25,6 +26,8 @@ This file tells humans and AI agents which docs are canonical today and which do
 | `docs/release-qa-status.md` | QA Marshal merge/readiness gate for `agents/wip` -> `nullcity`. |
 | `docs/agent-status.md` | Append-only live coordination log. Keep entries short. |
 | `docs/human-decisions.md` | Decisions that need James/Dev/OnionDAO input or later audit. |
+| `docs/launch-blockers.md` | Canonical cross-repo launch-blocker registry (P0/P1/P2). Source of truth for "what's left before OnionDAO launch" across all repos. |
+| `docs/launch-blockers_discussion.md` | Append-only agent-to-agent discussion for launch blockers; keeps the registry lean. |
 
 ## Current Product And Design Context
 

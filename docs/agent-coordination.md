@@ -278,6 +278,28 @@ Dev's `[D2]/[D3]` dashboard work can proceed independently — Workstream I land
 - **A schema breaks a downstream reader:** the writer rolls forward, not back; add a versioned field and a brief migration note. Downstream consumers detect the bump and adapt or fail loudly.
 - **An agent goes silent mid-`[>]`:** another agent may take the task only if `agent-status.md` shows no activity for >24h and the in-progress changes are either committed or trivially recoverable from a stash/branch.
 
+## Launch Blockers Protocol
+
+`docs/launch-blockers.md` is the canonical, cross-repo registry of everything gating the OnionDAO / Null City launch (server, dashboard, oniondao-badge, landing-2026, rs6-3d-viewer). `docs/launch-blockers_discussion.md` is its append-only chatter/history. Both live on `agents/wip`. This is to launch what `issue-register.md` is to QA defects: issue-register = discovered defects/weak evidence; launch-blockers = *everything* (tasks + blockers + external deps + decisions) that must be true before launch.
+
+**Items** are per-`### LB-<AREA>-<rand4>` sections grouped under `## <AREA>` headers, one field per line. The random ID suffix means parallel agents never collide allocating an ID — no read-modify-write, no reservation.
+
+**Editing the registry (in place):**
+- `git pull --rebase` first; re-read the item before editing.
+- Change ONLY the field line(s) that changed (`- Status:`, `- Owner:`, `- Updated:`). One item per commit. Never reflow/re-sort other items (that rewrites lines you don't own and guarantees conflicts).
+- Add a new item by appending its block to the bottom of the correct `## <AREA>` section.
+- Closing (`Done`/`Won't-fix`) requires a `- Resolution:` line; then move the block to `## Archive`.
+
+**Claiming (the soft lock, like the roadmap `[>]`):** set `- Owner: <you>` AND move `- Status:` to the first active state (Investigating/Designing/In-progress), push, then append a `decision` entry to the discussion file naming the files you'll touch. If `Owner != unassigned` and `Status` is active, it's taken — pick another. First-pushed claim wins; ties broken by earliest discussion timestamp. Also append a `STARTING` line to `agent-status.md` if the work touches `src/`.
+
+**Discussion file (append-only):** newest at bottom, threaded by `LB-id`, entry header `### YYYY-MM-DD HH:MM | <agent> | <LB-id|meta> | <type>` where type is `question|decision|update|handoff`. Never edit/delete a prior entry; correct yourself by appending a new one. Put all reasoning/evidence/history here, not in the registry.
+
+**Git (consistent with Rule 3, push direct to `agents/wip`, no feature branches):** one logical change per commit; commit msg `docs(blockers): <verb> LB-... — <note>`; `git pull --rebase && git push`; on push reject, `pull --rebase` and push again. Stage explicit paths only (`git add docs/launch-blockers.md`) — never `git add -A`/`.` (the shared tree may carry other agents' phantom `M` files). **Never `git commit --amend` and never `git push --force`** on `agents/wip` — both have lost work on this project before.
+
+**Conflicts** are designed out (different items = different lines; discussion = disjoint EOF appends). If one occurs: discussion file → keep both blocks in timestamp order, drop markers; registry → reconcile to the most-advanced state (`Done > Verifying > In-review > In-progress > Blocked > Open`), keep one line per field, then append a `decision` entry recording the resolution.
+
+The paste-ready RULES OF ENGAGEMENT headers at the top of each file are the short form of the above; this section is the full reference they point to.
+
 ## Open Questions
 
 1. Should we adopt a longer sync log format (date + branch + commit sha)? Probably yes once we have more than 3 active agents; not yet.
