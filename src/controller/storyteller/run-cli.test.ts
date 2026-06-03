@@ -52,6 +52,27 @@ describe('storyteller:run CLI digest sources', () => {
         });
     });
 
+    it('parses controller config path from flag and environment', () => {
+        expect(
+            parseStorytellerRunArgs(['--latest', '--controller-config', '/tmp/nullcity/controller.yml'], {
+                STORYTELLER_MODEL_PROFILE: 'openrouter_storyteller',
+            }),
+        ).toMatchObject({
+            source: 'latest',
+            modelProfile: 'openrouter_storyteller',
+            controllerConfigPath: '/tmp/nullcity/controller.yml',
+        });
+
+        expect(
+            parseStorytellerRunArgs(['--latest'], {
+                STORYTELLER_CONTROLLER_CONFIG: '/tmp/nullcity/storyteller-controller.yml',
+            }),
+        ).toMatchObject({
+            source: 'latest',
+            controllerConfigPath: '/tmp/nullcity/storyteller-controller.yml',
+        });
+    });
+
     it('rejects missing or conflicting digest sources', async () => {
         await expect(runStoryteller({ source: 'none', outputDir, modelProfile: 'default' })).rejects.toThrow(StorytellerRunCliError);
         expect(() => parseStorytellerRunArgs(['--fixture', '--latest'])).toThrow(StorytellerRunCliError);
@@ -211,7 +232,7 @@ describe('storyteller:run CLI digest sources', () => {
         fetchSpy.mockRestore();
     });
 
-    it('uses text response format for configured Storyteller endpoints', async () => {
+    it('uses text response format for configured Storyteller endpoints without publishing candidate text to latest-frame', async () => {
         const store = new StorytellerStore(outputDir);
         const { digest, refs } = buildFixtureDigest();
         store.writeDigest({ ...digest, digestId: 'text-format-digest' });
@@ -256,8 +277,8 @@ describe('storyteller:run CLI digest sources', () => {
         expect(body.response_format).toEqual({ type: 'text' });
         const frame = store.readLatestProjectorFrame();
         expect(frame?.digestId).toBe('text-format-digest');
-        expect(frame?.narration.source).toBe('verified_dispatch');
-        expect(frame?.narration.title).toBe(modelPayload.publicTitle);
+        expect(frame?.narration.source).toBe('deterministic_fallback');
+        expect(frame?.narration.title).not.toBe(modelPayload.publicTitle);
         fetchSpy.mockRestore();
     });
 
@@ -307,6 +328,82 @@ describe('storyteller:run CLI digest sources', () => {
         expect(body.response_format).toEqual({ type: 'text' });
         expect(result.dispatch.modelProfile).toBe('storyteller');
         expect(result.dispatch.publicTitle).toBe(modelPayload.publicTitle);
+        fetchSpy.mockRestore();
+    });
+
+    it('uses a named controller-config LLM profile when no direct Storyteller env endpoint is set', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest, refs } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'controller-profile-digest' });
+        const configPath = path.join(outputDir, 'controller.yml');
+        fs.writeFileSync(
+            configPath,
+            [
+                'llm:',
+                '  endpoints:',
+                '    openrouter:',
+                '      baseUrl: https://openrouter.ai/api',
+                '      apiKey: test-controller-config-key',
+                '      model: anthropic/claude-3.5-haiku',
+                '      responseFormat: text',
+                '      timeoutMs: 45000',
+                '  profiles:',
+                '    openrouter_storyteller:',
+                '      endpoint: openrouter',
+                '      model: anthropic/claude-3.5-sonnet',
+                '      responseFormat: text',
+                '      timeoutMs: 50000',
+                '',
+            ].join('\n'),
+            'utf-8',
+        );
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            message: {
+                                content: JSON.stringify({
+                                    publicTitle: 'A smarter narrator finds the city signal',
+                                    publicBody:
+                                        'The Storyteller used the configured controller profile without shell-only endpoint exports.',
+                                    publicBullets: ['Controller config profile was selected.'],
+                                    operatorSummary: 'Controller-config profile response.',
+                                    operatorWarnings: [],
+                                    eventRefsUsed: [refs.exchange],
+                                }),
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 90, completion_tokens: 45, cost: 0.003 },
+                }),
+                { status: 200 },
+            ),
+        );
+
+        const result = await runStoryteller(
+            {
+                source: 'digest-id',
+                digestId: 'controller-profile-digest',
+                outputDir,
+                modelProfile: 'openrouter_storyteller',
+                controllerConfigPath: configPath,
+                dailyCostCapUsd: 0.1,
+            },
+            {
+                env: {},
+                now: () => new Date('2026-06-03T18:45:00.000Z'),
+            },
+        );
+
+        const [url, requestInit] = fetchSpy.mock.calls[0] ?? [];
+        const body = JSON.parse(String((requestInit as RequestInit).body)) as { model?: string; response_format?: unknown };
+        expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+        expect(body.model).toBe('anthropic/claude-3.5-sonnet');
+        expect(body.response_format).toEqual({ type: 'text' });
+        expect((requestInit as RequestInit).headers).toMatchObject({ authorization: 'Bearer test-controller-config-key' });
+        expect(result.dispatch.modelProfile).toBe('openrouter_storyteller');
+        expect(result.dispatch.publicTitle).toBe('A smarter narrator finds the city signal');
         fetchSpy.mockRestore();
     });
 });

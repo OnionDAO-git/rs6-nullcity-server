@@ -50,12 +50,14 @@ The Storyteller should feel sharp, weird, fantasy/cyberpunk, and DCC-adjacent wi
   - Add fixtures proving a newer review/dry-run artifact cannot outrank an older safe public artifact.
   - This is the first implementation safety rail; admin deletion after the fact is not enough for a live projector.
   - Progress 2026-06-01: dashboard Storyteller digest reader now strips public dispatch copy from dry-run, review, and review-needed canon artifacts; `/overview` now selects safe canon dispatch copy over newer unsafe draft text. Full server-owned `latest-frame` path remains open.
+  - Progress 2026-06-03: server scheduler/run path now keeps clean candidate dispatch text out of public `latest-frame.json`; only the overseer can promote verified dispatch copy to projector narration.
 
 - [ ] **P0-S1: Configure Storyteller model activation through normal ops config.**
   - Repo: server.
   - Goal: Storyteller uses a Sonnet-class OpenRouter profile without one-off shell exports.
   - Include env/config docs for `STORYTELLER_LLM_BASE_URL`, `STORYTELLER_LLM_API_KEY`, `STORYTELLER_LLM_MODEL`, and `STORYTELLER_DAILY_COST_CAP_USD`.
   - Keep secrets out of git.
+  - Progress 2026-06-03: `storyteller:run` and `storyteller:scheduler` accept `--controller-config` / `STORYTELLER_CONTROLLER_CONFIG`, so a named controller `llm.profiles` entry such as `openrouter_storyteller` can be used without one-off endpoint exports.
 
 - [ ] **P0-S2: Build a deterministic public projector frame.**
   - Repo: server.
@@ -217,6 +219,7 @@ The Storyteller should feel sharp, weird, fantasy/cyberpunk, and DCC-adjacent wi
 - [ ] **T11: Public latest artifact fixture.**
   - Newer review/dry-run/candidate artifacts with unsafe text never appear on public `/overview` or public JSON.
   - Progress 2026-06-01: added dashboard tests for review/dry-run/review-needed dispatch copy stripping and `/overview` safe-canon preference. Candidate artifact and future `latest-frame` fixtures remain open.
+  - Progress 2026-06-03: added server tests for direct `storyteller:run` candidate suppression, clean review-queue fallback, and unknown-cost model output holding.
 
 - [ ] **T12: Override fixture.**
   - Suppressed/deleted dispatches never appear publicly; restore is blocked if the original no longer passes public verification.

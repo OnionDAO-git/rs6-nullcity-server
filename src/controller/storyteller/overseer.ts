@@ -16,6 +16,7 @@ export type StorytellerOverseerDecision =
     | 'held_budget'
     | 'held_duplicate'
     | 'held_no_delta'
+    | 'held_unknown_cost'
     | 'held_unresolved_refs';
 
 export interface StorytellerOverseerLedgerRow {
@@ -263,6 +264,21 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
                 } else {
                     const costUsd = asFiniteNonNegativeNumber(dispatch.estimatedCostUsd);
                     const capUsd = asFiniteNonNegativeNumber(args.dailyCostCapUsd);
+                    if (capUsd !== undefined && costUsd === undefined && !dispatchWasNooped(dispatch)) {
+                        row = makeRow({
+                            createdAt,
+                            digest,
+                            fingerprint,
+                            decision: 'held_unknown_cost',
+                            reason: 'unknown model cost under daily Storyteller cost cap; held instead of publishing',
+                            eventRefs: dispatch.eventRefsUsed.length ? [...dispatch.eventRefsUsed] : fingerprintRefs(digest),
+                            artifactDir: null,
+                            estimatedCostUsd: null,
+                        });
+                        ledger.append(row);
+                        store.writeLatestProjectorFrame(buildProjectorStoryFrame(digest, { now }));
+                        return { row, digest };
+                    }
                     if (capUsd !== undefined && costUsd !== undefined) {
                         const spentToday = dailySpentUsd(rows, now);
                         if (spentToday + costUsd > capUsd) {
@@ -282,8 +298,8 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
                         }
                     }
 
-                    frameDispatch = dispatch;
                     const shouldPublishCanon = autoPublishOnZeroWarnings && canAutoPublishDispatch(dispatch);
+                    frameDispatch = shouldPublishCanon || dispatch.needsReview ? dispatch : null;
                     const queue = shouldPublishCanon ? 'canon' : 'review';
                     const queueDir = writeDispatchQueueArtifact(args.outputDir, queue, digest, dispatch);
                     row = makeRow({
@@ -478,6 +494,10 @@ function isNarrationDecision(decision: StorytellerOverseerDecision): boolean {
 function canAutoPublishDispatch(dispatch: StorytellerDispatch): boolean {
     const warningCount = dispatch.operatorWarnings.length + (dispatch.reviewReasons?.length ?? 0);
     return !dispatch.needsReview && warningCount === 0;
+}
+
+function dispatchWasNooped(dispatch: StorytellerDispatch): boolean {
+    return (dispatch.reviewReasons ?? []).some(reason => reason.toLowerCase().includes('nooped'));
 }
 
 function writeDispatchQueueArtifact(

@@ -13,6 +13,7 @@ export interface StorytellerSchedulerArgs {
     memoryRoot: string;
     outputDir: string;
     modelProfile: string;
+    controllerConfigPath?: string;
     dailyCostCapUsd?: number;
     lockTtlMs: number;
     autoPublishOnZeroWarnings: boolean;
@@ -70,6 +71,7 @@ export function parseStorytellerSchedulerArgs(
     let memoryRoot = path.join('data', 'controller', 'memory');
     let outputDir = path.join('data', 'controller', 'storyteller');
     let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'storyteller';
+    let controllerConfigPath = readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG);
     let dailyCostCapUsd = parseOptionalNumber(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
     let autoPublishOnZeroWarnings = true;
 
@@ -107,6 +109,10 @@ export function parseStorytellerSchedulerArgs(
             if (!next) throw new StorytellerSchedulerCliError('missing_value', '--model-profile requires a value');
             modelProfile = next;
             i++;
+        } else if (flag === '--controller-config') {
+            if (!next) throw new StorytellerSchedulerCliError('missing_value', '--controller-config requires a path');
+            controllerConfigPath = next;
+            i++;
         } else if (flag === '--daily-cost-cap-usd') {
             if (!next) throw new StorytellerSchedulerCliError('missing_value', '--daily-cost-cap-usd requires a number');
             dailyCostCapUsd = parseOptionalNumber(next, '--daily-cost-cap-usd');
@@ -133,6 +139,7 @@ export function parseStorytellerSchedulerArgs(
         lockTtlMs,
         autoPublishOnZeroWarnings,
     };
+    if (controllerConfigPath !== undefined) parsed.controllerConfigPath = controllerConfigPath;
     if (dailyCostCapUsd !== undefined) parsed.dailyCostCapUsd = dailyCostCapUsd;
     return parsed;
 }
@@ -205,6 +212,7 @@ export async function runStorytellerSchedulerTick(
                 digestId: digest.digestId,
                 outputDir: args.outputDir,
                 modelProfile: args.modelProfile,
+                ...(args.controllerConfigPath !== undefined ? { controllerConfigPath: args.controllerConfigPath } : {}),
                 dailyCostCapUsd: args.dailyCostCapUsd,
             },
             { env: options.env, now: () => now },
@@ -260,7 +268,7 @@ export function usage(): string {
         'Usage:',
         '  npm run storyteller:scheduler -- --once [--interval-minutes 30] [--memory-root <path>] [--output-dir <path>]',
         '  npm run storyteller:scheduler -- --watch [--interval-minutes 30] [--memory-root <path>] [--output-dir <path>]',
-        '                                      [--model-profile <name>] [--daily-cost-cap-usd <usd>]',
+        '                                      [--model-profile <name>] [--controller-config <path>] [--daily-cost-cap-usd <usd>]',
         '',
         'Builds a live digest, skips quiet/no-delta windows, runs the Storyteller model when evidence exists,',
         'then publishes or queues the dispatch through the existing overseer. Paid model endpoints require a daily cap.',
@@ -282,6 +290,10 @@ function parseOptionalNumber(value: string | undefined, label: string): number |
         throw new StorytellerSchedulerCliError('invalid_number', `${label} must be a non-negative number`);
     }
     return parsed;
+}
+
+function readOptionalEnvPath(value: string | undefined): string | undefined {
+    return value && value.trim() ? value : undefined;
 }
 
 function digestEventCount(digest: CityEventDigest): number {

@@ -948,7 +948,7 @@ describe('residentRelevanceScore', () => {
     it('adds IMPORTANCE_WEIGHT for each window event mentioning the resident', () => {
         const r = makeResidentWithGp('res:alice');
         const events: DigestEvent[] = [
-            makeResidentEvent('res:alice', 'high'),   // weight 75
+            makeResidentEvent('res:alice', 'high'), // weight 75
             makeResidentEvent('res:alice', 'medium'), // weight 50
             makeResidentEvent('res:bob', 'critical'), // not alice — ignored
         ];
@@ -1039,15 +1039,15 @@ describe('rankResidentsByRelevance', () => {
         const carol = makeResidentWithGp('res:carol', { isFaded: true });
         const dawn = makeResidentWithGp('res:dawn', { isLowAp: true });
         const events: DigestEvent[] = [
-            makeResidentEvent('res:alice', 'high'),   // +75
-            makeResidentEvent('res:bob', 'low'),      // +25
+            makeResidentEvent('res:alice', 'high'), // +75
+            makeResidentEvent('res:bob', 'low'), // +25
         ];
         // carol: +100 (faded), dawn: +50 (lowAp), alice: +75 (event), bob: +25 (event)
         const ranked = rankResidentsByRelevance([alice, bob, carol, dawn], events);
-        expect(ranked[0].residentName).toBe('res:carol');   // 100
-        expect(ranked[1].residentName).toBe('res:alice');   // 75
-        expect(ranked[2].residentName).toBe('res:dawn');    // 50
-        expect(ranked[3].residentName).toBe('res:bob');     // 25
+        expect(ranked[0].residentName).toBe('res:carol'); // 100
+        expect(ranked[1].residentName).toBe('res:alice'); // 75
+        expect(ranked[2].residentName).toBe('res:dawn'); // 50
+        expect(ranked[3].residentName).toBe('res:bob'); // 25
     });
 });
 
@@ -1057,7 +1057,14 @@ describe('buildDigest — resident ranking (P0-S3)', () => {
         // With ranking: 'res:zed' has a critical event so it should rank first.
         const alice = makeResidentWithGp('res:alice');
         const zed = makeResidentWithGp('res:zed');
-        const criticalEvent: DigestEvent = { ref: 'zed-crit', kind: 'resident_faded', residentName: 'res:zed', ts: TS_IN, note: 'test', importance: 'critical' };
+        const criticalEvent: DigestEvent = {
+            ref: 'zed-crit',
+            kind: 'resident_faded',
+            residentName: 'res:zed',
+            ts: TS_IN,
+            note: 'test',
+            importance: 'critical',
+        };
         const digest = buildDigest({
             digestId: 'rank-test-1',
             windowStart: WIN_START,

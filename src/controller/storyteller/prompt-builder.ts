@@ -62,10 +62,7 @@ export function buildStorytellerPrompt(digest: CityEventDigest, config: Storytel
     const schema = REQUIRED_OUTPUT_SCHEMA.replace('{MAX_WORDS}', String(config.maxPublicBodyWords));
     const { totalResidents, activeResidents, fadedResidents, lowApResidents } = digest.systemHealth;
 
-    const personaBlock =
-        config.persona && config.persona.trim()
-            ? `\nPERSONA:\n${config.persona.trim()}\n`
-            : '';
+    const personaBlock = config.persona && config.persona.trim() ? `\nPERSONA:\n${config.persona.trim()}\n` : '';
 
     return `You are the Null City Storyteller. Write grounded public-facing narration for the Null City community.
 ${personaBlock}

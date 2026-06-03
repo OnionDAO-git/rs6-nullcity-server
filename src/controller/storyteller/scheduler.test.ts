@@ -57,6 +57,27 @@ describe('storyteller scheduler', () => {
         });
     });
 
+    it('parses controller config path from flag and environment', () => {
+        expect(
+            parseStorytellerSchedulerArgs(['--once', '--controller-config', '/tmp/nullcity/controller.yml'], {
+                STORYTELLER_MODEL_PROFILE: 'openrouter_storyteller',
+            }),
+        ).toMatchObject({
+            mode: 'once',
+            modelProfile: 'openrouter_storyteller',
+            controllerConfigPath: '/tmp/nullcity/controller.yml',
+        });
+
+        expect(
+            parseStorytellerSchedulerArgs(['--once'], {
+                STORYTELLER_CONTROLLER_CONFIG: '/tmp/nullcity/storyteller-controller.yml',
+            }),
+        ).toMatchObject({
+            mode: 'once',
+            controllerConfigPath: '/tmp/nullcity/storyteller-controller.yml',
+        });
+    });
+
     it('requires either --once or --watch so a daemon is deliberate', () => {
         expect(() => parseStorytellerSchedulerArgs([], {})).toThrow(StorytellerSchedulerCliError);
         expect(() => parseStorytellerSchedulerArgs(['--once', '--watch'], {})).toThrow(StorytellerSchedulerCliError);
@@ -152,6 +173,84 @@ describe('storyteller scheduler', () => {
         expect(latestFrame.digestId).toBe(result.row.digestId);
         expect(latestFrame.narration?.source).toBe('verified_dispatch');
         expect(latestFrame.narration?.title).toBe('Duke made a visible move');
+    });
+
+    it('can run a scheduled tick through a named controller-config LLM profile', async () => {
+        new EconomyEventLog(memoryRoot, () => new Date('2026-06-02T20:05:00.000Z')).append({
+            kind: 'gp_earned',
+            residentName: 'res:duke',
+            gpDelta: 25,
+            note: 'Duke earned 25 GP from real RuneScape coin item 995.',
+        });
+        const configPath = path.join(outputDir, 'controller.yml');
+        fs.writeFileSync(
+            configPath,
+            [
+                'llm:',
+                '  endpoints:',
+                '    openrouter:',
+                '      baseUrl: https://openrouter.ai/api',
+                '      apiKey: test-controller-config-key',
+                '      model: anthropic/claude-3.5-haiku',
+                '      responseFormat: text',
+                '      timeoutMs: 45000',
+                '  profiles:',
+                '    openrouter_storyteller:',
+                '      endpoint: openrouter',
+                '      model: anthropic/claude-3.5-sonnet',
+                '      responseFormat: text',
+                '      timeoutMs: 50000',
+                '',
+            ].join('\n'),
+            'utf-8',
+        );
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            message: {
+                                content: JSON.stringify({
+                                    publicTitle: 'Duke made a visible move',
+                                    publicBody: 'Duke made a visible move in Null City.',
+                                    publicBullets: ['Duke made a visible move.'],
+                                    operatorSummary: 'Scheduler controller-config dispatch.',
+                                    operatorWarnings: [],
+                                    eventRefsUsed: [],
+                                }),
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 100, completion_tokens: 60, cost: 0.01 },
+                }),
+                { status: 200 },
+            ),
+        );
+
+        const result = await runStorytellerSchedulerTick(
+            {
+                mode: 'once',
+                intervalMs: 30 * 60_000,
+                memoryRoot,
+                outputDir,
+                modelProfile: 'openrouter_storyteller',
+                controllerConfigPath: configPath,
+                dailyCostCapUsd: 1,
+                lockTtlMs: 90 * 60_000,
+                autoPublishOnZeroWarnings: true,
+            },
+            {
+                env: {},
+                now: () => new Date('2026-06-02T20:30:00.000Z'),
+            },
+        );
+
+        const requestInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+        const body = JSON.parse(String(requestInit.body)) as { model?: string };
+        expect(body.model).toBe('anthropic/claude-3.5-sonnet');
+        expect(result.modelCalled).toBe(true);
+        expect(result.row.decision).toBe('published_canon');
+        fetchSpy.mockRestore();
     });
 
     it('writes latest-frame.json with deterministic fallback when the scheduled model output needs review', async () => {

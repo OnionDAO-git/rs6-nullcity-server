@@ -484,18 +484,12 @@ describe('verifyDispatch — AP/GP conflation (P0-S5)', () => {
 
 describe('verifyDispatch — Discord handle detection (P0-S5)', () => {
     it('warns when publicBody contains a Discord-style handle', () => {
-        const result = verifyDispatch(
-            makeDispatch({ publicBody: 'Patron JamesOnion#4521 supported the city.' }),
-            makeEmptyDigest(),
-        );
+        const result = verifyDispatch(makeDispatch({ publicBody: 'Patron JamesOnion#4521 supported the city.' }), makeEmptyDigest());
         expect(result.warnings.some(w => w.includes('Discord-style handle'))).toBe(true);
     });
 
     it('warns when publicTitle contains a Discord-style handle', () => {
-        const result = verifyDispatch(
-            makeDispatch({ publicTitle: 'alice#0001 funded res:bob' }),
-            makeEmptyDigest(),
-        );
+        const result = verifyDispatch(makeDispatch({ publicTitle: 'alice#0001 funded res:bob' }), makeEmptyDigest());
         expect(result.warnings.some(w => w.includes('Discord-style handle'))).toBe(true);
     });
 
@@ -516,34 +510,22 @@ describe('verifyDispatch — Discord handle detection (P0-S5)', () => {
 
 describe('verifyDispatch — internal path exposure (P0-S5)', () => {
     it('warns when publicBody contains an internal API path', () => {
-        const result = verifyDispatch(
-            makeDispatch({ publicBody: 'See /api/nullcity/projector/overview for details.' }),
-            makeEmptyDigest(),
-        );
+        const result = verifyDispatch(makeDispatch({ publicBody: 'See /api/nullcity/projector/overview for details.' }), makeEmptyDigest());
         expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(true);
     });
 
     it('warns when publicBody contains an internal data path', () => {
-        const result = verifyDispatch(
-            makeDispatch({ publicBody: 'Data at /data/controller/logs/res:bob/actions.' }),
-            makeEmptyDigest(),
-        );
+        const result = verifyDispatch(makeDispatch({ publicBody: 'Data at /data/controller/logs/res:bob/actions.' }), makeEmptyDigest());
         expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(true);
     });
 
     it('warns when publicBody references the overseer ledger', () => {
-        const result = verifyDispatch(
-            makeDispatch({ publicBody: 'Check overseer-ledger for run details.' }),
-            makeEmptyDigest(),
-        );
+        const result = verifyDispatch(makeDispatch({ publicBody: 'Check overseer-ledger for run details.' }), makeEmptyDigest());
         expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(true);
     });
 
     it('does not warn for normal public prose', () => {
-        const result = verifyDispatch(
-            makeDispatch({ publicBody: 'res:alice completed a task near the bank.' }),
-            makeEmptyDigest(),
-        );
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:alice completed a task near the bank.' }), makeEmptyDigest());
         expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(false);
     });
 });
@@ -583,9 +565,7 @@ describe('verifyDispatch — claims', () => {
         const { digest, refs } = buildFixtureDigest();
         const result = verifyDispatch(
             makeDispatch({
-                claims: [
-                    { subject: 'res:alice', predicate: 'did something', eventRefs: ['unknown-ref'], ts: TS },
-                ],
+                claims: [{ subject: 'res:alice', predicate: 'did something', eventRefs: ['unknown-ref'], ts: TS }],
                 eventRefsUsed: [refs.apLow],
             }),
             digest,
@@ -599,9 +579,7 @@ describe('verifyDispatch — claims', () => {
         const { digest } = buildFixtureDigest();
         const result = verifyDispatch(
             makeDispatch({
-                claims: [
-                    { subject: 'city', predicate: 'had drama', eventRefs: ['bad-ref-1', 'bad-ref-2'], ts: TS },
-                ],
+                claims: [{ subject: 'city', predicate: 'had drama', eventRefs: ['bad-ref-1', 'bad-ref-2'], ts: TS }],
             }),
             digest,
         );

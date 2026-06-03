@@ -26,10 +26,11 @@
  *   --digest-id <id>           Use a specific persisted digest id from --output-dir
  *   --model-profile <name>     Endpoint/profile key (default: "default")
  *   --output-dir <path>        Where to write artifacts (default: data/controller/storyteller)
- *   --daily-cost-cap-usd <usd> Required when STORYTELLER_LLM_BASE_URL is set; overrides env cap
+ *   --controller-config <path> Load named LLM profiles from controller.yml when Storyteller env endpoint vars are unset
+ *   --daily-cost-cap-usd <usd> Required when a configured endpoint is set; overrides env cap
  */
 import path from 'path';
-import type { LlmEndpointConfig } from '../config';
+import { loadControllerConfig, type LlmEndpointConfig } from '../config';
 import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
 import { StorytellerModelClient } from './model-client';
@@ -46,6 +47,7 @@ export interface StorytellerRunArgs {
     modelProfile: string;
     outputDir: string;
     digestId?: string;
+    controllerConfigPath?: string;
     dailyCostCapUsd?: number;
 }
 
@@ -78,6 +80,7 @@ export function parseStorytellerRunArgs(
     let digestId: string | undefined;
     let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'default';
     let outputDir = path.join('data', 'controller', 'storyteller');
+    let controllerConfigPath = readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG);
     let dailyCostCapUsd = parseOptionalDailyCostCap(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
 
     const claimSource = (nextSource: StorytellerRunSource): void => {
@@ -107,6 +110,10 @@ export function parseStorytellerRunArgs(
             if (!next) throw new StorytellerRunCliError('missing_value', '--output-dir requires a path');
             outputDir = next;
             i++;
+        } else if (flag === '--controller-config') {
+            if (!next) throw new StorytellerRunCliError('missing_value', '--controller-config requires a path');
+            controllerConfigPath = next;
+            i++;
         } else if (flag === '--daily-cost-cap-usd') {
             if (!next) throw new StorytellerRunCliError('missing_value', '--daily-cost-cap-usd requires a number');
             dailyCostCapUsd = parseRequiredDailyCostCap(next, '--daily-cost-cap-usd');
@@ -120,15 +127,17 @@ export function parseStorytellerRunArgs(
 
     const parsed: StorytellerRunArgs = { source, modelProfile, outputDir };
     if (digestId !== undefined) parsed.digestId = digestId;
+    if (controllerConfigPath !== undefined) parsed.controllerConfigPath = controllerConfigPath;
     if (dailyCostCapUsd !== undefined) parsed.dailyCostCapUsd = dailyCostCapUsd;
     return parsed;
 }
 
 function buildEndpoints(
-    modelProfile: string,
+    args: StorytellerRunArgs,
     env: NodeJS.ProcessEnv | Record<string, string | undefined>,
 ): Record<string, LlmEndpointConfig> {
     const endpoint = resolveConfiguredEndpoint(env);
+    const modelProfile = args.modelProfile;
 
     const endpoints: Record<string, LlmEndpointConfig> = {};
 
@@ -150,6 +159,18 @@ function buildEndpoints(
         if (modelProfile !== 'default') {
             endpoints[modelProfile] = { timeoutMs: 60_000 };
         }
+    }
+
+    if (!endpoint && args.controllerConfigPath) {
+        const configEndpoints = loadControllerConfig(args.controllerConfigPath).llm.endpoints;
+        const configured = configEndpoints[modelProfile];
+        if (!configured?.baseUrl || !configured.model) {
+            throw new StorytellerRunCliError(
+                'model_profile_not_configured',
+                `Storyteller model profile "${modelProfile}" is not configured in ${args.controllerConfigPath}`,
+            );
+        }
+        return configEndpoints;
     }
 
     return endpoints;
@@ -210,16 +231,18 @@ export async function runStoryteller(args: StorytellerRunArgs, options: Storytel
     const env = options.env ?? process.env;
     const store = new StorytellerStore(args.outputDir);
     const digest = readDigestForRun(args, store);
-    if (hasConfiguredModelEndpoint(env)) {
+    const endpoints = buildEndpoints(args, env);
+    if (hasConfiguredModelEndpoint(endpoints, args.modelProfile)) {
         runPaidModelBudgetPreflight(args, options);
     }
-    const endpoints = buildEndpoints(args.modelProfile, env);
     const config = { ...DEFAULT_STORYTELLER_CONFIG, modelProfile: args.modelProfile };
     const client = new StorytellerModelClient(endpoints);
     const dispatch = await client.run(digest, config, { modelProfile: args.modelProfile });
     store.writeDigest(digest);
     store.writeDispatch(dispatch);
-    store.writeLatestProjectorFrame(buildProjectorStoryFrame(digest, { dispatch, now: options.now?.() }));
+    store.writeLatestProjectorFrame(
+        buildProjectorStoryFrame(digest, { dispatch: dispatch.needsReview ? dispatch : null, now: options.now?.() }),
+    );
 
     return {
         digest,
@@ -234,12 +257,16 @@ function usage(): string {
         '  npm run storyteller:run -- --fixture [--model-profile <name>] [--output-dir <path>]',
         '  npm run storyteller:run -- --latest [--model-profile <name>] [--output-dir <path>]',
         '  npm run storyteller:run -- --digest-id <id> [--model-profile <name>] [--output-dir <path>]',
-        '                                        [--daily-cost-cap-usd <usd>]',
+        '                                        [--controller-config <path>] [--daily-cost-cap-usd <usd>]',
         '',
         'Runs the Storyteller model over one digest. Without STORYTELLER_LLM_BASE_URL it writes a nooped dispatch for review.',
         'OPENROUTER_API_KEY + OPENROUTER_STORYTELLER_MODEL are also accepted as a Storyteller endpoint.',
-        'When a paid endpoint is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
+        'When a paid/configured endpoint is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
     ].join('\n');
+}
+
+function readOptionalEnvPath(value: string | undefined): string | undefined {
+    return value && value.trim() ? value : undefined;
 }
 
 function parseOptionalDailyCostCap(value: string | undefined, label: string): number | undefined {
@@ -257,8 +284,9 @@ function parseRequiredDailyCostCap(value: string, label: string): number {
     return parsed;
 }
 
-function hasConfiguredModelEndpoint(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
-    return !!resolveConfiguredEndpoint(env);
+function hasConfiguredModelEndpoint(endpoints: Record<string, LlmEndpointConfig>, modelProfile: string): boolean {
+    const endpoint = endpoints[modelProfile] ?? endpoints.default;
+    return !!endpoint?.baseUrl && !!endpoint.model;
 }
 
 function runPaidModelBudgetPreflight(args: StorytellerRunArgs, options: StorytellerRunOptions): void {
@@ -293,7 +321,7 @@ async function main(): Promise<void> {
         throw err;
     }
 
-    const hasEndpoint = hasConfiguredModelEndpoint(process.env);
+    const hasEndpoint = !!resolveConfiguredEndpoint(process.env) || !!args.controllerConfigPath;
     console.log(`[storyteller:run] Digest source: ${args.source}${args.digestId ? ` (${args.digestId})` : ''}`);
     console.log(
         `[storyteller:run] Model profile: "${args.modelProfile}"${hasEndpoint ? '' : ' (no Storyteller model endpoint set — will noop)'}`,

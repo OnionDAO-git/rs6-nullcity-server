@@ -20,6 +20,7 @@ describe('loadStorytellerLocalEnv', () => {
             [
                 'OPENROUTER_API_KEY=file-openrouter-key',
                 'OPENROUTER_STORYTELLER_MODEL=anthropic/claude-3.5-haiku',
+                'STORYTELLER_CONTROLLER_CONFIG=/tmp/nullcity/controller.yml',
                 'STORYTELLER_DAILY_COST_CAP_USD=0.75',
                 'UNRELATED_ENV=ignored',
             ].join('\n'),
@@ -31,9 +32,14 @@ describe('loadStorytellerLocalEnv', () => {
         const result = loadStorytellerLocalEnv({ cwd, env });
 
         expect(result.loaded).toBe(true);
-        expect(result.keysLoaded).toEqual(['OPENROUTER_STORYTELLER_MODEL', 'STORYTELLER_DAILY_COST_CAP_USD']);
+        expect(result.keysLoaded).toEqual([
+            'OPENROUTER_STORYTELLER_MODEL',
+            'STORYTELLER_CONTROLLER_CONFIG',
+            'STORYTELLER_DAILY_COST_CAP_USD',
+        ]);
         expect(env.OPENROUTER_API_KEY).toBe('shell-openrouter-key');
         expect(env.OPENROUTER_STORYTELLER_MODEL).toBe('anthropic/claude-3.5-haiku');
+        expect(env.STORYTELLER_CONTROLLER_CONFIG).toBe('/tmp/nullcity/controller.yml');
         expect(env.STORYTELLER_DAILY_COST_CAP_USD).toBe('0.75');
         expect(env.UNRELATED_ENV).toBeUndefined();
     });

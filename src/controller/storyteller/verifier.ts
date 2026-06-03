@@ -158,9 +158,7 @@ export function verifyDispatch(dispatch: StorytellerDispatch, digest: CityEventD
 
     // 9. (P0-S5) Title length limit
     if (dispatch.publicTitle.length > MAX_TITLE_CHARS) {
-        warnings.push(
-            `public title is ${dispatch.publicTitle.length} characters; display limit is ${MAX_TITLE_CHARS}`,
-        );
+        warnings.push(`public title is ${dispatch.publicTitle.length} characters; display limit is ${MAX_TITLE_CHARS}`);
     }
 
     // 10. (P0-S5) Body word count limit

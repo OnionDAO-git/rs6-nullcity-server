@@ -218,9 +218,10 @@ function toProjectorEvent(event: DigestEvent): ProjectorStoryFrameEvent {
 
 function toProjectorResident(resident: CityEventDigest['residents'][number]): ProjectorStoryFrameResident {
     const status: ProjectorStoryFrameResident['status'] = resident.isFaded ? 'faded' : resident.isLowAp ? 'low_attention' : 'active';
-    const speech = typeof resident.recentSpeech === 'string' && resident.recentSpeech.trim().length > 0
-        ? sanitizePublicText(resident.recentSpeech.trim())
-        : undefined;
+    const speech =
+        typeof resident.recentSpeech === 'string' && resident.recentSpeech.trim().length > 0
+            ? sanitizePublicText(resident.recentSpeech.trim())
+            : undefined;
     return {
         residentName: resident.residentName,
         displayName: displayName(resident.residentName),
