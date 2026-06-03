@@ -1853,3 +1853,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-03 23:00 UTC cron-cloud agents/wip RIQ-5-1 STARTING — plan read endpoint + Phase 4 roadmap §8 update. Files: src/controller/city-integration/service.ts http-server.ts http-server.test.ts docs/superpowers/plans/2026-06-01-resident-intelligence-roadmap.md docs/issue-register.md docs/agent-status.md collision=none
 
 2026-06-03 23:30 UTC cron-cloud agents/wip RIQ-5-1 HANDOFF — sha=e3fa945f fin=4069/4069 +2. GET /residents/:id/plan via PlanStore.load; roadmap §8 Phase 4→In Progress (4-1..4-4 done); QA-090 added. next=RIQ-4-5(hot-stack) collision=none
+2026-06-03 18:49 CDT codex branch=agents/wip repo=server lane=STORYTELLER packet=public-safety STARTING - harden projector sanitizer edge cases + useless watch-next fallback. Files: src/controller/storyteller/public-frame.{ts,test.ts}, docs/agent-status.md.
+2026-06-03 18:55 CDT codex branch=agents/wip repo=server lane=STORYTELLER packet=public-safety HANDOFF - sha=3772c67d fin=4073/4073 build=PASS live-once=published_canon browser=/overview clean; edge sanitizers hardened.
