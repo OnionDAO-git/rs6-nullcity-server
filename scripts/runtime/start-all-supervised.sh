@@ -13,6 +13,7 @@
 #   nullcity-infra        login + update servers
 #   nullcity-game         game server (SUPERVISED, 4GB heap, auto-restart)
 #   nullcity-controller   controller (SUPERVISED, auto-restart) + MCP + City API
+#   nullcity-storyteller  Storyteller scheduler (SUPERVISED, 30m by default)
 #   nullcity-dashboard-server / -web   the dashboard BFF + SPA
 #
 # Idempotent: quits any existing same-named screens first.
@@ -25,7 +26,7 @@ quit() { screen -X -S "$1" quit >/dev/null 2>&1 || true; }
 up() { lsof -tiTCP:"$1" -sTCP:LISTEN -nP >/dev/null 2>&1; }
 
 echo "[bring-up] stopping any existing Null City screens…"
-for s in nullcity-infra nullcity-game nullcity-controller nullcity-dashboard-server nullcity-dashboard-web; do quit "$s"; done
+for s in nullcity-infra nullcity-game nullcity-controller nullcity-storyteller nullcity-dashboard-server nullcity-dashboard-web; do quit "$s"; done
 sleep 3
 # clear a stale controller lock if no process holds the port
 if [ -f "$SERVER_DIR/data/controller/memory/nullcity-controller.lock" ] && ! up 43596; then
@@ -47,7 +48,15 @@ echo "[bring-up]   waiting for controller :43596…"
 for _ in $(seq 1 40); do up 43596 && break; sleep 2; done
 up 43596 && echo "[bring-up]   controller up ✓" || echo "[bring-up]   WARN controller not up yet (check $LOG/controller-supervised.log)"
 
-echo "[bring-up] 4/4 dashboard (BFF + web)…"
+if [ "${NULLCITY_ENABLE_STORYTELLER_SCHEDULER:-1}" != "0" ]; then
+  echo "[bring-up] 4/5 Storyteller scheduler (supervised, ${STORYTELLER_INTERVAL_MINUTES:-30}m cadence)…"
+  screen -dmS nullcity-storyteller bash -lc "cd '$SERVER_DIR' && bash scripts/runtime/start-storyteller-scheduler-supervised.sh >> '$LOG/storyteller-scheduler.log' 2>&1"
+  echo "[bring-up]   storyteller scheduler started (model config comes from env/.env.local/controller config)"
+else
+  echo "[bring-up] 4/5 Storyteller scheduler disabled by NULLCITY_ENABLE_STORYTELLER_SCHEDULER=0"
+fi
+
+echo "[bring-up] 5/5 dashboard (BFF + web)…"
 if [ -d "$DASH_DIR" ]; then
   screen -dmS nullcity-dashboard-server bash -lc "cd '$DASH_DIR/packages/server' && DASHBOARD_WEB_DEV_ORIGIN=http://127.0.0.1:5174 bun --watch src/index.ts >> '$LOG/dashboard-server.log' 2>&1"
   screen -dmS nullcity-dashboard-web bash -lc "cd '$DASH_DIR' && bun run dev:web >> '$LOG/dashboard-web.log' 2>&1"

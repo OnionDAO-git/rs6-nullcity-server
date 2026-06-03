@@ -34,7 +34,7 @@ async function main(): Promise<void> {
     const result = await runStorytellerSchedulerTick(args);
     console.log(`[storyteller:scheduler] Window: ${result.windowStart} -> ${result.windowEnd}`);
     console.log(`[storyteller:scheduler] Digest: ${result.digestId}`);
-    console.log(`[storyteller:scheduler] Model: ${result.modelCalled ? 'called' : 'skipped'}`);
+    console.log(`[storyteller:scheduler] Model: ${result.modelStatus}`);
     console.log(`[storyteller:scheduler] Decision: ${result.row.decision}`);
     console.log(`[storyteller:scheduler] Reason: ${result.row.reason}`);
     if (result.row.artifactDir) {

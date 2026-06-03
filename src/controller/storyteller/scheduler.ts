@@ -3,9 +3,10 @@ import path from 'path';
 import { runStorytellerDryRun } from './cli';
 import { type StorytellerOverseerLedgerRow, runStorytellerOverseerTick } from './overseer';
 import { runStoryteller } from './run-cli';
-import type { CityEventDigest } from './types';
+import type { CityEventDigest, StorytellerDispatch } from './types';
 
 export type StorytellerSchedulerMode = 'once' | 'watch';
+export type StorytellerSchedulerModelStatus = 'skipped' | 'called' | 'nooped';
 
 export interface StorytellerSchedulerArgs {
     mode: StorytellerSchedulerMode;
@@ -33,6 +34,7 @@ export interface StorytellerSchedulerTickResult {
     windowEnd: string;
     digestId: string;
     modelCalled: boolean;
+    modelStatus: StorytellerSchedulerModelStatus;
     row: StorytellerOverseerLedgerRow | StorytellerSchedulerSkippedLockedRow;
 }
 
@@ -160,6 +162,7 @@ export async function runStorytellerSchedulerTick(
             windowEnd,
             digestId: 'locked',
             modelCalled: false,
+            modelStatus: 'skipped',
             row: {
                 schemaVersion: 1,
                 rowId: `scheduler-skip-${now.getTime()}`,
@@ -202,11 +205,12 @@ export async function runStorytellerSchedulerTick(
                 windowEnd,
                 digestId: digest.digestId,
                 modelCalled: false,
+                modelStatus: 'skipped',
                 row: held.row,
             };
         }
 
-        await runStoryteller(
+        const run = await runStoryteller(
             {
                 source: 'digest-id',
                 digestId: digest.digestId,
@@ -217,6 +221,7 @@ export async function runStorytellerSchedulerTick(
             },
             { env: options.env, now: () => now },
         );
+        const modelStatus: StorytellerSchedulerModelStatus = dispatchWasNooped(run.dispatch) ? 'nooped' : 'called';
         const published = runStorytellerOverseerTick({
             source: 'digest-id',
             digestId: digest.digestId,
@@ -232,6 +237,7 @@ export async function runStorytellerSchedulerTick(
             windowEnd,
             digestId: digest.digestId,
             modelCalled: true,
+            modelStatus,
             row: published.row,
         };
     } finally {
@@ -249,7 +255,7 @@ export async function runStorytellerSchedulerWatch(
     while (true) {
         const result = await runStorytellerSchedulerTick(args, options);
         logger.log(
-            `[storyteller:scheduler] ${result.row.decision} digest=${result.digestId} model=${result.modelCalled ? 'called' : 'skipped'} reason="${result.row.reason}"`,
+            `[storyteller:scheduler] ${result.row.decision} digest=${result.digestId} model=${result.modelStatus} reason="${result.row.reason}"`,
         );
         iteration++;
         if (options.shouldContinue && !options.shouldContinue(iteration, result)) {
@@ -306,6 +312,10 @@ function digestEventCount(digest: CityEventDigest): number {
         digest.stuckEvents,
         digest.miscEvents,
     ].reduce((sum, events) => sum + events.length, 0);
+}
+
+function dispatchWasNooped(dispatch: StorytellerDispatch): boolean {
+    return (dispatch.reviewReasons ?? []).some(reason => reason.toLowerCase().includes('nooped'));
 }
 
 function acquireSchedulerLock(

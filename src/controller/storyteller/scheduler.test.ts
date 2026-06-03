@@ -107,6 +107,7 @@ describe('storyteller scheduler', () => {
         );
 
         expect(result.modelCalled).toBe(false);
+        expect(result.modelStatus).toBe('skipped');
         expect(result.row.decision).toBe('held_no_delta');
         expect(fetchSpy).not.toHaveBeenCalled();
         expect(new OverseerLedger(outputDir).readAll().map(row => row.decision)).toEqual(['held_no_delta']);
@@ -163,6 +164,7 @@ describe('storyteller scheduler', () => {
         );
 
         expect(result.modelCalled).toBe(true);
+        expect(result.modelStatus).toBe('called');
         expect(result.row.decision).toBe('published_canon');
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         expect(fs.existsSync(path.join(outputDir, 'canon', result.row.digestId, 'dispatch.json'))).toBe(true);
@@ -249,6 +251,7 @@ describe('storyteller scheduler', () => {
         const body = JSON.parse(String(requestInit.body)) as { model?: string };
         expect(body.model).toBe('anthropic/claude-3.5-sonnet');
         expect(result.modelCalled).toBe(true);
+        expect(result.modelStatus).toBe('called');
         expect(result.row.decision).toBe('published_canon');
         fetchSpy.mockRestore();
     });
@@ -280,6 +283,7 @@ describe('storyteller scheduler', () => {
         );
 
         expect(result.modelCalled).toBe(true);
+        expect(result.modelStatus).toBe('nooped');
         expect(result.row.decision).toBe('queued_review');
         expect(fetchSpy).not.toHaveBeenCalled();
         const latestFrame = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8')) as {
@@ -311,6 +315,7 @@ describe('storyteller scheduler', () => {
         );
 
         expect(result.modelCalled).toBe(false);
+        expect(result.modelStatus).toBe('skipped');
         expect(result.row.decision).toBe('skipped_locked');
         expect(new OverseerLedger(outputDir).readAll()).toHaveLength(0);
     });
