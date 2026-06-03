@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { CityEventDigest, StorytellerDispatch } from './types';
+import { projectorStoryFrameSchema, type CityEventDigest, type ProjectorStoryFrame, type StorytellerDispatch } from './types';
 
 // ---------------------------------------------------------------------------
 // StorytellerStore — file-backed persistence for digest + dispatch artifacts.
@@ -35,6 +35,11 @@ export class StorytellerStore {
         fs.writeFileSync(path.join(dir, 'dispatch.json'), JSON.stringify(dispatch, null, 2), 'utf-8');
     }
 
+    writeLatestProjectorFrame(frame: ProjectorStoryFrame): void {
+        fs.mkdirSync(this.rootDir, { recursive: true });
+        fs.writeFileSync(path.join(this.rootDir, 'latest-frame.json'), JSON.stringify(frame, null, 2), 'utf-8');
+    }
+
     readDigest(runId: string): CityEventDigest | null {
         const filePath = path.join(this.runDir(runId), 'digest.json');
         if (!fs.existsSync(filePath)) return null;
@@ -51,6 +56,13 @@ export class StorytellerStore {
         const filePath = path.join(this.runDir(runId), 'dispatch.json');
         if (!fs.existsSync(filePath)) return null;
         return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as StorytellerDispatch;
+    }
+
+    readLatestProjectorFrame(): ProjectorStoryFrame | null {
+        const filePath = path.join(this.rootDir, 'latest-frame.json');
+        if (!fs.existsSync(filePath)) return null;
+        const parsed = projectorStoryFrameSchema.safeParse(JSON.parse(fs.readFileSync(filePath, 'utf-8')));
+        return parsed.success ? (parsed.data as ProjectorStoryFrame) : null;
     }
 
     /** List all run-ids for which a digest.json exists. */

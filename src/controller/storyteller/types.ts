@@ -263,6 +263,142 @@ export const storytellerDispatchSchema = z.object({
     reviewReasons: z.array(z.string()).optional(),
 });
 
+export type ProjectorNarrationSource = 'verified_dispatch' | 'deterministic_fallback';
+
+export type ProjectorFreshnessStatus = 'fresh' | 'stale' | 'unknown';
+
+export type ProjectorHealthStatus = 'ok' | 'degraded' | 'stale';
+
+export interface ProjectorStoryFrameEvent {
+    ref: string;
+    label: string;
+    residentName: string;
+    happenedAt: string;
+    importance: ImportanceTier;
+    note: string;
+    whyItMatters: string;
+}
+
+export interface ProjectorStoryFrameResident {
+    residentName: string;
+    displayName: string;
+    attention: number;
+    status: 'active' | 'low_attention' | 'faded';
+    gpObserved: number | null;
+    goal?: string;
+}
+
+export interface ProjectorStoryFrameAction {
+    kind: 'grant_attention' | 'watch_resident' | 'operator_check' | 'witness';
+    label: string;
+    detail: string;
+    residentName?: string;
+}
+
+export interface ProjectorStoryFrame {
+    ok: true;
+    schemaVersion: 1;
+    frameId: string;
+    digestId: string;
+    generatedAt: string;
+    source: {
+        digestId: string;
+        digestBuiltAt?: string;
+        windowStart?: string;
+        windowEnd?: string;
+        freshnessMs: number | null;
+        freshnessStatus: ProjectorFreshnessStatus;
+        dispatchId?: string;
+        dispatchGeneratedAt?: string;
+        modelProfile?: string;
+        excludedDispatchId?: string;
+        excludedDispatchReason?: string;
+    };
+    narration: {
+        source: ProjectorNarrationSource;
+        title: string;
+        body: string;
+        bullets: string[];
+    };
+    leadEvent: ProjectorStoryFrameEvent | null;
+    events: ProjectorStoryFrameEvent[];
+    residents: ProjectorStoryFrameResident[];
+    actions: ProjectorStoryFrameAction[];
+    watchNext: string[];
+    omitted: {
+        events: number;
+        residents: number;
+    };
+    publicHealth: {
+        status: ProjectorHealthStatus;
+        totalResidents: number;
+        activeResidents: number;
+        fadedResidents: number;
+        lowApResidents: number;
+        warnings: string[];
+    };
+}
+
+export const projectorStoryFrameSchema = z
+    .object({
+        ok: z.literal(true),
+        schemaVersion: z.literal(1),
+        frameId: z.string().min(1),
+        digestId: z.string().min(1),
+        generatedAt: z.string().datetime(),
+        source: z
+            .object({
+                digestId: z.string().min(1),
+                digestBuiltAt: z.string().optional(),
+                windowStart: z.string().optional(),
+                windowEnd: z.string().optional(),
+                freshnessMs: z.number().nullable(),
+                freshnessStatus: z.enum(['fresh', 'stale', 'unknown']),
+                dispatchId: z.string().optional(),
+                dispatchGeneratedAt: z.string().optional(),
+                modelProfile: z.string().optional(),
+                excludedDispatchId: z.string().optional(),
+                excludedDispatchReason: z.string().optional(),
+            })
+            .strict(),
+        narration: z
+            .object({
+                source: z.enum(['verified_dispatch', 'deterministic_fallback']),
+                title: z.string().min(1),
+                body: z.string().min(1),
+                bullets: z.array(z.string()),
+            })
+            .strict(),
+        leadEvent: z
+            .object({
+                ref: z.string(),
+                label: z.string(),
+                residentName: z.string(),
+                happenedAt: z.string(),
+                importance: z.string(),
+                note: z.string(),
+                whyItMatters: z.string(),
+            })
+            .passthrough()
+            .nullable(),
+        events: z.array(z.unknown()),
+        residents: z.array(z.unknown()),
+        actions: z.array(z.unknown()),
+        watchNext: z.array(z.string()),
+        omitted: z.object({ events: z.number().int().nonnegative(), residents: z.number().int().nonnegative() }).strict(),
+        publicHealth: z
+            .object({
+                status: z.enum(['ok', 'degraded', 'stale']),
+                totalResidents: z.number().int().nonnegative(),
+                activeResidents: z.number().int().nonnegative(),
+                fadedResidents: z.number().int().nonnegative(),
+                lowApResidents: z.number().int().nonnegative(),
+                warnings: z.array(z.string()),
+            })
+            .strict(),
+    })
+    .passthrough();
+
 /** Configuration for the Storyteller subsystem. */
 export interface StorytellerConfig {
     /** Master switch — false by default until cost caps exist. */

@@ -3,6 +3,19 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { z } from 'zod';
 import { type RuntimeState, residentSlug } from '../memory/runtime-state';
+import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
+import { NcriPricingStore, setPricingSchema, type NcriPricing } from '../ncri/ncri-pricing-store';
+import { LibraryUpdater } from '../evidence';
+import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
+import { buildProjectorStoryFrame } from '../storyteller/public-frame';
+import { StorytellerStore } from '../storyteller/store';
+import {
+    cityEventDigestSchema,
+    type CityEventDigest as StorytellerCityEventDigest,
+    type ProjectorStoryFrame,
+    type StorytellerDispatch,
+    storytellerDispatchSchema,
+} from '../storyteller/types';
 import { validateSoulFrontmatter } from '../soul/soul-schema';
 import type { InitialContainerItem, PerceptionEvent } from '../transport/message-codecs';
 import { CityIntegrationStore } from './store';
@@ -17,8 +30,6 @@ import { buildCityEventDigest, type CityEventDigest } from './city-event-digest'
 import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
-import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
-import { NcriPricingStore, setPricingSchema, type NcriPricing } from '../ncri/ncri-pricing-store';
 import {
     buildLiveEconomySnapshot,
     type LiveEconomyHeartbeat,
@@ -26,8 +37,6 @@ import {
     type LiveEconomyQuery,
     type LiveEconomySnapshot,
 } from './live-economy';
-import { LibraryUpdater } from '../evidence';
-import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
 export const STORYTELLER_QUEUE_DEFAULT_LIMIT = 20;
@@ -1460,6 +1469,23 @@ export class CityIntegrationService {
         return this.storytellerQueue('review', limit);
     }
 
+    storytellerProjectorLatest(): ProjectorStoryFrame {
+        const storytellerRoot = path.join(path.dirname(this.options.memoryRoot), 'storyteller');
+        if (!fs.existsSync(storytellerRoot)) {
+            throw new CityIntegrationError(404, 'storyteller_not_found');
+        }
+
+        const store = new StorytellerStore(storytellerRoot);
+        const latestFrame = store.readLatestProjectorFrame();
+        if (latestFrame) return latestFrame;
+
+        const source = this.readLatestStorytellerSource(storytellerRoot);
+        if (!source) {
+            throw new CityIntegrationError(404, 'storyteller_not_found');
+        }
+        return buildProjectorStoryFrame(source.digest, { dispatch: source.dispatch, now: this.now() });
+    }
+
     private storytellerQueue(queue: 'canon' | 'review', limit: number): CityStorytellerQueueSummary {
         const boundedLimit = clampStorytellerQueueLimit(limit);
         const storytellerRoot = path.join(path.dirname(this.options.memoryRoot), 'storyteller', queue);
@@ -1479,6 +1505,29 @@ export class CityIntegrationService {
             queue,
             count: runs.length,
             entries: runs.slice(0, boundedLimit),
+        };
+    }
+
+    private readLatestStorytellerSource(
+        storytellerRoot: string,
+    ): { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch } | undefined {
+        const runs = fs
+            .readdirSync(storytellerRoot, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .map(entry => this.readStorytellerSource(path.join(storytellerRoot, entry.name)))
+            .filter((run): run is { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch } => Boolean(run));
+
+        runs.sort((left, right) => storytellerSourceStampMs(right) - storytellerSourceStampMs(left));
+        return runs[0];
+    }
+
+    private readStorytellerSource(runRoot: string): { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch } | undefined {
+        const digest = cityEventDigestSchema.safeParse(readJson(path.join(runRoot, 'digest.json')));
+        if (!digest.success) return undefined;
+        const dispatch = storytellerDispatchSchema.safeParse(readJson(path.join(runRoot, 'dispatch.json')));
+        return {
+            digest: digest.data as StorytellerCityEventDigest,
+            ...(dispatch.success ? { dispatch: dispatch.data as StorytellerDispatch } : {}),
         };
     }
 
@@ -1815,6 +1864,16 @@ function storytellerDispatchSummary(digest: Record<string, unknown>, runId: stri
 
 function storytellerLatestStampMs(run: Pick<CityStorytellerLatestSummary, 'dispatch' | 'builtAt' | 'windowEnd' | 'windowStart'>): number {
     const candidates = [run.dispatch?.generatedAt, run.builtAt, run.windowEnd, run.windowStart];
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        const parsed = Date.parse(candidate);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return Number.NEGATIVE_INFINITY;
+}
+
+function storytellerSourceStampMs(run: { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch }): number {
+    const candidates = [run.dispatch?.generatedAt, run.digest.builtAt, run.digest.windowEnd, run.digest.windowStart];
     for (const candidate of candidates) {
         if (!candidate) continue;
         const parsed = Date.parse(candidate);

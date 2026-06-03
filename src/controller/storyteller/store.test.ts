@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { buildProjectorStoryFrame } from './public-frame';
 import { StorytellerStore, buildOperatorSummary } from './store';
 import { buildFixtureDigest } from './digest-builder';
 import type { CityEventDigest } from './types';
@@ -131,6 +132,23 @@ describe('StorytellerStore', () => {
 
     it('readDispatch returns null for missing run-id', () => {
         expect(store.readDispatch('does-not-exist')).toBeNull();
+    });
+
+    it('writes and reads the public latest projector frame separately from run artifacts', () => {
+        const { digest } = buildFixtureDigest();
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        store.writeLatestProjectorFrame(frame);
+
+        expect(fs.existsSync(path.join(tmpDir, 'latest-frame.json'))).toBe(true);
+        const loaded = store.readLatestProjectorFrame();
+        expect(loaded).not.toBeNull();
+        expect(loaded!.frameId).toBe(frame.frameId);
+        expect(loaded!.digestId).toBe(digest.digestId);
+    });
+
+    it('readLatestProjectorFrame returns null when the latest-frame artifact is absent', () => {
+        expect(store.readLatestProjectorFrame()).toBeNull();
     });
 
     it('overwrites an existing digest on re-write', () => {
