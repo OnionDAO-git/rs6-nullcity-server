@@ -3,6 +3,8 @@
 **Date:** 2026-06-02 · **Author:** Claude (with subagent attention-surface audit) · **For:** OnionDAO launch readiness
 **Method:** live data — game player saves (`data/residents/*.json`), trajectory logs, inference + normal-life audits (90-min window), and a code audit of every human-facing attention surface. Every number below is measured, not estimated.
 
+> **⚠️ FRESHNESS — see the [2026-06-03 UPDATE](#update--2026-06-03-freshness-pass) at the bottom.** Two workstreams landed after this report (Storyteller public-frame pipeline; conversational-reply). The P0/P1 statuses below are partly superseded. The single most important fact: **nothing has been deployed/live-verified since 2026-06-02** — all new work is gated on a Codex/maintainer game-server restart.
+
 > **TL;DR for the crowd pitch:** The residents are **genuinely competent autonomous players** (one hit Woodcutting 66 / Firemaking 55 on its own) but they are **boring to watch** — their live, crowd-visible output is robotic coordinate spam, and the genuinely compelling surfaces (letters, standing) are private and unrendered. They play the game well; they do not yet *perform* it. **Dimension 3 (attracting humans) is the launch blocker, not the brains.**
 
 ---
@@ -108,3 +110,54 @@ Ordered by severity. P0 = a crowd would notice this is broken/boring; P1 = neede
 - ✅ "Their brains are healthy: **97.6%** of decisions are usable, **97.3%** of actions serve their goal, zero errors."
 - ⚠️ "**About half** are actively progressing right now; the rest are blocked on tools — a fix is built and lands this week."
 - ❌ Don't claim they're *characters* yet — live speech is robotic, quests are zero, and resident-to-resident drama is invisible to viewers. That's the P0/P1 work above.
+
+---
+
+## UPDATE — 2026-06-03 freshness pass
+
+**Author:** Claude (release-readiness owner) · **Method:** 3 expert subagents re-verified every P0/P1 item above against `origin/agents/wip` tip (`c2714fcf`, claimed tests=3984), plus a separate roadmap/blocker audit. Distinguishes *code-in-repo* from *deployed-and-live-verified*.
+
+### The one fact that frames everything
+**Nothing in this report has been deployed or live-verified since 2026-06-02.** Every recent HANDOFF carries `fin=SANDBOX-BLOCKED`; live verification is pending a **game-server restart owned by Codex/maintainer**. So the game a crowd would see *today* is still the 2026-06-02 baseline measured above — **until a restart lands the merged work**. Getting that restart is the #1 critical-path item and it is not in Claude's lane.
+
+### Re-graded P0/P1 status (what actually changed)
+
+| Item | 06-02 | Now (06-03) | Evidence / what remains |
+|---|---|---|---|
+| **P0-1** beacon spam → voiced speech | OPEN | **PARTIAL** | Coordinates removed + frequency cut ~5× (`e1925516`, `DEFAULT_GOAL_SHARE_EVERY_TICKS 120→600`). Conv-reply adds **LLM-voiced *reactive* speech** when a human says a resident's display name. **Still open:** ambient/idle speech (what the crowd mostly sees) is still templated phase-rotation beacons, not personality-voiced. |
+| **P0-2 / P1-4** deploy tool-acquisition | OPEN | **MERGED, NOT DEPLOYED** | `acquireWoodcuttingAxeAction` merged (`1c882058`) + root-cause fix (QA-20260602-081). Flips flat level-1 residents to progressing — **but unverified live; needs the restart.** Most deploy-ready item we have. |
+| **P0-3** crowd-facing live view | OPEN | **PARTIAL (server frame done)** | Storyteller writes a deterministic, fail-closed public projector frame (`latest-frame.json`, `01467312`) with narration/events/residents/watchNext, verifier-hardened. **Two gaps:** (1) it runs **CLI/cron-only — the overseer is NOT invoked by the live controller** (`index.ts`/`controller-host.ts` have zero storyteller imports); (2) the screen that renders it lives in the **separate dashboard repo**, unverified here. |
+| **P0-4** skill/goal readout | OPEN | **PARTIAL** | `controller:status` surfaces per-resident goal + activity + state. **Still missing the specific ask:** per-resident **skill levels** are not in the status path. |
+| **P1-1** lore/whispers visible | OPEN | **PARTIAL (thin)** | Storyteller digest now reads `say` + stuck-recovery + economy events. **Still invisible:** deaths (`legacy_event`), revivals, `goal_achieved`, fires lit, whispers — `readLibraryDigestEvents` drops them. The core "resident-to-resident drama is visible" goal is **not met.** |
+| **P1-2** goal completion/graduation | OPEN | **STILL OPEN** | No goal-graduation mechanism. Plan-*stage* completion landed (RIQ-3-x, `stageReachedLevelTarget`) but that advances stages within a goal, not goal→next-goal escalation. |
+| **P1-3** land a quest | OPEN | **STILL OPEN** | Cook's Assistant attempt-code exists (since `cadde200`, 05-29) but **no resident has completed a quest**; city-wide `quests=0`. Live probe (E13) open. |
+
+### New since this report (not in the original task list)
+- **Storyteller public-frame pipeline** — the dominant new workstream (P0-S2…S6 + persona landed; **S7 cadence partial, S8 event-triggers and S9 admin-escape-hatch OPEN**). A fail-closed, player-facing narration layer. Materially improves the *potential* of Dimension 3 — once wired into the controller and rendered.
+- **Conversational-reply feature** (9/9 slices, in-tree): residents reply in-character when a human player says their display name; detached non-freezing inference, content-screened, rate-limited, combat-cancels, player-only (no A↔B loops), speech-only (autonomy-preserving). **Live-verify pending the restart.** Known low-impact edge case in the defer gate (conversational small-talk containing a command keyword can route to the command path) — fix staged, not blocking.
+- **Dashboard-repo** redaction/fail-closed/print-queue work (separate repo, also pending a BFF restart).
+
+### Re-graded scorecard
+| Dimension | 06-02 | 06-03 | Why |
+|---|---|---|---|
+| 1. Playing the game | B− | **B−** (unchanged live) | Tool-acquisition fix would lift it, but it's not deployed. |
+| 2. Progress toward goals | B | **B** (unchanged) | Goal-graduation still absent; no completion metric. |
+| 3. Attracting humans | D | **C− *potential*, still D *live*** | Beacon de-spam + Storyteller frame + conv-reply are real and raise the ceiling — but none are live-rendered to a crowd yet. Live grade only moves on a restart + dashboard render + Storyteller wiring. |
+| Brain / inference | A | **A** | Unchanged; not the problem. |
+
+### Today's plan (2026-06-03) — owners
+**Claude (in-repo, my lane):**
+1. ✅ This freshness update.
+2. Push the staged conv-reply defer-gate fix (low-risk cleanup).
+3. **Propose (not unilaterally edit — active Storyteller workstream):** extend `readLibraryDigestEvents` to surface deaths/revivals/goal-achieved/fires into the public frame (P1-1, the highest-leverage Dimension-3 content fix), and a decision on wiring the overseer into the live controller. Coordinate with the Storyteller owner first.
+
+**Codex / maintainer (critical path — gates the launch):**
+- **Clean game-server restart** to deploy merged work (tool-acquisition, de-spammed beacons, conv-reply). #1 item.
+- Decide: wire Storyteller overseer into the live controller vs. run as cron.
+
+**James (decisions):**
+- **HD-052:** flip heroes to paid Haiku, or accept reflex-only hero speech.
+- Confirm the launch timeline: planning docs target the Chicago event **2026-06-01** (now 2 days past); reconcile whether this is post-event hardening or a slipped/second launch.
+
+### Bottom line
+The substrate is strong and *more* crowd-facing machinery now exists than this report originally credited — but it is **all behind a deploy gate plus a Storyteller-not-wired integration gap**, so **live readiness has not actually moved since 2026-06-02.** Dimension 3 remains the launch risk. The fastest path to a real readiness jump is a coordinated restart + Storyteller wiring + dashboard render — none of which are blocked on more controller code from Claude.
