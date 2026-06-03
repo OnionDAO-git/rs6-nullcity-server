@@ -6,8 +6,10 @@ import {
     runStorytellerSchedulerWatch,
     usage,
 } from './scheduler';
+import { loadStorytellerLocalEnv } from './local-env';
 
 async function main(): Promise<void> {
+    loadStorytellerLocalEnv();
     let args;
     try {
         args = parseStorytellerSchedulerArgs(process.argv.slice(2));

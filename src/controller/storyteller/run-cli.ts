@@ -36,6 +36,7 @@ import { StorytellerModelClient } from './model-client';
 import { preflightStorytellerPaidModelBudget, StorytellerOverseerCliError } from './overseer';
 import type { CityEventDigest, StorytellerDispatch } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
+import { loadStorytellerLocalEnv } from './local-env';
 
 export type StorytellerRunSource = 'none' | 'fixture' | 'latest' | 'digest-id';
 
@@ -274,6 +275,7 @@ function runPaidModelBudgetPreflight(args: StorytellerRunArgs, options: Storytel
 }
 
 async function main(): Promise<void> {
+    loadStorytellerLocalEnv();
     let args: StorytellerRunArgs;
     try {
         args = parseStorytellerRunArgs(process.argv.slice(2));
