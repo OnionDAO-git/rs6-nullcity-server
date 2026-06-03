@@ -153,11 +153,22 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             const combat = combatReaction(this, perception as HybridPerception);
             if (combat) {
+                // Combat supersedes a pending/in-flight social reply — never compose a line while attacked.
+                this.socialReplyCoordinator.abort(this.options.soul.frontmatter.name);
+                const combatCognition = this.cognition();
+                combatCognition.socialReplyInFlight = undefined;
+                combatCognition.pendingSocialReply = undefined;
                 return this.result(combat.actions, combat.cause, 0, false);
             }
 
-            // Conversational reply (social-reply): a human player named us — fire a detached,
-            // off-loop inference and yield this tick (no freeze). Runs AFTER combat so danger wins.
+            // Conversational reply (social-reply): emit a finished reply (if the asker is still present
+            // and it isn't stale) before starting a new one; both run AFTER combat so danger wins.
+            const socialEmit = this.maybeEmitSocialReply(perception as HybridPerception);
+            if (socialEmit) {
+                return socialEmit;
+            }
+
+            // A human player named us — fire a detached, off-loop inference and yield this tick (no freeze).
             const socialReply = this.maybeStartSocialReply(perception as HybridPerception);
             if (socialReply) {
                 return socialReply;
@@ -352,6 +363,29 @@ export class HybridAgentThinkingModule implements ThinkingModule {
      * DETACHED Body-profile inference (never awaited on the decision loop) and yield this tick.
      * The reply lands a few ticks later via commitSocialReply; the resident keeps acting.
      */
+    /**
+     * Conversational reply — emission step. Speaks a resolved pending reply, but only while it is
+     * fresh AND the addressing player is still in perception (no answering empty air after the
+     * 3-7-tick inference gap). Otherwise the pending reply is dropped. Records lastSocialReply for
+     * the 1-turn follow-up.
+     */
+    private maybeEmitSocialReply(perception: HybridPerception): ThoughtResult | undefined {
+        const cognition = this.cognition();
+        const pending = cognition.pendingSocialReply;
+        if (!pending) {
+            return undefined;
+        }
+        const tick = this.options.state.tick;
+        const askerPresent = (perception.nearby?.players || []).some(player => player.id === pending.speakerId);
+        if (tick > pending.expiresAtTick || !askerPresent) {
+            cognition.pendingSocialReply = undefined;
+            return undefined;
+        }
+        cognition.pendingSocialReply = undefined;
+        cognition.lastSocialReply = { text: pending.text, tick, speaker: pending.speakerId };
+        return this.result([{ kind: 'say', text: pending.text, voiceSource: 'inference' }], 'social_reply_emit', 0, false);
+    }
+
     private maybeStartSocialReply(perception: HybridPerception): ThoughtResult | undefined {
         const cognition = this.cognition();
         if (cognition.socialReplyInFlight) {

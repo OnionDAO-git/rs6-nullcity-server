@@ -10957,6 +10957,68 @@ describe('social-reply detection wiring (slice 7)', () => {
         expect(state.cognition?.socialReplyInFlight).toBeUndefined();
         expect(state.cognition?.pendingSocialReply).toBeUndefined();
     });
+
+    it('emits a fresh pending reply when the asker is still present', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Aye, friend.', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 20, players: [player('codex', 3201, 3200)] }) as never);
+
+        expect(result.cause).toBe('social_reply_emit');
+        expect((result.actions[0] as { text?: string }).text).toBe('Aye, friend.');
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+        expect(state.cognition?.lastSocialReply?.text).toBe('Aye, friend.');
+    });
+
+    it('drops a stale pending reply (past expiry) without speaking', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Too late.', expiresAtTick: 10, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 50, players: [player('codex', 3201, 3200)] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_emit');
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+
+    it('drops a pending reply when the asker has left perception (no empty-air reply)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Anyone?', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 20, players: [] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_emit');
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+
+    it('combat cancels an in-flight + pending social reply', async () => {
+        const chicken = npc('Chicken', 3219, 3201);
+        chicken.combatLevel = 1;
+        chicken.hpFraction = 1.0;
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.socialReplyInFlight = { key: 'k1', startedAtTick: 1 };
+        state.cognition!.pendingSocialReply = { text: 'Mid-sentence.', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                resident: { ...residentAt(3218, 3201), hp: { current: 95, max: 100 }, combatLevel: 10 },
+                npcs: [chicken],
+                events: [{ kind: 'hit_taken', from: chicken }],
+            }) as never,
+        );
+
+        expect(result.cause).not.toBe('social_reply_emit');
+        expect(state.cognition?.socialReplyInFlight).toBeUndefined();
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
 });
 
 function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), memoryStore = memory()): HybridAgentThinkingModule {
