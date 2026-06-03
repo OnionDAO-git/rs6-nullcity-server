@@ -19,7 +19,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
-import type { Stage } from '../intelligence/planner-pass';
+import type { Stage, PrimitiveAction } from '../intelligence/planner-pass';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
@@ -222,6 +222,8 @@ export type PlanBodySignal = 'stage_done' | 'stage_blocked' | undefined;
 export interface PlanBodyResult {
     action?: AgentAction;
     planSignal?: PlanBodySignal;
+    /** Phase 4 (RIQ-4-2): updated step index after processing an open-goal stage step. */
+    nextStepIdx?: number;
 }
 
 /** Ticks before an exploration target is considered eligible again after a recent visit or blocked approach. */
@@ -879,12 +881,100 @@ export function stageReachedLevelTarget(stage: Stage, perception: BodyHybridPerc
     });
 }
 
+// ---------------------------------------------------------------------------
+// Phase 4 (RIQ-4-2): open-goal stage execution
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a planner-authored PrimitiveAction into a typed AgentAction.
+ * Supports the game-action vocab referenced in the Phase 4 spec.
+ * Returns undefined for unknown or malformed actions (caller signals stage_blocked).
+ */
+function primitiveActionToAgentAction(pa: PrimitiveAction): AgentAction | undefined {
+    if (!pa || typeof pa.kind !== 'string') return undefined;
+    switch (pa.kind) {
+        case 'say':
+            if (typeof pa.text !== 'string' || !pa.text) return undefined;
+            return { kind: 'say', text: pa.text as string };
+        case 'move_to': {
+            const pos = pa.position as { x?: unknown; y?: unknown; level?: unknown } | undefined;
+            if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return undefined;
+            return {
+                kind: 'move_to',
+                target: { x: pos.x, y: pos.y, level: typeof pos.level === 'number' ? pos.level : 0 },
+            };
+        }
+        case 'drop': {
+            if (typeof pa.itemSlot !== 'number') return undefined;
+            return { kind: 'drop', itemSlot: pa.itemSlot as number };
+        }
+        case 'interact': {
+            const target = pa.target as { id?: unknown; kind?: unknown } | undefined;
+            if (!target || typeof target.id !== 'string' || typeof target.kind !== 'string') return undefined;
+            return { kind: 'interact', target: { id: target.id, kind: target.kind as string } };
+        }
+        case 'use_item_on': {
+            if (typeof pa.itemSlot !== 'number') return undefined;
+            return { kind: 'use_item_on', itemSlot: pa.itemSlot as number, targetId: pa.targetId as string };
+        }
+        default:
+            return undefined;
+    }
+}
+
+/** Context passed by the caller when the stage may have open-goal steps. */
+export interface OpenGoalContext {
+    /** Current step index from CognitiveState.primitiveStepIdxByStageId[stage.id], default 0. */
+    stepIdx: number;
+    /** Action result from the previous tick; used to advance 'action_result' steps. */
+    lastActionResult?: unknown;
+}
+
+/**
+ * Executes one tick of an open-goal stage by dispatching the primitive step at stepIdx.
+ * Returns the action to emit this tick and the nextStepIdx to persist in CognitiveState.
+ * When all steps are exhausted, returns planSignal='stage_done'.
+ * When a step cannot be converted to a valid AgentAction, returns planSignal='stage_blocked'.
+ */
+export function openGoalStageStep(
+    stage: Stage,
+    _perception: BodyHybridPerception,
+    stepIdx: number,
+    lastActionResult?: unknown,
+): PlanBodyResult {
+    const steps = stage.steps ?? [];
+
+    if (stepIdx >= steps.length) {
+        // All steps completed
+        return { planSignal: 'stage_done', nextStepIdx: stepIdx };
+    }
+
+    const step = steps[stepIdx];
+    const action = primitiveActionToAgentAction(step.action);
+
+    if (!action) {
+        return { planSignal: 'stage_blocked', nextStepIdx: stepIdx };
+    }
+
+    // Determine whether to advance the step index this tick
+    let nextStepIdx: number;
+    if (step.advanceWhen === 'next_tick') {
+        // Always advance so the next tick runs the next step
+        nextStepIdx = stepIdx + 1;
+    } else {
+        // 'action_result': advance only when the previous tick produced a non-null result
+        nextStepIdx = lastActionResult != null ? stepIdx + 1 : stepIdx;
+    }
+
+    return { action, nextStepIdx };
+}
+
 /**
  * Maps a durable PlannerPass stage into existing deterministic Body routines.
  * Unknown stage text returns undefined so callers can fall back to ordinary
  * goal/body selection instead of getting trapped in an unrecognized plan.
  */
-export function planStageRouter(stage: Stage, perception: BodyHybridPerception): PlanBodyResult | undefined {
+export function planStageRouter(stage: Stage, perception: BodyHybridPerception, openGoalCtx?: OpenGoalContext): PlanBodyResult | undefined {
     const subgoal = stage.subgoal.toLowerCase();
 
     if (/axe|woodcutting.*tool|acquire.*axe/.test(subgoal)) {
@@ -957,6 +1047,12 @@ export function planStageRouter(stage: Stage, perception: BodyHybridPerception):
         if (!hasBonesInInventory(perception)) return { planSignal: 'stage_done' };
         // Has bones but can't bury (shouldn't happen normally) → blocked
         return { planSignal: 'stage_blocked' };
+    }
+
+    // Phase 4 (RIQ-4-2): open-goal stages with authored primitive steps.
+    // Falls through to LLM-only Body when steps absent/empty (graceful degradation).
+    if (stage.steps && stage.steps.length > 0 && openGoalCtx) {
+        return openGoalStageStep(stage, perception, openGoalCtx.stepIdx, openGoalCtx.lastActionResult);
     }
 
     return undefined;

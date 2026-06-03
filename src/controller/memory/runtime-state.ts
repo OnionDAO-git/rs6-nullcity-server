@@ -84,6 +84,8 @@ export interface CognitiveState {
     waitResumeTick?: number;
     pausedGoal?: ActiveGoalState;
     pausedFollowTarget?: FollowTargetState;
+    /** Phase 4 (RIQ-4-2): step progress for open-goal stages, keyed by stage id. */
+    primitiveStepIdxByStageId?: Record<string, number>;
 }
 
 export interface FollowTargetState {

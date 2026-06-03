@@ -24,6 +24,7 @@ import {
     STARTER_FISHING_SPOT_DISCOVERY_RANGE,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
+    openGoalStageStep,
     opportunisticPickupAction,
     parseStageLevelTarget,
     planStageRouter,
@@ -43,7 +44,7 @@ import {
     type BodyItem,
     type BodyWorldItem,
 } from './runescape-body-routines';
-import type { Stage } from '../intelligence/planner-pass';
+import type { Stage, PrimitiveStep } from '../intelligence/planner-pass';
 
 const FIRE_OBJECT_ID = objectIds.fire;
 
@@ -3384,5 +3385,185 @@ describe('target failure cooldowns and cross-level hardening', () => {
         );
 
         expect(action).toBeUndefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// openGoalStageStep (RIQ-4-2)
+// ---------------------------------------------------------------------------
+
+function openGoalStage(steps: PrimitiveStep[], overrides: Partial<Stage> = {}): Stage {
+    return {
+        id: 'open-stage-1',
+        subgoal: 'do something creative',
+        requirements: [],
+        successCriteria: 'observable progress',
+        status: 'active',
+        steps,
+        ...overrides,
+    };
+}
+
+function sayStep(text: string, advanceWhen: 'next_tick' | 'action_result' = 'next_tick'): PrimitiveStep {
+    return { action: { kind: 'say', text }, advanceWhen };
+}
+
+function moveStep(x: number, y: number, level = 0): PrimitiveStep {
+    return { action: { kind: 'move_to', position: { x, y, level } }, advanceWhen: 'next_tick' };
+}
+
+function dropStep(itemSlot: number): PrimitiveStep {
+    return { action: { kind: 'drop', itemSlot }, advanceWhen: 'next_tick' };
+}
+
+describe('openGoalStageStep (RIQ-4-2)', () => {
+    const p = perception();
+
+    it('returns stage_done when stepIdx >= steps.length (all steps exhausted)', () => {
+        const s = openGoalStage([sayStep('hello')]);
+        const result = openGoalStageStep(s, p, 1);
+        expect(result.planSignal).toBe('stage_done');
+        expect(result.nextStepIdx).toBe(1);
+        expect(result.action).toBeUndefined();
+    });
+
+    it('returns stage_done when steps array is empty and stepIdx is 0', () => {
+        const s = openGoalStage([]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_done');
+    });
+
+    it('emits a say action for the current step and advances index on next_tick', () => {
+        const s = openGoalStage([sayStep('Hello world')]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'say', text: 'Hello world' });
+        expect(result.planSignal).toBeUndefined();
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('emits a move_to action and advances index on next_tick', () => {
+        const s = openGoalStage([moveStep(3220, 3220)]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'move_to', target: { x: 3220, y: 3220, level: 0 } });
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('emits a drop action for the given inventory slot', () => {
+        const s = openGoalStage([dropStep(3)]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'drop', itemSlot: 3 });
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('does NOT advance stepIdx for action_result step when lastActionResult is undefined', () => {
+        const s = openGoalStage([sayStep('wait for result', 'action_result')]);
+        const result = openGoalStageStep(s, p, 0, undefined);
+        expect(result.action).toEqual({ kind: 'say', text: 'wait for result' });
+        expect(result.nextStepIdx).toBe(0);
+    });
+
+    it('advances stepIdx for action_result step when lastActionResult is non-null', () => {
+        const s = openGoalStage([sayStep('got result', 'action_result')]);
+        const result = openGoalStageStep(s, p, 0, { success: true });
+        expect(result.action).toEqual({ kind: 'say', text: 'got result' });
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('returns stage_blocked when a step has an unknown action kind', () => {
+        const s = openGoalStage([{ action: { kind: 'unknown_action' }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_blocked');
+        expect(result.nextStepIdx).toBe(0);
+    });
+
+    it('returns stage_blocked when a say action has empty text', () => {
+        const s = openGoalStage([{ action: { kind: 'say', text: '' }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_blocked');
+    });
+
+    it('returns stage_blocked when a move_to action has no position', () => {
+        const s = openGoalStage([{ action: { kind: 'move_to' }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_blocked');
+    });
+
+    it('executes second step after first has been advanced (stepIdx=1)', () => {
+        const s = openGoalStage([sayStep('step A'), sayStep('step B')]);
+        const result = openGoalStageStep(s, p, 1);
+        expect(result.action).toEqual({ kind: 'say', text: 'step B' });
+        expect(result.nextStepIdx).toBe(2);
+    });
+
+    it('signals stage_done after last step is run and stepIdx advances past end', () => {
+        const s = openGoalStage([sayStep('only step')]);
+        // After step 0 returns nextStepIdx=1, next call with idx=1 → stage_done
+        const first = openGoalStageStep(s, p, 0);
+        expect(first.nextStepIdx).toBe(1);
+        const second = openGoalStageStep(s, p, first.nextStepIdx!);
+        expect(second.planSignal).toBe('stage_done');
+    });
+
+    it('uses level 0 as default for move_to when level is absent', () => {
+        const s = openGoalStage([{ action: { kind: 'move_to', position: { x: 10, y: 20 } }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'move_to', target: { x: 10, y: 20, level: 0 } });
+    });
+});
+
+describe('planStageRouter (Phase 4 open-goal branch)', () => {
+    const p = perception();
+
+    it('routes an open-goal stage via openGoalStageStep when steps present and context provided', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'recite a poem',
+            requirements: [],
+            successCriteria: 'poem shared',
+            status: 'active',
+            steps: [sayStep('Roses are red')],
+        };
+        const result = planStageRouter(s, p, { stepIdx: 0 });
+        expect(result?.action).toEqual({ kind: 'say', text: 'Roses are red' });
+        expect(result?.nextStepIdx).toBe(1);
+    });
+
+    it('returns undefined (falls to LLM) when steps present but no context provided', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'creative activity',
+            requirements: [],
+            successCriteria: 'done',
+            status: 'active',
+            steps: [sayStep('hello')],
+        };
+        // No openGoalCtx → falls through → undefined
+        const result = planStageRouter(s, p);
+        expect(result).toBeUndefined();
+    });
+
+    it('returns undefined for truly unknown stages regardless of context', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'unknown activity with no steps',
+            requirements: [],
+            successCriteria: 'done',
+            status: 'active',
+        };
+        const result = planStageRouter(s, p, { stepIdx: 0 });
+        expect(result).toBeUndefined();
+    });
+
+    it('signals stage_done via open-goal branch when all steps exhausted', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'say poem',
+            requirements: [],
+            successCriteria: 'said',
+            status: 'active',
+            steps: [sayStep('line 1')],
+        };
+        const result = planStageRouter(s, p, { stepIdx: 1 });
+        expect(result?.planSignal).toBe('stage_done');
     });
 });
