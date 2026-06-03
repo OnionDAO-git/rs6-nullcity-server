@@ -212,3 +212,62 @@ export function replyFallback(soul: Soul, seed: string): string {
     }
     return pickPhrase({ soul, situation: 'social_reply.deflection', seed });
 }
+
+/** Default ceiling on simultaneous social-reply Body inferences across ALL residents. */
+export const SOCIAL_REPLY_GLOBAL_CAP = 3;
+
+export interface SocialReplySlot {
+    key: string;
+    controller: AbortController;
+}
+
+/**
+ * Controller-level, in-memory coordinator for in-flight social-reply inferences.
+ * Holds the NON-serializable live handles (AbortControllers) and the global counter
+ * that must never live in `cognition`. Settle is idempotent and key-owned so a late
+ * resolver that no longer owns its slot is a no-op (no counter leak, no ghost bubble).
+ */
+export class SocialReplyCoordinator {
+    private readonly slots = new Map<string, SocialReplySlot>();
+    private count = 0;
+
+    constructor(private readonly cap: number) {}
+
+    get inFlight(): number {
+        return this.count;
+    }
+
+    /** Reserve a slot for `resident`; returns undefined if at the global cap or already in-flight. */
+    admit(resident: string, key: string): SocialReplySlot | undefined {
+        if (this.count >= this.cap) {
+            return undefined;
+        }
+        if (this.slots.has(resident)) {
+            return undefined;
+        }
+        const slot: SocialReplySlot = { key, controller: new AbortController() };
+        this.slots.set(resident, slot);
+        this.count += 1;
+        return slot;
+    }
+
+    /** Release the slot — only if `key` still owns it. Idempotent; never underflows. */
+    settle(resident: string, key: string): void {
+        const slot = this.slots.get(resident);
+        if (!slot || slot.key !== key) {
+            return;
+        }
+        this.slots.delete(resident);
+        this.count -= 1;
+    }
+
+    /** Truly cancel the in-flight inference for `resident` (aborts the fetch) and settle. */
+    abort(resident: string): void {
+        const slot = this.slots.get(resident);
+        if (!slot) {
+            return;
+        }
+        slot.controller.abort();
+        this.settle(resident, slot.key);
+    }
+}

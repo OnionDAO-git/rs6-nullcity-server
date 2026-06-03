@@ -7,6 +7,8 @@ import {
     formatReply,
     SOCIAL_REPLY_MAX_CHARS,
     replyFallback,
+    SocialReplyCoordinator,
+    SOCIAL_REPLY_GLOBAL_CAP,
 } from './social-reply';
 import type { SocialReplyContext } from './social-reply';
 import type { Soul } from '../soul/soul-schema';
@@ -232,5 +234,68 @@ describe('replyFallback', () => {
             expect(out).not.toMatch(/^(yes|of course|sure|okay|absolutely)\b/i);
             expect(out.trim().endsWith('?')).toBe(false);
         }
+    });
+});
+
+describe('SocialReplyCoordinator', () => {
+    it('admits a slot with an AbortController and tracks in-flight count', () => {
+        const c = new SocialReplyCoordinator(3);
+        const slot = c.admit('res:hans', 'k1');
+        expect(slot).toBeDefined();
+        expect(slot?.key).toBe('k1');
+        expect(slot?.controller).toBeInstanceOf(AbortController);
+        expect(c.inFlight).toBe(1);
+    });
+
+    it('refuses to admit beyond the global cap', () => {
+        const c = new SocialReplyCoordinator(2);
+        expect(c.admit('a', 'ka')).toBeDefined();
+        expect(c.admit('b', 'kb')).toBeDefined();
+        expect(c.admit('c', 'kc')).toBeUndefined();
+        expect(c.inFlight).toBe(2);
+    });
+
+    it('refuses a second in-flight slot for the same resident (dedup)', () => {
+        const c = new SocialReplyCoordinator(3);
+        expect(c.admit('res:hans', 'k1')).toBeDefined();
+        expect(c.admit('res:hans', 'k2')).toBeUndefined();
+        expect(c.inFlight).toBe(1);
+    });
+
+    it('settles exactly once and is idempotent', () => {
+        const c = new SocialReplyCoordinator(3);
+        c.admit('res:hans', 'k1');
+        c.settle('res:hans', 'k1');
+        expect(c.inFlight).toBe(0);
+        c.settle('res:hans', 'k1'); // idempotent, no underflow
+        expect(c.inFlight).toBe(0);
+    });
+
+    it('ignores a settle with a non-owning key (no stealing another slot)', () => {
+        const c = new SocialReplyCoordinator(3);
+        c.admit('res:hans', 'k1');
+        c.settle('res:hans', 'WRONG');
+        expect(c.inFlight).toBe(1);
+    });
+
+    it('abort() signals the controller and settles the slot', () => {
+        const c = new SocialReplyCoordinator(3);
+        const slot = c.admit('res:hans', 'k1');
+        c.abort('res:hans');
+        expect(slot?.controller.signal.aborted).toBe(true);
+        expect(c.inFlight).toBe(0);
+    });
+
+    it('does not leak the counter across many admit/settle rounds', () => {
+        const c = new SocialReplyCoordinator(3);
+        for (let i = 0; i < 100; i += 1) {
+            c.admit(`res:${i}`, `k${i}`);
+            c.settle(`res:${i}`, `k${i}`);
+        }
+        expect(c.inFlight).toBe(0);
+    });
+
+    it('exposes a sane default global cap', () => {
+        expect(SOCIAL_REPLY_GLOBAL_CAP).toBeGreaterThanOrEqual(1);
     });
 });
