@@ -109,6 +109,8 @@ Add rows here only when `Status` is `Open` and the `Next action` is directly cla
 
 | ID | Severity | Area | Status | Packet | Capability row | Evidence refs | Owner | Opened | Next action |
 |---|---|---|---|---|---|---|---|---|---|
+| QA-20260603-089 | P2 | Resident intelligence / Phase 4 arbitrary goals | Open | RIQ-4-1 | Durable multi-stage plans drive Body actions | spec:docs/superpowers/specs/2026-06-03-riq-phase4-arbitrary-goal-design.md; roadmap:docs/superpowers/plans/2026-06-01-resident-intelligence-roadmap.md (Phase 4, Not started) | cron | 2026-06-03 | Phase 4 design complete. First claimable slice: RIQ-4-1 — extend `Plan`+`Stage` schemas in `planner-pass.ts` with `goalClass?: GoalClass`, `steps?: PrimitiveStep[]`, `successPredicate?: SuccessPredicate`; update PlannerPass prompt with goal-classification block; add Zod validators. Cloud-doable + unit-testable. Gate: Phase 3 A1 live-verified on hot stack (QA-20260602-084 / RIQ-A1-SOUL) OR maintainer approval to start in parallel. RIQ-4-2 through RIQ-4-6 follow in order (see spec §7). |
+
 ## Review, Fixed, And Historical Rows
 
 | QA-20260603-088 | P2 | Storyteller / digest ranking | In Review | P0-S3-RESIDENT-RANK | Dashboard/story visibility | code:src/controller/storyteller/digest-builder.ts; test:digest-builder.test.ts (+19); sha=a26847b9; fin=3929/3929 | cron | 2026-06-03 | P0-S3: residentRelevanceScore+rankResidentsByRelevance; faded+100,lowAp+50,gpBonus+10,eventWeights; wired into buildDigest before maxResidentMentions cap. Substrate-only, no live verify needed. |
