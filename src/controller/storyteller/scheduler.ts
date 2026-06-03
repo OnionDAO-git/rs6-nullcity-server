@@ -75,7 +75,9 @@ export function parseStorytellerSchedulerArgs(
     let outputDir = path.join('data', 'controller', 'storyteller');
     let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'storyteller';
     let controllerConfigPath =
-        readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG) ?? DEFAULT_STORYTELLER_CONTROLLER_CONFIG;
+        readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ??
+        readOptionalEnvPath(env.CONTROLLER_CONFIG) ??
+        DEFAULT_STORYTELLER_CONTROLLER_CONFIG;
     let dailyCostCapUsd = parseOptionalNumber(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
     let autoPublishOnZeroWarnings = true;
 
