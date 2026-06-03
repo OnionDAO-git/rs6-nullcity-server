@@ -40,6 +40,15 @@ export interface ControllerConfig {
         profiles: Record<string, LlmEndpointConfig>;
     };
     patrons?: PatronConfig[];
+    /**
+     * Economy tuning. `onionsPerStandingPoint` scales onion/AP support into patron
+     * standing points (tiers are 10/30/75). MUST be set before the real onion-spend
+     * path goes live; if absent, the controller falls back to a KNOWN-PLACEHOLDER
+     * 1:1 with a loud warning. This is the one product knob behind the settled-support seam.
+     */
+    economy?: {
+        onionsPerStandingPoint?: number;
+    };
 }
 
 export type KnowledgeStorageMode = 'ephemeral' | 'persistent-volume' | 'external-store';

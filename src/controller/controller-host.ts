@@ -242,10 +242,14 @@ export class ControllerHost {
             // support grants so the dashboard "Support with AP" button produces
             // the same standing/letter effects as the patron:offer CLI path.
             onPatronSupport: event => {
-                // T0.0b: Shards-free settled-support seam. Keys on ONE canonical
-                // identity, consistently: personId (=== landing users.id) when
-                // resolved upstream, else patronHandle, else cityUserId. Must match
-                // the economy log's choice so standing/letters don't fragment.
+                // T0.0b: Shards-free settled-support seam. Keys on personId
+                // (=== landing users.id) when the caller resolved it (the same
+                // canonical id the ap_topup economy event records), else patronHandle,
+                // else cityUserId. When personId is present, standing aligns with the
+                // economy log. NOTE: not structurally enforced — if a grant arrives
+                // without personId, standing keys on a fallback while the log still
+                // records cityUserId; the upstream cityUserId->personId join is the
+                // real guard against fragmentation.
                 recordSettledSupport(
                     {
                         patronId: event.personId ?? event.patronHandle ?? event.cityUserId,
@@ -726,8 +730,8 @@ function delay(ms: number): Promise<void> {
  * would instantly mint Officer) is never silently shipped. Product must set the
  * real value before the real onion-spend path goes live.
  */
-function resolveOnionsPerStandingPoint(config: unknown): number {
-    const configured = (config as { economy?: { onionsPerStandingPoint?: unknown } })?.economy?.onionsPerStandingPoint;
+function resolveOnionsPerStandingPoint(config: ControllerConfig): number {
+    const configured = config.economy?.onionsPerStandingPoint;
     if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
         return configured;
     }
