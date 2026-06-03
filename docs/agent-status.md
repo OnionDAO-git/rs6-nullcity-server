@@ -70,3 +70,5 @@ Plan: docs/superpowers/plans/2026-06-02-resident-conversational-reply.md.
 2026-06-03 16:30 cron agents/wip S-STORY-2 HANDOFF sha=8b16d81a check:no-ui=PASS fin=SANDBOX-BLOCKED +8 tests(expected 3971+8=3979). confidence on narration+fallback; buildEffectiveWatchNext prefers dispatch.watchNext. next=S-STORY-3 paid-model scheduler or EXP-HARD-1-A
 
 2026-06-03 17:20 cron agents/wip S-STORY-3-PERSONA STARTING wire config.persona into StorytellerPrompt before PUBLIC VOICE. Files: src/controller/storyteller/types.ts src/controller/storyteller/prompt-builder.ts src/controller/storyteller/prompt-builder.test.ts collision=none
+
+2026-06-03 17:35 cron agents/wip S-STORY-3-PERSONA HANDOFF sha=3d722b8d check:no-ui=PASS fin=SANDBOX-BLOCKED +5 tests=3984. persona? in StorytellerConfig; PERSONA block before PUBLIC VOICE if set. Empty/unset=no-block. Paid live PENDING. next=EXP-HARD-1-A collision=none
