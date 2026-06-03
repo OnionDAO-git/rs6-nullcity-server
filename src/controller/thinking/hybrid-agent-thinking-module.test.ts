@@ -3899,6 +3899,26 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 
+    it('still executes a command when it is mixed with a pleasantry/status phrase (no defer)', async () => {
+        // Regression: the status/small-talk predicates scan the full text, so "agent follow me,
+        // what are you doing?" used to satisfy `conversational` and get deferred to social reply —
+        // silently dropping the follow command. The actionable-command guard must win.
+        const llm = scriptedLlm([{ text: 'should-not-be-used' }]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent follow me, what are you doing?', 3222, 3213)],
+            }),
+        );
+
+        expect(result.cause).toBe('direct_chat_follow');
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(llm.complete).not.toHaveBeenCalled();
+    });
+
     it('does not reprocess the same retained addressed chat event on later perception ticks', () => {
         const event = chatFromCodex('What are you doing agent?', 3217, 3201);
         const first = latestAddressedChat(perception({ tick: 2, events: [event] }), 'agent', undefined);

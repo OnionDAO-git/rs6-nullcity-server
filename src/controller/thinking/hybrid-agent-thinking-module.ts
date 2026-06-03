@@ -407,8 +407,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             currentTick,
             lastReply: cognition.lastSocialReply,
         });
-        // Rate-limit — but a same-speaker 1-turn follow-up gets exactly one bypass so the "why?"
-        // beat the player just asked isn't silently dropped.
+        // Rate-limit — but a same-speaker follow-up within the follow-up window bypasses it, so a
+        // genuine back-and-forth conversation stays responsive instead of dropping the "why?" beat.
+        // The window is re-stamped on each reply, so a sustained 1:1 exchange keeps bypassing; that
+        // is intended and bounded by the per-resident in-flight gate + the coordinator cap (it is
+        // NOT a single one-shot bypass).
         if (!context.bypassRateLimit && isChatRateLimited(this)) {
             cognition.lastDirectChatKey = detected.key;
             return undefined;
@@ -625,6 +628,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private advanceTick(perception: Perception): void {
         const perceptionTick = typeof perception.tick === 'number' ? perception.tick : 0;
         if (perceptionTick > 0 && this.options.state.tick - perceptionTick > WORLD_TICK_RESET_DRIFT) {
+            // A world-tick reset wipes cognition (including socialReplyInFlight). Release any live
+            // coordinator slot FIRST — otherwise the in-memory slot + counter outlive the marker and
+            // the resident is permanently locked out of conversational replies. abort() is a safe
+            // no-op when no slot is held and is key-owned so it can't double-free.
+            this.socialReplyCoordinator.abort(this.options.soul.frontmatter.name);
             resetClockSensitiveCognition(this.options.state, perceptionTick);
             this.options.state.tick = perceptionTick;
             return;

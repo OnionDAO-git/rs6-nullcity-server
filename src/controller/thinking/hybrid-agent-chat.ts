@@ -379,13 +379,18 @@ export function politeDeclineReaction(
     };
 }
 
-function isRecognizedCommand(command: string, fullText: string): boolean {
+/**
+ * A recognized command that performs an action or returns canned info — i.e. everything the
+ * command path owns EXCEPT bare status/small-talk, which the conversational-reply path handles.
+ * Used by the defer gate so a message that mixes a command with a pleasantry ("Hans, follow me,
+ * thanks") still executes the command instead of being swallowed as conversation.
+ */
+export function isActionableCommand(command: string, fullText: string): boolean {
     return (
         isStopFollowingIntent(command, fullText) ||
         Boolean(followIntent(command, fullText)) ||
         isReturnHomeIntent(command, fullText) ||
         isStopIntent(command, fullText) ||
-        isStatusIntent(command, fullText) ||
         isHelpIntent(command, fullText) ||
         isLookIntent(command, fullText) ||
         isInventoryIntent(command, fullText) ||
@@ -407,7 +412,14 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isWoodcuttingIntent(command, fullText) ||
         isFiremakingIntent(command, fullText) ||
         isComeHereIntent(command, fullText) ||
-        isWaitIntent(command, fullText) ||
+        isWaitIntent(command, fullText)
+    );
+}
+
+function isRecognizedCommand(command: string, fullText: string): boolean {
+    return (
+        isActionableCommand(command, fullText) ||
+        isStatusIntent(command, fullText) ||
         isSmallTalkIntent(command, fullText)
     );
 }
@@ -458,11 +470,14 @@ export async function directChatAction(
         if (mentionsDisplayName(chat.normalizedText, displayValue)) {
             const remainder = addressedCommand(chat.normalizedText, ctx.commandPrefix());
             // Small-talk and status queries ("how are you", "what are you doing") are conversation,
-            // not commands — defer them to the in-character reply. Real commands, clarifiable partials,
-            // and unknown-command declines keep their existing handling.
+            // not commands — defer them to the in-character reply. But a message that ALSO carries a
+            // real command ("Hans, follow me, what are you doing?") must keep executing the command:
+            // the status/small-talk predicates scan the full text, so guard the defer on the absence
+            // of any actionable command. Real commands, clarifiable partials, and unknown-command
+            // declines keep their existing handling.
             const conversational =
                 isSmallTalkIntent(remainder, chat.normalizedText) || isStatusIntent(remainder, chat.normalizedText);
-            if (conversational) {
+            if (conversational && !isActionableCommand(remainder, chat.normalizedText)) {
                 return undefined;
             }
         }
