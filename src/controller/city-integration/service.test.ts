@@ -87,6 +87,19 @@ describe('CityIntegrationService', () => {
         fs.rmSync(tempRoot, { recursive: true, force: true });
     });
 
+    it('stamps personId on the ap_topup economy event when provided', async () => {
+        await service.creditAttention('res:test', {
+            idempotencyKey: 'ap-pid-1',
+            amount: 25,
+            cityUserId: 'user-1',
+            personId: 'landing-user-1',
+            sourceType: 'patron_checkin',
+            sourceId: 'checkin-9',
+        });
+        const topup = new EconomyEventLog(root).readAll().find(event => event.kind === 'ap_topup');
+        expect(topup).toMatchObject({ kind: 'ap_topup', cityUserId: 'user-1', personId: 'landing-user-1', apDelta: 25 });
+    });
+
     it('credits resident attention once per idempotency key', async () => {
         const first = await service.creditAttention('res:test', { idempotencyKey: 'ap-1', amount: 5 });
         const replay = await service.creditAttention('res:test', { idempotencyKey: 'ap-1', amount: 5 });
