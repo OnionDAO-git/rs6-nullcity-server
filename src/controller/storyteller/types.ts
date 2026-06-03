@@ -468,6 +468,13 @@ export interface StorytellerConfig {
     maxPublicBodyWords: number;
     /** Model profile id to use for Storyteller runs. */
     modelProfile: string;
+    /**
+     * Narrator persona text (one paragraph). Injected as a PERSONA block before
+     * the PUBLIC VOICE section so the narrator identity is operator-controlled and
+     * cannot drift between runs. Omit to use the default cyberpunk-fantasy voice.
+     * Config-only — never LLM-decided.
+     */
+    persona?: string;
 }
 
 export const DEFAULT_STORYTELLER_CONFIG: StorytellerConfig = {

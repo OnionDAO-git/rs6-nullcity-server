@@ -62,8 +62,13 @@ export function buildStorytellerPrompt(digest: CityEventDigest, config: Storytel
     const schema = REQUIRED_OUTPUT_SCHEMA.replace('{MAX_WORDS}', String(config.maxPublicBodyWords));
     const { totalResidents, activeResidents, fadedResidents, lowApResidents } = digest.systemHealth;
 
-    return `You are the Null City Storyteller. Write grounded public-facing narration for the Null City community.
+    const personaBlock =
+        config.persona && config.persona.trim()
+            ? `\nPERSONA:\n${config.persona.trim()}\n`
+            : '';
 
+    return `You are the Null City Storyteller. Write grounded public-facing narration for the Null City community.
+${personaBlock}
 PUBLIC VOICE:
 - Sound like a cyberpunk-fantasy dungeon-crawl broadcast coming from a half-broken quest terminal, not an old-fashioned news-anchor.
 - Use sharp, playful, dangerous energy: fantasy stakes, tech weirdness, OnionDAO oddity, and the feeling that the city is a live experiment worth watching.
