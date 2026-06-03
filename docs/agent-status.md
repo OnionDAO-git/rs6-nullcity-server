@@ -53,3 +53,4 @@ phrasebook.ts. resident-runtime.ts / llm-client.ts UNTOUCHED.
 **LIVE-VERIFY PENDING** a steward-run game restart (runtime owned by Codex) — NOT done.
 Spec: docs/superpowers/specs/2026-06-02-resident-conversational-reply-design.md (v4).
 Plan: docs/superpowers/plans/2026-06-02-resident-conversational-reply.md.
+2026-06-03 02:08 CDT codex branch=codex/storyteller-public-frame->agents/wip lane=Storyteller HANDOFF bd124fce - added fail-closed ProjectorStoryFrame/latest-frame + city API. Verified 125 focused tests, check:no-ui, typecheck, build, compiled unsafe-dispatch smoke.
