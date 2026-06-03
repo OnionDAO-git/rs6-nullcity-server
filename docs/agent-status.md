@@ -63,3 +63,4 @@ Spec: docs/superpowers/specs/2026-06-02-resident-conversational-reply-design.md 
 Plan: docs/superpowers/plans/2026-06-02-resident-conversational-reply.md.
 2026-06-03 02:08 CDT codex branch=codex/storyteller-public-frame->agents/wip lane=Storyteller HANDOFF bd124fce - added fail-closed ProjectorStoryFrame/latest-frame + city API. Verified 125 focused tests, check:no-ui, typecheck, build, compiled unsafe-dispatch smoke.
 2026-06-03 14:15 cron agents/wip P0-S5-VERIFIER-HARD STARTING harden verifier: title/body length, AP-from-RS-activity conflation, Discord handle, internal-path patterns. Files: src/controller/storyteller/verifier.ts,src/controller/storyteller/verifier.test.ts collision=none
+2026-06-03 14:19 cron agents/wip P0-S5-VERIFIER-HARD HANDOFF sha=b253f8ac check:no-ui=PASS fin=SANDBOX-BLOCKED +20 tests. 5 checks: title/body len, AP-from-RS conflation, Discord handle, internal-path. tests=3939+20=3959(expected). next=P0-S6 prompt schema or S-STORY-2
