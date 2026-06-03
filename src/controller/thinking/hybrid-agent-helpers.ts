@@ -3715,6 +3715,15 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
 
     if (routed.planSignal === 'stage_done') {
         planStore.save(residentId, advancePlan(plan));
+        // RIQ-A1-OBS: emit stage-done Library event so normal-life-audit can count completions.
+        ctx.options.libraryUpdater?.observePlanStageDone({
+            kind: 'plan_stage_done',
+            ts: new Date().toISOString(),
+            tick: ctx.options.state.tick,
+            goalId: plan.goalId,
+            stageId: stage.id,
+            stageSubgoal: stage.subgoal,
+        });
         return {
             actions: [],
             cause: `plan_stage_done:${stage.id}`,
@@ -3726,6 +3735,15 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
 
     if (routed.planSignal === 'stage_blocked') {
         planStore.save(residentId, blockCurrentStage(plan));
+        // RIQ-A1-OBS: emit stage-blocked Library event so normal-life-audit can count blocks.
+        ctx.options.libraryUpdater?.observePlanStageBlocked({
+            kind: 'plan_stage_blocked',
+            ts: new Date().toISOString(),
+            tick: ctx.options.state.tick,
+            goalId: plan.goalId,
+            stageId: stage.id,
+            stageSubgoal: stage.subgoal,
+        });
         return {
             actions: [],
             cause: `plan_stage_blocked:${stage.id}`,

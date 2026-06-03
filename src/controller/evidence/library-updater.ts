@@ -47,6 +47,33 @@ export interface PlanReplannedLibraryEvent {
     replannedReason: string;
 }
 
+/**
+ * Emitted when the Body detects that the current plan stage's success criteria
+ * are met and advances the plan to the next stage (RIQ-A1-OBS).
+ */
+export interface PlanStageDoneLibraryEvent {
+    kind: 'plan_stage_done';
+    ts: string;
+    tick: number;
+    goalId: string;
+    stageId: string;
+    stageSubgoal: string;
+}
+
+/**
+ * Emitted when the Body detects that the current plan stage is blocked —
+ * the success criteria cannot be met given current world state — and
+ * marks the stage blocked so the Planner can re-plan (RIQ-A1-OBS).
+ */
+export interface PlanStageBlockedLibraryEvent {
+    kind: 'plan_stage_blocked';
+    ts: string;
+    tick: number;
+    goalId: string;
+    stageId: string;
+    stageSubgoal: string;
+}
+
 export interface NcriLibraryEvent {
     kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
     ts: string;
@@ -434,6 +461,49 @@ export class LibraryUpdater {
             replannedReason: event.replannedReason,
             lifeIndex: index.lives,
             significanceReasons: ['plan:replanned'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a plan stage completion as a Library timeline moment (RIQ-A1-OBS).
+     * Call when the Body router detects a stage's success criteria are met.
+     */
+    observePlanStageDone(event: PlanStageDoneLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_stage_done',
+            goalId: event.goalId,
+            stageId: event.stageId,
+            stageSubgoal: event.stageSubgoal,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:stage_done'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a plan stage block as a Library timeline moment (RIQ-A1-OBS).
+     * Call when the Body router determines the current stage cannot progress
+     * and marks it blocked so the Planner can re-plan.
+     */
+    observePlanStageBlocked(event: PlanStageBlockedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_stage_blocked',
+            goalId: event.goalId,
+            stageId: event.stageId,
+            stageSubgoal: event.stageSubgoal,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:stage_blocked'],
         });
         this.touchIndex(index);
     }
