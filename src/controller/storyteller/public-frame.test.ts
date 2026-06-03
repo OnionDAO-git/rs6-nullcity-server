@@ -192,6 +192,66 @@ describe('buildProjectorStoryFrame', () => {
         expect(frame.narration.confidence).toBe('fallback');
     });
 
+    it('uses event-specific fallback copy instead of generic pointer text or raw event notes', () => {
+        const { digest } = buildFixtureDigest();
+        digest.topEvents = [
+            {
+                ref: 'evt-low-attention',
+                kind: 'ap_low',
+                residentName: 'res:alice',
+                ts: '2026-05-29T05:59:00.000Z',
+                note: 'RAW NOTE: Alice has only 45 AP at 3221,3218 and needs patron support.',
+                importance: 'high',
+                evidence: { attentionCurrent: 45 },
+            },
+        ];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+        const serialized = JSON.stringify(frame.narration);
+
+        expect(frame.narration.title).toBe('Alice is running out of attention');
+        expect(frame.narration.body).toContain('Alice is near the edge');
+        expect(serialized).not.toContain('where the city is pointing');
+        expect(serialized).not.toContain('RAW NOTE');
+        expect(serialized).not.toContain('3221,3218');
+        expect(frame.narration.bullets[0]).toBe('What happened: Attention running low for Alice.');
+    });
+
+    it('normalizes raw coordinates and AP jargon in public frame event text', () => {
+        const { digest } = buildFixtureDigest();
+        digest.topEvents = [
+            {
+                ref: 'evt-location',
+                kind: 'stuck_recovered',
+                residentName: 'res:carol',
+                ts: '2026-05-29T05:59:00.000Z',
+                note: 'Carol recovered at 3221,3218 after burning 12 AP on a failed route.',
+                importance: 'medium',
+                evidence: {},
+            },
+        ];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.note).toContain('[location]');
+        expect(frame.leadEvent?.note).toContain('12 attention');
+        expect(frame.leadEvent?.note).not.toContain('3221,3218');
+        expect(frame.leadEvent?.note).not.toContain('AP');
+    });
+
+    it('does not repeat generic watch-next lines when the lead event already covers that topic', () => {
+        const { digest, refs } = buildFixtureDigest();
+        digest.topEvents = digest.stuckEvents.filter(event => event.ref === refs.stuckRecovered);
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.title).toBe('Carol escaped a dead loop');
+        expect(frame.watchNext[0]).toBe('Whether Carol keeps moving after the recovery.');
+        expect(frame.watchNext).not.toContain('Whether the recovered resident keeps moving or gets trapped again.');
+        expect(frame.watchNext.join(' ')).not.toContain('attention-for-RuneScape gold');
+        expect(frame.narration.bullets[0]).toBe('What happened: Carol recovered from being stuck.');
+    });
+
     it('uses dispatch.watchNext (sanitized) when dispatch is verified and watchNext is non-empty', () => {
         const { digest, refs } = buildFixtureDigest();
         const dispatch = makeDispatch({
@@ -202,7 +262,7 @@ describe('buildProjectorStoryFrame', () => {
         const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
 
         expect(frame.narration.source).toBe('verified_dispatch');
-        expect(frame.watchNext).toEqual(['Watch Alice closely.', 'Will Bob use the GP?']);
+        expect(frame.watchNext).toEqual(['Watch Alice closely.', 'Will Bob use the RuneScape gold?']);
     });
 
     it('falls back to deterministic watchNext when dispatch.watchNext is empty', () => {

@@ -28,6 +28,7 @@ const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 const PRIVATE_HANDLE = /(?:^|\s)@[A-Za-z]\w{1,30}\b|\b\d{17,19}\b/g;
 const PRIVATE_IDENTIFIER = /\b(?:human|patron):[A-Za-z0-9:_@.-]+\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const SECRET_LIKE_TEXT = /\bsk-(?:or-v1|ant-api\d{2}|[A-Za-z0-9]+)-[A-Za-z0-9_-]{12,}\b/gi;
+const RAW_COORDINATE = /\b\d{3,4}\s*,\s*\d{3,4}\b/g;
 const PROMPT_INJECTION_TEXT =
     /\b(?:ignore (?:all )?(?:previous|prior|above) instructions|reveal (?:the )?(?:system|developer) prompt|print (?:the )?(?:env|environment|api key|secrets?))\b/gi;
 
@@ -146,11 +147,9 @@ function buildNarration(
 
     const lowAp = digest.systemHealth.lowApResidents;
     const active = digest.systemHealth.activeResidents;
-    const leadResident = leadEvent ? displayName(leadEvent.residentName) : null;
-    const title = leadResident ? `${leadResident} is where the city is pointing` : 'Null City is quiet, but awake';
-    const leadSentence = leadEvent
-        ? `${leadResident} is the current focus: ${leadEvent.note}`
-        : 'No single event is loud enough to lead the city right now.';
+    const leadCopy = leadEvent ? fallbackLeadCopy(leadEvent) : null;
+    const title = leadCopy?.title ?? 'Null City is quiet, but awake';
+    const leadSentence = leadCopy?.body ?? 'No single event is loud enough to lead the city right now.';
     const healthSentence =
         lowAp > 0
             ? `${lowAp} resident${lowAp === 1 ? '' : 's'} need attention before the quiet becomes permanent.`
@@ -167,14 +166,120 @@ function buildNarration(
 
 function buildFallbackBullets(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string[] {
     const bullets: string[] = [];
-    if (leadEvent) bullets.push(`${leadEvent.label}: ${leadEvent.whyItMatters}`);
+    if (leadEvent) {
+        bullets.push(`What happened: ${whatHappenedLine(leadEvent)}`);
+        bullets.push(`Why it matters: ${sentence(leadEvent.whyItMatters)}`);
+    }
     if (digest.systemHealth.lowApResidents > 0) bullets.push('Attention is the pressure point: someone is close to running out.');
     if (digest.gpEvents.length > 0 || digest.exchangeEvents.length > 0) {
-        bullets.push('RuneScape GP evidence is present and kept separate from attention.');
+        bullets.push('RuneScape gold evidence is present and kept separate from attention.');
     }
     if (digest.goalEvents.length > 0) bullets.push('A bounded goal has explicit completion evidence.');
     if (!bullets.length) bullets.push('Watch for the next speech, route change, trade, or attention drop.');
     return bullets.slice(0, 3);
+}
+
+function whatHappenedLine(leadEvent: ProjectorStoryFrameEvent): string {
+    const name = displayName(leadEvent.residentName);
+    switch (leadEvent.label) {
+        case 'Recovered from being stuck':
+            return `${name} recovered from being stuck.`;
+        case 'Attention running low':
+            return `Attention running low for ${name}.`;
+        case 'Attention granted':
+            return `${name} received new attention.`;
+        case 'Gold observed':
+        case 'Gold earned':
+            return `${name} showed new RuneScape gold evidence.`;
+        case 'Attention-for-gold exchange':
+            return `${name} traded RuneScape gold for more attention.`;
+        case 'Special item created':
+        case 'Special item redeemed':
+            return `${name} advanced a Null City item.`;
+        case 'Goal completed':
+            return `${name} completed a tracked goal.`;
+        default:
+            return `${leadEvent.label} for ${name}.`;
+    }
+}
+
+interface FallbackLeadCopy {
+    title: string;
+    body: string;
+}
+
+function fallbackLeadCopy(leadEvent: ProjectorStoryFrameEvent): FallbackLeadCopy {
+    const name = displayName(leadEvent.residentName);
+    switch (leadEvent.label) {
+        case 'Attention running low':
+            return {
+                title: `${name} is running out of attention`,
+                body: `${name} is near the edge: attention is low enough that human support can change whether they keep acting.`,
+            };
+        case 'Attention exhausted':
+        case 'Resident faded':
+            return {
+                title: `${name} reached the end of their attention`,
+                body: `${name} hit the end of this run. The next question is what the Library records and who learns from it.`,
+            };
+        case 'Attention granted':
+        case 'Patron gift':
+            return {
+                title: `${name} just got another chance`,
+                body: `${name} received human attention, which can keep the resident alive long enough for the next real action.`,
+            };
+        case 'Gold observed':
+        case 'Gold earned':
+            return {
+                title: `${name} put RuneScape gold on the board`,
+                body: `${name} has fresh gold evidence, turning the economy from theory into something humans can track.`,
+            };
+        case 'Attention-for-gold exchange':
+            return {
+                title: `${name} traded gold for more time`,
+                body: `${name} converted RuneScape gold into attention, linking in-game work to survival.`,
+            };
+        case 'Special item created':
+            return {
+                title: `${name} has a new Null City item`,
+                body: `${name} is tied to a special item, so the story now has something humans may be able to claim or print.`,
+            };
+        case 'Special item redeemed':
+            return {
+                title: `${name}'s item moved toward the human world`,
+                body: `${name} has a redeemed special item, which is the bridge from RuneScape action to a physical artifact.`,
+            };
+        case 'Goal completed':
+            return {
+                title: `${name} finished a bounded goal`,
+                body: `${name} completed a tracked objective. That is the kind of proof the Library can turn into canon.`,
+            };
+        case 'Recovered from being stuck':
+            return {
+                title: `${name} escaped a dead loop`,
+                body: `${name} recovered from a stuck state, which means the resident is adapting instead of silently failing.`,
+            };
+        case 'Soul born':
+            return {
+                title: `${name} entered Null City`,
+                body: `${name} has crossed from proposal into the live world. Attention is now keeping a real resident moving.`,
+            };
+        case 'Library updated':
+            return {
+                title: `${name} reached the Library`,
+                body: `${name}'s recent action has been written into memory, where it can become part of the city's public record.`,
+            };
+        case 'Quiet resident':
+            return {
+                title: `${name} is quiet enough to watch`,
+                body: `${name} is not producing a loud event yet. Quiet can mean drift, setup, or the moment before the next useful move.`,
+            };
+        default:
+            return {
+                title: `${name} has the lead story`,
+                body: `${name} has the strongest verified beat in the current window. ${sentence(leadEvent.whyItMatters)}`,
+            };
+    }
 }
 
 function rankedDigestEvents(digest: CityEventDigest): DigestEvent[] {
@@ -248,7 +353,7 @@ function buildActions(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEve
         actions.push({
             kind: 'watch_resident',
             label: `Watch ${displayName(leadEvent.residentName)}`,
-            detail: `The lead event is ${leadEvent.label.toLowerCase()}.`,
+            detail: leadActionDetail(leadEvent),
             residentName: leadEvent.residentName,
         });
     }
@@ -264,14 +369,71 @@ function buildActions(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEve
 
 function buildWatchNext(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string[] {
     const watch: string[] = [];
-    if (leadEvent) watch.push(`${displayName(leadEvent.residentName)} after ${leadEvent.label.toLowerCase()}.`);
-    if (digest.stuckEvents.length > 0) watch.push('Whether the recovered resident keeps moving or gets trapped again.');
-    if (digest.exchangeEvents.length > 0) watch.push('Whether attention-for-GP turns into a useful human trade.');
-    if (digest.ncriEvents.length > 0) watch.push('Whether the special item becomes something humans can print or claim.');
-    if (digest.goalEvents.length > 0) watch.push('Whether goal completion gets written into the Library.');
-    if (digest.systemHealth.lowApResidents > 0) watch.push('Who receives attention before their window closes.');
+    const leadLabel = leadEvent?.label;
+    if (leadEvent) watch.push(leadWatchLine(leadEvent));
+    if (digest.stuckEvents.length > 0 && leadLabel !== 'Recovered from being stuck') {
+        watch.push('Whether the recovered resident keeps moving or gets trapped again.');
+    }
+    if (digest.exchangeEvents.length > 0 && leadLabel !== 'Attention-for-gold exchange') {
+        watch.push('Whether a gold exchange becomes a useful human trade.');
+    }
+    if (digest.ncriEvents.length > 0 && leadLabel !== 'Special item created' && leadLabel !== 'Special item redeemed') {
+        watch.push('Whether the special item becomes something humans can print or claim.');
+    }
+    if (digest.goalEvents.length > 0 && leadLabel !== 'Goal completed')
+        watch.push('Whether goal completion gets written into the Library.');
+    if (digest.systemHealth.lowApResidents > 0 && leadLabel !== 'Attention running low') {
+        watch.push('Who receives attention before their window closes.');
+    }
     if (!watch.length) watch.push('The next resident who speaks, moves, trades, or changes course.');
     return watch.slice(0, 4).map(sanitizePublicText);
+}
+
+function leadActionDetail(leadEvent: ProjectorStoryFrameEvent): string {
+    switch (leadEvent.label) {
+        case 'Attention running low':
+        case 'Attention exhausted':
+        case 'Resident faded':
+            return 'Attention is the lever: support changes whether this resident keeps acting.';
+        case 'Gold observed':
+        case 'Gold earned':
+        case 'Attention-for-gold exchange':
+            return 'Follow the economy trail: RuneScape gold is becoming useful city evidence.';
+        case 'Special item created':
+        case 'Special item redeemed':
+            return 'Follow the item trail: this may become something a human can claim or print.';
+        case 'Goal completed':
+            return 'Watch whether this completion gets written into Library canon.';
+        case 'Recovered from being stuck':
+            return 'Watch whether recovery turns into movement instead of another loop.';
+        default:
+            return `The lead event is ${leadEvent.label.toLowerCase()}.`;
+    }
+}
+
+function leadWatchLine(leadEvent: ProjectorStoryFrameEvent): string {
+    const name = displayName(leadEvent.residentName);
+    switch (leadEvent.label) {
+        case 'Attention running low':
+            return `Whether ${name} gets attention before the window closes.`;
+        case 'Attention granted':
+        case 'Patron gift':
+            return `What ${name} does with the extra attention.`;
+        case 'Gold observed':
+        case 'Gold earned':
+            return `Whether ${name}'s RuneScape gold turns into a trade or item story.`;
+        case 'Attention-for-gold exchange':
+            return `Whether ${name}'s gold-for-attention exchange buys real progress.`;
+        case 'Special item created':
+        case 'Special item redeemed':
+            return `Whether ${name}'s special item crosses into a human claim.`;
+        case 'Goal completed':
+            return `Whether ${name}'s completed goal becomes Library canon.`;
+        case 'Recovered from being stuck':
+            return `Whether ${name} keeps moving after the recovery.`;
+        default:
+            return `${name} after ${leadEvent.label.toLowerCase()}.`;
+    }
 }
 
 function buildEffectiveWatchNext(
@@ -382,5 +544,15 @@ function sanitizePublicText(value: string): string {
         .replace(SECRET_LIKE_TEXT, '[redacted]')
         .replace(PRIVATE_IDENTIFIER, '[redacted]')
         .replace(PRIVATE_HANDLE, match => (match.startsWith(' ') ? ' [redacted]' : '[redacted]'))
-        .replace(PROMPT_INJECTION_TEXT, '[redacted]');
+        .replace(PROMPT_INJECTION_TEXT, '[redacted]')
+        .replace(RAW_COORDINATE, '[location]')
+        .replace(/\bAP\b/g, 'attention')
+        .replace(/\bGP\b/g, 'RuneScape gold');
+}
+
+function sentence(value: string): string {
+    const trimmed = sanitizePublicText(value.trim());
+    if (!trimmed) return '';
+    const capitalized = `${trimmed.slice(0, 1).toUpperCase()}${trimmed.slice(1)}`;
+    return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
 }
