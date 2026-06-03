@@ -189,6 +189,17 @@ export function verifyDispatch(dispatch: StorytellerDispatch, digest: CityEventD
         warnings.push('public text may expose an internal API path or file path');
     }
 
+    // 14. (P0-S6) Claim-level validation: each claim's eventRefs must reference valid digest refs
+    if (dispatch.claims && dispatch.claims.length > 0) {
+        for (const claim of dispatch.claims) {
+            for (const ref of claim.eventRefs) {
+                if (!validRefs.has(ref)) {
+                    warnings.push(`claim "${claim.subject} ${claim.predicate}" cites unknown event ref: "${ref}"`);
+                }
+            }
+        }
+    }
+
     return { passed: warnings.length === 0, warnings };
 }
 

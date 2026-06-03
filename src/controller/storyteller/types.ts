@@ -219,6 +219,35 @@ export const cityEventDigestSchema = z.object({
 });
 
 /**
+ * A structured claim from the model about an event in the digest.
+ * Each claim must cite at least one valid eventRef from the digest.
+ * The verifier checks that no claim cites an unknown ref.
+ */
+export interface StorytellerClaim {
+    /** Resident name or "city" for city-level events. */
+    subject: string;
+    /** What happened (e.g. "earned", "faded", "exchanged", "asked for AP"). */
+    predicate: string;
+    /** Refs from the digest that support this claim (must exist in digest). */
+    eventRefs: string[];
+    /** ISO timestamp or window string for the claim. */
+    ts: string;
+    /** Optional numeric value (AP amount, GP amount, etc.). */
+    amount?: number;
+    /** Optional human-readable place label. */
+    location?: string;
+}
+
+export const storytellerClaimSchema = z.object({
+    subject: z.string().min(1),
+    predicate: z.string().min(1),
+    eventRefs: z.array(z.string()),
+    ts: z.string().min(1),
+    amount: z.number().optional(),
+    location: z.string().optional(),
+});
+
+/**
  * StorytellerDispatch — the model-generated public-canon output.
  * eventRefsUsed must only reference refs that exist in the source CityEventDigest.
  */
@@ -240,6 +269,22 @@ export interface StorytellerDispatch {
     operatorWarnings: string[];
     /** References into CityEventDigest.{apEvents,gpEvents,...}[].ref used to generate this dispatch. */
     eventRefsUsed: string[];
+    /**
+     * Structured claims the model makes about events in the digest.
+     * Each claim's eventRefs must reference valid digest refs.
+     * Optional for backward compatibility; new runs should always include it.
+     */
+    claims?: StorytellerClaim[];
+    /**
+     * Items the model flags for humans to watch in the next window.
+     * Optional for backward compatibility; new runs should always include it.
+     */
+    watchNext?: string[];
+    /**
+     * Model's self-assessed confidence in the grounding of this dispatch.
+     * Optional for backward compatibility; new runs should always include it.
+     */
+    confidence?: 'high' | 'medium' | 'low';
     /** Set by the verifier when a claim could not be confirmed from the digest. */
     needsReview: boolean;
     reviewReasons?: string[];
@@ -261,6 +306,9 @@ export const storytellerDispatchSchema = z.object({
     operatorSummary: z.string().min(1),
     operatorWarnings: z.array(z.string()),
     eventRefsUsed: z.array(z.string()),
+    claims: z.array(storytellerClaimSchema).optional(),
+    watchNext: z.array(z.string()).optional(),
+    confidence: z.enum(['high', 'medium', 'low']).optional(),
     needsReview: z.boolean(),
     reviewReasons: z.array(z.string()).optional(),
 });

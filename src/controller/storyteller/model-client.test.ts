@@ -346,3 +346,115 @@ describe('StorytellerModelClient.run — error handling', () => {
         expect(dispatch.modelProfile).toBe('storyteller-v1');
     });
 });
+
+// ---------------------------------------------------------------------------
+// P0-S6: claims / watchNext / confidence parsing
+// ---------------------------------------------------------------------------
+
+describe('StorytellerModelClient.run — P0-S6 claims/watchNext/confidence', () => {
+    it('parses claims, watchNext, and confidence when model provides them', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        const modelJson = JSON.stringify({
+            publicTitle: 'Null City Dispatch',
+            publicBody: 'Life continues in Null City today.',
+            publicBullets: ['Alice is low on AP.', 'Bob earned GP.'],
+            operatorSummary: 'Two notable events.',
+            operatorWarnings: [],
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+            claims: [
+                { subject: 'res:alice', predicate: 'low on AP', eventRefs: [refs.apLow], ts: '2026-05-29T05:55:00.000Z' },
+                { subject: 'res:bob', predicate: 'earned GP', eventRefs: [refs.gpEarned], ts: '2026-05-29T05:55:00.000Z', amount: 25 },
+            ],
+            watchNext: ['Watch res:alice for fading', 'res:bob may exchange GP for AP soon'],
+            confidence: 'high',
+        });
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(modelJson));
+        const client = new StorytellerModelClient(makeEndpoints());
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.claims).toHaveLength(2);
+        expect(dispatch.claims![0]).toMatchObject({ subject: 'res:alice', predicate: 'low on AP', eventRefs: [refs.apLow] });
+        expect(dispatch.claims![1]).toMatchObject({ subject: 'res:bob', predicate: 'earned GP', amount: 25 });
+        expect(dispatch.watchNext).toEqual(['Watch res:alice for fading', 'res:bob may exchange GP for AP soon']);
+        expect(dispatch.confidence).toBe('high');
+        expect(dispatch.needsReview).toBe(false);
+    });
+
+    it('returns empty claims and undefined watchNext/confidence when model omits them (backward compat)', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(validDispatchJson([refs.gpEarned])));
+        const client = new StorytellerModelClient(makeEndpoints());
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.claims).toEqual([]);
+        expect(dispatch.watchNext).toEqual([]);
+        expect(dispatch.confidence).toBeUndefined();
+    });
+
+    it('flags needsReview when a claim cites an unknown event ref', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        const modelJson = JSON.stringify({
+            publicTitle: 'Null City Dispatch',
+            publicBody: 'Life continues.',
+            publicBullets: ['Alice did something.'],
+            operatorSummary: 'Summary.',
+            operatorWarnings: [],
+            eventRefsUsed: [refs.apLow],
+            claims: [{ subject: 'res:alice', predicate: 'did something', eventRefs: ['nonexistent-ref'], ts: '2026-05-29T05:55:00.000Z' }],
+            watchNext: [],
+            confidence: 'low',
+        });
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(modelJson));
+        const client = new StorytellerModelClient(makeEndpoints());
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.needsReview).toBe(true);
+        expect(dispatch.reviewReasons?.some(r => r.includes('nonexistent-ref'))).toBe(true);
+    });
+
+    it('skips malformed claim entries (non-object, missing subject/predicate/ts)', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        const modelJson = JSON.stringify({
+            publicTitle: 'Null City Dispatch',
+            publicBody: 'Life continues.',
+            publicBullets: ['Alice did something.'],
+            operatorSummary: 'Summary.',
+            operatorWarnings: [],
+            eventRefsUsed: [refs.apLow],
+            claims: [
+                null,
+                'string is not a claim',
+                { subject: '', predicate: 'bad', eventRefs: [], ts: '2026-05-29T05:55:00.000Z' }, // empty subject — skip
+                { subject: 'res:alice', predicate: 'ok claim', eventRefs: [refs.apLow], ts: '2026-05-29T05:55:00.000Z' },
+            ],
+            watchNext: [],
+            confidence: 'medium',
+        });
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(modelJson));
+        const client = new StorytellerModelClient(makeEndpoints());
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.claims).toHaveLength(1);
+        expect(dispatch.claims![0].subject).toBe('res:alice');
+    });
+
+    it('ignores invalid confidence values', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        const modelJson = JSON.stringify({
+            publicTitle: 'Null City Dispatch',
+            publicBody: 'Life continues.',
+            publicBullets: ['Alice did something.'],
+            operatorSummary: 'Summary.',
+            operatorWarnings: [],
+            eventRefsUsed: [refs.apLow],
+            claims: [],
+            watchNext: [],
+            confidence: 'ultra-confident', // invalid
+        });
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(modelJson));
+        const client = new StorytellerModelClient(makeEndpoints());
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.confidence).toBeUndefined();
+    });
+});

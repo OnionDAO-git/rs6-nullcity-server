@@ -549,6 +549,91 @@ describe('verifyDispatch — internal path exposure (P0-S5)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Claim-level validation (P0-S6)
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — claims', () => {
+    it('passes when claims array is absent', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const result = verifyDispatch(makeDispatch({ eventRefsUsed: [refs.apLow] }), digest);
+        expect(result.passed).toBe(true);
+    });
+
+    it('passes when claims array is empty', () => {
+        const { digest } = buildFixtureDigest();
+        const result = verifyDispatch(makeDispatch({ claims: [] }), digest);
+        expect(result.passed).toBe(true);
+    });
+
+    it('passes when all claim eventRefs are valid digest refs', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const result = verifyDispatch(
+            makeDispatch({
+                claims: [
+                    { subject: 'res:alice', predicate: 'low on AP', eventRefs: [refs.apLow], ts: TS },
+                    { subject: 'res:bob', predicate: 'earned GP', eventRefs: [refs.gpEarned], ts: TS },
+                ],
+            }),
+            digest,
+        );
+        expect(result.passed).toBe(true);
+    });
+
+    it('warns when a claim cites an unknown event ref', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const result = verifyDispatch(
+            makeDispatch({
+                claims: [
+                    { subject: 'res:alice', predicate: 'did something', eventRefs: ['unknown-ref'], ts: TS },
+                ],
+                eventRefsUsed: [refs.apLow],
+            }),
+            digest,
+        );
+        expect(result.passed).toBe(false);
+        expect(result.warnings.some(w => w.includes('unknown-ref'))).toBe(true);
+        expect(result.warnings.some(w => w.includes('res:alice did something'))).toBe(true);
+    });
+
+    it('warns once per unknown claim ref (multiple unknown refs in one claim)', () => {
+        const { digest } = buildFixtureDigest();
+        const result = verifyDispatch(
+            makeDispatch({
+                claims: [
+                    { subject: 'city', predicate: 'had drama', eventRefs: ['bad-ref-1', 'bad-ref-2'], ts: TS },
+                ],
+            }),
+            digest,
+        );
+        expect(result.warnings.filter(w => w.includes('unknown event ref')).length).toBe(2);
+    });
+
+    it('passes when a claim has no eventRefs (uncited claim is not a verifier error)', () => {
+        const { digest } = buildFixtureDigest();
+        const result = verifyDispatch(
+            makeDispatch({
+                claims: [{ subject: 'res:alice', predicate: 'was observed', eventRefs: [], ts: TS }],
+            }),
+            digest,
+        );
+        expect(result.passed).toBe(true);
+    });
+
+    it('passes with valid claims and watchNext/confidence fields present', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const result = verifyDispatch(
+            makeDispatch({
+                claims: [{ subject: 'res:bob', predicate: 'earned GP', eventRefs: [refs.gpEarned], ts: TS }],
+                watchNext: ['Watch res:bob for GP spending'],
+                confidence: 'high',
+            }),
+            digest,
+        );
+        expect(result.passed).toBe(true);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Clean fixture — no false positives on neutral text
 // ---------------------------------------------------------------------------
 
