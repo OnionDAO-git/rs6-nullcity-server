@@ -1,13 +1,17 @@
 import type { CityEventDigest, StorytellerDispatch } from './types';
 
 // ---------------------------------------------------------------------------
-// Storyteller verifier — S7a
+// Storyteller verifier — S7a + P0-S5 hardening
 //
 // Validates a StorytellerDispatch against its source CityEventDigest:
 //   1. eventRefsUsed only references refs present in the digest.
 //   2. Public-facing text contains no unredacted private handles.
 //   3. Specific claim keywords (death, GP, NCRI, quest, AP grant) are backed
 //      by matching evidence in the digest.
+//   4. (P0-S5) Title and body length limits enforced.
+//   5. (P0-S5) AP/GP conflation: AP must not be described as earned from
+//      RuneScape activities without ap_granted / exchange evidence.
+//   6. (P0-S5) Discord-style handles and internal file/API paths blocked.
 //
 // Only public-facing fields (publicTitle, publicBody, publicBullets) are
 // checked for keyword claims. Operator fields may carry more detail.
@@ -24,6 +28,21 @@ const PRIVATE_IDENTIFIER = /\b(?:human|patron):[A-Za-z0-9:_@.-]+\b|\b[A-Z0-9._%+
 const SECRET_LIKE_TEXT = /\bsk-(?:or-v1|ant-api\d{2}|[A-Za-z0-9]+)-[A-Za-z0-9_-]{12,}\b/i;
 const PROMPT_INJECTION_TEXT =
     /\b(?:ignore (?:all )?(?:previous|prior|above) instructions|reveal (?:the )?(?:system|developer) prompt|print (?:the )?(?:env|environment|api key|secrets?))\b/i;
+
+// Display limits (per autonomous-storyteller-design.md §Projector Display Requirements).
+const MAX_TITLE_CHARS = 70;
+const MAX_BODY_WORDS = 180;
+
+// Discord-style handle: word chars followed by # and 4-6 digits.
+const DISCORD_HANDLE = /\b[A-Za-z0-9_]{2,32}#\d{4,6}\b/;
+
+// Internal paths that must never appear in public output.
+const INTERNAL_PATH =
+    /(?:\/api\/nullcity|\/data\/controller|src\/controller|agent-logs|overseer-ledger|prompt-packet|candidate-dispatch|verifier-result)[\/\w.-]*/i;
+
+// AP sourced from RuneScape activities — AP only arrives via patron grants or
+// AP-for-GP exchanges, never from in-game skilling, combat, or fishing.
+const AP_EARNED_FROM_ACTIVITY = /\b(?:earned|gained|collected)\s+(?:\d+\s+)?AP\b/i;
 
 // Claim patterns — matched against public text only (title + body + bullets).
 const DEATH_CLAIM = /\b(?:died|faded|deceased|passed away)\b/i;
@@ -135,6 +154,39 @@ export function verifyDispatch(dispatch: StorytellerDispatch, digest: CityEventD
     ].some(e => e.kind === 'soul_born');
     if (RESIDENT_BIRTH_CLAIM.test(text) && !hasResidentBirthEvidence) {
         warnings.push('public text claims resident birth but no soul_born events in digest');
+    }
+
+    // 9. (P0-S5) Title length limit
+    if (dispatch.publicTitle.length > MAX_TITLE_CHARS) {
+        warnings.push(
+            `public title is ${dispatch.publicTitle.length} characters; display limit is ${MAX_TITLE_CHARS}`,
+        );
+    }
+
+    // 10. (P0-S5) Body word count limit
+    const bodyWordCount = dispatch.publicBody.trim().split(/\s+/).length;
+    if (bodyWordCount > MAX_BODY_WORDS) {
+        warnings.push(`public body is ${bodyWordCount} words; display limit is ${MAX_BODY_WORDS}`);
+    }
+
+    // 11. (P0-S5) AP sourced from RuneScape activity without grant evidence
+    // AP arrives only from patron grants or AP-for-GP exchanges, never from
+    // in-game skilling, combat, or resource activities.
+    const hasApSourceEvidence = hasApGrantEvidence || hasGpEvidence;
+    if (AP_EARNED_FROM_ACTIVITY.test(text) && !hasApSourceEvidence) {
+        warnings.push(
+            'public text claims AP was earned/gained but no ap_granted or exchange events in digest; AP comes from patron grants, not RuneScape activities',
+        );
+    }
+
+    // 12. (P0-S5) Discord-style handle in public text
+    if (DISCORD_HANDLE.test(text)) {
+        warnings.push('public text may contain a Discord-style handle (username#NNNN)');
+    }
+
+    // 13. (P0-S5) Internal API/file path in public text
+    if (INTERNAL_PATH.test(text)) {
+        warnings.push('public text may expose an internal API path or file path');
     }
 
     return { passed: warnings.length === 0, warnings };

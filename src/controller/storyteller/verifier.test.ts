@@ -392,6 +392,163 @@ describe('applyVerifierResult', () => {
 });
 
 // ---------------------------------------------------------------------------
+// (P0-S5) Title length limit
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — title length (P0-S5)', () => {
+    it('warns when publicTitle exceeds 70 characters', () => {
+        const longTitle = 'A'.repeat(71);
+        const result = verifyDispatch(makeDispatch({ publicTitle: longTitle }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('display limit is 70'))).toBe(true);
+    });
+
+    it('passes when publicTitle is exactly 70 characters', () => {
+        const exactTitle = 'A'.repeat(70);
+        const result = verifyDispatch(makeDispatch({ publicTitle: exactTitle }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('display limit is 70'))).toBe(false);
+    });
+
+    it('passes for a short realistic title', () => {
+        const result = verifyDispatch(makeDispatch({ publicTitle: 'Null City Update' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('display limit is 70'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// (P0-S5) Body word count limit
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — body word count (P0-S5)', () => {
+    it('warns when publicBody exceeds 180 words', () => {
+        const longBody = Array(181).fill('word').join(' ');
+        const result = verifyDispatch(makeDispatch({ publicBody: longBody }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('display limit is 180'))).toBe(true);
+    });
+
+    it('passes when publicBody is exactly 180 words', () => {
+        const exactBody = Array(180).fill('word').join(' ');
+        const result = verifyDispatch(makeDispatch({ publicBody: exactBody }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('display limit is 180'))).toBe(false);
+    });
+
+    it('passes for a short normal body', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'The city is quiet tonight.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('display limit is 180'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// (P0-S5) AP/GP conflation: AP sourced from RuneScape activities
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — AP/GP conflation (P0-S5)', () => {
+    it('warns when publicBody claims AP was earned without any AP source evidence', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:alice earned 200 AP killing goblins.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('AP comes from patron grants'))).toBe(true);
+    });
+
+    it('warns when publicBody claims AP was gained without any AP source evidence', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:bob gained AP from fishing today.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('AP comes from patron grants'))).toBe(true);
+    });
+
+    it('passes when ap_granted evidence is present', () => {
+        const digest = makeEmptyDigest();
+        digest.apEvents = [makeEvent('ap-grant-1', 'ap_granted', 'high')];
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:alice earned 50 AP from a patron grant.' }), digest);
+        expect(result.warnings.some(w => w.includes('AP comes from patron grants'))).toBe(false);
+    });
+
+    it('passes when AP-for-GP exchange evidence is present', () => {
+        const digest = makeEmptyDigest();
+        digest.exchangeEvents = [makeEvent('ex-1', 'ap_for_gp_exchange', 'high')];
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:alice gained AP by trading GP.' }), digest);
+        expect(result.warnings.some(w => w.includes('AP comes from patron grants'))).toBe(false);
+    });
+
+    it('does not warn when AP appears in non-earning context (e.g. "low AP")', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:alice is running low on AP.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('AP comes from patron grants'))).toBe(false);
+    });
+
+    it('passes when GP events are present (GP is evidence for AP-source via exchange)', () => {
+        const { digest } = buildFixtureDigest();
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:alice earned AP after trading coins.' }), digest);
+        expect(result.warnings.some(w => w.includes('AP comes from patron grants'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// (P0-S5) Discord handle detection
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — Discord handle detection (P0-S5)', () => {
+    it('warns when publicBody contains a Discord-style handle', () => {
+        const result = verifyDispatch(
+            makeDispatch({ publicBody: 'Patron JamesOnion#4521 supported the city.' }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('Discord-style handle'))).toBe(true);
+    });
+
+    it('warns when publicTitle contains a Discord-style handle', () => {
+        const result = verifyDispatch(
+            makeDispatch({ publicTitle: 'alice#0001 funded res:bob' }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('Discord-style handle'))).toBe(true);
+    });
+
+    it('does not warn for a resident slug like res:bob', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'res:bob earned GP today.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('Discord-style handle'))).toBe(false);
+    });
+
+    it('does not warn for normal text containing a hash without digits', () => {
+        const result = verifyDispatch(makeDispatch({ publicBody: 'The #1 resident is active.' }), makeEmptyDigest());
+        expect(result.warnings.some(w => w.includes('Discord-style handle'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// (P0-S5) Internal path exposure
+// ---------------------------------------------------------------------------
+
+describe('verifyDispatch — internal path exposure (P0-S5)', () => {
+    it('warns when publicBody contains an internal API path', () => {
+        const result = verifyDispatch(
+            makeDispatch({ publicBody: 'See /api/nullcity/projector/overview for details.' }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(true);
+    });
+
+    it('warns when publicBody contains an internal data path', () => {
+        const result = verifyDispatch(
+            makeDispatch({ publicBody: 'Data at /data/controller/logs/res:bob/actions.' }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(true);
+    });
+
+    it('warns when publicBody references the overseer ledger', () => {
+        const result = verifyDispatch(
+            makeDispatch({ publicBody: 'Check overseer-ledger for run details.' }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(true);
+    });
+
+    it('does not warn for normal public prose', () => {
+        const result = verifyDispatch(
+            makeDispatch({ publicBody: 'res:alice completed a task near the bank.' }),
+            makeEmptyDigest(),
+        );
+        expect(result.warnings.some(w => w.includes('internal API path or file path'))).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Clean fixture — no false positives on neutral text
 // ---------------------------------------------------------------------------
 
