@@ -162,4 +162,92 @@ describe('buildProjectorStoryFrame', () => {
 
         expect(frame.residents[0].latestSpeechSummary).toBeUndefined();
     });
+
+    it('passes dispatch.confidence through to narration when dispatch is verified', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({ eventRefsUsed: [refs.apLow, refs.gpEarned], confidence: 'high' });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.narration.confidence).toBe('high');
+    });
+
+    it('omits confidence from narration when dispatch has no confidence field', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({ eventRefsUsed: [refs.apLow, refs.gpEarned] });
+        // makeDispatch does not set confidence — it should be absent
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.narration.confidence).toBeUndefined();
+    });
+
+    it('sets confidence=fallback on deterministic fallback narration', () => {
+        const { digest } = buildFixtureDigest();
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.narration.confidence).toBe('fallback');
+    });
+
+    it('uses dispatch.watchNext (sanitized) when dispatch is verified and watchNext is non-empty', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+            watchNext: ['Watch Alice closely.', 'Will Bob use the GP?'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.watchNext).toEqual(['Watch Alice closely.', 'Will Bob use the GP?']);
+    });
+
+    it('falls back to deterministic watchNext when dispatch.watchNext is empty', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({ eventRefsUsed: [refs.apLow, refs.gpEarned], watchNext: [] });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        // deterministic watchNext is non-empty for a digest with events
+        expect(frame.watchNext.length).toBeGreaterThan(0);
+    });
+
+    it('falls back to deterministic watchNext when no dispatch is given', () => {
+        const { digest } = buildFixtureDigest();
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.watchNext.length).toBeGreaterThan(0);
+    });
+
+    it('sanitizes hostile text in dispatch.watchNext before publishing', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+            watchNext: ['Watch patron:james@example.com for sk-or-v1-1234567890abcdef activity.'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.watchNext[0]).not.toContain('patron:james@example.com');
+        expect(frame.watchNext[0]).not.toContain('sk-or-v1-1234567890abcdef');
+        expect(frame.watchNext[0]).toContain('[redacted]');
+    });
+
+    it('caps dispatch.watchNext at 4 items', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+            watchNext: ['A', 'B', 'C', 'D', 'E'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.watchNext).toHaveLength(4);
+        expect(frame.watchNext).toEqual(['A', 'B', 'C', 'D']);
+    });
 });

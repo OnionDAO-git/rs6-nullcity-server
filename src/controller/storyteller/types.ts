@@ -371,6 +371,8 @@ export interface ProjectorStoryFrame {
         title: string;
         body: string;
         bullets: string[];
+        /** Model confidence when source is verified_dispatch; 'fallback' when source is deterministic_fallback. */
+        confidence?: 'high' | 'medium' | 'low' | 'fallback';
     };
     leadEvent: ProjectorStoryFrameEvent | null;
     events: ProjectorStoryFrameEvent[];
@@ -419,6 +421,7 @@ export const projectorStoryFrameSchema = z
                 title: z.string().min(1),
                 body: z.string().min(1),
                 bullets: z.array(z.string()),
+                confidence: z.enum(['high', 'medium', 'low', 'fallback']).optional(),
             })
             .strict(),
         leadEvent: z

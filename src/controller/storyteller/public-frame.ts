@@ -81,7 +81,7 @@ export function buildProjectorStoryFrame(digest: CityEventDigest, options: Build
         events: frameEvents,
         residents,
         actions: buildActions(digest, leadEvent),
-        watchNext: buildWatchNext(digest, leadEvent),
+        watchNext: buildEffectiveWatchNext(dispatchDecision, digest, leadEvent),
         omitted: {
             events: Math.max(0, rankedEvents.length - frameEvents.length),
             residents: Math.max(0, digest.residents.length - residents.length),
@@ -140,6 +140,7 @@ function buildNarration(
             title: decision.dispatch.publicTitle,
             body: decision.dispatch.publicBody,
             bullets: decision.dispatch.publicBullets,
+            ...(decision.dispatch.confidence !== undefined ? { confidence: decision.dispatch.confidence } : {}),
         };
     }
 
@@ -160,6 +161,7 @@ function buildNarration(
         title,
         body: `${leadSentence} ${healthSentence}`,
         bullets: buildFallbackBullets(digest, leadEvent),
+        confidence: 'fallback' as const,
     };
 }
 
@@ -269,6 +271,18 @@ function buildWatchNext(digest: CityEventDigest, leadEvent: ProjectorStoryFrameE
     if (digest.systemHealth.lowApResidents > 0) watch.push('Who receives attention before their window closes.');
     if (!watch.length) watch.push('The next resident who speaks, moves, trades, or changes course.');
     return watch.slice(0, 4).map(sanitizePublicText);
+}
+
+function buildEffectiveWatchNext(
+    decision: DispatchDecision,
+    digest: CityEventDigest,
+    leadEvent: ProjectorStoryFrameEvent | null,
+): string[] {
+    if (decision.dispatch?.watchNext?.length) {
+        const sanitized = decision.dispatch.watchNext.map(sanitizePublicText).filter(Boolean);
+        if (sanitized.length > 0) return sanitized.slice(0, 4);
+    }
+    return buildWatchNext(digest, leadEvent);
 }
 
 function eventLabel(kind: DigestEvent['kind']): string {
