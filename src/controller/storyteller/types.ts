@@ -55,6 +55,8 @@ export interface ResidentSnapshot {
     gpObserved: number | null;
     /** Resident's current Soul goal text, if available. */
     goalText?: string;
+    /** Most recent say event text from the Library timeline within the recent-speech window (max 140 chars). */
+    recentSpeech?: string;
 }
 
 /**
@@ -217,6 +219,35 @@ export const cityEventDigestSchema = z.object({
 });
 
 /**
+ * A structured claim from the model about an event in the digest.
+ * Each claim must cite at least one valid eventRef from the digest.
+ * The verifier checks that no claim cites an unknown ref.
+ */
+export interface StorytellerClaim {
+    /** Resident name or "city" for city-level events. */
+    subject: string;
+    /** What happened (e.g. "earned", "faded", "exchanged", "asked for AP"). */
+    predicate: string;
+    /** Refs from the digest that support this claim (must exist in digest). */
+    eventRefs: string[];
+    /** ISO timestamp or window string for the claim. */
+    ts: string;
+    /** Optional numeric value (AP amount, GP amount, etc.). */
+    amount?: number;
+    /** Optional human-readable place label. */
+    location?: string;
+}
+
+export const storytellerClaimSchema = z.object({
+    subject: z.string().min(1),
+    predicate: z.string().min(1),
+    eventRefs: z.array(z.string()),
+    ts: z.string().min(1),
+    amount: z.number().optional(),
+    location: z.string().optional(),
+});
+
+/**
  * StorytellerDispatch — the model-generated public-canon output.
  * eventRefsUsed must only reference refs that exist in the source CityEventDigest.
  */
@@ -238,6 +269,22 @@ export interface StorytellerDispatch {
     operatorWarnings: string[];
     /** References into CityEventDigest.{apEvents,gpEvents,...}[].ref used to generate this dispatch. */
     eventRefsUsed: string[];
+    /**
+     * Structured claims the model makes about events in the digest.
+     * Each claim's eventRefs must reference valid digest refs.
+     * Optional for backward compatibility; new runs should always include it.
+     */
+    claims?: StorytellerClaim[];
+    /**
+     * Items the model flags for humans to watch in the next window.
+     * Optional for backward compatibility; new runs should always include it.
+     */
+    watchNext?: string[];
+    /**
+     * Model's self-assessed confidence in the grounding of this dispatch.
+     * Optional for backward compatibility; new runs should always include it.
+     */
+    confidence?: 'high' | 'medium' | 'low';
     /** Set by the verifier when a claim could not be confirmed from the digest. */
     needsReview: boolean;
     reviewReasons?: string[];
@@ -259,9 +306,153 @@ export const storytellerDispatchSchema = z.object({
     operatorSummary: z.string().min(1),
     operatorWarnings: z.array(z.string()),
     eventRefsUsed: z.array(z.string()),
+    claims: z.array(storytellerClaimSchema).optional(),
+    watchNext: z.array(z.string()).optional(),
+    confidence: z.enum(['high', 'medium', 'low']).optional(),
     needsReview: z.boolean(),
     reviewReasons: z.array(z.string()).optional(),
 });
+
+export type ProjectorNarrationSource = 'verified_dispatch' | 'deterministic_fallback';
+
+export type ProjectorFreshnessStatus = 'fresh' | 'stale' | 'unknown';
+
+export type ProjectorHealthStatus = 'ok' | 'degraded' | 'stale';
+
+export interface ProjectorStoryFrameEvent {
+    ref: string;
+    label: string;
+    residentName: string;
+    happenedAt: string;
+    importance: ImportanceTier;
+    note: string;
+    whyItMatters: string;
+}
+
+export interface ProjectorStoryFrameResident {
+    residentName: string;
+    displayName: string;
+    attention: number;
+    status: 'active' | 'low_attention' | 'faded';
+    gpObserved: number | null;
+    goal?: string;
+    /** Most recent public speech from the Library timeline (sanitized, max 140 chars). */
+    latestSpeechSummary?: string;
+}
+
+export interface ProjectorStoryFrameAction {
+    kind: 'grant_attention' | 'watch_resident' | 'operator_check' | 'witness';
+    label: string;
+    detail: string;
+    residentName?: string;
+}
+
+export interface ProjectorStoryFrame {
+    ok: true;
+    schemaVersion: 1;
+    frameId: string;
+    digestId: string;
+    generatedAt: string;
+    source: {
+        digestId: string;
+        digestBuiltAt?: string;
+        windowStart?: string;
+        windowEnd?: string;
+        freshnessMs: number | null;
+        freshnessStatus: ProjectorFreshnessStatus;
+        dispatchId?: string;
+        dispatchGeneratedAt?: string;
+        modelProfile?: string;
+        excludedDispatchId?: string;
+        excludedDispatchReason?: string;
+    };
+    narration: {
+        source: ProjectorNarrationSource;
+        title: string;
+        body: string;
+        bullets: string[];
+        /** Model confidence when source is verified_dispatch; 'fallback' when source is deterministic_fallback. */
+        confidence?: 'high' | 'medium' | 'low' | 'fallback';
+    };
+    leadEvent: ProjectorStoryFrameEvent | null;
+    events: ProjectorStoryFrameEvent[];
+    residents: ProjectorStoryFrameResident[];
+    actions: ProjectorStoryFrameAction[];
+    watchNext: string[];
+    omitted: {
+        events: number;
+        residents: number;
+    };
+    publicHealth: {
+        status: ProjectorHealthStatus;
+        totalResidents: number;
+        activeResidents: number;
+        fadedResidents: number;
+        lowApResidents: number;
+        warnings: string[];
+    };
+}
+
+export const projectorStoryFrameSchema = z
+    .object({
+        ok: z.literal(true),
+        schemaVersion: z.literal(1),
+        frameId: z.string().min(1),
+        digestId: z.string().min(1),
+        generatedAt: z.string().datetime(),
+        source: z
+            .object({
+                digestId: z.string().min(1),
+                digestBuiltAt: z.string().optional(),
+                windowStart: z.string().optional(),
+                windowEnd: z.string().optional(),
+                freshnessMs: z.number().nullable(),
+                freshnessStatus: z.enum(['fresh', 'stale', 'unknown']),
+                dispatchId: z.string().optional(),
+                dispatchGeneratedAt: z.string().optional(),
+                modelProfile: z.string().optional(),
+                excludedDispatchId: z.string().optional(),
+                excludedDispatchReason: z.string().optional(),
+            })
+            .strict(),
+        narration: z
+            .object({
+                source: z.enum(['verified_dispatch', 'deterministic_fallback']),
+                title: z.string().min(1),
+                body: z.string().min(1),
+                bullets: z.array(z.string()),
+                confidence: z.enum(['high', 'medium', 'low', 'fallback']).optional(),
+            })
+            .strict(),
+        leadEvent: z
+            .object({
+                ref: z.string(),
+                label: z.string(),
+                residentName: z.string(),
+                happenedAt: z.string(),
+                importance: z.string(),
+                note: z.string(),
+                whyItMatters: z.string(),
+            })
+            .passthrough()
+            .nullable(),
+        events: z.array(z.unknown()),
+        residents: z.array(z.unknown()),
+        actions: z.array(z.unknown()),
+        watchNext: z.array(z.string()),
+        omitted: z.object({ events: z.number().int().nonnegative(), residents: z.number().int().nonnegative() }).strict(),
+        publicHealth: z
+            .object({
+                status: z.enum(['ok', 'degraded', 'stale']),
+                totalResidents: z.number().int().nonnegative(),
+                activeResidents: z.number().int().nonnegative(),
+                fadedResidents: z.number().int().nonnegative(),
+                lowApResidents: z.number().int().nonnegative(),
+                warnings: z.array(z.string()),
+            })
+            .strict(),
+    })
+    .passthrough();
 
 /** Configuration for the Storyteller subsystem. */
 export interface StorytellerConfig {
@@ -277,6 +468,13 @@ export interface StorytellerConfig {
     maxPublicBodyWords: number;
     /** Model profile id to use for Storyteller runs. */
     modelProfile: string;
+    /**
+     * Narrator persona text (one paragraph). Injected as a PERSONA block before
+     * the PUBLIC VOICE section so the narrator identity is operator-controlled and
+     * cannot drift between runs. Omit to use the default cyberpunk-fantasy voice.
+     * Config-only — never LLM-decided.
+     */
+    persona?: string;
 }
 
 export const DEFAULT_STORYTELLER_CONFIG: StorytellerConfig = {

@@ -3,6 +3,19 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { z } from 'zod';
 import { type RuntimeState, residentSlug } from '../memory/runtime-state';
+import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
+import { NcriPricingStore, setPricingSchema, type NcriPricing } from '../ncri/ncri-pricing-store';
+import { LibraryUpdater } from '../evidence';
+import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
+import { buildProjectorStoryFrame } from '../storyteller/public-frame';
+import { StorytellerStore } from '../storyteller/store';
+import {
+    cityEventDigestSchema,
+    type CityEventDigest as StorytellerCityEventDigest,
+    type ProjectorStoryFrame,
+    type StorytellerDispatch,
+    storytellerDispatchSchema,
+} from '../storyteller/types';
 import { validateSoulFrontmatter } from '../soul/soul-schema';
 import type { InitialContainerItem, PerceptionEvent } from '../transport/message-codecs';
 import { CityIntegrationStore } from './store';
@@ -17,8 +30,6 @@ import { buildCityEventDigest, type CityEventDigest } from './city-event-digest'
 import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
 import { createSoulProposalSchema, SoulProposalError, SoulProposalStore, type SoulProposal } from './soul-proposals';
-import { NcriRegistry, NcriRegistryError, type NcriRecord, createNcriSchema } from '../ncri/ncri-registry';
-import { NcriPricingStore, setPricingSchema, type NcriPricing } from '../ncri/ncri-pricing-store';
 import {
     buildLiveEconomySnapshot,
     type LiveEconomyHeartbeat,
@@ -26,8 +37,6 @@ import {
     type LiveEconomyQuery,
     type LiveEconomySnapshot,
 } from './live-economy';
-import { LibraryUpdater } from '../evidence';
-import { GoalContractError, createGoalContractSchema, type GoalContract } from './goal-contract';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
 export const STORYTELLER_QUEUE_DEFAULT_LIMIT = 20;
@@ -133,6 +142,22 @@ export interface CityIntegrationBirthAuthority {
     birthResident(input: BirthResidentRequest): Promise<{ resident: string; created: boolean; connected: boolean }>;
 }
 
+/** Event fired by {@link CityIntegrationService.creditAttention} when a patron supports a resident. */
+export interface PatronSupportEvent {
+    cityUserId: string;
+    /** Canonical identity (personId === landing users.id), resolved by the caller (T0.ID). Preferred standing/letter key. */
+    personId?: string;
+    /** Display alias for the patron (T0.ID). Used only if personId is absent. */
+    patronHandle?: string;
+    residentName: string;
+    /** Resident faction, e.g. `'embassy'`. Derived from runtime state at the moment of support. */
+    faction: string;
+    /** AP amount credited (positive integer, same value as `creditedAmount`). */
+    amount: number;
+    ts: string;
+    note: string;
+}
+
 export interface CityIntegrationOptions {
     memoryRoot: string;
     getRuntime(resident: string): CityRuntime | undefined;
@@ -140,6 +165,17 @@ export interface CityIntegrationOptions {
     birth: CityIntegrationBirthAuthority;
     now?: () => Date;
     economyEventLog?: EconomyEventLog;
+    /**
+     * Called synchronously after every successful {@link creditAttention} that
+     * carries a `cityUserId`. Allows the host to credit patron standing and
+     * dispatch tier letters without introducing a direct dependency on the
+     * patron subsystem inside CityIntegrationService. Best-effort: errors
+     * thrown by the callback are NOT propagated; log them and return normally.
+     *
+     * QA-20260601-065: wires the dashboard "Support with AP" path to the same
+     * standing/letter flow as the patron gateway CLI path (`patron:offer`).
+     */
+    onPatronSupport?: (event: PatronSupportEvent) => void;
 }
 
 export interface CityStorytellerDispatchSummary {
@@ -201,6 +237,8 @@ const attentionGrantRequestSchema = z
         idempotencyKey: idempotencyKeySchema,
         amount: z.number().int().positive(),
         cityUserId: z.string().min(1).optional(),
+        personId: z.string().min(1).optional(),
+        patronHandle: z.string().min(1).optional(),
         sourceType: z.string().min(1).optional(),
         sourceId: z.string().min(1).optional(),
         note: z.string().max(500).optional(),
@@ -1012,10 +1050,33 @@ export class CityIntegrationService {
                 kind: 'ap_topup',
                 residentName,
                 cityUserId: request.cityUserId,
+                personId: request.personId,
                 apDelta: request.amount,
                 refId: request.sourceId ?? request.idempotencyKey,
                 note: request.note ?? `credited ${request.amount} AP from ${request.sourceType ?? 'city_attention_credit'}`,
             });
+            // QA-20260601-065: when the dashboard "Support with AP" button calls
+            // creditAttention with a cityUserId, the patron should also receive
+            // standing credit + tier letters — same as the patron:offer CLI path.
+            if (request.cityUserId && this.options.onPatronSupport) {
+                const faction = (runtime.getState() as { faction?: string }).faction ?? 'embassy';
+                try {
+                    this.options.onPatronSupport({
+                        cityUserId: request.cityUserId,
+                        personId: request.personId,
+                        patronHandle: request.patronHandle,
+                        residentName,
+                        faction,
+                        amount: request.amount,
+                        ts,
+                        note: request.note ?? 'city_attention_credit',
+                    });
+                } catch (err) {
+                    // Best-effort: never block attention credit for standing issues.
+                    // eslint-disable-next-line no-console
+                    console.error('[creditAttention] onPatronSupport failed', err);
+                }
+            }
             return result;
         });
     }
@@ -1408,6 +1469,23 @@ export class CityIntegrationService {
         return this.storytellerQueue('review', limit);
     }
 
+    storytellerProjectorLatest(): ProjectorStoryFrame {
+        const storytellerRoot = path.join(path.dirname(this.options.memoryRoot), 'storyteller');
+        if (!fs.existsSync(storytellerRoot)) {
+            throw new CityIntegrationError(404, 'storyteller_not_found');
+        }
+
+        const store = new StorytellerStore(storytellerRoot);
+        const latestFrame = store.readLatestProjectorFrame();
+        if (latestFrame) return latestFrame;
+
+        const source = this.readLatestStorytellerSource(storytellerRoot);
+        if (!source) {
+            throw new CityIntegrationError(404, 'storyteller_not_found');
+        }
+        return buildProjectorStoryFrame(source.digest, { dispatch: source.dispatch, now: this.now() });
+    }
+
     private storytellerQueue(queue: 'canon' | 'review', limit: number): CityStorytellerQueueSummary {
         const boundedLimit = clampStorytellerQueueLimit(limit);
         const storytellerRoot = path.join(path.dirname(this.options.memoryRoot), 'storyteller', queue);
@@ -1427,6 +1505,29 @@ export class CityIntegrationService {
             queue,
             count: runs.length,
             entries: runs.slice(0, boundedLimit),
+        };
+    }
+
+    private readLatestStorytellerSource(
+        storytellerRoot: string,
+    ): { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch } | undefined {
+        const runs = fs
+            .readdirSync(storytellerRoot, { withFileTypes: true })
+            .filter(entry => entry.isDirectory())
+            .map(entry => this.readStorytellerSource(path.join(storytellerRoot, entry.name)))
+            .filter((run): run is { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch } => Boolean(run));
+
+        runs.sort((left, right) => storytellerSourceStampMs(right) - storytellerSourceStampMs(left));
+        return runs[0];
+    }
+
+    private readStorytellerSource(runRoot: string): { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch } | undefined {
+        const digest = cityEventDigestSchema.safeParse(readJson(path.join(runRoot, 'digest.json')));
+        if (!digest.success) return undefined;
+        const dispatch = storytellerDispatchSchema.safeParse(readJson(path.join(runRoot, 'dispatch.json')));
+        return {
+            digest: digest.data as StorytellerCityEventDigest,
+            ...(dispatch.success ? { dispatch: dispatch.data as StorytellerDispatch } : {}),
         };
     }
 
@@ -1763,6 +1864,16 @@ function storytellerDispatchSummary(digest: Record<string, unknown>, runId: stri
 
 function storytellerLatestStampMs(run: Pick<CityStorytellerLatestSummary, 'dispatch' | 'builtAt' | 'windowEnd' | 'windowStart'>): number {
     const candidates = [run.dispatch?.generatedAt, run.builtAt, run.windowEnd, run.windowStart];
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        const parsed = Date.parse(candidate);
+        if (Number.isFinite(parsed)) return parsed;
+    }
+    return Number.NEGATIVE_INFINITY;
+}
+
+function storytellerSourceStampMs(run: { digest: StorytellerCityEventDigest; dispatch?: StorytellerDispatch }): number {
+    const candidates = [run.dispatch?.generatedAt, run.digest.builtAt, run.digest.windowEnd, run.digest.windowStart];
     for (const candidate of candidates) {
         if (!candidate) continue;
         const parsed = Date.parse(candidate);

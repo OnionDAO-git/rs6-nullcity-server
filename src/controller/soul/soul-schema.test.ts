@@ -1,6 +1,14 @@
 import { validateSoulFrontmatter } from './soul-schema';
 
 describe('validateSoulFrontmatter modules', () => {
+    it('accepts a deflections array (social-reply in-voice fallback lines)', () => {
+        const frontmatter = validateSoulFrontmatter(
+            { name: 'res:agent', archetype: 'endurer', deflections: ['Busy, friend.', 'Not now.'] },
+            '/tmp/res-agent.md',
+        );
+        expect(frontmatter.deflections).toEqual(['Busy, friend.', 'Not now.']);
+    });
+
     it('parses data-only SPARK module selections', () => {
         const frontmatter = validateSoulFrontmatter(
             {

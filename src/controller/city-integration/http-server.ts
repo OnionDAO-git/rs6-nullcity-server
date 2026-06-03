@@ -119,6 +119,11 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/projector/latest`) {
+        writeJson(response, 200, options.service.storytellerProjectorLatest(), { 'Cache-Control': 'max-age=10' });
+        return;
+    }
+
     if (request.method === 'GET' && path === `${pathPrefix}/storyteller/canon`) {
         writeJson(response, 200, options.service.storytellerCanon(readListLimit(url)));
         return;

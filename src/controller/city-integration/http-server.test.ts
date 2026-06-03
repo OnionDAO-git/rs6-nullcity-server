@@ -3,6 +3,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import { residentSlug, type RuntimeState } from '../memory/runtime-state';
+import { buildProjectorStoryFrame } from '../storyteller/public-frame';
 import { closeCityIntegrationHttpServer, startCityIntegrationHttpServer } from './http-server';
 import { type CityRuntime, CityIntegrationService } from './service';
 
@@ -615,6 +616,46 @@ describe('CityIntegration HTTP server', () => {
                 warningCount: 2,
                 eventRefCount: 1,
             },
+        });
+    });
+
+    it('GET /storyteller/projector/latest returns the public projector frame', async () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        fs.mkdirSync(storytellerRoot, { recursive: true });
+        const frame = buildProjectorStoryFrame(
+            {
+                schemaVersion: 1,
+                digestId: 'digest-projector',
+                windowStart: '2026-05-27T11:50:00.000Z',
+                windowEnd: '2026-05-27T12:00:00.000Z',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                apEvents: [],
+                gpEvents: [],
+                exchangeEvents: [],
+                ncriEvents: [],
+                goalEvents: [],
+                stuckEvents: [],
+                miscEvents: [],
+                topEvents: [],
+                residents: [],
+                systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
+            },
+            { now: new Date('2026-05-27T12:01:00.000Z') },
+        );
+        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frame, null, 2));
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/storyteller/projector/latest`, token);
+
+        expect(response.status).toBe(200);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            digestId: 'digest-projector',
+            narration: { source: 'deterministic_fallback' },
         });
     });
 

@@ -43,6 +43,8 @@ export interface EconomyEvent {
     residentName?: string;
     /** Human/city user involved, if any. */
     cityUserId?: string;
+    /** Canonical identity (personId === landing users.id), if resolved by the caller. */
+    personId?: string;
     /** Signed AP change (Null City ledger units). */
     apDelta?: number;
     /** Signed GP change (real RuneScape gold). */
@@ -68,6 +70,7 @@ const economyEventSchema = z.object({
         .regex(/^res:[a-z0-9_-]{1,20}$/, 'must match res:<slug>')
         .optional(),
     cityUserId: z.string().min(1).optional(),
+    personId: z.string().min(1).optional(),
     apDelta: z.number().finite().optional(),
     gpDelta: z.number().finite().optional(),
     ncriId: z.string().min(1).optional(),
@@ -115,6 +118,7 @@ export class EconomyEventLog {
             kind: parsedInput.kind,
             ...(parsedInput.residentName !== undefined ? { residentName: parsedInput.residentName } : {}),
             ...(parsedInput.cityUserId !== undefined ? { cityUserId: parsedInput.cityUserId } : {}),
+            ...(parsedInput.personId !== undefined ? { personId: parsedInput.personId } : {}),
             ...(parsedInput.apDelta !== undefined ? { apDelta: parsedInput.apDelta } : {}),
             ...(parsedInput.gpDelta !== undefined ? { gpDelta: parsedInput.gpDelta } : {}),
             ...(parsedInput.ncriId !== undefined ? { ncriId: parsedInput.ncriId } : {}),

@@ -11,6 +11,69 @@ import type {
     OrientationGoalEditedLibraryEvent,
 } from '../spark/orientation-scorer';
 
+// ---------------------------------------------------------------------------
+// RIQ-3-3: Plan lifecycle Library event types
+// ---------------------------------------------------------------------------
+
+/**
+ * Emitted when PlannerPass creates the first durable plan for a resident.
+ * The Storyteller can narrate "resident X is now pursuing: stage1, stage2…"
+ */
+export interface PlanCreatedLibraryEvent {
+    kind: 'plan_created';
+    ts: string;
+    tick: number;
+    goalId: string;
+    goalDescription: string;
+    stageCount: number;
+    /** Ordered subgoal labels — enough for the Storyteller to narrate the arc. */
+    stageSubgoals: string[];
+}
+
+/**
+ * Emitted when PlannerPass replaces an existing plan (plan completed, abandoned,
+ * or a stage blocked). Includes why the replan was triggered so the Storyteller
+ * can frame it as adaptation rather than failure.
+ */
+export interface PlanReplannedLibraryEvent {
+    kind: 'plan_replanned';
+    ts: string;
+    tick: number;
+    goalId: string;
+    goalDescription: string;
+    stageCount: number;
+    stageSubgoals: string[];
+    /** Previous plan status ('completed'|'abandoned') or 'stage_blocked:<stageId>'. */
+    replannedReason: string;
+}
+
+/**
+ * Emitted when the Body detects that the current plan stage's success criteria
+ * are met and advances the plan to the next stage (RIQ-A1-OBS).
+ */
+export interface PlanStageDoneLibraryEvent {
+    kind: 'plan_stage_done';
+    ts: string;
+    tick: number;
+    goalId: string;
+    stageId: string;
+    stageSubgoal: string;
+}
+
+/**
+ * Emitted when the Body detects that the current plan stage is blocked —
+ * the success criteria cannot be met given current world state — and
+ * marks the stage blocked so the Planner can re-plan (RIQ-A1-OBS).
+ */
+export interface PlanStageBlockedLibraryEvent {
+    kind: 'plan_stage_blocked';
+    ts: string;
+    tick: number;
+    goalId: string;
+    stageId: string;
+    stageSubgoal: string;
+}
+
 export interface NcriLibraryEvent {
     kind: 'ncri_created' | 'ncri_transferred' | 'ncri_redeemed';
     ts: string;
@@ -352,6 +415,95 @@ export class LibraryUpdater {
             reason: event.reason,
             lifeIndex: index.lives,
             significanceReasons: ['orientation:goal_edited'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a new durable plan as a Library timeline moment (RIQ-3-3).
+     * Call only when PlannerPass creates the resident's first plan (no prior plan).
+     */
+    observePlanCreated(event: PlanCreatedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_created',
+            goalId: event.goalId,
+            goalDescription: event.goalDescription,
+            stageCount: event.stageCount,
+            stageSubgoals: event.stageSubgoals,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:created'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a plan replacement as a Library timeline moment (RIQ-3-3).
+     * Call when PlannerPass replaces an existing plan because it was completed,
+     * abandoned, or a stage became blocked.
+     */
+    observePlanReplanned(event: PlanReplannedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_replanned',
+            goalId: event.goalId,
+            goalDescription: event.goalDescription,
+            stageCount: event.stageCount,
+            stageSubgoals: event.stageSubgoals,
+            replannedReason: event.replannedReason,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:replanned'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a plan stage completion as a Library timeline moment (RIQ-A1-OBS).
+     * Call when the Body router detects a stage's success criteria are met.
+     */
+    observePlanStageDone(event: PlanStageDoneLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_stage_done',
+            goalId: event.goalId,
+            stageId: event.stageId,
+            stageSubgoal: event.stageSubgoal,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:stage_done'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Record a plan stage block as a Library timeline moment (RIQ-A1-OBS).
+     * Call when the Body router determines the current stage cannot progress
+     * and marks it blocked so the Planner can re-plan.
+     */
+    observePlanStageBlocked(event: PlanStageBlockedLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'plan_stage_blocked',
+            goalId: event.goalId,
+            stageId: event.stageId,
+            stageSubgoal: event.stageSubgoal,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:stage_blocked'],
         });
         this.touchIndex(index);
     }

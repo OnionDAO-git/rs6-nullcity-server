@@ -3,7 +3,13 @@ import os from 'os';
 import path from 'path';
 import type { ProgressLine, TrajectoryLine } from './schemas';
 import { LibraryUpdater } from './library-updater';
-import type { NcriLibraryEvent } from './library-updater';
+import type {
+    NcriLibraryEvent,
+    PlanCreatedLibraryEvent,
+    PlanReplannedLibraryEvent,
+    PlanStageDoneLibraryEvent,
+    PlanStageBlockedLibraryEvent,
+} from './library-updater';
 
 describe('LibraryUpdater', () => {
     it('appends only story-significant trajectory lines to timeline.jsonl', () => {
@@ -616,6 +622,282 @@ describe('LibraryUpdater — observeOrientationStalled', () => {
         expect(timeline[1]).toEqual(
             expect.objectContaining({ kind: 'orientation_stalled', tick: 110, nonProgressTicks: 100, lifeIndex: 1 }),
         );
+    });
+});
+
+describe('LibraryUpdater — observePlanCreated (RIQ-3-3)', () => {
+    it('appends plan_created to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+        const event: PlanCreatedLibraryEvent = {
+            kind: 'plan_created',
+            ts: '2026-06-02T15:00:00.000Z',
+            tick: 200,
+            goalId: 'master-firemaking',
+            goalDescription: 'Become a master of Firemaking',
+            stageCount: 3,
+            stageSubgoals: ['acquire axe', 'chop logs', 'light fires to level 99'],
+        };
+
+        updater.observePlanCreated(event);
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'plan_created',
+                ts: '2026-06-02T15:00:00.000Z',
+                tick: 200,
+                goalId: 'master-firemaking',
+                goalDescription: 'Become a master of Firemaking',
+                stageCount: 3,
+                stageSubgoals: ['acquire axe', 'chop logs', 'light fires to level 99'],
+                lifeIndex: 1,
+                significanceReasons: ['plan:created'],
+            }),
+        ]);
+    });
+
+    it('plan_created touches index updatedAt', () => {
+        const { updater, root } = testUpdater();
+        const before = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+
+        updater.observePlanCreated({
+            kind: 'plan_created',
+            ts: '2026-06-02T15:01:00.000Z',
+            tick: 201,
+            goalId: 'test-goal',
+            goalDescription: 'test',
+            stageCount: 1,
+            stageSubgoals: ['do thing'],
+        });
+
+        const after = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+        expect(after).toBeGreaterThanOrEqual(before);
+    });
+});
+
+describe('LibraryUpdater — observePlanReplanned (RIQ-3-3)', () => {
+    it('appends plan_replanned to timeline with replannedReason and all required fields', () => {
+        const { updater, root } = testUpdater();
+        const event: PlanReplannedLibraryEvent = {
+            kind: 'plan_replanned',
+            ts: '2026-06-02T15:05:00.000Z',
+            tick: 350,
+            goalId: 'master-firemaking',
+            goalDescription: 'Become a master of Firemaking',
+            stageCount: 2,
+            stageSubgoals: ['gather logs from bank', 'light fires to target level'],
+            replannedReason: 'completed',
+        };
+
+        updater.observePlanReplanned(event);
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'plan_replanned',
+                ts: '2026-06-02T15:05:00.000Z',
+                tick: 350,
+                goalId: 'master-firemaking',
+                replannedReason: 'completed',
+                stageCount: 2,
+                stageSubgoals: ['gather logs from bank', 'light fires to target level'],
+                lifeIndex: 1,
+                significanceReasons: ['plan:replanned'],
+            }),
+        ]);
+    });
+
+    it('plan_replanned with stage_blocked reason records correctly', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observePlanReplanned({
+            kind: 'plan_replanned',
+            ts: '2026-06-02T15:06:00.000Z',
+            tick: 400,
+            goalId: 'master-firemaking',
+            goalDescription: 'Become a master of Firemaking',
+            stageCount: 3,
+            stageSubgoals: ['acquire axe', 'chop logs', 'light fires'],
+            replannedReason: 'stage_blocked:acquire-axe',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(1);
+        expect(timeline[0]).toMatchObject({
+            kind: 'plan_replanned',
+            replannedReason: 'stage_blocked:acquire-axe',
+        });
+    });
+
+    it('plan_created then plan_replanned appear in timeline order', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observePlanCreated({
+            kind: 'plan_created',
+            ts: '2026-06-02T15:00:00.000Z',
+            tick: 200,
+            goalId: 'test-goal',
+            goalDescription: 'Test',
+            stageCount: 2,
+            stageSubgoals: ['stage 1', 'stage 2'],
+        });
+        updater.observePlanReplanned({
+            kind: 'plan_replanned',
+            ts: '2026-06-02T15:10:00.000Z',
+            tick: 800,
+            goalId: 'test-goal',
+            goalDescription: 'Test',
+            stageCount: 2,
+            stageSubgoals: ['revised stage 1', 'revised stage 2'],
+            replannedReason: 'abandoned',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toMatchObject({ kind: 'plan_created', tick: 200 });
+        expect(timeline[1]).toMatchObject({ kind: 'plan_replanned', tick: 800, replannedReason: 'abandoned' });
+    });
+});
+
+describe('LibraryUpdater — observePlanStageDone (RIQ-A1-OBS)', () => {
+    it('appends plan_stage_done to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+        const event: PlanStageDoneLibraryEvent = {
+            kind: 'plan_stage_done',
+            ts: '2026-06-03T10:00:00.000Z',
+            tick: 500,
+            goalId: 'master-firemaking',
+            stageId: 'acquire-axe',
+            stageSubgoal: 'acquire axe from bank',
+        };
+
+        updater.observePlanStageDone(event);
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'plan_stage_done',
+                ts: '2026-06-03T10:00:00.000Z',
+                tick: 500,
+                goalId: 'master-firemaking',
+                stageId: 'acquire-axe',
+                stageSubgoal: 'acquire axe from bank',
+                lifeIndex: 1,
+                significanceReasons: ['plan:stage_done'],
+            }),
+        ]);
+    });
+
+    it('plan_stage_done touches index updatedAt', () => {
+        const { updater, root } = testUpdater();
+        const before = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+
+        updater.observePlanStageDone({
+            kind: 'plan_stage_done',
+            ts: '2026-06-03T10:01:00.000Z',
+            tick: 501,
+            goalId: 'test-goal',
+            stageId: 'stage-1',
+            stageSubgoal: 'do stage 1',
+        });
+
+        const after = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+        expect(after).toBeGreaterThanOrEqual(before);
+    });
+
+    it('multiple plan_stage_done events accumulate in timeline order', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observePlanStageDone({
+            kind: 'plan_stage_done',
+            ts: '2026-06-03T10:00:00.000Z',
+            tick: 500,
+            goalId: 'master-firemaking',
+            stageId: 'acquire-axe',
+            stageSubgoal: 'acquire axe',
+        });
+        updater.observePlanStageDone({
+            kind: 'plan_stage_done',
+            ts: '2026-06-03T10:05:00.000Z',
+            tick: 600,
+            goalId: 'master-firemaking',
+            stageId: 'chop-logs',
+            stageSubgoal: 'chop 100 logs',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toMatchObject({ kind: 'plan_stage_done', stageId: 'acquire-axe', tick: 500 });
+        expect(timeline[1]).toMatchObject({ kind: 'plan_stage_done', stageId: 'chop-logs', tick: 600 });
+    });
+});
+
+describe('LibraryUpdater — observePlanStageBlocked (RIQ-A1-OBS)', () => {
+    it('appends plan_stage_blocked to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+        const event: PlanStageBlockedLibraryEvent = {
+            kind: 'plan_stage_blocked',
+            ts: '2026-06-03T11:00:00.000Z',
+            tick: 700,
+            goalId: 'master-firemaking',
+            stageId: 'acquire-axe',
+            stageSubgoal: 'acquire axe from bank',
+        };
+
+        updater.observePlanStageBlocked(event);
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'plan_stage_blocked',
+                ts: '2026-06-03T11:00:00.000Z',
+                tick: 700,
+                goalId: 'master-firemaking',
+                stageId: 'acquire-axe',
+                stageSubgoal: 'acquire axe from bank',
+                lifeIndex: 1,
+                significanceReasons: ['plan:stage_blocked'],
+            }),
+        ]);
+    });
+
+    it('plan_stage_blocked touches index updatedAt', () => {
+        const { updater, root } = testUpdater();
+        const before = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+
+        updater.observePlanStageBlocked({
+            kind: 'plan_stage_blocked',
+            ts: '2026-06-03T11:01:00.000Z',
+            tick: 701,
+            goalId: 'test-goal',
+            stageId: 'stage-1',
+            stageSubgoal: 'do stage 1',
+        });
+
+        const after = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+        expect(after).toBeGreaterThanOrEqual(before);
+    });
+
+    it('plan_stage_done followed by plan_stage_blocked appear in correct order', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observePlanStageDone({
+            kind: 'plan_stage_done',
+            ts: '2026-06-03T10:00:00.000Z',
+            tick: 500,
+            goalId: 'master-firemaking',
+            stageId: 'acquire-axe',
+            stageSubgoal: 'acquire axe',
+        });
+        updater.observePlanStageBlocked({
+            kind: 'plan_stage_blocked',
+            ts: '2026-06-03T10:10:00.000Z',
+            tick: 750,
+            goalId: 'master-firemaking',
+            stageId: 'chop-logs',
+            stageSubgoal: 'chop logs',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toMatchObject({ kind: 'plan_stage_done', stageId: 'acquire-axe' });
+        expect(timeline[1]).toMatchObject({ kind: 'plan_stage_blocked', stageId: 'chop-logs' });
     });
 });
 

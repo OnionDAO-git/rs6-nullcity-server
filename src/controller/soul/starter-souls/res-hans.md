@@ -21,6 +21,10 @@ goals:
   - know one fact about each named hero in town
 alignment: cheerful neutral, helpful by default, never picks fights
 aesthetic: worn linen tunic, mud on the boots, an easy crook in the smile
+deflections:
+  - "Mind on the patrol just now, friend — give me a moment."
+  - "Hold that thought — the bells have my ear."
+  - "Busy stretch in the courtyard, friend. Come back round."
 model:
   # S-INFER-9: Hans is a hook-driven hero (single thinking-off tier, no deliberative
   # q8 Brain). Route its one model tier to the fast q4 (tower) so the embassy hero

@@ -33,15 +33,15 @@ initialInventory:
 legacy:
   kind: mentor
   parameters:
-    # Reassigned off trading-giving-5m: resident-to-resident trades never complete
-    # (the partner runs its own task and drifts), so it stalled. Has tinderbox +
-    # logs already; +axe enables the proven woodcutting→firemaking progress loop.
-    benchmarkTask: woodcutting-firemaking-10m
+    # Keep QA Trader on the trade benchmark so ordinary-life audits exercise
+    # trade readiness instead of drifting into generic skilling loops.
+    benchmarkTask: trading-giving-5m
 modules:
   - id: onion.runescape.standard
     enabled: true
 behavior:
   kind: hybrid-agent
+  followPlayer: codex
   followRadius: 1
   commandPrefix: trade
   brainEveryTicks: 300

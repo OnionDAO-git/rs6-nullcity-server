@@ -139,6 +139,12 @@ export interface SoulFrontmatter {
      * light", "wet stone on the riverbank". Not visual rendering — vibe.
      */
     aesthetic?: string;
+    /**
+     * In-voice deflection lines used as the conversational-reply reliability floor —
+     * spoken when inference is unavailable/screened. Should acknowledge without
+     * false-answering (e.g. "Busy just now, friend."). 2-3 per soul, rotated.
+     */
+    deflections?: string[];
     model?: {
         endpoint?: string;
         model?: string;
@@ -261,6 +267,8 @@ export interface HybridAgentBehaviorDefinition {
     visibilityAnchor?: { x: number; y: number; level?: number };
     brain?: InferenceProfileDefinition;
     body?: InferenceProfileDefinition;
+    /** RIQ-3-2: rare deliberative planner profile (Haiku or local fallback). */
+    planner?: InferenceProfileDefinition;
 }
 
 export interface InferenceProfileDefinition {
@@ -341,6 +349,7 @@ const hybridAgentBehaviorSchema = z.object({
     visibilityAnchor: behaviorPositionSchema.optional(),
     brain: inferenceProfileSchema.optional(),
     body: inferenceProfileSchema.optional(),
+    planner: inferenceProfileSchema.optional(),
 });
 const soulBehaviorSchema = z.discriminatedUnion('kind', [basicAgentBehaviorSchema, hybridAgentBehaviorSchema]);
 const soulSparkModuleSchema = z
@@ -368,6 +377,7 @@ export const soulFrontmatterSchema = z
         goals: z.array(z.string().min(1)).optional(),
         alignment: z.string().min(1).optional(),
         aesthetic: z.string().min(1).optional(),
+        deflections: z.array(z.string().min(1)).optional(),
         model: z
             .object({
                 endpoint: z.string().optional(),

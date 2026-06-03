@@ -23,6 +23,7 @@ function selectPhrase(phrases: string[], seed: string): string {
 
 const PHRASEBOOK: Record<string, Record<string, string[]>> = {
     achiever: {
+        'social_reply.deflection': ['Catch me in a minute.', 'Busy right now.', 'Give me a sec.'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             "I'm stuck near the {direction} fence! Can someone help open the path?",
             'This {direction} fence is blocking my training! Anyone around to open a route?',
@@ -79,6 +80,7 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'direct_chat_stop.ack': ['Stopping.', 'Pausing here.'],
     },
     mentor: {
+        'social_reply.deflection': ['One moment, please.', 'I shall return to you shortly.', 'I am occupied just now.'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'A {direction} fence stands in our way. Let us see if someone can assist in finding a path.',
             'Patience is key, but I appear to be stuck by this {direction} fence. Can anyone help?',
@@ -137,6 +139,7 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'direct_chat_stop.ack': ['Very well, stopping here.', 'Stopping my routine.'],
     },
     endurer: {
+        'social_reply.deflection': ['Not now.', 'Busy. Later.', 'Give me a moment.'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'Just another barrier... Stuck near this {direction} fence.',
             'This {direction} fence is holding me back. Anyone around to help?',
@@ -189,6 +192,7 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
         'direct_chat_stop.ack': ['Stopping.', 'Pausing.'],
     },
     default: {
+        'social_reply.deflection': ['In a moment.', 'Busy just now.', 'One moment.'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'I am stuck near the {direction} fence. Can someone open a route?',
             "I'm blocked by a fence to the {direction}. Can anyone help?",

@@ -66,6 +66,8 @@ import {
     buryBonesAction,
     starterFishingAction,
     firemakingAction,
+    acquireWoodcuttingAxeAction,
+    planStageRouter,
     stuckRecoveryPatrolTarget,
     isUsefulGroundItem,
     usefulGroundItemPriority,
@@ -151,6 +153,11 @@ import {
     actorMatchesName,
     safeTradeOfferSlot,
 } from './hybrid-agent-chat';
+import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
+import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
+import type { PlanStore } from '../intelligence/plan-store';
+import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
+import type { LibraryUpdater } from '../evidence/library-updater';
 
 // --- Shared Constants ---
 export const DEFAULT_GOAL_SHARE_EVERY_TICKS = 600;
@@ -196,6 +203,10 @@ export interface HelperContext {
         memory: any;
         llm: any;
         patronRegistry?: any;
+        /** RIQ-3-2: per-resident durable plan store; absent for residents without planner config. */
+        planStore?: PlanStore;
+        /** RIQ-3-3: Library updater for plan lifecycle events; absent until wired from ResidentRuntime. */
+        libraryUpdater?: LibraryUpdater;
     };
     cognition(): any;
     commandPrefix(): string;
@@ -828,9 +839,7 @@ export function statusSpeech(
  */
 export function composeStatusLine(parts: { prefix: string; goal?: string; next?: string; need: string }): string {
     const { prefix, goal, next, need } = parts;
-    return (
-        cleanSpeech(goal ? `${prefix}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${prefix}.${need}`) || prefix
-    );
+    return cleanSpeech(goal ? `${prefix}. Goal: ${goal}.${next ? ` Next: ${next}` : ''}${need}` : `${prefix}.${need}`) || prefix;
 }
 
 export function visibilityReturnNextStep(ctx: HelperContext, perception: HybridPerception): string | undefined {
@@ -2906,6 +2915,10 @@ export function goalRoutineOverride(
 
     if (fireGoalLike) {
         const explicitWoodcuttingGoalId = /woodcut|chop/i.test(goal.id);
+        const acquireAxe = explicitWoodcuttingGoalId ? undefined : acquireWoodcuttingAxeAction(perception);
+        if (acquireAxe) {
+            return { action: acquireAxe, cause: acquireAxe.cause || 'firemaking_acquire_axe' };
+        }
         const woodcutting = explicitWoodcuttingGoalId ? undefined : levelOneWoodcuttingAction(perception);
         if (woodcutting) {
             return { action: woodcutting, cause: 'firemaking_gather_logs' };
@@ -3317,6 +3330,129 @@ function shouldShareGoal(ctx: HelperContext): boolean {
     return lastShared === undefined || ctx.options.state.tick - lastShared >= interval;
 }
 
+// Per-process lock: tracks residents with a PlannerPass currently in flight so
+// concurrent runBrain calls don't double-trigger the deliberative planner.
+const _plannerPassInFlight = new Set<string>();
+
+/**
+ * RIQ-3-6: Tick budget for plan stage routing.
+ *
+ * When the Body routes actions for a stage but the stage never emits
+ * stage_done or stage_blocked (e.g. the router recognises the subgoal but
+ * the resident cannot acquire the required item in the game world), this
+ * in-memory counter tracks how many ticks the stage has been routing.  Once
+ * STAGE_TICK_BUDGET ticks elapse the stage is force-blocked so the Planner
+ * can replan with updated knowledge.
+ *
+ * Key: `${residentId}:${plan.createdAtTick}:${stage.id}`.  Including
+ * createdAtTick means each replan gets fresh tracking even when the new plan
+ * reuses the same stage id strings.  The Map is reset on controller restart
+ * (acceptable — a restart is a legitimate reason to give a stage a fresh
+ * budget).
+ */
+export const STAGE_TICK_BUDGET = 200;
+const _stageActiveSinceTick = new Map<string, number>();
+
+/**
+ * RIQ-3-2: PlannerPass trigger.
+ *
+ * Runs before the per-tick goal picker. Checks whether the resident needs a
+ * new deliberative plan (first run, plan completed, or current stage blocked)
+ * and, if so, invokes runPlannerPass via the soul's `behavior.planner` profile.
+ *
+ * No-ops when:
+ *   - No planStore is configured in the context
+ *   - The soul has no orientationGoal
+ *   - The behavior has no `planner` profile (planner profile = opt-in)
+ *   - A PlannerPass is already in flight for this resident
+ *   - The active plan is healthy (active + current stage not blocked)
+ */
+export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: number): Promise<void> {
+    const { planStore } = ctx.options;
+    if (!planStore) return;
+
+    const soul = ctx.options.soul;
+    const orientationGoal = soul.frontmatter.orientationGoal;
+    if (!orientationGoal) return;
+
+    const behavior = ctx.behavior() as HybridAgentBehaviorDefinition;
+    const plannerProfile = behavior.planner;
+    if (!plannerProfile) return;
+
+    const residentId = ctx.options.state.resident;
+    if (_plannerPassInFlight.has(residentId)) return;
+
+    const plan = planStore.load(residentId);
+    const stage = plan ? currentPlanStage(plan) : undefined;
+    const needsReplan = !plan || plan.status === 'completed' || plan.status === 'abandoned' || stage?.status === 'blocked';
+    if (!needsReplan) return;
+
+    _plannerPassInFlight.add(residentId);
+    const plannerLlmAdapter = {
+        complete: async (req: LlmRequest): Promise<LlmResponse> => {
+            return ctx.complete(thinkId || 0, {
+                ...req,
+                endpoint: ctx.endpointFor(plannerProfile),
+                temperature: ctx.temperatureFor(plannerProfile, 0.3),
+                thinking: plannerProfile.thinking ?? false,
+                timeoutMs: ctx.timeoutFor(plannerProfile, 90_000),
+                ...(ctx.modelFor(plannerProfile) ? { model: ctx.modelFor(plannerProfile) } : {}),
+            });
+        },
+    } as unknown as LlmClient;
+
+    try {
+        const result = await runPlannerPass({
+            residentName: soul.frontmatter.display || residentId,
+            goalId: orientationGoal.id,
+            goalDescription: orientationGoal.description,
+            tick: ctx.options.state.tick,
+            llmClient: plannerLlmAdapter,
+            request: { endpoint: ctx.endpointFor(plannerProfile), priority: 3 },
+        });
+        if (result.success && result.plan) {
+            planStore.save(residentId, result.plan);
+            // RIQ-3-3: emit plan lifecycle Library event so the Storyteller can narrate
+            // when a resident forms or adapts their multi-stage plan.
+            const { libraryUpdater } = ctx.options;
+            if (libraryUpdater) {
+                const ts = new Date().toISOString();
+                const stageSubgoals = result.plan.stages.map(s => s.subgoal);
+                if (!plan) {
+                    libraryUpdater.observePlanCreated({
+                        kind: 'plan_created',
+                        ts,
+                        tick: ctx.options.state.tick,
+                        goalId: result.plan.goalId,
+                        goalDescription: result.plan.goalDescription,
+                        stageCount: result.plan.stages.length,
+                        stageSubgoals,
+                    });
+                } else {
+                    const replannedReason =
+                        plan.status !== 'active' ? plan.status : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
+                    libraryUpdater.observePlanReplanned({
+                        kind: 'plan_replanned',
+                        ts,
+                        tick: ctx.options.state.tick,
+                        goalId: result.plan.goalId,
+                        goalDescription: result.plan.goalDescription,
+                        stageCount: result.plan.stages.length,
+                        stageSubgoals,
+                        replannedReason,
+                    });
+                }
+            }
+        } else {
+            process.stderr.write(`[RIQ-3-2] PlannerPass failed for ${residentId}: ${result.error ?? 'unknown'}\n`);
+        }
+    } catch (err) {
+        process.stderr.write(`[RIQ-3-2] PlannerPass threw for ${residentId}: ${err instanceof Error ? err.message : String(err)}\n`);
+    } finally {
+        _plannerPassInFlight.delete(residentId);
+    }
+}
+
 export async function runBrain(
     ctx: HelperContext,
     perception: Perception,
@@ -3330,7 +3466,12 @@ export async function runBrain(
     memoUpdates?: number;
     planChange?: unknown;
 }> {
+    // RIQ-3-2: trigger deliberative PlannerPass before per-tick goal-picking
+    // when the resident has an orientationGoal and a planner profile configured.
+    await maybeTriggerPlannerPass(ctx, thinkId);
+
     const behavior = ctx.behavior();
+    const toolInstructions = buildToolInstructions([LOOKUP_SKILL_TOOL]);
     const prompt = buildBrainPrompt({
         soul: ctx.options.soul,
         perception,
@@ -3343,8 +3484,21 @@ export async function runBrain(
             stuckSince: ctx.options.state.stuckSince,
         },
         memories: ctx.promptMemories(perception as HybridPerception, 'brain'),
+        toolInstructions,
     });
-    const response = await ctx.complete(thinkId || 0, {
+
+    // RIQ-1-1-B: route the brain completion through the planner tool loop so the
+    // Brain can emit a lookup_skill call before its final goal/say JSON. The adapter
+    // wraps ctx.complete so the loop respects the existing abort/cancel machinery.
+    let lastRawResponse: LlmResponse = { text: '', nooped: false };
+    const brainLlmAdapter = {
+        complete: async (req: LlmRequest): Promise<LlmResponse> => {
+            const resp = await ctx.complete(thinkId || 0, req);
+            lastRawResponse = resp;
+            return resp;
+        },
+    } as unknown as LlmClient;
+    const brainRequest: LlmRequest = {
         endpoint: ctx.endpointFor(behavior.brain),
         prompt,
         temperature: ctx.temperatureFor(behavior.brain, 0.7),
@@ -3357,7 +3511,15 @@ export async function runBrain(
         maxTokens: ctx.maxTokensFor(behavior.brain, DEFAULT_BRAIN_MAX_TOKENS),
         priority: 5,
         ...(ctx.modelFor(behavior.brain) ? { model: ctx.modelFor(behavior.brain) } : {}),
+    };
+    const toolLoopResult = await runPlannerToolLoop({
+        llmClient: brainLlmAdapter,
+        request: brainRequest,
+        tools: [LOOKUP_SKILL_TOOL],
+        toolRegistry: defaultToolRegistry(),
     });
+    const response = { ...lastRawResponse, text: toolLoopResult.finalText };
+
     if (response.cancelledBy === 'request_timeout') {
         // S-INFER-8: the brain REQUEST timeout (240s) is a generous "inference server
         // is broken" alarm, NOT a thinking bound — real q4 qwopus thinking is ~40s, so
@@ -3457,6 +3619,11 @@ export async function runBody(
         return preInference;
     }
 
+    const routedPlanStage = routeActivePlanStage(ctx, bodyPerception);
+    if (routedPlanStage) {
+        return routedPlanStage;
+    }
+
     const prompt = buildBodyPrompt({
         soul: ctx.options.soul,
         perception: bodyPerception,
@@ -3537,6 +3704,119 @@ export async function runBody(
         envelopeTokens: estimateTokens(prompt),
         nooped: response.nooped || actions.length === 0,
     };
+}
+
+function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPerception): ThoughtResult | undefined {
+    const planStore = ctx.options.planStore;
+    if (!planStore) {
+        return undefined;
+    }
+
+    const residentId = ctx.options.soul.frontmatter.name;
+    if (!residentId) {
+        return undefined;
+    }
+
+    const plan = planStore.load(residentId);
+    if (!plan || plan.status !== 'active') {
+        return undefined;
+    }
+
+    const stage = currentPlanStage(plan);
+    if (!stage || stage.status !== 'active') {
+        return undefined;
+    }
+
+    const routed = planStageRouter(stage, bodyPerception);
+    const currentTick = ctx.options.state.tick;
+
+    // RIQ-3-6: stage tick-budget key.  createdAtTick scopes the tracking to
+    // this specific plan so a replan gets a fresh budget even if stage ids repeat.
+    const stageKey = `${residentId}:${plan.createdAtTick}:${stage.id}`;
+
+    if (!routed) {
+        return undefined;
+    }
+
+    if (routed.planSignal === 'stage_done') {
+        _stageActiveSinceTick.delete(stageKey);
+        planStore.save(residentId, advancePlan(plan));
+        // RIQ-A1-OBS: emit stage-done Library event so normal-life-audit can count completions.
+        ctx.options.libraryUpdater?.observePlanStageDone({
+            kind: 'plan_stage_done',
+            ts: new Date().toISOString(),
+            tick: currentTick,
+            goalId: plan.goalId,
+            stageId: stage.id,
+            stageSubgoal: stage.subgoal,
+        });
+        return {
+            actions: [],
+            cause: `plan_stage_done:${stage.id}`,
+            envelopeTokens: 0,
+            nooped: true,
+            planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_done' },
+        };
+    }
+
+    if (routed.planSignal === 'stage_blocked') {
+        _stageActiveSinceTick.delete(stageKey);
+        planStore.save(residentId, blockCurrentStage(plan));
+        // RIQ-A1-OBS: emit stage-blocked Library event so normal-life-audit can count blocks.
+        ctx.options.libraryUpdater?.observePlanStageBlocked({
+            kind: 'plan_stage_blocked',
+            ts: new Date().toISOString(),
+            tick: currentTick,
+            goalId: plan.goalId,
+            stageId: stage.id,
+            stageSubgoal: stage.subgoal,
+        });
+        return {
+            actions: [],
+            cause: `plan_stage_blocked:${stage.id}`,
+            envelopeTokens: 0,
+            nooped: true,
+            planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_blocked' },
+        };
+    }
+
+    if (routed.action) {
+        // RIQ-3-6: track the first tick this stage routed an action.
+        if (!_stageActiveSinceTick.has(stageKey)) {
+            _stageActiveSinceTick.set(stageKey, currentTick);
+        }
+        // If the stage has been routing without completing for STAGE_TICK_BUDGET ticks,
+        // force-block it so the planner can replan with updated knowledge.
+        const startedAt = _stageActiveSinceTick.get(stageKey)!;
+        if (currentTick - startedAt >= STAGE_TICK_BUDGET) {
+            _stageActiveSinceTick.delete(stageKey);
+            planStore.save(residentId, blockCurrentStage(plan));
+            ctx.options.libraryUpdater?.observePlanStageBlocked({
+                kind: 'plan_stage_blocked',
+                ts: new Date().toISOString(),
+                tick: currentTick,
+                goalId: plan.goalId,
+                stageId: stage.id,
+                stageSubgoal: stage.subgoal,
+            });
+            return {
+                actions: [],
+                cause: `plan_stage_blocked:${stage.id}`,
+                envelopeTokens: 0,
+                nooped: true,
+                planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_blocked' },
+            };
+        }
+        return {
+            actions: [routed.action],
+            cause: `plan_stage:${stage.id}`,
+            envelopeTokens: 0,
+            nooped: false,
+            planChange: { goalId: plan.goalId, stageId: stage.id, routed: true },
+        };
+    }
+
+    return undefined;
 }
 
 export function clearGoalMomentum(ctx: HelperContext): void {

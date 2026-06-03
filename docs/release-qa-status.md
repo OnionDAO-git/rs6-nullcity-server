@@ -9,16 +9,16 @@ This file is the QA Marshal checkpoint for deciding whether `agents/wip` is safe
 | QA Marshal | Unassigned |
 | Active branch | `agents/wip` |
 | Target branch | `nullcity` |
-| Last updated | 2026-05-29 |
+| Last updated | 2026-06-02 |
 
 ## Current Branch Delta
 
-As of the 2026-05-29 process hardening pass:
+As of the 2026-06-02 process cleanup pass:
 
 | Direction | Count | Meaning |
 |---|---:|---|
-| `origin/nullcity..origin/agents/wip` | 689 commits | Large hidden release surface; requires curated squash/review before broad external dispatch. |
-| `origin/agents/wip..origin/nullcity` | 3 commits | Default branch has a few commits not in the WIP comparison base. Reconcile before merge. |
+| `origin/nullcity..origin/agents/wip` | 36 commits | Manageable WIP surface, still needs QA Marshal review before squash/merge. |
+| `origin/agents/wip..origin/nullcity` | 0 commits | WIP is not behind the target branch at this checkpoint. |
 
 ## Required Gates Before Squash/Merge
 
@@ -37,9 +37,9 @@ As of the 2026-05-29 process hardening pass:
 
 ## Ready To Squash
 
-Status: **No.**
+Status: **No — needs QA Marshal review.**
 
-Reason: `agents/wip` is hundreds of commits ahead of `nullcity`; a QA Marshal must curate the range, review open issues, rerun gates, and prepare the squash/changelog.
+Reason: branch hygiene is no longer the blocker, but open/in-review P0/P1 rows and fresh gates still need a release owner before another curated squash to `nullcity`.
 
 ## Do Not Merge If
 

@@ -107,6 +107,30 @@ export interface NormalLifeAuditEconomySummary {
     requestAttentionWithGpResidents: NormalLifeAuditGpRunwayResident[];
 }
 
+/**
+ * Per-resident plan activity breakdown for Phase 3 A1 observability (RIQ-A1-OBS).
+ * stagesDone/stagesBlocked come from Library timeline events;
+ * planActions come from action-log causes prefixed with 'plan_stage:'.
+ */
+export interface NormalLifeAuditPlanResident {
+    resident: string;
+    stagesDone: number;
+    stagesBlocked: number;
+    planActions: number;
+}
+
+/**
+ * City-wide plan activity summary for Phase 3 A1 observability (RIQ-A1-OBS).
+ * The A1 acceptance test requires totalStagesDone >= 2 for the qa-firemaker resident.
+ */
+export interface NormalLifeAuditPlanSummary {
+    residentsWithPlanActivity: number;
+    totalStagesDone: number;
+    totalStagesBlocked: number;
+    totalPlanActions: number;
+    planResidents: NormalLifeAuditPlanResident[];
+}
+
 export interface NormalLifeAuditReport {
     runId: string;
     generatedAt: string;
@@ -126,6 +150,7 @@ export interface NormalLifeAuditReport {
     recurrenceSummary: NormalLifeAuditRecurrenceSummary;
     stuckSummary: NormalLifeAuditStuckSummary;
     economySummary: NormalLifeAuditEconomySummary;
+    planSummary: NormalLifeAuditPlanSummary;
     residentSlices: NormalLifeAuditResidentSlice[];
     residentSignalSummary: NormalLifeAuditResidentSlice[];
     notObservedTimelineKinds: string[];
@@ -222,6 +247,8 @@ const TRACKED_TIMELINE_KINDS = [
     'stuck_recovered',
     'first_xp',
     'say',
+    'plan_stage_done',
+    'plan_stage_blocked',
 ];
 const CONTROLLED_EXCHANGE_AFTER_ADMIN_DRAIN_MS = 10 * 60 * 1000;
 
@@ -403,6 +430,18 @@ export function collectNormalLifeAudit(options: {
     const aggregateDrop = round3(drops.reduce((sum, entry) => sum + entry.drop, 0));
     const actionSuccessRate = totalActionAttempts === 0 ? 0 : round3((successfulActionSubmissions / totalActionAttempts) * 100);
 
+    // RIQ-A1-OBS: count plan body actions per resident using cause prefix matching.
+    // Done/blocked signals (nooped=true) appear in Library timeline; body actions
+    // (actual game actions from the plan stage router) appear in action-log causes.
+    const planActionsByResident = new Map<string, number>();
+    for (const [resident, slice] of residentSlices.entries()) {
+        let count = 0;
+        for (const [cause, n] of slice.causeCounts.entries()) {
+            if (cause.startsWith('plan_stage:')) count += n;
+        }
+        if (count > 0) planActionsByResident.set(resident, count);
+    }
+
     const residentSliceReports = sortedResidentSlices(residentSlices);
     const stuckSummary = buildStuckSummary(residentSliceReports, maxTopRows);
     const economySummary = buildEconomySummary({
@@ -412,6 +451,7 @@ export function collectNormalLifeAudit(options: {
         windowEnd: options.windowEnd,
         maxTopRows,
     });
+    const planSummary = buildPlanSummary(residentSliceReports, planActionsByResident, maxTopRows);
 
     return {
         runId,
@@ -432,6 +472,7 @@ export function collectNormalLifeAudit(options: {
         recurrenceSummary: buildRecurrenceSummary(actionKindCounts, causeCounts, timelineKindCounts),
         stuckSummary,
         economySummary,
+        planSummary,
         residentSlices: residentSliceReports,
         residentSignalSummary: residentSliceReports,
         notObservedTimelineKinds: TRACKED_TIMELINE_KINDS.filter(kind => !timelineKindCounts.has(kind)),
@@ -694,6 +735,52 @@ function buildStuckSummary(residentSlices: NormalLifeAuditResidentSlice[], maxTo
         stuckRecovered,
         unresolved: Math.max(0, stuckDetected - stuckRecovered),
         topResidents,
+    };
+}
+
+/**
+ * Build plan activity summary for Phase 3 A1 observability (RIQ-A1-OBS).
+ *
+ * stagesDone and stagesBlocked come from Library timeline events
+ * (plan_stage_done / plan_stage_blocked kinds added to TRACKED_TIMELINE_KINDS).
+ * planActions counts action-log entries with causes prefixed 'plan_stage:'
+ * (body actions driven by the plan stage router — separate from done/blocked signals).
+ */
+function buildPlanSummary(
+    slices: NormalLifeAuditResidentSlice[],
+    planActionsByResident: Map<string, number>,
+    maxTopRows: number,
+): NormalLifeAuditPlanSummary {
+    let totalStagesDone = 0;
+    let totalStagesBlocked = 0;
+    let totalPlanActions = 0;
+    const planResidents: NormalLifeAuditPlanResident[] = [];
+
+    for (const slice of slices) {
+        const stagesDone = slice.trackedTimelineCounts['plan_stage_done'] ?? 0;
+        const stagesBlocked = slice.trackedTimelineCounts['plan_stage_blocked'] ?? 0;
+        const pa = planActionsByResident.get(slice.resident) ?? 0;
+
+        if (stagesDone + stagesBlocked + pa > 0) {
+            totalStagesDone += stagesDone;
+            totalStagesBlocked += stagesBlocked;
+            totalPlanActions += pa;
+            planResidents.push({ resident: slice.resident, stagesDone, stagesBlocked, planActions: pa });
+        }
+    }
+
+    planResidents.sort((a, b) => {
+        const scoreB = b.planActions + b.stagesDone;
+        const scoreA = a.planActions + a.stagesDone;
+        return scoreB === scoreA ? a.resident.localeCompare(b.resident) : scoreB - scoreA;
+    });
+
+    return {
+        residentsWithPlanActivity: planResidents.length,
+        totalStagesDone,
+        totalStagesBlocked,
+        totalPlanActions,
+        planResidents: planResidents.slice(0, maxTopRows),
     };
 }
 

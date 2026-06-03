@@ -13,49 +13,47 @@ SPARK split:
 
 ## Start Here
 
-Before substantial autonomy, controller, dashboard, or agent behavior work, read:
+Before substantial autonomy, controller, dashboard, or agent behavior work, use this 10-minute intake:
 
-1. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`
-2. `docs/superpowers/specs/2026-05-21-spark-faceted-module-system-design.md` and `docs/superpowers/plans/2026-05-21-spark-facets-implementation.md` for current SPARK facet work
-3. `docs/human-decisions.md` for open James/OnionDAO choices and default assumptions
-4. `docs/spark-module-authoring.md`, `docs/spark-module-experiments.md`, `docs/railgun-controller-deployment.md`, and `docs/controller-knowledge-runbook.md`
-5. `docs/superpowers/specs/2026-05-20-runescape-game-skill-design.md` and `docs/superpowers/plans/2026-05-20-runescape-game-skill-implementation.md` when changing knowledge, prompts, or workflow availability
-6. `feat/controller.md`, `feat/residents.md`, and `feat/runebench-agent-design.md` when changing resident design
-7. `feat/runebench-systems-design.md` only as historical RuneBench analysis unless the roadmap points to a specific active item
-8. `docs/superpowers/specs/2026-05-20-spark-module-system-design.md` and `docs/superpowers/plans/2026-05-20-spark-module-system-implementation.md` only for historical first-slice context
-9. `../rs6-nullcity-residents-dashboard/SPEC.md` before dashboard work
+1. `AGENTS.md` — this short operating guide.
+2. `docs/README.md` — the docs map and source-of-truth precedence.
+3. `docs/agent-status.md` tail — live file locks, handoffs, runtime requests.
+4. `docs/issue-register.md` — open P0/P1 defects, weak evidence, and process risks.
+5. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — canonical parent task board.
+6. A domain plan/spec only after the above points you there.
 
-The roadmap is the source of truth for active task status and next work. Older plans and RuneBench design notes are background unless the roadmap explicitly points to them as active.
+`docs/START-HERE-AGENTS.md` is deeper orientation, not the first source of truth. Older plans and RuneBench notes are historical unless `docs/README.md`, the issue register, or the roadmap links to a specific active section.
 
-For the May 29-June 1 AP/GP + Storyteller weekend sprint, use:
-- `docs/2026-05-29-weekend-sprint-plan.md` for the human/product brief.
-- `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task-by-task execution.
-- Workstream S in `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` as the central task board.
-- Claim the smallest available packet from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`), not a whole workstream, unless you are doing release closeout.
-- Capability QA packets (`CQA0`-`CQA11`) are always valid weekend work: read `docs/resident-capabilities.md`, prove or disprove one weak row with real logs/benchmarks, fix root causes, and update the table.
-- Dashboard packets (`D0`-`D8`) are valid weekend work, but implementation belongs in `../rs6-nullcity-residents-dashboard`. Server agents may add JSON contracts/endpoints only.
-- Treat the implementation plan's lane table as the file-lock map for parallel agents.
-- QA findings live in `docs/issue-register.md`; release/readiness gating lives in `docs/release-qa-status.md`.
+## Choosing Work
+
+Pick the smallest high-value unit in this order:
+
+1. An unclaimed `Open` P0/P1 row in `docs/issue-register.md`.
+2. A small active packet from a linked roadmap/implementation plan.
+3. A weak row in `docs/resident-capabilities.md`, converted into evidence or an issue before broad claims.
+4. Dashboard work only in `../rs6-nullcity-residents-dashboard`; this repo may add JSON contracts/endpoints only.
+
+Long-lived roadmap parent tasks marked `[>]` are status, not exclusive locks. The live lock is an unclosed `STARTING` line in `docs/agent-status.md` naming exact files. If there is no unclaimed P0/P1 and no clear active packet, ask for direction rather than inventing adjacent work.
 
 Paste-ready kickoff prompt for another AI:
 
 ```text
-You are an autonomous agent in /Users/james/Code/OnionDAO/rs6-nullcity-server on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, docs/2026-05-29-weekend-sprint-plan.md, and docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md. Claim one unblocked S* or CQA* packet, append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui and appropriate verification, update roadmap/capability/issue docs if needed, commit explicit files to agents/wip, push, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
+You are an autonomous agent in <server-repo> on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, and the current roadmap/spec linked by your chosen issue. Claim one unblocked P0/P1 issue or the smallest active roadmap packet, append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui plus appropriate verification, update issue/roadmap/capability docs if truth changed, commit explicit files only, push agents/wip, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
 ```
 
 Dashboard kickoff prompt:
 
 ```text
-You are an autonomous dashboard agent in /Users/james/Code/OnionDAO/rs6-nullcity-residents-dashboard on branch main. Read AGENTS.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/2026-05-29-weekend-sprint-plan.md. Claim one D* dashboard packet or one phase from spec/09, implement UI/BFF changes here only, coordinate server API needs through rs6-nullcity-server docs/city-dashboard-integration.md or S11, run bun run typecheck && bun run check && bun run build, commit and push main.
+You are an autonomous dashboard agent in <dashboard-repo> on branch main. Read AGENTS.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/README.md + docs/agent-status.md tail. Implement UI/BFF changes here only. Coordinate server API needs through server docs/city-dashboard-integration.md, docs/issue-register.md, or a server STARTING/HANDOFF. Run bun run typecheck && bun run check && bun run build, commit explicit files, and push main.
 ```
 
-For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. Keep status-log entries under ~250 chars — long rollups belong in the commit body.
+For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. STARTING/HANDOFF lines are capped at 280 chars, STARTING names exact files in `Files:`, and long rollups belong in the commit body.
 
 **Branch workflow (revised 2026-05-23):** day-to-day multi-agent work goes to the shared `agents/wip` branch, not directly to `nullcity`. Curated squash-merges from `agents/wip` → `nullcity` happen on milestone completion (workstream slice done + verifications green), every ~24h, or on the maintainer's ask. The default branch should read as a milestone log; in-progress STARTING/HANDOFF churn lives on `agents/wip`. Full mechanics in `docs/agent-coordination.md` § Rule 3. `docs/agent-status.md` lives only on `agents/wip` and is excluded from squash-merges to `nullcity`.
 
 When work maps to the roadmap, update the matching task as you start, finish, block, or defer it. For small fixes or unrelated maintenance, do not force roadmap churn; summarize clearly in the final note.
 
-Until June 1, 2026, OnionDAO work is pre-launch development. Default to building fast with good design. Track Railgun, deployment, and secure-module questions in `docs/human-decisions.md`, but do not block local gameplay, dashboard, benchmark, or module progress on them unless the decision is marked Critical.
+Track Railgun, deployment, and secure-module questions in `docs/human-decisions.md`, but do not block local gameplay, dashboard, benchmark, or module progress on them unless the decision is marked Critical.
 
 ## Current Architecture Map
 

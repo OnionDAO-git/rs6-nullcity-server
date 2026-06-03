@@ -153,3 +153,41 @@ describe('buildStorytellerPrompt — public voice', () => {
         expect(prompt).toMatch(/do not overhype quiet windows/i);
     });
 });
+
+describe('buildStorytellerPrompt — persona block', () => {
+    it('does not include a PERSONA block when config.persona is not set', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+        expect(prompt).not.toContain('PERSONA:');
+    });
+
+    it('injects a PERSONA block when config.persona is set', () => {
+        const { digest } = buildFixtureDigest();
+        const persona = 'The Archivist — a dry, sardonic chronicler who cares about honest records and refuses to invent drama.';
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona });
+        expect(prompt).toContain('PERSONA:');
+        expect(prompt).toContain(persona);
+    });
+
+    it('places the PERSONA block before the PUBLIC VOICE section', () => {
+        const { digest } = buildFixtureDigest();
+        const persona = 'Zyx-7, archivist drone of Null City, narrator of record.';
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona });
+        const personaIdx = prompt.indexOf('PERSONA:');
+        const voiceIdx = prompt.indexOf('PUBLIC VOICE:');
+        expect(personaIdx).toBeGreaterThanOrEqual(0);
+        expect(voiceIdx).toBeGreaterThan(personaIdx);
+    });
+
+    it('falls back to no PERSONA block when config.persona is an empty string', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona: '' });
+        expect(prompt).not.toContain('PERSONA:');
+    });
+
+    it('trims whitespace-only persona and falls back to no PERSONA block', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona: '   \n  ' });
+        expect(prompt).not.toContain('PERSONA:');
+    });
+});

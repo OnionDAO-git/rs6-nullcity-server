@@ -14,7 +14,9 @@ import { LoreBus } from './lore/lore-bus';
 import { MemoryStore } from './memory/memory-store';
 import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/runtime-state';
 import { CurrencyLedger } from './patron/currency-ledger';
+import { PlanStore } from './intelligence/plan-store';
 import { LettersStore } from './patron/letters-store';
+import { recordSettledSupport } from './patron/settled-support';
 import { PatronGateway } from './patron/patron-gateway';
 import { PatronStore } from './patron/patron-store';
 import { StandingLedger } from './patron/standing-ledger';
@@ -100,6 +102,7 @@ export class ControllerHost {
     private readonly bornStore: BornResidentStore;
     private readonly soulLoader: SoulLoader;
     private readonly memory: MemoryStore;
+    private readonly planStore: PlanStore;
     private readonly stateStore: RuntimeStateStore;
     private readonly llm: LlmClient;
     private readonly actionLog: ActionLog;
@@ -116,6 +119,13 @@ export class ControllerHost {
     public readonly patronGateway: PatronGateway;
     private readonly currencyLedger: CurrencyLedger;
     private readonly standingLedger: StandingLedger;
+    // Onions-per-standing-point scale for the settled-support seam. Sourced from
+    // config; falls back to the KNOWN-PLACEHOLDER 1:1 with a loud warning so the
+    // 1:1 economy is never silently shipped (see resolveOnionsPerStandingPoint).
+    private readonly onionsPerStandingPoint: number;
+    // Extracted so both PatronGateway and the onPatronSupport callback share
+    // the same LettersStore instance (same inbox root → same dedup index).
+    private readonly lettersStore: LettersStore;
     public readonly loreBus: LoreBus;
     public readonly factionStockpile: FactionStockpileLedger;
     private readonly economyEventLog: EconomyEventLog;
@@ -160,6 +170,7 @@ export class ControllerHost {
         }
         this.soulLoader = options.soulLoader || new SoulLoader(config.souls.dir);
         this.memory = options.memory || new MemoryStore(config.memory.dir, config.memory.qmdBin);
+        this.planStore = new PlanStore(config.memory.dir);
         this.stateStore = options.stateStore || new RuntimeStateStore(config.memory.dir);
         this.llm = options.llm || new LlmClient(config.llm.endpoints, config.inference.maxConcurrent);
         this.actionLog = options.actionLog || new ActionLog(config.logging.dir);
@@ -184,6 +195,12 @@ export class ControllerHost {
         this.patronStore = options.patronStore || new PatronStore(config.memory.dir);
         this.currencyLedger = this.patronStore.loadCurrency();
         this.standingLedger = this.patronStore.loadStanding();
+        this.onionsPerStandingPoint = resolveOnionsPerStandingPoint(config);
+        // Shared LettersStore: used by both PatronGateway (offer/sponsor/witness)
+        // and the onPatronSupport callback (creditAttention via city API) so
+        // tier-crossing letters from both paths land in the same inbox root and
+        // the LettersStore's natural dedup works across both flows.
+        this.lettersStore = new LettersStore(config.memory.dir);
         // EVENT-D1a: wire LettersStore rooted at memory.dir so every
         // tier-crossing offer/sponsor/witness/gift produces a Letter that
         // actually reaches disk. Prior to this wiring, PatronGateway was
@@ -196,7 +213,7 @@ export class ControllerHost {
                 standingLedger: this.standingLedger,
                 runtimes: this.runtimes,
                 soulsDir: config.souls.dir,
-                lettersStore: new LettersStore(config.memory.dir),
+                lettersStore: this.lettersStore,
                 memoryDir: config.memory.dir,
             });
         this.loreBus = options.loreBus || new LoreBus();
@@ -221,6 +238,35 @@ export class ControllerHost {
                 birthResident: input => this.birthResidentFromCity(input),
             },
             economyEventLog: this.economyEventLog,
+            // QA-20260601-065: wire patron standing + tier letters for city-API
+            // support grants so the dashboard "Support with AP" button produces
+            // the same standing/letter effects as the patron:offer CLI path.
+            onPatronSupport: event => {
+                // T0.0b: Shards-free settled-support seam. Keys on personId
+                // (=== landing users.id) when the caller resolved it (the same
+                // canonical id the ap_topup economy event records), else patronHandle,
+                // else cityUserId. When personId is present, standing aligns with the
+                // economy log. NOTE: not structurally enforced — if a grant arrives
+                // without personId, standing keys on a fallback while the log still
+                // records cityUserId; the upstream cityUserId->personId join is the
+                // real guard against fragmentation.
+                recordSettledSupport(
+                    {
+                        patronId: event.personId ?? event.patronHandle ?? event.cityUserId,
+                        faction: event.faction,
+                        residentName: event.residentName,
+                        onionsSettled: event.amount,
+                        ts: event.ts,
+                        reason: event.note,
+                    },
+                    {
+                        standingLedger: this.standingLedger,
+                        lettersStore: this.lettersStore,
+                        onionsPerStandingPoint: this.onionsPerStandingPoint,
+                    },
+                );
+                this.persistPatronLedgers();
+            },
         });
         this.bindGatewayEvents();
     }
@@ -453,6 +499,7 @@ export class ControllerHost {
             actionLog: this.actionLog,
             inferenceLog: this.inferenceLog,
             gameSkill: this.gameSkill,
+            planStore: this.planStore,
             sparkModules: this.sparkModules,
             evidence: this.tryCreateRuntimeEvidence(soul),
             patrons: this.config.patrons,
@@ -672,4 +719,27 @@ function isGatewayNotOpenError(error: unknown): boolean {
 
 function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve the onions->standing-point scale for the settled-support seam.
+ *
+ * Reads `config.economy.onionsPerStandingPoint` when set to a positive number.
+ * Otherwise falls back to the KNOWN-PLACEHOLDER 1:1 scale and warns LOUDLY — so
+ * the broken 1:1 economy (standing tiers are 10/30/75; a 500-onion check-in
+ * would instantly mint Officer) is never silently shipped. Product must set the
+ * real value before the real onion-spend path goes live.
+ */
+function resolveOnionsPerStandingPoint(config: ControllerConfig): number {
+    const configured = config.economy?.onionsPerStandingPoint;
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(
+        '[controller-host] onionsPerStandingPoint is using the PLACEHOLDER 1:1 scale. ' +
+            'Standing accrues 1 point per onion (tiers 10/30/75), so a single large grant can instantly top-tier a patron. ' +
+            'Set config.economy.onionsPerStandingPoint to the real scale before enabling real onion spend.',
+    );
+    return 1;
 }

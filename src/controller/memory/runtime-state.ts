@@ -74,6 +74,13 @@ export interface CognitiveState {
     combatEndCelebrated?: boolean;
     tickTelemetry?: Record<string, any>;
     chatReplyTicks?: number[];
+    /**
+     * Conversational-reply (social-reply.ts) state — serializable markers only. The live
+     * AbortControllers + global counter live in the controller-level SocialReplyCoordinator.
+     */
+    socialReplyInFlight?: { key: string; startedAtTick: number };
+    pendingSocialReply?: { text: string; expiresAtTick: number; speakerId: string };
+    lastSocialReply?: { text: string; tick: number; speaker: string };
     waitResumeTick?: number;
     pausedGoal?: ActiveGoalState;
     pausedFollowTarget?: FollowTargetState;

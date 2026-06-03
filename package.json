@@ -36,6 +36,7 @@
         "controller:status": "ts-node -r tsconfig-paths/register src/controller/admin/status-cli.ts",
         "controller:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/live-smoke.ts",
         "inference:canary": "ts-node -r tsconfig-paths/register src/controller/admin/inference-canary-smoke.ts",
+        "planner:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/planner-pass-smoke.ts",
         "patron:smoke": "ts-node -r tsconfig-paths/register src/controller/admin/patron-loop-smoke.ts",
         "patron:grant": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --grant",
         "patron:offer": "ts-node -r tsconfig-paths/register src/controller/patron/cli.ts --offer",

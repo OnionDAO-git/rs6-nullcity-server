@@ -1,12 +1,12 @@
 # Start Here — For Agents (Claude, Codex, future)
 
-**You are a new agent picking up Null City work in this repo.** Read this file end to end before doing anything else. It will save you (and the maintainer) hours.
+**You are a new agent picking up Null City work in this repo.** Start with `AGENTS.md` and `docs/README.md`. Use this file as deeper orientation after you know which issue or roadmap packet you are claiming.
 
 ---
 
 ## What this repo is
 
-A fork of RuneJS (RuneScape 2006 game server, build #435) with a custom SPARK kernel layered on top that runs autonomous AI "residents" inside the game world. Humans interact with residents as patrons/witnesses/sponsors during a June 1, 2026 in-person event in Chicago.
+A fork of RuneJS (RuneScape 2006 game server, build #435) with a custom SPARK kernel layered on top that runs autonomous AI "residents" inside the game world. Humans interact with residents as patrons/witnesses/sponsors through Attention Points, Gold Points, the dashboard/Embassy surfaces, and in-game presence.
 
 For the full vision: read **`docs/null-city-rs6-vision.md`**. That's the north star.
 
@@ -14,25 +14,21 @@ For the full vision: read **`docs/null-city-rs6-vision.md`**. That's the north s
 
 ## Canonical Flow
 
-If this file conflicts with `AGENTS.md`, `AGENTS.md` wins. If weekend packet details conflict with this file, the Workstream S implementation plan wins.
+If this file conflicts with `AGENTS.md` or `docs/README.md`, those files win. If a current issue or roadmap row links to a domain plan, that specific linked plan controls that work.
 
 Routine autonomous-agent work goes to `agents/wip`, not directly to `nullcity`. `nullcity` receives curated squash/merge commits only after QA/release gates pass.
 
-## The reading order — 15 minutes, all of it
+## The reading order — 15 minutes, current-first
 
 Do not skip. Order matters.
 
 1. **`AGENTS.md`** — the current short operating guide and safe kickoff prompt.
 2. **`docs/README.md`** — the docs map; use it to separate current docs from historical snapshots.
-3. **`docs/null-city-rs6-vision.md`** — *the why.* The vision, the three core loops, the design invariants you must not break.
-4. **`docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`** — *the what.* The canonical workstream board with task status markers `[ ] [>] [~] [!] [x]`.
-5. **`docs/agent-coordination.md`** — *the how.* Multi-agent collision avoidance, file lock conventions, branch policy.
-6. **`docs/agent-status.md`** — *the now.* Append-only sync log. Read the tail to see what's in flight before touching anything.
-
-After those four, if you're working a specific workstream:
-
-7. **Workstream-specific spec** in `docs/superpowers/specs/` — see the roadmap links.
-8. For the May 29-June 1 weekend sprint, read **`docs/2026-05-29-weekend-sprint-plan.md`** and **`docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`** before touching AP/GP, Soul birth, NCRI, Storyteller, benchmark, or capability QA work.
+3. **`docs/agent-status.md`** — *the now.* Append-only sync log. Read the tail to see what's in flight before touching anything.
+4. **`docs/issue-register.md`** — open defects, weak evidence, release risks, and process problems.
+5. **`docs/null-city-rs6-vision.md`** — *the why.* The vision, the three core loops, the design invariants you must not break.
+6. **`docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md`** — *the what.* The canonical parent workstream board.
+7. **Workstream-specific spec/plan** only after a current issue, roadmap row, or `docs/README.md` points you there.
 
 ---
 
@@ -40,10 +36,10 @@ After those four, if you're working a specific workstream:
 
 1. `git checkout agents/wip && git pull --ff-only`.
 2. Read `docs/agent-status.md` tail and `docs/issue-register.md`.
-3. Pick one unclaimed packet from Workstream S (`S0a`-`S12b`) or Capability QA (`CQA0`-`CQA11`).
-4. Check the implementation plan's lane table and the status-log STARTING lines for exact file locks.
-5. Change the parent roadmap task to `[>]` when appropriate.
-6. Append a one-line `STARTING` entry to `docs/agent-status.md` with packet id, lane, and exact file list.
+3. Pick one unclaimed Open P0/P1 issue, or the smallest active roadmap/domain packet linked by current docs.
+4. Check status-log STARTING lines for exact file locks. Roadmap `[>]` parent rows are not enough by themselves.
+5. Change the parent roadmap task to `[>]` only when your work really owns that parent state.
+6. Append a one-line `STARTING` entry to `docs/agent-status.md` with issue/packet id and exact file list.
 7. Implement with tests and real evidence. Use benchmarks/logs for behavior claims.
 8. Run focused verification, `npm run check:no-ui`, and `npm run fin` for code changes unless a human explicitly allows a smaller gate.
 9. Commit with explicit paths only; never `git add -A` or `git add .`.
@@ -54,7 +50,11 @@ Only a QA/release owner performs curated merges to `nullcity`.
 
 ---
 
-## What's currently done
+## Historical status snapshot
+
+The sections below were useful during the May sprint, but they are not current task state. Use `docs/README.md`, `docs/issue-register.md`, and the roadmap for today's truth.
+
+## What was done by late May
 
 - **Workstream A:** SPARK capability facades — DONE.
 - **Workstream B:** Standard module extraction — partial.
@@ -66,7 +66,7 @@ Only a QA/release owner performs curated merges to `nullcity`.
 - **Workstream H:** Operations — partial.
 - **Workstream I:** Evidence layer + Library of Souls — DONE (I1/I2/I3 + Codex's bonus runtime wiring + post-review fixes).
 
-## What's open
+## What was open by late May
 
 - **Workstream J: Patron / human-attention loop** — spec exists. Highest June-1 leverage. 8 tasks.
 - **Workstream K: rs6 factions** — spec exists, creative drafts available for edit. Maintainer-pending lock on names/POIs.
@@ -77,9 +77,7 @@ Only a QA/release owner performs curated merges to `nullcity`.
 - **Workstream P: Deeper game-skill knowledge** — spec exists. 6 plans: retrieval improvements, 23-skill expansion, world geography, NPCs+items, quests. Promotes `feat/skill-*.md` files.
 - **Workstream Q: Smarter behavior (F+G finish)** — spec exists. 5 plans for non-command small talk, stuck-help-speech, combat personality, trading, broader command loop.
 - **Workstream R: SPARK module extraction (B2-B5)** — spec exists. 5 plans carving the 2578-line monolith into 4 composable units + slim orchestrator. Foundation move; unblocks Q's integration points.
-- **Workstream S: AP/GP economy, Soul birth, NCRIs, Storyteller** — active weekend sprint. Use `docs/2026-05-29-weekend-sprint-plan.md` for product context and `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` for task execution.
-  - Friday/Saturday autonomous agents should claim packet ids from the implementation plan's **Agent Packet Backlog** (`S0a`-`S12b`) and use its lane table as the file-lock map. Do not grab an entire S task when a smaller packet will do.
-  - Capability QA packets (`CQA0`-`CQA11`) are standing work: use `docs/resident-capabilities.md` to pick one weak row, gather real evidence, fix what blocks it, and update `can do it` vs `does do it live`.
+- **Workstream S: AP/GP economy, Soul birth, NCRIs, Storyteller** — historical May sprint structure. Current AP/GP, Storyteller, dashboard, and capability work should be claimed through `docs/issue-register.md` or the current roadmap row that links to the old packet id.
 
 ---
 

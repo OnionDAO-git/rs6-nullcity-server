@@ -39,6 +39,37 @@ describe('acquireWoodcuttingAxeAction', () => {
         expect(action).toEqual(expect.objectContaining({ kind: 'move_to', target: BOB_AXE_SHOP.position }));
     });
 
+    it("does not keep walking to Bob's shop after arriving when Bob is missing from perception", () => {
+        const p = perception({
+            tick: 200,
+            pos: BOB_AXE_SHOP.position,
+            inventory: [{ itemId: COINS, amount: 100 }],
+            npcs: [],
+        });
+        const shopState: { lastShopkeeperMissingTick?: number } = {};
+
+        const first = acquireWoodcuttingAxeAction(p, shopState);
+        expect(first).toEqual(
+            expect.objectContaining({
+                kind: 'say',
+                cause: 'acquire_axe_shopkeeper_missing',
+            }),
+        );
+        expect(shopState.lastShopkeeperMissingTick).toBe(200);
+
+        const retry = acquireWoodcuttingAxeAction(
+            perception({
+                tick: 205,
+                pos: BOB_AXE_SHOP.position,
+                inventory: [{ itemId: COINS, amount: 100 }],
+                npcs: [],
+            }),
+            shopState,
+            205,
+        );
+        expect(retry).toBeUndefined();
+    });
+
     it('approaches Bob when he is visible but out of interaction range', () => {
         const p = perception({
             pos: { x: 3225, y: 3230, level: 0 },

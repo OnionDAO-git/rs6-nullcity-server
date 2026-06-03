@@ -1,5 +1,6 @@
 import {
     actorRefFromPerception,
+    detectCatatonicLoop,
     parseNamedCombatSoakArgs,
     peerSpawnNearPerception,
     verifyNamedCombatSoakEvidence,
@@ -226,7 +227,7 @@ describe('named combat soak verifier', () => {
             entries: [
                 log({
                     kind: 'say',
-                    text: 'I am scouting. Nearby I see 4 NPCs and 10 players at 3215,3212. Goal: Train combat on safe low-level NPCs and stop when hurt.',
+                    text: 'I am scouting. Nearby I see 4 NPCs and 10 players. Goal: Train combat on safe low-level NPCs and stop when hurt.',
                 }),
             ],
             events: [],
@@ -273,6 +274,49 @@ describe('named combat soak verifier', () => {
         });
     });
 
+    it('parses EXP_HARD flags from CLI args', () => {
+        const opts = parseNamedCombatSoakArgs(
+            [
+                '--exp-hard-trajectory',
+                '--exp-hard-inference-capture',
+                '--exp-hard-tick-profile',
+                '--exp-hard-no-food',
+                '--exp-hard-catatonic-abort-after',
+                '300',
+            ],
+            new Date('2026-05-30T15:52:00.000Z'),
+        );
+        expect(opts.expHardTrajectory).toBe(true);
+        expect(opts.expHardInferenceCapture).toBe(true);
+        expect(opts.expHardTickProfile).toBe(true);
+        expect(opts.expHardNoFood).toBe(true);
+        expect(opts.expHardCatatonicAbortAfter).toBe(300);
+    });
+
+    it('EXP_HARD flags default to false / 500', () => {
+        const opts = parseNamedCombatSoakArgs([], new Date('2026-05-30T15:52:00.000Z'));
+        expect(opts.expHardTrajectory).toBe(false);
+        expect(opts.expHardInferenceCapture).toBe(false);
+        expect(opts.expHardTickProfile).toBe(false);
+        expect(opts.expHardNoFood).toBe(false);
+        expect(opts.expHardCatatonicAbortAfter).toBe(500);
+    });
+
+    it('catatonic loop triggers a failed verification', () => {
+        const outcome = verifyNamedCombatSoakEvidence({
+            resident: 'res:qa-survivor',
+            commandPeer: 'res:codex-cqa5',
+            entries: [log({ kind: 'attack', target: safeNpc('Goblin'), cause: 'combat_attack_safe_target' })],
+            events: [],
+            commandSubmitted: 1,
+            perceptionCount: 2,
+            catatonicLoopDetected: true,
+            catatonicActionCount: 500,
+        });
+        expect(outcome.status).toBe('failed');
+        expect(outcome.failureReason).toContain('Catatonic');
+    });
+
     it('places the command peer beside the target resident current perception', () => {
         expect(
             peerSpawnNearPerception({
@@ -298,6 +342,49 @@ describe('named combat soak verifier', () => {
             name: 'QA Survivor',
             position: { x: 3254, y: 3230, level: 0 },
         });
+    });
+});
+
+describe('detectCatatonicLoop', () => {
+    it('returns false for fewer entries than threshold', () => {
+        const entries = [log({ kind: 'attack', cause: 'a' }), log({ kind: 'attack', cause: 'a' })];
+        expect(detectCatatonicLoop(entries, 3)).toBe(false);
+    });
+
+    it('returns true when N consecutive identical actions reach threshold', () => {
+        const entries = Array.from({ length: 5 }, () => log({ kind: 'attack', cause: 'combat_attack_safe_target' }));
+        expect(detectCatatonicLoop(entries, 5)).toBe(true);
+    });
+
+    it('returns false when actions vary before threshold is reached', () => {
+        const entries = [
+            log({ kind: 'attack', cause: 'a' }),
+            log({ kind: 'attack', cause: 'a' }),
+            log({ kind: 'move', cause: 'b' }),
+            log({ kind: 'attack', cause: 'a' }),
+            log({ kind: 'attack', cause: 'a' }),
+        ];
+        expect(detectCatatonicLoop(entries, 3)).toBe(false);
+    });
+
+    it('returns true when run of identical actions spans the tail of the array', () => {
+        const entries = [
+            log({ kind: 'move', cause: 'walk' }),
+            log({ kind: 'attack', cause: 'a' }),
+            log({ kind: 'attack', cause: 'a' }),
+            log({ kind: 'attack', cause: 'a' }),
+        ];
+        expect(detectCatatonicLoop(entries, 3)).toBe(true);
+    });
+
+    it('returns false for threshold of 0', () => {
+        const entries = Array.from({ length: 10 }, () => log({ kind: 'attack', cause: 'a' }));
+        expect(detectCatatonicLoop(entries, 0)).toBe(false);
+    });
+
+    it('treats different causes as different actions', () => {
+        const entries = [log({ kind: 'attack', cause: 'a' }), log({ kind: 'attack', cause: 'b' }), log({ kind: 'attack', cause: 'a' })];
+        expect(detectCatatonicLoop(entries, 2)).toBe(false);
     });
 });
 
