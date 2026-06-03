@@ -256,6 +256,84 @@ describe('storyteller scheduler', () => {
         fetchSpy.mockRestore();
     });
 
+    it('publishes a scheduled local controller-config profile as zero-cost when no API key is configured', async () => {
+        new EconomyEventLog(memoryRoot, () => new Date('2026-06-02T20:05:00.000Z')).append({
+            kind: 'gp_earned',
+            residentName: 'res:hans',
+            gpDelta: 12,
+            note: 'Hans earned 12 GP near the Lumbridge road.',
+        });
+        const configPath = path.join(outputDir, 'controller.yml');
+        fs.writeFileSync(
+            configPath,
+            [
+                'llm:',
+                '  endpoints:',
+                '    local_storyteller:',
+                '      baseUrl: http://127.0.0.1:1234',
+                '      model: qwopus3.5-27b-v3',
+                '      responseFormat: text',
+                '      timeoutMs: 45000',
+                '  profiles:',
+                '    storyteller:',
+                '      endpoint: local_storyteller',
+                '      model: qwopus3.5-27b-v3',
+                '      responseFormat: text',
+                '      timeoutMs: 45000',
+                '',
+            ].join('\n'),
+            'utf-8',
+        );
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    choices: [
+                        {
+                            message: {
+                                content: JSON.stringify({
+                                    publicTitle: 'Hans shook the road loose',
+                                    publicBody: 'Hans recovered from being stuck near the Lumbridge road.',
+                                    publicBullets: ['Hans recovered from being stuck.'],
+                                    operatorSummary: 'Local scheduler dispatch.',
+                                    operatorWarnings: [],
+                                    eventRefsUsed: [],
+                                }),
+                            },
+                        },
+                    ],
+                    usage: { prompt_tokens: 100, completion_tokens: 60 },
+                }),
+                { status: 200 },
+            ),
+        );
+
+        const result = await runStorytellerSchedulerTick(
+            {
+                mode: 'once',
+                intervalMs: 30 * 60_000,
+                memoryRoot,
+                outputDir,
+                modelProfile: 'storyteller',
+                controllerConfigPath: configPath,
+                dailyCostCapUsd: 1,
+                lockTtlMs: 90 * 60_000,
+                autoPublishOnZeroWarnings: true,
+            },
+            {
+                env: {},
+                now: () => new Date('2026-06-02T20:30:00.000Z'),
+            },
+        );
+
+        expect(result.modelCalled).toBe(true);
+        expect(result.modelStatus).toBe('called');
+        expect(result.row.decision).toBe('published_canon');
+        expect('estimatedCostUsd' in result.row ? result.row.estimatedCostUsd : undefined).toBe(0);
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(fs.existsSync(path.join(outputDir, 'canon', result.row.digestId, 'dispatch.json'))).toBe(true);
+        fetchSpy.mockRestore();
+    });
+
     it('writes latest-frame.json with deterministic fallback when the scheduled model output needs review', async () => {
         new EconomyEventLog(memoryRoot, () => new Date('2026-06-02T20:05:00.000Z')).append({
             kind: 'gp_earned',

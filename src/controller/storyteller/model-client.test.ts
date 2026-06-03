@@ -113,6 +113,52 @@ describe('StorytellerModelClient.run — happy path', () => {
         expect(dispatch.estimatedCostUsd).toBeCloseTo(0.025, 5);
     });
 
+    it('records zero external dollar cost for local endpoints without an API key or price table', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        global.fetch = jest
+            .fn()
+            .mockResolvedValueOnce(completionResponse(validDispatchJson([refs.gpEarned]), { prompt_tokens: 1000, completion_tokens: 500 }));
+
+        const localEndpoint: LlmEndpointConfig = {
+            baseUrl: FIXTURE_BASE_URL,
+            model: 'owned-local-model',
+            timeoutMs: 10_000,
+        };
+        const client = new StorytellerModelClient({ default: localEndpoint });
+        const dispatch = await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(dispatch.estimatedCostUsd).toBe(0);
+    });
+
+    it('uses the selected endpoint timeout instead of forcing a 60s Storyteller timeout', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(validDispatchJson([refs.gpEarned])));
+        const originalTimeout = AbortSignal.timeout.bind(AbortSignal);
+        const timeoutSpy = jest.spyOn(AbortSignal, 'timeout').mockImplementation(ms => originalTimeout(ms));
+
+        const endpointWithLongTimeout: LlmEndpointConfig = {
+            baseUrl: FIXTURE_BASE_URL,
+            model: 'slow-owned-model',
+            timeoutMs: 240_000,
+        };
+        const client = new StorytellerModelClient({ default: endpointWithLongTimeout });
+        await client.run(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(timeoutSpy).toHaveBeenCalledWith(240_000);
+    });
+
+    it('requests a Storyteller-sized completion budget when the endpoint does not set a hard cap', async () => {
+        const { digest, refs } = buildFixtureDigest();
+        global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(validDispatchJson([refs.gpEarned])));
+
+        const client = new StorytellerModelClient(makeEndpoints());
+        await client.run(digest, { ...DEFAULT_STORYTELLER_CONFIG, maxOutputTokens: 1536 });
+
+        const body = JSON.parse(String((global.fetch as jest.Mock).mock.calls[0][1]?.body));
+        expect(body.max_tokens).toBe(1536);
+        expect(body.max_completion_tokens).toBe(1536);
+    });
+
     it('needsReview is false when verifier passes', async () => {
         const { digest, refs } = buildFixtureDigest();
         global.fetch = jest.fn().mockResolvedValueOnce(completionResponse(validDispatchJson([refs.gpEarned])));

@@ -177,6 +177,7 @@ function estimateCost(
     endpoint: LlmEndpointConfig | undefined,
 ): number | null {
     if (reportedCostUsd !== undefined && Number.isFinite(reportedCostUsd)) return reportedCostUsd;
+    if (endpoint?.baseUrl && endpoint.model && !endpoint.apiKey && !endpoint.cost) return 0;
     if (inputTokens === null || outputTokens === null || !endpoint?.cost) return null;
     const promptCost = inputTokens * (endpoint.cost.promptTokenUsd ?? 0);
     const completionCost = outputTokens * (endpoint.cost.completionTokenUsd ?? 0);
@@ -194,13 +195,15 @@ export class StorytellerModelClient {
         const profileId = options?.modelProfile ?? config.modelProfile ?? 'default';
         const llmClient = new LlmClient(this.endpoints);
         const prompt = buildStorytellerPrompt(digest, config);
+        const endpoint = this.endpoints[profileId] ?? this.endpoints['default'];
 
         const startMs = Date.now();
         const llmResponse = await llmClient.complete({
             endpoint: profileId,
             prompt,
             signal: options?.signal,
-            timeoutMs: 60_000,
+            timeoutMs: endpoint?.timeoutMs ?? 60_000,
+            maxTokens: config.maxOutputTokens,
         });
         const latencyMs = Date.now() - startMs;
 
@@ -209,7 +212,6 @@ export class StorytellerModelClient {
 
         const inputTokens = llmResponse.promptTokens ?? null;
         const outputTokens = llmResponse.completionTokens ?? null;
-        const endpoint = this.endpoints[profileId] ?? this.endpoints['default'];
         const estimatedCostUsd = estimateCost(inputTokens, outputTokens, llmResponse.costUsd, endpoint);
 
         let parsed: Record<string, unknown> = {};

@@ -466,6 +466,8 @@ export interface StorytellerConfig {
     maxResidentMentions: number;
     /** Maximum word count for publicBody in generated dispatches. */
     maxPublicBodyWords: number;
+    /** Requested completion token budget for model-generated Storyteller JSON. */
+    maxOutputTokens: number;
     /** Model profile id to use for Storyteller runs. */
     modelProfile: string;
     /**
@@ -483,6 +485,7 @@ export const DEFAULT_STORYTELLER_CONFIG: StorytellerConfig = {
     maxDigestWindowMs: 10 * 60 * 1000,
     maxResidentMentions: 8,
     maxPublicBodyWords: 180,
+    maxOutputTokens: 1536,
     modelProfile: 'default',
 };
 
