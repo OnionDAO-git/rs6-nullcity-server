@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { buildFixtureDigest } from './digest-builder';
 import { runStorytellerDryRun } from './cli';
+import { buildProjectorStoryFrame } from './public-frame';
 import { StorytellerStore, buildOperatorSummary } from './store';
 import type { CityEventDigest, DigestEvent, StorytellerDispatch } from './types';
 
@@ -209,6 +210,7 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
     const fingerprint = topEventFingerprint(digest);
 
     let row: StorytellerOverseerLedgerRow;
+    let frameDispatch: StorytellerDispatch | null = null;
     if (eventRefs.length === 0) {
         row = makeRow({
             createdAt,
@@ -275,10 +277,12 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
                                 estimatedCostUsd: costUsd,
                             });
                             ledger.append(row);
+                            store.writeLatestProjectorFrame(buildProjectorStoryFrame(digest, { now }));
                             return { row, digest };
                         }
                     }
 
+                    frameDispatch = dispatch;
                     const shouldPublishCanon = autoPublishOnZeroWarnings && canAutoPublishDispatch(dispatch);
                     const queue = shouldPublishCanon ? 'canon' : 'review';
                     const queueDir = writeDispatchQueueArtifact(args.outputDir, queue, digest, dispatch);
@@ -300,6 +304,9 @@ export function runStorytellerOverseerTick(args: StorytellerOverseerTickArgs): S
     }
 
     ledger.append(row);
+    if (row.decision !== 'held_duplicate') {
+        store.writeLatestProjectorFrame(buildProjectorStoryFrame(digest, { dispatch: frameDispatch, now }));
+    }
     return { row, digest };
 }
 
