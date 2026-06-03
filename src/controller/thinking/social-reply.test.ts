@@ -9,7 +9,24 @@ import {
     replyFallback,
     SocialReplyCoordinator,
     SOCIAL_REPLY_GLOBAL_CAP,
+    detectSocialReply,
+    SOCIAL_REPLY_TEMPERATURE,
+    SOCIAL_REPLY_EXPIRE_TICKS,
 } from './social-reply';
+
+function chatEvent(text: string, from: Record<string, unknown>, tick = 100): Record<string, unknown> {
+    return { kind: 'chat', text, tick, from };
+}
+function perceptionWithEvents(events: Array<Record<string, unknown>>): HybridPerception {
+    return {
+        tick: 100,
+        resident: { position: { x: 3230, y: 3203, level: 0 }, inventory: [] },
+        nearby: { players: [], npcs: [], objects: [] },
+        events,
+    } as unknown as HybridPerception;
+}
+const PLAYER = { kind: 'player', id: 'player:alice', name: 'alice', position: { x: 3231, y: 3203, level: 0 } };
+const RESIDENT = { kind: 'resident', id: 'res:greta', name: 'Greta', position: { x: 3232, y: 3203, level: 0 } };
 import type { SocialReplyContext } from './social-reply';
 import type { Soul } from '../soul/soul-schema';
 import type { HybridPerception } from './hybrid-agent-utils';
@@ -298,6 +315,46 @@ describe('SocialReplyCoordinator', () => {
 
     it('exposes a sane default global cap', () => {
         expect(SOCIAL_REPLY_GLOBAL_CAP).toBeGreaterThanOrEqual(1);
+    });
+});
+
+describe('detectSocialReply', () => {
+    const display = 'Hans';
+
+    it('detects a human player naming the resident', () => {
+        const p = perceptionWithEvents([chatEvent('Hans, what are you up to?', PLAYER)]);
+        const d = detectSocialReply(p, undefined, display);
+        expect(d).toBeDefined();
+        expect(d?.text).toContain('what are you up to?');
+        expect(d?.speakerId).toBe('player:alice');
+        expect(d?.speakerName).toBe('alice');
+    });
+
+    it('ignores a resident speaker (no A↔B loops)', () => {
+        const p = perceptionWithEvents([chatEvent('Hans, nice fire!', RESIDENT)]);
+        expect(detectSocialReply(p, undefined, display)).toBeUndefined();
+    });
+
+    it('ignores a player message that does not name the resident', () => {
+        const p = perceptionWithEvents([chatEvent('what a nice day', PLAYER)]);
+        expect(detectSocialReply(p, undefined, display)).toBeUndefined();
+    });
+
+    it('dedups a message already handled (key === lastDirectChatKey)', () => {
+        const p = perceptionWithEvents([chatEvent('Hans, you there?', PLAYER)]);
+        const first = detectSocialReply(p, undefined, display);
+        expect(first).toBeDefined();
+        expect(detectSocialReply(p, first?.key, display)).toBeUndefined();
+    });
+
+    it('is disabled when the resident has no display name', () => {
+        const p = perceptionWithEvents([chatEvent('Hans!', PLAYER)]);
+        expect(detectSocialReply(p, undefined, undefined)).toBeUndefined();
+    });
+
+    it('exposes tuned constants', () => {
+        expect(SOCIAL_REPLY_TEMPERATURE).toBeGreaterThan(0);
+        expect(SOCIAL_REPLY_EXPIRE_TICKS).toBeGreaterThanOrEqual(1);
     });
 });
 

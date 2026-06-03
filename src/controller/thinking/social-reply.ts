@@ -1,4 +1,4 @@
-import { escapeRegExp } from './hybrid-agent-utils';
+import { escapeRegExp, normalizeText, actorLike } from './hybrid-agent-utils';
 import type { HybridPerception } from './hybrid-agent-utils';
 import type { Soul } from '../soul/soul-schema';
 // One-way dep: social-reply -> hybrid-agent-chat (chat must NOT import social-reply, to avoid a cycle).
@@ -215,6 +215,71 @@ export function replyFallback(soul: Soul, seed: string): string {
 
 /** Default ceiling on simultaneous social-reply Body inferences across ALL residents. */
 export const SOCIAL_REPLY_GLOBAL_CAP = 3;
+
+/** Sampling temperature for the reply inference — variety is a feature, bounded by the char cap. */
+export const SOCIAL_REPLY_TEMPERATURE = 0.9;
+
+/** Ticks a committed pending reply stays fresh (stamped at RESOLVE). ~6s at 600ms/tick. */
+export const SOCIAL_REPLY_EXPIRE_TICKS = 10;
+
+export interface DetectedSocialReply {
+    /** Stable dedup key (tick/ts/index : speakerId : normalizedText). */
+    key: string;
+    /** The player's raw message. */
+    text: string;
+    speakerName: string;
+    speakerId: string;
+}
+
+function chatEventKey(event: Record<string, unknown>, index: number, fromId: string, normalizedText: string): string {
+    const tick = event.tick;
+    const ts = event.ts;
+    const identity =
+        typeof tick === 'number' || typeof tick === 'string'
+            ? `tick:${tick}`
+            : typeof ts === 'number' || typeof ts === 'string'
+              ? `ts:${ts}`
+              : `index:${index}`;
+    return `${identity}:${fromId}:${normalizedText}`;
+}
+
+/**
+ * Pure scan of perception chat events for a conversational-reply trigger: the newest
+ * chat from a HUMAN PLAYER (`from.kind === 'player'`) that names this resident and was
+ * not already handled (`key !== lastDirectChatKey`). Player-only — resident speech never
+ * triggers, which structurally kills A↔B reply loops. The thinking module owns the
+ * stateful gates (rate-limit, in-flight, cap) and the detached inference.
+ */
+export function detectSocialReply(
+    perception: HybridPerception,
+    lastDirectChatKey: string | undefined,
+    displayName: string | undefined,
+): DetectedSocialReply | undefined {
+    if (!displayName) {
+        return undefined;
+    }
+    const events = perception.events || [];
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+        const event = events[index];
+        if (event.kind !== 'chat' || typeof event.text !== 'string') {
+            continue;
+        }
+        const from = actorLike(event.from);
+        if (!from || from.kind !== 'player') {
+            continue;
+        }
+        if (!isAddressedByName(event.text, displayName)) {
+            continue;
+        }
+        const fromId = from.id || 'unknown';
+        const key = chatEventKey(event, index, fromId, normalizeText(event.text));
+        if (key === lastDirectChatKey) {
+            return undefined;
+        }
+        return { key, text: event.text, speakerName: from.name || fromId, speakerId: fromId };
+    }
+    return undefined;
+}
 
 export interface SocialReplySlot {
     key: string;
