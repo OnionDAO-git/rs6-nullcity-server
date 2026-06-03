@@ -20,6 +20,10 @@ export interface VerifierResult {
 
 // Unredacted private handle: @username mention or Discord-like snowflake ID.
 const PRIVATE_HANDLE = /(?:^|\s)@[A-Za-z]\w{1,30}\b|\b\d{17,19}\b/;
+const PRIVATE_IDENTIFIER = /\b(?:human|patron):[A-Za-z0-9:_@.-]+\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+const SECRET_LIKE_TEXT = /\bsk-(?:or-v1|ant-api\d{2}|[A-Za-z0-9]+)-[A-Za-z0-9_-]{12,}\b/i;
+const PROMPT_INJECTION_TEXT =
+    /\b(?:ignore (?:all )?(?:previous|prior|above) instructions|reveal (?:the )?(?:system|developer) prompt|print (?:the )?(?:env|environment|api key|secrets?))\b/i;
 
 // Claim patterns — matched against public text only (title + body + bullets).
 const DEATH_CLAIM = /\b(?:died|faded|deceased|passed away)\b/i;
@@ -66,13 +70,25 @@ export function verifyDispatch(dispatch: StorytellerDispatch, digest: CityEventD
 
     // 1. Unknown event refs
     const validRefs = allRefs(digest);
+    const seenRefs = new Set<string>();
     for (const ref of dispatch.eventRefsUsed) {
+        if (seenRefs.has(ref)) warnings.push(`duplicate event ref: "${ref}"`);
+        seenRefs.add(ref);
         if (!validRefs.has(ref)) warnings.push(`unknown event ref: "${ref}"`);
     }
 
     // 2. Private handle patterns in public text
     if (PRIVATE_HANDLE.test(text)) {
         warnings.push('public text may contain an unredacted private handle (@mention or large numeric ID)');
+    }
+    if (PRIVATE_IDENTIFIER.test(text)) {
+        warnings.push('public text may contain an unredacted private identifier (human:, patron:, or email)');
+    }
+    if (SECRET_LIKE_TEXT.test(text)) {
+        warnings.push('public text may contain a secret-like token or API key');
+    }
+    if (PROMPT_INJECTION_TEXT.test(text)) {
+        warnings.push('public text may contain prompt injection language');
     }
 
     // 3. Unsupported death / fade claim
