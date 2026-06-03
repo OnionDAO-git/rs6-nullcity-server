@@ -1840,3 +1840,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 
 2026-06-03 18:38 cron agents/wip lane=DOCS packet=RIQ-PHASE4-DESIGN HANDOFF — sha=10dd9cb8 check:no-ui=PASS docs-only. Phase 4 spec 131 lines (6 packets RIQ-4-1..6). QA-20260603-089 Open. next=RIQ-4-1 (Phase 3 A1 live gate) collision=none
 2026-06-03 19:13 UTC cron-cloud branch=agents/wip packet=RIQ-4-1 STARTING — GoalClass/PrimitiveStep/SuccessPredicate types + Zod ext + PlannerPass prompt goal-classification block. Files: src/controller/intelligence/planner-pass.{ts,test.ts} docs/agent-status.md collision=none
+2026-06-03 19:35 UTC cron-cloud branch=agents/wip packet=RIQ-4-1 HANDOFF — sha=a2d89594 fin=4016/4016 check:no-ui=PASS +31 tests (74 total). GoalClass/PrimitiveStep/SuccessPredicate + Zod + prompt GOAL CLASSIFICATION block. next=RIQ-4-2 (openGoalStageStep) collision=none
