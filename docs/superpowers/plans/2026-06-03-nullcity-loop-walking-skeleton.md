@@ -404,6 +404,19 @@ Wire the three pieces so a settled support produces a letter, using `personId→
 **Decisions waiting (for James/Dev):**
 - **`onionsPerStandingPoint` scale (James):** standing tiers are 10/30/75; a daily check-in is 500 onions. Default is currently **1 (legacy 1:1)** — one check-in instantly makes a patron top-tier. Pick the real scale (e.g. 50 → 500 onions = 10 standing = Acquaintance). Set in `controller-host.ts` `onPatronSupport` (the `onionsPerStandingPoint: 1`). Low-risk, one-line.
 
+**HARDENING PASS (2026-06-03, after a 5-reviewer adversarial review):** fixed the real bugs the review found, then a 3-reviewer verification pass found one more, also fixed. All on origin.
+- ✅ #1/#2 saga: reordered to **debit-after-credit** (pre-flight balance → credit City → debit). No stranded AP on failure; insufficient-funds → 409 before any side effect. (dashboard `365a8a7`)
+- ✅ #1b (found in verification): debit-fails-after-credit no longer leaves the intent stuck in `sent_to_city` — marked `failed` + retryable. (`4516d54`)
+- ✅ #3 identity: seam keys on `personId ?? patronHandle ?? cityUserId`, consistent with the `ap_topup` economy log; new controller-host test proves personId keying (excludes cityUserId/patronHandle). (server `8eff0f8f`)
+- ✅ #4 scale: removed silent 1:1 default → `resolveOnionsPerStandingPoint` warns loudly; **now a real typed `config.economy.onionsPerStandingPoint` field** so it's actually settable. (`edeb98e8`)
+- ✅ tests: added Postgres mock-sql mapper tests, no-stranding, insufficient-funds, debit-fail, additive-standing-pin. Removed dead `grantResidentAttention`. Dashboard 168/168, server suites green, both tsc clean.
+
+**KNOWN LIMITATIONS (documented, not bugs — for Dev/steward):**
+- The credit-then-debit window over-credits the resident until a retry — inherent to the non-atomic *stand-in*; **Dev's real consent-spend API must make credit+debit atomic** (or add compensation). Documented in `attention-grant.ts`.
+- The Postgres mock-sql test catches mapper column-drift but proves nothing about real SQL execution — **a real PG integration suite is still queued** (below).
+- Cross-path standing: the CLI `patron:offer` path keys on operator `humanId` while the dashboard path keys on `personId` — same human can land in two buckets. Pre-existing; reconcile when unifying identity.
+- `debited` intent state is now unused (vestige of debit-first); harmless.
+
 **Queued for runtime-steward (restart-gated live verification):**
 - Live "support → attention → real letter in `/v1/inbox`" on a running controller + game (controller rebuild + restart needed; unit-proven, not yet live-smoked).
 
