@@ -1839,3 +1839,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-03 18:22 cron agents/wip lane=DOCS packet=RIQ-PHASE4-DESIGN STARTING — Phase 4 arbitrary-goal spec (RIQ gap). Files: docs/superpowers/specs/2026-06-03-riq-phase4-arbitrary-goal-design.md docs/issue-register.md docs/agent-status.md collision=none
 
 2026-06-03 18:38 cron agents/wip lane=DOCS packet=RIQ-PHASE4-DESIGN HANDOFF — sha=10dd9cb8 check:no-ui=PASS docs-only. Phase 4 spec 131 lines (6 packets RIQ-4-1..6). QA-20260603-089 Open. next=RIQ-4-1 (Phase 3 A1 live gate) collision=none
+2026-06-03 19:13 UTC cron-cloud branch=agents/wip packet=RIQ-4-1 STARTING — GoalClass/PrimitiveStep/SuccessPredicate types + Zod ext + PlannerPass prompt goal-classification block. Files: src/controller/intelligence/planner-pass.{ts,test.ts} docs/agent-status.md collision=none
