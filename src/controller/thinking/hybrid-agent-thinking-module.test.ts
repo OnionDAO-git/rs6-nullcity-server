@@ -10901,6 +10901,64 @@ describe('RIQ-1-1-B: Brain tool-call loop wired into runBrain', () => {
     });
 });
 
+describe('social-reply detection wiring (slice 7)', () => {
+    function namedSoul(): Soul {
+        const base = soul();
+        return {
+            ...base,
+            frontmatter: {
+                ...base.frontmatter,
+                display: 'Hans',
+                behavior: { ...(base.frontmatter.behavior as unknown as Record<string, unknown>), commandPrefix: 'social' },
+            },
+        } as Soul;
+    }
+    function withGoal() {
+        const state = runtimeState();
+        state.cognition = { ...(state.cognition || {}), activeGoal: { id: 'g-oaks', description: 'Chop oaks', createdAtTick: 0 } };
+        return state;
+    }
+
+    it('fires a detached social-reply inference when a human player names the resident (no freeze)', async () => {
+        const llm = scriptedLlm([{ text: 'Just splitting oaks, friend.' }]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(
+            perception({ tick: 5, events: [chatFromCodex('Hans, what are you doing?', 3201, 3200)] }) as never,
+        );
+
+        expect(result.cause).toBe('social_reply_detection');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(String(llm.complete.mock.calls[0][0].prompt)).toMatch(/not a helpful assistant/i);
+        expect(state.cognition?.activeGoal?.id).toBe('g-oaks');
+    });
+
+    it('does not start a social reply for a resident speaker (no A↔B loops)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                events: [
+                    {
+                        kind: 'chat',
+                        from: { id: 'res:greta', kind: 'resident', name: 'Greta', position: { x: 3201, y: 3200, level: 0 }, hpFraction: 1 },
+                        text: 'Hans, nice fire!',
+                        to: 'public',
+                    },
+                ],
+            }) as never,
+        );
+
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(state.cognition?.socialReplyInFlight).toBeUndefined();
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+});
+
 function hybridAgent(llm: MockLlm, state = runtimeState(), agentSoul = soul(), memoryStore = memory()): HybridAgentThinkingModule {
     return new HybridAgentThinkingModule({
         soul: agentSoul,

@@ -22,7 +22,18 @@ import {
     resetClockSensitiveCognition,
 } from './hybrid-agent-utils';
 
-import { directChatAction } from './hybrid-agent-chat';
+import { directChatAction, isChatRateLimited } from './hybrid-agent-chat';
+import {
+    SocialReplyCoordinator,
+    SOCIAL_REPLY_GLOBAL_CAP,
+    SOCIAL_REPLY_TEMPERATURE,
+    SOCIAL_REPLY_EXPIRE_TICKS,
+    detectSocialReply,
+    buildReplyContext,
+    buildReplyPrompt,
+    formatReply,
+    replyFallback,
+} from './social-reply';
 
 import {
     dialogueReaction,
@@ -85,6 +96,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private readonly cancelledThinkIds = new Map<number, string>();
     private readonly cancelledThinkResults = new Map<number, ThoughtResult>();
     private readonly inflightCompletions = new Map<number, AbortController>();
+    private readonly socialReplyCoordinator = new SocialReplyCoordinator(SOCIAL_REPLY_GLOBAL_CAP);
 
     constructor(public readonly options: HybridAgentThinkingModuleOptions) {}
 
@@ -142,6 +154,13 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             const combat = combatReaction(this, perception as HybridPerception);
             if (combat) {
                 return this.result(combat.actions, combat.cause, 0, false);
+            }
+
+            // Conversational reply (social-reply): a human player named us — fire a detached,
+            // off-loop inference and yield this tick (no freeze). Runs AFTER combat so danger wins.
+            const socialReply = this.maybeStartSocialReply(perception as HybridPerception);
+            if (socialReply) {
+                return socialReply;
             }
 
             if (cognition.waitResumeTick !== undefined) {
@@ -326,6 +345,86 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             fallback ||= result;
         }
         return fallback;
+    }
+
+    /**
+     * Conversational reply — detection step. If a human player named this resident, fire a
+     * DETACHED Body-profile inference (never awaited on the decision loop) and yield this tick.
+     * The reply lands a few ticks later via commitSocialReply; the resident keeps acting.
+     */
+    private maybeStartSocialReply(perception: HybridPerception): ThoughtResult | undefined {
+        const cognition = this.cognition();
+        if (cognition.socialReplyInFlight) {
+            return undefined;
+        }
+        const display = this.options.soul.frontmatter.display ?? displayName(this.options.soul.frontmatter.name);
+        const detected = detectSocialReply(perception, cognition.lastDirectChatKey, display);
+        if (!detected) {
+            return undefined;
+        }
+        if (isChatRateLimited(this)) {
+            cognition.lastDirectChatKey = detected.key;
+            return undefined;
+        }
+        const slot = this.socialReplyCoordinator.admit(this.options.soul.frontmatter.name, detected.key);
+        if (!slot) {
+            cognition.lastDirectChatKey = detected.key;
+            return undefined;
+        }
+        const currentTick = this.options.state.tick;
+        cognition.socialReplyInFlight = { key: detected.key, startedAtTick: currentTick };
+        cognition.lastDirectChatKey = detected.key;
+        (cognition.chatReplyTicks ||= []).push(currentTick);
+
+        const context = buildReplyContext({
+            soul: this.options.soul,
+            perception,
+            activeGoalDescription: cognition.activeGoal?.description,
+            speakerName: detected.speakerName,
+            speakerId: detected.speakerId,
+            chatText: detected.text,
+            currentTick,
+            lastReply: cognition.lastSocialReply,
+        });
+
+        const profile = this.behavior().body;
+        void this.options.llm
+            .complete({
+                endpoint: this.endpointFor(profile),
+                prompt: buildReplyPrompt(context),
+                temperature: this.temperatureFor(profile, SOCIAL_REPLY_TEMPERATURE),
+                thinking: profile?.thinking ?? false,
+                timeoutMs: this.timeoutFor(profile, DEFAULT_BODY_INFERENCE_TIMEOUT_MS),
+                priority: 4,
+                signal: slot.controller.signal,
+                ...(this.modelFor(profile) ? { model: this.modelFor(profile) } : {}),
+            })
+            .then(response => this.commitSocialReply(detected.key, formatReply(response.text), detected.speakerId))
+            .catch(() => this.commitSocialReply(detected.key, undefined, detected.speakerId));
+
+        return { actions: [], cause: 'social_reply_detection', nooped: true };
+    }
+
+    /**
+     * Conversational reply — resolve step (off-loop). Re-reads the LIVE cognition (never a
+     * captured closure, since this.options.state can be reassigned by stateStore.load), checks
+     * key-ownership, stamps freshness at resolve time, and settles the coordinator slot once.
+     */
+    private commitSocialReply(key: string, text: string | undefined, speakerId: string): void {
+        const name = this.options.soul.frontmatter.name;
+        const cognition = this.cognition();
+        if (cognition.socialReplyInFlight?.key !== key) {
+            this.socialReplyCoordinator.settle(name, key);
+            return;
+        }
+        const finalText = text ?? replyFallback(this.options.soul, key);
+        cognition.pendingSocialReply = {
+            text: finalText,
+            expiresAtTick: this.options.state.tick + SOCIAL_REPLY_EXPIRE_TICKS,
+            speakerId,
+        };
+        cognition.socialReplyInFlight = undefined;
+        this.socialReplyCoordinator.settle(name, key);
     }
 
     complete(thinkId: number, request: Omit<LlmRequest, 'signal'>): Promise<LlmResponse> {
