@@ -37,6 +37,8 @@ import {
     type LiveEconomyQuery,
     type LiveEconomySnapshot,
 } from './live-economy';
+import { PlanStore } from '../intelligence/plan-store';
+import type { Plan } from '../intelligence/planner-pass';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
 export const STORYTELLER_QUEUE_DEFAULT_LIMIT = 20;
@@ -324,6 +326,7 @@ export class CityIntegrationService {
     private readonly ncriRegistry: NcriRegistry;
     private readonly ncriPricingStore: NcriPricingStore;
     private readonly economyEventLog: EconomyEventLog;
+    private readonly planStore: PlanStore;
     private readonly now: () => Date;
 
     constructor(private readonly options: CityIntegrationOptions) {
@@ -334,6 +337,7 @@ export class CityIntegrationService {
         this.proposalStore = new SoulProposalStore(options.memoryRoot, this.now);
         this.ncriRegistry = new NcriRegistry(options.memoryRoot, this.now, this.economyEventLog);
         this.ncriPricingStore = new NcriPricingStore(options.memoryRoot, this.now);
+        this.planStore = new PlanStore(options.memoryRoot);
     }
 
     /**
@@ -1301,6 +1305,13 @@ export class CityIntegrationService {
         const runtime = this.options.getRuntime(residentName);
         const index = this.readLibrary(residentName).index;
         return { ok: true, resident: residentName, deceased: runtime?.getState().deceased, libraryState: index?.currentState };
+    }
+
+    /** RIQ-5-1: return the resident's active durable plan, or null if none. */
+    residentPlan(resident: string): { ok: boolean; resident: string; plan: Plan | null } {
+        const residentName = parseResident(resident);
+        const plan = this.planStore.load(residentName);
+        return { ok: true, resident: residentName, plan };
     }
 
     economyDigest(options: { since?: string; until?: string } = {}): CityEventDigest {

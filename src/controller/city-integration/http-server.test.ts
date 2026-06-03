@@ -1191,6 +1191,55 @@ describe('CityIntegration HTTP server', () => {
         expect(achievedAgain.status).toBe(200);
         expect(achievedAgain.payload).toMatchObject({ id: goalId, status: 'achieved' });
     });
+
+    it('GET /residents/:id/plan returns plan null when no plan exists (RIQ-5-1)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/residents/res%3Atest/plan`, token);
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/application\/json/);
+        expect(response.payload).toEqual({ ok: true, resident: 'res:test', plan: null });
+    });
+
+    it('GET /residents/:id/plan returns persisted plan when one exists (RIQ-5-1)', async () => {
+        const svc = makeService();
+        started = await startCityIntegrationHttpServer({
+            service: svc,
+            port: 0,
+            bearerToken: token,
+        });
+
+        // Write a plan file directly using PlanStore so the service can read it back.
+        const { PlanStore } = await import('../intelligence/plan-store');
+        const store = new PlanStore(root);
+        const fakePlan = {
+            goalId: 'goal-1',
+            createdAtTick: 10,
+            status: 'active' as const,
+            stages: [
+                {
+                    id: 'stage-1',
+                    subgoal: 'gather logs',
+                    status: 'active' as const,
+                    requirements: [],
+                },
+            ],
+            currentStageIndex: 0,
+        };
+        store.save('res:test', fakePlan as unknown as Parameters<typeof store.save>[1]);
+
+        const response = await requestJson('GET', `${started.url}/residents/res%3Atest/plan`, token);
+        expect(response.status).toBe(200);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            resident: 'res:test',
+            plan: { goalId: 'goal-1', status: 'active' },
+        });
+    });
 });
 
 function soulMarkdown(name: string): string {
