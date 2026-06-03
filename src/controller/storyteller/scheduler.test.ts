@@ -145,6 +145,54 @@ describe('storyteller scheduler', () => {
         expect(result.row.decision).toBe('published_canon');
         expect(fetchSpy).toHaveBeenCalledTimes(1);
         expect(fs.existsSync(path.join(outputDir, 'canon', result.row.digestId, 'dispatch.json'))).toBe(true);
+        const latestFrame = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8')) as {
+            digestId?: string;
+            narration?: { source?: string; title?: string };
+        };
+        expect(latestFrame.digestId).toBe(result.row.digestId);
+        expect(latestFrame.narration?.source).toBe('verified_dispatch');
+        expect(latestFrame.narration?.title).toBe('Duke made a visible move');
+    });
+
+    it('writes latest-frame.json with deterministic fallback when the scheduled model output needs review', async () => {
+        new EconomyEventLog(memoryRoot, () => new Date('2026-06-02T20:05:00.000Z')).append({
+            kind: 'gp_earned',
+            residentName: 'res:duke',
+            gpDelta: 25,
+            note: 'Duke earned 25 GP from real RuneScape coin item 995.',
+        });
+        const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+        const result = await runStorytellerSchedulerTick(
+            {
+                mode: 'once',
+                intervalMs: 30 * 60_000,
+                memoryRoot,
+                outputDir,
+                modelProfile: 'storyteller-test',
+                dailyCostCapUsd: 1,
+                lockTtlMs: 90 * 60_000,
+                autoPublishOnZeroWarnings: true,
+            },
+            {
+                env: {},
+                now: () => new Date('2026-06-02T20:30:00.000Z'),
+            },
+        );
+
+        expect(result.modelCalled).toBe(true);
+        expect(result.row.decision).toBe('queued_review');
+        expect(fetchSpy).not.toHaveBeenCalled();
+        const latestFrame = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8')) as {
+            digestId?: string;
+            source?: { excludedDispatchId?: string };
+            narration?: { source?: string };
+            publicHealth?: { warnings?: string[] };
+        };
+        expect(latestFrame.digestId).toBe(result.row.digestId);
+        expect(latestFrame.narration?.source).toBe('deterministic_fallback');
+        expect(latestFrame.source?.excludedDispatchId).toBeDefined();
+        expect(latestFrame.publicHealth?.warnings).toEqual(expect.arrayContaining([expect.stringContaining('nooped')]));
     });
 
     it('skips a tick when another scheduler process owns the lock', async () => {

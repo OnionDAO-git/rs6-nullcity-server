@@ -34,6 +34,7 @@ import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
 import { StorytellerModelClient } from './model-client';
 import { preflightStorytellerPaidModelBudget, StorytellerOverseerCliError } from './overseer';
+import { buildProjectorStoryFrame } from './public-frame';
 import type { CityEventDigest, StorytellerDispatch } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
 import { loadStorytellerLocalEnv } from './local-env';
@@ -218,6 +219,7 @@ export async function runStoryteller(args: StorytellerRunArgs, options: Storytel
     const dispatch = await client.run(digest, config, { modelProfile: args.modelProfile });
     store.writeDigest(digest);
     store.writeDispatch(dispatch);
+    store.writeLatestProjectorFrame(buildProjectorStoryFrame(digest, { dispatch, now: options.now?.() }));
 
     return {
         digest,

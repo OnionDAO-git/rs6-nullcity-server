@@ -87,6 +87,25 @@ describe('storyteller:run CLI digest sources', () => {
         expect(written.publicBody).toBe(result.dispatch.publicBody);
     });
 
+    it('writes latest-frame.json with fail-closed fallback narration when the model call is nooped', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'fallback-frame-digest' });
+
+        const result = await runStoryteller(
+            { source: 'digest-id', digestId: 'fallback-frame-digest', outputDir, modelProfile: 'default' },
+            { env: {}, now: () => new Date('2026-05-29T06:03:00.000Z') },
+        );
+
+        const frame = store.readLatestProjectorFrame();
+        expect(frame).not.toBeNull();
+        expect(frame?.digestId).toBe('fallback-frame-digest');
+        expect(frame?.narration.source).toBe('deterministic_fallback');
+        expect(frame?.publicHealth.status).toBe('degraded');
+        expect(frame?.source.excludedDispatchId).toBe(result.dispatch.dispatchId);
+        expect(frame?.publicHealth.warnings).toEqual(expect.arrayContaining([expect.stringContaining('nooped')]));
+    });
+
     it('runs over a named persisted digest id', async () => {
         const store = new StorytellerStore(outputDir);
         const { digest } = buildFixtureDigest();
@@ -235,6 +254,10 @@ describe('storyteller:run CLI digest sources', () => {
         const requestInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
         const body = JSON.parse(String(requestInit.body)) as { response_format?: unknown };
         expect(body.response_format).toEqual({ type: 'text' });
+        const frame = store.readLatestProjectorFrame();
+        expect(frame?.digestId).toBe('text-format-digest');
+        expect(frame?.narration.source).toBe('verified_dispatch');
+        expect(frame?.narration.title).toBe(modelPayload.publicTitle);
         fetchSpy.mockRestore();
     });
 
