@@ -10,6 +10,7 @@ import type {
     OrientationNudgeLibraryEvent,
     OrientationGoalEditedLibraryEvent,
 } from '../spark/orientation-scorer';
+import type { GoalClass } from '../intelligence/planner-pass';
 
 // ---------------------------------------------------------------------------
 // RIQ-3-3: Plan lifecycle Library event types
@@ -72,6 +73,21 @@ export interface PlanStageBlockedLibraryEvent {
     goalId: string;
     stageId: string;
     stageSubgoal: string;
+}
+
+/**
+ * Emitted when an open-goal (non-runescape_skill) plan stage completes via the
+ * primitive-steps executor. Lets the Storyteller narrate open-goal milestones —
+ * e.g. "placed the O in ONIONDAO", "recited first poem". (RIQ-4-4)
+ */
+export interface OpenGoalProgressLibraryEvent {
+    kind: 'open_goal_progress';
+    ts: string;
+    tick: number;
+    goalId: string;
+    stageId: string;
+    goalClass: GoalClass;
+    note: string;
 }
 
 export interface NcriLibraryEvent {
@@ -504,6 +520,29 @@ export class LibraryUpdater {
             stageSubgoal: event.stageSubgoal,
             lifeIndex: index.lives,
             significanceReasons: ['plan:stage_blocked'],
+        });
+        this.touchIndex(index);
+    }
+
+    /**
+     * Emit an open_goal_progress Library timeline event when a spatial, creative,
+     * or social plan stage completes its authored primitive steps. Makes open-goal
+     * milestones visible to the Storyteller substrate. (RIQ-4-4)
+     */
+    observeOpenGoalProgress(event: OpenGoalProgressLibraryEvent): void {
+        const index = this.readIndex();
+        this.appendTimeline({
+            schemaVersion: 1,
+            ts: event.ts,
+            tick: event.tick,
+            sessionId: 'external',
+            kind: 'open_goal_progress',
+            goalId: event.goalId,
+            stageId: event.stageId,
+            goalClass: event.goalClass,
+            note: event.note,
+            lifeIndex: index.lives,
+            significanceReasons: ['plan:open_goal_progress'],
         });
         this.touchIndex(index);
     }

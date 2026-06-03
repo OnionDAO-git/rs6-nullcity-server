@@ -5,6 +5,7 @@ import type { ProgressLine, TrajectoryLine } from './schemas';
 import { LibraryUpdater } from './library-updater';
 import type {
     NcriLibraryEvent,
+    OpenGoalProgressLibraryEvent,
     PlanCreatedLibraryEvent,
     PlanReplannedLibraryEvent,
     PlanStageDoneLibraryEvent,
@@ -898,6 +899,83 @@ describe('LibraryUpdater — observePlanStageBlocked (RIQ-A1-OBS)', () => {
         expect(timeline).toHaveLength(2);
         expect(timeline[0]).toMatchObject({ kind: 'plan_stage_done', stageId: 'acquire-axe' });
         expect(timeline[1]).toMatchObject({ kind: 'plan_stage_blocked', stageId: 'chop-logs' });
+    });
+});
+
+describe('LibraryUpdater — observeOpenGoalProgress (RIQ-4-4)', () => {
+    it('appends open_goal_progress to timeline with all required fields and lifeIndex', () => {
+        const { updater, root } = testUpdater();
+        const event: OpenGoalProgressLibraryEvent = {
+            kind: 'open_goal_progress',
+            ts: '2026-06-03T22:00:00.000Z',
+            tick: 300,
+            goalId: 'become-best-poet',
+            stageId: 'compose-poem-1',
+            goalClass: 'creative',
+            note: 'compose and recite first poem',
+        };
+
+        updater.observeOpenGoalProgress(event);
+
+        expect(readTimeline(root)).toEqual([
+            expect.objectContaining({
+                kind: 'open_goal_progress',
+                ts: '2026-06-03T22:00:00.000Z',
+                tick: 300,
+                goalId: 'become-best-poet',
+                stageId: 'compose-poem-1',
+                goalClass: 'creative',
+                note: 'compose and recite first poem',
+                lifeIndex: 1,
+                significanceReasons: ['plan:open_goal_progress'],
+            }),
+        ]);
+    });
+
+    it('open_goal_progress touches index updatedAt', () => {
+        const { updater, root } = testUpdater();
+        const before = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+
+        updater.observeOpenGoalProgress({
+            kind: 'open_goal_progress',
+            ts: '2026-06-03T22:01:00.000Z',
+            tick: 301,
+            goalId: 'spatial-oniondao',
+            stageId: 'place-letter-O',
+            goalClass: 'spatial',
+            note: 'place onion at tile for letter O',
+        });
+
+        const after = fs.statSync(path.join(root, 'library', 'res-agent', 'index.json')).mtimeMs;
+        expect(after).toBeGreaterThanOrEqual(before);
+    });
+
+    it('multiple open_goal_progress events accumulate in timeline order with distinct goalClass values', () => {
+        const { updater, root } = testUpdater();
+
+        updater.observeOpenGoalProgress({
+            kind: 'open_goal_progress',
+            ts: '2026-06-03T22:00:00.000Z',
+            tick: 300,
+            goalId: 'become-best-poet',
+            stageId: 'compose-poem-1',
+            goalClass: 'creative',
+            note: 'compose first poem',
+        });
+        updater.observeOpenGoalProgress({
+            kind: 'open_goal_progress',
+            ts: '2026-06-03T22:05:00.000Z',
+            tick: 360,
+            goalId: 'become-best-poet',
+            stageId: 'share-poem-1',
+            goalClass: 'creative',
+            note: 'share poem with residents',
+        });
+
+        const timeline = readTimeline(root);
+        expect(timeline).toHaveLength(2);
+        expect(timeline[0]).toMatchObject({ kind: 'open_goal_progress', stageId: 'compose-poem-1', tick: 300 });
+        expect(timeline[1]).toMatchObject({ kind: 'open_goal_progress', stageId: 'share-poem-1', tick: 360 });
     });
 });
 

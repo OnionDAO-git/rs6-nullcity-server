@@ -3794,6 +3794,18 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
             stageId: stage.id,
             stageSubgoal: stage.subgoal,
         });
+        // RIQ-4-4: for open-goal plans with authored steps, emit a narratable progress event.
+        if ((plan.goalClass ?? 'runescape_skill') !== 'runescape_skill' && stage.steps && stage.steps.length > 0) {
+            ctx.options.libraryUpdater?.observeOpenGoalProgress({
+                kind: 'open_goal_progress',
+                ts: new Date().toISOString(),
+                tick: currentTick,
+                goalId: plan.goalId,
+                stageId: stage.id,
+                goalClass: plan.goalClass!,
+                note: stage.subgoal,
+            });
+        }
         return {
             actions: [],
             cause: `plan_stage_done:${stage.id}`,
