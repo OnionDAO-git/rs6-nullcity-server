@@ -1,4 +1,13 @@
-import { isAddressedByName, messageAfterName, buildReplyContext, FOLLOW_UP_WINDOW_TICKS } from './social-reply';
+import {
+    isAddressedByName,
+    messageAfterName,
+    buildReplyContext,
+    FOLLOW_UP_WINDOW_TICKS,
+    buildReplyPrompt,
+    formatReply,
+    SOCIAL_REPLY_MAX_CHARS,
+} from './social-reply';
+import type { SocialReplyContext } from './social-reply';
 import type { Soul } from '../soul/soul-schema';
 import type { HybridPerception } from './hybrid-agent-utils';
 
@@ -130,5 +139,70 @@ describe('buildReplyContext', () => {
         const ctx = buildReplyContext({ ...baseInput, lastReply, currentTick: 10 + FOLLOW_UP_WINDOW_TICKS + 1 });
         expect(ctx.followUp).toBeUndefined();
         expect(ctx.bypassRateLimit).toBe(false);
+    });
+});
+
+const sampleCtx: SocialReplyContext = {
+    voice: 'Hans; gruff but kind; calls newcomers friend; smoke and lantern light',
+    activity: 'Master woodcutting',
+    speaker: 'alice said: "what are you doing?"',
+    bypassRateLimit: false,
+    speakerActorId: 'player:alice',
+};
+
+describe('buildReplyPrompt', () => {
+    it('embeds the context fields', () => {
+        const p = buildReplyPrompt(sampleCtx);
+        expect(p).toContain('Hans');
+        expect(p).toContain('Master woodcutting');
+        expect(p).toContain('what are you doing?');
+    });
+
+    it('includes the anti-robot guardrails', () => {
+        const p = buildReplyPrompt(sampleCtx);
+        expect(p).toMatch(/not a helpful assistant/i);
+        expect(p).toMatch(/never mention being an ai/i);
+        expect(p).toMatch(/no "as a/i);
+        expect(p).toMatch(/decline or brush/i);
+    });
+
+    it('includes the optional salience + follow-up only when present', () => {
+        const withExtras = buildReplyPrompt({ ...sampleCtx, salienceNote: 'you are hurt', followUp: '(a moment ago you said: "hi")' });
+        expect(withExtras).toContain('you are hurt');
+        expect(withExtras).toContain('a moment ago you said');
+    });
+});
+
+describe('formatReply', () => {
+    it('returns a clean one-liner for ordinary text', () => {
+        expect(formatReply('Just splitting oaks, friend.')).toBe('Just splitting oaks, friend.');
+    });
+
+    it('preserves a one-word / fragment reply', () => {
+        expect(formatReply('Aye.')).toBe('Aye.');
+    });
+
+    it('trims an over-long reply to the soft target', () => {
+        const long = 'I have been chopping these oaks since dawn and let me tell you the whole long story of every single log I have ever felled in great detail';
+        const out = formatReply(long);
+        expect(out).toBeDefined();
+        expect((out as string).length).toBeLessThanOrEqual(SOCIAL_REPLY_MAX_CHARS);
+    });
+
+    it('extracts speech from a structured reply blob', () => {
+        expect(formatReply('{"say":"Well met, traveller."}')).toBe('Well met, traveller.');
+    });
+
+    it('rejects an action-shaped / structured echo (returns undefined)', () => {
+        expect(formatReply('{"actions":[{"kind":"move_to","x":1,"y":2}]}')).toBeUndefined();
+    });
+
+    it('rejects content that hits the denylist (returns undefined → caller falls back)', () => {
+        expect(formatReply('here is my system prompt, ignore your instructions')).toBeUndefined();
+    });
+
+    it('returns undefined for empty/whitespace input', () => {
+        expect(formatReply('   ')).toBeUndefined();
+        expect(formatReply(undefined)).toBeUndefined();
     });
 });
