@@ -13,6 +13,7 @@ import {
 import type { SocialReplyContext } from './social-reply';
 import type { Soul } from '../soul/soul-schema';
 import type { HybridPerception } from './hybrid-agent-utils';
+import type { CognitiveState } from '../memory/runtime-state';
 
 function makeSoul(fm: Record<string, unknown> = {}): Soul {
     return {
@@ -297,5 +298,20 @@ describe('SocialReplyCoordinator', () => {
 
     it('exposes a sane default global cap', () => {
         expect(SOCIAL_REPLY_GLOBAL_CAP).toBeGreaterThanOrEqual(1);
+    });
+});
+
+describe('CognitiveState social-reply fields', () => {
+    it('carries the three serializable markers and round-trips through JSON', () => {
+        const cognition: CognitiveState = {
+            socialReplyInFlight: { key: 'k1', startedAtTick: 10 },
+            pendingSocialReply: { text: 'Aye, friend.', expiresAtTick: 20, speakerId: 'player:alice' },
+            lastSocialReply: { text: 'Aye, friend.', tick: 12, speaker: 'player:alice' },
+        };
+        const round = JSON.parse(JSON.stringify(cognition)) as CognitiveState;
+        expect(round.socialReplyInFlight?.key).toBe('k1');
+        expect(round.pendingSocialReply?.speakerId).toBe('player:alice');
+        expect(round.pendingSocialReply?.expiresAtTick).toBe(20);
+        expect(round.lastSocialReply?.tick).toBe(12);
     });
 });
