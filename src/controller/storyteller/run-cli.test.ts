@@ -22,13 +22,15 @@ describe('storyteller:run CLI digest sources', () => {
             source: 'latest',
             modelProfile: 'storyteller-smart',
             outputDir: '/tmp/storyteller',
+            controllerConfigPath: path.join('config', 'controller.storyteller.yml'),
         });
 
         expect(parseStorytellerRunArgs(['--digest-id', 'live-20260530060000'])).toEqual({
             source: 'digest-id',
             digestId: 'live-20260530060000',
-            modelProfile: 'default',
+            modelProfile: 'storyteller',
             outputDir: path.join('data', 'controller', 'storyteller'),
+            controllerConfigPath: path.join('config', 'controller.storyteller.yml'),
         });
     });
 
@@ -70,6 +72,14 @@ describe('storyteller:run CLI digest sources', () => {
         ).toMatchObject({
             source: 'latest',
             controllerConfigPath: '/tmp/nullcity/storyteller-controller.yml',
+        });
+    });
+
+    it('defaults unattended runs to the checked-in Storyteller controller profile', () => {
+        expect(parseStorytellerRunArgs(['--latest'], {})).toMatchObject({
+            source: 'latest',
+            modelProfile: 'storyteller',
+            controllerConfigPath: path.join('config', 'controller.storyteller.yml'),
         });
     });
 

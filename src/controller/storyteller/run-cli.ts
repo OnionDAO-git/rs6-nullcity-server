@@ -42,6 +42,8 @@ import { loadStorytellerLocalEnv } from './local-env';
 
 export type StorytellerRunSource = 'none' | 'fixture' | 'latest' | 'digest-id';
 
+const DEFAULT_STORYTELLER_CONTROLLER_CONFIG = path.join('config', 'controller.storyteller.yml');
+
 export interface StorytellerRunArgs {
     source: StorytellerRunSource;
     modelProfile: string;
@@ -78,9 +80,10 @@ export function parseStorytellerRunArgs(
 ): StorytellerRunArgs {
     let source: StorytellerRunSource = 'none';
     let digestId: string | undefined;
-    let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'default';
+    let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'storyteller';
     let outputDir = path.join('data', 'controller', 'storyteller');
-    let controllerConfigPath = readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG);
+    let controllerConfigPath =
+        readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG) ?? DEFAULT_STORYTELLER_CONTROLLER_CONFIG;
     let dailyCostCapUsd = parseOptionalDailyCostCap(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
 
     const claimSource = (nextSource: StorytellerRunSource): void => {

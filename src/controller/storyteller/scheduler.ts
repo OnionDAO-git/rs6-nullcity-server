@@ -62,6 +62,7 @@ export class StorytellerSchedulerCliError extends Error {
 
 const DEFAULT_INTERVAL_MS = 30 * 60_000;
 const DEFAULT_LOCK_TTL_MS = 90 * 60_000;
+const DEFAULT_STORYTELLER_CONTROLLER_CONFIG = path.join('config', 'controller.storyteller.yml');
 
 export function parseStorytellerSchedulerArgs(
     argv: string[],
@@ -73,7 +74,8 @@ export function parseStorytellerSchedulerArgs(
     let memoryRoot = path.join('data', 'controller', 'memory');
     let outputDir = path.join('data', 'controller', 'storyteller');
     let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'storyteller';
-    let controllerConfigPath = readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG);
+    let controllerConfigPath =
+        readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ?? readOptionalEnvPath(env.CONTROLLER_CONFIG) ?? DEFAULT_STORYTELLER_CONTROLLER_CONFIG;
     let dailyCostCapUsd = parseOptionalNumber(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
     let autoPublishOnZeroWarnings = true;
 

@@ -51,6 +51,7 @@ describe('storyteller scheduler', () => {
             memoryRoot: '/tmp/null-city-memory',
             outputDir: '/tmp/storyteller',
             modelProfile: 'openrouter_storyteller',
+            controllerConfigPath: path.join('config', 'controller.storyteller.yml'),
             dailyCostCapUsd: 5,
             lockTtlMs: 90 * 60_000,
             autoPublishOnZeroWarnings: true,
@@ -75,6 +76,14 @@ describe('storyteller scheduler', () => {
         ).toMatchObject({
             mode: 'once',
             controllerConfigPath: '/tmp/nullcity/storyteller-controller.yml',
+        });
+    });
+
+    it('defaults unattended scheduler ticks to the checked-in Storyteller controller profile', () => {
+        expect(parseStorytellerSchedulerArgs(['--once'], {})).toMatchObject({
+            mode: 'once',
+            modelProfile: 'storyteller',
+            controllerConfigPath: path.join('config', 'controller.storyteller.yml'),
         });
     });
 
