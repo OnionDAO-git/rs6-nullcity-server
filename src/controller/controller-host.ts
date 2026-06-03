@@ -738,8 +738,8 @@ function resolveOnionsPerStandingPoint(config: ControllerConfig): number {
     // eslint-disable-next-line no-console
     console.warn(
         '[controller-host] onionsPerStandingPoint is using the PLACEHOLDER 1:1 scale. ' +
-        'Standing accrues 1 point per onion (tiers 10/30/75), so a single large grant can instantly top-tier a patron. ' +
-        'Set config.economy.onionsPerStandingPoint to the real scale before enabling real onion spend.',
+            'Standing accrues 1 point per onion (tiers 10/30/75), so a single large grant can instantly top-tier a patron. ' +
+            'Set config.economy.onionsPerStandingPoint to the real scale before enabling real onion spend.',
     );
     return 1;
 }

@@ -204,7 +204,8 @@ describe('formatReply', () => {
     });
 
     it('trims an over-long reply to the soft target', () => {
-        const long = 'I have been chopping these oaks since dawn and let me tell you the whole long story of every single log I have ever felled in great detail';
+        const long =
+            'I have been chopping these oaks since dawn and let me tell you the whole long story of every single log I have ever felled in great detail';
         const out = formatReply(long);
         expect(out).toBeDefined();
         expect((out as string).length).toBeLessThanOrEqual(SOCIAL_REPLY_MAX_CHARS);

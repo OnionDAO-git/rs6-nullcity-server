@@ -10949,7 +10949,9 @@ describe('social-reply detection wiring (slice 7)', () => {
         const state = withGoal();
         const agent = hybridAgent(llm, state, heroSoul());
 
-        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, what are you doing?', 3201, 3200)] }) as never);
+        const result = await agent.think(
+            perception({ tick: 5, events: [chatFromCodex('Hans, what are you doing?', 3201, 3200)] }) as never,
+        );
 
         expect(result.cause).toBe('social_reply_detection');
         expect(socialInferenceCalls(llm)).toHaveLength(1);
@@ -10960,7 +10962,13 @@ describe('social-reply detection wiring (slice 7)', () => {
         const state = withGoal();
         const agent = hybridAgent(llm, state, heroSoul());
 
-        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, follow me', 3201, 3200)], players: [player('codex', 3201, 3200)] }) as never);
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                events: [chatFromCodex('Hans, follow me', 3201, 3200)],
+                players: [player('codex', 3201, 3200)],
+            }) as never,
+        );
 
         // command path handled it (a follow/await/etc. cause), NOT the conversational path
         expect(result.cause).not.toBe('social_reply_detection');

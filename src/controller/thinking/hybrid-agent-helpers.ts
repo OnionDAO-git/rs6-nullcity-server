@@ -3335,6 +3335,25 @@ function shouldShareGoal(ctx: HelperContext): boolean {
 const _plannerPassInFlight = new Set<string>();
 
 /**
+ * RIQ-3-6: Tick budget for plan stage routing.
+ *
+ * When the Body routes actions for a stage but the stage never emits
+ * stage_done or stage_blocked (e.g. the router recognises the subgoal but
+ * the resident cannot acquire the required item in the game world), this
+ * in-memory counter tracks how many ticks the stage has been routing.  Once
+ * STAGE_TICK_BUDGET ticks elapse the stage is force-blocked so the Planner
+ * can replan with updated knowledge.
+ *
+ * Key: `${residentId}:${plan.createdAtTick}:${stage.id}`.  Including
+ * createdAtTick means each replan gets fresh tracking even when the new plan
+ * reuses the same stage id strings.  The Map is reset on controller restart
+ * (acceptable — a restart is a legitimate reason to give a stage a fresh
+ * budget).
+ */
+export const STAGE_TICK_BUDGET = 200;
+const _stageActiveSinceTick = new Map<string, number>();
+
+/**
  * RIQ-3-2: PlannerPass trigger.
  *
  * Runs before the per-tick goal picker. Checks whether the resident needs a
@@ -3709,17 +3728,24 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
     }
 
     const routed = planStageRouter(stage, bodyPerception);
+    const currentTick = ctx.options.state.tick;
+
+    // RIQ-3-6: stage tick-budget key.  createdAtTick scopes the tracking to
+    // this specific plan so a replan gets a fresh budget even if stage ids repeat.
+    const stageKey = `${residentId}:${plan.createdAtTick}:${stage.id}`;
+
     if (!routed) {
         return undefined;
     }
 
     if (routed.planSignal === 'stage_done') {
+        _stageActiveSinceTick.delete(stageKey);
         planStore.save(residentId, advancePlan(plan));
         // RIQ-A1-OBS: emit stage-done Library event so normal-life-audit can count completions.
         ctx.options.libraryUpdater?.observePlanStageDone({
             kind: 'plan_stage_done',
             ts: new Date().toISOString(),
-            tick: ctx.options.state.tick,
+            tick: currentTick,
             goalId: plan.goalId,
             stageId: stage.id,
             stageSubgoal: stage.subgoal,
@@ -3734,12 +3760,13 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
     }
 
     if (routed.planSignal === 'stage_blocked') {
+        _stageActiveSinceTick.delete(stageKey);
         planStore.save(residentId, blockCurrentStage(plan));
         // RIQ-A1-OBS: emit stage-blocked Library event so normal-life-audit can count blocks.
         ctx.options.libraryUpdater?.observePlanStageBlocked({
             kind: 'plan_stage_blocked',
             ts: new Date().toISOString(),
-            tick: ctx.options.state.tick,
+            tick: currentTick,
             goalId: plan.goalId,
             stageId: stage.id,
             stageSubgoal: stage.subgoal,
@@ -3754,6 +3781,32 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
     }
 
     if (routed.action) {
+        // RIQ-3-6: track the first tick this stage routed an action.
+        if (!_stageActiveSinceTick.has(stageKey)) {
+            _stageActiveSinceTick.set(stageKey, currentTick);
+        }
+        // If the stage has been routing without completing for STAGE_TICK_BUDGET ticks,
+        // force-block it so the planner can replan with updated knowledge.
+        const startedAt = _stageActiveSinceTick.get(stageKey)!;
+        if (currentTick - startedAt >= STAGE_TICK_BUDGET) {
+            _stageActiveSinceTick.delete(stageKey);
+            planStore.save(residentId, blockCurrentStage(plan));
+            ctx.options.libraryUpdater?.observePlanStageBlocked({
+                kind: 'plan_stage_blocked',
+                ts: new Date().toISOString(),
+                tick: currentTick,
+                goalId: plan.goalId,
+                stageId: stage.id,
+                stageSubgoal: stage.subgoal,
+            });
+            return {
+                actions: [],
+                cause: `plan_stage_blocked:${stage.id}`,
+                envelopeTokens: 0,
+                nooped: true,
+                planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_blocked' },
+            };
+        }
         return {
             actions: [routed.action],
             cause: `plan_stage:${stage.id}`,

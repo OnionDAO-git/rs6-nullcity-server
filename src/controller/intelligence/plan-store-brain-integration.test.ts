@@ -18,7 +18,7 @@ jest.mock('./planner-pass', () => ({
     blockCurrentStage: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').blockCurrentStage,
 }));
 
-import { maybeTriggerPlannerPass, runBody } from '../thinking/hybrid-agent-helpers';
+import { maybeTriggerPlannerPass, runBody, STAGE_TICK_BUDGET } from '../thinking/hybrid-agent-helpers';
 import { runPlannerPass } from './planner-pass';
 import type { Plan } from './planner-pass';
 import type { HelperContext } from '../thinking/hybrid-agent-helpers';
@@ -66,10 +66,14 @@ function makePlanStore(plan: Plan | null): {
     };
 }
 
-function makeLibraryUpdaterMock(): jest.Mocked<Pick<LibraryUpdater, 'observePlanCreated' | 'observePlanReplanned'>> {
+function makeLibraryUpdaterMock(): jest.Mocked<
+    Pick<LibraryUpdater, 'observePlanCreated' | 'observePlanReplanned' | 'observePlanStageBlocked' | 'observePlanStageDone'>
+> {
     return {
         observePlanCreated: jest.fn(),
         observePlanReplanned: jest.fn(),
+        observePlanStageBlocked: jest.fn(),
+        observePlanStageDone: jest.fn(),
     };
 }
 
@@ -78,9 +82,17 @@ function makeCtx(overrides: {
     orientationGoal?: { id: string; description: string } | null;
     plannerProfile?: object | null;
     residentId?: string;
+    tick?: number;
     libraryUpdater?: ReturnType<typeof makeLibraryUpdaterMock> | null;
 }): HelperContext {
-    const { planStore = null, orientationGoal = null, plannerProfile = null, residentId = 'res:test', libraryUpdater = null } = overrides;
+    const {
+        planStore = null,
+        orientationGoal = null,
+        plannerProfile = null,
+        residentId = 'res:test',
+        tick = 100,
+        libraryUpdater = null,
+    } = overrides;
 
     const complete = jest.fn(async () => ({ text: '{"stages":[]}', nooped: false }));
 
@@ -95,7 +107,7 @@ function makeCtx(overrides: {
             } as any,
             state: {
                 resident: residentId,
-                tick: 100,
+                tick,
                 attention: 5000,
                 legacy: { kind: 'test', progress: {}, complete: false },
                 budgets: {
@@ -617,5 +629,156 @@ describe('survival-preserves-plan invariant (RIQ-3-2B)', () => {
         });
         await maybeTriggerPlannerPass(ctx);
         expect(mockRunPlannerPass).not.toHaveBeenCalled();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Stage tick-budget timeout (RIQ-3-6)
+//
+// A stage that routes actions continuously without completing should be
+// force-blocked after STAGE_TICK_BUDGET ticks so the Planner can replan.
+//
+// Each test uses a unique residentId + plan.createdAtTick to avoid Map key
+// collisions between test runs in the same Jest process.
+// ---------------------------------------------------------------------------
+
+describe('runBody — stage tick-budget timeout (RIQ-3-6)', () => {
+    // Shared setup: "chop logs" stage + axe + tree → planStageRouter returns action.
+    const tree = { objectId: 1276, position: { x: 100, y: 100, level: 0 } };
+    const chopLogPerception = {
+        tick: 5,
+        resident: {
+            position: { x: 100, y: 100, level: 0 },
+            inventory: [{ itemId: 1351, amount: 1 }], // bronze axe — has woodcutting axe
+        },
+        nearby: { objects: [tree], npcs: [], worldItems: [], players: [] },
+        events: [],
+    } as any;
+
+    function makeChopLogPlan(overrides: Partial<Plan> = {}): Plan {
+        return {
+            goalId: 'master-woodcutting',
+            goalDescription: 'Master woodcutting',
+            stages: [
+                {
+                    id: 'chop-logs',
+                    subgoal: 'Chop logs from nearby trees',
+                    requirements: ['axe'],
+                    successCriteria: 'logs gained',
+                    status: 'active',
+                },
+                { id: 'light-fires', subgoal: 'Light a fire', requirements: ['logs'], successCriteria: 'fire lit', status: 'pending' },
+                { id: 'repeat', subgoal: 'Repeat to target level', requirements: [], successCriteria: 'level 99', status: 'pending' },
+            ],
+            currentStageIndex: 0,
+            status: 'active',
+            createdAtTick: 5000, // unique per this describe block
+            ...overrides,
+        };
+    }
+
+    it('routes action normally while under the tick budget', async () => {
+        const plan = makeChopLogPlan({ createdAtTick: 5001 });
+        const planStore = makePlanStore(plan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({ planStore, tick: 5, residentId: 'res:budget-under-5001', libraryUpdater: library });
+
+        const result = await runBody(ctx, chopLogPerception);
+
+        // Not blocked — action should be routed
+        expect(result.cause).toBe('plan_stage:chop-logs');
+        expect(result.actions).toHaveLength(1);
+        expect(planStore.save).not.toHaveBeenCalled();
+        expect(library.observePlanStageBlocked).not.toHaveBeenCalled();
+    });
+
+    it('force-blocks the stage once STAGE_TICK_BUDGET ticks have elapsed', async () => {
+        const plan = makeChopLogPlan({ createdAtTick: 5002 });
+        const planStore = makePlanStore(plan);
+        const library = makeLibraryUpdaterMock();
+        const residentId = 'res:budget-exceed-5002';
+
+        // First call: tick=5 → sets the budget start in the Map.
+        const ctx1 = makeCtx({ planStore, tick: 5, residentId, libraryUpdater: library });
+        await runBody(ctx1, chopLogPerception);
+        expect(planStore.save).not.toHaveBeenCalled();
+
+        // Second call: tick has advanced by STAGE_TICK_BUDGET → budget exhausted.
+        const ctx2 = makeCtx({ planStore, tick: 5 + STAGE_TICK_BUDGET, residentId, libraryUpdater: library });
+        const result = await runBody(ctx2, chopLogPerception);
+
+        expect(result.cause).toBe('plan_stage_blocked:chop-logs');
+        expect(result.actions).toHaveLength(0);
+        expect(result.nooped).toBe(true);
+        expect(planStore.save).toHaveBeenCalledTimes(1);
+        expect(planStore.save).toHaveBeenCalledWith(
+            residentId,
+            expect.objectContaining({
+                stages: expect.arrayContaining([expect.objectContaining({ id: 'chop-logs', status: 'blocked' })]),
+            }),
+        );
+        expect(library.observePlanStageBlocked).toHaveBeenCalledTimes(1);
+        expect(library.observePlanStageBlocked).toHaveBeenCalledWith(
+            expect.objectContaining({
+                kind: 'plan_stage_blocked',
+                goalId: 'master-woodcutting',
+                stageId: 'chop-logs',
+            }),
+        );
+    });
+
+    it('budget resets for each new plan (different createdAtTick)', async () => {
+        const residentId = 'res:budget-replan-5003';
+        // Plan A: reach budget exhaustion.
+        const planA = makeChopLogPlan({ createdAtTick: 5003 });
+        const storeA = makePlanStore(planA);
+        const libA = makeLibraryUpdaterMock();
+        const ctxA1 = makeCtx({ planStore: storeA, tick: 5, residentId, libraryUpdater: libA });
+        await runBody(ctxA1, chopLogPerception);
+        const ctxA2 = makeCtx({ planStore: storeA, tick: 5 + STAGE_TICK_BUDGET, residentId, libraryUpdater: libA });
+        const resultA = await runBody(ctxA2, chopLogPerception);
+        expect(resultA.cause).toBe('plan_stage_blocked:chop-logs'); // Plan A: blocked
+
+        // Plan B: fresh plan (different createdAtTick) — budget resets.
+        const planB = makeChopLogPlan({ createdAtTick: 5004 }); // different createdAtTick
+        const storeB = makePlanStore(planB);
+        const libB = makeLibraryUpdaterMock();
+        const ctxB = makeCtx({
+            planStore: storeB,
+            tick: 5 + STAGE_TICK_BUDGET, // same high tick as Plan A exhaustion
+            residentId,
+            libraryUpdater: libB,
+        });
+        const resultB = await runBody(ctxB, chopLogPerception);
+
+        // Plan B has a fresh budget (different createdAtTick key) → routes action, not blocked.
+        expect(resultB.cause).toBe('plan_stage:chop-logs');
+        expect(libB.observePlanStageBlocked).not.toHaveBeenCalled();
+    });
+
+    it('does not force-block when stage completes normally before the budget', async () => {
+        const plan = makeChopLogPlan({ createdAtTick: 5005 });
+        // Seed an axe + logs in inventory so the stage is immediately "done".
+        const planStore = makePlanStore(plan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({ planStore, tick: 5, residentId: 'res:budget-done-5005', libraryUpdater: library });
+
+        const result = await runBody(ctx, {
+            tick: 5,
+            resident: {
+                position: { x: 100, y: 100, level: 0 },
+                inventory: [
+                    { itemId: 1351, amount: 1 }, // axe
+                    { itemId: 1511, amount: 1 }, // logs
+                ],
+            },
+            nearby: { objects: [tree], npcs: [], worldItems: [], players: [] },
+            events: [],
+        } as any);
+
+        // stage_done (logs in inventory) — not a budget-triggered block.
+        expect(result.cause).toBe('plan_stage_done:chop-logs');
+        expect(library.observePlanStageBlocked).not.toHaveBeenCalled();
+        expect(library.observePlanStageDone).toHaveBeenCalledTimes(1);
     });
 });

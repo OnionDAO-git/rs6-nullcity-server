@@ -417,11 +417,7 @@ export function isActionableCommand(command: string, fullText: string): boolean 
 }
 
 function isRecognizedCommand(command: string, fullText: string): boolean {
-    return (
-        isActionableCommand(command, fullText) ||
-        isStatusIntent(command, fullText) ||
-        isSmallTalkIntent(command, fullText)
-    );
+    return isActionableCommand(command, fullText) || isStatusIntent(command, fullText) || isSmallTalkIntent(command, fullText);
 }
 
 function commandCatalogForVoice(): string {
@@ -475,8 +471,7 @@ export async function directChatAction(
             // the status/small-talk predicates scan the full text, so guard the defer on the absence
             // of any actionable command. Real commands, clarifiable partials, and unknown-command
             // declines keep their existing handling.
-            const conversational =
-                isSmallTalkIntent(remainder, chat.normalizedText) || isStatusIntent(remainder, chat.normalizedText);
+            const conversational = isSmallTalkIntent(remainder, chat.normalizedText) || isStatusIntent(remainder, chat.normalizedText);
             if (conversational && !isActionableCommand(remainder, chat.normalizedText)) {
                 return undefined;
             }
