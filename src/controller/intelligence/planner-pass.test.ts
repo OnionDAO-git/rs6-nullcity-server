@@ -1,9 +1,11 @@
 /**
- * RIQ-2-1: PlannerPass unit tests.
+ * RIQ-2-1 / RIQ-4-1: PlannerPass unit tests.
  *
  * Tests cover:
  *   A. Plan schema validation (valid/invalid drafts)
+ *   A2. Phase 4 schema: GoalClass, PrimitiveStep, SuccessPredicate
  *   B. Prompt building (deliberative vs per-tick distinction)
+ *   B2. Phase 4 prompt: GOAL CLASSIFICATION block
  *   C. Output parsing (valid JSON → Plan; malformed; insufficient stages)
  *   D. Plan helpers (currentStage, advancePlan, blockCurrentStage)
  *   E. runPlannerPass end-to-end with a mock LlmClient
@@ -19,8 +21,11 @@ import {
     blockCurrentStage,
     PLANNER_PASS_MIN_STAGES,
     PLANNER_PASS_MAX_STAGES,
+    primitiveStepSchema,
+    successPredicateSchema,
     type Plan,
     type Stage,
+    type GoalClass,
 } from './planner-pass';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 
@@ -403,5 +408,253 @@ describe('PlannerPass rarity invariant', () => {
         expect(prompt).not.toContain('near-term');
         expect(prompt).not.toContain('next tick');
         expect(prompt).not.toContain('Choose one');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// A2. Phase 4 schema validators — PrimitiveStep and SuccessPredicate (RIQ-4-1)
+// ---------------------------------------------------------------------------
+
+describe('primitiveStepSchema', () => {
+    it('accepts a valid move_to step', () => {
+        const result = primitiveStepSchema.safeParse({
+            action: { kind: 'move_to', target: { x: 3200, y: 3400 } },
+            advanceWhen: 'action_result',
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts a valid say step with advanceWhen next_tick', () => {
+        const result = primitiveStepSchema.safeParse({
+            action: { kind: 'say', text: 'Hello, world!' },
+            advanceWhen: 'next_tick',
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts a drop step', () => {
+        const result = primitiveStepSchema.safeParse({
+            action: { kind: 'drop', slot: 0 },
+            advanceWhen: 'action_result',
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('rejects missing kind in action', () => {
+        const result = primitiveStepSchema.safeParse({
+            action: { what: 'no kind here' },
+            advanceWhen: 'action_result',
+        });
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid advanceWhen value', () => {
+        const result = primitiveStepSchema.safeParse({
+            action: { kind: 'noop' },
+            advanceWhen: 'never',
+        });
+        expect(result.success).toBe(false);
+    });
+});
+
+describe('successPredicateSchema', () => {
+    it('accepts library_event_count predicate', () => {
+        const result = successPredicateSchema.safeParse({
+            kind: 'library_event_count',
+            eventPattern: 'say',
+            threshold: 3,
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts items_at_tiles predicate', () => {
+        const result = successPredicateSchema.safeParse({
+            kind: 'items_at_tiles',
+            objectIds: [1957, 1261],
+            tileCount: 7,
+        });
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts ticks_elapsed predicate', () => {
+        const result = successPredicateSchema.safeParse({ kind: 'ticks_elapsed', ticks: 100 });
+        expect(result.success).toBe(true);
+    });
+
+    it('accepts self_assessment predicate', () => {
+        const result = successPredicateSchema.safeParse({ kind: 'self_assessment' });
+        expect(result.success).toBe(true);
+    });
+
+    it('rejects unknown predicate kind', () => {
+        const result = successPredicateSchema.safeParse({ kind: 'always_true' });
+        expect(result.success).toBe(false);
+    });
+
+    it('rejects library_event_count with non-positive threshold', () => {
+        const result = successPredicateSchema.safeParse({
+            kind: 'library_event_count',
+            eventPattern: 'say',
+            threshold: 0,
+        });
+        expect(result.success).toBe(false);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// A3. Phase 4 parsePlannerPassOutput — GoalClass + open-goal validation (RIQ-4-1)
+// ---------------------------------------------------------------------------
+
+const makeStep = (kind: string) => ({
+    action: { kind },
+    advanceWhen: 'action_result' as const,
+});
+
+const openStage = (id: string, steps?: object[]) => ({
+    id,
+    subgoal: `do ${id}`,
+    requirements: [] as string[],
+    successCriteria: `${id} complete`,
+    ...(steps !== undefined ? { steps } : {}),
+});
+
+describe('parsePlannerPassOutput — Phase 4 GoalClass handling', () => {
+    it('defaults goalClass to runescape_skill when absent', () => {
+        const json = JSON.stringify({
+            stages: [openStage('s1'), openStage('s2'), openStage('s3')],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'desc', 0);
+        expect(result.plan).toBeDefined();
+        expect(result.plan!.goalClass).toBe('runescape_skill');
+    });
+
+    it('passes through explicit runescape_skill goalClass', () => {
+        const json = JSON.stringify({
+            goalClass: 'runescape_skill',
+            stages: [openStage('s1'), openStage('s2'), openStage('s3')],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'desc', 0);
+        expect(result.plan!.goalClass).toBe('runescape_skill');
+    });
+
+    it('accepts a spatial plan where all stages have steps', () => {
+        const step = makeStep('drop');
+        const json = JSON.stringify({
+            goalClass: 'spatial' as GoalClass,
+            stages: [openStage('gather', [step]), openStage('place-1', [step, makeStep('move_to')]), openStage('place-2', [step])],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'spell ONIONDAO', 10);
+        expect(result.plan).toBeDefined();
+        expect(result.plan!.goalClass).toBe('spatial');
+        expect(result.plan!.stages[0].steps).toHaveLength(1);
+        expect(result.plan!.stages[1].steps).toHaveLength(2);
+    });
+
+    it('accepts a creative plan where all stages have steps', () => {
+        const step = makeStep('say');
+        const json = JSON.stringify({
+            goalClass: 'creative' as GoalClass,
+            stages: [openStage('compose', [step]), openStage('share', [step]), openStage('reflect', [makeStep('noop')])],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'become best poet', 0);
+        expect(result.plan).toBeDefined();
+        expect(result.plan!.goalClass).toBe('creative');
+    });
+
+    it('rejects spatial plan where a stage has no steps', () => {
+        const json = JSON.stringify({
+            goalClass: 'spatial' as GoalClass,
+            stages: [
+                openStage('gather', [makeStep('move_to')]),
+                openStage('place'), // missing steps
+                openStage('finish', [makeStep('noop')]),
+            ],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'spell ONIONDAO', 0);
+        expect(result.plan).toBeUndefined();
+        expect(result.error).toMatch(/place.*no steps/);
+    });
+
+    it('rejects social plan where a stage has empty steps array', () => {
+        const json = JSON.stringify({
+            goalClass: 'social' as GoalClass,
+            stages: [
+                openStage('greet', [makeStep('say')]),
+                openStage('befriend', []), // empty steps
+                openStage('maintain', [makeStep('say')]),
+            ],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'befriend everyone', 0);
+        expect(result.plan).toBeUndefined();
+        expect(result.error).toMatch(/befriend.*no steps/);
+    });
+
+    it('runescape_skill plan passes even if stages lack steps (backward compat)', () => {
+        const json = JSON.stringify({
+            goalClass: 'runescape_skill',
+            stages: [openStage('s1'), openStage('s2'), openStage('s3')],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'master fm', 0);
+        expect(result.plan).toBeDefined();
+        expect(result.plan!.stages[0].steps).toBeUndefined();
+    });
+
+    it('passes through successPredicate on stages', () => {
+        const step = makeStep('say');
+        const pred = { kind: 'library_event_count', eventPattern: 'say', threshold: 2 };
+        const json = JSON.stringify({
+            goalClass: 'creative' as GoalClass,
+            stages: [
+                { ...openStage('compose', [step]), successPredicate: pred },
+                openStage('share', [step]),
+                openStage('reflect', [makeStep('noop')]),
+            ],
+        });
+        const result = parsePlannerPassOutput(json, 'g', 'poet', 0);
+        expect(result.plan).toBeDefined();
+        expect(result.plan!.stages[0].successPredicate).toEqual(pred);
+        expect(result.plan!.stages[1].successPredicate).toBeUndefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// B2. Phase 4 prompt — GOAL CLASSIFICATION block (RIQ-4-1)
+// ---------------------------------------------------------------------------
+
+describe('buildPlannerPassPrompt — Phase 4 goal classification block', () => {
+    const base = {
+        residentName: 'Hans',
+        goalId: 'master-fm',
+        goalDescription: 'master Firemaking',
+        toolInstructions: '[TOOLS]',
+    };
+
+    it('includes GOAL CLASSIFICATION heading', () => {
+        const prompt = buildPlannerPassPrompt(base);
+        expect(prompt).toContain('GOAL CLASSIFICATION');
+    });
+
+    it('lists all four goalClass values', () => {
+        const prompt = buildPlannerPassPrompt(base);
+        expect(prompt).toContain('runescape_skill');
+        expect(prompt).toContain('spatial');
+        expect(prompt).toContain('creative');
+        expect(prompt).toContain('social');
+    });
+
+    it('mentions steps[] requirement for non-skill goals', () => {
+        const prompt = buildPlannerPassPrompt(base);
+        expect(prompt).toMatch(/steps\[\]/);
+    });
+
+    it('includes successPredicate in the JSON schema example', () => {
+        const prompt = buildPlannerPassPrompt(base);
+        expect(prompt).toContain('successPredicate');
+    });
+
+    it('includes goalClass in the JSON schema example', () => {
+        const prompt = buildPlannerPassPrompt(base);
+        // The schema example should show goalClass field
+        expect(prompt).toMatch(/"goalClass"/);
     });
 });
