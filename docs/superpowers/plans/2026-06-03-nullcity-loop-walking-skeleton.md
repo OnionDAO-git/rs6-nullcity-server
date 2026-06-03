@@ -393,7 +393,10 @@ Wire the three pieces so a settled support produces a letter, using `personId→
 
 | Time | Task | Status | Tests | Notes |
 |------|------|--------|-------|-------|
-| (seed) | — | ready | — | Plan written; worktrees not yet created (create at execution start). |
+| (seed) | — | ready | — | Plan written; worktrees created at execution start (`.worktrees/loop-{server,dashboard}`, node_modules symlinked). |
+| iter 1 | **T0.ID (Task 1)** | ✅ DONE + pushed | 8/8 identity, 72/72 city, 73/73 service, 28/28 econ-event, typecheck clean | Part A dashboard `resolveOnionId` + `city_identity_aliases` (`012a92d`→origin/main). Part B server `personId` pass-through on `ap_topup` (`7495d30a`→origin/agents/wip). |
+| iter 1 | (discovery) | note | — | `creditAttention` already has an **`onPatronSupport` hook** (fires when `cityUserId` present, carries `{cityUserId,residentName,faction,amount,ts,note}`, `service.ts:1045`). **Task 3 should wire `recordSettledSupport` via this existing hook in `controller-host.ts`** (where standingLedger/lettersStore live) rather than injecting into the service — simpler. The hook needs `patronHandle`/`personId` added to `PatronSupportEvent` so Task 4 can forward it. |
+| iter 2 | T0.0a (Task 2) | next | — | Support skeleton + intents saga (dashboard). |
 
 **Decisions waiting (for James/Dev):**
 - (none yet — Task 4 Step 3 may add one if patronHandle delivery needs a schema call.)
