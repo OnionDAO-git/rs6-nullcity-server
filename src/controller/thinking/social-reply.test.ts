@@ -6,6 +6,7 @@ import {
     buildReplyPrompt,
     formatReply,
     SOCIAL_REPLY_MAX_CHARS,
+    replyFallback,
 } from './social-reply';
 import type { SocialReplyContext } from './social-reply';
 import type { Soul } from '../soul/soul-schema';
@@ -204,5 +205,32 @@ describe('formatReply', () => {
     it('returns undefined for empty/whitespace input', () => {
         expect(formatReply('   ')).toBeUndefined();
         expect(formatReply(undefined)).toBeUndefined();
+    });
+});
+
+describe('replyFallback', () => {
+    it('prefers soul-authored deflections when present', () => {
+        const soul = makeSoul({ deflections: ['Busy, friend.', 'Not now.'] });
+        expect(['Busy, friend.', 'Not now.']).toContain(replyFallback(soul, 'seed-x'));
+    });
+
+    it('falls back to a phrasebook deflection when none are authored', () => {
+        const out = replyFallback(makeSoul(), 'seed-y');
+        expect(typeof out).toBe('string');
+        expect(out.length).toBeGreaterThan(0);
+    });
+
+    it('rotates across seeds (not one fixed string)', () => {
+        const soul = makeSoul();
+        const distinct = new Set(['s1', 's2', 's3', 's4', 's5', 's6'].map(s => replyFallback(soul, s)));
+        expect(distinct.size).toBeGreaterThan(1);
+    });
+
+    it('is non-assenting — never starts with yes/of course, never a bare question', () => {
+        for (const seed of ['a', 'b', 'c', 'd', 'e']) {
+            const out = replyFallback(makeSoul(), seed);
+            expect(out).not.toMatch(/^(yes|of course|sure|okay|absolutely)\b/i);
+            expect(out.trim().endsWith('?')).toBe(false);
+        }
     });
 });

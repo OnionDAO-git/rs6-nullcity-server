@@ -3,6 +3,7 @@ import type { HybridPerception } from './hybrid-agent-utils';
 import type { Soul } from '../soul/soul-schema';
 // One-way dep: social-reply -> hybrid-agent-chat (chat must NOT import social-reply, to avoid a cycle).
 import { cleanSmallTalkReply } from './hybrid-agent-chat';
+import { pickPhrase } from '../soul/phrasebook';
 
 /** Soft target for a spoken bubble (~1 sentence). cleanSpeech enforces the 220 hard ceiling. */
 export const SOCIAL_REPLY_MAX_CHARS = 120;
@@ -187,4 +188,27 @@ export function formatReply(raw: string | undefined): string | undefined {
         return undefined;
     }
     return oneLine;
+}
+
+function seedIndex(seed: string, length: number): number {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i += 1) {
+        hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash) % length;
+}
+
+/**
+ * The in-voice reliability floor: a soul-authored deflection that acknowledges without
+ * claiming comprehension (never false-answers). Prefers `frontmatter.deflections`
+ * (added in the soul schema slice) and otherwise rotates the phrasebook's
+ * `social_reply.deflection` for the soul's register/archetype. Read via a structural
+ * cast so this stays usable before the schema field lands.
+ */
+export function replyFallback(soul: Soul, seed: string): string {
+    const authored = (soul.frontmatter as { deflections?: string[] }).deflections;
+    if (authored && authored.length > 0) {
+        return authored[seedIndex(seed, authored.length)];
+    }
+    return pickPhrase({ soul, situation: 'social_reply.deflection', seed });
 }
