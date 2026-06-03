@@ -3871,8 +3871,8 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('stuck_move_recovery');
     });
 
-    it('answers direct status chat without waiting for Body inference', async () => {
-        const llm = scriptedLlm([]);
+    it('routes a player status question (by name) to the in-character social reply, not a canned beacon', async () => {
+        const llm = scriptedLlm([{ text: 'Tending the fire, friend.' }]);
         const state = runtimeState();
         state.cognition = {
             activeGoal: {
@@ -3893,9 +3893,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice firemaking.' }]);
-        expect(result.cause).toBe('direct_chat_status');
-        expect(llm.complete).not.toHaveBeenCalled();
+        // Old behavior was a canned 'direct_chat_status' beacon; a named conversational question
+        // now defers to the detached in-character reply.
+        expect(result.cause).toBe('social_reply_detection');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 
     it('does not reprocess the same retained addressed chat event on later perception ticks', () => {
@@ -3907,8 +3908,8 @@ describe('HybridAgentThinkingModule', () => {
         expect(second).toBeUndefined();
     });
 
-    it('answers addressed small talk without waiting for Body inference', async () => {
-        const llm = scriptedLlm([]);
+    it('routes a player small-talk greeting (by name) to the in-character social reply', async () => {
+        const llm = scriptedLlm([{ text: 'Keeping well, friend — and you?' }]);
         const agent = hybridAgent(llm, runtimeState());
 
         const result = await agent.think(
@@ -3919,14 +3920,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            {
-                kind: 'say',
-                text: 'I am here and watching. I can follow, scout, make fires, fish, cook, trade, or train safely.',
-            },
-        ]);
-        expect(result.cause).toBe('direct_chat_small_talk');
-        expect(llm.complete).not.toHaveBeenCalled();
+        // Old behavior was a canned 'direct_chat_small_talk' capability list; named small talk
+        // from a player now defers to the detached in-character reply.
+        expect(result.cause).toBe('social_reply_detection');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 
     it('answers addressed route-memory questions from Library memories before Body stuck recovery', async () => {
@@ -10918,6 +10915,37 @@ describe('social-reply detection wiring (slice 7)', () => {
         state.cognition = { ...(state.cognition || {}), activeGoal: { id: 'g-oaks', description: 'Chop oaks', createdAtTick: 0 } };
         return state;
     }
+    // A REAL hero shape: name 'res:hans' → display 'Hans' → commandPrefix DEFAULTS to 'hans' (== display).
+    // This is the production case (no explicit commandPrefix) that the routing fix must handle.
+    function heroSoul(): Soul {
+        const base = soul();
+        const behavior = { ...(base.frontmatter.behavior as unknown as Record<string, unknown>) };
+        delete behavior.commandPrefix;
+        return { ...base, frontmatter: { ...base.frontmatter, name: 'res:hans', display: 'Hans', behavior } } as unknown as Soul;
+    }
+
+    it('a hero named by display name (commandPrefix defaults to the display name) gets a conversational reply, not a command beacon', async () => {
+        const llm = scriptedLlm([{ text: 'Aye, friend — splitting oaks.' }]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, heroSoul());
+
+        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, what are you doing?', 3201, 3200)] }) as never);
+
+        expect(result.cause).toBe('social_reply_detection');
+        expect(socialInferenceCalls(llm)).toHaveLength(1);
+    });
+
+    it('a hero given a REAL command by display name still routes to the command path', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, heroSoul());
+
+        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, follow me', 3201, 3200)], players: [player('codex', 3201, 3200)] }) as never);
+
+        // command path handled it (a follow/await/etc. cause), NOT the conversational path
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(socialInferenceCalls(llm)).toHaveLength(0);
+    });
 
     it('fires a detached social-reply inference when a human player names the resident (no freeze)', async () => {
         const llm = scriptedLlm([{ text: 'Just splitting oaks, friend.' }]);

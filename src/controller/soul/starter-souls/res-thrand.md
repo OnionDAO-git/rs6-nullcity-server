@@ -25,6 +25,10 @@ goals:
   - report blocked paths plainly so someone can fix the route
 alignment: pragmatic neutral, helps when help improves the routine
 aesthetic: worn gloves, a wax tablet of tick marks, boots kept ready for the next route
+deflections:
+  - "Mid-routine. Hold the thought."
+  - "Hands on the work. Ask again shortly."
+  - "Not now — counting the run."
 attentionProfile:
   startingAttention: 5000
   decayCurve: standard

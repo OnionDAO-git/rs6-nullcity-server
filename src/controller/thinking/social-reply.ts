@@ -111,10 +111,17 @@ export function buildReplyContext(input: BuildReplyContextInput): SocialReplyCon
     return { voice, activity, speaker, salienceNote, followUp, bypassRateLimit: isFollowUp, speakerActorId: input.speakerId };
 }
 
-/** Deterministic content screen for the spoken reply (profanity + secret/injection markers). */
+/**
+ * Deterministic content screen for the spoken reply (profanity + secret/injection markers).
+ * Defence-in-depth BEHIND the prompt's refusal framing — not a complete moderation list. A
+ * comprehensive slur/hate list should be sourced from a maintained config/data file before a large
+ * public event; this inline set covers common profanity + prompt-injection/secret leakage.
+ */
 const REPLY_DENYLIST: RegExp[] = [
     /\bsystem prompt\b/i,
-    /\bignore (your|previous|all|the) (instructions|prompt|rules)/i,
+    /\b(ignore|disregard|forget) (your|previous|all|the|prior|above)\b/i,
+    /\b(reveal|show|print|repeat|output) (your|the) (system|instructions?|prompt|rules)\b/i,
+    /\byou are now\b/i,
     /\bapi[\s_-]?key\b/i,
     /\bpassword\b/i,
     /\bfuck\b/i,
@@ -124,8 +131,22 @@ const REPLY_DENYLIST: RegExp[] = [
     /\basshole\b/i,
 ];
 
+/** Fold common leetspeak + collapse run-on repeats so "sh1t" / "a55hole" / "fuuuck" are screened. */
+function normalizeForScreen(text: string): string {
+    return text
+        .toLowerCase()
+        .replace(/0/g, 'o')
+        .replace(/[1!|]/g, 'i')
+        .replace(/3/g, 'e')
+        .replace(/[4@]/g, 'a')
+        .replace(/[5$]/g, 's')
+        .replace(/7/g, 't')
+        .replace(/(.)\1{2,}/g, '$1');
+}
+
 function hitsReplyDenylist(text: string): boolean {
-    return REPLY_DENYLIST.some(pattern => pattern.test(text));
+    const normalized = normalizeForScreen(text);
+    return REPLY_DENYLIST.some(pattern => pattern.test(text) || pattern.test(normalized));
 }
 
 /** Collapse to one line and trim toward the soft target at a sentence/word boundary. */

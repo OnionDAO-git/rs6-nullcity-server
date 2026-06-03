@@ -396,20 +396,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         if (!detected) {
             return undefined;
         }
-        if (isChatRateLimited(this)) {
-            cognition.lastDirectChatKey = detected.key;
-            return undefined;
-        }
-        const slot = this.socialReplyCoordinator.admit(this.options.soul.frontmatter.name, detected.key);
-        if (!slot) {
-            cognition.lastDirectChatKey = detected.key;
-            return undefined;
-        }
         const currentTick = this.options.state.tick;
-        cognition.socialReplyInFlight = { key: detected.key, startedAtTick: currentTick };
-        cognition.lastDirectChatKey = detected.key;
-        (cognition.chatReplyTicks ||= []).push(currentTick);
-
         const context = buildReplyContext({
             soul: this.options.soul,
             perception,
@@ -420,29 +407,51 @@ export class HybridAgentThinkingModule implements ThinkingModule {
             currentTick,
             lastReply: cognition.lastSocialReply,
         });
+        // Rate-limit — but a same-speaker 1-turn follow-up gets exactly one bypass so the "why?"
+        // beat the player just asked isn't silently dropped.
+        if (!context.bypassRateLimit && isChatRateLimited(this)) {
+            cognition.lastDirectChatKey = detected.key;
+            return undefined;
+        }
+        const slot = this.socialReplyCoordinator.admit(this.options.soul.frontmatter.name, detected.key);
+        if (!slot) {
+            cognition.lastDirectChatKey = detected.key;
+            return undefined;
+        }
+        cognition.socialReplyInFlight = { key: detected.key, startedAtTick: currentTick };
+        cognition.lastDirectChatKey = detected.key;
+        (cognition.chatReplyTicks ||= []).push(currentTick);
 
-        const profile = this.behavior().body;
-        void this.options.llm
-            .complete({
-                endpoint: this.endpointFor(profile),
-                prompt: buildReplyPrompt(context),
-                temperature: this.temperatureFor(profile, SOCIAL_REPLY_TEMPERATURE),
-                thinking: profile?.thinking ?? false,
-                timeoutMs: this.timeoutFor(profile, DEFAULT_BODY_INFERENCE_TIMEOUT_MS),
-                priority: 4,
-                signal: slot.controller.signal,
-                ...(this.modelFor(profile) ? { model: this.modelFor(profile) } : {}),
-            })
-            .then(response => this.commitSocialReply(detected.key, formatReply(response.text), detected.speakerId))
-            .catch(() => this.commitSocialReply(detected.key, undefined, detected.speakerId));
+        try {
+            const profile = this.behavior().body;
+            void this.options.llm
+                .complete({
+                    endpoint: this.endpointFor(profile),
+                    prompt: buildReplyPrompt(context),
+                    temperature: this.temperatureFor(profile, SOCIAL_REPLY_TEMPERATURE),
+                    thinking: profile?.thinking ?? false,
+                    timeoutMs: this.timeoutFor(profile, DEFAULT_BODY_INFERENCE_TIMEOUT_MS),
+                    priority: 4,
+                    signal: slot.controller.signal,
+                    ...(this.modelFor(profile) ? { model: this.modelFor(profile) } : {}),
+                })
+                .then(response => this.commitSocialReply(detected.key, formatReply(response.text), detected.speakerId))
+                .catch(() => this.commitSocialReply(detected.key, undefined, detected.speakerId));
+        } catch {
+            // A synchronous failure assembling/dispatching the request must NOT leave the slot
+            // held — that would lock the resident out of all future social replies for its life.
+            this.socialReplyCoordinator.settle(this.options.soul.frontmatter.name, detected.key);
+            cognition.socialReplyInFlight = undefined;
+        }
 
         return { actions: [], cause: 'social_reply_detection', nooped: true };
     }
 
     /**
-     * Conversational reply — resolve step (off-loop). Re-reads the LIVE cognition (never a
-     * captured closure, since this.options.state can be reassigned by stateStore.load), checks
-     * key-ownership, stamps freshness at resolve time, and settles the coordinator slot once.
+     * Conversational reply — resolve step (off-loop). Re-reads the live cognition via
+     * `this.cognition()` at resolve time (it does NOT close over the cognition seen at detection),
+     * so the write lands on the current state object even if the runtime later swaps it. Checks
+     * key-ownership (a superseded/aborted reply is a no-op), stamps freshness at resolve, settles once.
      */
     private commitSocialReply(key: string, text: string | undefined, speakerId: string): void {
         const name = this.options.soul.frontmatter.name;

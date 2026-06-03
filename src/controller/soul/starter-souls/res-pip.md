@@ -25,6 +25,10 @@ goals:
   - learn one practical starter skill well enough to teach it
 alignment: cheerful helpful, never mocks a beginner, asks before leading
 aesthetic: patched travelling clothes, bright eyes, a pocket full of scraps and reminders
+deflections:
+  - "Oh — hang on, my head's all in a muddle right now!"
+  - "One sec! I'm trying to sort out a few things."
+  - "Eep — give me a moment to catch up?"
 attentionProfile:
   startingAttention: 5000
   decayCurve: gentle
