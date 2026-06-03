@@ -68,6 +68,7 @@ import {
     firemakingAction,
     acquireWoodcuttingAxeAction,
     planStageRouter,
+    type OpenGoalContext,
     stuckRecoveryPatrolTarget,
     isUsefulGroundItem,
     usefulGroundItemPriority,
@@ -157,6 +158,7 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
 import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
+import { evaluateSuccessPredicate } from '../intelligence/plan-predicates';
 import type { LibraryUpdater } from '../evidence/library-updater';
 
 // --- Shared Constants ---
@@ -3352,6 +3354,8 @@ const _plannerPassInFlight = new Set<string>();
  */
 export const STAGE_TICK_BUDGET = 200;
 const _stageActiveSinceTick = new Map<string, number>();
+/** RIQ-4-3: last tick an action was dispatched for an open-goal stage (for action_result advance). */
+const _stageLastDispatchTick = new Map<string, number>();
 
 /**
  * RIQ-3-2: PlannerPass trigger.
@@ -3727,19 +3731,59 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
         return undefined;
     }
 
-    const routed = planStageRouter(stage, bodyPerception);
     const currentTick = ctx.options.state.tick;
 
     // RIQ-3-6: stage tick-budget key.  createdAtTick scopes the tracking to
     // this specific plan so a replan gets a fresh budget even if stage ids repeat.
     const stageKey = `${residentId}:${plan.createdAtTick}:${stage.id}`;
 
+    // RIQ-4-3: build openGoalCtx from CognitiveState for open-goal stages.
+    // lastActionResult uses _stageLastDispatchTick as a proxy: if an action was
+    // dispatched for this stage last tick, treat it as a non-null result so
+    // 'action_result' steps advance on the following tick.
+    const cognition = ctx.cognition();
+    const stepIdx = (cognition.primitiveStepIdxByStageId as Record<string, number> | undefined)?.[stage.id] ?? 0;
+    const prevDispatchTick = _stageLastDispatchTick.get(stageKey);
+    const lastActionResult = prevDispatchTick != null && prevDispatchTick === currentTick - 1 ? { tick: prevDispatchTick } : undefined;
+    const openGoalCtx: OpenGoalContext | undefined = stage.steps && stage.steps.length > 0 ? { stepIdx, lastActionResult } : undefined;
+
+    const routed = planStageRouter(stage, bodyPerception, openGoalCtx);
+
     if (!routed) {
         return undefined;
     }
 
     if (routed.planSignal === 'stage_done') {
+        // RIQ-4-3: for open-goal stages with a successPredicate, evaluate before marking done.
+        if (stage.successPredicate) {
+            const stageStartedAt = _stageActiveSinceTick.get(stageKey);
+            const predicateMet = evaluateSuccessPredicate(stage.successPredicate, bodyPerception, stageStartedAt);
+            if (!predicateMet) {
+                _stageActiveSinceTick.delete(stageKey);
+                _stageLastDispatchTick.delete(stageKey);
+                if (cognition.primitiveStepIdxByStageId) {
+                    delete (cognition.primitiveStepIdxByStageId as Record<string, number>)[stage.id];
+                }
+                planStore.save(residentId, blockCurrentStage(plan));
+                ctx.options.libraryUpdater?.observePlanStageBlocked({
+                    kind: 'plan_stage_blocked',
+                    ts: new Date().toISOString(),
+                    tick: currentTick,
+                    goalId: plan.goalId,
+                    stageId: stage.id,
+                    stageSubgoal: stage.subgoal,
+                });
+                return {
+                    actions: [],
+                    cause: `plan_stage_pred_unmet:${stage.id}`,
+                    envelopeTokens: 0,
+                    nooped: true,
+                    planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_blocked' },
+                };
+            }
+        }
         _stageActiveSinceTick.delete(stageKey);
+        _stageLastDispatchTick.delete(stageKey);
         planStore.save(residentId, advancePlan(plan));
         // RIQ-A1-OBS: emit stage-done Library event so normal-life-audit can count completions.
         ctx.options.libraryUpdater?.observePlanStageDone({
@@ -3761,6 +3805,10 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
 
     if (routed.planSignal === 'stage_blocked') {
         _stageActiveSinceTick.delete(stageKey);
+        _stageLastDispatchTick.delete(stageKey);
+        if (cognition.primitiveStepIdxByStageId) {
+            delete (cognition.primitiveStepIdxByStageId as Record<string, number>)[stage.id];
+        }
         planStore.save(residentId, blockCurrentStage(plan));
         // RIQ-A1-OBS: emit stage-blocked Library event so normal-life-audit can count blocks.
         ctx.options.libraryUpdater?.observePlanStageBlocked({
@@ -3790,6 +3838,10 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
         const startedAt = _stageActiveSinceTick.get(stageKey)!;
         if (currentTick - startedAt >= STAGE_TICK_BUDGET) {
             _stageActiveSinceTick.delete(stageKey);
+            _stageLastDispatchTick.delete(stageKey);
+            if (cognition.primitiveStepIdxByStageId) {
+                delete (cognition.primitiveStepIdxByStageId as Record<string, number>)[stage.id];
+            }
             planStore.save(residentId, blockCurrentStage(plan));
             ctx.options.libraryUpdater?.observePlanStageBlocked({
                 kind: 'plan_stage_blocked',
@@ -3807,6 +3859,14 @@ function routeActivePlanStage(ctx: HelperContext, bodyPerception: HybridPercepti
                 planChange: { goalId: plan.goalId, stageId: stage.id, signal: 'stage_blocked' },
             };
         }
+        // RIQ-4-3: persist updated open-goal step index and record dispatch tick.
+        if (routed.nextStepIdx !== undefined) {
+            if (!cognition.primitiveStepIdxByStageId) {
+                cognition.primitiveStepIdxByStageId = {};
+            }
+            (cognition.primitiveStepIdxByStageId as Record<string, number>)[stage.id] = routed.nextStepIdx;
+        }
+        _stageLastDispatchTick.set(stageKey, currentTick);
         return {
             actions: [routed.action],
             cause: `plan_stage:${stage.id}`,
