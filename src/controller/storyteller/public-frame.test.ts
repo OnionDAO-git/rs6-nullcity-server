@@ -328,6 +328,36 @@ describe('buildProjectorStoryFrame', () => {
         expect(frame.leadEvent?.note).not.toContain('AP');
     });
 
+    it('sanitizes coordinate variants, lowercase economy shorthand, handles, and env-style secrets', () => {
+        const { digest } = buildFixtureDigest();
+        digest.topEvents = [
+            {
+                ref: 'evt-public-safety-edge',
+                kind: 'stuck_recovered',
+                residentName: 'res:carol',
+                ts: '2026-05-29T05:59:00.000Z',
+                note: 'Carol pinged (@alice) at x=3221 y=3218, then 3221,3218,0 after spending 12ap and seeing 25gp; OPENROUTER_API_KEY=or-abcdef1234567890.',
+                importance: 'medium',
+                evidence: {},
+            },
+        ];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+        const note = frame.leadEvent?.note ?? '';
+
+        expect(note).toContain('[location]');
+        expect(note).toContain('12 attention');
+        expect(note).toContain('25 RuneScape gold');
+        expect(note).toContain('[redacted]');
+        expect(note).not.toContain('3221');
+        expect(note).not.toContain('3218');
+        expect(note).not.toContain('@alice');
+        expect(note).not.toContain('12ap');
+        expect(note).not.toContain('25gp');
+        expect(note).not.toContain('OPENROUTER_API_KEY');
+        expect(note).not.toContain('or-abcdef1234567890');
+    });
+
     it('does not repeat generic watch-next lines when the lead event already covers that topic', () => {
         const { digest, refs } = buildFixtureDigest();
         digest.topEvents = digest.stuckEvents.filter(event => event.ref === refs.stuckRecovered);
@@ -385,6 +415,21 @@ describe('buildProjectorStoryFrame', () => {
         expect(frame.watchNext[0]).not.toContain('patron:james@example.com');
         expect(frame.watchNext[0]).not.toContain('sk-or-v1-1234567890abcdef');
         expect(frame.watchNext[0]).toContain('[redacted]');
+    });
+
+    it('falls back to deterministic watchNext when dispatch items sanitize to redaction-only noise', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+            watchNext: ['@alice', 'human:james@example.com', 'sk-or-v1-1234567890abcdef'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.watchNext.length).toBeGreaterThan(0);
+        expect(frame.watchNext).not.toEqual(['[redacted]', '[redacted]', '[redacted]']);
+        expect(frame.watchNext.join(' ')).not.toContain('[redacted]');
     });
 
     it('caps dispatch.watchNext at 4 items', () => {

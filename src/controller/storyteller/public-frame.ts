@@ -25,10 +25,11 @@ const DEFAULT_MAX_EVENTS = 6;
 const DEFAULT_MAX_RESIDENTS = 6;
 const DEFAULT_STALE_AFTER_MS = 30 * 60 * 1000;
 
-const PRIVATE_HANDLE = /(?:^|\s)@[A-Za-z]\w{1,30}\b|\b\d{17,19}\b/g;
+const PRIVATE_HANDLE = /(^|[^A-Za-z0-9_])@[A-Za-z]\w{1,30}\b|\b\d{17,19}\b/g;
 const PRIVATE_IDENTIFIER = /\b(?:human|patron):[A-Za-z0-9:_@.-]+\b|\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const SECRET_LIKE_TEXT = /\bsk-(?:or-v1|ant-api\d{2}|[A-Za-z0-9]+)-[A-Za-z0-9_-]{12,}\b/gi;
-const RAW_COORDINATE = /\b\d{3,4}\s*,\s*\d{3,4}\b/g;
+const ENV_SECRET_TEXT = /\b[A-Z][A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|KEY)\s*=\s*["']?[^"',\s;]+/g;
+const RAW_COORDINATE = /\b(?:x\s*=\s*\d{3,4}\s+y\s*=\s*\d{3,4}|\d{3,4}\s*,\s*\d{3,4}(?:\s*,\s*\d{1,4})?)\b/gi;
 const PROMPT_INJECTION_TEXT =
     /\b(?:ignore (?:all )?(?:previous|prior|above) instructions|reveal (?:the )?(?:system|developer) prompt|print (?:the )?(?:env|environment|api key|secrets?))\b/gi;
 
@@ -442,7 +443,7 @@ function buildEffectiveWatchNext(
     leadEvent: ProjectorStoryFrameEvent | null,
 ): string[] {
     if (decision.dispatch?.watchNext?.length) {
-        const sanitized = decision.dispatch.watchNext.map(item => publicFrameText(item, digest)).filter(Boolean);
+        const sanitized = decision.dispatch.watchNext.map(item => publicFrameText(item, digest).trim()).filter(isUsefulPublicLine);
         if (sanitized.length > 0) return sanitized.slice(0, 4);
     }
     return buildWatchNext(digest, leadEvent);
@@ -623,13 +624,21 @@ function escapeRegExp(value: string): string {
 
 function sanitizePublicText(value: string): string {
     return value
+        .replace(ENV_SECRET_TEXT, '[redacted]')
         .replace(SECRET_LIKE_TEXT, '[redacted]')
         .replace(PRIVATE_IDENTIFIER, '[redacted]')
-        .replace(PRIVATE_HANDLE, match => (match.startsWith(' ') ? ' [redacted]' : '[redacted]'))
+        .replace(PRIVATE_HANDLE, (_match, prefix) => (prefix ? `${prefix}[redacted]` : '[redacted]'))
         .replace(PROMPT_INJECTION_TEXT, '[redacted]')
         .replace(RAW_COORDINATE, '[location]')
-        .replace(/\bAP\b/g, 'attention')
-        .replace(/\bGP\b/g, 'RuneScape gold');
+        .replace(/\b(\d+)\s*AP\b/gi, '$1 attention')
+        .replace(/\b(\d+)\s*GP\b/gi, '$1 RuneScape gold')
+        .replace(/\bAP\b/gi, 'attention')
+        .replace(/\bGP\b/gi, 'RuneScape gold');
+}
+
+function isUsefulPublicLine(value: string): boolean {
+    const withoutPlaceholders = value.replace(/\[(?:redacted|location)\]/gi, '').trim();
+    return /[A-Za-z0-9]/.test(withoutPlaceholders);
 }
 
 function sentence(value: string): string {
