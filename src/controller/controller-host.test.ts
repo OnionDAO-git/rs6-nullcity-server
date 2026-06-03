@@ -272,6 +272,57 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
+    it('keys patron standing + letters on personId (not cityUserId) when the grant supplies it', async () => {
+        const gateway = new FakeGateway();
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-personid-'));
+        const runtimeState = {
+            resident: 'res:pip',
+            attention: 100,
+            tick: 7,
+            legacy: { kind: 'mentor', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: new Date(0).toISOString(),
+                dayStartedAt: new Date(0).toISOString(),
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+            variables: {},
+            hookCooldowns: {},
+            shadowedHooks: [],
+        } satisfies RuntimeState;
+        const runtime = {
+            ...fakeRuntime(),
+            getState: jest.fn(() => runtimeState),
+            incrementAttention: jest.fn((amount: number) => {
+                runtimeState.attention += amount;
+            }),
+        } as unknown as ResidentRuntime;
+        const host = new ControllerHost(
+            { ...config(), memory: { dir: memoryDir, qmdBin: '' } },
+            { ...dependencies(gateway), runtimeFactory: jest.fn(() => runtime) },
+        );
+        await host.start();
+
+        await host.getCityIntegrationService().creditAttention('res:pip', {
+            idempotencyKey: 'dashboard-support-personid',
+            amount: 10,
+            cityUserId: 'usr_random_abc',
+            personId: 'landing-person-1',
+            patronHandle: 'aliceHandle',
+            note: 'dashboard support',
+        });
+
+        const standing = new PatronStore(memoryDir).loadStanding();
+        // Keyed on personId (the canonical id) — NOT cityUserId, NOT patronHandle.
+        expect(standing.points('landing-person-1', 'embassy')).toBe(10);
+        expect(standing.points('usr_random_abc', 'embassy')).toBe(0);
+        expect(standing.points('aliceHandle', 'embassy')).toBe(0);
+        expect(new LettersStore(memoryDir).readInbox('landing-person-1')).toHaveLength(1);
+        expect(new LettersStore(memoryDir).readInbox('usr_random_abc')).toHaveLength(0);
+
+        await host.stop();
+    });
+
     it('uses a fresh retryable city gateway for GP inventory calls when the live host owns the gateway', async () => {
         const gateway = new FakeGateway();
         const firstCityGateway = new FakeGateway();

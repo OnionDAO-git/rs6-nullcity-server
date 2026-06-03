@@ -59,4 +59,18 @@ describe('recordSettledSupport (Shards-free Leg D seam)', () => {
         expect(standingLedger.points('person-123', 'embassy')).toBe(30); // ally
         expect(lettersStore.readInbox('person-123').length).toBeGreaterThanOrEqual(1);
     });
+
+    it('is NOT idempotent on its own — standing is additive (idempotency is the caller\'s job)', () => {
+        // This pins the real contract: recordSettledSupport has NO internal dedup.
+        // Calling it twice for the same grant doubles standing. The dashboard saga
+        // relies on the upstream creditAttention `idempotent()` wrapper to never
+        // fire onPatronSupport twice for one idempotencyKey — see service.ts.
+        const ev = { patronId: 'dup@onion', faction: 'embassy', residentName: 'res:pip', onionsSettled: 10, ts: '2026-06-03T00:00:00.000Z' };
+        recordSettledSupport(ev, { standingLedger, lettersStore });
+        recordSettledSupport({ ...ev }, { standingLedger, lettersStore });
+        expect(standingLedger.points('dup@onion', 'embassy')).toBe(20); // additive — proves NOT idempotent
+        // Letters DO dedup on (kind, dispatchedAt, subject, recipient): the 2nd call
+        // crosses no new tier (10->20, both Acquaintance), so still exactly one letter.
+        expect(lettersStore.readInbox('dup@onion')).toHaveLength(1);
+    });
 });

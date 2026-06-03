@@ -119,6 +119,10 @@ export class ControllerHost {
     public readonly patronGateway: PatronGateway;
     private readonly currencyLedger: CurrencyLedger;
     private readonly standingLedger: StandingLedger;
+    // Onions-per-standing-point scale for the settled-support seam. Sourced from
+    // config; falls back to the KNOWN-PLACEHOLDER 1:1 with a loud warning so the
+    // 1:1 economy is never silently shipped (see resolveOnionsPerStandingPoint).
+    private readonly onionsPerStandingPoint: number;
     // Extracted so both PatronGateway and the onPatronSupport callback share
     // the same LettersStore instance (same inbox root → same dedup index).
     private readonly lettersStore: LettersStore;
@@ -191,6 +195,7 @@ export class ControllerHost {
         this.patronStore = options.patronStore || new PatronStore(config.memory.dir);
         this.currencyLedger = this.patronStore.loadCurrency();
         this.standingLedger = this.patronStore.loadStanding();
+        this.onionsPerStandingPoint = resolveOnionsPerStandingPoint(config);
         // Shared LettersStore: used by both PatronGateway (offer/sponsor/witness)
         // and the onPatronSupport callback (creditAttention via city API) so
         // tier-crossing letters from both paths land in the same inbox root and
@@ -237,15 +242,13 @@ export class ControllerHost {
             // support grants so the dashboard "Support with AP" button produces
             // the same standing/letter effects as the patron:offer CLI path.
             onPatronSupport: event => {
-                // T0.0b: Shards-free settled-support seam. Keys on the canonical
-                // identity (patronHandle/personId) when resolved upstream, else the
-                // cityUserId fallback. onionsPerStandingPoint scales onions->standing.
-                // TODO(James, decision): onionsPerStandingPoint defaults to 1 (legacy
-                // 1:1). 1:1 makes one 500-onion check-in instantly top-tier (tiers
-                // 10/30/75) — set the real scale once product decides it.
+                // T0.0b: Shards-free settled-support seam. Keys on ONE canonical
+                // identity, consistently: personId (=== landing users.id) when
+                // resolved upstream, else patronHandle, else cityUserId. Must match
+                // the economy log's choice so standing/letters don't fragment.
                 recordSettledSupport(
                     {
-                        patronId: event.patronHandle ?? event.cityUserId,
+                        patronId: event.personId ?? event.patronHandle ?? event.cityUserId,
                         faction: event.faction,
                         residentName: event.residentName,
                         onionsSettled: event.amount,
@@ -255,7 +258,7 @@ export class ControllerHost {
                     {
                         standingLedger: this.standingLedger,
                         lettersStore: this.lettersStore,
-                        onionsPerStandingPoint: 1,
+                        onionsPerStandingPoint: this.onionsPerStandingPoint,
                     },
                 );
                 this.persistPatronLedgers();
@@ -712,4 +715,27 @@ function isGatewayNotOpenError(error: unknown): boolean {
 
 function delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve the onions->standing-point scale for the settled-support seam.
+ *
+ * Reads `config.economy.onionsPerStandingPoint` when set to a positive number.
+ * Otherwise falls back to the KNOWN-PLACEHOLDER 1:1 scale and warns LOUDLY — so
+ * the broken 1:1 economy (standing tiers are 10/30/75; a 500-onion check-in
+ * would instantly mint Officer) is never silently shipped. Product must set the
+ * real value before the real onion-spend path goes live.
+ */
+function resolveOnionsPerStandingPoint(config: unknown): number {
+    const configured = (config as { economy?: { onionsPerStandingPoint?: unknown } })?.economy?.onionsPerStandingPoint;
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+        return configured;
+    }
+    // eslint-disable-next-line no-console
+    console.warn(
+        '[controller-host] onionsPerStandingPoint is using the PLACEHOLDER 1:1 scale. ' +
+        'Standing accrues 1 point per onion (tiers 10/30/75), so a single large grant can instantly top-tier a patron. ' +
+        'Set config.economy.onionsPerStandingPoint to the real scale before enabling real onion spend.',
+    );
+    return 1;
 }

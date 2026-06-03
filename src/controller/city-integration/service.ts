@@ -136,7 +136,9 @@ export interface CityIntegrationBirthAuthority {
 /** Event fired by {@link CityIntegrationService.creditAttention} when a patron supports a resident. */
 export interface PatronSupportEvent {
     cityUserId: string;
-    /** Canonical patron handle/personId resolved by the caller (T0.ID); standing/letters key on this when present. */
+    /** Canonical identity (personId === landing users.id), resolved by the caller (T0.ID). Preferred standing/letter key. */
+    personId?: string;
+    /** Display alias for the patron (T0.ID). Used only if personId is absent. */
     patronHandle?: string;
     residentName: string;
     /** Resident faction, e.g. `'embassy'`. Derived from runtime state at the moment of support. */
@@ -1052,6 +1054,7 @@ export class CityIntegrationService {
                 try {
                     this.options.onPatronSupport({
                         cityUserId: request.cityUserId,
+                        personId: request.personId,
                         patronHandle: request.patronHandle,
                         residentName,
                         faction,
