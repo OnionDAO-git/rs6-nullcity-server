@@ -1,8 +1,8 @@
 # Resident Conversational Reply — residents answer when named (Lane 1)
 
 Author: claude (with James, PM+tech lead). Date: 2026-06-02.
-Status: **design v3 — async reply model + fixes from two rounds of expert subagent review
-(feasibility / safety / anti-robotic / verification). Pending user approval.**
+Status: **design v4 — async concurrency mechanics pinned after three rounds of expert subagent
+review (feasibility / safety / anti-robotic / verification / plan-readiness). Pending user approval.**
 
 ## Problem
 
@@ -81,13 +81,18 @@ New isolated module `src/controller/thinking/social-reply.ts` (pure, unit-testab
 
 **Detection step (synchronous, cheap, every tick).** When a player names this resident and: not
 rate-limited (reuse `isChatRateLimited`/`chatReplyTicks`), no reply already in-flight for this
-resident, not in combat/critical, and global in-flight cap not exceeded →
+resident, not in combat/critical, and the coordinator's global in-flight cap not exceeded →
 - `buildReplyContext(...)` snapshots the four fields NOW (pure, no inference);
-- fire the inference as a **detached promise** (NOT awaited on the decision path);
-- mark `cognition.socialReplyInFlight = { key, startedAtTick }`, set `lastDirectChatKey`, record the
-  rate-limit tick, increment the controller-global in-flight counter.
+- register an in-flight slot with the **SocialReplyCoordinator** (§3.5): a unique `key`, an
+  `AbortController`, `startedAtTick`; increment the global counter;
+- write only the **serializable** marker `cognition.socialReplyInFlight = { key, startedAtTick }`;
+  set `lastDirectChatKey`; record the rate-limit tick;
+- fire the inference as a **detached promise** (NOT awaited on the decision path), calling the
+  LlmClient **directly** (`llm.complete({ ...bodyProfileRequest, signal: controller.signal })`) —
+  it does **not** go through the module's `thinkId`-bound `complete()` (which would couple it to the
+  decision lifecycle). An explicit Body-profile timeout bounds it.
 
-If the cap is exceeded or rate-limited → skip inference, optionally queue an in-voice deflection.
+If the cap is exceeded or rate-limited → skip inference; optionally queue an in-voice deflection.
 
 `buildReplyContext` — four fields (refusing a fifth):
 1. **Who I am — the voice.** display + **register + up to 3 quirks + aesthetic line** from soul
@@ -124,9 +129,62 @@ If a soul has no `behavior.body`, `endpointFor` falls back to `soul.frontmatter.
 string (reuse `cleanSmallTalkReply` / structured-reply extraction, which already discards anything
 action-shaped), sentence-trim toward **~120 chars** (≤220 hard ceiling via `cleanSpeech`, preserving
 fragments / one-word replies), pass a **deterministic content screen** (profanity/secret denylist) →
-on hit, use the fallback. Write the screened line to `cognition.pendingSocialReply =
-{ text, expiresAtTick }`, clear `socialReplyInFlight`, decrement the global counter. On
-error/timeout/screen → write an in-voice deflection or drop; always clear in-flight + counter.
+on hit, use the in-voice fallback. Then **commit via the coordinator, never via a captured
+closure** (§3.5): the commit re-reads the resident's **live** `cognition` (which may have been
+reassigned by `stateStore.load()`), verifies this promise's `key` still owns the in-flight slot
+(else drop — combat or a newer message superseded it), stamps `expiresAtTick` **now (at resolve)**,
+writes `cognition.pendingSocialReply = { text, expiresAtTick }`, and **settles** the slot
+(idempotent: decrement counter once, clear `socialReplyInFlight`). On error/timeout/screen/abort →
+commit an in-voice deflection or drop, but always **settle once**.
+
+### 3.5 Concurrency & state ownership (the v4 fixes)
+
+Two classes of state, kept strictly separate:
+
+- **Serializable, per-resident, in `cognition`** (persisted each tick): `socialReplyInFlight =
+  { key, startedAtTick }`, `pendingSocialReply = { text, expiresAtTick }`, `lastSocialReply =
+  { text, tick, speaker }`. These are plain data.
+- **Live, in-memory, NOT serializable — a single controller-level `SocialReplyCoordinator`**: the
+  global in-flight **counter** and a `Map<residentName, { key, AbortController }>` of live handles.
+  The `AbortController` and the counter must NOT go in `cognition` (not serializable; and the counter
+  is global, not per-resident).
+
+**Write-back must not use a captured closure.** `this.state`/`cognition` is reassigned by
+`stateStore.load()` mid-life (resident-runtime.ts:209 and the operator-revive path ~727). A detached
+promise that closed over the `cognition` it saw at detection could write into a dead object and the
+reply would silently vanish. Therefore the resolve step commits through a **runtime-provided
+callback** (e.g. `runtime.commitSocialReply(key, result)`) that re-reads the **current**
+`this.state.cognition` at call time. A test must assert a reply survives a `stateStore.load()`
+occurring between detection and resolve.
+
+**Settle-once / key-ownership.** Every in-flight slot is owned by its `key`. It is settled exactly
+once — by whichever of {resolve, timeout, abort, combat-cancel} happens first. Settling: decrement
+the global counter, clear `socialReplyInFlight`, drop the coordinator handle. A late resolver whose
+`key` no longer owns the slot does nothing (no write, no counter touch). This prevents both a leaked
+counter (cap creeping up until it permanently blocks all replies) and a ghost bubble written after a
+clear.
+
+**Combat truly cancels.** On combat/critical entry the runtime calls
+`coordinator.abort(residentName)` → `.abort()` the `AbortController` (the LlmClient honors the
+signal, freeing the host) → settle the slot. Not "discard on arrival."
+
+**State machine (every path defined):**
+
+| Event | socialReplyInFlight | pendingSocialReply | global counter | notes |
+|---|---|---|---|---|
+| detection (admitted) | set {key,tick} | — | +1 | fire detached call |
+| detection (rate-limited / cap / in-flight / combat) | unchanged | unchanged | unchanged | optional deflection; no inference |
+| resolve success (still owns key) | cleared | set {text, expiresAtTick=now} | −1 | commit screened line |
+| resolve fail/timeout/content-hit (owns key) | cleared | set deflection OR — | −1 | deflection or drop |
+| resolve/late (key no longer owns) | unchanged | unchanged | unchanged | no-op (already settled) |
+| combat-cancel while in-flight | cleared | dropped | −1 | abort controller |
+| emit tick: pending fresh, asker present, not combat | — | cleared | — | emit `say`; set lastSocialReply |
+| emit tick: stale (tick>expiresAtTick) or asker gone or combat | — | cleared | — | drop, no `say` |
+| second message while in-flight | unchanged | unchanged | unchanged | dedup: no 2nd inference |
+
+**Follow-up vs rate-limit (concrete):** a same-speaker message within the follow-up window grants
+**exactly one** rate-limit bypass; the follow-up does **not** extend the window (no infinite chain),
+and is still subject to the in-flight dedup (one inference at a time per resident).
 
 ### 4. Reliability — in-voice deflection floor (never false-answer)
 
@@ -140,11 +198,16 @@ key) holds them; `replyFallback(soul, seed)` rotates.
 
 ### 5. Emission — non-freezing, combat-yielding
 
-A later `think()` tick checks `cognition.pendingSocialReply`: if present, not past `expiresAtTick`,
-and the resident is **not in combat/critical**, emit a cheap `say` (no inference) and clear it. The
-say does not preempt a critical body action; if the resident is mid-critical it waits a tick or
-expires. **Combat/critical supersedes:** entering combat cancels an in-flight reply and drops any
-pending reply — a resident never stands composing a line while being attacked.
+A later `think()` tick checks `cognition.pendingSocialReply`. It emits a cheap `say` (no inference)
+and clears the slot only if **all** hold: present; not past `expiresAtTick` (stamped at resolve, so
+it is never born expired); resident **not in combat/critical**; and **the addressing player is still
+in perception range** (else the resident would answer empty air after a 3–7-tick gap —
+`World.TICK_LENGTH=600ms`, so a 2–4s inference is several ticks and the asker may have walked off).
+Otherwise the pending reply is **dropped** (no `say`). The say does not preempt a critical body
+action; context drift (the resident finished its task during the inference) is tolerated — the
+~120-char in-voice line is vague enough to stay plausible. **Combat/critical supersedes:** entering
+combat aborts+settles the in-flight reply and drops any pending reply — a resident never stands
+composing a line while being attacked.
 
 ### 6. Render
 
@@ -162,9 +225,10 @@ bubbles over adjacent residents are a known legibility risk at a crowd; covered 
 | `buildReplyPrompt(context)` | constrained, guard-railed, speech-only prompt | yes |
 | `formatReply(raw)` | extract + clean + ~120 trim + content-screen | yes |
 | `replyFallback(soul, seed)` | rotate neutral in-voice deflections | yes |
-| detached inference + write-back | off-loop call; writes `pendingSocialReply`; clears in-flight | thin |
-| global in-flight cap (controller-level counter) | host protection | thin |
-| `cognition.{pendingSocialReply, socialReplyInFlight, lastSocialReply}` | typed `CognitiveState` fields | thin |
+| `SocialReplyCoordinator` (controller-level) | global in-flight counter + `Map<resident,{key,AbortController}>`; `admit`/`abort`/`settle` (idempotent) | thin |
+| detached inference call | off-loop `llm.complete(..., signal)`; on resolve calls the runtime commit callback | thin |
+| `runtime.commitSocialReply(key, result)` | re-reads **live** `this.state.cognition`; key-owns check; stamps `expiresAtTick`; settles once | thin |
+| `cognition.{pendingSocialReply, socialReplyInFlight, lastSocialReply}` | serializable typed `CognitiveState` markers only (no handles) | thin |
 | rate limit | reuse existing `chatReplyTicks` / `isChatRateLimited` | reuse |
 
 New `CognitiveState` fields are declared on the typed interface in
@@ -225,13 +289,22 @@ Pure-unit:
 - Quality evals (deterministic): reply is **not a substring** of the context packet (no stat-readout);
   same prompt → **different replies for two different souls** (no voice convergence).
 
-Temporal / integration (the v3 must-have, simulated ticks):
+Temporal / integration (the v3/v4 must-haves, simulated ticks):
 - Async write-back: detection fires, `think()` returns a normal action that tick (no freeze), and a
   later tick emits the pending `say`; the resident's `activeGoal` is unchanged throughout and it
   resumes its task.
-- Combat cancels: combat perception during in-flight → reply cancelled/dropped, resident fights.
+- **Reply survives a `stateStore.load()` between detection and resolve** (commit re-reads live
+  cognition, not a captured closure) — the core v4 correctness test.
+- **Settle-once:** 100 detections whose promises all reject → global counter returns to 0 (no leak).
+- Combat aborts: combat during in-flight → coordinator `.abort()` called, slot settled, reply
+  dropped, resident fights (not "discarded on arrival").
+- **Asker departed:** addressing player leaves perception before emit → pending reply dropped (no
+  `say` to empty air).
 - Concurrency cap: N simultaneous detections beyond the cap → excess get fallback, not N inferences.
-- In-flight de-dup: a second addressed message while one is in-flight does not fire a second inference.
+- In-flight de-dup: a second addressed message while one is in-flight does not fire a second
+  inference; a same-speaker follow-up within the window gets exactly one rate-limit bypass.
+- Stale/late resolve: a resolver whose `key` no longer owns the slot is a no-op (no ghost bubble, no
+  counter change).
 
 Live smoke (post-restart): walk up, type "<name>, what are you doing?", see a contextual in-character
 bubble a beat later while the resident keeps working; spam the name → rate limit holds; 3 residents
@@ -245,7 +318,8 @@ named within 2s → legible; abusive prompt → screened; attacked mid-reply →
 
 ## Open questions for the plan
 
-- Exact values: rate-limit window, follow-up window, `expiresAtTick`, global in-flight cap.
+- Exact tuned values: rate-limit window, follow-up window, `expiresAtTick` window, global in-flight
+  cap (all are parameters, not design unknowns).
 - Deflection storage: new `deflections: string[]` frontmatter field vs a phrasebook key.
-- Mechanism detail for the detached promise mutating `cognition` safely across the tick boundary
-  (the runtime owns the cognition object; confirm the write-back path in the plan).
+- Where the `SocialReplyCoordinator` is instantiated and threaded to each resident's thinking module
+  (controller wiring detail for the plan; the runtime already owns per-resident lifecycle).
