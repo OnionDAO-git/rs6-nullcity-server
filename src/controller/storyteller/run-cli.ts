@@ -17,7 +17,8 @@
  *   STORYTELLER_LLM_BASE_URL   e.g. http://localhost:11434
  *   STORYTELLER_LLM_API_KEY    optional Bearer token
  *   STORYTELLER_LLM_MODEL      e.g. llama3, qwen2.5-7b
- *   STORYTELLER_DAILY_COST_CAP_USD  required when STORYTELLER_LLM_BASE_URL is set
+ *   OPENROUTER_API_KEY + OPENROUTER_STORYTELLER_MODEL can be used instead
+ *   STORYTELLER_DAILY_COST_CAP_USD  required when any paid endpoint is set
  *
  * Flags:
  *   --fixture                  Use the canonical fixture digest
@@ -125,15 +126,18 @@ function buildEndpoints(
     modelProfile: string,
     env: NodeJS.ProcessEnv | Record<string, string | undefined>,
 ): Record<string, LlmEndpointConfig> {
-    const baseUrl = env.STORYTELLER_LLM_BASE_URL;
-    const apiKey = env.STORYTELLER_LLM_API_KEY ?? undefined;
-    const model = env.STORYTELLER_LLM_MODEL ?? 'llama3';
+    const endpoint = resolveConfiguredEndpoint(env);
 
     const endpoints: Record<string, LlmEndpointConfig> = {};
 
-    if (baseUrl) {
-        const endpointCfg: LlmEndpointConfig = { baseUrl, model, timeoutMs: 60_000, responseFormat: 'text' };
-        if (apiKey) endpointCfg.apiKey = apiKey;
+    if (endpoint) {
+        const endpointCfg: LlmEndpointConfig = {
+            baseUrl: endpoint.baseUrl,
+            model: endpoint.model,
+            timeoutMs: 60_000,
+            responseFormat: 'text',
+        };
+        if (endpoint.apiKey) endpointCfg.apiKey = endpoint.apiKey;
         endpoints[modelProfile] = endpointCfg;
         if (modelProfile !== 'default') {
             endpoints['default'] = endpointCfg;
@@ -147,6 +151,33 @@ function buildEndpoints(
     }
 
     return endpoints;
+}
+
+function resolveConfiguredEndpoint(env: NodeJS.ProcessEnv | Record<string, string | undefined>):
+    | {
+          baseUrl: string;
+          apiKey?: string;
+          model: string;
+      }
+    | undefined {
+    const baseUrl = env.STORYTELLER_LLM_BASE_URL;
+    if (baseUrl) {
+        return {
+            baseUrl,
+            apiKey: env.STORYTELLER_LLM_API_KEY || undefined,
+            model: env.STORYTELLER_LLM_MODEL || 'llama3',
+        };
+    }
+
+    if (env.OPENROUTER_API_KEY) {
+        return {
+            baseUrl: 'https://openrouter.ai/api',
+            apiKey: env.OPENROUTER_API_KEY,
+            model: env.OPENROUTER_STORYTELLER_MODEL || env.OPENROUTER_HAIKU_MODEL || 'anthropic/claude-3.5-haiku',
+        };
+    }
+
+    return undefined;
 }
 
 function readDigestForRun(args: StorytellerRunArgs, store: StorytellerStore): CityEventDigest {
@@ -203,7 +234,8 @@ function usage(): string {
         '                                        [--daily-cost-cap-usd <usd>]',
         '',
         'Runs the Storyteller model over one digest. Without STORYTELLER_LLM_BASE_URL it writes a nooped dispatch for review.',
-        'When STORYTELLER_LLM_BASE_URL is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
+        'OPENROUTER_API_KEY + OPENROUTER_STORYTELLER_MODEL are also accepted as a Storyteller endpoint.',
+        'When a paid endpoint is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
     ].join('\n');
 }
 
@@ -223,7 +255,7 @@ function parseRequiredDailyCostCap(value: string, label: string): number {
 }
 
 function hasConfiguredModelEndpoint(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
-    return !!env.STORYTELLER_LLM_BASE_URL;
+    return !!resolveConfiguredEndpoint(env);
 }
 
 function runPaidModelBudgetPreflight(args: StorytellerRunArgs, options: StorytellerRunOptions): void {
@@ -257,10 +289,10 @@ async function main(): Promise<void> {
         throw err;
     }
 
-    const hasEndpoint = !!process.env.STORYTELLER_LLM_BASE_URL;
+    const hasEndpoint = hasConfiguredModelEndpoint(process.env);
     console.log(`[storyteller:run] Digest source: ${args.source}${args.digestId ? ` (${args.digestId})` : ''}`);
     console.log(
-        `[storyteller:run] Model profile: "${args.modelProfile}"${hasEndpoint ? '' : ' (no STORYTELLER_LLM_BASE_URL set — will noop)'}`,
+        `[storyteller:run] Model profile: "${args.modelProfile}"${hasEndpoint ? '' : ' (no Storyteller model endpoint set — will noop)'}`,
     );
     console.log(`[storyteller:run] Calling model...`);
 

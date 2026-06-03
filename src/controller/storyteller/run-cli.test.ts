@@ -126,6 +126,30 @@ describe('storyteller:run CLI digest sources', () => {
         fetchSpy.mockRestore();
     });
 
+    it('treats OpenRouter Storyteller aliases as a configured paid endpoint', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'openrouter-digest' });
+        const fetchSpy = jest.spyOn(globalThis, 'fetch');
+
+        await expect(
+            runStoryteller(
+                { source: 'digest-id', digestId: 'openrouter-digest', outputDir, modelProfile: 'storyteller' },
+                {
+                    env: {
+                        OPENROUTER_API_KEY: 'test-openrouter-key',
+                        OPENROUTER_STORYTELLER_MODEL: 'anthropic/claude-3.5-haiku',
+                    },
+                    now: () => new Date('2026-06-03T05:30:00.000Z'),
+                },
+            ),
+        ).rejects.toMatchObject({ code: 'missing_cost_cap' });
+
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(fs.existsSync(path.join(outputDir, 'openrouter-digest', 'dispatch.json'))).toBe(false);
+        fetchSpy.mockRestore();
+    });
+
     it('blocks configured model endpoints before fetch when daily cost cap is already spent', async () => {
         const store = new StorytellerStore(outputDir);
         const { digest } = buildFixtureDigest();
@@ -211,6 +235,55 @@ describe('storyteller:run CLI digest sources', () => {
         const requestInit = fetchSpy.mock.calls[0]?.[1] as RequestInit;
         const body = JSON.parse(String(requestInit.body)) as { response_format?: unknown };
         expect(body.response_format).toEqual({ type: 'text' });
+        fetchSpy.mockRestore();
+    });
+
+    it('uses OpenRouter Storyteller aliases for model-backed dispatches when capped', async () => {
+        const store = new StorytellerStore(outputDir);
+        const { digest, refs } = buildFixtureDigest();
+        store.writeDigest({ ...digest, digestId: 'openrouter-capped-digest' });
+        const modelPayload = {
+            publicTitle: 'The City Narrator Notices the Ledger',
+            publicBody: 'Attention and GP moved in the same window. The public story should follow that pressure.',
+            publicBullets: ['AP/GP exchange evidence exists.', 'The narrator used a paid OpenRouter profile.'],
+            operatorSummary: 'OpenRouter alias response.',
+            operatorWarnings: [],
+            eventRefsUsed: [refs.exchange],
+        };
+        const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    choices: [{ message: { content: JSON.stringify(modelPayload) } }],
+                    usage: { prompt_tokens: 80, completion_tokens: 40, cost: 0.002 },
+                }),
+                { status: 200 },
+            ),
+        );
+
+        const result = await runStoryteller(
+            {
+                source: 'digest-id',
+                digestId: 'openrouter-capped-digest',
+                outputDir,
+                modelProfile: 'storyteller',
+                dailyCostCapUsd: 0.1,
+            },
+            {
+                env: {
+                    OPENROUTER_API_KEY: 'test-openrouter-key',
+                    OPENROUTER_STORYTELLER_MODEL: 'anthropic/claude-3.5-haiku',
+                },
+                now: () => new Date('2026-06-03T05:30:00.000Z'),
+            },
+        );
+
+        const [url, requestInit] = fetchSpy.mock.calls[0] ?? [];
+        const body = JSON.parse(String((requestInit as RequestInit).body)) as { model?: string; response_format?: unknown };
+        expect(url).toBe('https://openrouter.ai/api/v1/chat/completions');
+        expect(body.model).toBe('anthropic/claude-3.5-haiku');
+        expect(body.response_format).toEqual({ type: 'text' });
+        expect(result.dispatch.modelProfile).toBe('storyteller');
+        expect(result.dispatch.publicTitle).toBe(modelPayload.publicTitle);
         fetchSpy.mockRestore();
     });
 });
