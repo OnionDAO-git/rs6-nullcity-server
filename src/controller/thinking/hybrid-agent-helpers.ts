@@ -3408,9 +3408,7 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
     // S-GOAL-4: if an orientation stall fired AFTER the current plan was created, the Brain
     // should replan with a fresh approach. This connects the per-tick stall tracker (which
     // writes orientationStalledAt to CognitiveState) to the deliberative planner.
-    const stalledSinceLastPlan =
-        plan != null &&
-        (ctx.options.state.cognition?.orientationStalledAt ?? -1) > plan.createdAtTick;
+    const stalledSinceLastPlan = plan != null && (ctx.options.state.cognition?.orientationStalledAt ?? -1) > plan.createdAtTick;
     const needsReplan =
         !plan ||
         plan.status === 'completed' ||

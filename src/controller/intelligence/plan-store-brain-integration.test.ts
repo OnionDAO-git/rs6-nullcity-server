@@ -473,7 +473,12 @@ describe('maybeTriggerPlannerPass — orientation stall triggers replan (S-GOAL-
         mockRunPlannerPass.mockResolvedValueOnce({ success: true, plan: newPlan, toolCallsMade: 0, fellBackToRag: false, elapsedMs: 50 });
         const planStore = makePlanStore(plan);
         const library = makeLibraryUpdaterMock();
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, libraryUpdater: library });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
         ctx.options.state.cognition = { orientationStalledAt: 50 };
         await maybeTriggerPlannerPass(ctx);
         expect(library.observePlanReplanned).toHaveBeenCalledTimes(1);
