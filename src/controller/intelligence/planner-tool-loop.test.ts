@@ -1,9 +1,11 @@
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import {
     LOOKUP_SKILL_TOOL,
+    LOOKUP_WIKI_TOOL,
     PLANNER_TOOL_MAX_TURNS,
     buildToolInstructions,
     defaultToolRegistry,
+    defaultTools,
     lookupSkill,
     runPlannerToolLoop,
 } from './planner-tool-loop';
@@ -309,5 +311,95 @@ describe('runPlannerToolLoop — fallback paths', () => {
 
     it('PLANNER_TOOL_MAX_TURNS is 2', () => {
         expect(PLANNER_TOOL_MAX_TURNS).toBe(2);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// LOOKUP_WIKI_TOOL + defaultToolRegistry(wikiSearch) — RIQ-1-1-C
+// ---------------------------------------------------------------------------
+
+describe('LOOKUP_WIKI_TOOL', () => {
+    it('has name lookup_wiki', () => {
+        expect(LOOKUP_WIKI_TOOL.name).toBe('lookup_wiki');
+    });
+
+    it('description mentions RuneScape wiki knowledge', () => {
+        expect(LOOKUP_WIKI_TOOL.description.toLowerCase()).toContain('wiki');
+    });
+});
+
+describe('defaultToolRegistry — without wikiSearch', () => {
+    it('does NOT contain lookup_wiki when no wikiSearch is provided', () => {
+        const registry = defaultToolRegistry();
+        expect(registry.has('lookup_wiki')).toBe(false);
+    });
+
+    it('still contains lookup_skill', () => {
+        const registry = defaultToolRegistry();
+        expect(registry.has('lookup_skill')).toBe(true);
+    });
+});
+
+describe('defaultToolRegistry — with wikiSearch', () => {
+    const mockWikiSearch = (query: string) => `Wiki result for: ${query}`;
+
+    it('contains lookup_wiki when wikiSearch is provided', () => {
+        const registry = defaultToolRegistry(mockWikiSearch);
+        expect(registry.has('lookup_wiki')).toBe(true);
+    });
+
+    it('lookup_wiki calls the provided wikiSearch function', () => {
+        const registry = defaultToolRegistry(mockWikiSearch);
+        const fn = registry.get('lookup_wiki')!;
+        const result = fn('goblin drops');
+        expect(result).toBe('Wiki result for: goblin drops');
+    });
+
+    it('still contains lookup_skill', () => {
+        const registry = defaultToolRegistry(mockWikiSearch);
+        expect(registry.has('lookup_skill')).toBe(true);
+    });
+});
+
+describe('defaultTools', () => {
+    it('returns only lookup_skill when no wikiSearch', () => {
+        const tools = defaultTools();
+        expect(tools).toHaveLength(1);
+        expect(tools[0].name).toBe('lookup_skill');
+    });
+
+    it('returns lookup_skill + lookup_wiki when wikiSearch provided', () => {
+        const tools = defaultTools(() => 'result');
+        expect(tools).toHaveLength(2);
+        expect(tools.map(t => t.name)).toEqual(['lookup_skill', 'lookup_wiki']);
+    });
+});
+
+describe('runPlannerToolLoop — lookup_wiki call', () => {
+    const wikiSearch = (query: string) => `Wiki result for: ${query}`;
+    const wikiToolCallJson = '{"tool":"lookup_wiki","query":"where is the bank in Lumbridge"}';
+    const finalGoalJson = '{"goal":{"description":"go to the bank","steps":["walk to Lumbridge bank"]}}';
+
+    it('executes lookup_wiki and feeds result into follow-up completion', async () => {
+        const client = mockLlm([{ text: wikiToolCallJson }, { text: finalGoalJson }]);
+        const result = await runPlannerToolLoop({
+            llmClient: client,
+            request: baseRequest,
+            tools: defaultTools(wikiSearch),
+            toolRegistry: defaultToolRegistry(wikiSearch),
+        });
+        expect(result.finalText).toBe(finalGoalJson);
+        expect(result.toolCallsMade).toHaveLength(1);
+        expect(result.toolCallsMade[0].tool).toBe('lookup_wiki');
+        expect(result.toolCallsMade[0].query).toBe('where is the bank in Lumbridge');
+        expect(result.toolCallsMade[0].result).toContain('Wiki result for:');
+        expect(result.fellBackToRag).toBe(false);
+        expect(result.turns).toBe(2);
+    });
+
+    it('buildToolInstructions includes lookup_wiki when wiki tool is present', () => {
+        const instructions = buildToolInstructions(defaultTools(wikiSearch));
+        expect(instructions).toContain('lookup_wiki');
+        expect(instructions).toContain('lookup_skill');
     });
 });

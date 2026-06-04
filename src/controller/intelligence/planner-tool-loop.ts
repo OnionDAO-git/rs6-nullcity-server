@@ -1,5 +1,5 @@
 /**
- * RIQ-1-1-A: Brain tool-calling substrate (Phase 1 spike).
+ * RIQ-1-1-A/C: Brain tool-calling substrate (Phase 1).
  *
  * Gives the Brain a pull-based knowledge interface: instead of relying
  * solely on pre-injected RAG, the Brain can emit a single tool-call JSON
@@ -16,8 +16,10 @@
  * without crashing and sets `fellBackToRag = true`. Callers can then use
  * their normal RAG-injected path as if no tool call occurred.
  *
- * Currently ships one tool: `lookup_skill` (wraps the knowledge retriever).
- * Adding more tools later is a one-line `toolRegistry.set(...)` call.
+ * Ships two tools:
+ *   - `lookup_skill`: wraps ENGINE_KNOWLEDGE_ENTRIES (skill training, XP rates, items).
+ *   - `lookup_wiki`: searches RuneBench wiki entries (places, quests, monsters, world facts).
+ *     Only registered when wiki entries are available via `defaultToolRegistry(wikiSearch)`.
  */
 
 import { z } from 'zod';
@@ -87,11 +89,47 @@ export function lookupSkill(query: string): string {
     return formatKnowledgeForPrompt(results, { maxChars: 1200 });
 }
 
-/** Default tool registry used by `runPlannerToolLoop`. */
-export function defaultToolRegistry(): Map<string, ToolFn> {
+// ---------------------------------------------------------------------------
+// Built-in tool: lookup_wiki
+// ---------------------------------------------------------------------------
+
+export const LOOKUP_WIKI_TOOL: ToolDefinition = {
+    name: 'lookup_wiki',
+    description:
+        'Search the RuneScape wiki for world knowledge: places, quests, monsters, items, and world facts not covered by skill guides.',
+    exampleQuery: 'Where is the bank in Lumbridge? What do goblins drop?',
+};
+
+// ---------------------------------------------------------------------------
+// Tool registry helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Default tool registry used by `runPlannerToolLoop`.
+ *
+ * Always includes `lookup_skill`. When `wikiSearch` is provided (i.e. wiki
+ * entries were loaded for this controller instance), also registers
+ * `lookup_wiki` so the Brain can pull world-knowledge facts on demand.
+ */
+export function defaultToolRegistry(wikiSearch?: (query: string) => string): Map<string, ToolFn> {
     const m = new Map<string, ToolFn>();
     m.set(LOOKUP_SKILL_TOOL.name, lookupSkill);
+    if (wikiSearch) {
+        m.set(LOOKUP_WIKI_TOOL.name, wikiSearch);
+    }
     return m;
+}
+
+/**
+ * Returns the list of tool definitions matching the given registry.
+ * Use alongside `defaultToolRegistry` to keep tools and registry in sync.
+ */
+export function defaultTools(wikiSearch?: (query: string) => string): ToolDefinition[] {
+    const tools: ToolDefinition[] = [LOOKUP_SKILL_TOOL];
+    if (wikiSearch) {
+        tools.push(LOOKUP_WIKI_TOOL);
+    }
+    return tools;
 }
 
 // ---------------------------------------------------------------------------

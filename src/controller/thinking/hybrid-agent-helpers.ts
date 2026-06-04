@@ -156,7 +156,7 @@ import {
 } from './hybrid-agent-chat';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import { admitPlannerCall, acquireGlobalPlannerSlot, releaseGlobalPlannerSlot } from '../llm/budgets';
-import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
+import { runPlannerToolLoop, defaultToolRegistry, defaultTools, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
 import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
 import { evaluateSuccessPredicate } from '../intelligence/plan-predicates';
@@ -3519,7 +3519,10 @@ export async function runBrain(
     await maybeTriggerPlannerPass(ctx, thinkId);
 
     const behavior = ctx.behavior();
-    const toolInstructions = buildToolInstructions([LOOKUP_SKILL_TOOL]);
+    // RIQ-1-1-C: include lookup_wiki when GameSkillContext has wiki entries loaded.
+    const wikiSearch = gameSkill?.wikiSearch;
+    const brainTools = defaultTools(wikiSearch);
+    const toolInstructions = buildToolInstructions(brainTools);
     const prompt = buildBrainPrompt({
         soul: ctx.options.soul,
         perception,
@@ -3535,9 +3538,9 @@ export async function runBrain(
         toolInstructions,
     });
 
-    // RIQ-1-1-B: route the brain completion through the planner tool loop so the
-    // Brain can emit a lookup_skill call before its final goal/say JSON. The adapter
-    // wraps ctx.complete so the loop respects the existing abort/cancel machinery.
+    // RIQ-1-1-B/C: route the brain completion through the planner tool loop so the
+    // Brain can emit a lookup_skill or lookup_wiki call before its final goal/say JSON.
+    // The adapter wraps ctx.complete so the loop respects the existing abort/cancel machinery.
     let lastRawResponse: LlmResponse = { text: '', nooped: false };
     const brainLlmAdapter = {
         complete: async (req: LlmRequest): Promise<LlmResponse> => {
@@ -3563,8 +3566,8 @@ export async function runBrain(
     const toolLoopResult = await runPlannerToolLoop({
         llmClient: brainLlmAdapter,
         request: brainRequest,
-        tools: [LOOKUP_SKILL_TOOL],
-        toolRegistry: defaultToolRegistry(),
+        tools: brainTools,
+        toolRegistry: defaultToolRegistry(wikiSearch),
     });
     const response = { ...lastRawResponse, text: toolLoopResult.finalText };
 
