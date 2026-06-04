@@ -431,7 +431,12 @@ describe('maybeTriggerPlannerPass — failure backoff (RIQ-5-2)', () => {
             elapsedMs: 10,
         });
         const planStore = makePlanStore(null);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 500 });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            tick: 500,
+        });
         await maybeTriggerPlannerPass(ctx);
         expect(ctx.options.state.cognition?.plannerFailureBackoffUntilTick).toBe(500 + PLANNER_FAILURE_BACKOFF_TICKS);
     });
@@ -439,14 +444,24 @@ describe('maybeTriggerPlannerPass — failure backoff (RIQ-5-2)', () => {
     it('sets plannerFailureBackoffUntilTick when runPlannerPass throws', async () => {
         mockRunPlannerPass.mockRejectedValueOnce(new Error('network error'));
         const planStore = makePlanStore(null);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 300 });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            tick: 300,
+        });
         await maybeTriggerPlannerPass(ctx);
         expect(ctx.options.state.cognition?.plannerFailureBackoffUntilTick).toBe(300 + PLANNER_FAILURE_BACKOFF_TICKS);
     });
 
     it('skips PlannerPass when backoff is active (tick < backoffUntil)', async () => {
         const planStore = makePlanStore(null);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 100 });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            tick: 100,
+        });
         // Inject an active backoff
         ctx.options.state.cognition = { ...ctx.options.state.cognition, plannerFailureBackoffUntilTick: 250 };
         await maybeTriggerPlannerPass(ctx);
@@ -457,7 +472,12 @@ describe('maybeTriggerPlannerPass — failure backoff (RIQ-5-2)', () => {
         const newPlan = makeActivePlan({ goalId: 'wc' });
         mockRunPlannerPass.mockResolvedValueOnce({ success: true, plan: newPlan, toolCallsMade: 0, fellBackToRag: false, elapsedMs: 50 });
         const planStore = makePlanStore(null);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'wc', description: 'master woodcutting' }, plannerProfile: { endpoint: 'p' }, tick: 400 });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'wc', description: 'master woodcutting' },
+            plannerProfile: { endpoint: 'p' },
+            tick: 400,
+        });
         // Pre-set a stale backoff
         ctx.options.state.cognition = { ...ctx.options.state.cognition, plannerFailureBackoffUntilTick: 99 };
         await maybeTriggerPlannerPass(ctx);
@@ -467,7 +487,12 @@ describe('maybeTriggerPlannerPass — failure backoff (RIQ-5-2)', () => {
 
     it('fires again once the backoff tick window expires', async () => {
         const planStore = makePlanStore(null);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 300 });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'g1', description: 'test' },
+            plannerProfile: { endpoint: 'p' },
+            tick: 300,
+        });
         // Inject an expired backoff
         ctx.options.state.cognition = { ...ctx.options.state.cognition, plannerFailureBackoffUntilTick: 200 };
         await maybeTriggerPlannerPass(ctx);

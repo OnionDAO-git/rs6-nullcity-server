@@ -105,15 +105,9 @@ export interface PlannerBudgetDecision {
  *
  * On deny: leaves the counter unchanged; caller should log and skip the planner.
  */
-export function admitPlannerCall(
-    state: RuntimeState,
-    max = MAX_PLANNER_CALLS_PER_DAY,
-    now = new Date(),
-): PlannerBudgetDecision {
+export function admitPlannerCall(state: RuntimeState, max = MAX_PLANNER_CALLS_PER_DAY, now = new Date()): PlannerBudgetDecision {
     // Roll the day window when the calendar day changes.
-    const plannerDayStartedAt = state.budgets.plannerDayStartedAt
-        ? new Date(state.budgets.plannerDayStartedAt)
-        : undefined;
+    const plannerDayStartedAt = state.budgets.plannerDayStartedAt ? new Date(state.budgets.plannerDayStartedAt) : undefined;
     if (!plannerDayStartedAt || now.toDateString() !== plannerDayStartedAt.toDateString()) {
         state.budgets.plannerDayStartedAt = now.toISOString();
         state.budgets.plannerCallsToday = 0;
@@ -126,6 +120,44 @@ export function admitPlannerCall(
 
     state.budgets.plannerCallsToday = callsToday + 1;
     return { ok: true, callsToday: callsToday + 1, max };
+}
+
+/**
+ * RIQ-5-3: Global concurrent PlannerPass cap — prevents N residents from all
+ * firing an expensive paid Haiku call simultaneously on the same tick (e.g. on
+ * controller restart when all plans are stale). Per-resident daily budget
+ * (admitPlannerCall) handles long-run cost; this handles the burst rate.
+ *
+ * Process-level slot counter: at most MAX_CONCURRENT_PLANNER_CALLS in-flight
+ * at any one time. Callers that cannot acquire a slot skip this tick; the plan
+ * replan condition persists, so the slot is re-tried on the next brain tick
+ * (naturally staggered). No queuing needed — skip-and-retry is correct here
+ * because planner calls are rare stage-boundary events, not per-tick.
+ */
+export const MAX_CONCURRENT_PLANNER_CALLS = 3;
+
+let _globalPlannerSlotsInUse = 0;
+
+/** Attempt to acquire one in-flight planner slot. Returns false if the cap is reached. */
+export function acquireGlobalPlannerSlot(max = MAX_CONCURRENT_PLANNER_CALLS): boolean {
+    if (_globalPlannerSlotsInUse >= max) return false;
+    _globalPlannerSlotsInUse += 1;
+    return true;
+}
+
+/** Release a previously acquired in-flight planner slot. */
+export function releaseGlobalPlannerSlot(): void {
+    if (_globalPlannerSlotsInUse > 0) _globalPlannerSlotsInUse -= 1;
+}
+
+/** How many planner slots are currently in use (test / observability helper). */
+export function globalPlannerSlotsInUse(): number {
+    return _globalPlannerSlotsInUse;
+}
+
+/** Reset all in-flight slots to zero. Call only in tests or on process restart. */
+export function resetGlobalPlannerSlots(): void {
+    _globalPlannerSlotsInUse = 0;
 }
 
 function rollWindows(state: RuntimeState, now: Date): void {

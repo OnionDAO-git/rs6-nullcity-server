@@ -155,7 +155,7 @@ import {
     safeTradeOfferSlot,
 } from './hybrid-agent-chat';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
-import { admitPlannerCall } from '../llm/budgets';
+import { admitPlannerCall, acquireGlobalPlannerSlot, releaseGlobalPlannerSlot } from '../llm/budgets';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
 import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
@@ -3410,11 +3410,18 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
     const plannerBudget = admitPlannerCall(ctx.options.state);
     if (!plannerBudget.ok) {
         process.stderr.write(
-            `[RIQ-3-2] Planner budget exhausted for ${residentId}: ` +
-                `${plannerBudget.callsToday}/${plannerBudget.max} calls today\n`,
+            `[RIQ-3-2] Planner budget exhausted for ${residentId}: ` + `${plannerBudget.callsToday}/${plannerBudget.max} calls today\n`,
         );
         return;
     }
+
+    // RIQ-5-3: global concurrency cap — at most MAX_CONCURRENT_PLANNER_CALLS
+    // residents may be running a PlannerPass simultaneously (default 3). On
+    // controller restart all residents with stale plans need a replan at once;
+    // without this gate that means N simultaneous paid Haiku calls. Residents
+    // denied a slot skip this tick and retry on the next brain cycle, giving
+    // natural stagger without a queue or priority system.
+    if (!acquireGlobalPlannerSlot()) return;
 
     _plannerPassInFlight.add(residentId);
     const plannerLlmAdapter = {
@@ -3480,17 +3487,16 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
             // RIQ-5-2: back off before retrying so a flaky endpoint cannot burn the
             // daily budget in seconds (budget: 10 calls/day; backoff: 200 ticks ≈ 3 min).
             ctx.options.state.cognition = ctx.options.state.cognition ?? {};
-            ctx.options.state.cognition.plannerFailureBackoffUntilTick =
-                ctx.options.state.tick + PLANNER_FAILURE_BACKOFF_TICKS;
+            ctx.options.state.cognition.plannerFailureBackoffUntilTick = ctx.options.state.tick + PLANNER_FAILURE_BACKOFF_TICKS;
             process.stderr.write(`[RIQ-3-2] PlannerPass failed for ${residentId}: ${result.error ?? 'unknown'}\n`);
         }
     } catch (err) {
         // RIQ-5-2: also back off on thrown errors (network timeouts, parse failures).
         ctx.options.state.cognition = ctx.options.state.cognition ?? {};
-        ctx.options.state.cognition.plannerFailureBackoffUntilTick =
-            ctx.options.state.tick + PLANNER_FAILURE_BACKOFF_TICKS;
+        ctx.options.state.cognition.plannerFailureBackoffUntilTick = ctx.options.state.tick + PLANNER_FAILURE_BACKOFF_TICKS;
         process.stderr.write(`[RIQ-3-2] PlannerPass threw for ${residentId}: ${err instanceof Error ? err.message : String(err)}\n`);
     } finally {
+        releaseGlobalPlannerSlot();
         _plannerPassInFlight.delete(residentId);
     }
 }

@@ -1863,3 +1863,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-04 11:35 UTC cron-cloud agents/wip RIQ-5-2 HANDOFF — sha=6995580b fin=4091/4086 +5 tests. plannerFailureBackoffUntilTick in CognitiveState; maybeTriggerPlannerPass backs off 200 ticks after fail/throw, clears on success. QA-20260604-092 In Review. live-verify PENDING hot stack. next=RIQ-4-5(hot-stack) collision=none
 
 2026-06-04 12:00 UTC cron-cloud agents/wip packet=RIQ-5-3 STARTING — global planner concurrency cap (max 3 simultaneous PlannerPass calls across all residents). Files: src/controller/llm/budgets.ts src/controller/llm/budgets.test.ts src/controller/thinking/hybrid-agent-helpers.ts docs/superpowers/plans/2026-06-01-resident-intelligence-roadmap.md docs/issue-register.md docs/agent-status.md collision=none
+
+2026-06-04 12:30 UTC cron-cloud agents/wip packet=RIQ-5-3 HANDOFF — sha=TBD fin=4097/4091 +6 tests. MAX_CONCURRENT_PLANNER_CALLS=3; acquireGlobalPlannerSlot/releaseGlobalPlannerSlot in maybeTriggerPlannerPass. QA-20260604-093 In Review. Roadmap §8 Phase 5 updated (was Not started). live-verify PENDING hot stack. next=RIQ-4-5(hot-stack) collision=none

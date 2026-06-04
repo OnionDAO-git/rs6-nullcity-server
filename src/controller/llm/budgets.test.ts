@@ -1,5 +1,16 @@
 import type { RuntimeState } from '../memory/runtime-state';
-import { type InferenceBudget, MAX_PLANNER_CALLS_PER_DAY, admitInference, admitPlannerCall, defaultInferenceBudget } from './budgets';
+import {
+    type InferenceBudget,
+    MAX_PLANNER_CALLS_PER_DAY,
+    MAX_CONCURRENT_PLANNER_CALLS,
+    admitInference,
+    admitPlannerCall,
+    acquireGlobalPlannerSlot,
+    releaseGlobalPlannerSlot,
+    globalPlannerSlotsInUse,
+    resetGlobalPlannerSlots,
+    defaultInferenceBudget,
+} from './budgets';
 
 describe('inference budgets', () => {
     it('keeps resident brain budgets bounded but high enough for all-day weekend operation', () => {
@@ -91,6 +102,53 @@ describe('planner budgets (S-PLAN-BUDGET-1)', () => {
         expect(state.budgets.plannerDayStartedAt).toBeUndefined();
         const result = admitPlannerCall(state, 5, now);
         expect(result).toMatchObject({ ok: true, callsToday: 1 });
+    });
+});
+
+describe('global planner concurrency cap (RIQ-5-3)', () => {
+    beforeEach(() => resetGlobalPlannerSlots());
+    afterEach(() => resetGlobalPlannerSlots());
+
+    it('has a sane default cap small enough to prevent burst-N paid calls on restart', () => {
+        expect(MAX_CONCURRENT_PLANNER_CALLS).toBeLessThanOrEqual(5);
+        expect(MAX_CONCURRENT_PLANNER_CALLS).toBeGreaterThanOrEqual(1);
+    });
+
+    it('admits slots up to the cap and reports in-use count', () => {
+        expect(globalPlannerSlotsInUse()).toBe(0);
+        expect(acquireGlobalPlannerSlot(2)).toBe(true);
+        expect(globalPlannerSlotsInUse()).toBe(1);
+        expect(acquireGlobalPlannerSlot(2)).toBe(true);
+        expect(globalPlannerSlotsInUse()).toBe(2);
+    });
+
+    it('denies a slot when the cap is reached', () => {
+        acquireGlobalPlannerSlot(2);
+        acquireGlobalPlannerSlot(2);
+        expect(acquireGlobalPlannerSlot(2)).toBe(false);
+        expect(globalPlannerSlotsInUse()).toBe(2);
+    });
+
+    it('re-admits after a slot is released', () => {
+        acquireGlobalPlannerSlot(2);
+        acquireGlobalPlannerSlot(2);
+        expect(acquireGlobalPlannerSlot(2)).toBe(false);
+        releaseGlobalPlannerSlot();
+        expect(globalPlannerSlotsInUse()).toBe(1);
+        expect(acquireGlobalPlannerSlot(2)).toBe(true);
+        expect(globalPlannerSlotsInUse()).toBe(2);
+    });
+
+    it('does not go below zero on extra releases (defensive)', () => {
+        releaseGlobalPlannerSlot();
+        expect(globalPlannerSlotsInUse()).toBe(0);
+    });
+
+    it('uses MAX_CONCURRENT_PLANNER_CALLS as the default cap', () => {
+        for (let i = 0; i < MAX_CONCURRENT_PLANNER_CALLS; i++) {
+            expect(acquireGlobalPlannerSlot()).toBe(true);
+        }
+        expect(acquireGlobalPlannerSlot()).toBe(false);
     });
 });
 
