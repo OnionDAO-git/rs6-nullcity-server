@@ -1,4 +1,6 @@
+import path from 'path';
 import { GameSkillService } from './game-skill-context';
+import { createDefaultGameSkillEntries } from './game-skill-entries';
 
 describe('GameSkillService', () => {
     it('builds can-do-now firemaking context from inventory evidence', () => {
@@ -1090,3 +1092,60 @@ function tradeAndFiremakingPerception() {
         ],
     } as any;
 }
+
+// ---------------------------------------------------------------------------
+// RIQ-1-1-C: GameSkillContext.wikiSearch presence
+// ---------------------------------------------------------------------------
+
+describe('GameSkillContext.wikiSearch — RIQ-1-1-C', () => {
+    const simplePerception = () => ({ tick: 1, resident: { inventory: [], hp: { current: 10, max: 10 } }, nearby: {}, events: [] }) as any;
+
+    it('wikiSearch is undefined when no wiki dir is configured (engine-only mode)', () => {
+        const service = new GameSkillService(); // no entries override → ENGINE_KNOWLEDGE_ENTRIES only
+        const ctx = service.buildContext({
+            resident: 'res:agent',
+            tick: 1,
+            perception: simplePerception(),
+        });
+        expect(ctx.wikiSearch).toBeUndefined();
+    });
+
+    it('wikiSearch is a function when wiki entries are loaded', () => {
+        const wikiDir = path.resolve(process.cwd(), 'docs/runescape-skill');
+        const entries = createDefaultGameSkillEntries(wikiDir);
+        const service = new GameSkillService({ entries });
+        const ctx = service.buildContext({
+            resident: 'res:agent',
+            tick: 1,
+            perception: simplePerception(),
+        });
+        expect(typeof ctx.wikiSearch).toBe('function');
+    });
+
+    it('wikiSearch returns a non-empty string for a wiki-relevant query', () => {
+        const wikiDir = path.resolve(process.cwd(), 'docs/runescape-skill');
+        const entries = createDefaultGameSkillEntries(wikiDir);
+        const service = new GameSkillService({ entries });
+        const ctx = service.buildContext({
+            resident: 'res:agent',
+            tick: 1,
+            perception: simplePerception(),
+        });
+        const result = ctx.wikiSearch!('goblins lumbridge monsters');
+        expect(typeof result).toBe('string');
+        expect(result.length).toBeGreaterThan(0);
+    });
+
+    it('wikiSearch returns a not-found message for an unmatched query', () => {
+        const wikiDir = path.resolve(process.cwd(), 'docs/runescape-skill');
+        const entries = createDefaultGameSkillEntries(wikiDir);
+        const service = new GameSkillService({ entries });
+        const ctx = service.buildContext({
+            resident: 'res:agent',
+            tick: 1,
+            perception: simplePerception(),
+        });
+        const result = ctx.wikiSearch!('xyzzy nonexistent 99999');
+        expect(result).toContain('No wiki pages matched');
+    });
+});

@@ -1,10 +1,22 @@
 import { buildFixtureDigest, resetRefCounter } from './digest-builder';
 import { buildStorytellerPrompt } from './prompt-builder';
-import { DEFAULT_STORYTELLER_CONFIG } from './types';
+import { DEFAULT_STORYTELLER_CONFIG, type DigestEvent } from './types';
 
 beforeEach(() => {
     resetRefCounter();
 });
+
+function event(overrides: Partial<DigestEvent>): DigestEvent {
+    return {
+        ref: 'evt-default',
+        kind: 'library_writeback',
+        residentName: 'res:hans',
+        ts: '2026-05-29T05:59:00.000Z',
+        note: 'Hans said: "The courtyard is awake."',
+        importance: 'low',
+        ...overrides,
+    };
+}
 
 describe('buildStorytellerPrompt — AP/GP vocabulary', () => {
     it('uses AP / Attention Points vocabulary, not Shards', () => {
@@ -111,6 +123,28 @@ describe('buildStorytellerPrompt — digest context', () => {
         expect(prompt).toContain(String(digest.systemHealth.totalResidents));
     });
 
+    it('presents tangible resident speech before generic stuck recovery', () => {
+        const { digest } = buildFixtureDigest();
+        const speech = event({
+            ref: 'evt-hans-speech',
+            kind: 'library_writeback',
+            note: 'Hans said: "I can feel my attention fading. An offering at the embassy would keep me here a while longer."',
+            importance: 'low',
+        });
+        const stuck = event({
+            ref: 'evt-hans-stuck',
+            kind: 'stuck_recovered',
+            note: 'Hans recovered from being stuck.',
+            importance: 'medium',
+        });
+        digest.topEvents = [stuck, speech];
+
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(prompt.indexOf('evt-hans-speech')).toBeGreaterThanOrEqual(0);
+        expect(prompt.indexOf('evt-hans-speech')).toBeLessThan(prompt.indexOf('evt-hans-stuck'));
+    });
+
     it('includes maxPublicBodyWords constraint from config', () => {
         const { digest } = buildFixtureDigest();
         const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, maxPublicBodyWords: 180 });
@@ -151,5 +185,43 @@ describe('buildStorytellerPrompt — public voice', () => {
         expect(prompt).toMatch(/big news tonight/i);
         expect(prompt).toMatch(/old-fashioned news-anchor/i);
         expect(prompt).toMatch(/do not overhype quiet windows/i);
+    });
+});
+
+describe('buildStorytellerPrompt — persona block', () => {
+    it('does not include a PERSONA block when config.persona is not set', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+        expect(prompt).not.toContain('PERSONA:');
+    });
+
+    it('injects a PERSONA block when config.persona is set', () => {
+        const { digest } = buildFixtureDigest();
+        const persona = 'The Archivist — a dry, sardonic chronicler who cares about honest records and refuses to invent drama.';
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona });
+        expect(prompt).toContain('PERSONA:');
+        expect(prompt).toContain(persona);
+    });
+
+    it('places the PERSONA block before the PUBLIC VOICE section', () => {
+        const { digest } = buildFixtureDigest();
+        const persona = 'Zyx-7, archivist drone of Null City, narrator of record.';
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona });
+        const personaIdx = prompt.indexOf('PERSONA:');
+        const voiceIdx = prompt.indexOf('PUBLIC VOICE:');
+        expect(personaIdx).toBeGreaterThanOrEqual(0);
+        expect(voiceIdx).toBeGreaterThan(personaIdx);
+    });
+
+    it('falls back to no PERSONA block when config.persona is an empty string', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona: '' });
+        expect(prompt).not.toContain('PERSONA:');
+    });
+
+    it('trims whitespace-only persona and falls back to no PERSONA block', () => {
+        const { digest } = buildFixtureDigest();
+        const prompt = buildStorytellerPrompt(digest, { ...DEFAULT_STORYTELLER_CONFIG, persona: '   \n  ' });
+        expect(prompt).not.toContain('PERSONA:');
     });
 });

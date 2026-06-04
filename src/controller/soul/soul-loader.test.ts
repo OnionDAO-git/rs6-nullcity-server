@@ -148,14 +148,12 @@ describe('SoulLoader', () => {
             expect(loader.load('res:qa-cook').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
             expect(loader.load('res:qa-scout').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
             expect(loader.load('res:qa-trader').frontmatter.behavior).toEqual(
-                expect.objectContaining({ commandPrefix: 'trade' }),
+                expect.objectContaining({ followPlayer: 'codex', followRadius: 1, commandPrefix: 'trade' }),
             );
-            expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('woodcutting-firemaking-10m');
+            expect(loader.load('res:qa-trader').frontmatter.legacy?.parameters?.benchmarkTask).toBe('trading-giving-5m');
             expect(loader.load('res:qa-survivor').frontmatter.legacy?.parameters?.benchmarkTask).toBe('starter-fishing-5m');
             expect(loader.load('res:qa-banker').frontmatter.legacy?.parameters?.benchmarkTask).toBe('fishing-cooking-10m');
-            expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(
-                expect.objectContaining({ commandPrefix: 'bank' }),
-            );
+            expect(loader.load('res:qa-banker').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'bank' }));
             expect(loader.load('res:qa-guide').frontmatter.behavior).toEqual(expect.objectContaining({ commandPrefix: 'guide' }));
             expect(loader.load('res:qa-priest').frontmatter.legacy?.parameters?.benchmarkTask).toBe('combat-prayer-10m');
             expect(loader.load('res:qa-forager').frontmatter.legacy?.parameters?.benchmarkTask).toBe('explore-report-5m');
@@ -176,6 +174,41 @@ describe('SoulLoader', () => {
             expect(loader.load('res:hans').frontmatter.model?.endpoint ?? 'default').toBe('body_q4');
             expect(loader.load('res:qa-scout').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
             expect(loader.load('res:qa-forager').frontmatter.model?.endpoint).toBe('spacetower_qwopus_q4');
+        });
+    });
+
+    describe('Phase 3 A1 and EXP-HARD-1 test residents', () => {
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        it('res:qa-firemaker has orientationGoal + behavior.planner for Phase 3 A1 verification', () => {
+            const soul = loader.load('res:qa-firemaker');
+            expect(soul.frontmatter.orientationGoal).toBeDefined();
+            expect(soul.frontmatter.orientationGoal?.id).toBe('master-firemaking');
+            expect(soul.frontmatter.orientationGoal?.tier).toBe('pursue');
+            const planner = (soul.frontmatter.behavior as any)?.planner;
+            expect(planner).toBeDefined();
+            expect(planner?.endpoint).toBe('planner_local');
+            expect(planner?.timeoutMs).toBeGreaterThanOrEqual(90000);
+            expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
+            expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
+            expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+        });
+
+        it('res:qa-firemaker starts with axe and tinderbox for the chop-fire loop', () => {
+            const soul = loader.load('res:qa-firemaker');
+            const inventory = soul.frontmatter.initialInventory ?? [];
+            expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 590 })])); // tinderbox
+            expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 1351 })])); // bronze axe
+        });
+
+        it('res:qa-survivor-foodless loads and has a fishing net but no cooked starter food', () => {
+            const soul = loader.load('res:qa-survivor-foodless');
+            expect(soul.frontmatter.name).toBe('res:qa-survivor-foodless');
+            expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
+            expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+            const inventory = soul.frontmatter.initialInventory ?? [];
+            expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 303 })])); // small net
+            expect(inventory).not.toContainEqual(expect.objectContaining({ itemId: 315 })); // no cooked shrimp
         });
     });
 });

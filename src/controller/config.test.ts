@@ -166,6 +166,21 @@ describe('controller config', () => {
         });
     });
 
+    it('ships a tracked Storyteller config with an uncapped owned-hardware profile', () => {
+        const config = loadControllerConfig(path.join(process.cwd(), 'config/controller.storyteller.yml'));
+
+        expect(config.llm.profiles.storyteller).toMatchObject({
+            profileId: 'storyteller',
+            endpointId: 'local_storyteller',
+            baseUrl: 'http://inf.nullcity.ai:1234',
+            model: 'qwopus3.5-27b-v3',
+            timeoutMs: 240000,
+            forceThinking: false,
+        });
+        expect(config.llm.profiles.storyteller.maxTokens).toBeUndefined();
+        expect(config.llm.profiles.storyteller.apiKey).toBeUndefined();
+    });
+
     it('resolves model profiles separately from endpoint hardware definitions', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
         const configPath = path.join(root, 'controller.yml');

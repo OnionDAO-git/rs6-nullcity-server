@@ -11,6 +11,7 @@ import { ResidentRuntimeBenchmarkDriver } from './autonomous-runtime';
 import { BenchmarkRunner, type BenchmarkTask } from './benchmark-runner';
 import { emitVerifierConventions } from './verifier-conventions';
 import { AP_DECAY_ASK_5M_TASK_ID, makeApDecayAsk5mBenchmarkTask } from './tasks/ap-decay-ask-5m';
+import { BRAIN_TOOL_CALL_5M_TASK_ID, makeBrainToolCall5mBenchmarkTask } from './tasks/brain-tool-call-5m';
 import { AP_GP_EXCHANGE_5M_TASK_ID, makeApGpExchange5mBenchmarkTask } from './tasks/ap-gp-exchange-5m';
 import { AP_GP_HONESTY_5M_TASK_ID, makeApGpHonesty5mBenchmarkTask } from './tasks/ap-gp-honesty-5m';
 import { AP_GP_LIBRARY_STRATEGY_5M_TASK_ID, makeApGpLibraryStrategy5mBenchmarkTask } from './tasks/ap-gp-library-strategy-5m';
@@ -365,6 +366,9 @@ function taskById(taskId: string): BenchmarkTask {
     }
     if (taskId === ORIENTATION_BIAS_10M_TASK_ID) {
         return makeOrientationBias10mBenchmarkTask();
+    }
+    if (taskId === BRAIN_TOOL_CALL_5M_TASK_ID) {
+        return makeBrainToolCall5mBenchmarkTask();
     }
     throw new Error(`Unknown benchmark task ${taskId}`);
 }

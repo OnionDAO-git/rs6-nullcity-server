@@ -119,6 +119,11 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/storyteller/projector/latest`) {
+        writeJson(response, 200, options.service.storytellerProjectorLatest(), { 'Cache-Control': 'max-age=10' });
+        return;
+    }
+
     if (request.method === 'GET' && path === `${pathPrefix}/storyteller/canon`) {
         writeJson(response, 200, options.service.storytellerCanon(readListLimit(url)));
         return;
@@ -286,7 +291,7 @@ async function handle(
 
     const match = path.match(
         new RegExp(
-            `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|ap-gp-exchanges|gold-burns|messages|wealth|public-snapshot|log|death|library-events)$`,
+            `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|ap-gp-exchanges|gold-burns|messages|wealth|public-snapshot|log|death|library-events|plan)$`,
         ),
     );
     if (!match) {
@@ -329,6 +334,10 @@ async function handle(
     }
     if (request.method === 'GET' && route === 'death') {
         writeJson(response, 200, options.service.residentDeath(resident));
+        return;
+    }
+    if (request.method === 'GET' && route === 'plan') {
+        writeJson(response, 200, options.service.residentPlan(resident));
         return;
     }
 

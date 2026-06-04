@@ -10,7 +10,7 @@ describe('verifyFollowAndChat5m', () => {
             elapsedMs: 42_000,
             actions: [
                 attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
-                attempt({ kind: 'say', text: 'I am online at 3228,3230. Goal: Follow Codex.', cause: 'direct_chat_status' }),
+                attempt({ kind: 'say', text: 'I am online. Goal: Follow Codex.', cause: 'direct_chat_status' }),
                 attempt({ kind: 'say', text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.' }),
                 attempt({ kind: 'say', text: 'I will pause here and wait for a new goal.' }),
                 attempt({ kind: 'move_to', target: { x: 3234, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
@@ -44,7 +44,7 @@ describe('verifyFollowAndChat5m', () => {
             elapsedMs: 42_000,
             actions: [
                 attempt({ kind: 'move_to', target: { x: 3229, y: 3230, level: 0 }, range: 2, cause: 'direct_chat_follow' }),
-                attempt({ kind: 'say', text: 'I am online at 3228,3230. Goal: Follow Codex.', cause: 'direct_chat_status' }),
+                attempt({ kind: 'say', text: 'I am online. Goal: Follow Codex.', cause: 'direct_chat_status' }),
                 attempt({ kind: 'say', text: 'Try: follow me, status, look, inventory, make fire, fish, fight safely, trade me, stop.' }),
             ],
             perceptions: [

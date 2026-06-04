@@ -3,6 +3,28 @@ import type { Perception } from '../transport/message-codecs';
 import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
 
 describe('hybrid agent prompts', () => {
+    it('injects toolInstructions into the Brain prompt when provided (RIQ-1-1-B)', () => {
+        const toolInstructions =
+            '\n---\nYou may call ONE tool before your final answer.\nAvailable tools:\n  - lookup_skill: Look up RuneScape knowledge.\n---';
+        const prompt = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Idle.'),
+            commandPrefix: '!',
+            toolInstructions,
+        });
+        expect(prompt).toContain('lookup_skill');
+        expect(prompt).toContain('ONE tool before your final answer');
+    });
+
+    it('omits tool instructions section cleanly when toolInstructions is not provided', () => {
+        const prompt = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Idle.'),
+            commandPrefix: '!',
+        });
+        expect(prompt).not.toContain('ONE tool before your final answer');
+    });
+
     it('injects relevant RuneScape knowledge into Brain prompts', () => {
         const prompt = buildBrainPrompt({
             soul: testSoul(),

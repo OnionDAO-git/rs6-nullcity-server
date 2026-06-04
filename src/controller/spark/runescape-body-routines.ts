@@ -19,12 +19,18 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import type { AgentAction } from '../transport/message-codecs';
+import type { Stage, PrimitiveAction } from '../intelligence/planner-pass';
 import {
     HUMAN_BONE_SOURCE_PATTERN,
     LOW_RISK_BONE_SOURCE_PATTERN,
     MEDIUM_RISK_BONE_SOURCE_PATTERN,
+    hasBonesInInventory,
+    hasFiremakingLogsInInventory,
     hasPickaxe,
     hasSmallFishingNet,
+    hasStarterCookedFishInInventory,
+    hasStarterOreInInventory,
+    hasStarterRawFishInInventory,
     hasWoodcuttingAxe,
     isBones,
     isFiremakingLog,
@@ -94,6 +100,8 @@ export const LEVEL_ONE_TREE_IDS: ReadonlySet<number> = new Set([
     ...objectIds.tree.normal.map(tree => tree.default),
     ...objectIds.tree.dead.map(tree => tree.default),
 ]);
+/** Free bronze axe in Lumbridge, exposed by the logs object pick-up plugin. */
+export const LUMBRIDGE_FREE_AXE_OBJECT_ID = objectIds.lumbridgeAxeInLogs;
 
 /** Level-1 ore rocks the starter mining routine may mine. Empty/depleted rock ids are intentionally excluded. */
 export const STARTER_ORE_IDS: ReadonlySet<number> = new Set([
@@ -202,6 +210,21 @@ export const COMBAT_LOOT_MAX_DISTANCE = 6;
 
 /** Default body tick cadence; participates in the patrol-direction hash. Mirrors the monolith constant. */
 export const DEFAULT_BODY_EVERY_TICKS = 8;
+
+/** Maximum active body-routing ticks before a non-observable plan stage is considered complete enough for replanning. */
+export const PLAN_STAGE_TICK_BUDGET = 600;
+
+/** Consecutive plan-stage ticks with no body action before the stage is considered blocked. */
+export const PLAN_STAGE_STUCK_THRESHOLD = 120;
+
+export type PlanBodySignal = 'stage_done' | 'stage_blocked' | undefined;
+
+export interface PlanBodyResult {
+    action?: AgentAction;
+    planSignal?: PlanBodySignal;
+    /** Phase 4 (RIQ-4-2): updated step index after processing an open-goal stage step. */
+    nextStepIdx?: number;
+}
 
 /** Ticks before an exploration target is considered eligible again after a recent visit or blocked approach. */
 export const EXPLORATION_TARGET_COOLDOWN_TICKS = 600;
@@ -677,6 +700,101 @@ export function firemakingAction(perception: BodyHybridPerception): AgentAction 
  * Approach and chop the nearest level-1 tree when the resident is carrying
  * a woodcutting axe. Moved verbatim from the monolith (R-β slice 2).
  */
+/** Bronze axe — the cheapest woodcutting axe, sold at Bob's Brilliant Axes (Lumbridge). */
+export const BRONZE_AXE_ITEM_ID = 1351;
+/** Bob's axe shop NPC location (Lumbridge), used to navigate when Bob is out of perception. */
+export const BOB_AXE_SHOP = { key: 'rs:lumbridge_bob', position: { x: 3230, y: 3203, level: 0 } } as const;
+/** Coin floor before attempting an axe purchase (bronze axe is ~16gp; buffer for shop rate). */
+const MIN_COINS_FOR_AXE = 30;
+/** A shop stays open after `interact 'trade'`; treat it as open for this many ticks. */
+const SHOP_OPEN_WINDOW_TICKS = 30;
+
+function coinsCarried(perception: BodyHybridPerception): number {
+    return (perception.resident?.inventory || []).reduce((sum, item) => {
+        return item && COIN_ITEM_IDS.has(item.itemId) ? sum + (item.amount ?? 1) : sum;
+    }, 0);
+}
+
+function isAxeShopkeeper(actor: BodyActor): boolean {
+    const ref = `${actor.key ?? ''} ${actor.name ?? ''}`.toLowerCase();
+    return /\bbob\b/.test(ref) || ref.includes('lumbridge_bob');
+}
+
+/**
+ * Resident tool-acquisition: a woodcutting resident with no axe but enough coins
+ * BUYS one at Bob's shop instead of stalling forever. Per tick: navigate to Bob
+ * (by known location when out of perception, then approach), open his shop via
+ * `interact 'trade'`, then `buy_from_shop` a bronze axe. Returns undefined when
+ * the resident already has an axe (defer to the skill routine) or cannot afford
+ * one (the caller reports blocked). `shopState` sequences the open->buy handshake
+ * and the "arrived but Bob is not visible" report across ticks since perception
+ * carries no shop-open signal.
+ */
+export function acquireWoodcuttingAxeAction(
+    perception: BodyHybridPerception,
+    shopState?: { lastShopOpenTick?: number; lastShopkeeperMissingTick?: number },
+    currentTick = perception.tick ?? 0,
+): AgentAction | undefined {
+    const here = perception.resident?.position;
+    if (!here) {
+        return undefined;
+    }
+    if (hasWoodcuttingAxe(perception)) {
+        return undefined;
+    }
+    const freeAxe = (perception.nearby?.objects || [])
+        .filter(object => object.objectId === LUMBRIDGE_FREE_AXE_OBJECT_ID && sameLevel(here, object.position))
+        .sort((a, b) => distance(here, a.position) - distance(here, b.position))[0];
+    if (freeAxe) {
+        if (distance(here, freeAxe.position) > INTERACTION_APPROACH_RADIUS) {
+            return {
+                kind: 'move_to',
+                target: freeAxe.position,
+                range: INTERACTION_APPROACH_RADIUS,
+                cause: 'acquire_axe_approach_free_lumbridge_axe',
+            };
+        }
+
+        return { kind: 'interact', target: freeAxe, option: 'take-axe', cause: 'acquire_axe_take_free_lumbridge_axe' };
+    }
+    if (coinsCarried(perception) < MIN_COINS_FOR_AXE) {
+        return undefined;
+    }
+    const bob = (perception.nearby?.npcs || []).find(npc => isAxeShopkeeper(npc) && sameLevel(here, npc.position));
+    if (!bob) {
+        const atKnownShop = sameLevel(here, BOB_AXE_SHOP.position) && distance(here, BOB_AXE_SHOP.position) <= INTERACTION_APPROACH_RADIUS;
+        if (atKnownShop) {
+            const lastMissing = shopState?.lastShopkeeperMissingTick;
+            if (shopState && (lastMissing === undefined || currentTick - lastMissing > SHOP_OPEN_WINDOW_TICKS)) {
+                shopState.lastShopkeeperMissingTick = currentTick;
+                return {
+                    kind: 'say',
+                    text: "I reached Bob's axe shop, but I cannot see Bob yet. I need to wait, look around, or try another tool source.",
+                    cause: 'acquire_axe_shopkeeper_missing',
+                };
+            }
+            return undefined;
+        }
+        return {
+            kind: 'move_to',
+            target: { ...BOB_AXE_SHOP.position },
+            range: INTERACTION_APPROACH_RADIUS,
+            cause: 'acquire_axe_travel_to_shop',
+        };
+    }
+    if (distance(here, bob.position) > INTERACTION_APPROACH_RADIUS) {
+        return { kind: 'move_to', target: bob.position, range: INTERACTION_APPROACH_RADIUS, cause: 'acquire_axe_approach_bob' };
+    }
+    const shopOpen = shopState?.lastShopOpenTick !== undefined && currentTick - shopState.lastShopOpenTick <= SHOP_OPEN_WINDOW_TICKS;
+    if (!shopOpen) {
+        if (shopState) {
+            shopState.lastShopOpenTick = currentTick;
+        }
+        return { kind: 'interact', target: bob, option: 'trade', cause: 'acquire_axe_open_shop' };
+    }
+    return { kind: 'buy_from_shop', itemId: BRONZE_AXE_ITEM_ID, quantity: 1, cause: 'acquire_axe_buy' };
+}
+
 export function levelOneWoodcuttingAction(
     perception: BodyHybridPerception,
     targetFailureCooldowns?: Record<string, number>,
@@ -687,7 +805,21 @@ export function levelOneWoodcuttingAction(
         return undefined;
     }
     if (!hasWoodcuttingAxe(perception)) {
-        return undefined;
+        // No axe but a woodcutting goal: instead of stalling forever, go buy one at
+        // Bob's shop. The shop-open tick is persisted via the cooldown record so the
+        // open->buy handshake sequences across body ticks.
+        const shopState = {
+            lastShopOpenTick: targetFailureCooldowns?.['acquire_axe_shop_open'],
+            lastShopkeeperMissingTick: targetFailureCooldowns?.['acquire_axe_shopkeeper_missing'],
+        };
+        const acquire = acquireWoodcuttingAxeAction(perception, shopState, currentTick);
+        if (targetFailureCooldowns && shopState.lastShopOpenTick !== undefined) {
+            targetFailureCooldowns['acquire_axe_shop_open'] = shopState.lastShopOpenTick;
+        }
+        if (targetFailureCooldowns && shopState.lastShopkeeperMissingTick !== undefined) {
+            targetFailureCooldowns['acquire_axe_shopkeeper_missing'] = shopState.lastShopkeeperMissingTick;
+        }
+        return acquire;
     }
 
     const target = (perception.nearby?.objects || [])
@@ -707,6 +839,223 @@ export function levelOneWoodcuttingAction(
     }
 
     return { kind: 'interact', target, option: 'chop down', cause: 'woodcutting_level1_routine' };
+}
+
+/** Returns the normalised RuneScape skill name implied by a stage subgoal, or undefined if unrecognised. */
+export function stageSubgoalSkill(subgoal: string): string | undefined {
+    const s = subgoal.toLowerCase();
+    // Check log/woodcutting before firemaking so "gather logs for firemaking" maps to woodcutting
+    if (/chop.*log|gather.*log|woodcutting.*log|woodcutting/.test(s)) return 'woodcutting';
+    if (/light.*fire|firemaking/.test(s)) return 'firemaking';
+    if (/fish|gather.*shrimp|fishing/.test(s)) return 'fishing';
+    if (/cook|prepare.*food/.test(s)) return 'cooking';
+    if (/mine|mining|ore/.test(s)) return 'mining';
+    if (/bury.*bone|prayer/.test(s)) return 'prayer';
+    return undefined;
+}
+
+/** Extracts a numeric level target from a successCriteria string, e.g. "reach level 5 Firemaking" → 5. */
+export function parseStageLevelTarget(criteria: string): number | undefined {
+    const m = /\blevel\s+(\d+)\b/i.exec(criteria);
+    return m ? parseInt(m[1], 10) : undefined;
+}
+
+/**
+ * Returns true when perception.events contains a level_up event for the skill
+ * implied by stage.subgoal, at or above the level target in stage.successCriteria
+ * (if any target is specified; if none, any level_up for the skill counts).
+ */
+export function stageReachedLevelTarget(stage: Stage, perception: BodyHybridPerception): boolean {
+    const skill = stageSubgoalSkill(stage.subgoal);
+    if (!skill) return false;
+    const targetLevel = parseStageLevelTarget(stage.successCriteria);
+    const normalise = (raw: unknown): string => (typeof raw === 'string' ? raw.toLowerCase().replace(/[\s_]+/g, '') : '');
+    return (perception.events ?? []).some(ev => {
+        if (typeof ev !== 'object' || ev === null) return false;
+        const kind = typeof ev.kind === 'string' ? ev.kind : '';
+        if (!['level_up', 'skill_level', 'skill_level_up'].includes(kind)) return false;
+        if (normalise(ev.skill) !== normalise(skill)) return false;
+        const evLevel = typeof ev.level === 'number' ? ev.level : undefined;
+        if (evLevel === undefined) return false;
+        return targetLevel === undefined || evLevel >= targetLevel;
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 (RIQ-4-2): open-goal stage execution
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a planner-authored PrimitiveAction into a typed AgentAction.
+ * Supports the game-action vocab referenced in the Phase 4 spec.
+ * Returns undefined for unknown or malformed actions (caller signals stage_blocked).
+ */
+function primitiveActionToAgentAction(pa: PrimitiveAction): AgentAction | undefined {
+    if (!pa || typeof pa.kind !== 'string') return undefined;
+    switch (pa.kind) {
+        case 'say':
+            if (typeof pa.text !== 'string' || !pa.text) return undefined;
+            return { kind: 'say', text: pa.text as string };
+        case 'move_to': {
+            const pos = pa.position as { x?: unknown; y?: unknown; level?: unknown } | undefined;
+            if (!pos || typeof pos.x !== 'number' || typeof pos.y !== 'number') return undefined;
+            return {
+                kind: 'move_to',
+                target: { x: pos.x, y: pos.y, level: typeof pos.level === 'number' ? pos.level : 0 },
+            };
+        }
+        case 'drop': {
+            if (typeof pa.itemSlot !== 'number') return undefined;
+            return { kind: 'drop', itemSlot: pa.itemSlot as number };
+        }
+        case 'interact': {
+            const target = pa.target as { id?: unknown; kind?: unknown } | undefined;
+            if (!target || typeof target.id !== 'string' || typeof target.kind !== 'string') return undefined;
+            return { kind: 'interact', target: { id: target.id, kind: target.kind as string } };
+        }
+        case 'use_item_on': {
+            if (typeof pa.itemSlot !== 'number') return undefined;
+            return { kind: 'use_item_on', itemSlot: pa.itemSlot as number, targetId: pa.targetId as string };
+        }
+        default:
+            return undefined;
+    }
+}
+
+/** Context passed by the caller when the stage may have open-goal steps. */
+export interface OpenGoalContext {
+    /** Current step index from CognitiveState.primitiveStepIdxByStageId[stage.id], default 0. */
+    stepIdx: number;
+    /** Action result from the previous tick; used to advance 'action_result' steps. */
+    lastActionResult?: unknown;
+}
+
+/**
+ * Executes one tick of an open-goal stage by dispatching the primitive step at stepIdx.
+ * Returns the action to emit this tick and the nextStepIdx to persist in CognitiveState.
+ * When all steps are exhausted, returns planSignal='stage_done'.
+ * When a step cannot be converted to a valid AgentAction, returns planSignal='stage_blocked'.
+ */
+export function openGoalStageStep(
+    stage: Stage,
+    _perception: BodyHybridPerception,
+    stepIdx: number,
+    lastActionResult?: unknown,
+): PlanBodyResult {
+    const steps = stage.steps ?? [];
+
+    if (stepIdx >= steps.length) {
+        // All steps completed
+        return { planSignal: 'stage_done', nextStepIdx: stepIdx };
+    }
+
+    const step = steps[stepIdx];
+    const action = primitiveActionToAgentAction(step.action);
+
+    if (!action) {
+        return { planSignal: 'stage_blocked', nextStepIdx: stepIdx };
+    }
+
+    // Determine whether to advance the step index this tick
+    let nextStepIdx: number;
+    if (step.advanceWhen === 'next_tick') {
+        // Always advance so the next tick runs the next step
+        nextStepIdx = stepIdx + 1;
+    } else {
+        // 'action_result': advance only when the previous tick produced a non-null result
+        nextStepIdx = lastActionResult != null ? stepIdx + 1 : stepIdx;
+    }
+
+    return { action, nextStepIdx };
+}
+
+/**
+ * Maps a durable PlannerPass stage into existing deterministic Body routines.
+ * Unknown stage text returns undefined so callers can fall back to ordinary
+ * goal/body selection instead of getting trapped in an unrecognized plan.
+ */
+export function planStageRouter(stage: Stage, perception: BodyHybridPerception, openGoalCtx?: OpenGoalContext): PlanBodyResult | undefined {
+    const subgoal = stage.subgoal.toLowerCase();
+
+    if (/axe|woodcutting.*tool|acquire.*axe/.test(subgoal)) {
+        if (hasWoodcuttingAxe(perception)) {
+            return { planSignal: 'stage_done' };
+        }
+        const action = acquireWoodcuttingAxeAction(perception);
+        return action ? { action } : undefined;
+    }
+
+    if (/chop.*log|gather.*log|woodcutting.*log/.test(subgoal)) {
+        // Already have logs in inventory → stage satisfied
+        if (hasFiremakingLogsInInventory(perception)) return { planSignal: 'stage_done' };
+        const action = levelOneWoodcuttingAction(perception);
+        if (action) return { action };
+        // No tree visible and no logs gathered → blocked (can't make progress)
+        return { planSignal: 'stage_blocked' };
+    }
+
+    if (/light.*fire|firemaking/.test(subgoal)) {
+        // Level-up event from this tick takes priority: level goal achieved
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
+        const action = firemakingAction(perception);
+        if (action) return { action };
+        // Firemaking routine returns null only when no logs+tinderbox combo exists
+        if (!hasFiremakingLogsInInventory(perception)) return { planSignal: 'stage_done' };
+        // Has logs but can't light fire (missing tinderbox, or on cooldown) → blocked
+        return { planSignal: 'stage_blocked' };
+    }
+
+    if (/fish|gather.*shrimp|fishing/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
+        // Already caught fish → stage satisfied (resource-collection variant)
+        if (hasStarterRawFishInInventory(perception)) return { planSignal: 'stage_done' };
+        const action = starterFishingAction(perception);
+        if (action) return { action };
+        // No fishing spot visible and no fish yet → blocked
+        return { planSignal: 'stage_blocked' };
+    }
+
+    if (/cook|prepare.*food/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
+        // Already have cooked food → stage satisfied
+        if (hasStarterCookedFishInInventory(perception)) return { planSignal: 'stage_done' };
+        const action = starterFishingCookingAction(perception);
+        if (action) return { action };
+        // Can't cook (no raw fish + fire combo) and no cooked food yet → blocked
+        return { planSignal: 'stage_blocked' };
+    }
+
+    if (/mine|mining|ore/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
+        // Already mined ore → stage satisfied
+        if (hasStarterOreInInventory(perception)) return { planSignal: 'stage_done' };
+        const action = starterMiningAction(perception);
+        if (action) return { action };
+        // No rock visible and no ore yet → blocked
+        return { planSignal: 'stage_blocked' };
+    }
+
+    if (/bury.*bone|prayer/.test(subgoal)) {
+        // Level-up event takes priority for skill-mastery stages
+        if (stageReachedLevelTarget(stage, perception)) return { planSignal: 'stage_done' };
+        const action = buryBonesAction(perception);
+        if (action) return { action };
+        // buryBonesAction returns null when there are no bones — stage done
+        if (!hasBonesInInventory(perception)) return { planSignal: 'stage_done' };
+        // Has bones but can't bury (shouldn't happen normally) → blocked
+        return { planSignal: 'stage_blocked' };
+    }
+
+    // Phase 4 (RIQ-4-2): open-goal stages with authored primitive steps.
+    // Falls through to LLM-only Body when steps absent/empty (graceful degradation).
+    if (stage.steps && stage.steps.length > 0 && openGoalCtx) {
+        return openGoalStageStep(stage, perception, openGoalCtx.stepIdx, openGoalCtx.lastActionResult);
+    }
+
+    return undefined;
 }
 
 /** Approach and mine the nearest level-1 clay/copper/tin rock when carrying a pickaxe. */

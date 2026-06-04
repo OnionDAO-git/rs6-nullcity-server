@@ -17,7 +17,8 @@
  *   STORYTELLER_LLM_BASE_URL   e.g. http://localhost:11434
  *   STORYTELLER_LLM_API_KEY    optional Bearer token
  *   STORYTELLER_LLM_MODEL      e.g. llama3, qwen2.5-7b
- *   STORYTELLER_DAILY_COST_CAP_USD  required when STORYTELLER_LLM_BASE_URL is set
+ *   OPENROUTER_API_KEY + OPENROUTER_STORYTELLER_MODEL can be used instead
+ *   STORYTELLER_DAILY_COST_CAP_USD  required when any paid endpoint is set
  *
  * Flags:
  *   --fixture                  Use the canonical fixture digest
@@ -25,24 +26,30 @@
  *   --digest-id <id>           Use a specific persisted digest id from --output-dir
  *   --model-profile <name>     Endpoint/profile key (default: "default")
  *   --output-dir <path>        Where to write artifacts (default: data/controller/storyteller)
- *   --daily-cost-cap-usd <usd> Required when STORYTELLER_LLM_BASE_URL is set; overrides env cap
+ *   --controller-config <path> Load named LLM profiles from controller.yml when Storyteller env endpoint vars are unset
+ *   --daily-cost-cap-usd <usd> Required when a configured endpoint is set; overrides env cap
  */
 import path from 'path';
-import type { LlmEndpointConfig } from '../config';
+import { loadControllerConfig, type LlmEndpointConfig } from '../config';
 import { buildFixtureDigest } from './digest-builder';
 import { StorytellerStore } from './store';
 import { StorytellerModelClient } from './model-client';
 import { preflightStorytellerPaidModelBudget, StorytellerOverseerCliError } from './overseer';
+import { buildProjectorStoryFrame } from './public-frame';
 import type { CityEventDigest, StorytellerDispatch } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
+import { loadStorytellerLocalEnv } from './local-env';
 
 export type StorytellerRunSource = 'none' | 'fixture' | 'latest' | 'digest-id';
+
+const DEFAULT_STORYTELLER_CONTROLLER_CONFIG = path.join('config', 'controller.storyteller.yml');
 
 export interface StorytellerRunArgs {
     source: StorytellerRunSource;
     modelProfile: string;
     outputDir: string;
     digestId?: string;
+    controllerConfigPath?: string;
     dailyCostCapUsd?: number;
 }
 
@@ -73,8 +80,12 @@ export function parseStorytellerRunArgs(
 ): StorytellerRunArgs {
     let source: StorytellerRunSource = 'none';
     let digestId: string | undefined;
-    let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'default';
+    let modelProfile = env.STORYTELLER_MODEL_PROFILE ?? 'storyteller';
     let outputDir = path.join('data', 'controller', 'storyteller');
+    let controllerConfigPath =
+        readOptionalEnvPath(env.STORYTELLER_CONTROLLER_CONFIG) ??
+        readOptionalEnvPath(env.CONTROLLER_CONFIG) ??
+        DEFAULT_STORYTELLER_CONTROLLER_CONFIG;
     let dailyCostCapUsd = parseOptionalDailyCostCap(env.STORYTELLER_DAILY_COST_CAP_USD, 'STORYTELLER_DAILY_COST_CAP_USD');
 
     const claimSource = (nextSource: StorytellerRunSource): void => {
@@ -104,6 +115,10 @@ export function parseStorytellerRunArgs(
             if (!next) throw new StorytellerRunCliError('missing_value', '--output-dir requires a path');
             outputDir = next;
             i++;
+        } else if (flag === '--controller-config') {
+            if (!next) throw new StorytellerRunCliError('missing_value', '--controller-config requires a path');
+            controllerConfigPath = next;
+            i++;
         } else if (flag === '--daily-cost-cap-usd') {
             if (!next) throw new StorytellerRunCliError('missing_value', '--daily-cost-cap-usd requires a number');
             dailyCostCapUsd = parseRequiredDailyCostCap(next, '--daily-cost-cap-usd');
@@ -117,23 +132,28 @@ export function parseStorytellerRunArgs(
 
     const parsed: StorytellerRunArgs = { source, modelProfile, outputDir };
     if (digestId !== undefined) parsed.digestId = digestId;
+    if (controllerConfigPath !== undefined) parsed.controllerConfigPath = controllerConfigPath;
     if (dailyCostCapUsd !== undefined) parsed.dailyCostCapUsd = dailyCostCapUsd;
     return parsed;
 }
 
 function buildEndpoints(
-    modelProfile: string,
+    args: StorytellerRunArgs,
     env: NodeJS.ProcessEnv | Record<string, string | undefined>,
 ): Record<string, LlmEndpointConfig> {
-    const baseUrl = env.STORYTELLER_LLM_BASE_URL;
-    const apiKey = env.STORYTELLER_LLM_API_KEY ?? undefined;
-    const model = env.STORYTELLER_LLM_MODEL ?? 'llama3';
+    const endpoint = resolveConfiguredEndpoint(env);
+    const modelProfile = args.modelProfile;
 
     const endpoints: Record<string, LlmEndpointConfig> = {};
 
-    if (baseUrl) {
-        const endpointCfg: LlmEndpointConfig = { baseUrl, model, timeoutMs: 60_000, responseFormat: 'text' };
-        if (apiKey) endpointCfg.apiKey = apiKey;
+    if (endpoint) {
+        const endpointCfg: LlmEndpointConfig = {
+            baseUrl: endpoint.baseUrl,
+            model: endpoint.model,
+            timeoutMs: 60_000,
+            responseFormat: 'text',
+        };
+        if (endpoint.apiKey) endpointCfg.apiKey = endpoint.apiKey;
         endpoints[modelProfile] = endpointCfg;
         if (modelProfile !== 'default') {
             endpoints['default'] = endpointCfg;
@@ -146,7 +166,46 @@ function buildEndpoints(
         }
     }
 
+    if (!endpoint && args.controllerConfigPath) {
+        const configEndpoints = loadControllerConfig(args.controllerConfigPath).llm.endpoints;
+        const configured = configEndpoints[modelProfile];
+        if (!configured?.baseUrl || !configured.model) {
+            throw new StorytellerRunCliError(
+                'model_profile_not_configured',
+                `Storyteller model profile "${modelProfile}" is not configured in ${args.controllerConfigPath}`,
+            );
+        }
+        return configEndpoints;
+    }
+
     return endpoints;
+}
+
+function resolveConfiguredEndpoint(env: NodeJS.ProcessEnv | Record<string, string | undefined>):
+    | {
+          baseUrl: string;
+          apiKey?: string;
+          model: string;
+      }
+    | undefined {
+    const baseUrl = env.STORYTELLER_LLM_BASE_URL;
+    if (baseUrl) {
+        return {
+            baseUrl,
+            apiKey: env.STORYTELLER_LLM_API_KEY || undefined,
+            model: env.STORYTELLER_LLM_MODEL || 'llama3',
+        };
+    }
+
+    if (env.OPENROUTER_API_KEY) {
+        return {
+            baseUrl: 'https://openrouter.ai/api',
+            apiKey: env.OPENROUTER_API_KEY,
+            model: env.OPENROUTER_STORYTELLER_MODEL || env.OPENROUTER_HAIKU_MODEL || 'anthropic/claude-3.5-haiku',
+        };
+    }
+
+    return undefined;
 }
 
 function readDigestForRun(args: StorytellerRunArgs, store: StorytellerStore): CityEventDigest {
@@ -177,15 +236,18 @@ export async function runStoryteller(args: StorytellerRunArgs, options: Storytel
     const env = options.env ?? process.env;
     const store = new StorytellerStore(args.outputDir);
     const digest = readDigestForRun(args, store);
-    if (hasConfiguredModelEndpoint(env)) {
+    const endpoints = buildEndpoints(args, env);
+    if (hasConfiguredModelEndpoint(endpoints, args.modelProfile)) {
         runPaidModelBudgetPreflight(args, options);
     }
-    const endpoints = buildEndpoints(args.modelProfile, env);
     const config = { ...DEFAULT_STORYTELLER_CONFIG, modelProfile: args.modelProfile };
     const client = new StorytellerModelClient(endpoints);
     const dispatch = await client.run(digest, config, { modelProfile: args.modelProfile });
     store.writeDigest(digest);
     store.writeDispatch(dispatch);
+    store.writeLatestProjectorFrame(
+        buildProjectorStoryFrame(digest, { dispatch: dispatch.needsReview ? dispatch : null, now: options.now?.() }),
+    );
 
     return {
         digest,
@@ -200,11 +262,16 @@ function usage(): string {
         '  npm run storyteller:run -- --fixture [--model-profile <name>] [--output-dir <path>]',
         '  npm run storyteller:run -- --latest [--model-profile <name>] [--output-dir <path>]',
         '  npm run storyteller:run -- --digest-id <id> [--model-profile <name>] [--output-dir <path>]',
-        '                                        [--daily-cost-cap-usd <usd>]',
+        '                                        [--controller-config <path>] [--daily-cost-cap-usd <usd>]',
         '',
         'Runs the Storyteller model over one digest. Without STORYTELLER_LLM_BASE_URL it writes a nooped dispatch for review.',
-        'When STORYTELLER_LLM_BASE_URL is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
+        'OPENROUTER_API_KEY + OPENROUTER_STORYTELLER_MODEL are also accepted as a Storyteller endpoint.',
+        'When a paid/configured endpoint is set, provide --daily-cost-cap-usd or STORYTELLER_DAILY_COST_CAP_USD.',
     ].join('\n');
+}
+
+function readOptionalEnvPath(value: string | undefined): string | undefined {
+    return value && value.trim() ? value : undefined;
 }
 
 function parseOptionalDailyCostCap(value: string | undefined, label: string): number | undefined {
@@ -222,8 +289,9 @@ function parseRequiredDailyCostCap(value: string, label: string): number {
     return parsed;
 }
 
-function hasConfiguredModelEndpoint(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
-    return !!env.STORYTELLER_LLM_BASE_URL;
+function hasConfiguredModelEndpoint(endpoints: Record<string, LlmEndpointConfig>, modelProfile: string): boolean {
+    const endpoint = endpoints[modelProfile] ?? endpoints.default;
+    return !!endpoint?.baseUrl && !!endpoint.model;
 }
 
 function runPaidModelBudgetPreflight(args: StorytellerRunArgs, options: StorytellerRunOptions): void {
@@ -242,6 +310,7 @@ function runPaidModelBudgetPreflight(args: StorytellerRunArgs, options: Storytel
 }
 
 async function main(): Promise<void> {
+    loadStorytellerLocalEnv();
     let args: StorytellerRunArgs;
     try {
         args = parseStorytellerRunArgs(process.argv.slice(2));
@@ -257,10 +326,10 @@ async function main(): Promise<void> {
         throw err;
     }
 
-    const hasEndpoint = !!process.env.STORYTELLER_LLM_BASE_URL;
+    const hasEndpoint = !!resolveConfiguredEndpoint(process.env) || !!args.controllerConfigPath;
     console.log(`[storyteller:run] Digest source: ${args.source}${args.digestId ? ` (${args.digestId})` : ''}`);
     console.log(
-        `[storyteller:run] Model profile: "${args.modelProfile}"${hasEndpoint ? '' : ' (no STORYTELLER_LLM_BASE_URL set — will noop)'}`,
+        `[storyteller:run] Model profile: "${args.modelProfile}"${hasEndpoint ? '' : ' (no Storyteller model endpoint set — will noop)'}`,
     );
     console.log(`[storyteller:run] Calling model...`);
 

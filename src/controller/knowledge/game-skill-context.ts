@@ -35,6 +35,12 @@ export interface GameSkillContext {
     workflowAvailability: WorkflowAvailability[];
     brainSection: string;
     bodySection: string;
+    /**
+     * RIQ-1-1-C: on-demand wiki search for the Brain tool loop.
+     * Present only when wiki entries (id prefix `runebench-wiki:`) are loaded.
+     * Undefined when no wiki dir is configured (engine-entries-only mode).
+     */
+    wikiSearch?: (query: string) => string;
 }
 
 export interface GameSkillServiceOptions {
@@ -102,11 +108,22 @@ export class GameSkillService {
         const knowledge = formatKnowledgeForPrompt(knowledgeResults, { maxChars: 1600 });
         const availability = renderAvailability(workflowAvailability);
 
+        const wikiEntries = this.entries.filter(e => e.id.startsWith('runebench-wiki:'));
+        const wikiSearch: ((query: string) => string) | undefined =
+            wikiEntries.length > 0
+                ? (query: string) => {
+                      const results = retrieveKnowledge(wikiEntries, query, { limit: 3 });
+                      if (!results.length) return `No wiki pages matched "${query}".`;
+                      return formatKnowledgeForPrompt(results, { maxChars: 1200 });
+                  }
+                : undefined;
+
         return {
             knowledgeResults,
             workflowAvailability,
             brainSection: renderSection(availability, knowledge, 2600),
             bodySection: renderSection(availability, knowledge, 2200),
+            wikiSearch,
         };
     }
 

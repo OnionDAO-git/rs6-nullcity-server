@@ -26,8 +26,8 @@ The Storyteller must use a smart model, preferably a Sonnet-class OpenRouter mod
 
 The existing substrate is close but not real yet:
 
-- `storyteller:run` currently reads only `STORYTELLER_LLM_*` environment variables. It does not automatically use `controller.yml`'s `openrouter_storyteller` profile.
-- `.env.example` documents OpenRouter keys, but not the actual `STORYTELLER_LLM_BASE_URL`, `STORYTELLER_LLM_API_KEY`, `STORYTELLER_LLM_MODEL`, or `STORYTELLER_DAILY_COST_CAP_USD` variables needed by the runner.
+- 2026-06-03 update: `storyteller:run` and `storyteller:scheduler` now accept `--controller-config` / `STORYTELLER_CONTROLLER_CONFIG`, so they can use a named `controller.yml` LLM profile such as `openrouter_storyteller` when direct `STORYTELLER_LLM_*` endpoint vars are absent.
+- 2026-06-03 update: `.env.example` documents the direct Storyteller endpoint vars, OpenRouter aliases, `STORYTELLER_CONTROLLER_CONFIG`, `STORYTELLER_MODEL_PROFILE`, and the required daily cost cap.
 - The current `CityEventDigest` is capped at 8 residents/top events and orders resident snapshots alphabetically before slicing, which can omit the main actor.
 - The model prompt sees resident snapshots and top events, but not enough coordinates, actions, recent speech, human/patron activity, map context, or source freshness.
 - The dashboard projector currently stitches Storyteller artifacts to live positions in the browser. That works for V1, but the real Storyteller should receive and publish a server-built frame so narration, map, and action lists share evidence refs.

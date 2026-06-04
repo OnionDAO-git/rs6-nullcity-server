@@ -1,6 +1,6 @@
 import { LlmClient } from '../llm/llm-client';
 import type { LlmEndpointConfig } from '../config';
-import type { CityEventDigest, DigestEvent, StorytellerDispatch, StorytellerConfig } from './types';
+import type { CityEventDigest, DigestEvent, StorytellerClaim, StorytellerDispatch, StorytellerConfig } from './types';
 import { DEFAULT_STORYTELLER_CONFIG } from './types';
 import { buildStorytellerPrompt } from './prompt-builder';
 import { verifyDispatch, applyVerifierResult } from './verifier';
@@ -33,6 +33,31 @@ function safeString(v: unknown): string {
 function safeStringArray(v: unknown): string[] {
     if (!Array.isArray(v)) return [];
     return v.filter((item): item is string => typeof item === 'string');
+}
+
+function safeClaimsArray(v: unknown): StorytellerClaim[] {
+    if (!Array.isArray(v)) return [];
+    const claims: StorytellerClaim[] = [];
+    for (const item of v) {
+        if (!isRecord(item)) continue;
+        const subject = safeString(item['subject']);
+        const predicate = safeString(item['predicate']);
+        const eventRefs = safeStringArray(item['eventRefs']);
+        const ts = safeString(item['ts']);
+        if (!subject || !predicate || !ts) continue;
+        const claim: StorytellerClaim = { subject, predicate, eventRefs, ts };
+        const amount = item['amount'];
+        if (typeof amount === 'number' && Number.isFinite(amount)) claim.amount = amount;
+        const location = safeString(item['location']);
+        if (location) claim.location = location;
+        claims.push(claim);
+    }
+    return claims;
+}
+
+function safeConfidence(v: unknown): 'high' | 'medium' | 'low' | undefined {
+    if (v === 'high' || v === 'medium' || v === 'low') return v;
+    return undefined;
 }
 
 function sanitizePublicText(text: string): string {
@@ -152,6 +177,7 @@ function estimateCost(
     endpoint: LlmEndpointConfig | undefined,
 ): number | null {
     if (reportedCostUsd !== undefined && Number.isFinite(reportedCostUsd)) return reportedCostUsd;
+    if (endpoint?.baseUrl && endpoint.model && !endpoint.apiKey && !endpoint.cost) return 0;
     if (inputTokens === null || outputTokens === null || !endpoint?.cost) return null;
     const promptCost = inputTokens * (endpoint.cost.promptTokenUsd ?? 0);
     const completionCost = outputTokens * (endpoint.cost.completionTokenUsd ?? 0);
@@ -169,13 +195,15 @@ export class StorytellerModelClient {
         const profileId = options?.modelProfile ?? config.modelProfile ?? 'default';
         const llmClient = new LlmClient(this.endpoints);
         const prompt = buildStorytellerPrompt(digest, config);
+        const endpoint = this.endpoints[profileId] ?? this.endpoints['default'];
 
         const startMs = Date.now();
         const llmResponse = await llmClient.complete({
             endpoint: profileId,
             prompt,
             signal: options?.signal,
-            timeoutMs: 60_000,
+            timeoutMs: endpoint?.timeoutMs ?? 60_000,
+            maxTokens: config.maxOutputTokens,
         });
         const latencyMs = Date.now() - startMs;
 
@@ -184,7 +212,6 @@ export class StorytellerModelClient {
 
         const inputTokens = llmResponse.promptTokens ?? null;
         const outputTokens = llmResponse.completionTokens ?? null;
-        const endpoint = this.endpoints[profileId] ?? this.endpoints['default'];
         const estimatedCostUsd = estimateCost(inputTokens, outputTokens, llmResponse.costUsd, endpoint);
 
         let parsed: Record<string, unknown> = {};
@@ -208,6 +235,9 @@ export class StorytellerModelClient {
         const operatorSummary = safeString(parsed['operatorSummary']) || '(no summary)';
         const operatorWarnings = safeStringArray(parsed['operatorWarnings']);
         const eventRefsUsed = safeStringArray(parsed['eventRefsUsed']);
+        const claims = safeClaimsArray(parsed['claims']);
+        const watchNext = safeStringArray(parsed['watchNext']);
+        const confidence = safeConfidence(parsed['confidence']);
         if (!safeString(parsed['publicTitle']).trim()) {
             reviewReasons.push('model returned missing publicTitle');
         }
@@ -234,6 +264,9 @@ export class StorytellerModelClient {
             operatorSummary,
             operatorWarnings,
             eventRefsUsed,
+            claims,
+            watchNext,
+            confidence,
             needsReview: reviewReasons.length > 0,
             reviewReasons: reviewReasons.length > 0 ? reviewReasons : undefined,
         };

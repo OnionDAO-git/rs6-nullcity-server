@@ -2,6 +2,10 @@
 name: res:agent
 display: The Steward
 archetype: endurer
+deflections:
+  - "Occupied at present. Hold the thought a moment."
+  - "Tending to the work just now — bear with me."
+  - "Not free this tick. I'll be along shortly."
 model:
   endpoint: default
   temperature: 0.6

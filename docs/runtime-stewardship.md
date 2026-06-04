@@ -1,6 +1,6 @@
 # Null City Runtime Stewardship
 
-Last updated: 2026-05-31 17:11 CDT
+Last updated: 2026-06-02 16:10 CDT
 
 This file is the coordination point for running processes on James's machine.
 
@@ -24,15 +24,25 @@ Codex in James's active desktop thread owns runtime restarts until this note is 
 
 Codex currently runs these in named `screen` sessions because detached child processes launched from Codex can be cleaned up when a tool call exits.
 
-- `nullcity-infra-codex`
-- `nullcity-game-codex`
-- `nullcity-controller-codex`
-- `nullcity-dashboard-server-codex`
-- `nullcity-dashboard-web-codex`
+| Target | Screen session | Primary ports | Restart risk | Notes |
+|---|---|---|---|---|
+| `infra` | `nullcity-infra` | `43591`, `43592` | High | Login/update services. Restart only for health failure or explicit operator request. |
+| `game` | `nullcity-game` | `43594`, `43595` | High | Game + agent gateway. Restart interrupts clients/residents. |
+| `controller` | `nullcity-controller` | `43596`, `43610`, `43611` | Medium | Resident brain/body, letters, city API. Rebuild before restart. |
+| `dashboard-server` | `nullcity-dashboard-server` | `8787` | Low | Dashboard BFF/API. Usually safe after dashboard/server changes. |
+| `dashboard-web` | `nullcity-dashboard-web` | `5174` | Low | Dashboard dev web server. Usually safe after dashboard UI changes. |
+
+Legacy `*-codex` screen sessions are old names. If both suffixed and unsuffixed sessions exist, ask the runtime steward before killing anything.
 
 Inspect with `screen -ls`. Attach with `screen -r <name>`, detach with `Ctrl-a d`.
 
-Latest log paths are written to `/tmp/nullcity-runtime/*.log`.
+Latest log paths are written to `/tmp/nullcity-runtime/*.log`. Supervised
+runtime logs are bounded: each `*.log` is copy-truncated on supervisor startup
+when it exceeds `NULLCITY_RUNTIME_LOG_MAX_BYTES` (default 500 MiB, preserving a
+tail snapshot under `/tmp/nullcity-runtime/snapshots`), and supervised process
+stdout/stderr streams rotate at `NULLCITY_LOG_MAX_BYTES` (default 64 MiB, five
+backups). This prevents a repeat of the 2026-06-01 `game.log` disk-pressure
+incident while preserving the newest evidence for diagnosis.
 
 The runtime game session should use the supervised game runner, not the dev
 nodemon runner. The supervised runner starts the compiled game server with a
@@ -90,10 +100,10 @@ local stack unless James asks for an all-resident soak.
 
 ## Agent restart request protocol
 
-If an autonomous agent needs a process restarted, it should append a single line to `docs/agent-status.md`:
+If an autonomous agent needs a shared process restarted, it should append a single line to `docs/agent-status.md`:
 
 ```text
-YYYY-MM-DD HH:MM CDT <agent> RUNTIME-REQUEST target=<controller|dashboard|game|infra|all> reason=<why> required_sha=<sha-or-working-tree> validation=<command-or-url> urgency=<low|normal|high>
+YYYY-MM-DD HH:MM CDT <agent> RUNTIME-REQUEST target=<controller|dashboard-server|dashboard-web|game|infra|all> reason=<why> required_sha=<sha-or-working-tree> affected_ports=<ports> interrupts_live_test=<yes|no|unknown> safe_after=<now|time> validation=<command-or-url> rollback=<plan> urgency=<low|normal|high> lease_expires=<iso-or-local-time>
 ```
 
 The runtime steward responds in `docs/agent-status.md`:
@@ -103,6 +113,14 @@ YYYY-MM-DD HH:MM CDT codex RUNTIME-ACK target=<...> action=<restart|defer|needs-
 YYYY-MM-DD HH:MM CDT codex RUNTIME-HANDOFF target=<...> pid=<pid-or-list> log=<path> validation=<result>
 ```
 
+Steward preflight before restart:
+
+1. Read the last 120 lines of `docs/agent-status.md` for unexpired STARTING/RUNTIME leases touching the target.
+2. Run `screen -ls` and confirm the target's current session name.
+3. Check the target ports if the failure mode is ambiguous.
+4. ACK with restart/defer/needs-info before acting.
+5. Handoff with screen name, pid/log path, and at least one post-smoke command or URL.
+
 ## Ground rules
 
 - Do not restart the controller, game, infra, or dashboard directly while this owner note is active unless James explicitly asks you to.
@@ -110,7 +128,7 @@ YYYY-MM-DD HH:MM CDT codex RUNTIME-HANDOFF target=<...> pid=<pid-or-list> log=<p
 - Server agents may restart only tests or one-shot benchmark commands they start themselves.
 - Controller restarts are medium risk because they interrupt live resident cadence.
 - Game or infra restarts are high risk and should happen only for health failures, config reloads, or explicit human instruction.
-- Prefer dashboard restarts freely after dashboard changes; they do not reset residents.
+- Dashboard restarts are low risk, but non-stewards still request them; the steward may fast-ack when no active dashboard lease is present.
 
 ## Canonical commands
 
@@ -119,6 +137,7 @@ Controller:
 ```bash
 cd /Users/james/Code/OnionDAO/rs6-nullcity-server
 npm run build
+screen -S nullcity-controller
 node dist/controller/index.js --config="$(pwd)/controller.yml" --mcp-http-port=43610 --letters-http-port=43596 --wall-redact --city-http-port=43611 --city-http-token=operator-token
 ```
 
@@ -126,6 +145,7 @@ Dashboard:
 
 ```bash
 cd /Users/james/Code/OnionDAO/rs6-nullcity-residents-dashboard
+screen -S nullcity-dashboard-web
 bun run dev
 ```
 
@@ -134,6 +154,7 @@ Game:
 ```bash
 cd /Users/james/Code/OnionDAO/rs6-nullcity-server
 npm run build
+screen -S nullcity-game
 NODE_MAX_OLD_SPACE=4096 npm run start:game:supervised
 ```
 

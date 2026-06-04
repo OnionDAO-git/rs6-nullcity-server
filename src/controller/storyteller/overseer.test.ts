@@ -237,6 +237,35 @@ describe('runStorytellerOverseerTick', () => {
         expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(false);
     });
 
+    it('keeps clean but review-queued dispatch text out of latest-frame.json when auto-publish is disabled', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = fixtureDispatch({
+            digestId: digest.digestId,
+            eventRefsUsed: [refs.apLow],
+            publicTitle: 'A clean candidate title should stay private',
+            needsReview: false,
+            reviewReasons: undefined,
+        });
+        store.writeDigest(digest);
+        store.writeDispatch(dispatch);
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+            autoPublishOnZeroWarnings: false,
+        });
+
+        expect(result.row.decision).toBe('queued_review');
+        const frame = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8'));
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.narration.title).not.toBe(dispatch.publicTitle);
+        expect(frame.source.dispatchId).toBeUndefined();
+    });
+
     it('holds dispatch publishing when the daily cost cap is exceeded', () => {
         const outputDir = tempOutputDir();
         const store = new StorytellerStore(outputDir);
@@ -270,6 +299,153 @@ describe('runStorytellerOverseerTick', () => {
         expect(result.row.reason).toContain('daily cost cap');
         expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(false);
         expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'dispatch.json'))).toBe(false);
+    });
+
+    it('dry_run tick writes latest-frame.json with deterministic fallback narration', () => {
+        const outputDir = tempOutputDir();
+        const result = runStorytellerOverseerTick({
+            source: 'fixture',
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+        });
+
+        expect(result.row.decision).toBe('dry_run');
+        const framePath = path.join(outputDir, 'latest-frame.json');
+        expect(fs.existsSync(framePath)).toBe(true);
+        const frame = JSON.parse(fs.readFileSync(framePath, 'utf-8'));
+        expect(frame.ok).toBe(true);
+        expect(frame.schemaVersion).toBe(1);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+    });
+
+    it('held_no_delta tick writes latest-frame.json with quiet-city fallback', () => {
+        const outputDir = tempOutputDir();
+        new StorytellerStore(outputDir).writeDigest(emptyDigest());
+
+        const result = runStorytellerOverseerTick({
+            source: 'latest',
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+        });
+
+        expect(result.row.decision).toBe('held_no_delta');
+        const framePath = path.join(outputDir, 'latest-frame.json');
+        expect(fs.existsSync(framePath)).toBe(true);
+        const frame = JSON.parse(fs.readFileSync(framePath, 'utf-8'));
+        expect(frame.ok).toBe(true);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+    });
+
+    it('held_duplicate tick does NOT overwrite the latest-frame.json written by the prior tick', () => {
+        const outputDir = tempOutputDir();
+        const now = new Date('2026-05-30T20:00:00.000Z');
+
+        runStorytellerOverseerTick({ source: 'fixture', outputDir, now: () => now });
+        const firstFrame = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8'));
+
+        runStorytellerOverseerTick({
+            source: 'fixture',
+            outputDir,
+            now: () => new Date(now.getTime() + 60_000),
+            dedupWindowMs: 30 * 60_000,
+        });
+        const secondRead = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8'));
+
+        expect(secondRead.frameId).toBe(firstFrame.frameId);
+    });
+
+    it('published_canon tick writes latest-frame.json with verified dispatch narration', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = fixtureDispatch({ digestId: digest.digestId, eventRefsUsed: [refs.apLow] });
+        store.writeDigest(digest);
+        store.writeDispatch(dispatch);
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+            autoPublishOnZeroWarnings: true,
+        });
+
+        expect(result.row.decision).toBe('published_canon');
+        const framePath = path.join(outputDir, 'latest-frame.json');
+        expect(fs.existsSync(framePath)).toBe(true);
+        const frame = JSON.parse(fs.readFileSync(framePath, 'utf-8'));
+        expect(frame.ok).toBe(true);
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.narration.title).toBe(dispatch.publicTitle);
+    });
+
+    it('held_budget tick writes latest-frame.json with fallback before returning early', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const digest = buildFixtureDigest().digest;
+        store.writeDigest(digest);
+        store.writeDispatch(fixtureDispatch({ digestId: digest.digestId, estimatedCostUsd: 0.11 }));
+
+        const ledger = new OverseerLedger(outputDir);
+        ledger.append({
+            schemaVersion: 1,
+            rowId: 'prior-row',
+            createdAt: '2026-05-30T19:40:00.000Z',
+            digestId: 'prior-digest',
+            fingerprint: 'fp-prior',
+            decision: 'published_canon',
+            reason: 'published',
+            eventRefs: ['gp:1'],
+            artifactDir: path.join(outputDir, 'canon', 'prior-digest'),
+            estimatedCostUsd: 0.15,
+        });
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+            dailyCostCapUsd: 0.2,
+        });
+
+        expect(result.row.decision).toBe('held_budget');
+        const framePath = path.join(outputDir, 'latest-frame.json');
+        expect(fs.existsSync(framePath)).toBe(true);
+        const frame = JSON.parse(fs.readFileSync(framePath, 'utf-8'));
+        expect(frame.ok).toBe(true);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+    });
+
+    it('holds unknown-cost model dispatches under a daily cap and keeps latest-frame fallback-only', () => {
+        const outputDir = tempOutputDir();
+        const store = new StorytellerStore(outputDir);
+        const { digest, refs } = buildFixtureDigest();
+        store.writeDigest(digest);
+        store.writeDispatch(
+            fixtureDispatch({
+                digestId: digest.digestId,
+                eventRefsUsed: [refs.apLow],
+                estimatedCostUsd: null,
+                needsReview: false,
+                reviewReasons: undefined,
+            }),
+        );
+
+        const result = runStorytellerOverseerTick({
+            source: 'digest-id',
+            digestId: digest.digestId,
+            outputDir,
+            now: () => new Date('2026-05-30T20:00:00.000Z'),
+            dailyCostCapUsd: 0.2,
+        });
+
+        expect(result.row.decision).toBe('held_unknown_cost');
+        expect(result.row.reason).toContain('unknown model cost');
+        expect(fs.existsSync(path.join(outputDir, 'canon', digest.digestId, 'dispatch.json'))).toBe(false);
+        expect(fs.existsSync(path.join(outputDir, 'review', digest.digestId, 'dispatch.json'))).toBe(false);
+        const frame = JSON.parse(fs.readFileSync(path.join(outputDir, 'latest-frame.json'), 'utf-8'));
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.source.dispatchId).toBeUndefined();
     });
 });
 

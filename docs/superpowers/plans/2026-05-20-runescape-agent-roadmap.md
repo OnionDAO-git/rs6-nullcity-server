@@ -1,6 +1,6 @@
 # RuneScape Agent Roadmap And Task List
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Update this file whenever you start, finish, block, or defer a task.
+> **For agentic workers:** This is the parent roadmap, not the live claim queue. Start from `AGENTS.md`, `docs/agent-status.md`, and `docs/issue-register.md`; claim a concrete issue or smallest linked packet before editing. Roadmap `[>]` parent rows are status, while `docs/agent-status.md` STARTING lines are live file locks.
 
 **Goal:** Track the remaining design and build work needed for `res:agent` to become a safe, modular, self-improving RuneScape resident that can explore, chat, fight, trade, and perform starter workflows.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Zod, Jest, SWC, existing RuneJS server/controller/dashboard, SPARK module registry, dashboard repo, JSONL action/inference logs, Markdown knowledge docs.
 
-**Human Decisions:** Track James/OnionDAO choices in `docs/human-decisions.md`. Until June 1, 2026, this is pre-launch development: prefer fast local progress with good design, and do not block on Railgun or secure third-party module decisions unless they are marked Critical.
+**Human Decisions:** Track James/OnionDAO choices in `docs/human-decisions.md`. Prefer fast local progress with good design, and do not block on Railgun or secure third-party module decisions unless they are marked Critical.
 
 ---
 
@@ -699,7 +699,7 @@ Safe public module facade building blocks are implemented, but the public member
 
 ## Workstream S: AP/GP Economy, Soul Birth, NCRIs, And Storyteller
 
-**Purpose:** Build Dev's current Null City loop for the May 29-June 1 weekend sprint: humans fund Souls with Attention Points (AP), residents survive by managing AP, residents earn/trade actual RuneScape GP, NCRIs connect in-game value to physical prints, saved residents enter the Library, and the Storyteller narrates public canon from evidence.
+**Purpose:** Track the Null City loop that came out of the May 29-June 1 sprint: humans fund Souls with Attention Points (AP), residents survive by managing AP, residents earn/trade actual RuneScape GP, NCRIs connect in-game value to physical prints, saved residents enter the Library, and the Storyteller narrates public canon from evidence.
 
 **Primary docs:**
 
@@ -710,9 +710,9 @@ Safe public module facade building blocks are implemented, but the public member
 - Storyteller design: `docs/2026-05-28-storyteller-design.md`
 - Current capability evidence: `docs/resident-capabilities.md`
 
-**Autonomous agent process:** use the implementation plan's **Agent Packet Backlog** for Friday/Saturday work. Packets S0a-S12b and CQA0-CQA11 are the safe claim units; this roadmap keeps parent task status. Every packet needs a `STARTING` line, exact file list, focused tests, `npm run check:no-ui`, pushed commit, and `HANDOFF` with evidence.
+**Autonomous agent process:** use `docs/issue-register.md` and `docs/agent-status.md` to claim work. Old packet ids (S0a-S12b, CQA0-CQA11) remain useful labels when a current issue or roadmap row links to them; they are no longer a separate claim queue. Every active packet needs a `STARTING` line, exact file list, focused tests, `npm run check:no-ui`, pushed commit, and `HANDOFF` with evidence.
 
-**Standing capability QA lane:** one agent should continuously work through `docs/resident-capabilities.md`, choosing weak/unproven rows, searching real logs/artifacts, running or adding benchmarks, fixing root causes, and updating the matrix with separate `can do it` and `does do it live` evidence. Use CQA packets in the implementation plan for this work. Do not mark resident capability claims complete from unit tests alone.
+**Standing capability QA lane:** use `docs/resident-capabilities.md` to find weak/unproven rows, then claim/open the matching issue before coding. Search real logs/artifacts, run or add benchmarks, fix root causes, and update the matrix with separate `can do it` and `does do it live` evidence. Do not mark resident capability claims complete from unit tests alone.
 
 **Hard boundary:** no human-facing UI in `rs6-nullcity-server`. Server tasks in this workstream may add JSON/control APIs, persisted read models, CLI tools, logs, benchmarks, and docs. Dashboard/Embassy/wall/inbox/Library/Storyteller visual surfaces belong in `../rs6-nullcity-residents-dashboard`. Run `npm run check:no-ui` before marking any S task done.
 

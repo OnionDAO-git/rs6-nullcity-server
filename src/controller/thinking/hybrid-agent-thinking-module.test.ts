@@ -1759,6 +1759,44 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('firemaking_gather_logs');
     });
 
+    it('takes the free Lumbridge axe for a fire goal when it has tinderbox but no axe or logs', async () => {
+        const freeAxe = { objectId: objectIds.lumbridgeAxeInLogs, position: { x: 3225, y: 3230, level: 0 }, orientation: 0 };
+        const llm = scriptedLlm([{ text: JSON.stringify({ actions: [] }) }]);
+        const state = runtimeState();
+        state.cognition = {
+            activeGoal: {
+                id: 'make-fire',
+                description: 'Gather ordinary logs and light a fire with the tinderbox.',
+                steps: ['Find a tree', 'Chop it for logs', 'Use tinderbox on logs'],
+                createdAtTick: 0,
+            },
+            lastBrainTick: 1,
+            lastBodyTick: 0,
+        };
+        const agent = hybridAgent(llm, state);
+
+        const result = await agent.think(
+            perception({
+                tick: 3,
+                resident: {
+                    ...residentAt(3225, 3230),
+                    inventory: [{ itemId: 590, key: 'rs:tinderbox', amount: 1 }],
+                },
+                objects: [freeAxe],
+            }),
+        );
+
+        expect(result.actions).toEqual([
+            {
+                kind: 'interact',
+                target: freeAxe,
+                option: 'take-axe',
+                cause: 'acquire_axe_take_free_lumbridge_axe',
+            },
+        ]);
+        expect(result.cause).toBe('acquire_axe_take_free_lumbridge_axe');
+    });
+
     it('does not re-light stale logs when a fresh fire is already visible nearby', async () => {
         const normalTree = { objectId: 1278, position: { x: 3225, y: 3232, level: 0 }, orientation: 3 };
         const fire = { objectId: 2732, position: { x: 3225, y: 3230, level: 0 }, orientation: 0 };
@@ -3833,8 +3871,8 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.cause).toBe('stuck_move_recovery');
     });
 
-    it('answers direct status chat without waiting for Body inference', async () => {
-        const llm = scriptedLlm([]);
+    it('routes a player status question (by name) to the in-character social reply, not a canned beacon', async () => {
+        const llm = scriptedLlm([{ text: 'Tending the fire, friend.' }]);
         const state = runtimeState();
         state.cognition = {
             activeGoal: {
@@ -3855,8 +3893,29 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
-        expect(result.cause).toBe('direct_chat_status');
+        // Old behavior was a canned 'direct_chat_status' beacon; a named conversational question
+        // now defers to the detached in-character reply.
+        expect(result.cause).toBe('social_reply_detection');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+    });
+
+    it('still executes a command when it is mixed with a pleasantry/status phrase (no defer)', async () => {
+        // Regression: the status/small-talk predicates scan the full text, so "agent follow me,
+        // what are you doing?" used to satisfy `conversational` and get deferred to social reply —
+        // silently dropping the follow command. The actionable-command guard must win.
+        const llm = scriptedLlm([{ text: 'should-not-be-used' }]);
+        const agent = hybridAgent(llm, runtimeState());
+
+        const result = await agent.think(
+            perception({
+                tick: 2,
+                resident: residentAt(3218, 3201),
+                events: [chatFromCodex('agent follow me, what are you doing?', 3222, 3213)],
+            }),
+        );
+
+        expect(result.cause).toBe('direct_chat_follow');
+        expect(result.cause).not.toBe('social_reply_detection');
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -3869,8 +3928,8 @@ describe('HybridAgentThinkingModule', () => {
         expect(second).toBeUndefined();
     });
 
-    it('answers addressed small talk without waiting for Body inference', async () => {
-        const llm = scriptedLlm([]);
+    it('routes a player small-talk greeting (by name) to the in-character social reply', async () => {
+        const llm = scriptedLlm([{ text: 'Keeping well, friend — and you?' }]);
         const agent = hybridAgent(llm, runtimeState());
 
         const result = await agent.think(
@@ -3881,14 +3940,10 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            {
-                kind: 'say',
-                text: 'I am here and watching. I can follow, scout, make fires, fish, cook, trade, or train safely.',
-            },
-        ]);
-        expect(result.cause).toBe('direct_chat_small_talk');
-        expect(llm.complete).not.toHaveBeenCalled();
+        // Old behavior was a canned 'direct_chat_small_talk' capability list; named small talk
+        // from a player now defers to the detached in-character reply.
+        expect(result.cause).toBe('social_reply_detection');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
     });
 
     it('answers addressed route-memory questions from Library memories before Body stuck recovery', async () => {
@@ -4080,7 +4135,7 @@ describe('HybridAgentThinkingModule', () => {
                 events: [
                     chatFromCodex('agent, what do you remember about the west gate passphrase?', 3187, 3222),
                     chatFromResidentPeer(
-                        'I am scouting. Nearby I see 15 trees and 2 players at 3197,3216. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find.',
+                        'I am scouting. Nearby I see 15 trees and 2 players. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find.',
                         3197,
                         3216,
                     ),
@@ -5369,7 +5424,9 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('moves the trader toward Codex under the seeded trade benchmark when the tester is visible', async () => {
+    it('moves the trader toward its configured follow player under the seeded trade benchmark when visible', async () => {
+        // The trade goal now targets a present resident (trade-with-res-qa-social),
+        // but the trader still follows its configured followPlayer (codex) to stay in range.
         const codex = player('codex', 3229, 3230);
         const llm = scriptedLlm([]);
         const state = runtimeState();
@@ -5723,7 +5780,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I will look for a safe creature, collect bones, then bury them at 3234,3236. Goal: Pick up bones and bury them to train Prayer after safe combat.',
+                text: 'I will look for a safe creature, collect bones, then bury them. Goal: Pick up bones and bury them to train Prayer after safe combat.',
             },
         ]);
         expect(result.cause).toBe('direct_chat_train_prayer');
@@ -7935,7 +7992,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -7964,7 +8021,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice firemaking.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice firemaking.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9043,7 +9100,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net at a visible Fishing spot. Next: fish at 3219,3201 with my small net.',
+                text: 'I am online. Goal: Catch shrimp with a small fishing net at a visible Fishing spot. Next: fish at 3219,3201 with my small net.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9083,7 +9140,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net, then cook the catch on a fire or range. Next: find a fire or range to cook my raw fish.',
+                text: 'I am online. Goal: Catch shrimp with a small fishing net, then cook the catch on a fire or range. Next: find a fire or range to cook my raw fish.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9114,9 +9171,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: pick up coins at 3219,3201.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: pick up coins at 3219,3201.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9145,7 +9200,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9180,7 +9235,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: scout the tree stand at 3224,3201.',
+                text: 'I am online. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: scout the tree stand at 3224,3201.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9226,7 +9281,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3192,3229. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: return toward my findable point at 3200,3200.',
+                text: 'I am online. Goal: Scout nearby landmarks, creatures, and useful items while staying easy to find. Next: return toward my findable point at 3200,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9265,7 +9320,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions[0].kind).toBe('say');
         const text = String((result.actions[0] as { text?: string }).text);
         // phase 2 (Math.floor(2522/20)%4=2): Goal shown, Next suppressed for variety
-        expect(text).toBe('I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC at 3218,3201. Goal: Practice scouting.');
+        expect(text).toBe('I am scouting. Nearby I see 1 tree, 1 item, and 1 NPC. Goal: Practice scouting.');
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9302,9 +9357,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9341,9 +9394,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9381,9 +9432,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([
-            { kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting. Next: chop the tree at 3219,3200.' },
-        ]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting. Next: chop the tree at 3219,3200.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9419,7 +9468,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Practice scouting.',
+                text: 'I am online. Goal: Practice scouting.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9460,7 +9509,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: chop the tree at 3221,3201.',
+                text: 'I am online. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: chop the tree at 3221,3201.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9497,7 +9546,7 @@ describe('HybridAgentThinkingModule', () => {
             }),
         );
 
-        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online at 3218,3201. Goal: Practice scouting.' }]);
+        expect(result.actions).toEqual([{ kind: 'say', text: 'I am online. Goal: Practice scouting.' }]);
         expect(result.cause).toBe('presence_beacon');
         expect(llm.complete).not.toHaveBeenCalled();
     });
@@ -9538,7 +9587,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Gather ordinary logs and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
+                text: 'I am online. Goal: Gather ordinary logs and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9580,7 +9629,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Gather logs from a nearby ordinary tree and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
+                text: 'I am online. Goal: Gather logs from a nearby ordinary tree and light a fire with the tinderbox. Next: chop the tree at 3219,3200.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9617,7 +9666,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Catch shrimp with a small fishing net. Next: fish at 3219,3201 with my small net.',
+                text: 'I am online. Goal: Catch shrimp with a small fishing net. Next: fish at 3219,3201 with my small net.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9651,7 +9700,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(result.actions).toEqual([
             {
                 kind: 'say',
-                text: 'I am online at 3218,3201. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: look for an ordinary tree to chop.',
+                text: 'I am online. Goal: Move to a visible tree and chop it to gather logs and gain Woodcutting XP. Next: look for an ordinary tree to chop.',
             },
         ]);
         expect(result.cause).toBe('presence_beacon');
@@ -9735,7 +9784,7 @@ describe('HybridAgentThinkingModule', () => {
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
-    it('F9a: phase-3 beacon shows only prefix and position (no Goal, no Next)', async () => {
+    it('F9a: phase-3 beacon shows only prefix and nearby summary (no Goal, no Next, no raw coordinates)', async () => {
         // tick=1100 → phase Math.floor(1100/20)%4 = 55%4 = 3
         const coins = { itemId: 995, key: 'rs:coins', amount: 8, position: { x: 3219, y: 3201, level: 0 } };
         const llm = scriptedLlm([]);
@@ -9754,7 +9803,9 @@ describe('HybridAgentThinkingModule', () => {
         const text = String((result.actions[0] as { text?: string }).text);
         expect(text).not.toContain('Goal:');
         expect(text).not.toContain('Next:');
-        expect(text).toContain('at 3218,3201');
+        // Toned down for human viewers: no raw tile coordinates in the chat feed.
+        expect(text).not.toMatch(/\d{3,4}\s*,\s*\d{3,4}/);
+        expect(text).toMatch(/Nearby I see|working my route|checking|scouting/);
         expect(llm.complete).not.toHaveBeenCalled();
     });
 
@@ -10812,6 +10863,260 @@ describe('HybridAgentThinkingModule', () => {
             ]);
             expect(result.refusalReason).toBe('unknown_command');
         });
+    });
+});
+
+describe('RIQ-1-1-B: Brain tool-call loop wired into runBrain', () => {
+    it('sets goal from the follow-up completion when Brain emits a lookup_skill tool call', async () => {
+        const toolCallJson = '{"tool":"lookup_skill","query":"firemaking training methods"}';
+        const goalJson =
+            '{"goal":{"id":"train-fm","description":"Train Firemaking by lighting logs","steps":["gather logs","use tinderbox on logs"]}}';
+        const llm = scriptedLlm([
+            { text: toolCallJson }, // brain turn 1: tool call detected
+            { text: goalJson }, // brain turn 2: goal JSON after tool result injected
+            { text: JSON.stringify({ actions: [] }) }, // body
+        ]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(perception({ tick: 0 }));
+
+        // Two brain completions + one body completion
+        expect(llm.complete).toHaveBeenCalledTimes(3);
+        expect(state.cognition?.activeGoal?.id).toBe('train-fm');
+        expect(state.cognition?.activeGoal?.description).toContain('Firemaking');
+    });
+
+    it('sets goal after one Brain completion when no tool call is emitted (fast path)', async () => {
+        const goalJson = '{"goal":{"id":"scout","description":"Scout nearby area","steps":["walk around the spawn"]}}';
+        const llm = scriptedLlm([
+            { text: goalJson }, // brain: plain goal (no tool call)
+            { text: JSON.stringify({ actions: [] }) }, // body
+        ]);
+        const state = runtimeState();
+        const agent = hybridAgent(llm, state);
+
+        await agent.think(perception({ tick: 0 }));
+
+        expect(llm.complete).toHaveBeenCalledTimes(2); // 1 brain + 1 body
+        expect(state.cognition?.activeGoal?.id).toBe('scout');
+    });
+
+    it('injects lookup_skill tool instructions into the Brain prompt', async () => {
+        const capturedPrompts: string[] = [];
+        const complete = jest.fn<Promise<LlmResponse>, [LlmRequest]>(req => {
+            capturedPrompts.push(req.prompt);
+            return Promise.resolve({ text: '{"goal":{"id":"test","description":"test goal"}}', nooped: false });
+        });
+        const agent = hybridAgent({ complete });
+
+        await agent.think(perception({ tick: 0 }));
+
+        // First captured prompt is the brain prompt (no direct-chat events in perception)
+        expect(capturedPrompts[0]).toContain('lookup_skill');
+        expect(capturedPrompts[0]).toContain('ONE tool before your final answer');
+    });
+});
+
+describe('social-reply detection wiring (slice 7)', () => {
+    function namedSoul(): Soul {
+        const base = soul();
+        return {
+            ...base,
+            frontmatter: {
+                ...base.frontmatter,
+                display: 'Hans',
+                behavior: { ...(base.frontmatter.behavior as unknown as Record<string, unknown>), commandPrefix: 'social' },
+            },
+        } as Soul;
+    }
+    function withGoal() {
+        const state = runtimeState();
+        state.cognition = { ...(state.cognition || {}), activeGoal: { id: 'g-oaks', description: 'Chop oaks', createdAtTick: 0 } };
+        return state;
+    }
+    // A REAL hero shape: name 'res:hans' → display 'Hans' → commandPrefix DEFAULTS to 'hans' (== display).
+    // This is the production case (no explicit commandPrefix) that the routing fix must handle.
+    function heroSoul(): Soul {
+        const base = soul();
+        const behavior = { ...(base.frontmatter.behavior as unknown as Record<string, unknown>) };
+        delete behavior.commandPrefix;
+        return { ...base, frontmatter: { ...base.frontmatter, name: 'res:hans', display: 'Hans', behavior } } as unknown as Soul;
+    }
+
+    it('a hero named by display name (commandPrefix defaults to the display name) gets a conversational reply, not a command beacon', async () => {
+        const llm = scriptedLlm([{ text: 'Aye, friend — splitting oaks.' }]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, heroSoul());
+
+        const result = await agent.think(
+            perception({ tick: 5, events: [chatFromCodex('Hans, what are you doing?', 3201, 3200)] }) as never,
+        );
+
+        expect(result.cause).toBe('social_reply_detection');
+        expect(socialInferenceCalls(llm)).toHaveLength(1);
+    });
+
+    it('a hero given a REAL command by display name still routes to the command path', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, heroSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                events: [chatFromCodex('Hans, follow me', 3201, 3200)],
+                players: [player('codex', 3201, 3200)],
+            }) as never,
+        );
+
+        // command path handled it (a follow/await/etc. cause), NOT the conversational path
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(socialInferenceCalls(llm)).toHaveLength(0);
+    });
+
+    it('fires a detached social-reply inference when a human player names the resident (no freeze)', async () => {
+        const llm = scriptedLlm([{ text: 'Just splitting oaks, friend.' }]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(
+            perception({ tick: 5, events: [chatFromCodex('Hans, what are you doing?', 3201, 3200)] }) as never,
+        );
+
+        expect(result.cause).toBe('social_reply_detection');
+        expect(llm.complete).toHaveBeenCalledTimes(1);
+        expect(String(llm.complete.mock.calls[0][0].prompt)).toMatch(/not a helpful assistant/i);
+        expect(state.cognition?.activeGoal?.id).toBe('g-oaks');
+    });
+
+    it('does not start a social reply for a resident speaker (no A↔B loops)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                events: [
+                    {
+                        kind: 'chat',
+                        from: { id: 'res:greta', kind: 'resident', name: 'Greta', position: { x: 3201, y: 3200, level: 0 }, hpFraction: 1 },
+                        text: 'Hans, nice fire!',
+                        to: 'public',
+                    },
+                ],
+            }) as never,
+        );
+
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(state.cognition?.socialReplyInFlight).toBeUndefined();
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+
+    it('emits a fresh pending reply when the asker is still present', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Aye, friend.', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 20, players: [player('codex', 3201, 3200)] }) as never);
+
+        expect(result.cause).toBe('social_reply_emit');
+        expect((result.actions[0] as { text?: string }).text).toBe('Aye, friend.');
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+        expect(state.cognition?.lastSocialReply?.text).toBe('Aye, friend.');
+    });
+
+    it('drops a stale pending reply (past expiry) without speaking', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Too late.', expiresAtTick: 10, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 50, players: [player('codex', 3201, 3200)] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_emit');
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+
+    it('drops a pending reply when the asker has left perception (no empty-air reply)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Anyone?', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 20, players: [] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_emit');
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+
+    it('combat cancels an in-flight + pending social reply', async () => {
+        const chicken = npc('Chicken', 3219, 3201);
+        chicken.combatLevel = 1;
+        chicken.hpFraction = 1.0;
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.socialReplyInFlight = { key: 'k1', startedAtTick: 1 };
+        state.cognition!.pendingSocialReply = { text: 'Mid-sentence.', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(
+            perception({
+                tick: 5,
+                resident: { ...residentAt(3218, 3201), hp: { current: 95, max: 100 }, combatLevel: 10 },
+                npcs: [chicken],
+                events: [{ kind: 'hit_taken', from: chicken }],
+            }) as never,
+        );
+
+        expect(result.cause).not.toBe('social_reply_emit');
+        expect(state.cognition?.socialReplyInFlight).toBeUndefined();
+        expect(state.cognition?.pendingSocialReply).toBeUndefined();
+    });
+
+    // A social inference is identifiable by its guard-railed prompt — used to assert none fired.
+    const socialInferenceCalls = (llm: MockLlm) =>
+        llm.complete.mock.calls.filter(call => /not a helpful assistant/i.test(String(call[0]?.prompt)));
+
+    it('a conversational reply only ever produces a say and never changes the goal (autonomy)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.pendingSocialReply = { text: 'Aye.', expiresAtTick: 100, speakerId: 'player:codex' };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 20, players: [player('codex', 3201, 3200)] }) as never);
+
+        expect(result.cause).toBe('social_reply_emit');
+        expect((result.actions[0] as { kind?: string }).kind).toBe('say');
+        expect(state.cognition?.activeGoal?.id).toBe('g-oaks');
+    });
+
+    it('does not start a second social inference while one is already in flight (dedup)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.socialReplyInFlight = { key: 'x', startedAtTick: 1 };
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, you busy?', 3201, 3200)] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(state.cognition?.socialReplyInFlight?.key).toBe('x');
+        expect(socialInferenceCalls(llm)).toHaveLength(0);
+    });
+
+    it('rate-limits social replies (no inference once the chat-reply window is full)', async () => {
+        const llm = scriptedLlm([]);
+        const state = withGoal();
+        state.cognition!.chatReplyTicks = [5, 5, 5]; // >= CHAT_REPLIES_PER_WINDOW within the window
+        const agent = hybridAgent(llm, state, namedSoul());
+
+        const result = await agent.think(perception({ tick: 5, events: [chatFromCodex('Hans, what now?', 3201, 3200)] }) as never);
+
+        expect(result.cause).not.toBe('social_reply_detection');
+        expect(state.cognition?.socialReplyInFlight).toBeUndefined();
+        expect(socialInferenceCalls(llm)).toHaveLength(0);
     });
 });
 

@@ -1,0 +1,53 @@
+# Storyteller scheduler config.
+#
+# This file is intentionally separate from the resident controller config:
+# residents often need small per-action maxTokens caps, while the Storyteller
+# needs enough completion room to emit grounded JSON narration.
+#
+# Default usage:
+#   npm run storyteller:scheduler:supervised
+#
+# One-shot smoke:
+#   npm run storyteller:scheduler -- --once --daily-cost-cap-usd 1
+#
+# Operators can override with STORYTELLER_CONTROLLER_CONFIG or
+# STORYTELLER_MODEL_PROFILE without editing source.
+
+llm:
+  endpoints:
+    local_storyteller:
+      baseUrl: http://inf.nullcity.ai:1234
+      provider: openai-compatible
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      forceThinking: false
+
+    openrouter:
+      baseUrl: https://openrouter.ai/api
+      provider: openrouter
+      apiKey: ${OPENROUTER_API_KEY}
+      responseFormat: text
+      timeoutMs: 90000
+
+  profiles:
+    storyteller:
+      endpoint: local_storyteller
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      forceThinking: false
+
+    openrouter_storyteller:
+      endpoint: openrouter
+      model: ${OPENROUTER_STORYTELLER_MODEL}
+      timeoutMs: 90000
+      cost:
+        promptTokenUsd: 0.000003
+        completionTokenUsd: 0.000015
+
+    openrouter_haiku_storyteller:
+      endpoint: openrouter
+      model: ${OPENROUTER_HAIKU_MODEL}
+      timeoutMs: 60000
+      cost:
+        promptTokenUsd: 0.0000008
+        completionTokenUsd: 0.000004

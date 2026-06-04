@@ -19,6 +19,10 @@ export interface RuntimeState {
         lastTick?: number;
         requestsThisTick?: number;
         noInferenceUntil?: string;
+        /** S-PLAN-BUDGET-1: daily planner-call counter (resets on new calendar day). */
+        plannerCallsToday?: number;
+        /** ISO timestamp of when the current planner-budget day window started. */
+        plannerDayStartedAt?: string;
     };
     variables?: Record<string, number>;
     hookCooldowns?: Record<string, number>;
@@ -74,9 +78,24 @@ export interface CognitiveState {
     combatEndCelebrated?: boolean;
     tickTelemetry?: Record<string, any>;
     chatReplyTicks?: number[];
+    /**
+     * Conversational-reply (social-reply.ts) state — serializable markers only. The live
+     * AbortControllers + global counter live in the controller-level SocialReplyCoordinator.
+     */
+    socialReplyInFlight?: { key: string; startedAtTick: number };
+    pendingSocialReply?: { text: string; expiresAtTick: number; speakerId: string };
+    lastSocialReply?: { text: string; tick: number; speaker: string };
     waitResumeTick?: number;
     pausedGoal?: ActiveGoalState;
     pausedFollowTarget?: FollowTargetState;
+    /** Phase 4 (RIQ-4-2): step progress for open-goal stages, keyed by stage id. */
+    primitiveStepIdxByStageId?: Record<string, number>;
+    /** RIQ-5-2: tick before which maybeTriggerPlannerPass should not retry after a failure. */
+    plannerFailureBackoffUntilTick?: number;
+    /** S-GOAL-4: tick at which orientation_stalled was last emitted. When this is newer than
+     *  the current plan's createdAtTick, maybeTriggerPlannerPass treats it as a replan trigger
+     *  so the Brain can approach the orientation from a different angle. Cleared on success. */
+    orientationStalledAt?: number;
 }
 
 export interface FollowTargetState {

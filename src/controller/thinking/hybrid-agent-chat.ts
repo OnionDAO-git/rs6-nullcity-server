@@ -379,13 +379,18 @@ export function politeDeclineReaction(
     };
 }
 
-function isRecognizedCommand(command: string, fullText: string): boolean {
+/**
+ * A recognized command that performs an action or returns canned info — i.e. everything the
+ * command path owns EXCEPT bare status/small-talk, which the conversational-reply path handles.
+ * Used by the defer gate so a message that mixes a command with a pleasantry ("Hans, follow me,
+ * thanks") still executes the command instead of being swallowed as conversation.
+ */
+export function isActionableCommand(command: string, fullText: string): boolean {
     return (
         isStopFollowingIntent(command, fullText) ||
         Boolean(followIntent(command, fullText)) ||
         isReturnHomeIntent(command, fullText) ||
         isStopIntent(command, fullText) ||
-        isStatusIntent(command, fullText) ||
         isHelpIntent(command, fullText) ||
         isLookIntent(command, fullText) ||
         isInventoryIntent(command, fullText) ||
@@ -407,9 +412,12 @@ function isRecognizedCommand(command: string, fullText: string): boolean {
         isWoodcuttingIntent(command, fullText) ||
         isFiremakingIntent(command, fullText) ||
         isComeHereIntent(command, fullText) ||
-        isWaitIntent(command, fullText) ||
-        isSmallTalkIntent(command, fullText)
+        isWaitIntent(command, fullText)
     );
+}
+
+function isRecognizedCommand(command: string, fullText: string): boolean {
+    return isActionableCommand(command, fullText) || isStatusIntent(command, fullText) || isSmallTalkIntent(command, fullText);
 }
 
 function commandCatalogForVoice(): string {
@@ -445,6 +453,29 @@ export async function directChatAction(
     const chat = latestAddressedChat(perception, ctx.commandPrefix(), ctx.cognition().lastDirectChatKey);
     if (!chat) {
         return options.includeSmallTalk ? await nonCommandChatReaction(ctx, perception, thinkId) : undefined;
+    }
+
+    // A human PLAYER who addresses a resident by its DISPLAY NAME with a non-actionable message
+    // (small talk / unrecognized) is having a conversation, not issuing a command. Defer to the
+    // conversational-reply path WITHOUT consuming the message (don't set lastDirectChatKey), so
+    // detectSocialReply can pick it up. This is the fix for the commandPrefix==displayName collision
+    // that otherwise routed every named hero ("Hans, ...") to a canned command/decline response.
+    // Real commands ("Hans, follow me") and resident-authored speech are unaffected.
+    if (chat.from?.kind === 'player') {
+        const displayValue = ctx.options.soul.frontmatter.display ?? displayName(ctx.options.soul.frontmatter.name);
+        if (mentionsDisplayName(chat.normalizedText, displayValue)) {
+            const remainder = addressedCommand(chat.normalizedText, ctx.commandPrefix());
+            // Small-talk and status queries ("how are you", "what are you doing") are conversation,
+            // not commands — defer them to the in-character reply. But a message that ALSO carries a
+            // real command ("Hans, follow me, what are you doing?") must keep executing the command:
+            // the status/small-talk predicates scan the full text, so guard the defer on the absence
+            // of any actionable command. Real commands, clarifiable partials, and unknown-command
+            // declines keep their existing handling.
+            const conversational = isSmallTalkIntent(remainder, chat.normalizedText) || isStatusIntent(remainder, chat.normalizedText);
+            if (conversational && !isActionableCommand(remainder, chat.normalizedText)) {
+                return undefined;
+            }
+        }
     }
 
     ctx.cognition().lastDirectChatKey = chat.key;
@@ -1115,6 +1146,14 @@ export async function directChatAction(
 
 export function mentionsCommandPrefix(text: string, commandPrefix: string): boolean {
     return new RegExp(`\\b${escapeRegExp(commandPrefix)}\\b`, 'i').test(text);
+}
+
+/** True iff `text` mentions the resident's display name as a whole word. */
+export function mentionsDisplayName(text: string, displayValue: string | undefined): boolean {
+    if (!displayValue) {
+        return false;
+    }
+    return new RegExp(`\\b${escapeRegExp(displayValue)}\\b`, 'i').test(text);
 }
 
 export function addressedCommand(text: string, commandPrefix: string): string {

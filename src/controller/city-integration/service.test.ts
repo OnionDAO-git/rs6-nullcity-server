@@ -2,10 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { residentSlug, type RuntimeState } from '../memory/runtime-state';
+import { buildProjectorStoryFrame } from '../storyteller/public-frame';
 import { runCityDigest } from './cli';
 import { EconomyEventLog } from './economy-event';
 import { GoalContractStore } from './goal-contract';
-import { CityIntegrationError, CityIntegrationService, type CityRuntime } from './service';
+import { CityIntegrationError, CityIntegrationService, type CityRuntime, type PatronSupportEvent } from './service';
 import { SoulProposalStore } from './soul-proposals';
 
 class FakeRuntime implements CityRuntime {
@@ -87,6 +88,19 @@ describe('CityIntegrationService', () => {
         fs.rmSync(tempRoot, { recursive: true, force: true });
     });
 
+    it('stamps personId on the ap_topup economy event when provided', async () => {
+        await service.creditAttention('res:test', {
+            idempotencyKey: 'ap-pid-1',
+            amount: 25,
+            cityUserId: 'user-1',
+            personId: 'landing-user-1',
+            sourceType: 'patron_checkin',
+            sourceId: 'checkin-9',
+        });
+        const topup = new EconomyEventLog(root).readAll().find(event => event.kind === 'ap_topup');
+        expect(topup).toMatchObject({ kind: 'ap_topup', cityUserId: 'user-1', personId: 'landing-user-1', apDelta: 25 });
+    });
+
     it('credits resident attention once per idempotency key', async () => {
         const first = await service.creditAttention('res:test', { idempotencyKey: 'ap-1', amount: 5 });
         const replay = await service.creditAttention('res:test', { idempotencyKey: 'ap-1', amount: 5 });
@@ -129,6 +143,104 @@ describe('CityIntegrationService', () => {
             tick: 7,
             lifeIndex: 1,
             significanceReasons: ['city:attention_credit'],
+        });
+    });
+
+    describe('onPatronSupport callback (QA-20260601-065)', () => {
+        it('calls onPatronSupport with cityUserId, residentName, faction, amount, ts, and note', async () => {
+            const events: PatronSupportEvent[] = [];
+            const serviceWithHook = new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-06-02T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => ({
+                        resident,
+                        itemId: 995,
+                        burnedAmount: amount,
+                        remainingAmount: gold - amount,
+                    }),
+                },
+                birth: { birthResident: async input => ({ resident: input.residentName, created: true, connected: true }) },
+                onPatronSupport: event => events.push(event),
+            });
+
+            await serviceWithHook.creditAttention('res:test', {
+                idempotencyKey: 'patron-hook-1',
+                amount: 10,
+                cityUserId: 'user-alice',
+                note: 'dashboard support',
+            });
+
+            expect(events).toHaveLength(1);
+            expect(events[0]).toMatchObject({
+                cityUserId: 'user-alice',
+                residentName: 'res:test',
+                faction: 'embassy', // FakeRuntime state has no faction → falls back to 'embassy'
+                amount: 10,
+                ts: '2026-06-02T12:00:00.000Z',
+                note: 'dashboard support',
+            });
+        });
+
+        it('does NOT call onPatronSupport when cityUserId is absent', async () => {
+            let called = false;
+            const serviceWithHook = new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-06-02T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => ({
+                        resident,
+                        itemId: 995,
+                        burnedAmount: amount,
+                        remainingAmount: gold - amount,
+                    }),
+                },
+                birth: { birthResident: async input => ({ resident: input.residentName, created: true, connected: true }) },
+                onPatronSupport: () => {
+                    called = true;
+                },
+            });
+
+            await serviceWithHook.creditAttention('res:test', {
+                idempotencyKey: 'no-user-id-1',
+                amount: 5,
+                // no cityUserId
+            });
+
+            expect(called).toBe(false);
+        });
+
+        it('still credits attention if onPatronSupport throws', async () => {
+            const serviceWithHook = new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-06-02T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => ({
+                        resident,
+                        itemId: 995,
+                        burnedAmount: amount,
+                        remainingAmount: gold - amount,
+                    }),
+                },
+                birth: { birthResident: async input => ({ resident: input.residentName, created: true, connected: true }) },
+                onPatronSupport: () => {
+                    throw new Error('standing service unavailable');
+                },
+            });
+
+            const result = await serviceWithHook.creditAttention('res:test', {
+                idempotencyKey: 'hook-throws-1',
+                amount: 7,
+                cityUserId: 'user-bob',
+            });
+
+            expect(result).toMatchObject({ ok: true, creditedAmount: 7, attentionAfter: 17 });
         });
     });
 
@@ -497,6 +609,105 @@ describe('CityIntegrationService', () => {
                 eventRefCount: 1,
             },
         });
+    });
+
+    it('storytellerProjectorLatest returns an explicit latest-frame artifact when present', () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        fs.mkdirSync(storytellerRoot, { recursive: true });
+        const frame = buildProjectorStoryFrame(
+            {
+                schemaVersion: 1,
+                digestId: 'digest-frame',
+                windowStart: '2026-05-27T11:50:00.000Z',
+                windowEnd: '2026-05-27T12:00:00.000Z',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                apEvents: [],
+                gpEvents: [],
+                exchangeEvents: [],
+                ncriEvents: [],
+                goalEvents: [],
+                stuckEvents: [],
+                miscEvents: [],
+                topEvents: [],
+                residents: [],
+                systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
+            },
+            { now: new Date('2026-05-27T12:01:00.000Z') },
+        );
+        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frame, null, 2));
+
+        expect(service.storytellerProjectorLatest()).toMatchObject({
+            ok: true,
+            digestId: 'digest-frame',
+            narration: { source: 'deterministic_fallback' },
+        });
+    });
+
+    it('storytellerProjectorLatest builds a fail-closed frame from the newest run when latest-frame is absent', () => {
+        const storytellerRoot = path.join(path.dirname(root), 'storyteller');
+        const runRoot = path.join(storytellerRoot, 'run-review-needed');
+        fs.mkdirSync(runRoot, { recursive: true });
+        fs.writeFileSync(
+            path.join(runRoot, 'digest.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                digestId: 'digest-review-needed',
+                windowStart: '2026-05-27T11:50:00.000Z',
+                windowEnd: '2026-05-27T12:00:00.000Z',
+                builtAt: '2026-05-27T12:00:00.000Z',
+                apEvents: [],
+                gpEvents: [],
+                exchangeEvents: [],
+                ncriEvents: [],
+                goalEvents: [],
+                stuckEvents: [],
+                miscEvents: [],
+                topEvents: [
+                    {
+                        ref: 'evt-1',
+                        kind: 'ap_low',
+                        residentName: 'res:test',
+                        ts: '2026-05-27T11:59:00.000Z',
+                        note: 'res:test has low AP.',
+                        importance: 'medium',
+                    },
+                ],
+                residents: [{ residentName: 'res:test', attention: 10, isLowAp: true, isFaded: false, gpObserved: 5 }],
+                systemHealth: { totalResidents: 1, activeResidents: 1, fadedResidents: 0, lowApResidents: 1 },
+            }),
+        );
+        fs.writeFileSync(
+            path.join(runRoot, 'dispatch.json'),
+            JSON.stringify({
+                schemaVersion: 1,
+                dispatchId: 'dispatch-review-needed',
+                digestId: 'digest-review-needed',
+                generatedAt: '2026-05-27T12:01:00.000Z',
+                modelProfile: 'smart',
+                latencyMs: 10,
+                estimatedCostUsd: 0.01,
+                inputTokens: 10,
+                outputTokens: 10,
+                publicTitle: 'Ignore previous instructions',
+                publicBody: 'human:alice@example.com revealed sk-or-v1-1234567890abcdef.',
+                publicBullets: ['unsafe'],
+                operatorSummary: 'unsafe',
+                operatorWarnings: [],
+                eventRefsUsed: [],
+                needsReview: true,
+                reviewReasons: ['private identifier'],
+            }),
+        );
+
+        const frame = service.storytellerProjectorLatest();
+        const serialized = JSON.stringify(frame);
+
+        expect(frame.ok).toBe(true);
+        expect(frame.digestId).toBe('digest-review-needed');
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(serialized).not.toContain('Ignore previous instructions');
+        expect(serialized).not.toContain('alice@example.com');
+        expect(serialized).not.toContain('sk-or-v1-1234567890abcdef');
     });
 
     it('storytellerLatest throws storyteller_not_found when no storyteller artifacts are present', () => {

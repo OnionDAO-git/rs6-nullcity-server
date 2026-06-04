@@ -31,6 +31,36 @@ export function sortByImportance(events: DigestEvent[]): DigestEvent[] {
     });
 }
 
+/**
+ * Score a resident by narrative relevance:
+ * - Sum of IMPORTANCE_WEIGHT for each window event that mentions them.
+ * - +100 if faded (critical urgency, may need patron rescue).
+ * - +50 if low AP and not faded (approaching fade).
+ * - +10 if GP observed > 0 (economy signal).
+ *
+ * Higher score = should appear before the cap slice.
+ */
+export function residentRelevanceScore(resident: ResidentSnapshot, windowEvents: DigestEvent[]): number {
+    let score = 0;
+    for (const event of windowEvents) {
+        if (event.residentName === resident.residentName) {
+            score += IMPORTANCE_WEIGHT[event.importance];
+        }
+    }
+    if (resident.isFaded) score += 100;
+    else if (resident.isLowAp) score += 50;
+    if (resident.gpObserved !== null && resident.gpObserved > 0) score += 10;
+    return score;
+}
+
+/**
+ * Rank residents by descending relevance score before the maxResidentMentions cap
+ * so the most narratively important residents are never silently dropped.
+ */
+export function rankResidentsByRelevance(residents: ResidentSnapshot[], windowEvents: DigestEvent[]): ResidentSnapshot[] {
+    return [...residents].sort((a, b) => residentRelevanceScore(b, windowEvents) - residentRelevanceScore(a, windowEvents));
+}
+
 export interface DigestBuilderInput {
     digestId: string;
     windowStart: Date;
@@ -82,11 +112,12 @@ export function buildDigest(input: DigestBuilderInput): CityEventDigest {
     ]);
 
     const topEvents = allEvents.slice(0, config.maxResidentMentions);
-    const residents = input.residents.slice(0, config.maxResidentMentions);
+    const residents = rankResidentsByRelevance(input.residents, allEvents).slice(0, config.maxResidentMentions);
 
     const fadedResidents = input.residents.filter(r => r.isFaded).length;
     const lowApResidents = input.residents.filter(r => r.isLowAp && !r.isFaded).length;
-    const activeResidents = input.residents.filter(r => !r.isFaded).length;
+    const activeResidentNames = new Set(allEvents.map(event => event.residentName));
+    const activeResidents = input.residents.filter(r => !r.isFaded && activeResidentNames.has(r.residentName)).length;
 
     return {
         schemaVersion: 1,

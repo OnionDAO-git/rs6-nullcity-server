@@ -11,20 +11,37 @@ This file tells humans and AI agents which docs are canonical today and which do
 | AI coding agent | `AGENTS.md` | Current repo rules, sprint pointers, safety boundaries. |
 | Deep AI onboarding | `docs/START-HERE-AGENTS.md` | Longer architecture and workstream context. |
 | Multi-agent worker | `docs/agent-coordination.md` | Branch workflow, file locks, status log, issue rules. |
+| Launch readiness | `docs/launch-blockers.md` | Canonical cross-repo registry of everything gating OnionDAO launch (P0/P1/P2), across all repos. |
+
+## Precedence
+
+When docs disagree, use this order:
+
+1. `AGENTS.md` for current agent operating rules and safety boundaries.
+2. This docs map for which files are active vs historical.
+3. `docs/agent-status.md` tail for live file locks and runtime requests.
+4. `docs/issue-register.md` for open defects, weak evidence, and process risks.
+5. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` for parent task status.
+6. Domain specs/plans only when linked from the roadmap, issue register, or this map.
+
+Do not treat old sprint plans, audits, or evidence notes as task queues unless a current issue or roadmap item points to them.
 
 ## Active Source Of Truth
 
 | Doc | Role |
 |---|---|
 | `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` | Canonical task board and Workstream S parent task status. |
-| `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` | Packet backlog (`S0a`-`S12b`, `CQA0`-`CQA11`), file lanes, packet definition of done. |
-| `docs/2026-05-29-weekend-sprint-plan.md` | Human-readable Friday/Saturday/Sunday sprint plan. |
+| `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md` | Historical packet backlog (`S0a`-`S12b`, `CQA0`-`CQA11`) that remains active only where current roadmap/issue rows link to it. |
+| `docs/superpowers/plans/2026-06-01-resident-intelligence-roadmap.md` | Active resident intelligence roadmap when issue rows or James point there. |
+| `docs/2026-06-01-storyteller-dashboard-backlog.md` | Active Storyteller/dashboard backlog for the projector and human-facing story view. |
 | `docs/resident-capabilities.md` | Evidence-backed matrix of what residents can do versus what they do live. |
 | `docs/capability-evidence/` | Append-only CQA evidence notes that can later be folded into `resident-capabilities.md`. |
 | `docs/issue-register.md` | Open QA findings, defects, weak evidence, and process issues. |
 | `docs/release-qa-status.md` | QA Marshal merge/readiness gate for `agents/wip` -> `nullcity`. |
 | `docs/agent-status.md` | Append-only live coordination log. Keep entries short. |
 | `docs/human-decisions.md` | Decisions that need James/Dev/OnionDAO input or later audit. |
+| `docs/launch-blockers.md` | Canonical cross-repo launch-blocker registry (P0/P1/P2). Source of truth for "what's left before OnionDAO launch" across all repos. |
+| `docs/launch-blockers_discussion.md` | Append-only agent-to-agent discussion for launch blockers; keeps the registry lean. |
 
 ## Current Product And Design Context
 
@@ -35,7 +52,6 @@ This file tells humans and AI agents which docs are canonical today and which do
 | `docs/2026-05-26-meeting-decisions.md` | Latest James/Dev/Adam meeting decisions and constraints. |
 | `docs/2026-05-28-attention-loop-and-storyteller-tasks.md` | AP/GP loop and Storyteller task seed. |
 | `docs/2026-05-28-storyteller-design.md` | Storyteller feature design. |
-| `docs/2026-06-01-storyteller-dashboard-backlog.md` | Active James-controlled Storyteller + `/overview` projector backlog. |
 | `docs/city-dashboard-integration.md` | Server-to-dashboard JSON contracts. |
 
 ## Evidence And Benchmarks
@@ -65,3 +81,5 @@ These docs are useful context, but do not treat them as active task state unless
 ## Rule Of Thumb
 
 If a doc disagrees with the active source-of-truth docs, trust the active source-of-truth docs and add a note to `docs/issue-register.md` if the contradiction could mislead another agent.
+
+For capability work, use `docs/resident-capabilities.md` as the evidence rollup, not as a private task list. If a weak capability needs dev work, add or update an issue-register row, claim it, gather evidence under `docs/capability-evidence/`, then fold the conclusion back into the capabilities matrix.

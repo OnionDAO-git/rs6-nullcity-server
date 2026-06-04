@@ -43,6 +43,7 @@ import { PerceptionCompressor } from './perception/perception-compressor';
 import { PerceptionHistory } from './perception/perception-history';
 import { type Soul, dominantFaction } from './soul/soul-schema';
 import { LettersStore } from './patron/letters-store';
+import type { PlanStore } from './intelligence/plan-store';
 import {
     buildEpitaphDispatchRequests,
     dispatchEpitaphs,
@@ -55,6 +56,7 @@ import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import { initialAttention, spendAttention } from './spark/attention';
 import { explorationGoal, isStandaloneFiremakingGoal } from './spark/runescape-brain-planner';
+import { scoreOrientationAction, OrientationStallTracker } from './spark/orientation-scorer';
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
 import type { ThinkingModule, ThoughtResult } from './thinking';
 import type { GatewayClient } from './transport/gateway-client';
@@ -122,6 +124,7 @@ export interface ResidentRuntimeOptions {
     body?: ResidentBody;
     actionCoordinator?: ActionCoordinator;
     gameSkill?: ResidentRuntimeGameSkill;
+    planStore?: PlanStore;
     factionStockpile?: ResidentRuntimeFactionStockpile;
     cityExchange?: ResidentRuntimeCityExchange;
     sparkModules?: SparkModule[];
@@ -198,6 +201,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly momentLabeler?: MomentLabeler;
     private readonly whisperInbox?: WhisperInbox;
     private readonly loreBusInbox?: LoreBusInbox;
+    private orientationStallTracker?: OrientationStallTracker;
     private readonly gatewayActionResults = new Map<string, GatewayActionResultObservation>();
     private readonly gatewayActionResultWaiters = new Map<string, Set<(observation: GatewayActionResultObservation) => void>>();
     private readonly gatewayActionResultListener?: GatewayActionResultListener;
@@ -227,6 +231,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 state: this.state,
                 memory: options.memory,
                 llm: options.llm,
+                planStore: options.planStore,
+                libraryUpdater: this.evidence?.library,
                 sparkModules: options.sparkModules,
                 moduleTelemetry: entry => options.inferenceLog.append(this.name, { ...entry }),
                 patronRegistry: this.patronRegistry,
@@ -262,6 +268,9 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.momentLabeler = options.evidence ? new MomentLabeler({ builder: options.evidence.trajectory }) : undefined;
         }
         this.options.stateStore.save(this.state);
+        if (options.soul.frontmatter.orientationGoal) {
+            this.orientationStallTracker = new OrientationStallTracker();
+        }
     }
 
     private applyRestartRespawnPolicy(startingAttention: number): void {
@@ -637,6 +646,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 this.deciding = false;
             }
         } finally {
+            this.maybeRecordOrientationProgress();
             this.advanceRuntimeClock(perception);
             this.checkDeceasedAndDispatchEpitaphs(perception);
             this.options.stateStore.save(this.state);
@@ -649,6 +659,47 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             return;
         }
         this.state.tick = Math.max(this.state.tick, perceptionTick);
+    }
+
+    private maybeRecordOrientationProgress(): void {
+        const orientationGoal = this.options.soul.frontmatter.orientationGoal;
+        if (!orientationGoal || !this.orientationStallTracker || this.state.deceased) return;
+
+        const currentGoalId = this.state.cognition?.activeGoal?.id;
+        const scored = scoreOrientationAction({
+            orientationGoalId: orientationGoal.id,
+            currentGoalId,
+        });
+
+        const ts = new Date().toISOString();
+        const tick = this.state.tick;
+
+        if (scored.progressDetected && scored.reason) {
+            this.evidence?.library?.observeOrientationProgress({
+                kind: 'orientation_progress',
+                ts,
+                tick,
+                orientationGoalId: orientationGoal.id,
+                orientationGoalDescription: orientationGoal.description,
+                reason: scored.reason,
+            });
+        }
+
+        const stall = this.orientationStallTracker.record(scored.progressDetected);
+        if (stall.newStall) {
+            this.evidence?.library?.observeOrientationStalled({
+                kind: 'orientation_stalled',
+                ts,
+                tick,
+                orientationGoalId: orientationGoal.id,
+                orientationGoalDescription: orientationGoal.description,
+                nonProgressTicks: stall.nonProgressTicks,
+            });
+            // S-GOAL-4: persist stall tick so maybeTriggerPlannerPass sees it next brain cycle
+            // and can replan with a fresh approach to the orientation goal.
+            this.state.cognition = this.state.cognition ?? {};
+            this.state.cognition.orientationStalledAt = tick;
+        }
     }
 
     private async trySubmitReceptionGreeting(perception: Perception): Promise<boolean> {

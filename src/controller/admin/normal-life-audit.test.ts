@@ -147,7 +147,16 @@ describe('normal life audit', () => {
             'stuck_recovered',
             'first_xp',
             'say',
+            'plan_stage_done',
+            'plan_stage_blocked',
         ]);
+        expect(report.planSummary).toEqual({
+            residentsWithPlanActivity: 0,
+            totalStagesDone: 0,
+            totalStagesBlocked: 0,
+            totalPlanActions: 0,
+            planResidents: [],
+        });
         expect(report.residentSignalSummary).toBe(report.residentSlices);
         expect(report.residentSlices).toEqual([
             expect.objectContaining({
@@ -497,6 +506,83 @@ describe('normal life audit', () => {
                 lastGpObservedAt: '2026-05-31T12:04:00.000Z',
             },
         ]);
+    });
+
+    it('reports planSummary with stage done/blocked timeline events and plan body actions', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'normal-life-audit-plan-'));
+        const logsRoot = path.join(root, 'logs');
+        const libraryRoot = path.join(root, 'library');
+        fs.mkdirSync(logsRoot, { recursive: true });
+        fs.mkdirSync(libraryRoot, { recursive: true });
+
+        // res:qa-firemaker: 3 plan body actions + 2 stage_done + 1 stage_blocked
+        writeJsonl(path.join(logsRoot, 'res:qa-firemaker', 'actions', '2026-06-03.jsonl'), [
+            action('2026-06-03T10:00:00.000Z', 'use_item_on_item', 'plan_stage:light-fires', true, 3000),
+            action('2026-06-03T10:01:00.000Z', 'use_item_on_item', 'plan_stage:light-fires', true, 3000),
+            action('2026-06-03T10:02:00.000Z', 'move_to', 'plan_stage:acquire-axe', true, 3000),
+        ]);
+        writeJsonl(path.join(libraryRoot, 'res-qa-firemaker', 'timeline.jsonl'), [
+            timeline('2026-06-03T10:00:30.000Z', 'plan_stage_done'),
+            timeline('2026-06-03T10:01:30.000Z', 'plan_stage_done'),
+            timeline('2026-06-03T10:02:30.000Z', 'plan_stage_blocked'),
+        ]);
+
+        // res:qa-other: only idle actions, no plan activity
+        writeJsonl(path.join(logsRoot, 'res:qa-other', 'actions', '2026-06-03.jsonl'), [
+            action('2026-06-03T10:00:00.000Z', 'say', 'idle_initiative', true, 2000),
+        ]);
+
+        const report = collectNormalLifeAudit({
+            logsRoot,
+            libraryRoot,
+            windowStart: new Date('2026-06-03T10:00:00.000Z'),
+            windowEnd: new Date('2026-06-03T11:00:00.000Z'),
+            maxTopRows: 6,
+        });
+
+        expect(report.planSummary.residentsWithPlanActivity).toBe(1);
+        expect(report.planSummary.totalStagesDone).toBe(2);
+        expect(report.planSummary.totalStagesBlocked).toBe(1);
+        expect(report.planSummary.totalPlanActions).toBe(3);
+        expect(report.planSummary.planResidents).toEqual([
+            { resident: 'res:qa-firemaker', stagesDone: 2, stagesBlocked: 1, planActions: 3 },
+        ]);
+        // New timeline kinds are tracked
+        expect(report.trackedTimelineCounts['plan_stage_done']).toBe(2);
+        expect(report.trackedTimelineCounts['plan_stage_blocked']).toBe(1);
+        // Non-plan resident does not appear in planResidents
+        expect(report.planSummary.planResidents.find(r => r.resident === 'res:qa-other')).toBeUndefined();
+    });
+
+    it('planSummary prefix-matches plan_stage: causes without matching plan_stage_done: or plan_stage_blocked: from action log', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'normal-life-audit-plan-prefix-'));
+        const logsRoot = path.join(root, 'logs');
+        const libraryRoot = path.join(root, 'library');
+        fs.mkdirSync(logsRoot, { recursive: true });
+        fs.mkdirSync(libraryRoot, { recursive: true });
+
+        // plan_stage_done:/plan_stage_blocked: causes in the action log should not contribute to planActions
+        // (those signals are nooped and don't appear in action log — but if they did, they should not be counted
+        // as planActions because they start with plan_stage_done:, not plan_stage:)
+        writeJsonl(path.join(logsRoot, 'res:qa-alpha', 'actions', '2026-06-03.jsonl'), [
+            action('2026-06-03T10:00:00.000Z', 'move_to', 'plan_stage:gather-logs', true, 3000),
+            action('2026-06-03T10:01:00.000Z', 'use_item_on_item', 'plan_stage:light-fires', true, 3000),
+            // These would never appear in action log in practice (nooped) but must not inflate planActions
+            action('2026-06-03T10:02:00.000Z', 'move_to', 'plan_stage_done:acquire-axe', true, 3000),
+            action('2026-06-03T10:03:00.000Z', 'move_to', 'plan_stage_blocked:gather-logs', true, 3000),
+        ]);
+
+        const report = collectNormalLifeAudit({
+            logsRoot,
+            libraryRoot,
+            windowStart: new Date('2026-06-03T10:00:00.000Z'),
+            windowEnd: new Date('2026-06-03T11:00:00.000Z'),
+            maxTopRows: 6,
+        });
+
+        // Only plan_stage: prefix counts as planActions (not plan_stage_done: or plan_stage_blocked:)
+        expect(report.planSummary.totalPlanActions).toBe(2);
+        expect(report.planSummary.planResidents[0].planActions).toBe(2);
     });
 
     it('writes a JSON artifact and returns exit code 0', async () => {

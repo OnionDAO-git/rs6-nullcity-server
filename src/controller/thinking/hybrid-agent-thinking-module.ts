@@ -3,6 +3,8 @@ import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { ActiveGoalState, RuntimeState } from '../memory/runtime-state';
 import type { HybridAgentBehaviorDefinition, Soul } from '../soul/soul-schema';
+import type { LibraryUpdater } from '../evidence/library-updater';
+import type { PlanStore } from '../intelligence/plan-store';
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import { PatronRegistry } from '../patron/patron-registry';
 import type { ThinkingModule, ThoughtResult } from './thinking-module';
@@ -20,7 +22,18 @@ import {
     resetClockSensitiveCognition,
 } from './hybrid-agent-utils';
 
-import { directChatAction } from './hybrid-agent-chat';
+import { directChatAction, isChatRateLimited } from './hybrid-agent-chat';
+import {
+    SocialReplyCoordinator,
+    SOCIAL_REPLY_GLOBAL_CAP,
+    SOCIAL_REPLY_TEMPERATURE,
+    SOCIAL_REPLY_EXPIRE_TICKS,
+    detectSocialReply,
+    buildReplyContext,
+    buildReplyPrompt,
+    formatReply,
+    replyFallback,
+} from './social-reply';
 
 import {
     dialogueReaction,
@@ -59,6 +72,8 @@ export interface HybridAgentThinkingModuleOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+    planStore?: PlanStore;
+    libraryUpdater?: LibraryUpdater;
     patronRegistry?: PatronRegistry;
 }
 
@@ -81,6 +96,7 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private readonly cancelledThinkIds = new Map<number, string>();
     private readonly cancelledThinkResults = new Map<number, ThoughtResult>();
     private readonly inflightCompletions = new Map<number, AbortController>();
+    private readonly socialReplyCoordinator = new SocialReplyCoordinator(SOCIAL_REPLY_GLOBAL_CAP);
 
     constructor(public readonly options: HybridAgentThinkingModuleOptions) {}
 
@@ -137,7 +153,25 @@ export class HybridAgentThinkingModule implements ThinkingModule {
 
             const combat = combatReaction(this, perception as HybridPerception);
             if (combat) {
+                // Combat supersedes a pending/in-flight social reply — never compose a line while attacked.
+                this.socialReplyCoordinator.abort(this.options.soul.frontmatter.name);
+                const combatCognition = this.cognition();
+                combatCognition.socialReplyInFlight = undefined;
+                combatCognition.pendingSocialReply = undefined;
                 return this.result(combat.actions, combat.cause, 0, false);
+            }
+
+            // Conversational reply (social-reply): emit a finished reply (if the asker is still present
+            // and it isn't stale) before starting a new one; both run AFTER combat so danger wins.
+            const socialEmit = this.maybeEmitSocialReply(perception as HybridPerception);
+            if (socialEmit) {
+                return socialEmit;
+            }
+
+            // A human player named us — fire a detached, off-loop inference and yield this tick (no freeze).
+            const socialReply = this.maybeStartSocialReply(perception as HybridPerception);
+            if (socialReply) {
+                return socialReply;
             }
 
             if (cognition.waitResumeTick !== undefined) {
@@ -324,6 +358,121 @@ export class HybridAgentThinkingModule implements ThinkingModule {
         return fallback;
     }
 
+    /**
+     * Conversational reply — detection step. If a human player named this resident, fire a
+     * DETACHED Body-profile inference (never awaited on the decision loop) and yield this tick.
+     * The reply lands a few ticks later via commitSocialReply; the resident keeps acting.
+     */
+    /**
+     * Conversational reply — emission step. Speaks a resolved pending reply, but only while it is
+     * fresh AND the addressing player is still in perception (no answering empty air after the
+     * 3-7-tick inference gap). Otherwise the pending reply is dropped. Records lastSocialReply for
+     * the 1-turn follow-up.
+     */
+    private maybeEmitSocialReply(perception: HybridPerception): ThoughtResult | undefined {
+        const cognition = this.cognition();
+        const pending = cognition.pendingSocialReply;
+        if (!pending) {
+            return undefined;
+        }
+        const tick = this.options.state.tick;
+        const askerPresent = (perception.nearby?.players || []).some(player => player.id === pending.speakerId);
+        if (tick > pending.expiresAtTick || !askerPresent) {
+            cognition.pendingSocialReply = undefined;
+            return undefined;
+        }
+        cognition.pendingSocialReply = undefined;
+        cognition.lastSocialReply = { text: pending.text, tick, speaker: pending.speakerId };
+        return this.result([{ kind: 'say', text: pending.text, voiceSource: 'inference' }], 'social_reply_emit', 0, false);
+    }
+
+    private maybeStartSocialReply(perception: HybridPerception): ThoughtResult | undefined {
+        const cognition = this.cognition();
+        if (cognition.socialReplyInFlight) {
+            return undefined;
+        }
+        const display = this.options.soul.frontmatter.display ?? displayName(this.options.soul.frontmatter.name);
+        const detected = detectSocialReply(perception, cognition.lastDirectChatKey, display);
+        if (!detected) {
+            return undefined;
+        }
+        const currentTick = this.options.state.tick;
+        const context = buildReplyContext({
+            soul: this.options.soul,
+            perception,
+            activeGoalDescription: cognition.activeGoal?.description,
+            speakerName: detected.speakerName,
+            speakerId: detected.speakerId,
+            chatText: detected.text,
+            currentTick,
+            lastReply: cognition.lastSocialReply,
+        });
+        // Rate-limit — but a same-speaker follow-up within the follow-up window bypasses it, so a
+        // genuine back-and-forth conversation stays responsive instead of dropping the "why?" beat.
+        // The window is re-stamped on each reply, so a sustained 1:1 exchange keeps bypassing; that
+        // is intended and bounded by the per-resident in-flight gate + the coordinator cap (it is
+        // NOT a single one-shot bypass).
+        if (!context.bypassRateLimit && isChatRateLimited(this)) {
+            cognition.lastDirectChatKey = detected.key;
+            return undefined;
+        }
+        const slot = this.socialReplyCoordinator.admit(this.options.soul.frontmatter.name, detected.key);
+        if (!slot) {
+            cognition.lastDirectChatKey = detected.key;
+            return undefined;
+        }
+        cognition.socialReplyInFlight = { key: detected.key, startedAtTick: currentTick };
+        cognition.lastDirectChatKey = detected.key;
+        (cognition.chatReplyTicks ||= []).push(currentTick);
+
+        try {
+            const profile = this.behavior().body;
+            void this.options.llm
+                .complete({
+                    endpoint: this.endpointFor(profile),
+                    prompt: buildReplyPrompt(context),
+                    temperature: this.temperatureFor(profile, SOCIAL_REPLY_TEMPERATURE),
+                    thinking: profile?.thinking ?? false,
+                    timeoutMs: this.timeoutFor(profile, DEFAULT_BODY_INFERENCE_TIMEOUT_MS),
+                    priority: 4,
+                    signal: slot.controller.signal,
+                    ...(this.modelFor(profile) ? { model: this.modelFor(profile) } : {}),
+                })
+                .then(response => this.commitSocialReply(detected.key, formatReply(response.text), detected.speakerId))
+                .catch(() => this.commitSocialReply(detected.key, undefined, detected.speakerId));
+        } catch {
+            // A synchronous failure assembling/dispatching the request must NOT leave the slot
+            // held — that would lock the resident out of all future social replies for its life.
+            this.socialReplyCoordinator.settle(this.options.soul.frontmatter.name, detected.key);
+            cognition.socialReplyInFlight = undefined;
+        }
+
+        return { actions: [], cause: 'social_reply_detection', nooped: true };
+    }
+
+    /**
+     * Conversational reply — resolve step (off-loop). Re-reads the live cognition via
+     * `this.cognition()` at resolve time (it does NOT close over the cognition seen at detection),
+     * so the write lands on the current state object even if the runtime later swaps it. Checks
+     * key-ownership (a superseded/aborted reply is a no-op), stamps freshness at resolve, settles once.
+     */
+    private commitSocialReply(key: string, text: string | undefined, speakerId: string): void {
+        const name = this.options.soul.frontmatter.name;
+        const cognition = this.cognition();
+        if (cognition.socialReplyInFlight?.key !== key) {
+            this.socialReplyCoordinator.settle(name, key);
+            return;
+        }
+        const finalText = text ?? replyFallback(this.options.soul, key);
+        cognition.pendingSocialReply = {
+            text: finalText,
+            expiresAtTick: this.options.state.tick + SOCIAL_REPLY_EXPIRE_TICKS,
+            speakerId,
+        };
+        cognition.socialReplyInFlight = undefined;
+        this.socialReplyCoordinator.settle(name, key);
+    }
+
     complete(thinkId: number, request: Omit<LlmRequest, 'signal'>): Promise<LlmResponse> {
         const cancelled = this.cancelledThinkIds.get(thinkId);
         if (cancelled) {
@@ -479,6 +628,11 @@ export class HybridAgentThinkingModule implements ThinkingModule {
     private advanceTick(perception: Perception): void {
         const perceptionTick = typeof perception.tick === 'number' ? perception.tick : 0;
         if (perceptionTick > 0 && this.options.state.tick - perceptionTick > WORLD_TICK_RESET_DRIFT) {
+            // A world-tick reset wipes cognition (including socialReplyInFlight). Release any live
+            // coordinator slot FIRST — otherwise the in-memory slot + counter outlive the marker and
+            // the resident is permanently locked out of conversational replies. abort() is a safe
+            // no-op when no slot is held and is key-owned so it can't double-free.
+            this.socialReplyCoordinator.abort(this.options.soul.frontmatter.name);
             resetClockSensitiveCognition(this.options.state, perceptionTick);
             this.options.state.tick = perceptionTick;
             return;

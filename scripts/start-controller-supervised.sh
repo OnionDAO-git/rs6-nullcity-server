@@ -25,6 +25,11 @@ LOCK="data/controller/memory/nullcity-controller.lock"
 LOG_DIR="/tmp/nullcity-runtime"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/controller-supervised.log"
+bash scripts/runtime/rotate-logs.sh "$LOG_DIR"
+
+log_msg() {
+  printf '%s\n' "$1" | bash scripts/runtime/rotating-log.sh "$LOG"
+}
 
 # Flags must match the canonical launch (see docs/HUMANS.md / runtime-stewardship.md).
 CTRL_ARGS=(
@@ -38,7 +43,7 @@ CTRL_ARGS=(
 
 child=""
 shutdown() {
-  echo "[supervisor] received signal; stopping controller (pid ${child:-none})" | tee -a "$LOG"
+  log_msg "[supervisor] received signal; stopping controller (pid ${child:-none})"
   [ -n "$child" ] && kill "$child" 2>/dev/null
   exit 0
 }
@@ -47,13 +52,13 @@ trap shutdown SIGTERM SIGINT
 fast_fails=0
 while true; do
   if [ -f "$LOCK" ] && ! lsof -tiTCP:43596 -sTCP:LISTEN -nP >/dev/null 2>&1; then
-    echo "[supervisor] no live controller on :43596 but lock present — removing stale $LOCK" | tee -a "$LOG"
+    log_msg "[supervisor] no live controller on :43596 but lock present — removing stale $LOCK"
     rm -f "$LOCK"
   fi
 
-  echo "[supervisor] starting controller at $(date)" | tee -a "$LOG"
+  log_msg "[supervisor] starting controller at $(date)"
   start=$(date +%s)
-  node dist/controller/index.js "${CTRL_ARGS[@]}" >>"$LOG" 2>&1 &
+  node dist/controller/index.js "${CTRL_ARGS[@]}" > >(bash scripts/runtime/rotating-log.sh "$LOG") 2>&1 &
   child=$!
   wait "$child"
   code=$?
@@ -64,10 +69,10 @@ while true; do
   else
     fast_fails=0
   fi
-  echo "[supervisor] controller exited code=$code after ${uptime}s (consecutive fast-crashes=$fast_fails)" | tee -a "$LOG"
+  log_msg "[supervisor] controller exited code=$code after ${uptime}s (consecutive fast-crashes=$fast_fails)"
 
   if [ "$fast_fails" -ge 5 ]; then
-    echo "[supervisor] 5 crashes within 15s each — likely a broken build/config; giving up. Fix + restart manually." | tee -a "$LOG"
+    log_msg "[supervisor] 5 crashes within 15s each — likely a broken build/config; giving up. Fix + restart manually."
     exit 1
   fi
   sleep 3

@@ -5,6 +5,8 @@ import {
     resetRefCounter,
     economyEventsToDigestBuckets,
     goalContractsToDigestGoalEvents,
+    rankResidentsByRelevance,
+    residentRelevanceScore,
 } from './digest-builder';
 import { cityEventDigestSchema, IMPORTANCE_WEIGHT } from './types';
 import type { DigestEvent, ResidentSnapshot } from './types';
@@ -186,6 +188,10 @@ describe('buildDigest — maxResidentMentions cap', () => {
             windowStart: WIN_START,
             windowEnd: WIN_END,
             residents,
+            apEvents: [
+                ...Array.from({ length: 10 }, (_, i) => ({ ...makeEvent(`active-a${i}`, 'ap_granted', 'low'), residentName: `res:a${i}` })),
+                { ...makeEvent('active-low', 'ap_low', 'medium'), residentName: 'res:low' },
+            ],
             config: { maxResidentMentions: 3 },
         });
 
@@ -262,6 +268,10 @@ describe('buildDigest — systemHealth', () => {
             windowStart: WIN_START,
             windowEnd: WIN_END,
             residents,
+            apEvents: [
+                { ...makeEvent('active-a', 'ap_granted', 'low'), residentName: 'res:a' },
+                { ...makeEvent('active-b', 'ap_low', 'medium'), residentName: 'res:b' },
+            ],
         });
         expect(systemHealth.totalResidents).toBe(4);
         expect(systemHealth.activeResidents).toBe(2);
@@ -914,5 +924,204 @@ describe('S9b integration — GoalContract → digest → verifier', () => {
             goalEvents,
         });
         expect(digest.goalEvents).toHaveLength(0);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// P0-S3: Resident relevance scoring and ranking (fixes alphabetical drop)
+// ---------------------------------------------------------------------------
+
+function makeResidentWithGp(name: string, opts: Partial<ResidentSnapshot> = {}): ResidentSnapshot {
+    return { residentName: name, attention: 2000, isLowAp: false, isFaded: false, gpObserved: null, ...opts };
+}
+
+function makeResidentEvent(residentName: string, importance: DigestEvent['importance']): DigestEvent {
+    return { ref: `${residentName}-evt`, kind: 'ap_low', residentName, ts: TS_IN, note: 'test', importance };
+}
+
+describe('residentRelevanceScore', () => {
+    it('returns 0 for a resident with no events and no status flags', () => {
+        const r = makeResidentWithGp('res:quiet');
+        expect(residentRelevanceScore(r, [])).toBe(0);
+    });
+
+    it('adds IMPORTANCE_WEIGHT for each window event mentioning the resident', () => {
+        const r = makeResidentWithGp('res:alice');
+        const events: DigestEvent[] = [
+            makeResidentEvent('res:alice', 'high'), // weight 75
+            makeResidentEvent('res:alice', 'medium'), // weight 50
+            makeResidentEvent('res:bob', 'critical'), // not alice — ignored
+        ];
+        expect(residentRelevanceScore(r, events)).toBe(IMPORTANCE_WEIGHT.high + IMPORTANCE_WEIGHT.medium);
+    });
+
+    it('adds 100 for a faded resident', () => {
+        const r = makeResidentWithGp('res:faded', { isFaded: true });
+        expect(residentRelevanceScore(r, [])).toBe(100);
+    });
+
+    it('adds 50 for a low-AP resident (not faded)', () => {
+        const r = makeResidentWithGp('res:lowap', { isLowAp: true });
+        expect(residentRelevanceScore(r, [])).toBe(50);
+    });
+
+    it('does not add 50 for a faded resident (faded +100 already covers it)', () => {
+        // faded=true, isLowAp=true — only +100, not +150
+        const r = makeResidentWithGp('res:faded-low', { isFaded: true, isLowAp: true });
+        expect(residentRelevanceScore(r, [])).toBe(100);
+    });
+
+    it('adds 10 for a resident with GP observed > 0', () => {
+        const r = makeResidentWithGp('res:rich', { gpObserved: 500 });
+        expect(residentRelevanceScore(r, [])).toBe(10);
+    });
+
+    it('does not add GP bonus when gpObserved is 0', () => {
+        const r = makeResidentWithGp('res:broke', { gpObserved: 0 });
+        expect(residentRelevanceScore(r, [])).toBe(0);
+    });
+
+    it('does not add GP bonus when gpObserved is null', () => {
+        const r = makeResidentWithGp('res:unknown-gp', { gpObserved: null });
+        expect(residentRelevanceScore(r, [])).toBe(0);
+    });
+
+    it('accumulates all bonuses: events + low-AP + GP', () => {
+        const r = makeResidentWithGp('res:combo', { isLowAp: true, gpObserved: 200 });
+        const events: DigestEvent[] = [makeResidentEvent('res:combo', 'critical')]; // +100
+        // low-AP +50, GP +10, critical event +100 = 160
+        expect(residentRelevanceScore(r, events)).toBe(IMPORTANCE_WEIGHT.critical + 50 + 10);
+    });
+});
+
+describe('rankResidentsByRelevance', () => {
+    it('does not mutate the input array', () => {
+        const residents = [makeResidentWithGp('res:a'), makeResidentWithGp('res:b')];
+        const original = residents.map(r => r.residentName);
+        rankResidentsByRelevance(residents, []);
+        expect(residents.map(r => r.residentName)).toEqual(original);
+    });
+
+    it('ranks faded resident above active resident', () => {
+        const faded = makeResidentWithGp('res:faded', { isFaded: true });
+        const active = makeResidentWithGp('res:active');
+        const ranked = rankResidentsByRelevance([active, faded], []);
+        expect(ranked[0].residentName).toBe('res:faded');
+    });
+
+    it('ranks low-AP resident above quiet resident', () => {
+        const lowAp = makeResidentWithGp('res:lowap', { isLowAp: true });
+        const quiet = makeResidentWithGp('res:quiet');
+        const ranked = rankResidentsByRelevance([quiet, lowAp], []);
+        expect(ranked[0].residentName).toBe('res:lowap');
+    });
+
+    it('ranks resident with a critical event above quiet resident', () => {
+        const lead = makeResidentWithGp('res:lead');
+        const quiet = makeResidentWithGp('res:quiet');
+        const events: DigestEvent[] = [makeResidentEvent('res:lead', 'critical')];
+        const ranked = rankResidentsByRelevance([quiet, lead], events);
+        expect(ranked[0].residentName).toBe('res:lead');
+    });
+
+    it('preserves relative order for equal-score residents', () => {
+        const a = makeResidentWithGp('res:a');
+        const b = makeResidentWithGp('res:b');
+        const ranked = rankResidentsByRelevance([a, b], []);
+        // both score 0 — stable sort preserves original order
+        expect(ranked[0].residentName).toBe('res:a');
+        expect(ranked[1].residentName).toBe('res:b');
+    });
+
+    it('puts the resident with the most important events first across a mixed list', () => {
+        const alice = makeResidentWithGp('res:alice');
+        const bob = makeResidentWithGp('res:bob');
+        const carol = makeResidentWithGp('res:carol', { isFaded: true });
+        const dawn = makeResidentWithGp('res:dawn', { isLowAp: true });
+        const events: DigestEvent[] = [
+            makeResidentEvent('res:alice', 'high'), // +75
+            makeResidentEvent('res:bob', 'low'), // +25
+        ];
+        // carol: +100 (faded), dawn: +50 (lowAp), alice: +75 (event), bob: +25 (event)
+        const ranked = rankResidentsByRelevance([alice, bob, carol, dawn], events);
+        expect(ranked[0].residentName).toBe('res:carol'); // 100
+        expect(ranked[1].residentName).toBe('res:alice'); // 75
+        expect(ranked[2].residentName).toBe('res:dawn'); // 50
+        expect(ranked[3].residentName).toBe('res:bob'); // 25
+    });
+});
+
+describe('buildDigest — resident ranking (P0-S3)', () => {
+    it('ranked resident with critical event appears before an alphabetically-earlier quiet resident', () => {
+        // Without ranking: 'res:alice' (A) before 'res:zed' (Z).
+        // With ranking: 'res:zed' has a critical event so it should rank first.
+        const alice = makeResidentWithGp('res:alice');
+        const zed = makeResidentWithGp('res:zed');
+        const criticalEvent: DigestEvent = {
+            ref: 'zed-crit',
+            kind: 'resident_faded',
+            residentName: 'res:zed',
+            ts: TS_IN,
+            note: 'test',
+            importance: 'critical',
+        };
+        const digest = buildDigest({
+            digestId: 'rank-test-1',
+            windowStart: WIN_START,
+            windowEnd: WIN_END,
+            residents: [alice, zed],
+            apEvents: [criticalEvent],
+        });
+        expect(digest.residents[0].residentName).toBe('res:zed');
+    });
+
+    it('faded resident appears first even when passed last', () => {
+        const active1 = makeResidentWithGp('res:a-active');
+        const active2 = makeResidentWithGp('res:b-active');
+        const faded = makeResidentWithGp('res:z-faded', { isFaded: true });
+        const digest = buildDigest({
+            digestId: 'rank-test-2',
+            windowStart: WIN_START,
+            windowEnd: WIN_END,
+            residents: [active1, active2, faded],
+        });
+        expect(digest.residents[0].residentName).toBe('res:z-faded');
+    });
+
+    it('maxResidentMentions cap preserves the most-relevant residents', () => {
+        // 4 residents, cap = 2. The two with events should survive.
+        const eventful1 = makeResidentWithGp('res:eventful-1');
+        const eventful2 = makeResidentWithGp('res:eventful-2');
+        const quiet1 = makeResidentWithGp('res:quiet-1');
+        const quiet2 = makeResidentWithGp('res:quiet-2');
+        const events: DigestEvent[] = [
+            { ref: 'e1', kind: 'gp_earned', residentName: 'res:eventful-1', ts: TS_IN, note: 'x', importance: 'high' },
+            { ref: 'e2', kind: 'gp_earned', residentName: 'res:eventful-2', ts: TS_IN, note: 'x', importance: 'medium' },
+        ];
+        const digest = buildDigest({
+            digestId: 'rank-test-3',
+            windowStart: WIN_START,
+            windowEnd: WIN_END,
+            residents: [quiet1, quiet2, eventful1, eventful2],
+            gpEvents: events,
+            config: { maxResidentMentions: 2 },
+        });
+        expect(digest.residents).toHaveLength(2);
+        const names = digest.residents.map(r => r.residentName);
+        expect(names).toContain('res:eventful-1');
+        expect(names).toContain('res:eventful-2');
+    });
+
+    it('systemHealth.totalResidents counts ALL residents, not just the ranked slice', () => {
+        const residents = Array.from({ length: 10 }, (_, i) => makeResidentWithGp(`res:r${i}`));
+        const digest = buildDigest({
+            digestId: 'rank-test-4',
+            windowStart: WIN_START,
+            windowEnd: WIN_END,
+            residents,
+            config: { maxResidentMentions: 3 },
+        });
+        expect(digest.systemHealth.totalResidents).toBe(10);
+        expect(digest.residents).toHaveLength(3);
     });
 });

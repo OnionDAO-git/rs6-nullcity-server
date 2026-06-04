@@ -7,6 +7,7 @@
 
 import { objectIds } from '@engine/world/config/object-ids';
 import {
+    acquireWoodcuttingAxeAction,
     buryBonesAction,
     combatLootOrPrayerAction,
     combatTrainingAction,
@@ -17,12 +18,16 @@ import {
     explorationPatrolCooldownKey,
     factionLandmarkWorkAction,
     firemakingAction,
+    LUMBRIDGE_FREE_AXE_OBJECT_ID,
     LUMBRIDGE_CASTLE_KITCHEN_ENTRY,
     LUMBRIDGE_CASTLE_RANGE,
     STARTER_FISHING_SPOT_DISCOVERY_RANGE,
     levelOneWoodcuttingAction,
     lowHealthRecoveryAction,
+    openGoalStageStep,
     opportunisticPickupAction,
+    parseStageLevelTarget,
+    planStageRouter,
     prayerTrainingAction,
     cooksAssistantStartAction,
     cooksAssistantQuestAction,
@@ -31,12 +36,15 @@ import {
     starterFishingRouteAction,
     safeCombatTarget,
     safeBoneSourceTarget,
+    stageReachedLevelTarget,
+    stageSubgoalSkill,
     starterMiningAction,
     type BodyActor,
     type BodyHybridPerception,
     type BodyItem,
     type BodyWorldItem,
 } from './runescape-body-routines';
+import type { Stage, PrimitiveStep } from '../intelligence/planner-pass';
 
 const FIRE_OBJECT_ID = objectIds.fire;
 
@@ -68,6 +76,17 @@ function perception(overrides: Partial<BodyHybridPerception> = {}): BodyHybridPe
             ...(overrides.nearby || {}),
         },
         events: overrides.events ?? [],
+    };
+}
+
+function stage(subgoal: string, overrides: Partial<Stage> = {}): Stage {
+    return {
+        id: 'stage-1',
+        subgoal,
+        requirements: [],
+        successCriteria: 'observable progress',
+        status: 'active',
+        ...overrides,
     };
 }
 
@@ -143,6 +162,351 @@ describe('firemakingAction', () => {
             targetSlot: 1,
             cause: 'firemaking_fallback',
         });
+    });
+});
+
+describe('planStageRouter', () => {
+    it('marks an axe-acquisition stage done when an axe is already carried', () => {
+        const result = planStageRouter(
+            stage('Acquire a woodcutting axe'),
+            perception({
+                resident: { inventory: [item(1351)] },
+            }),
+        );
+
+        expect(result).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('routes an axe-acquisition stage to the free Lumbridge axe action when no axe is carried', () => {
+        const axe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 103, y: 100, level: 0 } };
+        const result = planStageRouter(
+            stage('Acquire an axe for woodcutting'),
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [axe] },
+            }),
+        );
+
+        expect(result).toEqual({
+            action: {
+                kind: 'move_to',
+                target: axe.position,
+                range: 1,
+                cause: 'acquire_axe_approach_free_lumbridge_axe',
+            },
+        });
+    });
+
+    it('routes log-gathering stages to level-one woodcutting', () => {
+        const tree = { objectId: 1276, position: { x: 100, y: 100, level: 0 } };
+        const result = planStageRouter(
+            stage('Chop logs from a tree'),
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1351)] },
+                nearby: { objects: [tree] },
+            }),
+        );
+
+        expect(result?.action).toEqual({
+            kind: 'interact',
+            target: tree,
+            option: 'chop down',
+            cause: 'woodcutting_level1_routine',
+        });
+    });
+
+    it('routes firemaking stages to tinderbox-on-logs', () => {
+        const result = planStageRouter(
+            stage('Light a fire using logs and a tinderbox'),
+            perception({
+                resident: { inventory: [item(590), item(1511)] },
+            }),
+        );
+
+        expect(result?.action).toEqual({
+            kind: 'use_item_on_item',
+            itemSlot: 0,
+            targetSlot: 1,
+            cause: 'firemaking_fallback',
+        });
+    });
+
+    it('routes fishing, cooking, mining, and prayer stages to existing starter routines', () => {
+        const fishingSpot = {
+            id: 'npc:fishing-spot',
+            kind: 'npc' as const,
+            name: 'Fishing spot',
+            key: 'rs:fishing_spot_net_bait',
+            position: { x: 100, y: 100, level: 0 },
+        };
+        const rock = { objectId: objectIds.default.clay[0].default, position: { x: 100, y: 100, level: 0 } };
+
+        expect(
+            planStageRouter(
+                stage('Fish shrimp at a net fishing spot'),
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(303)] },
+                    nearby: { npcs: [fishingSpot] },
+                }),
+            )?.action?.cause,
+        ).toBe('starter_fishing_net');
+        expect(
+            planStageRouter(
+                stage('Cook food for the next leg'),
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(317), item(590), item(1511)] },
+                    nearby: { objects: [{ objectId: FIRE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } }] },
+                }),
+            )?.action?.kind,
+        ).toBe('use_item_on');
+        expect(
+            planStageRouter(
+                stage('Mine starter ore'),
+                perception({
+                    resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1265)] },
+                    nearby: { objects: [rock] },
+                }),
+            )?.action?.cause,
+        ).toBe('starter_mining_routine');
+        expect(
+            planStageRouter(
+                stage('Bury bones for Prayer'),
+                perception({
+                    resident: { inventory: [item(526)] },
+                }),
+            )?.action,
+        ).toEqual({ kind: 'item_action', slot: 0, option: 'bury', cause: 'prayer_bury_bones' });
+    });
+
+    it('returns undefined for unknown stages so callers can fall back to normal body selection', () => {
+        expect(planStageRouter(stage('Compose a poem about Lumbridge'), perception())).toBeUndefined();
+    });
+
+    it('signals stage_done for log-gathering when logs already in inventory (already satisfied)', () => {
+        expect(planStageRouter(stage('Chop logs from a tree'), perception({ resident: { inventory: [item(1511, 'rs:logs')] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for log-gathering when no tree nearby and no logs gathered yet', () => {
+        expect(
+            planStageRouter(
+                stage('Chop logs from a tree'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1351)] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for firemaking when no logs remain (all consumed)', () => {
+        // No logs + no tinderbox → firemakingAction is undefined → no logs in inventory → done
+        expect(planStageRouter(stage('Light a fire using logs and a tinderbox'), perception({ resident: { inventory: [] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for firemaking when logs exist but tinderbox is missing', () => {
+        // firemakingAction is undefined (no tinderbox), but logs exist → blocked
+        expect(
+            planStageRouter(stage('Light a fire using logs and a tinderbox'), perception({ resident: { inventory: [item(1511)] } })),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for fishing when already carrying raw fish', () => {
+        expect(planStageRouter(stage('Fish shrimp at a net fishing spot'), perception({ resident: { inventory: [item(317)] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for fishing when no spot visible and no fish yet', () => {
+        expect(
+            planStageRouter(
+                stage('Fish shrimp at a net fishing spot'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(303)] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for cooking when already carrying cooked fish', () => {
+        expect(planStageRouter(stage('Cook food for the next leg'), perception({ resident: { inventory: [item(315)] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for cooking when no raw fish and no cooked fish', () => {
+        expect(
+            planStageRouter(
+                stage('Cook food for the next leg'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for mining when ore already in inventory', () => {
+        expect(planStageRouter(stage('Mine starter ore'), perception({ resident: { inventory: [item(436)] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_blocked for mining when no rock visible and no ore yet', () => {
+        expect(
+            planStageRouter(
+                stage('Mine starter ore'),
+                perception({ resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1265)] } }),
+            ),
+        ).toEqual({ planSignal: 'stage_blocked' });
+    });
+
+    it('signals stage_done for prayer when all bones have been buried (empty inventory)', () => {
+        expect(planStageRouter(stage('Bury bones for Prayer'), perception({ resident: { inventory: [] } }))).toEqual({
+            planSignal: 'stage_done',
+        });
+    });
+
+    it('signals stage_done for firemaking when a level_up event satisfies successCriteria level target', () => {
+        expect(
+            planStageRouter(
+                stage('Light fires to train Firemaking', { successCriteria: 'reach level 5 Firemaking' }),
+                perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'firemaking', level: 5 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('does not signal stage_done for firemaking when level_up level is below the successCriteria target', () => {
+        // level 4 gained, but need level 5 → keep executing
+        const result = planStageRouter(
+            stage('Light fires to train Firemaking', { successCriteria: 'reach level 5 Firemaking' }),
+            perception({ resident: { inventory: [item(1511), item(590)] }, events: [{ kind: 'level_up', skill: 'firemaking', level: 4 }] }),
+        );
+        expect(result?.planSignal).toBeUndefined();
+        expect(result?.action).toBeDefined(); // still firing
+    });
+
+    it('signals stage_done for fishing when a level_up event satisfies the successCriteria level', () => {
+        expect(
+            planStageRouter(
+                stage('Fish shrimp until level 10 Fishing', { successCriteria: 'Fishing level 10' }),
+                perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'fishing', level: 10 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('signals stage_done for mining via level_up event even when no ore in inventory yet', () => {
+        expect(
+            planStageRouter(
+                stage('Mine ore to level 5 Mining', { successCriteria: 'level 5 Mining' }),
+                perception({ resident: { inventory: [item(1265)] }, events: [{ kind: 'level_up', skill: 'mining', level: 5 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('does not signal stage_done when level_up is for a different skill', () => {
+        // fishing level_up should not satisfy a firemaking stage
+        const result = planStageRouter(
+            stage('Light fires to train Firemaking', { successCriteria: 'reach level 5 Firemaking' }),
+            perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'fishing', level: 5 }] }),
+        );
+        // no logs → falls through to 'stage_done' from resource check, not from level event
+        expect(result).toEqual({ planSignal: 'stage_done' });
+    });
+
+    it('signals stage_done on any level_up for the skill when successCriteria has no numeric level', () => {
+        expect(
+            planStageRouter(
+                stage('Light fires', { successCriteria: 'gain Firemaking XP' }),
+                perception({ resident: { inventory: [] }, events: [{ kind: 'level_up', skill: 'firemaking', level: 2 }] }),
+            ),
+        ).toEqual({ planSignal: 'stage_done' });
+    });
+});
+
+describe('parseStageLevelTarget', () => {
+    it('extracts a level number from "reach level 5 Firemaking"', () => {
+        expect(parseStageLevelTarget('reach level 5 Firemaking')).toBe(5);
+    });
+
+    it('extracts a level number from "Firemaking level 10"', () => {
+        expect(parseStageLevelTarget('Firemaking level 10')).toBe(10);
+    });
+
+    it('returns undefined when no level target is present', () => {
+        expect(parseStageLevelTarget('gain some Firemaking XP')).toBeUndefined();
+        expect(parseStageLevelTarget('observable progress')).toBeUndefined();
+    });
+});
+
+describe('stageSubgoalSkill', () => {
+    it('maps firemaking subgoals to "firemaking"', () => {
+        expect(stageSubgoalSkill('Light fires to train Firemaking')).toBe('firemaking');
+        expect(stageSubgoalSkill('Firemaking training')).toBe('firemaking');
+    });
+
+    it('maps fishing subgoals to "fishing"', () => {
+        expect(stageSubgoalSkill('Fish shrimp at a net fishing spot')).toBe('fishing');
+    });
+
+    it('maps woodcutting subgoals to "woodcutting"', () => {
+        expect(stageSubgoalSkill('Chop logs from a tree')).toBe('woodcutting');
+        expect(stageSubgoalSkill('Gather logs for firemaking')).toBe('woodcutting');
+    });
+
+    it('returns undefined for unrecognised subgoals', () => {
+        expect(stageSubgoalSkill('Compose a poem about Lumbridge')).toBeUndefined();
+    });
+});
+
+describe('stageReachedLevelTarget', () => {
+    it('returns true when level_up event matches skill and meets target level', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 5 }] }),
+            ),
+        ).toBe(true);
+    });
+
+    it('returns false when event level is below target', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 4 }] }),
+            ),
+        ).toBe(false);
+    });
+
+    it('returns false when event skill does not match stage subgoal', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'fishing', level: 5 }] }),
+            ),
+        ).toBe(false);
+    });
+
+    it('returns false when no level_up events are present', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'reach level 5 Firemaking', status: 'active' },
+                perception({ events: [] }),
+            ),
+        ).toBe(false);
+    });
+
+    it('returns true for any level_up when successCriteria has no numeric target', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Light fires', requirements: [], successCriteria: 'gain some XP', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 2 }] }),
+            ),
+        ).toBe(true);
+    });
+
+    it('returns false for subgoals with no recognisable skill', () => {
+        expect(
+            stageReachedLevelTarget(
+                { id: 's', subgoal: 'Compose a poem', requirements: [], successCriteria: 'level 5', status: 'active' },
+                perception({ events: [{ kind: 'level_up', skill: 'firemaking', level: 5 }] }),
+            ),
+        ).toBe(false);
     });
 });
 
@@ -228,6 +592,54 @@ describe('levelOneWoodcuttingAction', () => {
                 nearby: { objects: [{ objectId: NORMAL_TREE, position: { x: 100, y: 100, level: 0 } }] },
             }),
         );
+        expect(action).toBeUndefined();
+    });
+});
+
+describe('acquireWoodcuttingAxeAction', () => {
+    it('takes the free Lumbridge axe when visible and adjacent', () => {
+        const axe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } };
+        const action = acquireWoodcuttingAxeAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [axe] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'interact',
+            target: axe,
+            option: 'take-axe',
+            cause: 'acquire_axe_take_free_lumbridge_axe',
+        });
+    });
+
+    it('approaches the free Lumbridge axe when visible but not adjacent', () => {
+        const axe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 103, y: 100, level: 0 } };
+        const action = acquireWoodcuttingAxeAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [] },
+                nearby: { objects: [axe] },
+            }),
+        );
+
+        expect(action).toEqual({
+            kind: 'move_to',
+            target: axe.position,
+            range: 1,
+            cause: 'acquire_axe_approach_free_lumbridge_axe',
+        });
+    });
+
+    it('does nothing when the resident already has a woodcutting axe', () => {
+        const freeAxe = { objectId: LUMBRIDGE_FREE_AXE_OBJECT_ID, position: { x: 100, y: 100, level: 0 } };
+        const action = acquireWoodcuttingAxeAction(
+            perception({
+                resident: { position: { x: 100, y: 100, level: 0 }, inventory: [item(1351, 'rs:bronze_axe')] },
+                nearby: { objects: [freeAxe] },
+            }),
+        );
+
         expect(action).toBeUndefined();
     });
 });
@@ -2973,5 +3385,185 @@ describe('target failure cooldowns and cross-level hardening', () => {
         );
 
         expect(action).toBeUndefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// openGoalStageStep (RIQ-4-2)
+// ---------------------------------------------------------------------------
+
+function openGoalStage(steps: PrimitiveStep[], overrides: Partial<Stage> = {}): Stage {
+    return {
+        id: 'open-stage-1',
+        subgoal: 'do something creative',
+        requirements: [],
+        successCriteria: 'observable progress',
+        status: 'active',
+        steps,
+        ...overrides,
+    };
+}
+
+function sayStep(text: string, advanceWhen: 'next_tick' | 'action_result' = 'next_tick'): PrimitiveStep {
+    return { action: { kind: 'say', text }, advanceWhen };
+}
+
+function moveStep(x: number, y: number, level = 0): PrimitiveStep {
+    return { action: { kind: 'move_to', position: { x, y, level } }, advanceWhen: 'next_tick' };
+}
+
+function dropStep(itemSlot: number): PrimitiveStep {
+    return { action: { kind: 'drop', itemSlot }, advanceWhen: 'next_tick' };
+}
+
+describe('openGoalStageStep (RIQ-4-2)', () => {
+    const p = perception();
+
+    it('returns stage_done when stepIdx >= steps.length (all steps exhausted)', () => {
+        const s = openGoalStage([sayStep('hello')]);
+        const result = openGoalStageStep(s, p, 1);
+        expect(result.planSignal).toBe('stage_done');
+        expect(result.nextStepIdx).toBe(1);
+        expect(result.action).toBeUndefined();
+    });
+
+    it('returns stage_done when steps array is empty and stepIdx is 0', () => {
+        const s = openGoalStage([]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_done');
+    });
+
+    it('emits a say action for the current step and advances index on next_tick', () => {
+        const s = openGoalStage([sayStep('Hello world')]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'say', text: 'Hello world' });
+        expect(result.planSignal).toBeUndefined();
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('emits a move_to action and advances index on next_tick', () => {
+        const s = openGoalStage([moveStep(3220, 3220)]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'move_to', target: { x: 3220, y: 3220, level: 0 } });
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('emits a drop action for the given inventory slot', () => {
+        const s = openGoalStage([dropStep(3)]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'drop', itemSlot: 3 });
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('does NOT advance stepIdx for action_result step when lastActionResult is undefined', () => {
+        const s = openGoalStage([sayStep('wait for result', 'action_result')]);
+        const result = openGoalStageStep(s, p, 0, undefined);
+        expect(result.action).toEqual({ kind: 'say', text: 'wait for result' });
+        expect(result.nextStepIdx).toBe(0);
+    });
+
+    it('advances stepIdx for action_result step when lastActionResult is non-null', () => {
+        const s = openGoalStage([sayStep('got result', 'action_result')]);
+        const result = openGoalStageStep(s, p, 0, { success: true });
+        expect(result.action).toEqual({ kind: 'say', text: 'got result' });
+        expect(result.nextStepIdx).toBe(1);
+    });
+
+    it('returns stage_blocked when a step has an unknown action kind', () => {
+        const s = openGoalStage([{ action: { kind: 'unknown_action' }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_blocked');
+        expect(result.nextStepIdx).toBe(0);
+    });
+
+    it('returns stage_blocked when a say action has empty text', () => {
+        const s = openGoalStage([{ action: { kind: 'say', text: '' }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_blocked');
+    });
+
+    it('returns stage_blocked when a move_to action has no position', () => {
+        const s = openGoalStage([{ action: { kind: 'move_to' }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.planSignal).toBe('stage_blocked');
+    });
+
+    it('executes second step after first has been advanced (stepIdx=1)', () => {
+        const s = openGoalStage([sayStep('step A'), sayStep('step B')]);
+        const result = openGoalStageStep(s, p, 1);
+        expect(result.action).toEqual({ kind: 'say', text: 'step B' });
+        expect(result.nextStepIdx).toBe(2);
+    });
+
+    it('signals stage_done after last step is run and stepIdx advances past end', () => {
+        const s = openGoalStage([sayStep('only step')]);
+        // After step 0 returns nextStepIdx=1, next call with idx=1 → stage_done
+        const first = openGoalStageStep(s, p, 0);
+        expect(first.nextStepIdx).toBe(1);
+        const second = openGoalStageStep(s, p, first.nextStepIdx!);
+        expect(second.planSignal).toBe('stage_done');
+    });
+
+    it('uses level 0 as default for move_to when level is absent', () => {
+        const s = openGoalStage([{ action: { kind: 'move_to', position: { x: 10, y: 20 } }, advanceWhen: 'next_tick' }]);
+        const result = openGoalStageStep(s, p, 0);
+        expect(result.action).toEqual({ kind: 'move_to', target: { x: 10, y: 20, level: 0 } });
+    });
+});
+
+describe('planStageRouter (Phase 4 open-goal branch)', () => {
+    const p = perception();
+
+    it('routes an open-goal stage via openGoalStageStep when steps present and context provided', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'recite a poem',
+            requirements: [],
+            successCriteria: 'poem shared',
+            status: 'active',
+            steps: [sayStep('Roses are red')],
+        };
+        const result = planStageRouter(s, p, { stepIdx: 0 });
+        expect(result?.action).toEqual({ kind: 'say', text: 'Roses are red' });
+        expect(result?.nextStepIdx).toBe(1);
+    });
+
+    it('returns undefined (falls to LLM) when steps present but no context provided', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'creative activity',
+            requirements: [],
+            successCriteria: 'done',
+            status: 'active',
+            steps: [sayStep('hello')],
+        };
+        // No openGoalCtx → falls through → undefined
+        const result = planStageRouter(s, p);
+        expect(result).toBeUndefined();
+    });
+
+    it('returns undefined for truly unknown stages regardless of context', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'unknown activity with no steps',
+            requirements: [],
+            successCriteria: 'done',
+            status: 'active',
+        };
+        const result = planStageRouter(s, p, { stepIdx: 0 });
+        expect(result).toBeUndefined();
+    });
+
+    it('signals stage_done via open-goal branch when all steps exhausted', () => {
+        const s: Stage = {
+            id: 's1',
+            subgoal: 'say poem',
+            requirements: [],
+            successCriteria: 'said',
+            status: 'active',
+            steps: [sayStep('line 1')],
+        };
+        const result = planStageRouter(s, p, { stepIdx: 1 });
+        expect(result?.planSignal).toBe('stage_done');
     });
 });

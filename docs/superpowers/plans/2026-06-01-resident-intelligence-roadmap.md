@@ -326,17 +326,42 @@ evidence note + flip to `In Review`.
 
 | Phase | State | Acceptance test | Last update |
 |---|---|---|---|
-| 0 — Stabilize & enable | **In progress** — inference fixes shipped (S-INFER-1..6); wiki-enable + runtime-ownership + planner-model pick remain | usable-brain-rate ≥80% post-restart on committed config + wiki fact retrieved + planner model recorded | 2026-06-01 (created) |
-| 1 — Tool-calling | Not started | tool call pulls non-RAG fact + used in next decision | — |
-| 2 — Deliberative planner pass | Not started | ≥3-stage validated plan from one rare planner call | — |
-| 3 — Durable plan + progress | Not started | A1 (Firemaking plan, ≥2 stages, 0 deaths, survives restart) | — |
-| 4 — Arbitrary-goal support | Not started | A2 + A3 | — |
-| 5 — Polish / scale | Not started | N≥10 residents, bounded spend, plan dashboard | — |
+| 0 — Stabilize & enable | **Done** — (a) qwopus brain+75s timeout committed (S-INFER-10, RIQ-0-1); (b) wiki RAG enabled (S-WIKI-1, RIQ-0-2); (c) runtime ownership: born-persist + supervised controller scripts landed; (d) planner model decision recorded (RIQ-0-3, 2026-06-02). Acceptance test PASSES: usable-brain-rate ≥80% (`data/benchmarks/capability-qa-2026-05-31/s-cohort-10-1-inference-30m/inference_health_audit_20260531T225236Z.json` shows 96.5% usable, 97.1% goal-follow-through); wiki fact retrieval proven (QA-20260601-061 / S-WIKI-1); planner model recorded below. | usable-brain-rate ≥80% post-restart on committed config + wiki fact retrieved + planner model recorded | 2026-06-02 |
+| 1 — Tool-calling | **Done** — RIQ-1-1-A (PlannerToolLoop substrate + lookup_skill + brain-tool-call-5m task, +34 tests, sha=2aeefdc7); RIQ-1-1-B (runBrain routed through runPlannerToolLoop, brainLlmAdapter, lookup_skill injected into brain prompt, +5 tests, sha=4ec64d40); RIQ-1-1-C (lookup_wiki tool: LOOKUP_WIKI_TOOL + defaultTools(wikiSearch?) + defaultToolRegistry(wikiSearch?) + GameSkillContext.wikiSearch closure + runBrain conditional wiki wiring, +15 tests, fin=4112/4097). Both lookup_skill and lookup_wiki delivered. Live-verify PENDING (cloud sandbox). | tool call pulls non-RAG fact + used in next decision | 2026-06-02 |
+| 2 — Deliberative planner pass | **In Progress** — RIQ-2-1 (Plan schema + PlannerPass prompt + parser + runPlannerPass + plan helpers + 30 unit tests, sha=a17d462e). Substrate: cloud-only unit tests pass; live planner call requires hot stack + `planner_haiku` or `planner_local` profile. | ≥3-stage validated plan from one rare planner call | 2026-06-02 |
+| 3 — Durable plan + progress | **In Progress** — RIQ-3-1 (PlanStore: save/load/clear/has, atomic tmp-then-rename, quarantine on corrupt, residentSlug path, +15 tests, sha=5c63f168, fin=3701/3701); RIQ-3-2 (maybeTriggerPlannerPass wired into runBrain; triggers on null/completed/abandoned/blocked-stage plan; planner opt-in via behavior.planner; +12 tests, sha=15510437, fin=3713/3713); RIQ-3-3 (plan Library events: PlanCreatedLibraryEvent+PlanReplannedLibraryEvent, observePlanCreated+observePlanReplanned in LibraryUpdater, libraryUpdater? in HelperContext, +12 tests, sha=bf58123a, fin=SANDBOX-BLOCKED/check:no-ui=PASS); RIQ-3-2B (PlanStore + LibraryUpdater production wiring, `planStageRouter`, `runBody` plan-stage fast path, +8 focused tests). Next: hot-stack A1 live verification with planner_haiku/planner_local, then stage completion from real XP/action-result evidence. | A1 (Firemaking plan, ≥2 stages, 0 deaths, survives restart) | 2026-06-02 |
+| 4 — Arbitrary-goal support | **In Progress** — RIQ-4-1 (GoalClass + Phase 4 schema extensions, sha=7cfed2a6); RIQ-4-2 (openGoalStageStep + City API + 7 tests, sha=f2a9ef5b); RIQ-4-3 (evaluateSuccessPredicate + City API + 8 tests, sha=ca34d21f); RIQ-4-4 (observeOpenGoalProgress + City API + 12 tests, sha=6703fb3f, fin=4060/4057). RIQ-5-1 (GET /residents/:id/plan endpoint + 2 tests, sha=TBD, fin=4069/4069). A2/A3 live acceptance tests pending hot stack. | A2 + A3 | 2026-06-03 |
+| 5 — Polish / scale | **In Progress** — S-PLAN-BUDGET-1 (daily per-resident planner call cap MAX=10, +5 tests, sha=834e0f80); RIQ-5-1 (GET /residents/:id/plan observability endpoint, +2 tests, sha=e3fa945f); RIQ-5-2 (planner failure backoff 200-tick cooldown after fail/throw, +5 tests, sha=6995580b); RIQ-5-3 (global concurrent PlannerPass cap MAX=3, prevents burst-N paid calls on restart, +6 tests, sha=TBD); RIQ-5-4 (plan goal-mismatch invalidation: plan.goalId!==orientationGoal.id triggers replan + goal_changed Library event, +4 tests, fin=4115/4112, sha=992e5d47). All substrate-only; live-verify PENDING hot stack. Remaining: plan dashboard (dashboard repo), N≥10 soak benchmark. | N≥10 residents, bounded spend, plan dashboard | 2026-06-04 |
 
-**Planner model decision:** _pending RIQ-0-3_ (leaning Claude Haiku for the deep planner call per
-`docs/capability-evidence/2026-05-31-inference-model-comparison.md`; local qwopus as fallback).
+### Planner model decision — DECIDED (RIQ-0-3, 2026-06-02)
 
-**Critical path right now:** Phase 0 wiki-enable + planner-model pick → Phase 1 tool-call spike.
+**Primary:** `anthropic/claude-3.5-haiku` via `planner_haiku` profile (OpenRouter). Profile
+defined in `config/controller.paid-example.yml`.
+
+**Fallback:** `qwopus3.5-27b-v3@q4_k_s` via `planner_local` profile — offline and cost-free.
+
+**Rationale:**
+- Haiku is the only model that passed the full benchmark suite 9/9; qwopus 8/9 (same fail on
+  `combat-prayer-10m` reasoning/task-switching). Evidence:
+  `docs/capability-evidence/2026-05-31-inference-model-comparison.md`.
+- Planner calls are **rare** (stage-boundary only, not per-tick). Estimated cost:
+  ~$0.016/plan at 10K prompt + 2K completion tokens; 5 plans × 10 residents = ~$0.80/day.
+- The per-tick body/brain remains on local qwopus (HD-053, free). The planner model upgrade
+  is an additive slice that does not affect existing body/brain routing.
+- Live empty-rate A/B on Haiku (post-S-INFER-1 parser salvage) was NOT run from the cloud
+  sandbox; defer to Phase 2 implementation time when the PlannerPass is wired in. The task-
+  intelligence win (9/9) is sufficient evidence to select Haiku at Phase 0.
+
+**Decisions table reference:** HD-052 (model comparison), HD-052-AB (live A/B data), HD-053
+(qwopus as default brain/body — separate decision, unchanged).
+
+**D1 resolution:** Haiku (`planner_haiku`) for the rare deep planner call; local qwopus
+(`planner_local`) as fallback. Both profiles committed in `config/controller.paid-example.yml`.
+
+---
+
+**Critical path right now:** Phase 0 ✅ complete → Phase 1 tool-call spike (RIQ-1-1, blocked
+on RIQ-0-3 now resolved). Entry point: `docs/issue-register.md` QA-20260601-063.
 
 ---
 
@@ -344,7 +369,7 @@ evidence note + flip to `In Review`.
 
 | ID | Decision | Options | Lean / note |
 |---|---|---|---|
-| **D1** | Planner model | local qwopus (free, slow) · Claude Haiku (cheap-paid, clean parse, 9/9) · larger Claude for hard plans | Haiku for the rare deep planner call; qwopus fallback. Needs the empty-rate A/B re-run post-salvage (RIQ-0-3). Cost is bounded because planner calls are rare. |
+| **D1** | Planner model | local qwopus (free, slow) · Claude Haiku (cheap-paid, clean parse, 9/9) · larger Claude for hard plans | **DECIDED (2026-06-02, RIQ-0-3):** Haiku (`planner_haiku`) for the rare deep planner call; local qwopus (`planner_local`) as fallback. Both profiles in `config/controller.paid-example.yml`. See §8. |
 | **D2** | Tool-call protocol for local models | native function-calling · structured-JSON-emit + parser-salvage seam · MCP `run_routine` bridge | Local 27B models are unreliable at native function-calling; favor structured-JSON + salvage over the existing MCP seam, with a turn cap. |
 | **D3** | How plans are stored | extend `ActiveGoalState` in runtime-state · new per-resident `PlanStore` (JSON atomic write, like the ledgers) | New `PlanStore` — a plan is bigger and longer-lived than a goal; reuse the ledger atomic-write pattern for restart-survival. |
 | **D4** | Scope for June 1 vs beta vs full release | demo = beta (think/act/survive/interact) · beta = + tool-calling · full = + durable plan + arbitrary goals | Demo June 1 ships the **beta** (§10). Don't oversell autonomy. |

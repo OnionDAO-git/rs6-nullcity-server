@@ -1,20 +1,19 @@
 # Multi-Agent Coordination Protocol
 
 **Audience:** Any agent (Claude, Codex, future) or human working in this repo or the residents-dashboard repo.
-**Date:** 2026-05-21; tightened 2026-05-30.
+**Date:** 2026-05-21; tightened 2026-06-02.
 **Status:** Live rules below; historical context further down.
 
-**Current rule:** if this file conflicts with `AGENTS.md`, `docs/README.md`, or `docs/superpowers/plans/2026-05-29-ap-gp-storyteller-weekend-implementation.md`, the newer docs win for current weekend packet work.
+**Current rule:** if this file conflicts with `AGENTS.md` or `docs/README.md`, those files win. Domain plans/specs control only the issues or roadmap rows that link to them.
 
-**New here?** Start with `AGENTS.md`, `docs/README.md`, `docs/agent-status.md`, `docs/issue-register.md`, and the Workstream S implementation plan. Pre-Chicago, also read `docs/2026-05-30-final-32hr-sprint-plan.md`. Then use this file for coordination rules and historical context.
+**New here?** Start with `AGENTS.md`, `docs/README.md`, the tail of `docs/agent-status.md`, and `docs/issue-register.md`. Then use this file for coordination rules and historical context.
 
 ## Why This Exists
 
-Three agents are active across two repos:
+Multiple humans and agents may be active across two repos:
 
-- **Claude (Anthropic)** operated by the maintainer in `rs6-nullcity-server`.
-- **Codex (OpenAI)** operated by the maintainer in `rs6-nullcity-server`.
-- **Dev's agent** working in `rs6-nullcity-residents-dashboard`.
+- Server/runtime work in `rs6-nullcity-server`.
+- Dashboard/human-facing UI work in `rs6-nullcity-residents-dashboard`.
 
 We do not have a shared message bus, real-time presence, or a job queue. Coordination must therefore be:
 
@@ -26,13 +25,13 @@ We do not have a shared message bus, real-time presence, or a job queue. Coordin
 
 The canonical "what is happening right now" is the union of:
 
-1. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — workstream board with `[ ] [>] [~] [x] [!]` task markers. Workstream S is the active weekend sprint.
-2. `git status` on the active branch.
-3. `docs/agent-status.md` — short append-only log of who-is-doing-what (see below).
-4. `docs/issue-register.md` — discovered QA findings, weak evidence, and blockers.
+1. `git status` in your own clean worktree.
+2. `docs/agent-status.md` tail — live STARTING/HANDOFF locks and runtime requests.
+3. `docs/issue-register.md` — discovered QA findings, weak evidence, and blockers.
+4. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — parent task status.
 5. `docs/release-qa-status.md` — QA Marshal release/readiness gate.
 
-If these disagree, the roadmap wins for planned intent, `git status` wins for in-flight file reality, and `docs/issue-register.md` wins for known blockers.
+If these disagree, `git status` wins for in-flight file reality, `docs/agent-status.md` wins for live locks, `docs/issue-register.md` wins for known blockers, and the roadmap wins for parent-task intent.
 
 ## Historical Workstream Ownership (2026-05-21 Snapshot)
 
@@ -45,22 +44,25 @@ and is now redundant — current active workstreams live in
 
 ## Conflict Avoidance Rules
 
-### Rule 1 — Check before opening
+### Rule 1 — Work from a clean tree and check before opening
+
+Use a clean worktree based on `origin/agents/wip` whenever possible. If the main checkout is dirty or diverged, do not "clean it up" unless James explicitly asks; create or reuse an isolated worktree instead.
 
 Before editing a file, every agent does:
 
 ```bash
+git fetch origin
 git status --short
 git log -n 10 --oneline
 ```
 
 If a file appears as `M` or `??` in `git status --short`, another worker has it open. Do not touch.
 
-### Rule 2 — Update the marker before the code
+### Rule 2 — Claim the smallest unit, then name exact files
 
-Before editing a file owned by a roadmap task, set the task marker to `[>]` in the roadmap. Other agents read the roadmap before starting work; the marker is the lock.
+Before editing, prefer an unclaimed Open P0/P1 issue. If no issue fits, claim the smallest linked roadmap/domain packet. Do not grab a whole parent workstream when a smaller packet exists.
 
-After the work is done and verified, set the marker to `[x]` or `[!]` as appropriate.
+Roadmap `[>]` markers show parent-task intent; they are not sufficient file locks. The hard coordination lock is a `STARTING` line in `docs/agent-status.md` that names exact files. After the work is done and verified, update the issue/roadmap/capability docs that changed truth.
 
 Exception: while Codex has the roadmap dirty, other agents propose roadmap changes via a delta file (e.g., `docs/superpowers/specs/2026-05-21-roadmap-delta-evidence-loop.md`) instead of editing the roadmap directly.
 
@@ -83,6 +85,7 @@ Implications:
 - `docs/agent-status.md` lives on `agents/wip` and **does not get merged to `nullcity`**. It's a coordination artifact, not a deliverable.
 - File-level collision avoidance still primary. Read `git status` + the status log on `agents/wip` before editing.
 - The dashboard repo (`rs6-nullcity-residents-dashboard`) has its own conventions — follow Dev's existing pattern there.
+- Dashboard or human-facing UI belongs in the dashboard repo. Server agents may add JSON/control APIs and contract docs only.
 - Single-commit critical fixes that Dev needs to see immediately (security patch, hotfix) can still go direct to `nullcity` — judgment call. Default to `agents/wip`.
 
 The pre-existing noisy history on `nullcity` stays as-is; rewriting shared history is dangerous. The new convention applies forward.
@@ -132,6 +135,8 @@ Good HANDOFF (≈220 chars):
 
 Bad HANDOFF (don't): 1500-char rollup of the multi-cycle arc + per-entry summaries + impact paragraph. Put that in the commit message body.
 
+Runtime requests also go through this log; see `docs/runtime-stewardship.md`. If an agent needs a shared process restart, it posts `RUNTIME-REQUEST` and keeps working elsewhere. Only the runtime steward restarts controller/game/infra/dashboard sessions while an owner note is active.
+
 ### Rule 5b — Issue register and QA Marshal
 
 `docs/issue-register.md` tracks discovered problems. Use it when a benchmark fails, a capability claim lacks evidence, a doc contradiction could mislead another agent, or a fix crosses packet/file ownership.
@@ -139,6 +144,8 @@ Bad HANDOFF (don't): 1500-char rollup of the multi-cycle arc + per-entry summari
 `docs/release-qa-status.md` is the QA Marshal gate for `agents/wip` -> `nullcity`. Do not claim broad release readiness while open `P0` issues remain.
 
 Direct fix is fine when the bug is inside your claimed packet, can be proven in the same cycle, and no other STARTING line owns the files. Otherwise add or update an issue row.
+
+Capability evidence is not a parallel task tracker. A weak row in `docs/resident-capabilities.md` becomes either a capability-evidence note plus matrix update, or an issue-register row if it needs dev work.
 
 ### Rule 6 — No silent refactors of shared files
 
@@ -277,6 +284,28 @@ Dev's `[D2]/[D3]` dashboard work can proceed independently — Workstream I land
 - **Merge conflict in a coordination file (roadmap, agent-status):** preserve both edits, never overwrite; the merging agent posts a status line describing what was preserved.
 - **A schema breaks a downstream reader:** the writer rolls forward, not back; add a versioned field and a brief migration note. Downstream consumers detect the bump and adapt or fail loudly.
 - **An agent goes silent mid-`[>]`:** another agent may take the task only if `agent-status.md` shows no activity for >24h and the in-progress changes are either committed or trivially recoverable from a stash/branch.
+
+## Launch Blockers Protocol
+
+`docs/launch-blockers.md` is the canonical, cross-repo registry of everything gating the OnionDAO / Null City launch (server, dashboard, oniondao-badge, landing-2026, rs6-3d-viewer). `docs/launch-blockers_discussion.md` is its append-only chatter/history. Both live on `agents/wip`. This is to launch what `issue-register.md` is to QA defects: issue-register = discovered defects/weak evidence; launch-blockers = *everything* (tasks + blockers + external deps + decisions) that must be true before launch.
+
+**Items** are per-`### LB-<AREA>-<rand4>` sections grouped under `## <AREA>` headers, one field per line. The random ID suffix means parallel agents never collide allocating an ID — no read-modify-write, no reservation.
+
+**Editing the registry (in place):**
+- `git pull --rebase` first; re-read the item before editing.
+- Change ONLY the field line(s) that changed (`- Status:`, `- Owner:`, `- Updated:`). One item per commit. Never reflow/re-sort other items (that rewrites lines you don't own and guarantees conflicts).
+- Add a new item by appending its block to the bottom of the correct `## <AREA>` section.
+- Closing (`Done`/`Won't-fix`) requires a `- Resolution:` line; then move the block to `## Archive`.
+
+**Claiming (the soft lock, like the roadmap `[>]`):** set `- Owner: <you>` AND move `- Status:` to the first active state (Investigating/Designing/In-progress), push, then append a `decision` entry to the discussion file naming the files you'll touch. If `Owner != unassigned` and `Status` is active, it's taken — pick another. First-pushed claim wins; ties broken by earliest discussion timestamp. Also append a `STARTING` line to `agent-status.md` if the work touches `src/`.
+
+**Discussion file (append-only):** newest at bottom, threaded by `LB-id`, entry header `### YYYY-MM-DD HH:MM | <agent> | <LB-id|meta> | <type>` where type is `question|decision|update|handoff`. Never edit/delete a prior entry; correct yourself by appending a new one. Put all reasoning/evidence/history here, not in the registry.
+
+**Git (consistent with Rule 3, push direct to `agents/wip`, no feature branches):** one logical change per commit; commit msg `docs(blockers): <verb> LB-... — <note>`; `git pull --rebase && git push`; on push reject, `pull --rebase` and push again. Stage explicit paths only (`git add docs/launch-blockers.md`) — never `git add -A`/`.` (the shared tree may carry other agents' phantom `M` files). **Never `git commit --amend` and never `git push --force`** on `agents/wip` — both have lost work on this project before.
+
+**Conflicts** are designed out (different items = different lines; discussion = disjoint EOF appends). If one occurs: discussion file → keep both blocks in timestamp order, drop markers; registry → reconcile to the most-advanced state (`Done > Verifying > In-review > In-progress > Blocked > Open`), keep one line per field, then append a `decision` entry recording the resolution.
+
+The paste-ready RULES OF ENGAGEMENT headers at the top of each file are the short form of the above; this section is the full reference they point to.
 
 ## Open Questions
 

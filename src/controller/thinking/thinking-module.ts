@@ -1,6 +1,8 @@
 import type { LlmClient } from '../llm/llm-client';
 import type { MemoryStore } from '../memory/memory-store';
 import type { RuntimeState } from '../memory/runtime-state';
+import type { LibraryUpdater } from '../evidence/library-updater';
+import type { PlanStore } from '../intelligence/plan-store';
 import type { Soul } from '../soul/soul-schema';
 import type { Perception } from '../transport/message-codecs';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
@@ -31,6 +33,8 @@ export interface SparkThinkingModuleOptions {
     state: RuntimeState;
     memory: MemoryStore;
     llm: LlmClient;
+    planStore?: PlanStore;
+    libraryUpdater?: LibraryUpdater;
     sparkModules?: SparkModule[];
     resolvedSparkModules?: ResolvedSparkModule[];
     moduleTelemetry?: (module: SparkModuleIdentity) => SparkModuleTelemetry;
