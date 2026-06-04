@@ -1876,3 +1876,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 
 2026-06-04 16:00 UTC cron-cloud agents/wip S-GOAL-3 HANDOFF — sha=b0090c9a fin=4121/4115 +6. maybeRecordOrientationProgress in onPerception finally; orientation_progress/stalled per tick; deceased guard. QA-20260604-096 In Review. PENDING hot stack. next=S-GOAL-4 collision=none
 2026-06-04 16:18 UTC cron-cloud agents/wip S-GOAL-4 STARTING — stall→replan: orientationStalledAt in CognitiveState + stall branch in maybeTriggerPlannerPass. Files: runtime-state.ts hybrid-agent-helpers.ts resident-runtime.ts agent-status.md issue-register.md collision=none
+2026-06-04 16:50 UTC cron-cloud agents/wip S-GOAL-4 HANDOFF — sha=e9605b98 fin=4126/4121 +5. orientationStalledAt+stall branch in maybeTriggerPlannerPass; replannedReason=orientation_stalled; cleared on success. QA-097 In Review. PENDING hot stack. next=RIQ-4-5 collision=none
