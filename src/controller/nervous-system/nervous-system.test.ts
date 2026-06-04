@@ -653,6 +653,55 @@ describe('NervousSystem', () => {
             expect(second?.action?.cause).not.toBe('nervous:request-attention');
         });
 
+        it('calls dispatchAttentionPlea when the attention appeal fires (LB-H2R-4p77)', () => {
+            const state = runtimeState(100);
+            state.attention = 4000;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect(dispatchAttentionPlea).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not call dispatchAttentionPlea when the cooldown is active', () => {
+            const state = runtimeState(100);
+            state.attention = 4000;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            sys.react(healthyPerception(100));
+            dispatchAttentionPlea.mockClear();
+
+            state.tick = 200;
+            sys.react(healthyPerception(200));
+
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
+        it('does not call dispatchAttentionPlea when AP is above the appeal threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 10001;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            sys.react(healthyPerception(100));
+
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
+        it('does not call dispatchAttentionPlea when AP is exhausted (attention = 0)', () => {
+            const state = runtimeState(100);
+            state.attention = 0;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            sys.react(healthyPerception(100));
+
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
         it('re-appeals after the cooldown expires', () => {
             const state = runtimeState(100);
             state.attention = 4000;

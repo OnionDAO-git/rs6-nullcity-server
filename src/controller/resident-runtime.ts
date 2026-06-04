@@ -51,7 +51,7 @@ import {
     loadPreparedEpitaph,
     type DeceasedResidentSummary,
 } from './patron/epitaph-dispatcher';
-import { produceBroadcastLetter, type Letter } from './patron/letters-producer';
+import { produceBroadcastLetter, produceAttentionPleaLetter, type Letter } from './patron/letters-producer';
 import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import { initialAttention, spendAttention } from './spark/attention';
@@ -217,6 +217,30 @@ export class ResidentRuntime implements RoutineCapableRuntime {
         );
         this.applyRestartRespawnPolicy(startingAttention);
         this.patronRegistry = new PatronRegistry(options.patrons || []);
+
+        // LB-H2R-4p77: dispatch plea letters to faction supporters when the
+        // attention-appeal reflex fires (same cooldown as the in-world say).
+        const dispatchAttentionPlea = (): void => {
+            const storeRoot = this.evidence?.store.root;
+            if (!storeRoot) return;
+            const faction = dominantFaction(this.options.soul.frontmatter.factionAffinity) ?? 'unaligned';
+            const recipients = buildPleaRecipients(storeRoot, faction, this.options.patrons ?? []);
+            if (recipients.size === 0) return;
+            const ts = new Date().toISOString();
+            const store = new LettersStore(storeRoot);
+            for (const humanId of recipients) {
+                store.append(
+                    produceAttentionPleaLetter({
+                        humanId,
+                        residentName: this.name,
+                        faction,
+                        currentAp: Math.round(this.state.attention),
+                        ts,
+                    }),
+                );
+            }
+        };
+
         if (options.thinking) {
             this.thinking = options.thinking;
             this.nervousSystem = new NervousSystem({
@@ -224,6 +248,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 state: this.state,
                 memory: options.memory,
                 patronRegistry: this.patronRegistry,
+                dispatchAttentionPlea,
             });
         } else {
             const facets = createSparkRuntimeFacets({
@@ -236,6 +261,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 sparkModules: options.sparkModules,
                 moduleTelemetry: entry => options.inferenceLog.append(this.name, { ...entry }),
                 patronRegistry: this.patronRegistry,
+                dispatchAttentionPlea,
             });
             this.thinking = facets.thinking;
             this.thinkingSparkModule = facets.thinkingSparkModule;
@@ -3000,4 +3026,43 @@ function sourceFromProducer(producer: string): 'thinking' | 'nervous-system' | '
     if (producer === 'nervous-system') return 'nervous-system';
     if (producer === 'body' || producer === 'active-routine') return 'body';
     return 'thinking';
+}
+
+/**
+ * Collect humanIds that should receive an attention-plea letter.
+ * Includes anyone who has ever supported `faction` (standing ledger) plus all
+ * configured patrons. Used by the {@link NervousSystemOptions.dispatchAttentionPlea}
+ * callback (LB-H2R-4p77).
+ */
+function buildPleaRecipients(storeRoot: string, faction: string, configPatrons: PatronConfig[]): Set<string> {
+    const recipients = new Set<string>();
+
+    const standingPath = path.join(storeRoot, 'patron-standing.json');
+    if (fs.existsSync(standingPath)) {
+        try {
+            const snap = JSON.parse(fs.readFileSync(standingPath, 'utf8')) as unknown;
+            if (snap && typeof snap === 'object' && 'points' in snap) {
+                for (const key of Object.keys((snap as { points: Record<string, unknown> }).points)) {
+                    const sepIdx = key.lastIndexOf('|');
+                    if (sepIdx >= 0) {
+                        const humanId = key.slice(0, sepIdx);
+                        const entryFaction = key.slice(sepIdx + 1);
+                        if (entryFaction === faction && humanId.length > 0) {
+                            recipients.add(humanId);
+                        }
+                    }
+                }
+            }
+        } catch {
+            // ignore corrupt / missing file
+        }
+    }
+
+    for (const p of configPatrons) {
+        if (p.handle && p.handle.trim().length > 0) {
+            recipients.add(p.handle.trim());
+        }
+    }
+
+    return recipients;
 }

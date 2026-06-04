@@ -225,11 +225,11 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Design
 - Severity: P1
-- Status: Open
-- Owner: unassigned
-- Evidence: nervous-system.ts:527-567 emits only `{kind:'say'}`; letters-producer.ts has 5 kinds, no plea; no targeting of funders. Opportunity: landing sendPushToUsers(userIds,...) already exists as a delivery channel.
+- Status: In-progress
+- Owner: cron-cloud
+- Evidence: nervous-system.ts:534-578 requestAttentionReaction now calls dispatchAttentionPlea?.(). letters-producer.ts:469 produceAttentionPleaLetter. resident-runtime.ts buildPleaRecipients. QA-20260604-102. sha=pending.
 - Created: 2026-06-02
-- Updated: 2026-06-02
+- Updated: 2026-06-04
 - Resolution:
 
 ### LB-H2R-1n55 — Two disconnected human inboxes (controller letters never reach the dashboard)

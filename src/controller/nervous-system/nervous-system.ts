@@ -19,6 +19,13 @@ export interface NervousSystemOptions {
     state: RuntimeState;
     memory: MemoryStore;
     patronRegistry?: PatronRegistry;
+    /**
+     * Called when the attention-appeal reflex fires and the cooldown allows it
+     * (same cadence as the in-world `say`). The caller dispatches plea letters
+     * to faction supporters; the NervousSystem does not handle delivery.
+     * LB-H2R-4p77.
+     */
+    dispatchAttentionPlea?: () => void;
 }
 
 type Item = { itemId?: number; key?: string; amount?: number };
@@ -545,6 +552,10 @@ export class NervousSystem {
 
         this.options.state.hookCooldowns = this.options.state.hookCooldowns ?? {};
         this.options.state.hookCooldowns[cooldownKey] = tick + REQUEST_ATTENTION_COOLDOWN_TICKS;
+
+        // LB-H2R-4p77: notify caller so it can dispatch plea letters to
+        // faction supporters at the same cadence as this in-world appeal.
+        this.options.dispatchAttentionPlea?.();
 
         const basePhrase = APPEAL_PHRASES[tick % APPEAL_PHRASES.length];
         const publicName = this.options.soul.frontmatter.heroProfile?.publicName;

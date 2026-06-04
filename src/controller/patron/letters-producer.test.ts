@@ -1,4 +1,5 @@
 import {
+    type AttentionPleaLetterInput,
     type CivicAchievementLetterInput,
     type EpitaphLetterInput,
     type Letter,
@@ -9,6 +10,7 @@ import {
     produceEpitaphLetter,
     produceStandingTierLetter,
     produceBroadcastLetter,
+    produceAttentionPleaLetter,
     ticksToHumanTime,
 } from './letters-producer';
 
@@ -283,6 +285,84 @@ describe('produceBroadcastLetter (J4)', () => {
 
     it('round-trips through letterSchema', () => {
         const letter = produceBroadcastLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceAttentionPleaLetter (LB-H2R-4p77)', () => {
+    const baseInput: AttentionPleaLetterInput = {
+        humanId: 'alice@onion',
+        residentName: 'res:fern',
+        faction: 'embassy',
+        currentAp: 350,
+        ts: '2026-06-04T22:00:00.000Z',
+    };
+
+    it('returns a Letter with kind=attention_plea', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.kind).toBe('attention_plea');
+    });
+
+    it('sets recipient to humanId', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.recipient).toBe('alice@onion');
+    });
+
+    it('sets senderResident to residentName', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.senderResident).toBe('res:fern');
+    });
+
+    it('subject includes the resident name', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.subject).toMatch(/res:fern/);
+    });
+
+    it('body includes humanId, residentName, faction, and AP amount', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.body).toMatch(/alice@onion/);
+        expect(letter.body).toMatch(/res:fern/);
+        expect(letter.body).toMatch(/embassy/);
+        expect(letter.body).toMatch(/350/);
+    });
+
+    it('delivers strictly to web-inbox (no in-game-scroll, no lanyard-card)', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('sets dispatchedAt to the supplied ts', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.dispatchedAt).toBe(baseInput.ts);
+    });
+
+    it('different timestamps can produce different body templates (rotation covers all 3 variants)', () => {
+        const timestamps = [
+            '2026-06-04T00:00:00.000Z',
+            '2026-06-04T01:00:00.000Z',
+            '2026-06-04T02:00:00.000Z',
+            '2026-06-04T03:00:00.000Z',
+            '2026-06-04T04:00:00.000Z',
+            '2026-06-04T05:00:00.000Z',
+        ];
+        const bodies = new Set(
+            timestamps.map(ts => produceAttentionPleaLetter({ ...baseInput, ts }).body),
+        );
+        // At least 2 distinct templates across 6 timestamps; all 3 covered with enough samples.
+        expect(bodies.size).toBeGreaterThanOrEqual(2);
+    });
+
+    it('produces identical bodies for two patrons receiving the same plea at the same ts', () => {
+        const a = produceAttentionPleaLetter({ ...baseInput, humanId: 'alice@onion' });
+        const b = produceAttentionPleaLetter({ ...baseInput, humanId: 'bob@onion' });
+        // Body template selection is ts-deterministic; only humanId substitution differs.
+        const aBodyStripped = a.body.replace(/alice@onion/g, 'PATRON');
+        const bBodyStripped = b.body.replace(/bob@onion/g, 'PATRON');
+        expect(aBodyStripped).toBe(bBodyStripped);
+    });
+
+    it('round-trips through letterSchema', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
         expect(() => letterSchema.parse(letter)).not.toThrow();
     });
 });

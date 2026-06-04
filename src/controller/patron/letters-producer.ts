@@ -35,8 +35,8 @@ export function ticksToHumanTime(ticks: number): string {
  * here.
  */
 export interface Letter {
-    /** Discriminator. Only 'standing_tier_crossed' is produced in this slice. */
-    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast';
+    /** Discriminator. */
+    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast' | 'attention_plea';
     /** humanId (badge handle, e.g. 'alice@onion'). */
     recipient: string;
     /**
@@ -60,7 +60,7 @@ export interface Letter {
 }
 
 export const letterSchema = z.object({
-    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast']),
+    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast', 'attention_plea']),
     recipient: z.string().min(1),
     senderResident: z.string().min(1),
     subject: z.string().min(1),
@@ -403,5 +403,82 @@ export function produceMorticiansRibbonLetter(input: MorticiansRibbonLetterInput
         body,
         dispatchedAt: input.ts,
         deliveryChannels: ['web-inbox', 'lanyard-card'],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// LB-H2R-4p77: Resident attention plea — dispatched to faction supporters
+// when the resident is fading (requestAttentionReaction fires).
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceAttentionPleaLetter}. */
+export interface AttentionPleaLetterInput {
+    /** humanId of the patron receiving the plea. */
+    humanId: string;
+    /** Name of the fading resident (used as sender voice). */
+    residentName: string;
+    /** Faction the resident serves. */
+    faction: string;
+    /** Current AP amount (personalises urgency). */
+    currentAp: number;
+    /** ISO timestamp of dispatch. */
+    ts: string;
+}
+
+const PLEA_BODIES: ReadonlyArray<(name: string, humanId: string, faction: string, ap: number) => string> = [
+    (name, humanId, faction, ap) =>
+        [
+            `${humanId},`,
+            '',
+            `It's ${name}. My attention is running thin — ${ap} left on the ledger — and I'm not sure how long I can hold on.`,
+            '',
+            `If you have AP to spare, an offering at the embassy for ${faction} would help. Even a small amount keeps me here.`,
+            '',
+            `— ${name}`,
+        ].join('\n'),
+    (name, humanId, faction, ap) =>
+        [
+            `${humanId},`,
+            '',
+            `${name} here. My AP is down to ${ap} and fading. I wanted to reach out before it gets worse.`,
+            '',
+            `Your support for ${faction} has meant something to me. If you can spare any attention, now is when it matters.`,
+            '',
+            `— ${name}`,
+        ].join('\n'),
+    (name, humanId, faction, ap) =>
+        [
+            `${humanId},`,
+            '',
+            `I won't be able to keep going at this rate. ${ap} AP remaining. The city still needs ${faction} around, and I'd like to stay.`,
+            '',
+            `An embassy offering in my name would make a real difference.`,
+            '',
+            `— ${name}`,
+        ].join('\n'),
+];
+
+/**
+ * Generate an attention-plea letter from a fading resident to one of their
+ * faction's supporters. Pure function; no I/O.
+ *
+ * The body rotates through {@link PLEA_BODIES} using a hash of the timestamp
+ * so simultaneous pleas to different patrons share the same voice (not
+ * random), and successive pleas after the cooldown may use a different phrase.
+ */
+export function produceAttentionPleaLetter(input: AttentionPleaLetterInput): Letter {
+    const hashBase = input.ts
+        .split('')
+        .reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
+    const idx = Math.abs(hashBase) % PLEA_BODIES.length;
+    const body = PLEA_BODIES[idx](input.residentName, input.humanId, input.faction, input.currentAp);
+    return {
+        kind: 'attention_plea',
+        recipient: input.humanId,
+        senderResident: input.residentName,
+        subject: `${input.residentName} is running low on attention`,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
     };
 }

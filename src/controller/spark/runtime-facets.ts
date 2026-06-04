@@ -27,6 +27,8 @@ export interface SparkRuntimeFacetOptions {
     sparkModules?: SparkModule[];
     moduleTelemetry?: (entry: SparkModuleTelemetryLogEntry) => void;
     patronRegistry?: PatronRegistry;
+    /** Forwarded to {@link NervousSystem} options (LB-H2R-4p77). */
+    dispatchAttentionPlea?: () => void;
 }
 
 export interface SparkRuntimeFacets {
@@ -66,6 +68,7 @@ function createNervousSelection(
         state: options.state,
         memory: options.memory,
         patronRegistry: options.patronRegistry,
+        dispatchAttentionPlea: options.dispatchAttentionPlea,
     });
     for (const selected of selectedModules) {
         const nervousSystem = selected.module.createNervousSystem?.({
