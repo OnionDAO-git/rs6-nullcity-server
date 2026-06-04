@@ -13,6 +13,7 @@ node_modules
 /data/controller/storyteller/s-*/
 /data/controller/storyteller/canon/
 /data/controller/storyteller/review/
+/data/controller/storyteller/latest-frame.json
 /data/controller/storyteller/overseer-ledger.jsonl
 /data/runtime-logs
 /data/benchmarks/**
