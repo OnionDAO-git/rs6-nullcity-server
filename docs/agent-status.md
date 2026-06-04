@@ -1873,3 +1873,5 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-04 15:40 UTC cron-cloud agents/wip packet=RIQ-5-4 HANDOFF — sha=992e5d47 fin=4115/4112 +4 tests. goalId mismatch triggers replan; replannedReason=goal_changed. Fixes stale plan after resident:goal-edit. QA-20260604-095 In Review. PENDING hot stack. collision=none
 
 2026-06-04 15:20 UTC cron-cloud agents/wip S-GOAL-3 STARTING — wire orientation scorer (S-GOAL-2) into runtime: progress/stall Library events per tick. Files: src/controller/resident-runtime.ts src/controller/resident-runtime.orientation.test.ts docs/agent-status.md collision=none
+
+2026-06-04 16:00 UTC cron-cloud agents/wip S-GOAL-3 HANDOFF — sha=b0090c9a fin=4121/4115 +6. maybeRecordOrientationProgress in onPerception finally; orientation_progress/stalled per tick; deceased guard. QA-20260604-096 In Review. PENDING hot stack. next=S-GOAL-4 collision=none
