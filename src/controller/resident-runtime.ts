@@ -695,6 +695,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 orientationGoalDescription: orientationGoal.description,
                 nonProgressTicks: stall.nonProgressTicks,
             });
+            // S-GOAL-4: persist stall tick so maybeTriggerPlannerPass sees it next brain cycle
+            // and can replan with a fresh approach to the orientation goal.
+            this.state.cognition = this.state.cognition ?? {};
+            this.state.cognition.orientationStalledAt = tick;
         }
     }
 

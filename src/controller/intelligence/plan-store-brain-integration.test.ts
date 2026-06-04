@@ -436,6 +436,62 @@ describe('maybeTriggerPlannerPass — trigger conditions', () => {
     });
 });
 
+// S-GOAL-4: orientation stall → plan replan
+describe('maybeTriggerPlannerPass — orientation stall triggers replan (S-GOAL-4)', () => {
+    it('triggers replan when orientationStalledAt is newer than plan.createdAtTick', async () => {
+        // Active plan created at tick 0; stall detected at tick 50 (after plan).
+        const plan = makeActivePlan({ goalId: 'g1', status: 'active', createdAtTick: 0 });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' } });
+        ctx.options.state.cognition = { orientationStalledAt: 50 };
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT trigger when orientationStalledAt predates the current plan (stale stall)', async () => {
+        // Stall at tick 10, but plan was created at tick 20 — plan already incorporates new approach.
+        const plan = makeActivePlan({ goalId: 'g1', status: 'active', createdAtTick: 20 });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' } });
+        ctx.options.state.cognition = { orientationStalledAt: 10 };
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).not.toHaveBeenCalled();
+    });
+
+    it('does NOT trigger when orientationStalledAt is absent', async () => {
+        const plan = makeActivePlan({ goalId: 'g1', status: 'active', createdAtTick: 0 });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' } });
+        // No cognition set at all.
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).not.toHaveBeenCalled();
+    });
+
+    it('emits replannedReason=orientation_stalled when stall triggers the replan', async () => {
+        const plan = makeActivePlan({ goalId: 'g1', status: 'active', createdAtTick: 0 });
+        const newPlan = makeActivePlan({ goalId: 'g1', createdAtTick: 100 });
+        mockRunPlannerPass.mockResolvedValueOnce({ success: true, plan: newPlan, toolCallsMade: 0, fellBackToRag: false, elapsedMs: 50 });
+        const planStore = makePlanStore(plan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, libraryUpdater: library });
+        ctx.options.state.cognition = { orientationStalledAt: 50 };
+        await maybeTriggerPlannerPass(ctx);
+        expect(library.observePlanReplanned).toHaveBeenCalledTimes(1);
+        expect(library.observePlanReplanned).toHaveBeenCalledWith(expect.objectContaining({ replannedReason: 'orientation_stalled' }));
+    });
+
+    it('clears orientationStalledAt after a successful replan', async () => {
+        const plan = makeActivePlan({ goalId: 'g1', status: 'active', createdAtTick: 0 });
+        const newPlan = makeActivePlan({ goalId: 'g1', createdAtTick: 100 });
+        mockRunPlannerPass.mockResolvedValueOnce({ success: true, plan: newPlan, toolCallsMade: 0, fellBackToRag: false, elapsedMs: 50 });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' } });
+        ctx.options.state.cognition = { orientationStalledAt: 50 };
+        await maybeTriggerPlannerPass(ctx);
+        expect(ctx.options.state.cognition?.orientationStalledAt).toBeUndefined();
+    });
+});
+
 describe('maybeTriggerPlannerPass — failure handling', () => {
     it('does not throw when PlannerPass returns success=false', async () => {
         mockRunPlannerPass.mockResolvedValueOnce({

@@ -92,6 +92,10 @@ export interface CognitiveState {
     primitiveStepIdxByStageId?: Record<string, number>;
     /** RIQ-5-2: tick before which maybeTriggerPlannerPass should not retry after a failure. */
     plannerFailureBackoffUntilTick?: number;
+    /** S-GOAL-4: tick at which orientation_stalled was last emitted. When this is newer than
+     *  the current plan's createdAtTick, maybeTriggerPlannerPass treats it as a replan trigger
+     *  so the Brain can approach the orientation from a different angle. Cleared on success. */
+    orientationStalledAt?: number;
 }
 
 export interface FollowTargetState {

@@ -3405,7 +3405,19 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
     // RIQ-5-4: include goal-mismatch so a plan made for the old orientationGoal is
     // invalidated when the operator edits the soul (via `resident:goal-edit`).
     const goalChanged = plan !== null && plan !== undefined && plan.goalId !== orientationGoal.id;
-    const needsReplan = !plan || plan.status === 'completed' || plan.status === 'abandoned' || stage?.status === 'blocked' || goalChanged;
+    // S-GOAL-4: if an orientation stall fired AFTER the current plan was created, the Brain
+    // should replan with a fresh approach. This connects the per-tick stall tracker (which
+    // writes orientationStalledAt to CognitiveState) to the deliberative planner.
+    const stalledSinceLastPlan =
+        plan != null &&
+        (ctx.options.state.cognition?.orientationStalledAt ?? -1) > plan.createdAtTick;
+    const needsReplan =
+        !plan ||
+        plan.status === 'completed' ||
+        plan.status === 'abandoned' ||
+        stage?.status === 'blocked' ||
+        goalChanged ||
+        stalledSinceLastPlan;
     if (!needsReplan) return;
 
     // S-PLAN-BUDGET-1: guard the paid planner (planner_haiku ~$0.016/call) against
@@ -3455,6 +3467,10 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
             if (ctx.options.state.cognition?.plannerFailureBackoffUntilTick !== undefined) {
                 ctx.options.state.cognition.plannerFailureBackoffUntilTick = undefined;
             }
+            // S-GOAL-4: clear orientation stall flag so we don't keep replanning every cycle.
+            if (ctx.options.state.cognition?.orientationStalledAt !== undefined) {
+                ctx.options.state.cognition.orientationStalledAt = undefined;
+            }
             // RIQ-3-3: emit plan lifecycle Library event so the Storyteller can narrate
             // when a resident forms or adapts their multi-stage plan.
             const { libraryUpdater } = ctx.options;
@@ -3474,9 +3490,11 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
                 } else {
                     const replannedReason = goalChanged
                         ? 'goal_changed'
-                        : plan.status !== 'active'
-                          ? plan.status
-                          : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
+                        : stalledSinceLastPlan
+                          ? 'orientation_stalled'
+                          : plan.status !== 'active'
+                            ? plan.status
+                            : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
                     libraryUpdater.observePlanReplanned({
                         kind: 'plan_replanned',
                         ts,
