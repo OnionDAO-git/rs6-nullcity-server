@@ -3354,6 +3354,14 @@ const _plannerPassInFlight = new Set<string>();
  * budget).
  */
 export const STAGE_TICK_BUDGET = 200;
+
+/**
+ * RIQ-5-2: Ticks to wait before retrying a PlannerPass after a failure.
+ * 200 ticks ≈ 3 min at 1 tick/s; prevents rapid-retry budget exhaustion when
+ * the planner endpoint is flaky or times out.
+ */
+export const PLANNER_FAILURE_BACKOFF_TICKS = 200;
+
 const _stageActiveSinceTick = new Map<string, number>();
 /** RIQ-4-3: last tick an action was dispatched for an open-goal stage (for action_result advance). */
 const _stageLastDispatchTick = new Map<string, number>();
@@ -3386,6 +3394,11 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
 
     const residentId = ctx.options.state.resident;
     if (_plannerPassInFlight.has(residentId)) return;
+
+    // RIQ-5-2: exponential-free but bounded backoff after a failed PlannerPass.
+    // Prevents rapid-retry budget burn when the planner endpoint is flaky.
+    const backoffUntil = ctx.options.state.cognition?.plannerFailureBackoffUntilTick;
+    if (backoffUntil !== undefined && ctx.options.state.tick < backoffUntil) return;
 
     const plan = planStore.load(residentId);
     const stage = plan ? currentPlanStage(plan) : undefined;
@@ -3428,6 +3441,10 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
         });
         if (result.success && result.plan) {
             planStore.save(residentId, result.plan);
+            // RIQ-5-2: clear any prior failure backoff on a successful plan.
+            if (ctx.options.state.cognition?.plannerFailureBackoffUntilTick !== undefined) {
+                ctx.options.state.cognition.plannerFailureBackoffUntilTick = undefined;
+            }
             // RIQ-3-3: emit plan lifecycle Library event so the Storyteller can narrate
             // when a resident forms or adapts their multi-stage plan.
             const { libraryUpdater } = ctx.options;
@@ -3460,9 +3477,18 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
                 }
             }
         } else {
+            // RIQ-5-2: back off before retrying so a flaky endpoint cannot burn the
+            // daily budget in seconds (budget: 10 calls/day; backoff: 200 ticks ≈ 3 min).
+            ctx.options.state.cognition = ctx.options.state.cognition ?? {};
+            ctx.options.state.cognition.plannerFailureBackoffUntilTick =
+                ctx.options.state.tick + PLANNER_FAILURE_BACKOFF_TICKS;
             process.stderr.write(`[RIQ-3-2] PlannerPass failed for ${residentId}: ${result.error ?? 'unknown'}\n`);
         }
     } catch (err) {
+        // RIQ-5-2: also back off on thrown errors (network timeouts, parse failures).
+        ctx.options.state.cognition = ctx.options.state.cognition ?? {};
+        ctx.options.state.cognition.plannerFailureBackoffUntilTick =
+            ctx.options.state.tick + PLANNER_FAILURE_BACKOFF_TICKS;
         process.stderr.write(`[RIQ-3-2] PlannerPass threw for ${residentId}: ${err instanceof Error ? err.message : String(err)}\n`);
     } finally {
         _plannerPassInFlight.delete(residentId);

@@ -90,6 +90,8 @@ export interface CognitiveState {
     pausedFollowTarget?: FollowTargetState;
     /** Phase 4 (RIQ-4-2): step progress for open-goal stages, keyed by stage id. */
     primitiveStepIdxByStageId?: Record<string, number>;
+    /** RIQ-5-2: tick before which maybeTriggerPlannerPass should not retry after a failure. */
+    plannerFailureBackoffUntilTick?: number;
 }
 
 export interface FollowTargetState {

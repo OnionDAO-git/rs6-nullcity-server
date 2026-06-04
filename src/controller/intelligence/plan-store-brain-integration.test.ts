@@ -18,7 +18,7 @@ jest.mock('./planner-pass', () => ({
     blockCurrentStage: jest.requireActual<typeof import('./planner-pass')>('./planner-pass').blockCurrentStage,
 }));
 
-import { maybeTriggerPlannerPass, runBody, STAGE_TICK_BUDGET } from '../thinking/hybrid-agent-helpers';
+import { maybeTriggerPlannerPass, runBody, STAGE_TICK_BUDGET, PLANNER_FAILURE_BACKOFF_TICKS } from '../thinking/hybrid-agent-helpers';
 import { runPlannerPass } from './planner-pass';
 import type { Plan } from './planner-pass';
 import type { HelperContext } from '../thinking/hybrid-agent-helpers';
@@ -417,6 +417,61 @@ describe('maybeTriggerPlannerPass — failure handling', () => {
         (planStore.load as jest.Mock).mockReturnValue(makeActivePlan());
         await maybeTriggerPlannerPass(ctx);
         // Second call should not trigger because the plan is now healthy.
+        expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('maybeTriggerPlannerPass — failure backoff (RIQ-5-2)', () => {
+    it('sets plannerFailureBackoffUntilTick on success=false result', async () => {
+        mockRunPlannerPass.mockResolvedValueOnce({
+            success: false,
+            error: 'parse failed',
+            toolCallsMade: 0,
+            fellBackToRag: false,
+            elapsedMs: 10,
+        });
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 500 });
+        await maybeTriggerPlannerPass(ctx);
+        expect(ctx.options.state.cognition?.plannerFailureBackoffUntilTick).toBe(500 + PLANNER_FAILURE_BACKOFF_TICKS);
+    });
+
+    it('sets plannerFailureBackoffUntilTick when runPlannerPass throws', async () => {
+        mockRunPlannerPass.mockRejectedValueOnce(new Error('network error'));
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 300 });
+        await maybeTriggerPlannerPass(ctx);
+        expect(ctx.options.state.cognition?.plannerFailureBackoffUntilTick).toBe(300 + PLANNER_FAILURE_BACKOFF_TICKS);
+    });
+
+    it('skips PlannerPass when backoff is active (tick < backoffUntil)', async () => {
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 100 });
+        // Inject an active backoff
+        ctx.options.state.cognition = { ...ctx.options.state.cognition, plannerFailureBackoffUntilTick: 250 };
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).not.toHaveBeenCalled();
+    });
+
+    it('clears plannerFailureBackoffUntilTick on a successful plan', async () => {
+        const newPlan = makeActivePlan({ goalId: 'wc' });
+        mockRunPlannerPass.mockResolvedValueOnce({ success: true, plan: newPlan, toolCallsMade: 0, fellBackToRag: false, elapsedMs: 50 });
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'wc', description: 'master woodcutting' }, plannerProfile: { endpoint: 'p' }, tick: 400 });
+        // Pre-set a stale backoff
+        ctx.options.state.cognition = { ...ctx.options.state.cognition, plannerFailureBackoffUntilTick: 99 };
+        await maybeTriggerPlannerPass(ctx);
+        expect(ctx.options.state.cognition?.plannerFailureBackoffUntilTick).toBeUndefined();
+        expect(planStore.save).toHaveBeenCalledWith('res:test', newPlan);
+    });
+
+    it('fires again once the backoff tick window expires', async () => {
+        const planStore = makePlanStore(null);
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' }, tick: 300 });
+        // Inject an expired backoff
+        ctx.options.state.cognition = { ...ctx.options.state.cognition, plannerFailureBackoffUntilTick: 200 };
+        await maybeTriggerPlannerPass(ctx);
+        // tick(300) >= backoffUntil(200) → should proceed
         expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
     });
 });
