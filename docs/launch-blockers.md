@@ -254,7 +254,7 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Evidence: memory-router.ts:196-217 + portrait-template.ts:176 key off patronHandle and exclude city_inbox_message/cityUserId.
 - Created: 2026-06-02
 - Updated: 2026-06-04
-- Resolution: routeEvent routes human_inbox_message to social/<sender>.md; routeDurableFacts writes facts/humans.md. QA-20260604-101. sha pending push.
+- Resolution: routeEvent routes human_inbox_message to social/<sender>.md; routeDurableFacts writes facts/humans.md. QA-20260604-101. sha=c6b544f2.
 
 ---
 
