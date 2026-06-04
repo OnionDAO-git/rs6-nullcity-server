@@ -38,7 +38,7 @@ import {
     type LiveEconomySnapshot,
 } from './live-economy';
 import { PlanStore } from '../intelligence/plan-store';
-import type { Plan } from '../intelligence/planner-pass';
+import { currentStage, type Plan, type Stage } from '../intelligence/planner-pass';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
 export const STORYTELLER_QUEUE_DEFAULT_LIMIT = 20;
@@ -1312,6 +1312,18 @@ export class CityIntegrationService {
         const residentName = parseResident(resident);
         const plan = this.planStore.load(residentName);
         return { ok: true, resident: residentName, plan };
+    }
+
+    /** RIQ-5-5: return all residents that have an active durable plan. */
+    allResidentPlans(): { ok: boolean; plans: Array<{ residentSlug: string; plan: Plan; currentStage: Stage | null }> } {
+        return {
+            ok: true,
+            plans: this.planStore.listAll().map(({ slug, plan }) => ({
+                residentSlug: slug,
+                plan,
+                currentStage: currentStage(plan) ?? null,
+            })),
+        };
     }
 
     economyDigest(options: { since?: string; until?: string } = {}): CityEventDigest {

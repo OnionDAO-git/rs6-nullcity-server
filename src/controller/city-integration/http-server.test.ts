@@ -1192,6 +1192,60 @@ describe('CityIntegration HTTP server', () => {
         expect(achievedAgain.payload).toMatchObject({ id: goalId, status: 'achieved' });
     });
 
+    it('GET /plans returns empty list when no plans exist (RIQ-5-5)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/plans`, token);
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/application\/json/);
+        expect(response.payload).toEqual({ ok: true, plans: [] });
+    });
+
+    it('GET /plans returns active plans written via PlanStore (RIQ-5-5)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const { PlanStore } = await import('../intelligence/plan-store');
+        const store = new PlanStore(root);
+        const fakePlan = {
+            goalId: 'goal-bulk',
+            goalDescription: 'Bulk test goal',
+            createdAtTick: 5,
+            status: 'active' as const,
+            stages: [
+                {
+                    id: 'stage-1',
+                    subgoal: 'do something',
+                    status: 'active' as const,
+                    requirements: [],
+                    successCriteria: 'done',
+                },
+            ],
+            currentStageIndex: 0,
+        };
+        store.save('res:bulk-tester', fakePlan as unknown as Parameters<typeof store.save>[1]);
+
+        const response = await requestJson('GET', `${started.url}/plans`, token);
+        expect(response.status).toBe(200);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            plans: [
+                {
+                    residentSlug: 'res-bulk-tester',
+                    plan: { goalId: 'goal-bulk', status: 'active' },
+                    currentStage: { id: 'stage-1', status: 'active' },
+                },
+            ],
+        });
+    });
+
     it('GET /residents/:id/plan returns plan null when no plan exists (RIQ-5-1)', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),

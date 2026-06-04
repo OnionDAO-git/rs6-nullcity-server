@@ -87,4 +87,22 @@ export class PlanStore {
     has(residentId: string): boolean {
         return fs.existsSync(this.planPath(residentId));
     }
+
+    /** RIQ-5-5: return all residents that have a readable active plan. */
+    listAll(): Array<{ slug: string; plan: Plan }> {
+        if (!fs.existsSync(this.memoryRoot)) return [];
+        const entries = fs.readdirSync(this.memoryRoot, { withFileTypes: true });
+        const result: Array<{ slug: string; plan: Plan }> = [];
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const planPath = path.join(this.memoryRoot, entry.name, 'active-plan.json');
+            if (!fs.existsSync(planPath)) continue;
+            try {
+                result.push({ slug: entry.name, plan: JSON.parse(fs.readFileSync(planPath, 'utf8')) as Plan });
+            } catch {
+                // corrupt plan — skip silently (listAll is read-only; no quarantine here)
+            }
+        }
+        return result;
+    }
 }

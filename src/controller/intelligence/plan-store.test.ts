@@ -275,3 +275,38 @@ describe('I. plan helpers work through the store', () => {
         expect(final.status).toBe('completed');
     });
 });
+
+// ---------------------------------------------------------------------------
+// J. listAll() returns plans for all residents
+// ---------------------------------------------------------------------------
+
+describe('J. listAll()', () => {
+    it('returns empty array when memoryRoot does not exist', () => {
+        const store = new PlanStore('/tmp/does-not-exist-plan-store-test-xyz');
+        expect(store.listAll()).toEqual([]);
+    });
+
+    it('excludes subdirectories that have no active-plan.json', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        // Create a directory with no plan file
+        fs.mkdirSync(path.join(dir, 'orphan-dir'));
+        expect(store.listAll()).toEqual([]);
+    });
+
+    it('returns one entry per resident with a saved plan', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        const planA = makePlan('goal-a', 1);
+        const planB = makePlan('goal-b', 2);
+        store.save('res:alice', planA);
+        store.save('res:bob', planB);
+
+        const all = store.listAll();
+        expect(all).toHaveLength(2);
+        const slugs = all.map(e => e.slug).sort();
+        expect(slugs).toEqual(['res-alice', 'res-bob']);
+        const aliceEntry = all.find(e => e.slug === 'res-alice')!;
+        expect(aliceEntry.plan).toEqual(planA);
+    });
+});

@@ -289,6 +289,11 @@ async function handle(
         return;
     }
 
+    if (request.method === 'GET' && path === `${pathPrefix}/plans`) {
+        writeJson(response, 200, options.service.allResidentPlans());
+        return;
+    }
+
     const match = path.match(
         new RegExp(
             `^${escapeRegExp(pathPrefix)}/residents/([^/]+)/(attention-grants|ap-gp-exchanges|gold-burns|messages|wealth|public-snapshot|log|death|library-events|plan)$`,
