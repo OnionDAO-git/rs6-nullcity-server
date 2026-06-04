@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { Letter } from './letters-producer';
+import type { LettersEntry } from './letters-store';
 import { LettersStore } from './letters-store';
 
 describe('LettersStore', () => {
@@ -194,6 +195,69 @@ describe('LettersStore', () => {
             const store = new LettersStore(tmpRoot);
             const bad = { ...letter(), recipient: '' };
             expect(() => store.append(bad)).toThrow();
+        });
+    });
+
+    describe('readAllLetters', () => {
+        it('returns empty array when no letters directory exists', () => {
+            const store = new LettersStore(tmpRoot);
+            expect(store.readAllLetters()).toEqual([]);
+        });
+
+        it('returns all letters across all recipients when no since filter', () => {
+            const store = new LettersStore(tmpRoot);
+            store.append(letter({ recipient: 'alice@onion', subject: 'for-alice', dispatchedAt: '2026-05-23T04:00:00.000Z' }));
+            store.append(letter({ recipient: 'bob@onion', subject: 'for-bob', dispatchedAt: '2026-05-23T04:01:00.000Z' }));
+
+            const entries = store.readAllLetters();
+            const recipients = entries.map((e: LettersEntry) => e.recipient).sort();
+            expect(recipients).toEqual(['alice@onion', 'bob@onion']);
+            const aliceEntry = entries.find((e: LettersEntry) => e.recipient === 'alice@onion');
+            expect(aliceEntry?.letters).toHaveLength(1);
+            expect(aliceEntry?.letters[0].subject).toBe('for-alice');
+        });
+
+        it('filters by since: excludes letters dispatched before the cutoff', () => {
+            const store = new LettersStore(tmpRoot);
+            store.append(letter({ subject: 'old', dispatchedAt: '2026-05-23T03:00:00.000Z' }));
+            store.append(letter({ subject: 'new', dispatchedAt: '2026-05-23T05:00:00.000Z' }));
+
+            const cutoff = new Date('2026-05-23T04:00:00.000Z');
+            const entries = store.readAllLetters(cutoff);
+            expect(entries).toHaveLength(1);
+            expect(entries[0].letters[0].subject).toBe('new');
+        });
+
+        it('includes letters dispatched exactly at the since boundary', () => {
+            const store = new LettersStore(tmpRoot);
+            store.append(letter({ subject: 'at-boundary', dispatchedAt: '2026-05-23T04:00:00.000Z' }));
+
+            const cutoff = new Date('2026-05-23T04:00:00.000Z');
+            const entries = store.readAllLetters(cutoff);
+            expect(entries).toHaveLength(1);
+            expect(entries[0].letters[0].subject).toBe('at-boundary');
+        });
+
+        it('omits recipients with no letters after the since filter', () => {
+            const store = new LettersStore(tmpRoot);
+            store.append(letter({ recipient: 'alice@onion', subject: 'old', dispatchedAt: '2026-05-23T02:00:00.000Z' }));
+            store.append(letter({ recipient: 'bob@onion', subject: 'new', dispatchedAt: '2026-05-23T05:00:00.000Z' }));
+
+            const entries = store.readAllLetters(new Date('2026-05-23T04:00:00.000Z'));
+            const recipients = entries.map((e: LettersEntry) => e.recipient);
+            expect(recipients).not.toContain('alice@onion');
+            expect(recipients).toContain('bob@onion');
+        });
+
+        it('returns each recipient once with all their matching letters', () => {
+            const store = new LettersStore(tmpRoot);
+            store.append(letter({ subject: 'first', dispatchedAt: '2026-05-23T04:00:00.000Z' }));
+            store.append(letter({ subject: 'second', dispatchedAt: '2026-05-23T04:01:00.000Z' }));
+            store.append(letter({ subject: 'third', dispatchedAt: '2026-05-23T04:02:00.000Z' }));
+
+            const entries = store.readAllLetters();
+            expect(entries).toHaveLength(1);
+            expect(entries[0].letters).toHaveLength(3);
         });
     });
 });

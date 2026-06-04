@@ -8,6 +8,12 @@ export interface LettersStoreAppendResult {
     deduped: boolean;
 }
 
+/** One recipient's letters, as returned by {@link LettersStore.readAllLetters}. */
+export interface LettersEntry {
+    recipient: string;
+    letters: Letter[];
+}
+
 /**
  * Filesystem-backed inbox per human.
  *
@@ -66,6 +72,60 @@ export class LettersStore {
                     return [];
                 }
             });
+    }
+
+    /**
+     * Returns all letters across every recipient's inbox, optionally
+     * filtered to letters dispatched at or after `since`.
+     *
+     * Designed for dashboard polling: callers pass the timestamp of the
+     * last letter they ingested so only new letters are returned.  When
+     * `since` is omitted every letter is returned.
+     *
+     * Recipients with no matching letters after the `since` filter are
+     * omitted from the result.
+     */
+    readAllLetters(since?: Date): LettersEntry[] {
+        const lettersDir = path.join(this.root, 'data', 'letters');
+        if (!fs.existsSync(lettersDir)) {
+            return [];
+        }
+        const slugDirs = fs
+            .readdirSync(lettersDir, { withFileTypes: true })
+            .filter(d => d.isDirectory())
+            .map(d => d.name);
+
+        const result: LettersEntry[] = [];
+        for (const slugDir of slugDirs) {
+            const inboxFile = path.join(lettersDir, slugDir, 'inbox.jsonl');
+            if (!fs.existsSync(inboxFile)) continue;
+
+            const raw = fs
+                .readFileSync(inboxFile, 'utf8')
+                .split('\n')
+                .map(line => line.trim())
+                .filter(Boolean)
+                .flatMap(line => {
+                    try {
+                        return [JSON.parse(line) as Letter];
+                    } catch {
+                        return [];
+                    }
+                });
+
+            const letters = since
+                ? raw.filter(l => {
+                      const ts = new Date(l.dispatchedAt);
+                      return !isNaN(ts.getTime()) && ts >= since;
+                  })
+                : raw;
+
+            if (letters.length === 0) continue;
+
+            const recipient = letters[0]?.recipient ?? slugDir;
+            result.push({ recipient, letters });
+        }
+        return result;
     }
 
     private inboxPath(recipient: string): string {

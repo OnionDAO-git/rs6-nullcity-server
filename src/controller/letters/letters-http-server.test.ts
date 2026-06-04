@@ -930,6 +930,77 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(oak?.livesCount).toBe(2);
         });
     });
+
+    describe('GET /v1/letters/all (LB-H2R-1n55 dashboard polling bridge)', () => {
+        it('returns empty entries array when no letters exist', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { entries: unknown[]; total: number; asOf: string; since: null };
+            expect(payload.entries).toEqual([]);
+            expect(payload.total).toBe(0);
+            expect(typeof payload.asOf).toBe('string');
+            expect(payload.since).toBeNull();
+        });
+
+        it('returns all letters across all recipients', async () => {
+            seedLetter('alice@onion', 'welcome-alice', '2026-05-23T04:00:00.000Z');
+            seedLetter('bob@onion', 'welcome-bob', '2026-05-23T04:01:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { entries: Array<{ recipient: string; letters: unknown[] }>; total: number };
+            expect(payload.total).toBe(2);
+            const recipients = payload.entries.map(e => e.recipient).sort();
+            expect(recipients).toEqual(['alice@onion', 'bob@onion']);
+        });
+
+        it('filters by ?since= and returns only letters at or after the cutoff', async () => {
+            seedLetter('alice@onion', 'old-letter', '2026-05-23T03:00:00.000Z');
+            seedLetter('alice@onion', 'new-letter', '2026-05-23T05:00:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all?since=2026-05-23T04:00:00.000Z'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                entries: Array<{ recipient: string; letters: Array<{ subject: string }> }>;
+                total: number;
+                since: string;
+            };
+            expect(payload.total).toBe(1);
+            expect(payload.entries[0]?.letters[0]?.subject).toBe('new-letter');
+            expect(payload.since).toBe('2026-05-23T04:00:00.000Z');
+        });
+
+        it('returns 400 for a malformed ?since= value', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all?since=not-a-date'));
+            expect(response.status).toBe(400);
+            const payload = JSON.parse(response.body) as { error: string };
+            expect(payload.error).toMatch(/since/i);
+        });
+
+        it('omits recipients with no letters after ?since= filtering', async () => {
+            seedLetter('alice@onion', 'alice-old', '2026-05-23T02:00:00.000Z');
+            seedLetter('bob@onion', 'bob-new', '2026-05-23T05:00:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all?since=2026-05-23T04:00:00.000Z'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { entries: Array<{ recipient: string }>; total: number };
+            expect(payload.total).toBe(1);
+            expect(payload.entries[0]?.recipient).toBe('bob@onion');
+        });
+
+        it('respects bearer-token auth when configured', async () => {
+            const auth = { bearerToken: 'test-secret' };
+            seedLetter('alice@onion', 'guarded', '2026-05-23T04:00:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0, auth });
+            const urlAll = server.url.replace('/v1/inbox', '/v1/letters/all');
+            const unauthorized = await get(urlAll);
+            expect(unauthorized.status).toBe(401);
+            const authorized = await get(urlAll, { Authorization: 'Bearer test-secret' });
+            expect(authorized.status).toBe(200);
+        });
+    });
 });
 
 function writeRuntimeState(root: string, slug: string, partial: { attention: number; [key: string]: unknown }): void {

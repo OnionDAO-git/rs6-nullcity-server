@@ -237,12 +237,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: multi
 - Type: Dev
 - Severity: P1
-- Status: Open
-- Owner: unassigned
+- Status: In-progress
+- Owner: cron-cloud
 - Evidence: controller letters served GET-only at letters-http-server.ts:11-39; dashboard inbox_* tables read-only (postgres-store.ts:463-476). Epitaph/standing letters never surface where humans look.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-04
+- Resolution: Server side (QA-20260604-103): LettersStore.readAllLetters(since?) + GET /v1/letters/all?since=<ISO> polling endpoint (sha=pending, fin=4193/4181). Dashboard side: must poll /v1/letters/all and INSERT into postgres inbox_* tables (rs6-nullcity-residents-dashboard, not yet started).
 
 ### LB-H2R-6c20 — City-API messages are not remembered by the resident (log-and-forget)
 - Area: H2R
