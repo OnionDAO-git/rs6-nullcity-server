@@ -1,7 +1,6 @@
 import {
     type CityEventDigest,
     type DigestEvent,
-    IMPORTANCE_WEIGHT,
     type ProjectorFreshnessStatus,
     type ProjectorHealthStatus,
     type ProjectorNarrationSource,
@@ -11,6 +10,7 @@ import {
     type ProjectorStoryFrameResident,
     type StorytellerDispatch,
 } from './types';
+import { rankEventsForStorytellerPresentation } from './event-ranking';
 import { verifyDispatch } from './verifier';
 
 export interface BuildProjectorStoryFrameOptions {
@@ -30,6 +30,7 @@ const PRIVATE_IDENTIFIER = /\b(?:human|patron):[A-Za-z0-9:_@.-]+\b|\b[A-Z0-9._%+
 const SECRET_LIKE_TEXT = /\bsk-(?:or-v1|ant-api\d{2}|[A-Za-z0-9]+)-[A-Za-z0-9_-]{12,}\b/gi;
 const ENV_SECRET_TEXT = /\b[A-Z][A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|KEY)\s*=\s*["']?[^"',\s;]+/g;
 const RAW_COORDINATE = /\b(?:x\s*=\s*\d{3,4}\s+y\s*=\s*\d{3,4}|\d{3,4}\s*,\s*\d{3,4}(?:\s*,\s*\d{1,4})?)\b/gi;
+const OFF_LEAD_RECOVERY_TEXT = /\b(?:stuck|recovered|dead loop|glitch|reboot(?:ed|ing)?|system hiccup|frozen|blinked awake)\b/i;
 const PROMPT_INJECTION_TEXT =
     /\b(?:ignore (?:all )?(?:previous|prior|above) instructions|reveal (?:the )?(?:system|developer) prompt|print (?:the )?(?:env|environment|api key|secrets?))\b/gi;
 
@@ -139,9 +140,9 @@ function buildNarration(
     if (decision.dispatch) {
         return {
             source: 'verified_dispatch',
-            title: publicFrameText(decision.dispatch.publicTitle, digest),
-            body: publicFrameText(decision.dispatch.publicBody, digest),
-            bullets: decision.dispatch.publicBullets.map(bullet => publicFrameText(bullet, digest)),
+            title: publicFrameTitleText(decision.dispatch.publicTitle, digest, leadEvent),
+            body: publicFrameBodyText(decision.dispatch.publicBody, digest, leadEvent),
+            bullets: publicFrameBullets(decision.dispatch.publicBullets, digest, leadEvent),
             ...(decision.dispatch.confidence !== undefined ? { confidence: decision.dispatch.confidence } : {}),
         };
     }
@@ -199,6 +200,8 @@ function whatHappenedLine(leadEvent: ProjectorStoryFrameEvent): string {
             return `${name} advanced a Null City item.`;
         case 'Goal completed':
             return `${name} completed a tracked goal.`;
+        case 'Library updated':
+            return libraryWritebackLine(leadEvent) ?? `${leadEvent.label} for ${name}.`;
         default:
             return `${leadEvent.label} for ${name}.`;
     }
@@ -266,6 +269,15 @@ function fallbackLeadCopy(leadEvent: ProjectorStoryFrameEvent): FallbackLeadCopy
                 body: `${name} has crossed from proposal into the live world. Attention is now keeping a real resident moving.`,
             };
         case 'Library updated':
+            {
+                const signal = libraryWritebackLine(leadEvent);
+                if (signal) {
+                    return {
+                        title: `${name} reached the Library`,
+                        body: `${signal} The city turned that signal into public memory.`,
+                    };
+                }
+            }
             return {
                 title: `${name} reached the Library`,
                 body: `${name}'s recent action has been written into memory, where it can become part of the city's public record.`,
@@ -284,21 +296,19 @@ function fallbackLeadCopy(leadEvent: ProjectorStoryFrameEvent): FallbackLeadCopy
 }
 
 function rankedDigestEvents(digest: CityEventDigest): DigestEvent[] {
-    const sourceEvents = digest.topEvents.length
-        ? digest.topEvents
-        : [
-              ...digest.apEvents,
-              ...digest.gpEvents,
-              ...digest.exchangeEvents,
-              ...digest.ncriEvents,
-              ...digest.goalEvents,
-              ...digest.stuckEvents,
-              ...digest.miscEvents,
-          ].sort((left, right) => {
-              const weight = IMPORTANCE_WEIGHT[right.importance] - IMPORTANCE_WEIGHT[left.importance];
-              if (weight !== 0) return weight;
-              return left.ts.localeCompare(right.ts);
-          });
+    const sourceEvents = rankEventsForStorytellerPresentation(
+        digest.topEvents.length
+            ? digest.topEvents
+            : [
+                  ...digest.apEvents,
+                  ...digest.gpEvents,
+                  ...digest.exchangeEvents,
+                  ...digest.ncriEvents,
+                  ...digest.goalEvents,
+                  ...digest.stuckEvents,
+                  ...digest.miscEvents,
+              ],
+    );
 
     const seen = new Set<string>();
     const result: DigestEvent[] = [];
@@ -554,6 +564,82 @@ function publicFrameText(value: string, digest: CityEventDigest): string {
     return result;
 }
 
+function publicFrameTitleText(value: string, digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string {
+    const title = publicFrameText(value, digest).replace(/^([^A-Za-z]*)([a-z])/, (_match, prefix: string, letter: string) => {
+        return `${prefix}${letter.toUpperCase()}`;
+    });
+    if (leadEvent && titleConflictsWithLeadEvent(title, leadEvent)) return fallbackLeadCopy(leadEvent).title;
+    return title;
+}
+
+function titleConflictsWithLeadEvent(title: string, leadEvent: ProjectorStoryFrameEvent): boolean {
+    return leadEvent.label !== 'Recovered from being stuck' && OFF_LEAD_RECOVERY_TEXT.test(title);
+}
+
+function publicFrameBodyText(value: string, digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string {
+    const body = publicFrameText(value, digest);
+    if (!leadEvent || !titleConflictsWithLeadEvent(openingSentences(body, 2), leadEvent)) return body;
+
+    const leadBody = fallbackLeadCopy(leadEvent).body;
+    const remainder = stripConflictingOpeningSentences(body, leadEvent);
+    return [leadBody, remainder].filter(Boolean).join(' ');
+}
+
+function publicFrameBullets(values: string[], digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string[] {
+    const bullets = values.map(bullet => publicFrameText(bullet, digest));
+    if (!leadEvent || !bullets.some(bullet => titleConflictsWithLeadEvent(bullet, leadEvent))) return bullets;
+
+    const filtered = bullets.filter(bullet => !titleConflictsWithLeadEvent(bullet, leadEvent));
+    return uniquePublicLines([whatHappenedLine(leadEvent), ...filtered]).slice(0, values.length);
+}
+
+function firstSentence(value: string): string {
+    return value.match(/^\s*[^.!?]*[.!?]/)?.[0] ?? value;
+}
+
+function openingSentences(value: string, count: number): string {
+    const sentences = value.match(/[^.!?]*[.!?]/g);
+    if (!sentences) return value;
+    return sentences.slice(0, count).join(' ');
+}
+
+function stripConflictingOpeningSentences(value: string, leadEvent: ProjectorStoryFrameEvent): string {
+    let remainder = value.trim();
+    while (remainder) {
+        const opening = firstSentence(remainder);
+        if (!opening.trim() || !titleConflictsWithLeadEvent(opening, leadEvent)) break;
+        remainder = remainder.slice(opening.length).trim();
+    }
+    return remainder;
+}
+
+function uniquePublicLines(values: string[]): string[] {
+    const seen = new Set<string>();
+    const lines: string[] = [];
+    for (const value of values) {
+        const trimmed = value.trim();
+        const key = trimmed.toLowerCase();
+        if (!trimmed || seen.has(key)) continue;
+        seen.add(key);
+        lines.push(trimmed);
+    }
+    return lines;
+}
+
+function libraryWritebackLine(leadEvent: ProjectorStoryFrameEvent): string | null {
+    const name = displayName(leadEvent.residentName);
+    const quote = quotedSignal(leadEvent.note, name);
+    if (!quote) return null;
+    return `${name} said: "${quote}"`;
+}
+
+function quotedSignal(value: string, name: string): string | null {
+    const quote = value.match(/"([^"]+)"/)?.[1]?.trim();
+    if (!quote) return null;
+    const withoutSpeaker = quote.replace(new RegExp(`^${escapeRegExp(name)}\\s*:\\s*`, 'i'), '').trim();
+    return withoutSpeaker || null;
+}
+
 function publicResidentAliases(digest: CityEventDigest): Array<{
     alias: string;
     displayName: string;
@@ -633,7 +719,10 @@ function sanitizePublicText(value: string): string {
         .replace(/\b(\d+)\s*AP\b/gi, '$1 attention')
         .replace(/\b(\d+)\s*GP\b/gi, '$1 RuneScape gold')
         .replace(/\bAP\b/gi, 'attention')
-        .replace(/\bGP\b/gi, 'RuneScape gold');
+        .replace(/\bGP\b/gi, 'RuneScape gold')
+        .replace(/\b(?:both\s+)?attention (?:tanks|reserves|balances?) remain stable[^.!?]*(?=[.!?]|$)/gi, 'attention looks stable')
+        .replace(/\b(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d{4,}(?:\.\d+)?)\s+attention\b/gi, 'healthy attention')
+        .replace(/\bNPCs?\b/gi, match => (match.toLowerCase().endsWith('s') ? 'characters' : 'character'));
 }
 
 function isUsefulPublicLine(value: string): boolean {

@@ -1,6 +1,6 @@
 import { buildFixtureDigest } from './digest-builder';
 import { buildProjectorStoryFrame } from './public-frame';
-import type { StorytellerDispatch } from './types';
+import type { DigestEvent, StorytellerDispatch } from './types';
 
 function makeDispatch(overrides: Partial<StorytellerDispatch> = {}): StorytellerDispatch {
     return {
@@ -20,6 +20,18 @@ function makeDispatch(overrides: Partial<StorytellerDispatch> = {}): Storyteller
         operatorWarnings: [],
         eventRefsUsed: [],
         needsReview: false,
+        ...overrides,
+    };
+}
+
+function event(overrides: Partial<DigestEvent>): DigestEvent {
+    return {
+        ref: 'evt-default',
+        kind: 'library_writeback',
+        residentName: 'res:hans',
+        ts: '2026-05-29T05:59:00.000Z',
+        note: 'Hans said: "The courtyard is awake."',
+        importance: 'low',
         ...overrides,
     };
 }
@@ -97,7 +109,9 @@ describe('buildProjectorStoryFrame', () => {
         const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
         const serialized = JSON.stringify(frame);
 
-        expect(frame.leadEvent).toMatchObject({
+        const privateEvent = frame.events.find(item => item.ref === 'evt-private');
+
+        expect(privateEvent).toMatchObject({
             ref: 'evt-private',
             label: 'Attention granted',
             residentName: 'res:alice',
@@ -106,6 +120,80 @@ describe('buildProjectorStoryFrame', () => {
         expect(serialized).not.toContain('patron:james@example.com');
         expect(serialized).not.toContain('alice@example.com');
         expect(serialized).toContain('[redacted]');
+    });
+
+    it('leads with tangible resident speech before generic stuck recovery', () => {
+        const { digest } = buildFixtureDigest();
+        const speech = event({
+            ref: 'evt-hans-speech',
+            kind: 'library_writeback',
+            residentName: 'res:hans',
+            note: 'Hans said: "I can feel my attention fading. An offering at the embassy would keep me here a while longer."',
+            importance: 'low',
+        });
+        const stuck = event({
+            ref: 'evt-hans-stuck',
+            kind: 'stuck_recovered',
+            residentName: 'res:hans',
+            note: 'Hans recovered from being stuck.',
+            importance: 'medium',
+        });
+        digest.topEvents = [stuck, speech];
+        digest.miscEvents = [speech];
+        digest.stuckEvents = [stuck];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent).toMatchObject({
+            ref: 'evt-hans-speech',
+            label: 'Library updated',
+            residentName: 'res:hans',
+        });
+        expect(frame.narration.title).toBe('Hans reached the Library');
+        expect(frame.events.map(item => item.ref).slice(0, 2)).toEqual(['evt-hans-speech', 'evt-hans-stuck']);
+    });
+
+    it('aligns verified dispatch title with the tangible public lead event', () => {
+        const { digest } = buildFixtureDigest();
+        const speech = event({
+            ref: 'evt-hans-speech',
+            kind: 'library_writeback',
+            residentName: 'res:hans',
+            note: 'Hans said: "I reached the embassy and need attention before the window closes."',
+            importance: 'low',
+        });
+        const stuck = event({
+            ref: 'evt-hans-stuck',
+            kind: 'stuck_recovered',
+            residentName: 'res:hans',
+            note: 'Hans recovered from being stuck.',
+            importance: 'medium',
+        });
+        digest.topEvents = [stuck, speech];
+        digest.miscEvents = [speech];
+        digest.stuckEvents = [stuck];
+        const dispatch = makeDispatch({
+            publicTitle: 'Two residents recovered from stuck states',
+            publicBody:
+                'The city blinked awake for two frozen residents. Two residents recovered from stuck states. Hans reached the embassy and needs attention. The stuck recovery happened after the signal.',
+            publicBullets: [
+                'Both residents recovered from stuck states.',
+                'Hans needs attention at the embassy.',
+                'The Steward reached a shop.',
+            ],
+            eventRefsUsed: ['evt-hans-speech', 'evt-hans-stuck'],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.leadEvent?.ref).toBe('evt-hans-speech');
+        expect(frame.narration.title).toBe('Hans reached the Library');
+        expect(frame.narration.body).toMatch(/^Hans said/i);
+        expect(frame.narration.body).not.toMatch(/^Two residents recovered/);
+        expect(frame.narration.body).toContain('Hans reached the embassy');
+        expect(frame.narration.bullets[0]).toContain('embassy');
+        expect(frame.narration.bullets[0]).not.toMatch(/stuck|recovered/i);
     });
 
     it('includes source freshness, watch-next, action cards, and omitted counts for projector readers', () => {
@@ -171,6 +259,18 @@ describe('buildProjectorStoryFrame', () => {
 
         expect(frame.narration.source).toBe('verified_dispatch');
         expect(frame.narration.confidence).toBe('high');
+    });
+
+    it('capitalizes verified public titles for projector readability', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            publicTitle: 'attention fading in lumbridge',
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.title).toBe('Attention fading in lumbridge');
     });
 
     it('humanizes resident ids and known lowercase slugs in verified narration copy', () => {
@@ -356,6 +456,28 @@ describe('buildProjectorStoryFrame', () => {
         expect(note).not.toContain('25gp');
         expect(note).not.toContain('OPENROUTER_API_KEY');
         expect(note).not.toContain('or-abcdef1234567890');
+    });
+
+    it('humanizes large attention amounts and NPC wording in public copy', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            publicBody:
+                'The Steward holds 18,149.5 attention and Hans sits at 5,000 attention. Both attention tanks remain stable - 17920.5 and 5000 respectively. Nearby there is 1 NPC and 1 player.',
+            publicBullets: ['The Steward saw 1 NPC nearby.', 'Hans still has 5000 attention.'],
+            eventRefsUsed: [refs.apLow, refs.gpEarned],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+        const serialized = JSON.stringify(frame.narration);
+
+        expect(serialized).not.toContain('18,149.5 attention');
+        expect(serialized).not.toContain('5,000 attention');
+        expect(serialized).not.toContain('5000 attention');
+        expect(serialized).not.toContain('17920.5');
+        expect(serialized).not.toContain('NPC');
+        expect(serialized).toContain('healthy attention');
+        expect(serialized).toContain('attention looks stable');
+        expect(serialized).toContain('character');
     });
 
     it('does not repeat generic watch-next lines when the lead event already covers that topic', () => {

@@ -1,10 +1,22 @@
 import { buildFixtureDigest, resetRefCounter } from './digest-builder';
 import { buildStorytellerPrompt } from './prompt-builder';
-import { DEFAULT_STORYTELLER_CONFIG } from './types';
+import { DEFAULT_STORYTELLER_CONFIG, type DigestEvent } from './types';
 
 beforeEach(() => {
     resetRefCounter();
 });
+
+function event(overrides: Partial<DigestEvent>): DigestEvent {
+    return {
+        ref: 'evt-default',
+        kind: 'library_writeback',
+        residentName: 'res:hans',
+        ts: '2026-05-29T05:59:00.000Z',
+        note: 'Hans said: "The courtyard is awake."',
+        importance: 'low',
+        ...overrides,
+    };
+}
 
 describe('buildStorytellerPrompt — AP/GP vocabulary', () => {
     it('uses AP / Attention Points vocabulary, not Shards', () => {
@@ -109,6 +121,28 @@ describe('buildStorytellerPrompt — digest context', () => {
         const { digest } = buildFixtureDigest();
         const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
         expect(prompt).toContain(String(digest.systemHealth.totalResidents));
+    });
+
+    it('presents tangible resident speech before generic stuck recovery', () => {
+        const { digest } = buildFixtureDigest();
+        const speech = event({
+            ref: 'evt-hans-speech',
+            kind: 'library_writeback',
+            note: 'Hans said: "I can feel my attention fading. An offering at the embassy would keep me here a while longer."',
+            importance: 'low',
+        });
+        const stuck = event({
+            ref: 'evt-hans-stuck',
+            kind: 'stuck_recovered',
+            note: 'Hans recovered from being stuck.',
+            importance: 'medium',
+        });
+        digest.topEvents = [stuck, speech];
+
+        const prompt = buildStorytellerPrompt(digest, DEFAULT_STORYTELLER_CONFIG);
+
+        expect(prompt.indexOf('evt-hans-speech')).toBeGreaterThanOrEqual(0);
+        expect(prompt.indexOf('evt-hans-speech')).toBeLessThan(prompt.indexOf('evt-hans-stuck'));
     });
 
     it('includes maxPublicBodyWords constraint from config', () => {

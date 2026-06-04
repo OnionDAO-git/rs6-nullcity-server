@@ -1,4 +1,5 @@
 import type { CityEventDigest, StorytellerConfig } from './types';
+import { rankEventsForStorytellerPresentation } from './event-ranking';
 
 // ---------------------------------------------------------------------------
 // Storyteller prompt builder — S7b
@@ -46,7 +47,7 @@ function renderResidents(digest: CityEventDigest): string {
 
 function renderTopEvents(digest: CityEventDigest): string {
     if (digest.topEvents.length === 0) return '(no notable events this window)';
-    return digest.topEvents
+    return rankEventsForStorytellerPresentation(digest.topEvents)
         .map(e => `  - ref="${e.ref}" kind=${e.kind} resident=${e.residentName} importance=${e.importance}: ${e.note}`)
         .join('\n');
 }
@@ -92,7 +93,7 @@ ${totalResidents} total residents, ${activeResidents} active, ${fadedResidents} 
 RESIDENT SNAPSHOTS:
 ${renderResidents(digest)}
 
-TOP EVENTS (sorted by importance, highest first):
+TOP EVENTS (story-ranked for public relevance; critical survival, economy, item, and goal evidence remain protected):
 ${renderTopEvents(digest)}
 
 TASK:
