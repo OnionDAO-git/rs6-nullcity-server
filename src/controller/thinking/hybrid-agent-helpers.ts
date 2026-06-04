@@ -3418,23 +3418,23 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
         stalledSinceLastPlan;
     if (!needsReplan) return;
 
+    // RIQ-5-3: global concurrency cap — acquire slot BEFORE admitting budget so
+    // residents denied a slot are never charged against their daily budget.
+    // At most MAX_CONCURRENT_PLANNER_CALLS in-flight; denied residents skip this
+    // tick and retry on the next brain cycle (natural stagger, no queue needed).
+    if (!acquireGlobalPlannerSlot()) return;
+
     // S-PLAN-BUDGET-1: guard the paid planner (planner_haiku ~$0.016/call) against
     // runaway re-planning loops. Deny and log when the daily limit is reached.
+    // Slot is released here so other residents can proceed on the same tick.
     const plannerBudget = admitPlannerCall(ctx.options.state);
     if (!plannerBudget.ok) {
+        releaseGlobalPlannerSlot();
         process.stderr.write(
             `[RIQ-3-2] Planner budget exhausted for ${residentId}: ` + `${plannerBudget.callsToday}/${plannerBudget.max} calls today\n`,
         );
         return;
     }
-
-    // RIQ-5-3: global concurrency cap — at most MAX_CONCURRENT_PLANNER_CALLS
-    // residents may be running a PlannerPass simultaneously (default 3). On
-    // controller restart all residents with stale plans need a replan at once;
-    // without this gate that means N simultaneous paid Haiku calls. Residents
-    // denied a slot skip this tick and retry on the next brain cycle, giving
-    // natural stagger without a queue or priority system.
-    if (!acquireGlobalPlannerSlot()) return;
 
     _plannerPassInFlight.add(residentId);
     const plannerLlmAdapter = {
