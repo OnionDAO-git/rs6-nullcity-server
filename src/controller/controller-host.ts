@@ -735,6 +735,12 @@ function resolveOnionsPerStandingPoint(config: ControllerConfig): number {
     if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
         return configured;
     }
+    // Env fallback so the live run can set the real scale without a config change
+    // (e.g. CITY_ONIONS_PER_STANDING_POINT=100). Product decision; James chose ≥100.
+    const fromEnv = Number(process.env.CITY_ONIONS_PER_STANDING_POINT);
+    if (Number.isFinite(fromEnv) && fromEnv > 0) {
+        return fromEnv;
+    }
     // eslint-disable-next-line no-console
     console.warn(
         '[controller-host] onionsPerStandingPoint is using the PLACEHOLDER 1:1 scale. ' +
