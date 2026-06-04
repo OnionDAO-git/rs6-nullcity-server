@@ -1857,3 +1857,4 @@ TDD throughout. Files: src/controller/letters/wall-snapshot.ts (EDIT), src/contr
 2026-06-03 18:55 CDT codex branch=agents/wip repo=server lane=STORYTELLER packet=public-safety HANDOFF - sha=3772c67d fin=4073/4073 build=PASS live-once=published_canon browser=/overview clean; edge sanitizers hardened.
 
 2026-06-04 00:00 UTC cron-cloud agents/wip packet=S-PLAN-BUDGET-1 STARTING — planner daily call budget gate (Phase 5-a). Files: src/controller/memory/runtime-state.ts src/controller/llm/budgets.ts src/controller/llm/budgets.test.ts src/controller/thinking/hybrid-agent-helpers.ts docs/agent-status.md collision=none
+2026-06-04 00:30 UTC cron-cloud agents/wip packet=S-PLAN-BUDGET-1 HANDOFF — sha=834e0f80 fin=4078/4078 +5 tests. admitPlannerCall gates maybeTriggerPlannerPass (MAX_PLANNER_CALLS_PER_DAY=10). QA-20260604-091 In Review. next=RIQ-4-5(hot-stack) collision=none
