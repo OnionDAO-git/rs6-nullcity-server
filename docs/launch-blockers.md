@@ -249,12 +249,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P2
-- Status: Open
-- Owner: unassigned
+- Status: Fixed (substrate; live-verify pending hot stack)
+- Owner: cron-cloud
 - Evidence: memory-router.ts:196-217 + portrait-template.ts:176 key off patronHandle and exclude city_inbox_message/cityUserId.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-04
+- Resolution: routeEvent routes human_inbox_message to social/<sender>.md; routeDurableFacts writes facts/humans.md. QA-20260604-101. sha pending push.
 
 ---
 

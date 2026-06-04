@@ -15,7 +15,7 @@ export class MemoryRouter {
         const kind = typeof event.kind === 'string' ? event.kind : 'event';
         const eventLine = `- ${timestamp} ${JSON.stringify(event)}\n`;
 
-        if (kind === 'chat' && isRecord(event.from)) {
+        if ((kind === 'chat' || kind === 'human_inbox_message') && isRecord(event.from)) {
             return {
                 path: `social/${slug(String(event.from.name || event.from.id || 'unknown'))}.md`,
                 content: eventLine,
@@ -115,6 +115,16 @@ export class MemoryRouter {
                 writes.push({
                     path: 'facts/world-events.md',
                     content: `- ${timestamp} ${fact}\n`,
+                });
+            }
+        }
+
+        if (kind === 'human_inbox_message' && typeof event.text === 'string') {
+            const text = cleanText(event.text);
+            if (text) {
+                writes.push({
+                    path: 'facts/humans.md',
+                    content: `- ${timestamp} ${actorDisplay(event.from)} sent: "${text}"\n`,
                 });
             }
         }
