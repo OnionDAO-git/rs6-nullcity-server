@@ -155,6 +155,7 @@ import {
     safeTradeOfferSlot,
 } from './hybrid-agent-chat';
 import type { LlmClient, LlmRequest, LlmResponse } from '../llm/llm-client';
+import { admitPlannerCall } from '../llm/budgets';
 import { runPlannerToolLoop, LOOKUP_SKILL_TOOL, defaultToolRegistry, buildToolInstructions } from '../intelligence/planner-tool-loop';
 import type { PlanStore } from '../intelligence/plan-store';
 import { advancePlan, blockCurrentStage, runPlannerPass, currentStage as currentPlanStage } from '../intelligence/planner-pass';
@@ -3390,6 +3391,17 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
     const stage = plan ? currentPlanStage(plan) : undefined;
     const needsReplan = !plan || plan.status === 'completed' || plan.status === 'abandoned' || stage?.status === 'blocked';
     if (!needsReplan) return;
+
+    // S-PLAN-BUDGET-1: guard the paid planner (planner_haiku ~$0.016/call) against
+    // runaway re-planning loops. Deny and log when the daily limit is reached.
+    const plannerBudget = admitPlannerCall(ctx.options.state);
+    if (!plannerBudget.ok) {
+        process.stderr.write(
+            `[RIQ-3-2] Planner budget exhausted for ${residentId}: ` +
+                `${plannerBudget.callsToday}/${plannerBudget.max} calls today\n`,
+        );
+        return;
+    }
 
     _plannerPassInFlight.add(residentId);
     const plannerLlmAdapter = {

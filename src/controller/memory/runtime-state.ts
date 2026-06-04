@@ -19,6 +19,10 @@ export interface RuntimeState {
         lastTick?: number;
         requestsThisTick?: number;
         noInferenceUntil?: string;
+        /** S-PLAN-BUDGET-1: daily planner-call counter (resets on new calendar day). */
+        plannerCallsToday?: number;
+        /** ISO timestamp of when the current planner-budget day window started. */
+        plannerDayStartedAt?: string;
     };
     variables?: Record<string, number>;
     hookCooldowns?: Record<string, number>;
