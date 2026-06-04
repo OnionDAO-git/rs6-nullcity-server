@@ -345,9 +345,7 @@ describe('produceAttentionPleaLetter (LB-H2R-4p77)', () => {
             '2026-06-04T04:00:00.000Z',
             '2026-06-04T05:00:00.000Z',
         ];
-        const bodies = new Set(
-            timestamps.map(ts => produceAttentionPleaLetter({ ...baseInput, ts }).body),
-        );
+        const bodies = new Set(timestamps.map(ts => produceAttentionPleaLetter({ ...baseInput, ts }).body));
         // At least 2 distinct templates across 6 timestamps; all 3 covered with enough samples.
         expect(bodies.size).toBeGreaterThanOrEqual(2);
     });

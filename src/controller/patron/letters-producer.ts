@@ -467,9 +467,7 @@ const PLEA_BODIES: ReadonlyArray<(name: string, humanId: string, faction: string
  * random), and successive pleas after the cooldown may use a different phrase.
  */
 export function produceAttentionPleaLetter(input: AttentionPleaLetterInput): Letter {
-    const hashBase = input.ts
-        .split('')
-        .reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
+    const hashBase = input.ts.split('').reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
     const idx = Math.abs(hashBase) % PLEA_BODIES.length;
     const body = PLEA_BODIES[idx](input.residentName, input.humanId, input.faction, input.currentAp);
     return {
