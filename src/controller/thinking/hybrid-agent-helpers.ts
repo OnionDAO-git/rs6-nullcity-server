@@ -3402,7 +3402,10 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
 
     const plan = planStore.load(residentId);
     const stage = plan ? currentPlanStage(plan) : undefined;
-    const needsReplan = !plan || plan.status === 'completed' || plan.status === 'abandoned' || stage?.status === 'blocked';
+    // RIQ-5-4: include goal-mismatch so a plan made for the old orientationGoal is
+    // invalidated when the operator edits the soul (via `resident:goal-edit`).
+    const goalChanged = plan !== null && plan !== undefined && plan.goalId !== orientationGoal.id;
+    const needsReplan = !plan || plan.status === 'completed' || plan.status === 'abandoned' || stage?.status === 'blocked' || goalChanged;
     if (!needsReplan) return;
 
     // S-PLAN-BUDGET-1: guard the paid planner (planner_haiku ~$0.016/call) against
@@ -3469,8 +3472,11 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
                         stageSubgoals,
                     });
                 } else {
-                    const replannedReason =
-                        plan.status !== 'active' ? plan.status : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
+                    const replannedReason = goalChanged
+                        ? 'goal_changed'
+                        : plan.status !== 'active'
+                          ? plan.status
+                          : `stage_blocked:${currentPlanStage(plan)?.id ?? 'unknown'}`;
                     libraryUpdater.observePlanReplanned({
                         kind: 'plan_replanned',
                         ts,

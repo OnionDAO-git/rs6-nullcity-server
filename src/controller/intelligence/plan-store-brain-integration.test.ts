@@ -318,10 +318,15 @@ describe('maybeTriggerPlannerPass — no-op conditions', () => {
         expect(mockRunPlannerPass).not.toHaveBeenCalled();
     });
 
-    it('does nothing when an active healthy plan exists (stage active, plan active)', async () => {
+    it('does nothing when an active healthy plan exists (stage active, plan active, goalId matches)', async () => {
+        // makeActivePlan() has goalId:'test-goal'; orientationGoal must match to not trigger.
         const plan = makeActivePlan();
         const planStore = makePlanStore(plan);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test goal' }, plannerProfile: { endpoint: 'p' } });
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'test-goal', description: 'test goal' },
+            plannerProfile: { endpoint: 'p' },
+        });
         await maybeTriggerPlannerPass(ctx);
         expect(mockRunPlannerPass).not.toHaveBeenCalled();
     });
@@ -379,9 +384,55 @@ describe('maybeTriggerPlannerPass — trigger conditions', () => {
             currentStageIndex: 0,
         });
         const planStore = makePlanStore(plan);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' } });
+        // Use matching goalId so blocked stage is the only trigger reason.
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'test-goal', description: 'test' }, plannerProfile: { endpoint: 'p' } });
         await maybeTriggerPlannerPass(ctx);
         expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
+    });
+
+    // RIQ-5-4: goal-mismatch trigger.
+    it('triggers when plan goalId does not match the current orientationGoal (operator edited the soul)', async () => {
+        // Active plan was made for 'old-goal'; soul now has 'new-goal'.
+        const plan = makeActivePlan({ goalId: 'old-goal' });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'new-goal', description: 'a changed goal' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
+        // Planner is invoked with the *new* goal.
+        expect(mockRunPlannerPass).toHaveBeenCalledWith(expect.objectContaining({ goalId: 'new-goal' }));
+    });
+
+    it('does not trigger when active plan goalId matches orientationGoal', async () => {
+        const plan = makeActivePlan({ goalId: 'firemaking', status: 'active' });
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'firemaking', description: 'master firemaking' },
+            plannerProfile: { endpoint: 'p' },
+        });
+        await maybeTriggerPlannerPass(ctx);
+        expect(mockRunPlannerPass).not.toHaveBeenCalled();
+    });
+
+    it('emits observePlanReplanned with replannedReason=goal_changed when goal-mismatch triggers', async () => {
+        const oldPlan = makeActivePlan({ goalId: 'old-goal' });
+        const newPlan = makeActivePlan({ goalId: 'new-goal' });
+        mockRunPlannerPass.mockResolvedValueOnce({ success: true, plan: newPlan, toolCallsMade: 0, fellBackToRag: false, elapsedMs: 50 });
+        const planStore = makePlanStore(oldPlan);
+        const library = makeLibraryUpdaterMock();
+        const ctx = makeCtx({
+            planStore,
+            orientationGoal: { id: 'new-goal', description: 'a changed goal' },
+            plannerProfile: { endpoint: 'p' },
+            libraryUpdater: library,
+        });
+        await maybeTriggerPlannerPass(ctx);
+        expect(library.observePlanReplanned).toHaveBeenCalledTimes(1);
+        expect(library.observePlanReplanned).toHaveBeenCalledWith(expect.objectContaining({ replannedReason: 'goal_changed' }));
     });
 });
 
@@ -410,11 +461,12 @@ describe('maybeTriggerPlannerPass — failure handling', () => {
 
     it('allows a second trigger after the first pass finishes', async () => {
         const planStore = makePlanStore(null);
-        const ctx = makeCtx({ planStore, orientationGoal: { id: 'g1', description: 'test' }, plannerProfile: { endpoint: 'p' } });
+        const ctx = makeCtx({ planStore, orientationGoal: { id: 'test-goal', description: 'test' }, plannerProfile: { endpoint: 'p' } });
         await maybeTriggerPlannerPass(ctx);
         // After first pass completes, planStore.load now returns the saved plan.
-        // Simulate: plan is now active after the first pass.
-        (planStore.load as jest.Mock).mockReturnValue(makeActivePlan());
+        // Simulate: plan is now active after the first pass. Must use matching goalId to avoid
+        // triggering a re-plan for goal-change (RIQ-5-4).
+        (planStore.load as jest.Mock).mockReturnValue(makeActivePlan({ goalId: 'test-goal' }));
         await maybeTriggerPlannerPass(ctx);
         // Second call should not trigger because the plan is now healthy.
         expect(mockRunPlannerPass).toHaveBeenCalledTimes(1);
@@ -527,9 +579,11 @@ describe('maybeTriggerPlannerPass — Library events (RIQ-3-3)', () => {
         const completedPlan = makeActivePlan({ status: 'completed' });
         const planStore = makePlanStore(completedPlan);
         const library = makeLibraryUpdaterMock();
+        // orientationGoal.id must match plan.goalId so the replannedReason reflects 'completed'
+        // not 'goal_changed' (RIQ-5-4).
         const ctx = makeCtx({
             planStore,
-            orientationGoal: { id: 'master-firemaking', description: 'Become a master of Firemaking' },
+            orientationGoal: { id: 'test-goal', description: 'Become a master of Firemaking' },
             plannerProfile: { endpoint: 'p' },
             libraryUpdater: library,
         });
@@ -547,9 +601,10 @@ describe('maybeTriggerPlannerPass — Library events (RIQ-3-3)', () => {
         const abandonedPlan = makeActivePlan({ status: 'abandoned' });
         const planStore = makePlanStore(abandonedPlan);
         const library = makeLibraryUpdaterMock();
+        // orientationGoal.id must match so 'abandoned' is the replannedReason, not 'goal_changed'.
         const ctx = makeCtx({
             planStore,
-            orientationGoal: { id: 'g1', description: 'test' },
+            orientationGoal: { id: 'test-goal', description: 'test' },
             plannerProfile: { endpoint: 'p' },
             libraryUpdater: library,
         });
@@ -574,7 +629,7 @@ describe('maybeTriggerPlannerPass — Library events (RIQ-3-3)', () => {
         const library = makeLibraryUpdaterMock();
         const ctx = makeCtx({
             planStore,
-            orientationGoal: { id: 'g1', description: 'test' },
+            orientationGoal: { id: 'test-goal', description: 'test' },
             plannerProfile: { endpoint: 'p' },
             libraryUpdater: library,
         });
@@ -689,7 +744,7 @@ describe('survival-preserves-plan invariant (RIQ-3-2B)', () => {
         const planStore = makePlanStore(healthyPlan);
         const ctx = makeCtx({
             planStore,
-            orientationGoal: { id: 'g1', description: 'test' },
+            orientationGoal: { id: 'test-goal', description: 'test' },
             plannerProfile: { endpoint: 'p' },
         });
         await maybeTriggerPlannerPass(ctx);
