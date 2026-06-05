@@ -489,6 +489,10 @@ function eventLabel(kind: DigestEvent['kind']): string {
             return 'Library updated';
         case 'patron_gift':
             return 'Patron gift';
+        case 'resident_revived':
+            return 'Resident revived';
+        case 'skill_level_up':
+            return 'Skill level-up';
         case 'quiet_resident':
             return 'Quiet resident';
     }
@@ -518,6 +522,10 @@ function eventWhyItMatters(event: DigestEvent): string {
             return 'a human-backed soul entered the city';
         case 'library_writeback':
             return 'the city turned action into memory';
+        case 'resident_revived':
+            return 'revival marks a new life chapter in the resident arc';
+        case 'skill_level_up':
+            return 'a skill milestone is a durable story beat and economy signal';
         case 'quiet_resident':
             return 'quiet residents still need watching for drift or opportunity';
     }

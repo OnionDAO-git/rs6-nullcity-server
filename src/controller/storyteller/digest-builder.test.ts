@@ -487,19 +487,20 @@ describe('economyEventsToDigestBuckets — NCRI events (S5b core)', () => {
 });
 
 describe('economyEventsToDigestBuckets — AP events', () => {
-    it('maps ap_grant to apEvents with kind ap_granted', () => {
+    it('maps ap_grant to apEvents with kind ap_granted and importance high', () => {
         const event = makeEconomyEvent({ kind: 'ap_grant', apDelta: 100 });
         const { apEvents } = economyEventsToDigestBuckets([event]);
         expect(apEvents).toHaveLength(1);
         expect(apEvents[0].kind).toBe('ap_granted');
-        expect(apEvents[0].importance).toBe('low');
+        expect(apEvents[0].importance).toBe('high');
     });
 
-    it('maps ap_topup to apEvents with kind ap_granted', () => {
+    it('maps ap_topup to apEvents with kind ap_granted and importance high', () => {
         const event = makeEconomyEvent({ kind: 'ap_topup', apDelta: 50 });
         const { apEvents } = economyEventsToDigestBuckets([event]);
         expect(apEvents).toHaveLength(1);
         expect(apEvents[0].kind).toBe('ap_granted');
+        expect(apEvents[0].importance).toBe('high');
     });
 
     it('maps ap_fade to apEvents with kind resident_faded and importance critical', () => {

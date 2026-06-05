@@ -193,7 +193,8 @@ export function economyEventsToDigestBuckets(events: EconomyEvent[]): EconomyDig
         switch (event.kind) {
             case 'ap_grant':
             case 'ap_topup':
-                apEvents.push({ ref, kind: 'ap_granted', residentName, ts, note, importance: 'low', evidence });
+                // A patron actively supporting a resident is a notable narrative beat.
+                apEvents.push({ ref, kind: 'ap_granted', residentName, ts, note, importance: 'high', evidence });
                 break;
             case 'ap_fade':
                 apEvents.push({ ref, kind: 'resident_faded', residentName, ts, note, importance: 'critical', evidence });
