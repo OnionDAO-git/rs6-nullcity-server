@@ -472,7 +472,10 @@ describe('CityIntegrationService', () => {
         const serviceWithCb = new CityIntegrationService({
             memoryRoot: root,
             getRuntime: () => runtime,
-            inventory: { inspectResidentGold: async () => ({ resident: 'res:test', itemId: 995, amount: 0 }), burnResidentGold: async () => ({ resident: 'res:test', itemId: 995, burnedAmount: 0, remainingAmount: 0 }) },
+            inventory: {
+                inspectResidentGold: async () => ({ resident: 'res:test', itemId: 995, amount: 0 }),
+                burnResidentGold: async () => ({ resident: 'res:test', itemId: 995, burnedAmount: 0, remainingAmount: 0 }),
+            },
             birth: { birthResident: async () => ({ resident: 'res:test', created: true, connected: true }) },
             onMessageDelivered: event => delivered.push(event),
         });

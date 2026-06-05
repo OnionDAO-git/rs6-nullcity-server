@@ -1,6 +1,8 @@
 import { BornResidentStore } from './born-resident-store';
 import { EconomyEventLog } from './city-integration/economy-event';
 import { CityIntegrationService, type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
+import { GoalContractStore } from './city-integration/goal-contract';
+import type { Plan } from './intelligence/planner-pass';
 import { ControllerConfig } from './config';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import { FactionStockpileLedger } from './factions/stockpile-ledger';
@@ -299,6 +301,11 @@ export class ControllerHost {
                 })();
             },
         });
+        // LB-LOOP-7e31: autonomous goal completion — when a plan's final stage
+        // is done, auto-mark the resident's active GoalContract achieved so the
+        // loop closes without requiring an operator POST /goals/:id/achieve.
+        this.planStore.onPlanCompleted = (residentId, plan) => this.handlePlanCompleted(residentId, plan);
+
         this.bindGatewayEvents();
     }
 
@@ -654,6 +661,23 @@ export class ControllerHost {
      * graveyard. Authored cohort residents (config.residents) are left untouched
      * and keep their existing respawn behavior.
      */
+    /** LB-LOOP-7e31: fires when the resident's plan transitions to 'completed'. */
+    private handlePlanCompleted(residentId: string, plan: Plan): void {
+        const goalStore = new GoalContractStore(this.config.memory.dir);
+        const active = goalStore.listByResident(residentId).find(c => c.status === 'active');
+        if (!active) return;
+        try {
+            const doneSubgoals = plan.stages.filter(s => s.status === 'done').map(s => s.subgoal);
+            const evidence =
+                doneSubgoals.length > 0
+                    ? `Plan completed. Stages done: ${doneSubgoals.join('; ')}`
+                    : `Plan completed: goalId=${plan.goalId}`;
+            this.cityIntegrationService.markGoalAchieved(active.id, { evidence });
+        } catch (err) {
+            process.stderr.write(`[handlePlanCompleted] markGoalAchieved failed for ${residentId}: ${String(err)}\n`);
+        }
+    }
+
     private handleResidentDeath(name: string, cause: string): void {
         if (!this.cityBorn.has(name)) {
             return;

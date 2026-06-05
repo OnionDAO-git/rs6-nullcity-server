@@ -86,8 +86,16 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
     mentor: {
         'social_reply.deflection': ['One moment, please.', 'I shall return to you shortly.', 'I am occupied just now.'],
         'presence_beacon.online': ['Here, should you need guidance', 'Present and watchful, as always', 'Here and glad to be of use'],
-        'presence_beacon.idle': ['Considering the wisest next step', 'Taking a moment to read the courtyard', 'Reflecting on where I am most needed'],
-        'presence_beacon.scouting': ['Surveying the grounds with care', 'Studying the area for what it can teach', 'Walking the ground to learn its shape'],
+        'presence_beacon.idle': [
+            'Considering the wisest next step',
+            'Taking a moment to read the courtyard',
+            'Reflecting on where I am most needed',
+        ],
+        'presence_beacon.scouting': [
+            'Surveying the grounds with care',
+            'Studying the area for what it can teach',
+            'Walking the ground to learn its shape',
+        ],
         'presence_beacon.route': ['Walking my usual rounds', 'Keeping to my patient circuit', 'Tending to my familiar path'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'A {direction} fence stands in our way. Let us see if someone can assist in finding a path.',

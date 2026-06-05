@@ -310,3 +310,73 @@ describe('J. listAll()', () => {
         expect(aliceEntry.plan).toEqual(planA);
     });
 });
+
+// ---------------------------------------------------------------------------
+// J. onPlanCompleted hook (LB-LOOP-7e31)
+// ---------------------------------------------------------------------------
+
+describe('J. onPlanCompleted hook', () => {
+    it('fires when a completed plan is saved', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        const calls: Array<{ residentId: string; plan: Plan }> = [];
+        store.onPlanCompleted = (residentId, plan) => calls.push({ residentId, plan });
+
+        const completedPlan: Plan = { ...makePlan('g1'), status: 'completed' };
+        store.save('res:alice', completedPlan);
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].residentId).toBe('res:alice');
+        expect(calls[0].plan.status).toBe('completed');
+    });
+
+    it('does NOT fire for an active plan', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        const calls: Array<unknown> = [];
+        store.onPlanCompleted = () => calls.push(true);
+
+        store.save('res:alice', makePlan('g1'));
+        expect(calls).toHaveLength(0);
+    });
+
+    it('does NOT fire for an abandoned plan', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        const calls: Array<unknown> = [];
+        store.onPlanCompleted = () => calls.push(true);
+
+        const abandoned: Plan = { ...makePlan('g1'), status: 'abandoned' };
+        store.save('res:alice', abandoned);
+        expect(calls).toHaveLength(0);
+    });
+
+    it('fires once when advancePlan advances through all stages', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        const calls: Array<{ residentId: string; plan: Plan }> = [];
+        store.onPlanCompleted = (residentId, plan) => calls.push({ residentId, plan });
+
+        // Advance through two stages — only the final save (status='completed') fires.
+        let plan = makePlan('g1'); // 3 stages: active, pending, pending
+        plan = advancePlan(plan); // stage-1 done → stage-2 active
+        store.save('res:alice', plan);
+        expect(calls).toHaveLength(0);
+
+        plan = advancePlan(plan); // stage-2 done → stage-3 active
+        store.save('res:alice', plan);
+        expect(calls).toHaveLength(0);
+
+        plan = advancePlan(plan); // stage-3 done → status='completed'
+        store.save('res:alice', plan);
+        expect(calls).toHaveLength(1);
+        expect(calls[0].plan.status).toBe('completed');
+    });
+
+    it('is not required — saving completed plan without hook is silent', () => {
+        const dir = tmpDir();
+        const store = new PlanStore(dir);
+        const completedPlan: Plan = { ...makePlan('g1'), status: 'completed' };
+        expect(() => store.save('res:alice', completedPlan)).not.toThrow();
+    });
+});

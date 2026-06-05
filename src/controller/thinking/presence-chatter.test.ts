@@ -67,11 +67,7 @@ describe('presence-beacon cadence — toned down for human viewers', () => {
     });
 });
 
-import {
-    presenceBeaconPrefix,
-    presenceBeaconAction,
-    PRESENCE_BEACON_VARIETY_AFTER_TICKS,
-} from './hybrid-agent-helpers';
+import { presenceBeaconPrefix, presenceBeaconAction, PRESENCE_BEACON_VARIETY_AFTER_TICKS } from './hybrid-agent-helpers';
 import type { HelperContext } from './hybrid-agent-helpers';
 import type { HybridPerception } from './hybrid-agent-utils';
 import type { Soul } from '../soul/soul-schema';
@@ -93,7 +89,10 @@ function richPerception(): HybridPerception {
         resident: { position: { x: 3231, y: 3202, level: 0 }, inventory: [] },
         nearby: {
             players: [{ kind: 'player', id: 'p1' }],
-            npcs: [{ kind: 'npc', id: 'n1' }, { kind: 'npc', id: 'n2' }],
+            npcs: [
+                { kind: 'npc', id: 'n1' },
+                { kind: 'npc', id: 'n2' },
+            ],
             objects: [],
             worldItems: [{ id: 'i1' }, { id: 'i2' }, { id: 'i3' }],
         },

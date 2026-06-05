@@ -19,6 +19,9 @@ import type { Plan } from './planner-pass';
 import { residentSlug } from '../memory/runtime-state';
 
 export class PlanStore {
+    /** LB-LOOP-7e31: called once when a plan is first saved with status='completed'. */
+    onPlanCompleted?: (residentId: string, plan: Plan) => void;
+
     constructor(private readonly memoryRoot: string) {}
 
     private planPath(residentId: string): string {
@@ -35,6 +38,9 @@ export class PlanStore {
         const tmpPath = `${filePath}.tmp`;
         fs.writeFileSync(tmpPath, JSON.stringify(plan, null, 2), 'utf8');
         fs.renameSync(tmpPath, filePath);
+        if (plan.status === 'completed') {
+            this.onPlanCompleted?.(residentId, plan);
+        }
     }
 
     /**

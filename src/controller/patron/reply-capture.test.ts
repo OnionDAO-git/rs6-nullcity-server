@@ -32,17 +32,13 @@ describe('findTrajectoryReply', () => {
     });
 
     it('returns null when no say entry exists after sinceTs', () => {
-        writeTrajectory([
-            { kind: 'say', text: 'Hello!', ts: '2026-01-01T09:59:59.999Z' },
-        ]);
+        writeTrajectory([{ kind: 'say', text: 'Hello!', ts: '2026-01-01T09:59:59.999Z' }]);
         const result = findTrajectoryReply(tmpDir, RESIDENT, '2026-01-01T10:00:00.000Z');
         expect(result).toBeNull();
     });
 
     it('returns null when say has empty text', () => {
-        writeTrajectory([
-            { kind: 'say', text: '', ts: '2026-01-01T10:01:00.000Z' },
-        ]);
+        writeTrajectory([{ kind: 'say', text: '', ts: '2026-01-01T10:01:00.000Z' }]);
         const result = findTrajectoryReply(tmpDir, RESIDENT, '2026-01-01T10:00:00.000Z');
         expect(result).toBeNull();
     });
@@ -74,11 +70,8 @@ describe('findTrajectoryReply', () => {
         const filePath = path.join(trajDir, 'session-1.jsonl');
         fs.writeFileSync(
             filePath,
-            [
-                'not-json',
-                JSON.stringify({ kind: 'say', text: 'Good reply', ts: '2026-01-01T10:00:05.000Z' }),
-                '{"broken":',
-            ].join('\n') + '\n',
+            ['not-json', JSON.stringify({ kind: 'say', text: 'Good reply', ts: '2026-01-01T10:00:05.000Z' }), '{"broken":'].join('\n') +
+                '\n',
         );
         fs.writeFileSync(path.join(trajDir, 'current'), 'session-1.jsonl');
 
@@ -91,10 +84,7 @@ describe('findTrajectoryReply', () => {
         const trajDir = path.join(evidenceDir, 'trajectory');
         fs.mkdirSync(trajDir, { recursive: true });
         const sessionFile = path.join(evidenceDir, 'trajectory', 'session-a.jsonl');
-        fs.writeFileSync(
-            sessionFile,
-            JSON.stringify({ kind: 'say', text: 'Via index', ts: '2026-01-01T10:00:06.000Z' }) + '\n',
-        );
+        fs.writeFileSync(sessionFile, JSON.stringify({ kind: 'say', text: 'Via index', ts: '2026-01-01T10:00:06.000Z' }) + '\n');
         fs.writeFileSync(
             path.join(evidenceDir, 'index.json'),
             JSON.stringify({

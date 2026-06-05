@@ -22,11 +22,7 @@ export interface TrajectoryReplyResult {
  * Returns `null` when no matching entry exists (not yet emitted, or the
  * trajectory file is missing).
  */
-export function findTrajectoryReply(
-    memoryDir: string,
-    residentName: string,
-    sinceTs: string,
-): TrajectoryReplyResult | null {
+export function findTrajectoryReply(memoryDir: string, residentName: string, sinceTs: string): TrajectoryReplyResult | null {
     const slug = residentSlug(residentName);
     const trajectoryPath = resolveCurrentTrajectoryPath(memoryDir, slug);
     if (!trajectoryPath || !fs.existsSync(trajectoryPath)) {
@@ -97,8 +93,7 @@ function resolveCurrentTrajectoryPath(memoryDir: string, slug: string): string |
                 sessions?: Array<{ sessionId?: string; trajectoryPath?: string }>;
             };
             const current =
-                index.sessions?.find(s => s.sessionId === index.currentSessionId) ??
-                index.sessions?.[index.sessions.length - 1];
+                index.sessions?.find(s => s.sessionId === index.currentSessionId) ?? index.sessions?.[index.sessions.length - 1];
             if (current?.trajectoryPath) {
                 return path.join(evidenceRoot, current.trajectoryPath);
             }
