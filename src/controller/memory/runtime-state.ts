@@ -58,6 +58,8 @@ export interface CognitiveState {
     lastDirectChatKey?: string;
     manualPauseSinceTick?: number;
     lastPresenceBeaconTick?: number;
+    /** Last PUBLIC presence-beacon say string emitted; used to suppress consecutive identical beacons. */
+    lastPresenceBeaconText?: string;
     lastSocialKeepaliveTick?: number;
     lastTradeKeepaliveTick?: number;
     lastAgentKeepaliveTick?: number;

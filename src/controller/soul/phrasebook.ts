@@ -24,6 +24,10 @@ function selectPhrase(phrases: string[], seed: string): string {
 const PHRASEBOOK: Record<string, Record<string, string[]>> = {
     achiever: {
         'social_reply.deflection': ['Catch me in a minute.', 'Busy right now.', 'Give me a sec.'],
+        'presence_beacon.online': ['Online and ready to grind', 'Here and making progress', 'Clocked in and working'],
+        'presence_beacon.idle': ['Scanning for my next move', 'Looking for the next opportunity', 'Plotting the efficient route'],
+        'presence_beacon.scouting': ['Scouting for the best spots', 'Mapping out where the gains are', 'On the hunt for good targets'],
+        'presence_beacon.route': ['Running my route, no time to waste', 'Working the circuit', 'Grinding my usual loop'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             "I'm stuck near the {direction} fence! Can someone help open the path?",
             'This {direction} fence is blocking my training! Anyone around to open a route?',
@@ -81,6 +85,10 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
     },
     mentor: {
         'social_reply.deflection': ['One moment, please.', 'I shall return to you shortly.', 'I am occupied just now.'],
+        'presence_beacon.online': ['Here, should you need guidance', 'Present and watchful, as always', 'Here and glad to be of use'],
+        'presence_beacon.idle': ['Considering the wisest next step', 'Taking a moment to read the courtyard', 'Reflecting on where I am most needed'],
+        'presence_beacon.scouting': ['Surveying the grounds with care', 'Studying the area for what it can teach', 'Walking the ground to learn its shape'],
+        'presence_beacon.route': ['Walking my usual rounds', 'Keeping to my patient circuit', 'Tending to my familiar path'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'A {direction} fence stands in our way. Let us see if someone can assist in finding a path.',
             'Patience is key, but I appear to be stuck by this {direction} fence. Can anyone help?',
@@ -140,6 +148,10 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
     },
     endurer: {
         'social_reply.deflection': ['Not now.', 'Busy. Later.', 'Give me a moment.'],
+        'presence_beacon.online': ['Still here, still going', 'Online and holding the line', 'Here, for what it is worth'],
+        'presence_beacon.idle': ['Catching my breath, figuring the next step', 'Waiting out the lull', 'Sizing up what comes next'],
+        'presence_beacon.scouting': ['Looking around, same as ever', 'Scouting, nothing easy out here', 'Checking the ground ahead'],
+        'presence_beacon.route': ['Back on my route, one foot after another', 'Working the loop again', 'Trudging my circuit'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'Just another barrier... Stuck near this {direction} fence.',
             'This {direction} fence is holding me back. Anyone around to help?',
@@ -193,6 +205,10 @@ const PHRASEBOOK: Record<string, Record<string, string[]>> = {
     },
     default: {
         'social_reply.deflection': ['In a moment.', 'Busy just now.', 'One moment.'],
+        'presence_beacon.online': ['I am online', 'Here and ready', 'Checking in'],
+        'presence_beacon.idle': ['Looking for something useful to do', 'Deciding what to do next', 'Taking stock'],
+        'presence_beacon.scouting': ['I am scouting the area', 'Having a look around', 'Exploring nearby'],
+        'presence_beacon.route': ['Working my route', 'Making my rounds', 'On my usual path'],
         'stuck_help_request.blocked_by_obstacle.fence': [
             'I am stuck near the {direction} fence. Can someone open a route?',
             "I'm blocked by a fence to the {direction}. Can anyone help?",

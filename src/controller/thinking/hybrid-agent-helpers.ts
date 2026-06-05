@@ -602,28 +602,54 @@ export function presenceBeaconAction(ctx: HelperContext, perception: HybridPerce
     const phase = presenceBeaconPhase(ctx);
     const includeNextStep = phase === 0;
     const includeGoal = phase !== 3;
+    const text = statusSpeech(ctx, perception, presenceBeaconPrefix(ctx, perception), includeNextStep, includeGoal);
+
+    // Suppress consecutive-identical PUBLIC beacons: the live audit saw the same
+    // beacon line repeated up to 94x in a row. Only emit when the spoken text
+    // changes (or after the timing gate's longer cooldown re-fires it later with
+    // a different phrase). Scoped to the presence/status beacon path only —
+    // combat/command/social-reply say-actions never flow through here.
+    if (cognition.lastPresenceBeaconText === text) {
+        return undefined;
+    }
+
     cognition.lastPresenceBeaconTick = ctx.options.state.tick;
     cognition.lastGoalShareTick = ctx.options.state.tick;
-    return { kind: 'say', text: statusSpeech(ctx, perception, presenceBeaconPrefix(ctx, perception), includeNextStep, includeGoal) };
+    cognition.lastPresenceBeaconText = text;
+    return { kind: 'say', text };
+}
+
+// Maps the presence-beacon phase to a phrasebook situation key. The nearby
+// perception read-out ("Nearby I see 17 trees and 8 items") is deliberately NOT
+// folded into the public say string — it read as debug telemetry in the live
+// chat feed, the same reason raw tile coords were dropped (see composeStatusLine).
+// presenceNearbySummary() stays available for the operator/digest/telemetry path.
+function presenceBeaconSituation(phase: 0 | 1 | 2 | 3): string {
+    switch (phase) {
+        case 1:
+            return 'presence_beacon.idle';
+        case 2:
+            return 'presence_beacon.scouting';
+        case 3:
+            return 'presence_beacon.route';
+        default:
+            return 'presence_beacon.online';
+    }
 }
 
 export function presenceBeaconPrefix(ctx: HelperContext, perception: HybridPerception): string {
-    if (ctx.options.state.tick < PRESENCE_BEACON_VARIETY_AFTER_TICKS) {
-        return 'I am online';
-    }
-
-    const phase = presenceBeaconPhase(ctx);
-    const nearby = presenceNearbySummary(perception);
-    if (phase === 1 && nearby) {
-        return `I see ${nearby} nearby`;
-    }
-    if (phase === 2) {
-        return nearby ? `I am scouting. Nearby I see ${nearby}` : 'I am scouting';
-    }
-    if (phase === 3) {
-        return nearby ? `I am working my route. Nearby I see ${nearby}` : 'I am working my route';
-    }
-    return nearby ? `I am checking this area. Nearby I see ${nearby}` : 'I am checking in';
+    const warmingUp = ctx.options.state.tick < PRESENCE_BEACON_VARIETY_AFTER_TICKS;
+    const phase = warmingUp ? 0 : presenceBeaconPhase(ctx);
+    const soul = ctx.options.soul;
+    const display = soul.frontmatter.display || soul.frontmatter.name;
+    // Deterministic, seeded by resident+tick — NO LLM call, no added latency.
+    const seed = `${soul.frontmatter.name}:${ctx.options.state.tick}`;
+    return pickPhrase({
+        soul,
+        situation: presenceBeaconSituation(phase),
+        seed,
+        params: { display },
+    });
 }
 
 export function presenceNearbySummary(perception: HybridPerception): string | undefined {
