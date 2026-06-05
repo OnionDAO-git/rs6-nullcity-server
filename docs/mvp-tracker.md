@@ -13,9 +13,25 @@
 | 2 | Crowd screen renders the living city | ✅ DONE — dashboard `/overview` up, projector frame 200 |
 | 3 | Storyteller narrates the city live | ✅ DONE — overseer running, `latest-frame.json` fresh (Storyteller agent) |
 | 4 | Human says a resident's name → it replies in character | ✅ **VERIFIED LIVE** — triggered via controller MCP `patron_ask`; `res:hans` replied in-character naming the player back, ~few ticks later via the detached path. Deterministic demo trigger exists (no client needed). |
-| 5 | Human supports a resident → standing + letter back | ✅ **ENGINE CHAIN VERIFIED** + **UI AUTH NOW WORKS** — landing DB wired (`auth.mode: landing-db`), test login succeeds, add-attention passes auth+CSRF and runs the write path. Only remaining: fund user AP (MVP-9) + set onion scale (MVP-7). |
+| 5 | Human supports a resident → standing + letter back | ✅ **VERIFIED LIVE END-TO-END** — authenticated dashboard support spent 100 onions (corrected 10:1 scale) → resident attention up → standing 0→10 → Acquaintance letter in both inboxes. MVP-1/7/9/10 all DONE. |
 
-**Verdict: 4 of 5 loops VERIFIED LIVE (1-4); Loop 5 = engine + auth proven, blocked on the onion-spend wiring + identity-join (MVP-10).** _Refreshed 2026-06-04 PM._
+**Verdict: all 5 core loops VERIFIED LIVE.** _Refreshed 2026-06-04 PM; live-rechecked 2026-06-05 — see refresh below._
+
+---
+
+## 2026-06-05 — live refresh + new findings (Claude, 3 subagents @ `agents/wip 0f6a6e37`)
+
+**🔴 URGENT live regression — Dashboard BFF (`:8787`) is DOWN** (crashed; nothing listening). This takes **Loop 2 (crowd screen `/api/projector/overview`)** + auth/session/inbox UI **offline right now**. SPA (`:5174`) + letters (`:43596`) are still up. The loop *code* is fine — the human-facing surface is just down. → **Ops: restart the dashboard BFF.**
+
+**Confirmed since 06-04:**
+- **MVP-7 proven live** — `alice` 100 onions → 10 standing → Acquaintance; placeholder 1:1 warning gone. Running build (20:44, restarted 20:47) includes the onion-scale loader + beacon polish (MVP-11) + the goal-completion hook — **no rebuild needed**.
+- **H2R wave shipped** (depth on already-green loops): resident→human **reply round-trip** makes Loop 4 a two-way thread — wired + unit-tested but **0 live `resident_reply` letters yet → needs a smoke**; **attention-plea** letters fire **live (82)** when a resident's life fades (Support/Legacy); new `GET /v1/letters/all` bridge serves 1698 letters across 36 recipients.
+
+**Still open (mostly unchanged):**
+- **MVP-2 heroes** — `father-aereck`/`duke`/`mother-anvil`/`wise-old-man` still absent from `controller.yml residents:` → OFFLINE. (Codex config.)
+- **MVP-8 Bob/axe** — `res:agent` (525×) + `qa-guardian` (384×) still looping `acquire_axe_shopkeeper_missing`; no axe acquired today; the `controller:ensure-inventory` mitigation isn't applied yet. (Codex.)
+- **Goal-completion (LB-LOOP-7e31)** — `onPlanCompleted → markGoalAchieved` hook is live in the build but **not observed firing this run**; probe to confirm a plan reaches `completed` and a resident graduates to a new goal.
+- **Real onion-burn mode** — adapter built (dashboard `main cb13aeb`) but `ONION_SPEND_MODE` defaults to `standin` and the running dashboard sits on `wip/spec`; confirm the real-burn path before the public event.
 
 ---
 
