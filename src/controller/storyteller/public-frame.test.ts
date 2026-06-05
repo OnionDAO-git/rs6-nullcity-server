@@ -106,7 +106,7 @@ describe('buildProjectorStoryFrame', () => {
             goalText: 'Meet patron:james@example.com near the secret door.',
         };
 
-        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z'), maxEvents: 20 });
         const serialized = JSON.stringify(frame);
 
         const privateEvent = frame.events.find(item => item.ref === 'evt-private');

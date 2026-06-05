@@ -316,12 +316,16 @@ export interface FixtureDigest {
     /** Named refs so tests can assert specific events were included. */
     refs: {
         apLow: string;
+        apGranted: string;
         gpObserved: string;
         gpEarned: string;
         exchange: string;
         ncri: string;
         goalCompleted: string;
         stuckRecovered: string;
+        skillLevelUp: string;
+        residentRevived: string;
+        patronGift: string;
         quietResident: string;
     };
 }
@@ -334,12 +338,16 @@ export interface FixtureDigest {
 export function buildFixtureDigest(): FixtureDigest {
     const refs = {
         apLow: 'fixture-ap-low-1',
+        apGranted: 'fixture-ap-granted-1',
         gpObserved: 'fixture-gp-observed-1',
         gpEarned: 'fixture-gp-earned-1',
         exchange: 'fixture-exchange-1',
         ncri: 'fixture-ncri-1',
         goalCompleted: 'fixture-goal-completed-1',
         stuckRecovered: 'fixture-stuck-recovered-1',
+        skillLevelUp: 'fixture-skill-level-up-1',
+        residentRevived: 'fixture-resident-revived-1',
+        patronGift: 'fixture-patron-gift-1',
         quietResident: 'fixture-quiet-1',
     };
 
@@ -390,6 +398,15 @@ export function buildFixtureDigest(): FixtureDigest {
             'medium',
             { attentionCurrent: 45, threshold: 100 },
             ts(5_000),
+        ),
+        makeFixtureEvent(
+            refs.apGranted,
+            'ap_granted',
+            'res:alice',
+            'Patron james granted 200 AP to Alice. Her attention is now 245.',
+            'high',
+            { apGranted: 200, source: 'patron_grant', patronHandle: 'james', attentionAfter: 245 },
+            ts(8_000),
         ),
     ];
 
@@ -471,6 +488,33 @@ export function buildFixtureDigest(): FixtureDigest {
     ];
 
     const miscEvents: DigestEvent[] = [
+        makeFixtureEvent(
+            refs.skillLevelUp,
+            'skill_level_up',
+            'res:bob',
+            'Bob reached Firemaking level 5. His pyromancy is improving.',
+            'high',
+            { skill: 'Firemaking', level: 5, source: 'library.timeline' },
+            ts(52_000),
+        ),
+        makeFixtureEvent(
+            refs.residentRevived,
+            'resident_revived',
+            'res:carol',
+            'Carol died and returned to Lumbridge. This is her second life in Null City.',
+            'critical',
+            { lifeIndex: 2, source: 'library.timeline' },
+            ts(55_000),
+        ),
+        makeFixtureEvent(
+            refs.patronGift,
+            'patron_gift',
+            'res:alice',
+            'Patron james gifted AP to Alice. She now has enough attention to pursue her goal.',
+            'high',
+            { patronHandle: 'james', amount: 150, source: 'library.timeline' },
+            ts(58_000),
+        ),
         makeFixtureEvent(
             refs.quietResident,
             'quiet_resident',
