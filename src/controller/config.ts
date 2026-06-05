@@ -301,6 +301,9 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
             profiles: llmProfiles,
         },
         patrons: readPatronArray(source.patrons),
+        economy: {
+            onionsPerStandingPoint: readOptionalNumber(readPath(source, ['economy', 'onionsPerStandingPoint'])),
+        },
     };
 
     return config;

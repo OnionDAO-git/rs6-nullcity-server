@@ -50,6 +50,16 @@ describe('controller config', () => {
         });
     });
 
+    it('loads the onion standing scale from economy config', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
+        const configPath = path.join(root, 'controller.yml');
+        fs.writeFileSync(configPath, ['economy:', '  onionsPerStandingPoint: 10'].join('\n'));
+
+        const config = loadControllerConfig(configPath);
+
+        expect(config.economy?.onionsPerStandingPoint).toBe(10);
+    });
+
     it('loads Railgun-style knowledge paths from env interpolation', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
         const configPath = path.join(root, 'controller.yml');
