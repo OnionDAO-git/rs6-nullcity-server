@@ -18,7 +18,7 @@ Before substantial autonomy, controller, dashboard, or agent behavior work, use 
 1. `AGENTS.md` — this short operating guide.
 2. `docs/README.md` — the docs map and source-of-truth precedence.
 3. `docs/agent-status.md` tail — live file locks, handoffs, runtime requests.
-4. `docs/issue-register.md` — open P0/P1 defects, weak evidence, and process risks.
+4. `docs/issue-register.md` — open P0/P1 defects, weak evidence, and process risks — **and `docs/launch-blockers.md`**, the cross-repo launch backlog (`docs/mvp-tracker.md` = live beta punch-list). These are the open-work intake queues.
 5. `docs/superpowers/plans/2026-05-20-runescape-agent-roadmap.md` — canonical parent task board.
 6. A domain plan/spec only after the above points you there.
 
@@ -28,7 +28,7 @@ Before substantial autonomy, controller, dashboard, or agent behavior work, use 
 
 Pick the smallest high-value unit in this order:
 
-1. An unclaimed `Open` P0/P1 row in `docs/issue-register.md`.
+1. An unclaimed `Open` P0/P1 row in `docs/issue-register.md`, **or an unowned (`Owner: unassigned`, `Status: Open`) row in `docs/launch-blockers.md`** — claim it per the "Launch Blockers Protocol" in `docs/agent-coordination.md` (set `Owner`+`Status`, announce in `docs/launch-blockers_discussion.md`). Beta-critical work is tracked in `docs/mvp-tracker.md`.
 2. A small active packet from a linked roadmap/implementation plan.
 3. A weak row in `docs/resident-capabilities.md`, converted into evidence or an issue before broad claims.
 4. Dashboard work only in `../rs6-nullcity-residents-dashboard`; this repo may add JSON contracts/endpoints only.
@@ -38,13 +38,13 @@ Long-lived roadmap parent tasks marked `[>]` are status, not exclusive locks. Th
 Paste-ready kickoff prompt for another AI:
 
 ```text
-You are an autonomous agent in <server-repo> on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, and the current roadmap/spec linked by your chosen issue. Claim one unblocked P0/P1 issue or the smallest active roadmap packet, append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui plus appropriate verification, update issue/roadmap/capability docs if truth changed, commit explicit files only, push agents/wip, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
+You are an autonomous agent in <server-repo> on branch agents/wip. Read AGENTS.md, docs/README.md, docs/agent-status.md tail, docs/issue-register.md, docs/launch-blockers.md (+ docs/mvp-tracker.md for beta-critical work), and the current roadmap/spec linked by your chosen issue. Claim one unblocked P0/P1 issue, an unowned (Owner: unassigned / Status: Open) launch-blocker row in your repo boundary, or the smallest active roadmap packet — for launch-blockers follow docs/agent-coordination.md "Launch Blockers Protocol" (set Owner+Status, announce in docs/launch-blockers_discussion.md). Append STARTING with exact files, implement with tests and real evidence, run npm run check:no-ui plus appropriate verification, update issue/roadmap/capability docs if truth changed, commit explicit files only, push agents/wip, and append HANDOFF. Do not build human-facing UI in this repo. Do not push routine work to nullcity.
 ```
 
 Dashboard kickoff prompt:
 
 ```text
-You are an autonomous dashboard agent in <dashboard-repo> on branch main. Read AGENTS.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/README.md + docs/agent-status.md tail. Implement UI/BFF changes here only. Coordinate server API needs through server docs/city-dashboard-integration.md, docs/issue-register.md, or a server STARTING/HANDOFF. Run bun run typecheck && bun run check && bun run build, commit explicit files, and push main.
+You are an autonomous dashboard agent in <dashboard-repo> on branch main. Read AGENTS.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/README.md + docs/agent-status.md tail + docs/launch-blockers.md (claim unowned dashboard-tagged rows, e.g. Repo: rs6-nullcity-residents-dashboard). Implement UI/BFF changes here only. Coordinate server API needs through server docs/city-dashboard-integration.md, docs/issue-register.md, or a server STARTING/HANDOFF. Run bun run typecheck && bun run check && bun run build, commit explicit files, and push main.
 ```
 
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. STARTING/HANDOFF lines are capped at 280 chars, STARTING names exact files in `Files:`, and long rollups belong in the commit body.
