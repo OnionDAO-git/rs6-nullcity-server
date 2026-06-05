@@ -1530,10 +1530,9 @@ export class CityIntegrationService {
             throw new CityIntegrationError(404, 'storyteller_not_found');
         }
 
-        const store = new StorytellerStore(storytellerRoot);
-        const latestFrame = store.readLatestProjectorFrame();
-        if (latestFrame) return latestFrame;
-
+        // Always rebuild from source so freshnessMs reflects the true age at request time.
+        // The cached latest-frame.json has a frozen freshnessMs baked in at write time; returning
+        // it directly causes stale digests to appear fresh indefinitely (QA-20260606-106).
         const source = this.readLatestStorytellerSource(storytellerRoot);
         if (!source) {
             throw new CityIntegrationError(404, 'storyteller_not_found');

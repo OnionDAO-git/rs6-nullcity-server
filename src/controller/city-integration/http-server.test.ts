@@ -621,28 +621,26 @@ describe('CityIntegration HTTP server', () => {
 
     it('GET /storyteller/projector/latest returns the public projector frame', async () => {
         const storytellerRoot = path.join(path.dirname(root), 'storyteller');
-        fs.mkdirSync(storytellerRoot, { recursive: true });
-        const frame = buildProjectorStoryFrame(
-            {
-                schemaVersion: 1,
-                digestId: 'digest-projector',
-                windowStart: '2026-05-27T11:50:00.000Z',
-                windowEnd: '2026-05-27T12:00:00.000Z',
-                builtAt: '2026-05-27T12:00:00.000Z',
-                apEvents: [],
-                gpEvents: [],
-                exchangeEvents: [],
-                ncriEvents: [],
-                goalEvents: [],
-                stuckEvents: [],
-                miscEvents: [],
-                topEvents: [],
-                residents: [],
-                systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
-            },
-            { now: new Date('2026-05-27T12:01:00.000Z') },
-        );
-        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frame, null, 2));
+        const runRoot = path.join(storytellerRoot, 'run-projector');
+        fs.mkdirSync(runRoot, { recursive: true });
+        const digest = {
+            schemaVersion: 1 as const,
+            digestId: 'digest-projector',
+            windowStart: '2026-05-27T11:50:00.000Z',
+            windowEnd: '2026-05-27T12:00:00.000Z',
+            builtAt: '2026-05-27T12:00:00.000Z',
+            apEvents: [],
+            gpEvents: [],
+            exchangeEvents: [],
+            ncriEvents: [],
+            goalEvents: [],
+            stuckEvents: [],
+            miscEvents: [],
+            topEvents: [],
+            residents: [],
+            systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
+        };
+        fs.writeFileSync(path.join(runRoot, 'digest.json'), JSON.stringify(digest, null, 2));
         started = await startCityIntegrationHttpServer({
             service: makeService(),
             port: 0,

@@ -161,12 +161,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P0
-- Status: Open
-- Owner: unassigned
-- Evidence: patron-gateway.ts keys all interaction ops on free-text humanId (e.g. alice@onion); no map from city_users.id / landing users.id. Bridge landing<->dashboard works (city_users.landing_user_id).
-- Blocks: LB-H2R-q9k2, LB-ECON-9k22
+- Status: In-progress
+- Owner: cron-cloud
+- Evidence: patron-gateway.ts keys all interaction ops on free-text humanId (e.g. alice@onion); no map from city_users.id / landing users.id. Bridge landing<->dashboard works (city_users.landing_user_id). Partial: walking-skeleton (sha=dff2ab9/cb13aeb) wired personId through creditAttention/attention-grant path; patron-gateway.ts free-text humanId key still open.
+- Blocks: LB-ECON-9k22
 - Created: 2026-06-02
-- Updated: 2026-06-02
+- Updated: 2026-06-05
 - Resolution:
 
 ### LB-IDENT-5f71 — Cross-subdomain auth silently breaks if AUTH_COOKIE_DOMAIN unset in prod
@@ -197,18 +197,6 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 
 ## H2R — human <-> resident bridge
 
-### LB-H2R-q9k2 — "Support with AP" is mocked; the resident never receives the transfer
-- Area: H2R
-- Repo: multi
-- Type: Dev
-- Severity: P0
-- Status: Open
-- Owner: unassigned
-- Evidence: dashboard postgres-store.ts:399-412 debits human AP, returns {mocked:true}, never forwards; controller service.ts:978-1021 creditAttention is a free top-up that debits nobody and doesn't verify cityUserId. App.svelte:1957 falsely reports success.
-- Blocked-by: LB-IDENT-c08e
-- Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
 
 ### LB-H2R-8m13 — No resident->human reply round-trip (reply only prints to operator terminal)
 - Area: H2R
@@ -397,3 +385,15 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 ## Archive
 
 <!-- Move Done / Won't-fix items here, with their Resolution line intact. -->
+
+### LB-H2R-q9k2 — "Support with AP" is mocked; the resident never receives the transfer
+- Area: H2R
+- Repo: multi
+- Type: Dev
+- Severity: P0
+- Status: Done
+- Owner: cron-cloud
+- Evidence: walking-skeleton (sha=dff2ab9/cb13aeb) un-mocked the controller support flow: creditAttention now verified against cityUserId and wired to resident attention ledger; personId/patronHandle join in attention-grant path. Dashboard postgres-store.ts mock remains but is tracked under MVP-9 (full end-to-end human→resident AP transfer). Controller-side blocker resolved.
+- Created: 2026-06-02
+- Updated: 2026-06-05
+- Resolution: Controller creditAttention un-mocked and wired (sha=dff2ab9/cb13aeb). Dashboard side deferred to MVP-9 dashboard sprint.

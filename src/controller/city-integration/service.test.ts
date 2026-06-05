@@ -640,36 +640,40 @@ describe('CityIntegrationService', () => {
         });
     });
 
-    it('storytellerProjectorLatest returns an explicit latest-frame artifact when present', () => {
+    it('storytellerProjectorLatest recomputes freshnessMs dynamically — not frozen from cached latest-frame.json (QA-20260606-106)', () => {
+        // service.now() is 2026-05-27T12:00:00.000Z; digest builtAt is 1 hour earlier.
         const storytellerRoot = path.join(path.dirname(root), 'storyteller');
-        fs.mkdirSync(storytellerRoot, { recursive: true });
-        const frame = buildProjectorStoryFrame(
-            {
-                schemaVersion: 1,
-                digestId: 'digest-frame',
-                windowStart: '2026-05-27T11:50:00.000Z',
-                windowEnd: '2026-05-27T12:00:00.000Z',
-                builtAt: '2026-05-27T12:00:00.000Z',
-                apEvents: [],
-                gpEvents: [],
-                exchangeEvents: [],
-                ncriEvents: [],
-                goalEvents: [],
-                stuckEvents: [],
-                miscEvents: [],
-                topEvents: [],
-                residents: [],
-                systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
-            },
-            { now: new Date('2026-05-27T12:01:00.000Z') },
+        const runRoot = path.join(storytellerRoot, 'run-freshness-regression');
+        fs.mkdirSync(runRoot, { recursive: true });
+        const staleDigest = {
+            schemaVersion: 1 as const,
+            digestId: 'digest-freshness',
+            windowStart: '2026-05-27T10:50:00.000Z',
+            windowEnd: '2026-05-27T11:00:00.000Z',
+            builtAt: '2026-05-27T11:00:00.000Z',
+            apEvents: [],
+            gpEvents: [],
+            exchangeEvents: [],
+            ncriEvents: [],
+            goalEvents: [],
+            stuckEvents: [],
+            miscEvents: [],
+            topEvents: [],
+            residents: [],
+            systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
+        };
+        fs.writeFileSync(path.join(runRoot, 'digest.json'), JSON.stringify(staleDigest, null, 2));
+        // Write a cached latest-frame.json whose freshnessMs was frozen at write time (=0 when built).
+        const frozenFrame = buildProjectorStoryFrame(
+            { ...staleDigest },
+            { now: new Date('2026-05-27T11:00:00.000Z') }, // written right as digest was built → freshnessMs=0
         );
-        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frame, null, 2));
+        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frozenFrame, null, 2));
 
-        expect(service.storytellerProjectorLatest()).toMatchObject({
-            ok: true,
-            digestId: 'digest-frame',
-            narration: { source: 'deterministic_fallback' },
-        });
+        const frame = service.storytellerProjectorLatest();
+        // freshnessMs should reflect the true age at request time (~3600000 ms = 1 hour), not 0.
+        expect(frame.source.freshnessMs).toBeGreaterThanOrEqual(3600000);
+        expect(frame.source.freshnessStatus).toBe('stale');
     });
 
     it('storytellerProjectorLatest builds a fail-closed frame from the newest run when latest-frame is absent', () => {
