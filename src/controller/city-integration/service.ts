@@ -178,6 +178,26 @@ export interface CityIntegrationOptions {
      * standing/letter flow as the patron gateway CLI path (`patron:offer`).
      */
     onPatronSupport?: (event: PatronSupportEvent) => void;
+
+    /**
+     * Called synchronously after a human inbox message is successfully
+     * dispatched to the resident runtime. The host can poll for the resident's
+     * reply and store it as a `resident_reply` letter in `LettersStore` so the
+     * human sees it via GET /v1/letters/all (LB-H2R-8m13).
+     *
+     * Best-effort: errors thrown by the callback are NOT propagated.
+     */
+    onMessageDelivered?: (event: MessageDeliveredEvent) => void;
+}
+
+/** Event fired by {@link CityIntegrationService.deliverMessage} after the message
+ * is dispatched to the resident runtime. */
+export interface MessageDeliveredEvent {
+    residentName: string;
+    cityUserId: string;
+    senderDisplayName?: string;
+    /** ISO timestamp the message was dispatched. */
+    ts: string;
 }
 
 export interface CityStorytellerDispatchSummary {
@@ -1273,6 +1293,18 @@ export class CityIntegrationService {
                 lifeIndex: this.readLifeIndex(residentName),
                 significanceReasons: ['city:inbox_message'],
             });
+            if (this.options.onMessageDelivered) {
+                try {
+                    this.options.onMessageDelivered({
+                        residentName,
+                        cityUserId: request.cityUserId,
+                        senderDisplayName: request.senderDisplayName,
+                        ts,
+                    });
+                } catch {
+                    // best-effort; never fail the delivery
+                }
+            }
             return { ok: true, resident: residentName, delivered: true, event };
         });
     }

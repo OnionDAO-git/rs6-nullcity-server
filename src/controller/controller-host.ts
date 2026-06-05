@@ -16,6 +16,8 @@ import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/run
 import { CurrencyLedger } from './patron/currency-ledger';
 import { PlanStore } from './intelligence/plan-store';
 import { LettersStore } from './patron/letters-store';
+import { produceResidentReplyLetter } from './patron/letters-producer';
+import { findTrajectoryReply } from './patron/reply-capture';
 import { recordSettledSupport } from './patron/settled-support';
 import { PatronGateway } from './patron/patron-gateway';
 import { PatronStore } from './patron/patron-store';
@@ -28,6 +30,8 @@ import { GatewayClient } from './transport/gateway-client';
 import type { PerceptionEvent } from './transport/message-codecs';
 
 const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
+const REPLY_POLL_TIMEOUT_MS = 10_000;
+const REPLY_POLL_INTERVAL_MS = 500;
 
 export interface ControllerHostOptions {
     once?: boolean;
@@ -266,6 +270,37 @@ export class ControllerHost {
                     },
                 );
                 this.persistPatronLedgers();
+            },
+            // LB-H2R-8m13: when a human inbox message is delivered, poll the
+            // resident's trajectory for the next say action and store it as a
+            // resident_reply letter so the human sees it via GET /v1/letters/all.
+            onMessageDelivered: event => {
+                const { residentName, cityUserId, senderDisplayName, ts } = event;
+                const memoryDir = config.memory.dir;
+                const lettersStore = this.lettersStore;
+                void (async () => {
+                    const deadline = Date.now() + REPLY_POLL_TIMEOUT_MS;
+                    while (Date.now() < deadline) {
+                        const reply = findTrajectoryReply(memoryDir, residentName, ts);
+                        if (reply) {
+                            const letter = produceResidentReplyLetter({
+                                humanId: cityUserId,
+                                residentName,
+                                replyText: reply.text,
+                                ts: reply.ts,
+                            });
+                            try {
+                                lettersStore.append(letter);
+                            } catch {
+                                // best-effort; ignore filesystem errors
+                            }
+                            return;
+                        }
+                        await new Promise<void>(resolve => setTimeout(resolve, REPLY_POLL_INTERVAL_MS));
+                    }
+                    // No reply within the window — that is fine; the human can
+                    // still read the resident's say actions via the live stream.
+                })();
             },
         });
         this.bindGatewayEvents();

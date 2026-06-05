@@ -213,12 +213,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: multi
 - Type: Dev
 - Severity: P1
-- Status: Open
-- Owner: unassigned
+- Status: In-progress
+- Owner: cron-cloud
 - Evidence: service.ts:1176-1213 deliverMessage has no write-back; cli.ts:948 prints reply to operator; dashboard inbox routes GET-only (routes.ts:559), inbox tables never INSERTed (postgres-store.ts:463-476).
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-05
+- Resolution: server-side write-back implemented — onMessageDelivered callback polls trajectory and appends resident_reply letter to LettersStore.
 
 ### LB-H2R-4p77 — No resident->human plea/outreach when fading (in-world `say` only)
 - Area: H2R

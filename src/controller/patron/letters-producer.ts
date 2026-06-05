@@ -36,7 +36,7 @@ export function ticksToHumanTime(ticks: number): string {
  */
 export interface Letter {
     /** Discriminator. */
-    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast' | 'attention_plea';
+    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast' | 'attention_plea' | 'resident_reply';
     /** humanId (badge handle, e.g. 'alice@onion'). */
     recipient: string;
     /**
@@ -60,7 +60,7 @@ export interface Letter {
 }
 
 export const letterSchema = z.object({
-    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast', 'attention_plea']),
+    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast', 'attention_plea', 'resident_reply']),
     recipient: z.string().min(1),
     senderResident: z.string().min(1),
     subject: z.string().min(1),
@@ -476,6 +476,42 @@ export function produceAttentionPleaLetter(input: AttentionPleaLetterInput): Let
         senderResident: input.residentName,
         subject: `${input.residentName} is running low on attention`,
         body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// LB-H2R-8m13: Resident reply letter — dispatched to the human who sent an
+// inbox message when the resident emits a say action in response.
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceResidentReplyLetter}. */
+export interface ResidentReplyLetterInput {
+    /** humanId (badge handle) of the message sender receiving the reply. */
+    humanId: string;
+    /** Name of the resident who replied. */
+    residentName: string;
+    /** The reply text the resident emitted. */
+    replyText: string;
+    /** ISO timestamp when the reply was emitted. */
+    ts: string;
+}
+
+/**
+ * Generate a resident-reply letter dispatched when a resident emits a `say`
+ * action after receiving a `human_inbox_message`. Pure function; no I/O.
+ *
+ * The letter surfaces in the human's web inbox via GET /v1/letters/all
+ * (LB-H2R-1n55), closing the human→resident→human reply round-trip.
+ */
+export function produceResidentReplyLetter(input: ResidentReplyLetterInput): Letter {
+    return {
+        kind: 'resident_reply',
+        recipient: input.humanId,
+        senderResident: input.residentName,
+        subject: `${input.residentName} replied to your message`,
+        body: input.replyText,
         dispatchedAt: input.ts,
         deliveryChannels: ['web-inbox'],
     };

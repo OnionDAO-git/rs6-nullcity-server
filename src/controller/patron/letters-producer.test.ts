@@ -3,11 +3,13 @@ import {
     type CivicAchievementLetterInput,
     type EpitaphLetterInput,
     type Letter,
+    type ResidentReplyLetterInput,
     type StandingTierLetterInput,
     type BroadcastLetterInput,
     letterSchema,
     produceCivicAchievementLetter,
     produceEpitaphLetter,
+    produceResidentReplyLetter,
     produceStandingTierLetter,
     produceBroadcastLetter,
     produceAttentionPleaLetter,
@@ -404,6 +406,35 @@ describe('letterSchema', () => {
             dispatchedAt: '2026-05-23T04:00:00.000Z',
             deliveryChannels: ['web-inbox', 'in-game-scroll', 'lanyard-card'],
         };
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceResidentReplyLetter', () => {
+    const baseInput: ResidentReplyLetterInput = {
+        humanId: 'alice@onion',
+        residentName: 'res:hans',
+        replyText: 'I found the Blue Moon Inn just north of the market.',
+        ts: '2026-06-05T00:10:00.000Z',
+    };
+
+    it('produces a resident_reply letter with correct fields', () => {
+        const letter = produceResidentReplyLetter(baseInput);
+        expect(letter.kind).toBe('resident_reply');
+        expect(letter.recipient).toBe('alice@onion');
+        expect(letter.senderResident).toBe('res:hans');
+        expect(letter.body).toBe('I found the Blue Moon Inn just north of the market.');
+        expect(letter.dispatchedAt).toBe('2026-06-05T00:10:00.000Z');
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('includes the resident name in the subject', () => {
+        const letter = produceResidentReplyLetter(baseInput);
+        expect(letter.subject).toContain('res:hans');
+    });
+
+    it('passes letterSchema validation', () => {
+        const letter = produceResidentReplyLetter(baseInput);
         expect(() => letterSchema.parse(letter)).not.toThrow();
     });
 });

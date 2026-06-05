@@ -466,6 +466,32 @@ describe('CityIntegrationService', () => {
             messageId: 'msg-1',
         });
     });
+
+    it('fires onMessageDelivered callback with correct fields after delivery', async () => {
+        const delivered: unknown[] = [];
+        const serviceWithCb = new CityIntegrationService({
+            memoryRoot: root,
+            getRuntime: () => runtime,
+            inventory: { inspectResidentGold: async () => ({ itemId: 0, amount: 0 }), burnResidentGold: async () => ({ resident: 'res:test', itemId: 0, burnedAmount: 0, remainingAmount: 0 }) },
+            birth: { birthResident: async () => ({ ok: true, residentName: 'res:test', idempotent: false }) },
+            onMessageDelivered: event => delivered.push(event),
+        });
+        await serviceWithCb.deliverMessage('res:test', {
+            messageId: 'msg-cb-1',
+            threadId: 'thread-cb-1',
+            cityUserId: 'user-cb',
+            senderDisplayName: 'Bob',
+            body: 'Where are you?',
+        });
+        expect(delivered).toHaveLength(1);
+        expect(delivered[0]).toMatchObject({
+            residentName: 'res:test',
+            cityUserId: 'user-cb',
+            senderDisplayName: 'Bob',
+        });
+        expect(typeof (delivered[0] as { ts: string }).ts).toBe('string');
+    });
+
     // ── AP-for-GP exchange ────────────────────────────────────────────────────
 
     it('exchangeApForGp: records failed_gp when resident has insufficient gold', async () => {
