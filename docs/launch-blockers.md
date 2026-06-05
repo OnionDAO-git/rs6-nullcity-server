@@ -360,12 +360,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P1
-- Status: Open
-- Owner: unassigned
+- Status: In-progress
+- Owner: cron-cloud
 - Evidence: service.ts:546-568 writes goal_achieved only via POST /goals/:id/achieve; no autonomous detection.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-05
+- Resolution: PlanStore.onPlanCompleted hook fires when plan.status='completed'; ControllerHost wires it to markGoalAchieved on the first active GoalContract for that resident. +5 tests (plan-store.test.ts section J). commit e8485601. check:no-ui PASS, fin=4220/4220. Needs QA marshal review.
 
 ### LB-LOOP-2k88 — Heroes' Brain frozen ~87% on local q4; decide a paid model for heroes
 - Area: LOOP
