@@ -720,6 +720,65 @@ describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
             const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z') });
             expect(snap.residents.map(r => r.slug).sort()).toEqual(['res-hans', 'res-qa-cook']);
         });
+
+        it('excludes letters from res:loop-check (senderResident colon form) when excludeSynthetic is true', () => {
+            store.append({
+                kind: 'standing_tier_crossed',
+                recipient: 'alice@onion',
+                senderResident: 'res:loop-check',
+                subject: 'loop-check tier',
+                body: 'body',
+                dispatchedAt: '2026-05-26T11:00:00.000Z',
+                deliveryChannels: ['web-inbox'],
+            });
+            store.append({
+                kind: 'standing_tier_crossed',
+                recipient: 'bob@onion',
+                senderResident: 'res:fern',
+                subject: 'real letter',
+                body: 'body',
+                dispatchedAt: '2026-05-26T11:01:00.000Z',
+                deliveryChannels: ['web-inbox'],
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z'), excludeSynthetic: true });
+            expect(snap.recentLetters).toHaveLength(1);
+            expect(snap.recentLetters[0].senderResident).toBe('res:fern');
+        });
+
+        it('excludes letters from res:qa-* senders when excludeSynthetic is true', () => {
+            store.append({
+                kind: 'standing_tier_crossed',
+                recipient: 'charlie@onion',
+                senderResident: 'res:qa-woodcutter',
+                subject: 'qa tier',
+                body: 'body',
+                dispatchedAt: '2026-05-26T11:00:00.000Z',
+                deliveryChannels: ['web-inbox'],
+            });
+            seedLetter({
+                recipient: 'alice@onion',
+                kind: 'standing_tier_crossed',
+                subject: 'real letter',
+                dispatchedAt: '2026-05-26T11:01:00.000Z',
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z'), excludeSynthetic: true });
+            expect(snap.recentLetters.every(l => l.senderResident !== 'res:qa-woodcutter')).toBe(true);
+            expect(snap.recentLetters).toHaveLength(1);
+        });
+
+        it('does not count epitaphs from synthetic senders in deathsToday when excludeSynthetic is true', () => {
+            store.append({
+                kind: 'epitaph',
+                recipient: 'graveyard',
+                senderResident: 'res:loop-check',
+                subject: 'RIP loop-check',
+                body: 'body',
+                dispatchedAt: '2026-05-26T10:00:00.000Z',
+                deliveryChannels: ['web-inbox'],
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z'), excludeSynthetic: true });
+            expect(snap.deathsToday).toBe(0);
+        });
     });
 });
 

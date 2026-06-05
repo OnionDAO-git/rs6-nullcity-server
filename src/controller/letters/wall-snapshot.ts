@@ -373,11 +373,12 @@ export interface BuildWallSnapshotOptions {
 
 /**
  * Slug pattern for residents that should be hidden from public-facing surfaces.
- * Covers QA fixture residents (`res-qa-*`) and benchmark synthetics (`res-bmk_*`).
+ * Covers QA fixture residents (`res-qa-*`), benchmark synthetics (`res-bmk_*`),
+ * and known test/verification residents that predate the qa- prefix convention.
  * Canonical demo residents like `res-agent` are intentionally NOT matched —
  * they're real demo souls, not fixtures.
  */
-export const SYNTHETIC_SLUG_PATTERN = /^res-(qa-|bmk_)/;
+export const SYNTHETIC_SLUG_PATTERN = /^res-(qa-|bmk_|loop-check|smoke-born|wf-verify-born|death-test|restart-test|verify-born)/;
 
 export function isSyntheticSlug(slug: string): boolean {
     return SYNTHETIC_SLUG_PATTERN.test(slug);
@@ -470,11 +471,18 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         }
     }
 
+    // Strip letters from QA/test/verification residents before public display.
+    // senderResident uses colon notation (e.g. "res:loop-check"); normalise to
+    // slug form (first colon → dash) before testing against SYNTHETIC_SLUG_PATTERN.
+    const wallLetters = options.excludeSynthetic
+        ? allLetters.filter(l => !isSyntheticSlug(l.senderResident.replace(':', '-')))
+        : allLetters;
+
     // Newest first.
-    allLetters.sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : a.dispatchedAt > b.dispatchedAt ? -1 : 0));
+    wallLetters.sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : a.dispatchedAt > b.dispatchedAt ? -1 : 0));
     // Optional public-display dedup: collapse repeats by subject, keep newest
     // per subject. We dedup BEFORE limit so the wall shows N distinct subjects.
-    const dedupedLetters = options.dedupeBySubject ? dedupeLettersBySubject(allLetters) : allLetters;
+    const dedupedLetters = options.dedupeBySubject ? dedupeLettersBySubject(wallLetters) : wallLetters;
     const recentLetters = dedupedLetters.slice(0, limit);
 
     // Unique deceased residents whose epitaphs landed in the local-day
@@ -489,7 +497,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     const dayEndMs = dayEnd.getTime();
 
     const deceasedResidents = new Set<string>();
-    for (const letter of allLetters) {
+    for (const letter of wallLetters) {
         if (letter.kind !== 'epitaph') {
             continue;
         }
