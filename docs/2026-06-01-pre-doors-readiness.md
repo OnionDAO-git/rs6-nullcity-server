@@ -42,10 +42,7 @@ prune-on-death `602d9d8d`. Controller runs in screen `nullcity-controller-codex`
   `res:agent` converts all its GP→AP via the self-initiated survival exchange (no reserve),
   so most residents sit at 0. For an NCRI cash-in demo, use an NCRI owned by a GP-rich
   resident (qa-guardian). AP scarcity is OnionDAO-external (third-party DB) by design.
-- **In-game tombstone / Library seal on attention-death** — `/v1/graveyard` works (reads
-  runtime-state), but `library/<slug>/index.json` stays `currentState:living` on
-  attention-death (the seal only fires on the Spark legacy path). In-game tombstones +
-  portrait seal won't reflect such deaths. Cosmetic-ish follow-up.
+- **In-game tombstone / Library seal on attention-death** — Fixed (QA-20260601-066, live-verified 2026-06-01 13:48 CDT). `resident-runtime.ts` emits a `legacy_event` sealing `currentState:'ended'` on attention-death; Library portrait and graveyard tombstone both reflect the death correctly. LB-LOOP-5a09 closed.
 - **Patron registry thin** — only 1 patron configured; walk-up greeting needs
   `patron:bulk-register` (HD-011) and the OnionDAO landing-app AP sync wired at the venue.
 - **`qa-*` test souls are in production `config.residents`** (dev/live muddle).

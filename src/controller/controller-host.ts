@@ -32,7 +32,7 @@ import { GatewayClient } from './transport/gateway-client';
 import type { PerceptionEvent } from './transport/message-codecs';
 
 const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
-const REPLY_POLL_TIMEOUT_MS = 10_000;
+const REPLY_POLL_TIMEOUT_MS = 90_000;
 const REPLY_POLL_INTERVAL_MS = 500;
 
 export interface ControllerHostOptions {

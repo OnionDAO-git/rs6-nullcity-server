@@ -373,12 +373,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P2
-- Status: Open
-- Owner: unassigned
+- Status: Done
+- Owner: cron-cloud
 - Evidence: resident-runtime.ts:1200-1215 emits a legacy_event sealing currentState:'ended' on death; docs/2026-06-01-pre-doors-readiness.md:45-48 still claims it stays 'living'. Re-verify live + update doc.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-05
+- Resolution: docs/2026-06-01-pre-doors-readiness.md:45-48 updated (S-H2R-REPLY-WINDOW-1, 2026-06-05); code was already correct per QA-20260601-066 live-verified 2026-06-01 13:48 CDT. LB closed.
 
 ---
 
