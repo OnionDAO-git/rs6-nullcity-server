@@ -246,17 +246,13 @@ export class ControllerHost {
             // support grants so the dashboard "Support with AP" button produces
             // the same standing/letter effects as the patron:offer CLI path.
             onPatronSupport: event => {
-                // T0.0b: Shards-free settled-support seam. Keys on personId
-                // (=== landing users.id) when the caller resolved it (the same
-                // canonical id the ap_topup economy event records), else patronHandle,
-                // else cityUserId. When personId is present, standing aligns with the
-                // economy log. NOTE: not structurally enforced — if a grant arrives
-                // without personId, standing keys on a fallback while the log still
-                // records cityUserId; the upstream cityUserId->personId join is the
-                // real guard against fragmentation.
+                // T0.0b: Shards-free settled-support seam. Prefer the human-facing
+                // patron handle for standing + letters so /v1/inbox?human=<handle>
+                // sees the tier letter. Keep personId in the economy log above as
+                // the canonical audit join to landing users.id.
                 recordSettledSupport(
                     {
-                        patronId: event.personId ?? event.patronHandle ?? event.cityUserId,
+                        patronId: event.patronHandle ?? event.personId ?? event.cityUserId,
                         faction: event.faction,
                         residentName: event.residentName,
                         onionsSettled: event.amount,
