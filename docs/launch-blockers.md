@@ -23,6 +23,8 @@
 
 # Launch Blockers — OnionDAO / Null City
 
+> **Live BETA punch-list lives in [`docs/mvp-tracker.md`](mvp-tracker.md).** That file is the active, single-owner tracker for the 5 core loops being driven to beta (currency lock, onion-spend support, embassy heroes, conv-reply). **This file (launch-blockers.md) is the full cross-repo launch backlog.** Rule of thumb: if it's on the beta critical path, track status in `mvp-tracker.md`; the matching `LB-` row here just cross-refs it (e.g. `LB-H2R-q9k2` ↔ `MVP-9`).
+
 Single canonical registry of **everything that must happen before launch**, across all repos and across investigation / dev / design / decision work. Multiple agents (Claude + Codex + James) read and edit this in parallel — **read the conventions below before adding or editing an item.**
 
 - **Companion (history/chatter):** `docs/launch-blockers_discussion.md` — append-only, threaded by `LB-id`. Put debate, evidence dumps, and progress notes there, not here.
