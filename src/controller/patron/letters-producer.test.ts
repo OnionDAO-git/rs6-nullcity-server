@@ -2,6 +2,7 @@ import {
     type AttentionPleaLetterInput,
     type CivicAchievementLetterInput,
     type EpitaphLetterInput,
+    type GoalAchievedLetterInput,
     type Letter,
     type ResidentReplyLetterInput,
     type StandingTierLetterInput,
@@ -9,6 +10,7 @@ import {
     letterSchema,
     produceCivicAchievementLetter,
     produceEpitaphLetter,
+    produceGoalAchievedLetter,
     produceResidentReplyLetter,
     produceStandingTierLetter,
     produceBroadcastLetter,
@@ -435,6 +437,80 @@ describe('produceResidentReplyLetter', () => {
 
     it('passes letterSchema validation', () => {
         const letter = produceResidentReplyLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceGoalAchievedLetter (S-GOAL-NOTIF-1)', () => {
+    const baseInput: GoalAchievedLetterInput = {
+        humanId: 'alice@onion',
+        residentName: 'res:hans',
+        goalText: 'Become the best fisherman in Null City',
+        ts: '2026-06-05T17:30:00.000Z',
+    };
+
+    it('returns a goal_achieved letter', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.kind).toBe('goal_achieved');
+    });
+
+    it('sets recipient to humanId', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.recipient).toBe('alice@onion');
+    });
+
+    it('sets senderResident to residentName', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.senderResident).toBe('res:hans');
+    });
+
+    it('subject includes the display name (stripped of res: prefix)', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.subject).toContain('hans');
+        expect(letter.subject).not.toContain('res:');
+    });
+
+    it('body includes the goalText', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.body).toContain('Become the best fisherman in Null City');
+    });
+
+    it('body includes the humanId', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.body).toContain('alice@onion');
+    });
+
+    it('delivers to web-inbox only', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('sets dispatchedAt to the supplied ts', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.dispatchedAt).toBe('2026-06-05T17:30:00.000Z');
+    });
+
+    it('two patrons of the same resident get the same body template', () => {
+        const letter1 = produceGoalAchievedLetter({ ...baseInput, humanId: 'alice@onion' });
+        const letter2 = produceGoalAchievedLetter({ ...baseInput, humanId: 'alice@onion' });
+        expect(letter1.body).toBe(letter2.body);
+    });
+
+    it('rotation covers all 3 body templates across different humanId + residentName combos', () => {
+        const variants = new Set<string>();
+        const names = ['res:hans', 'res:aereck', 'res:wizard'];
+        const patrons = ['alice@onion', 'bob@onion', 'carol@onion', 'dave@onion'];
+        for (const residentName of names) {
+            for (const humanId of patrons) {
+                const letter = produceGoalAchievedLetter({ ...baseInput, residentName, humanId });
+                variants.add(letter.body.split('\n')[2]);
+            }
+        }
+        expect(variants.size).toBeGreaterThanOrEqual(2);
+    });
+
+    it('passes letterSchema validation', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
         expect(() => letterSchema.parse(letter)).not.toThrow();
     });
 });

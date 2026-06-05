@@ -36,7 +36,7 @@ export function ticksToHumanTime(ticks: number): string {
  */
 export interface Letter {
     /** Discriminator. */
-    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast' | 'attention_plea' | 'resident_reply';
+    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast' | 'attention_plea' | 'resident_reply' | 'goal_achieved';
     /** humanId (badge handle, e.g. 'alice@onion'). */
     recipient: string;
     /**
@@ -60,7 +60,7 @@ export interface Letter {
 }
 
 export const letterSchema = z.object({
-    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast', 'attention_plea', 'resident_reply']),
+    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast', 'attention_plea', 'resident_reply', 'goal_achieved']),
     recipient: z.string().min(1),
     senderResident: z.string().min(1),
     subject: z.string().min(1),
@@ -512,6 +512,86 @@ export function produceResidentReplyLetter(input: ResidentReplyLetterInput): Let
         senderResident: input.residentName,
         subject: `${input.residentName} replied to your message`,
         body: input.replyText,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// S-GOAL-NOTIF-1: Goal achieved letter — dispatched to faction supporters
+// when the resident's active GoalContract transitions to 'achieved'.
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceGoalAchievedLetter}. */
+export interface GoalAchievedLetterInput {
+    /** humanId of the patron receiving the notification. */
+    humanId: string;
+    /** Name of the resident that achieved the goal. */
+    residentName: string;
+    /** Aspirational goal text from the GoalContract. */
+    goalText: string;
+    /** ISO timestamp of achievement. */
+    ts: string;
+}
+
+const GOAL_ACHIEVED_BODIES: ReadonlyArray<(name: string, humanId: string, goal: string) => string> = [
+    (name, humanId, goal) =>
+        [
+            `${humanId},`,
+            '',
+            `${name} did it.`,
+            '',
+            `"${goal}"`,
+            '',
+            `Your support made this possible. Thank you for standing with them.`,
+            '',
+            `— from Null City`,
+        ].join('\n'),
+    (name, humanId, goal) =>
+        [
+            `${humanId},`,
+            '',
+            `Word from Null City: ${name} has achieved their goal.`,
+            '',
+            `"${goal}"`,
+            '',
+            `Your attention kept them here long enough to see it through.`,
+            '',
+            `— from Null City`,
+        ].join('\n'),
+    (name, humanId, goal) =>
+        [
+            `${humanId},`,
+            '',
+            `${name} has completed what they set out to do.`,
+            '',
+            `"${goal}"`,
+            '',
+            `They could not have held on without patrons like you.`,
+            '',
+            `— from Null City`,
+        ].join('\n'),
+];
+
+/**
+ * Generate a goal-achieved letter from Null City to a patron when their
+ * supported resident completes a GoalContract. Pure function; no I/O.
+ *
+ * Body rotates through {@link GOAL_ACHIEVED_BODIES} using a hash of
+ * residentName+humanId so all patrons of the same resident see the same
+ * voice at a given milestone.
+ */
+export function produceGoalAchievedLetter(input: GoalAchievedLetterInput): Letter {
+    const hashBase = (input.residentName + input.humanId).split('').reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
+    const idx = Math.abs(hashBase) % GOAL_ACHIEVED_BODIES.length;
+    const displayName = input.residentName.replace(/^res:/, '');
+    const body = GOAL_ACHIEVED_BODIES[idx](displayName, input.humanId, input.goalText);
+    return {
+        kind: 'goal_achieved',
+        recipient: input.humanId,
+        senderResident: input.residentName,
+        subject: `${displayName} achieved their goal`,
+        body,
         dispatchedAt: input.ts,
         deliveryChannels: ['web-inbox'],
     };

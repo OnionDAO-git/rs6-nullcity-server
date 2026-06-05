@@ -18,7 +18,7 @@ import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/run
 import { CurrencyLedger } from './patron/currency-ledger';
 import { PlanStore } from './intelligence/plan-store';
 import { LettersStore } from './patron/letters-store';
-import { produceResidentReplyLetter } from './patron/letters-producer';
+import { produceGoalAchievedLetter, produceResidentReplyLetter } from './patron/letters-producer';
 import { findTrajectoryReply } from './patron/reply-capture';
 import { recordSettledSupport } from './patron/settled-support';
 import { PatronGateway } from './patron/patron-gateway';
@@ -661,7 +661,7 @@ export class ControllerHost {
      * graveyard. Authored cohort residents (config.residents) are left untouched
      * and keep their existing respawn behavior.
      */
-    /** LB-LOOP-7e31: fires when the resident's plan transitions to 'completed'. */
+    /** LB-LOOP-7e31 + S-GOAL-NOTIF-1: fires when the resident's plan transitions to 'completed'. */
     private handlePlanCompleted(residentId: string, plan: Plan): void {
         const goalStore = new GoalContractStore(this.config.memory.dir);
         const active = goalStore.listByResident(residentId).find(c => c.status === 'active');
@@ -676,6 +676,55 @@ export class ControllerHost {
         } catch (err) {
             process.stderr.write(`[handlePlanCompleted] markGoalAchieved failed for ${residentId}: ${String(err)}\n`);
         }
+
+        // S-GOAL-NOTIF-1: notify faction patrons that this resident achieved their goal.
+        try {
+            const runtime = this.runtimes.get(this.runtimeName(residentId));
+            const faction: string = (runtime?.getState() as { faction?: string } | undefined)?.faction ?? 'embassy';
+            const ts = new Date().toISOString();
+            const recipients = this.goalAchievedRecipients(faction);
+            for (const humanId of recipients) {
+                const letter = produceGoalAchievedLetter({
+                    humanId,
+                    residentName: residentId,
+                    goalText: active.goalText,
+                    ts,
+                });
+                try {
+                    this.lettersStore.append(letter);
+                } catch {
+                    // best-effort; never block plan completion for letter errors
+                }
+            }
+        } catch (err) {
+            process.stderr.write(`[handlePlanCompleted] goal-notif dispatch failed for ${residentId}: ${String(err)}\n`);
+        }
+    }
+
+    /**
+     * Collect humanIds to receive a goal_achieved notification.
+     * Includes all patrons who ever supported `faction` (standing ledger)
+     * plus all configured patrons — same recipient set as attention pleas.
+     */
+    private goalAchievedRecipients(faction: string): Set<string> {
+        const recipients = new Set<string>();
+        const snap = this.standingLedger.snapshot();
+        for (const key of Object.keys(snap.points)) {
+            const sepIdx = key.lastIndexOf('|');
+            if (sepIdx >= 0) {
+                const humanId = key.slice(0, sepIdx);
+                const entryFaction = key.slice(sepIdx + 1);
+                if (entryFaction === faction && humanId.length > 0) {
+                    recipients.add(humanId);
+                }
+            }
+        }
+        for (const p of this.config.patrons ?? []) {
+            if (p.handle && p.handle.trim().length > 0) {
+                recipients.add(p.handle.trim());
+            }
+        }
+        return recipients;
     }
 
     private handleResidentDeath(name: string, cause: string): void {

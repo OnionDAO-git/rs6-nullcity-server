@@ -353,7 +353,7 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Evidence: service.ts:546-568 writes goal_achieved only via POST /goals/:id/achieve; no autonomous detection.
 - Created: 2026-06-02
 - Updated: 2026-06-05
-- Resolution: PlanStore.onPlanCompleted hook fires when plan.status='completed'; ControllerHost wires it to markGoalAchieved on the first active GoalContract for that resident. +5 tests (plan-store.test.ts section J). commit e8485601. check:no-ui PASS, fin=4220/4220. Needs QA marshal review.
+- Resolution: PlanStore.onPlanCompleted hook fires when plan.status='completed'; ControllerHost wires it to markGoalAchieved on the first active GoalContract for that resident. +5 tests (plan-store.test.ts section J). commit e8485601. S-GOAL-NOTIF-1 extends handlePlanCompleted to also dispatch goal_achieved letters to faction supporters + configured patrons via goalAchievedRecipients + LettersStore. +11 tests. fin=4236/4236. Needs QA marshal review + live verify.
 
 ### LB-LOOP-2k88 — Heroes' Brain frozen ~87% on local q4; decide a paid model for heroes
 - Area: LOOP
