@@ -370,31 +370,146 @@ function toProjectorResident(resident: CityEventDigest['residents'][number], dig
 
 function buildActions(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): ProjectorStoryFrameAction[] {
     const actions: ProjectorStoryFrameAction[] = [];
-    const lowResident = digest.residents.find(resident => resident.isLowAp && !resident.isFaded);
-    if (lowResident) {
+
+    const fadedResident = digest.residents.find(r => r.isFaded);
+    const lowResident = digest.residents.find(r => r.isLowAp && !r.isFaded);
+
+    if (fadedResident) {
+        const name = displayName(fadedResident.residentName);
         actions.push({
             kind: 'grant_attention',
-            label: `Keep ${displayName(lowResident.residentName)} alive`,
+            label: `Revive ${name}`,
+            detail: `${name} has faded — patron attention may bring them back.`,
+            residentName: fadedResident.residentName,
+            priority: 'primary',
+            audience: 'patrons',
+            reason: `${name} faded this window; a grant now is the fastest path to revival.`,
+        });
+    } else if (lowResident) {
+        const name = displayName(lowResident.residentName);
+        actions.push({
+            kind: 'grant_attention',
+            label: `Keep ${name} alive`,
             detail: 'Grant attention if humans want this resident to keep acting.',
             residentName: lowResident.residentName,
+            priority: 'primary',
+            audience: 'patrons',
+            reason: `${name} is near zero attention; a grant now prevents fading before the next window.`,
         });
     }
+
     if (leadEvent) {
-        actions.push({
-            kind: 'watch_resident',
-            label: `Watch ${displayName(leadEvent.residentName)}`,
-            detail: leadActionDetail(leadEvent),
-            residentName: leadEvent.residentName,
-        });
+        const secondaryAction = leadEventAction(leadEvent);
+        if (secondaryAction) {
+            actions.push({
+                ...secondaryAction,
+                priority: actions.length === 0 ? 'primary' : 'secondary',
+            });
+        }
     }
+
     if (!actions.length) {
         actions.push({
             kind: 'operator_check',
             label: 'Wait for the next meaningful beat',
             detail: 'The city is quiet; check the next Storyteller window.',
+            priority: 'primary',
+            audience: 'operators',
+            reason: 'No urgent AP situation or lead event this window; the city is between beats.',
         });
     }
+
     return actions.slice(0, 3);
+}
+
+function leadEventAction(leadEvent: ProjectorStoryFrameEvent): Omit<ProjectorStoryFrameAction, 'priority'> | null {
+    const name = displayName(leadEvent.residentName);
+    switch (leadEvent.label) {
+        case 'Goal completed':
+            return {
+                kind: 'witness',
+                label: `Witness ${name}'s completed goal`,
+                detail: 'Watch whether this completion gets written into Library canon.',
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} finished a bounded goal this window — the Library may record it as canon.`,
+            };
+        case 'Soul born':
+            return {
+                kind: 'witness',
+                label: `Welcome ${name} to the city`,
+                detail: `${name} entered Null City for the first time.`,
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} just crossed from proposal into the live world — human witnesses anchor the first chapter.`,
+            };
+        case 'Resident revived':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name} after revival`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} died and came back; the next chapter depends on what happens in this window.`,
+            };
+        case 'Skill level-up':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name}'s new skill`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} reached a new RuneScape skill tier — a durable story beat worth tracking.`,
+            };
+        case 'Patron gift':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name} after the gift`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'patrons',
+                reason: `${name} received patron attention; patrons can see whether it translates into action.`,
+            };
+        case 'Attention-for-gold exchange':
+        case 'Gold observed':
+        case 'Gold earned':
+            return {
+                kind: 'witness',
+                label: `Track ${name}'s RuneScape gold`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} has active RuneScape gold evidence — watching confirms the AP/GP loop is real.`,
+            };
+        case 'Special item created':
+        case 'Special item redeemed':
+            return {
+                kind: 'witness',
+                label: `Follow ${name}'s special item`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} advanced a special item this window; it may become a human-claimable artifact.`,
+            };
+        case 'Recovered from being stuck':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name} keep moving`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'operators',
+                reason: `${name} just recovered from a stuck state — confirm pathing holds before the next window.`,
+            };
+        default:
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name}`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} has the lead story this window.`,
+            };
+    }
 }
 
 function buildWatchNext(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string[] {

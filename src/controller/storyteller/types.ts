@@ -347,6 +347,12 @@ export interface ProjectorStoryFrameAction {
     label: string;
     detail: string;
     residentName?: string;
+    /** Whether this is the single most important action this window. */
+    priority?: 'primary' | 'secondary';
+    /** Who can usefully take this action. */
+    audience?: 'anyone' | 'nearby_humans' | 'patrons' | 'operators';
+    /** Why this action is surfaced now (one sentence). */
+    reason?: string;
 }
 
 export interface ProjectorStoryFrame {
