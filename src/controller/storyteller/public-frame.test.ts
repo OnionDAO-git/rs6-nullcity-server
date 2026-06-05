@@ -566,4 +566,95 @@ describe('buildProjectorStoryFrame', () => {
         expect(frame.watchNext).toHaveLength(4);
         expect(frame.watchNext).toEqual(['A', 'B', 'C', 'D']);
     });
+
+    it('uses specific fallback copy for skill_level_up lead event', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const skillEvent = digest.miscEvents.find(e => e.ref === refs.skillLevelUp);
+        if (!skillEvent) throw new Error('skill_level_up fixture event missing');
+        digest.topEvents = [skillEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Skill level-up');
+        expect(frame.leadEvent?.ref).toBe(refs.skillLevelUp);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.narration.title).toBe('Bob hit a new milestone');
+        expect(frame.narration.body).toContain('leveled up');
+        expect(frame.narration.bullets[0]).toBe('What happened: Bob reached a new RuneScape skill level.');
+        expect(frame.watchNext[0]).toBe('What Bob does now that a new skill tier is available.');
+    });
+
+    it('uses specific fallback copy for resident_revived lead event', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const reviveEvent = digest.miscEvents.find(e => e.ref === refs.residentRevived);
+        if (!reviveEvent) throw new Error('resident_revived fixture event missing');
+        digest.topEvents = [reviveEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Resident revived');
+        expect(frame.leadEvent?.ref).toBe(refs.residentRevived);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.narration.title).toBe('Carol returned after death');
+        expect(frame.narration.body).toContain('died and came back');
+        expect(frame.narration.bullets[0]).toBe('What happened: Carol died and came back to Null City.');
+        expect(frame.watchNext[0]).toBe("Whether Carol's next chapter changes the story after coming back.");
+    });
+
+    it('uses specific whatHappenedLine for patron_gift lead event', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const giftEvent = digest.miscEvents.find(e => e.ref === refs.patronGift);
+        if (!giftEvent) throw new Error('patron_gift fixture event missing');
+        digest.topEvents = [giftEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Patron gift');
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        // patron_gift falls into 'Attention granted'/'Patron gift' case in fallbackLeadCopy
+        expect(frame.narration.title).toBe('Alice just got another chance');
+        expect(frame.narration.bullets[0]).toBe('What happened: Alice received patron attention.');
+    });
+
+    it('uses goal_completed lead event for deterministic fallback and deterministic watchNext', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const goalEvent = digest.goalEvents.find(e => e.ref === refs.goalCompleted);
+        if (!goalEvent) throw new Error('goal_completed fixture event missing');
+        digest.topEvents = [goalEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Goal completed');
+        expect(frame.narration.title).toBe('Bob finished a bounded goal');
+        expect(frame.narration.body).toContain('tracked objective');
+        expect(frame.watchNext[0]).toBe("Whether Bob's completed goal becomes Library canon.");
+        expect(frame.actions.some(a => a.kind === 'watch_resident' && a.residentName === 'res:bob')).toBe(true);
+    });
+
+    it('verified dispatch citing goalCompleted ref passes and uses dispatch narration', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            publicTitle: 'Bob completed his bounded goal',
+            publicBody: 'Bob wrapped up the Cook quest objective and delivered proof to the city.',
+            eventRefsUsed: [refs.goalCompleted],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.source.dispatchId).toBe(dispatch.dispatchId);
+        expect(frame.narration.title).toBe(dispatch.publicTitle);
+    });
+
+    it('verified dispatch citing skillLevelUp and residentRevived refs passes', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            publicBody: 'Bob leveled up Firemaking and Carol returned after death.',
+            eventRefsUsed: [refs.skillLevelUp, refs.residentRevived],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+    });
 });

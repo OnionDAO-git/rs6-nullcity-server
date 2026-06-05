@@ -189,7 +189,8 @@ function whatHappenedLine(leadEvent: ProjectorStoryFrameEvent): string {
         case 'Attention running low':
             return `Attention running low for ${name}.`;
         case 'Attention granted':
-            return `${name} received new attention.`;
+        case 'Patron gift':
+            return `${name} received patron attention.`;
         case 'Gold observed':
         case 'Gold earned':
             return `${name} showed new RuneScape gold evidence.`;
@@ -200,6 +201,14 @@ function whatHappenedLine(leadEvent: ProjectorStoryFrameEvent): string {
             return `${name} advanced a Null City item.`;
         case 'Goal completed':
             return `${name} completed a tracked goal.`;
+        case 'Skill level-up':
+            return `${name} reached a new RuneScape skill level.`;
+        case 'Resident revived':
+            return `${name} died and came back to Null City.`;
+        case 'Soul born':
+            return `${name} entered Null City.`;
+        case 'Quiet resident':
+            return `${name} was quiet this window.`;
         case 'Library updated':
             return libraryWritebackLine(leadEvent) ?? `${leadEvent.label} for ${name}.`;
         default:
@@ -257,6 +266,16 @@ function fallbackLeadCopy(leadEvent: ProjectorStoryFrameEvent): FallbackLeadCopy
             return {
                 title: `${name} finished a bounded goal`,
                 body: `${name} completed a tracked objective. That is the kind of proof the Library can turn into canon.`,
+            };
+        case 'Skill level-up':
+            return {
+                title: `${name} hit a new milestone`,
+                body: `${name} leveled up a RuneScape skill. That is a durable story beat — real progress inside the game that the city can reference.`,
+            };
+        case 'Resident revived':
+            return {
+                title: `${name} returned after death`,
+                body: `${name} died and came back. Revival is a chapter boundary — the resident is still here, and the arc continues.`,
             };
         case 'Recovered from being stuck':
             return {
@@ -415,6 +434,12 @@ function leadActionDetail(leadEvent: ProjectorStoryFrameEvent): string {
             return 'Follow the item trail: this may become something a human can claim or print.';
         case 'Goal completed':
             return 'Watch whether this completion gets written into Library canon.';
+        case 'Skill level-up':
+            return 'A skill milestone is lasting evidence; watch what the resident does with the new ability.';
+        case 'Resident revived':
+            return 'Revival is a story reset; watch whether this new chapter changes the resident arc.';
+        case 'Patron gift':
+            return 'Patron attention is a commitment; watch whether the resident acts on it.';
         case 'Recovered from being stuck':
             return 'Watch whether recovery turns into movement instead of another loop.';
         default:
@@ -440,6 +465,10 @@ function leadWatchLine(leadEvent: ProjectorStoryFrameEvent): string {
             return `Whether ${name}'s special item crosses into a human claim.`;
         case 'Goal completed':
             return `Whether ${name}'s completed goal becomes Library canon.`;
+        case 'Skill level-up':
+            return `What ${name} does now that a new skill tier is available.`;
+        case 'Resident revived':
+            return `Whether ${name}'s next chapter changes the story after coming back.`;
         case 'Recovered from being stuck':
             return `Whether ${name} keeps moving after the recovery.`;
         default:
