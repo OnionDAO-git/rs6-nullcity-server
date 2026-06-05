@@ -103,10 +103,7 @@ describe('verifyDispatch — eventRefsUsed', () => {
 
     it('recognises new miscEvents refs — skillLevelUp, residentRevived, patronGift — added in S-STORY-FIXTURE-1', () => {
         const { digest, refs } = buildFixtureDigest();
-        const result = verifyDispatch(
-            makeDispatch({ eventRefsUsed: [refs.skillLevelUp, refs.residentRevived, refs.patronGift] }),
-            digest,
-        );
+        const result = verifyDispatch(makeDispatch({ eventRefsUsed: [refs.skillLevelUp, refs.residentRevived, refs.patronGift] }), digest);
         expect(result.passed).toBe(true);
         expect(result.warnings).toHaveLength(0);
     });
