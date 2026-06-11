@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { readRecentPatronMemories } from '../evidence/library-memories';
 import { residentSlug, type RuntimeState } from '../memory/runtime-state';
 import { buildProjectorStoryFrame } from '../storyteller/public-frame';
 import { runCityDigest } from './cli';
@@ -130,7 +131,12 @@ describe('CityIntegrationService', () => {
         });
 
         const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
-        const event = JSON.parse(fs.readFileSync(timelinePath, 'utf8').trim());
+        const events = fs
+            .readFileSync(timelinePath, 'utf8')
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line) as Record<string, unknown>);
+        const event = events.find(entry => entry.kind === 'city_attention_credit');
         expect(event).toMatchObject({
             kind: 'city_attention_credit',
             amount: 50,
@@ -241,6 +247,91 @@ describe('CityIntegrationService', () => {
             });
 
             expect(result).toMatchObject({ ok: true, creditedAmount: 7, attentionAfter: 17 });
+        });
+    });
+
+    describe('dashboard patron recognition — patron_gift timeline event (D-RECOG)', () => {
+        const timelineEvents = (): Array<Record<string, unknown>> => {
+            const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+            return fs
+                .readFileSync(timelinePath, 'utf8')
+                .trim()
+                .split('\n')
+                .map(line => JSON.parse(line) as Record<string, unknown>);
+        };
+
+        it('appends a patron_gift timeline event the patron-memory reader picks up when patronHandle is present', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-1',
+                amount: 25,
+                cityUserId: 'user-9',
+                patronHandle: 'alice',
+                sourceType: 'patron_checkin',
+                sourceId: 'checkin-77',
+                note: 'dashboard support',
+            });
+
+            const gift = timelineEvents().find(event => event.kind === 'patron_gift');
+            expect(gift).toMatchObject({
+                schemaVersion: 1,
+                kind: 'patron_gift',
+                patronHandle: 'alice',
+                amount: 25,
+                attentionDelta: 25,
+                tick: 7,
+                lifeIndex: 1,
+                significanceReasons: ['patron:patron_gift'],
+            });
+
+            // The resident's patron-awareness machinery (memory slice → prompt
+            // envelope, ack reflex, epitaph recipients) reads via the patron-kind
+            // filter — the dashboard supporter must show up there.
+            const memories = readRecentPatronMemories(root, 'res:test', 5);
+            expect(memories.join('\n')).toContain('alice');
+            expect(memories.join('\n')).toContain('25 AP');
+        });
+
+        it('falls back to cityUserId as the patron handle when patronHandle is absent', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-2',
+                amount: 10,
+                cityUserId: 'user-bob',
+            });
+
+            const gift = timelineEvents().find(event => event.kind === 'patron_gift');
+            expect(gift).toMatchObject({ kind: 'patron_gift', patronHandle: 'user-bob', amount: 10 });
+        });
+
+        it('appends exactly one patron_gift per support alongside the city_attention_credit audit event', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-3',
+                amount: 15,
+                cityUserId: 'user-9',
+                patronHandle: 'alice',
+            });
+
+            const events = timelineEvents();
+            expect(events.filter(event => event.kind === 'patron_gift')).toHaveLength(1);
+            expect(events.filter(event => event.kind === 'city_attention_credit')).toHaveLength(1);
+        });
+
+        it('does not append a patron_gift when neither patronHandle nor cityUserId is present', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-4',
+                amount: 5,
+            });
+
+            const events = timelineEvents();
+            expect(events.filter(event => event.kind === 'patron_gift')).toHaveLength(0);
+            expect(readRecentPatronMemories(root, 'res:test', 5)).toHaveLength(0);
+        });
+
+        it('does not re-append a patron_gift on an idempotent replay', async () => {
+            const payload = { idempotencyKey: 'gift-recog-5', amount: 8, cityUserId: 'user-9', patronHandle: 'alice' };
+            await service.creditAttention('res:test', payload);
+            await service.creditAttention('res:test', payload);
+
+            expect(timelineEvents().filter(event => event.kind === 'patron_gift')).toHaveLength(1);
         });
     });
 

@@ -1069,6 +1069,36 @@ export class CityIntegrationService {
                 lifeIndex: this.readLifeIndex(residentName),
                 significanceReasons: ['city:attention_credit'],
             });
+            // D-RECOG (launch fix #1): dashboard supports must enter the
+            // resident's mind. The `city_attention_credit` event above is an
+            // audit record, but the resident's patron-awareness machinery
+            // (readRecentPatronMemories memory slice → prompt envelope, the
+            // patron ack reflex, getPatronHandles epitaph recipients) filters
+            // on patron_* kinds carrying a `patronHandle`. Mirror the exact
+            // event shape PatronGateway.offerTo writes via
+            // LibraryUpdater.observePatron so every downstream consumer just
+            // works. No double-counting: the CLI path (PatronGateway.offerTo)
+            // never calls creditAttention, and the host's onPatronSupport
+            // callback (recordSettledSupport) writes standing + letters only —
+            // never library timeline events. This block is therefore the single
+            // patron_gift writer on the city-API support path, and the
+            // idempotency wrapper keeps replays from appending twice.
+            const patronHandle = request.patronHandle ?? request.cityUserId;
+            if (patronHandle) {
+                this.appendLibraryEvent(residentName, {
+                    schemaVersion: 1,
+                    ts,
+                    tick: runtime.getState().tick,
+                    sessionId: 'external',
+                    kind: 'patron_gift',
+                    patronHandle,
+                    note: request.note ?? 'city_attention_credit',
+                    amount: request.amount,
+                    attentionDelta: after - before,
+                    lifeIndex: this.readLifeIndex(residentName),
+                    significanceReasons: ['patron:patron_gift'],
+                });
+            }
             this.economyEventLog.append({
                 ts,
                 kind: 'ap_topup',
