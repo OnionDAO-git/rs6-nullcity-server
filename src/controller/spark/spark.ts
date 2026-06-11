@@ -12,13 +12,7 @@ import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/ru
 import type { Soul } from '../soul/soul-schema';
 import type { AgentAction, Perception, PerceptionEvent } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
-import {
-    decayScheduleMultiplier,
-    spendAttention,
-    spendForAction,
-    spendForLlm,
-    type AttentionDecayScheduleConfig,
-} from './attention';
+import { decayScheduleMultiplier, spendAttention, spendForAction, spendForLlm, type AttentionDecayScheduleConfig } from './attention';
 import { generateFirstStepCandidates } from './candidates';
 import { HookEvaluator } from './hook-evaluator';
 import { type HookDefinition, clampHookPriority, systemHooks } from './hooks';

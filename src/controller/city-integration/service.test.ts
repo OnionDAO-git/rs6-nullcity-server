@@ -1633,7 +1633,9 @@ describe('CityIntegrationService', () => {
         it('rejects the exchange with a clean disabled error when the flag is false', async () => {
             const gated = gatedService(false);
 
-            await expect(gated.exchangeApForGp('res:test', { idempotencyKey: 'exch-gated', apAmount: 10, gpAmount: 20 })).rejects.toMatchObject({
+            await expect(
+                gated.exchangeApForGp('res:test', { idempotencyKey: 'exch-gated', apAmount: 10, gpAmount: 20 }),
+            ).rejects.toMatchObject({
                 status: 403,
                 code: 'ap_gp_exchange_disabled',
             });

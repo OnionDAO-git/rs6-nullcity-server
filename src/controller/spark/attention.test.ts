@@ -112,9 +112,9 @@ describe('attention spend functions', () => {
             expect(initialAttention({ startingAttention: 200000, decayCurve: 'gentle' }, { maxAttention: 180000 })).toBe(180000);
             expect(initialAttention({ startingAttention: 120000, decayCurve: 'gentle' }, { maxAttention: 180000 })).toBe(120000);
             // Per-soul maxAttention overrides the config default for the clamp.
-            expect(initialAttention({ startingAttention: 200000, maxAttention: 250000, decayCurve: 'gentle' }, { maxAttention: 180000 })).toBe(
-                200000,
-            );
+            expect(
+                initialAttention({ startingAttention: 200000, maxAttention: 250000, decayCurve: 'gentle' }, { maxAttention: 180000 }),
+            ).toBe(200000);
         });
     });
 
@@ -129,7 +129,7 @@ describe('attention spend functions', () => {
             expect(resolveAttentionCapacity({}, 180000)).toBe(180000);
             expect(resolveAttentionCapacity(undefined, 180000)).toBe(180000);
         });
-        it('returns undefined (uncapped — today\'s behavior) when neither is set', () => {
+        it("returns undefined (uncapped — today's behavior) when neither is set", () => {
             expect(resolveAttentionCapacity({}, undefined)).toBeUndefined();
             expect(resolveAttentionCapacity(undefined, undefined)).toBeUndefined();
         });

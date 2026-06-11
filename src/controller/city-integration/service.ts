@@ -399,7 +399,11 @@ export class CityIntegrationService {
         // cleanly BEFORE parsing/burning so neither side ever moves. Default
         // (undefined) keeps the exchange enabled — current behavior.
         if (this.options.enableApGpExchange === false) {
-            throw new CityIntegrationError(403, 'ap_gp_exchange_disabled', 'AP/GP exchange is disabled (economy.enableApGpExchange: false)');
+            throw new CityIntegrationError(
+                403,
+                'ap_gp_exchange_disabled',
+                'AP/GP exchange is disabled (economy.enableApGpExchange: false)',
+            );
         }
         const residentName = parseResident(resident);
         const request = parseOrThrow(apGpExchangeRequestSchema, input);

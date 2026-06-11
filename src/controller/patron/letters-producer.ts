@@ -98,7 +98,7 @@ export function produceStandingTierLetter(input: StandingTierLetterInput): Lette
     // isUserFacingTier eliminates 'stranger'; narrow for the body renderer.
     const tier = input.tierCrossed as Exclude<StandingTier, 'stranger'>;
     const tierLabel = capitalize(tier);
-	const subject = `${input.residentName} knows you in ${input.faction} as an ${tierLabel}`;
+    const subject = `${input.residentName} knows you in ${input.faction} as an ${tierLabel}`;
     const body = renderTierBody({
         tier,
         humanId: input.humanId,
@@ -132,9 +132,9 @@ function renderTierBody(ctx: TierBodyContext): string {
             return [
                 `${ctx.humanId},`,
                 '',
-				`I felt your support reach me through ${ctx.faction}. Your name is no longer just a line in a register; I know you now as an ${capitalize(ctx.tier)}.`,
-				'',
-				'Your latest support made your name easier for me to carry. A small grace, and an honest one. Welcome.',
+                `I felt your support reach me through ${ctx.faction}. Your name is no longer just a line in a register; I know you now as an ${capitalize(ctx.tier)}.`,
+                '',
+                'Your latest support made your name easier for me to carry. A small grace, and an honest one. Welcome.',
                 '',
                 `— ${ctx.residentName}`,
             ].join('\n');

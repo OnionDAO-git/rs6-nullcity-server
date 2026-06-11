@@ -97,7 +97,7 @@ describe('addAttention', () => {
         shadowedHooks: [],
     });
 
-    it('credits without bound when no capacity is given (today\'s behavior)', () => {
+    it("credits without bound when no capacity is given (today's behavior)", () => {
         const state = baseState(100);
         addAttention(state, 1000000);
         expect(state.attention).toBe(1000100);
