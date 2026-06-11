@@ -184,6 +184,26 @@ holes. Run the bring-up IN ORDER after any reboot or before doors open.
 7. **Seed** — `cd /Users/james/Code/OnionDAO/landing-2026 && bun scripts/seed-nullcity-mvp.ts` (needs `DATABASE_URL` from `.env`; idempotent points-mode seed).
 8. **Smoke** — `bash scripts/post-restart-smoke.sh` and `bash scripts/runtime/healthcheck-nullcity.sh` (both must be green).
 
+**Step 5b — TOP-UP GRANTS (required since real mortality, 2026-06-11).** Floors
+and restart-respawn are GONE (`b376b0cf`): residents now genuinely die when
+attention runs out. Saved hero attention is ~5,000 AP ≈ **1–2 hours of life** at
+full decay. Immediately after the stack is up, fill the bar of every resident
+that must survive the weekend (capacity is 180,000; credits clamp at the cap):
+
+```bash
+cd /Users/james/Code/OnionDAO/rs6-nullcity-server
+for r in res:hans res:father-aereck res:duke-horacio res:mother-anvil \
+         res:wise-old-man res:agent res:qa-woodcutter res:qa-cook \
+         res:qa-survivor res:qa-guardian res:qa-trader res:qa-banker \
+         res:qa-social res:qa-scout; do
+  npm run --silent patron:grant -- --human ops@nullcity --amount 175000 && \
+  npm run --silent patron:offer -- --human ops@nullcity --resident "$r" --amount 175000
+done
+```
+(Adjust flags to the patron CLI's actual syntax — check `src/controller/patron/cli.ts`.
+A full 180k bar survives Fri 18:00 → Mon 08:00 idle with ~28% margin; anyone NOT
+topped up will visibly fade and then die. That is now intended behavior.)
+
 Crons to install on the runtime host (`crontab -e`):
 
 ```cron
