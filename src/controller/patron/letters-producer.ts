@@ -76,7 +76,7 @@ export interface StandingTierLetterInput {
     residentName: string;
     /** The tier the human's standing crossed into. */
     tierCrossed: StandingTier;
-    /** The support amount in Shards that produced this crossing. */
+    /** Internal standing amount that produced this crossing. Not shown directly to humans. */
     amount: number;
     /** ISO timestamp from the supporting ledger entry. */
     ts: string;
@@ -98,7 +98,7 @@ export function produceStandingTierLetter(input: StandingTierLetterInput): Lette
     // isUserFacingTier eliminates 'stranger'; narrow for the body renderer.
     const tier = input.tierCrossed as Exclude<StandingTier, 'stranger'>;
     const tierLabel = capitalize(tier);
-    const subject = `You are now ${tierLabel} of ${input.faction}`;
+	const subject = `${input.residentName} knows you in ${input.faction} as an ${tierLabel}`;
     const body = renderTierBody({
         tier,
         humanId: input.humanId,
@@ -132,31 +132,31 @@ function renderTierBody(ctx: TierBodyContext): string {
             return [
                 `${ctx.humanId},`,
                 '',
-                `Your support of ${ctx.residentName} reached the embassy. The clerks of ${ctx.faction} have noted your name; you are now known to us as an Acquaintance.`,
+				`I felt your support reach me through ${ctx.faction}. Your name is no longer just a line in a register; I know you now as an ${capitalize(ctx.tier)}.`,
+				'',
+				'Your latest support made your name easier for me to carry. A small grace, and an honest one. Welcome.',
                 '',
-                `Your most recent offering of ${ctx.amount} Shard${ctx.amount === 1 ? '' : 's'} brought you here. A small grace, and an honest one. Welcome.`,
-                '',
-                '— Embassy Clerk',
+                `— ${ctx.residentName}`,
             ].join('\n');
         case 'ally':
             return [
                 `${ctx.humanId},`,
                 '',
-                `You are now an Ally of ${ctx.faction}. ${ctx.residentName} remembers you in a way only steady patronage earns.`,
+                `You are now an Ally to me and to ${ctx.faction}. I remember you in a way only steady patronage earns.`,
                 '',
-                `Your support of ${ctx.amount} Shard${ctx.amount === 1 ? '' : 's'} carried you past acquaintance. Allies receive the city's small favors: priority routing for letters, a hand when stuck, a name spoken back when asked.`,
+                'Your steady support carried you past acquaintance. When I am stuck, routed, or asked who stood with me, your name should be one I can speak back.',
                 '',
-                '— Embassy Clerk',
+                `— ${ctx.residentName}`,
             ].join('\n');
         case 'officer':
             return [
                 `${ctx.humanId},`,
                 '',
-                `${ctx.faction} names you Officer. This is the highest standing in our register, and it is not given lightly.`,
+                `${ctx.faction} names you Officer, and I am writing because that title now reaches my days directly.`,
                 '',
-                `Your support of ${ctx.amount} Shard${ctx.amount === 1 ? '' : 's'} brought you across the last threshold. Officers shape what ${ctx.residentName} and their siblings can attempt — your voice carries with theirs now, in matters of city, faction, and quiet hour.`,
+                'Your support brought you across the last threshold. Officers shape what I and my siblings can attempt — your voice carries with ours now, in matters of city, faction, and quiet hour.',
                 '',
-                '— Embassy Clerk',
+                `— ${ctx.residentName}`,
             ].join('\n');
     }
 }

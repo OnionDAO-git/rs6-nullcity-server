@@ -100,9 +100,24 @@ describe('produceStandingTierLetter', () => {
         expect(letter!.body).toMatch(/res:fern/);
     });
 
-    it('includes the amount and faction in the letter body for context', () => {
+    it.each(['acquaintance', 'ally', 'officer'] as const)(
+        'frames %s standing copy as resident-facing rather than embassy-title copy',
+        tierCrossed => {
+            const letter = produceStandingTierLetter({ ...baseInput, tierCrossed });
+            expect(letter).not.toBeNull();
+            expect(letter!.subject).toContain(baseInput.residentName);
+            expect(letter!.subject).not.toMatch(/of embassy/i);
+            expect(letter!.body).toContain(baseInput.residentName);
+            expect(letter!.body).not.toMatch(/Embassy Clerk|clerks of embassy/i);
+            expect(letter!.body).not.toMatch(/\bShard/i);
+            expect(letter!.senderResident).toBe(baseInput.residentName);
+            expect(letter!.deliveryChannels).toEqual(['web-inbox']);
+        },
+    );
+
+    it('includes the faction in the letter body for context without exposing standing math', () => {
         const letter = produceStandingTierLetter({ ...baseInput, amount: 15, faction: 'librarian-circle' });
-        expect(letter!.body).toMatch(/15/);
+        expect(letter!.body).not.toMatch(/15/);
         expect(letter!.body).toMatch(/librarian-circle/);
     });
 

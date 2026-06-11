@@ -1,6 +1,6 @@
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import type { Soul, HybridAgentBehaviorDefinition } from '../soul/soul-schema';
-import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
+import { buildBodyPrompt, buildBrainPrompt, type RuntimeAttentionPromptInput } from './hybrid-agent-prompts';
 import { estimateTokens } from '../util/token-count';
 import { parseCompletion } from '../llm/completion-parser';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
@@ -2783,6 +2783,23 @@ export function ensureBenchmarkGoal(ctx: HelperContext): void {
     cognition.lastBrainTick = ctx.options.state.tick;
 }
 
+export function runtimeAttentionPromptInput(ctx: HelperContext): RuntimeAttentionPromptInput {
+    const activeGoal = ctx.activeGoal();
+    const needsContext = buildResidentNeedsContext({
+        attention: ctx.options.state.attention,
+        attentionFloor: ctx.options.soul.frontmatter.attentionProfile?.floor,
+        hasActiveGoal: Boolean(activeGoal),
+        orientationGoal: ctx.options.soul.frontmatter.orientationGoal,
+        currentActiveGoalId: activeGoal?.id,
+    });
+    return {
+        currentAttention: needsContext.ap,
+        attentionFloor: needsContext.apFloor,
+        runwayAboveFloor: Math.max(0, needsContext.ap - needsContext.apFloor),
+        needsTier: currentTier(needsContext),
+    };
+}
+
 export function ensureFactionLandmarkGoal(ctx: HelperContext): void {
     if (ctx.options.soul.frontmatter.legacy?.parameters?.benchmarkTask) {
         return;
@@ -3582,6 +3599,7 @@ export async function runBrain(
             lastMeaningfulProgressAt: ctx.options.state.lastMeaningfulProgressAt,
             stuckSince: ctx.options.state.stuckSince,
         },
+        attention: runtimeAttentionPromptInput(ctx),
         memories: ctx.promptMemories(perception as HybridPerception, 'brain'),
         toolInstructions,
     });
@@ -3734,6 +3752,7 @@ export async function runBody(
             lastMeaningfulProgressAt: ctx.options.state.lastMeaningfulProgressAt,
             stuckSince: ctx.options.state.stuckSince,
         },
+        attention: runtimeAttentionPromptInput(ctx),
         memories: ctx.promptMemories(bodyPerception, 'body'),
         visibility,
     });

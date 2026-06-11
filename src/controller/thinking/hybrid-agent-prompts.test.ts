@@ -184,6 +184,48 @@ describe('hybrid agent prompts', () => {
         expect(prompt).toMatch(/AP/i);
     });
 
+    it('includes current AP, floor, runway, and survival tier in the Brain prompt', () => {
+        const prompt = buildBrainPrompt({
+            soul: testSoul(),
+            perception: perception('Attention is near the floor.'),
+            commandPrefix: '!',
+            attention: {
+                currentAttention: 12,
+                attentionFloor: 10,
+                runwayAboveFloor: 2,
+                needsTier: 'survive',
+            },
+        });
+
+        expect(prompt).toContain('Attention state:');
+        expect(prompt).toContain('- Current AP / attention: 12');
+        expect(prompt).toContain('- Attention floor: 10');
+        expect(prompt).toContain('- AP runway above floor: 2');
+        expect(prompt).toContain('- Active needs tier: survive');
+        expect(prompt).toContain('AP runway is thin');
+    });
+
+    it('includes the same attention context in the Body prompt', () => {
+        const prompt = buildBodyPrompt({
+            soul: testSoul(),
+            perception: perception('Attention is healthy enough to keep earning.'),
+            commandPrefix: '!',
+            visibility: { returnDue: false },
+            attention: {
+                currentAttention: 120,
+                attentionFloor: 10,
+                runwayAboveFloor: 110,
+                needsTier: 'earn',
+            },
+        });
+
+        expect(prompt).toContain('Attention state:');
+        expect(prompt).toContain('- Current AP / attention: 120');
+        expect(prompt).toContain('- Attention floor: 10');
+        expect(prompt).toContain('- AP runway above floor: 110');
+        expect(prompt).toContain('- Active needs tier: earn');
+    });
+
     describe('SOUL identity injection', () => {
         it('injects archetype directive language into the Brain prompt', () => {
             const enduringPrompt = buildBrainPrompt({
