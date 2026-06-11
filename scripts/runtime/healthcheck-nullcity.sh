@@ -56,7 +56,10 @@ else
 fi
 
 # --- controller letters API ---------------------------------------------------
-curl_ok "controller" "http://127.0.0.1:43596/v1/health"
+# Controller /v1/health intentionally includes a real inference probe. Owned q4
+# models can take ~30s even when healthy, so keep the stack-liveness probes fast
+# while allowing this one route to fail accurately instead of timing out early.
+curl_ok "controller" "http://127.0.0.1:43596/v1/health" -m "${NULLCITY_CONTROLLER_HEALTH_MAX_TIME:-35}"
 
 # --- city API heartbeat -------------------------------------------------------
 CITY_URL="http://127.0.0.1:43611/api/nullcity/economy/heartbeat"
