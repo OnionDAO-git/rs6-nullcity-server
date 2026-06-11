@@ -6,7 +6,7 @@ import type { PlanStore } from '../intelligence/plan-store';
 import { NervousSystem } from '../nervous-system';
 import type { Soul } from '../soul/soul-schema';
 import { createThinkingModuleSelection, type ThinkingModule } from '../thinking';
-import type { AttentionDecayScheduleConfig } from './attention';
+import type { AttentionDecayScheduleConfig, AttentionEconomyConfig } from './attention';
 import { createSparkModuleTelemetry, type SparkModuleTelemetry, type SparkModuleTelemetryLogEntry } from './module-telemetry';
 import { PatronRegistry } from '../patron/patron-registry';
 import {
@@ -32,6 +32,12 @@ export interface SparkRuntimeFacetOptions {
     dispatchAttentionPlea?: () => void;
     /** Survivable-weekend decay schedule, forwarded to the Spark thinking module. */
     attentionDecaySchedule?: AttentionDecayScheduleConfig;
+    /**
+     * Attention-economy knobs (capacity + plea-threshold fraction), forwarded
+     * to the {@link NervousSystem} so the no-floor attention plea fires
+     * capacity-aware (real-mortality lead time).
+     */
+    economy?: AttentionEconomyConfig;
     /** Injectable wall clock (epoch ms), forwarded to the Spark thinking module. */
     now?: () => number;
 }
@@ -74,6 +80,7 @@ function createNervousSelection(
         memory: options.memory,
         patronRegistry: options.patronRegistry,
         dispatchAttentionPlea: options.dispatchAttentionPlea,
+        economy: options.economy,
     });
     for (const selected of selectedModules) {
         const nervousSystem = selected.module.createNervousSystem?.({
@@ -83,6 +90,7 @@ function createNervousSelection(
             llm: options.llm,
             config: selected.config,
             telemetry: createModuleTelemetryFactory(options)(sparkModuleIdentity(selected.module.manifest)),
+            economy: options.economy,
         });
         if (nervousSystem) {
             const identity = sparkModuleIdentity(selected.module.manifest);

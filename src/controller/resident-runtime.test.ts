@@ -4044,7 +4044,10 @@ describe('ResidentRuntime modules', () => {
             inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
             thinking,
             body,
-            economy: { attentionDecaySchedule: { timezone: 'America/Chicago' } },
+            // maxAttention keeps the capacity-aware plea threshold (15% → 75)
+            // below the test's attention of 100 so no plea say interferes
+            // with the decay math under inspection.
+            economy: { attentionDecaySchedule: { timezone: 'America/Chicago' }, maxAttention: 500 },
             now: () => weekendNight,
         });
 
@@ -4903,7 +4906,9 @@ function stateFor(resident: string): RuntimeState {
     const now = new Date().toISOString();
     return {
         resident,
-        attention: 100,
+        // Above the capacity-aware attention-plea threshold so the nervous
+        // request-attention reflex stays quiet in tests that are not about it.
+        attention: 5000,
         tick: 0,
         legacy: { kind: 'mentor', progress: {}, complete: false },
         budgets: { minuteStartedAt: now, dayStartedAt: now, requestsThisMinute: 0, requestsToday: 0 },

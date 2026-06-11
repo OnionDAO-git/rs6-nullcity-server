@@ -70,6 +70,14 @@ export interface AttentionEconomyConfig {
     maxAttention?: number;
     /** Config-level default starting attention (per-soul startingAttention wins). */
     startingAttention?: number;
+    /**
+     * Fraction of a no-floor resident's attention capacity below which the
+     * attention-plea reflex fires (real-mortality lead time). Defaults to
+     * {@link DEFAULT_ATTENTION_PLEA_THRESHOLD_FRACTION}. Values outside
+     * (0, 1] are ignored. When no capacity resolves at all, the plea falls
+     * back to {@link FALLBACK_ATTENTION_PLEA_THRESHOLD} absolute AP.
+     */
+    attentionPleaThresholdFraction?: number;
 }
 
 const DEFAULT_SCHEDULE_TIMEZONE = 'America/Chicago';
@@ -175,6 +183,39 @@ export function resolveAttentionCapacity(profile?: Partial<AttentionProfile>, co
         return configDefault;
     }
     return undefined;
+}
+
+/** Default fraction of capacity below which the attention plea fires (15%). */
+export const DEFAULT_ATTENTION_PLEA_THRESHOLD_FRACTION = 0.15;
+/**
+ * Absolute plea threshold for residents with no resolvable capacity
+ * (legacy configs without `economy.maxAttention` or a per-soul
+ * `attentionProfile.maxAttention`). With real mortality and floors gone,
+ * the historical last-second threshold of 10 AP (~seconds of decay) gave
+ * patrons no time to respond — 2000 AP is roughly half a starter bar.
+ */
+export const FALLBACK_ATTENTION_PLEA_THRESHOLD = 2000;
+
+/**
+ * Capacity-aware attention-plea threshold for residents WITHOUT a declared
+ * attention floor: a fraction (`economy.attentionPleaThresholdFraction`,
+ * default 15%) of the resolved capacity (per-soul `maxAttention` wins over
+ * the `economy.maxAttention` config default). Falls back to
+ * {@link FALLBACK_ATTENTION_PLEA_THRESHOLD} when no capacity resolves.
+ * Floor-protected residents keep their own floor+buffer band and never
+ * consult this helper.
+ */
+export function attentionPleaThreshold(profile?: Partial<AttentionProfile>, economy?: AttentionEconomyConfig): number {
+    const capacity = resolveAttentionCapacity(profile, economy?.maxAttention);
+    if (capacity === undefined) {
+        return FALLBACK_ATTENTION_PLEA_THRESHOLD;
+    }
+    const fraction = economy?.attentionPleaThresholdFraction;
+    const safeFraction =
+        typeof fraction === 'number' && Number.isFinite(fraction) && fraction > 0 && fraction <= 1
+            ? fraction
+            : DEFAULT_ATTENTION_PLEA_THRESHOLD_FRACTION;
+    return capacity * safeFraction;
 }
 
 export type AttentionLedgerEventKind = 'grant' | 'spend' | 'decay' | 'top_up' | 'fade';

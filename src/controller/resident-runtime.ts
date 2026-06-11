@@ -269,6 +269,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 memory: options.memory,
                 patronRegistry: this.patronRegistry,
                 dispatchAttentionPlea,
+                // Capacity-aware plea threshold (real mortality lead time).
+                economy: options.economy,
             });
         } else {
             const facets = createSparkRuntimeFacets({
@@ -285,6 +287,8 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 // Survivable weekend: Spark.tick is the second per-tick decay
                 // site; it needs the same schedule + clock as handlePerception.
                 attentionDecaySchedule: options.economy?.attentionDecaySchedule,
+                // Capacity-aware plea threshold for the core NervousSystem.
+                economy: options.economy,
                 now: this.now,
             });
             this.thinking = facets.thinking;

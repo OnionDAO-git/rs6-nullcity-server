@@ -1,4 +1,7 @@
 import {
+    DEFAULT_ATTENTION_PLEA_THRESHOLD_FRACTION,
+    FALLBACK_ATTENTION_PLEA_THRESHOLD,
+    attentionPleaThreshold,
     decayScheduleMultiplier,
     initialAttention,
     replayAttentionLedger,
@@ -134,6 +137,31 @@ describe('attention spend functions', () => {
             expect(resolveAttentionCapacity({ maxAttention: Number.NaN }, 180000)).toBe(180000);
             expect(resolveAttentionCapacity({ maxAttention: 0 }, undefined)).toBeUndefined();
             expect(resolveAttentionCapacity({ maxAttention: -5 }, Number.POSITIVE_INFINITY)).toBeUndefined();
+        });
+    });
+
+    // Real-mortality plea lead time: with floors gone, no-floor residents
+    // plead when attention falls below a fraction of their capacity
+    // (economy.attentionPleaThresholdFraction, default 15%), with an absolute
+    // fallback when no capacity is configured anywhere.
+    describe('attentionPleaThreshold', () => {
+        it('returns the default fraction of the config capacity', () => {
+            expect(attentionPleaThreshold({}, { maxAttention: 180_000 })).toBe(180_000 * DEFAULT_ATTENTION_PLEA_THRESHOLD_FRACTION);
+        });
+        it('honors a configured fraction', () => {
+            expect(attentionPleaThreshold({}, { maxAttention: 10_000, attentionPleaThresholdFraction: 0.5 })).toBe(5_000);
+        });
+        it('prefers the per-soul maxAttention capacity', () => {
+            expect(attentionPleaThreshold({ maxAttention: 4_000 }, { maxAttention: 180_000 })).toBe(600);
+        });
+        it('falls back to the absolute threshold when no capacity resolves', () => {
+            expect(attentionPleaThreshold({}, undefined)).toBe(FALLBACK_ATTENTION_PLEA_THRESHOLD);
+            expect(attentionPleaThreshold(undefined, {})).toBe(FALLBACK_ATTENTION_PLEA_THRESHOLD);
+        });
+        it('ignores out-of-range fractions (uses the default instead)', () => {
+            expect(attentionPleaThreshold({}, { maxAttention: 100_000, attentionPleaThresholdFraction: 0 })).toBe(15_000);
+            expect(attentionPleaThreshold({}, { maxAttention: 100_000, attentionPleaThresholdFraction: 1.5 })).toBe(15_000);
+            expect(attentionPleaThreshold({}, { maxAttention: 100_000, attentionPleaThresholdFraction: Number.NaN })).toBe(15_000);
         });
     });
 

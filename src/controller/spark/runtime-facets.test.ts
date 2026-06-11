@@ -116,7 +116,9 @@ function runtimeState(): RuntimeState {
     const now = new Date().toISOString();
     return {
         resident: 'res:test',
-        attention: 100,
+        // Above the capacity-aware attention-plea threshold so the core
+        // kernel's request-attention reflex stays quiet in these tests.
+        attention: 5000,
         tick: 0,
         legacy: { kind: 'endurer', progress: {}, complete: false },
         budgets: { minuteStartedAt: now, dayStartedAt: now, requestsThisMinute: 0, requestsToday: 0 },

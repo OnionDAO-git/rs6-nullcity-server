@@ -13,6 +13,7 @@ import {
     heroSurplusGpExchangeAction,
     selfInitiatedApGpExchangeAction,
 } from '../spark/self-initiated-ap-gp-exchange';
+import { attentionPleaThreshold, type AttentionEconomyConfig } from '../spark/attention';
 
 export interface NervousSystemOptions {
     soul: Soul;
@@ -26,6 +27,13 @@ export interface NervousSystemOptions {
      * LB-H2R-4p77.
      */
     dispatchAttentionPlea?: () => void;
+    /**
+     * Attention-economy knobs from controller.yml `economy:`. Drives the
+     * capacity-aware plea threshold for no-floor residents (real mortality:
+     * plead below `attentionPleaThresholdFraction` × capacity, default 15%).
+     * Absent = the absolute fallback threshold in attention.ts.
+     */
+    economy?: AttentionEconomyConfig;
 }
 
 type Item = { itemId?: number; key?: string; amount?: number };
@@ -42,7 +50,12 @@ const STARTER_BURNT_FISH_ITEM_IDS: ReadonlySet<number> = new Set([7954, 323]);
 const REQUEST_ATTENTION_COOLDOWN_TICKS = 600;
 /** Buffer above the declared attention floor at which the appeal fires. */
 const LOW_ATTENTION_REQUEST_BUFFER = 5000;
-/** Residents without an attention floor still need one last AP appeal before fading. */
+/**
+ * Last-second band for the no-floor starter GP harvest reflex ONLY. The
+ * attention plea no longer uses this: with floors gone (real mortality) it
+ * fires capacity-aware via {@link attentionPleaThreshold} so patrons get
+ * real lead time, not ~10 AP of warning.
+ */
 const CRITICAL_ATTENTION_REQUEST_THRESHOLD = 10;
 /** Rotating phrases for the low-attention appeal (index = tick % length). */
 const APPEAL_PHRASES = [
@@ -537,14 +550,22 @@ export class NervousSystem {
         }
 
         const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
-        const threshold = floor > 0 ? floor + LOW_ATTENTION_REQUEST_BUFFER : CRITICAL_ATTENTION_REQUEST_THRESHOLD;
+        // No-floor residents (the post-mortality default) plead capacity-aware:
+        // below economy.attentionPleaThresholdFraction × capacity (default 15%),
+        // falling back to an absolute threshold when no capacity is configured.
+        // This replaces the old last-second CRITICAL threshold (10 AP ≈ seconds
+        // of decay) that gave patrons no time to respond before death.
+        const threshold =
+            floor > 0
+                ? floor + LOW_ATTENTION_REQUEST_BUFFER
+                : attentionPleaThreshold(this.options.soul.frontmatter.attentionProfile, this.options.economy);
         const attention = this.options.state.attention;
         // The appeal means "I am genuinely fading". The runtime clamp parks
         // floor-protected residents AT the floor — they can never decline
         // further, so a resident at (or, clamp aside, below) the floor must
         // never plead: `attention > floor` is strict. Without it, immortal
         // floor-parked heroes plead forever (one letter per cooldown window).
-        const shouldAppeal = floor > 0 ? attention > floor && attention < threshold : attention <= threshold;
+        const shouldAppeal = floor > 0 ? attention > floor && attention < threshold : attention < threshold;
         if (attention <= 0 || !shouldAppeal) {
             return undefined;
         }

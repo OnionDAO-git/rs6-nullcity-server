@@ -70,6 +70,15 @@ export interface ControllerConfig {
          * historical hardcoded 5000.
          */
         startingAttention?: number;
+        /**
+         * Fraction of a no-floor resident's attention capacity below which
+         * the attention-plea reflex fires (real-mortality lead time so a
+         * fading resident can summon patrons). Absent = 0.15 (15% of
+         * capacity). When no capacity is configured anywhere, an absolute
+         * fallback threshold of 2000 AP applies. See
+         * `attentionPleaThreshold` in src/controller/spark/attention.ts.
+         */
+        attentionPleaThresholdFraction?: number;
     };
 }
 
@@ -328,6 +337,7 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
             attentionDecaySchedule: readAttentionDecaySchedule(readPath(source, ['economy', 'attentionDecaySchedule'])),
             maxAttention: readOptionalNumber(readPath(source, ['economy', 'maxAttention'])),
             startingAttention: readOptionalNumber(readPath(source, ['economy', 'startingAttention'])),
+            attentionPleaThresholdFraction: readOptionalNumber(readPath(source, ['economy', 'attentionPleaThresholdFraction'])),
         },
     };
 

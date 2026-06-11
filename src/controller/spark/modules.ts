@@ -7,6 +7,7 @@ import type { ThinkingModule } from '../thinking/thinking-module';
 import type { Perception } from '../transport/message-codecs';
 import { validateSparkModuleConfig, type SparkModuleConfigPolicy, type SparkModuleConfigSchema } from './module-config';
 import type { SparkModuleTelemetry } from './module-telemetry';
+import type { AttentionEconomyConfig } from './attention';
 
 export type SparkModuleCapability =
     | 'thinking'
@@ -50,6 +51,13 @@ export interface TrustedSparkModuleContext {
     llm: LlmClient;
     config: Record<string, unknown>;
     telemetry: SparkModuleTelemetry;
+    /**
+     * Attention-economy knobs from controller.yml `economy:` (capacity +
+     * plea-threshold fraction). Module-created NervousSystems receive the
+     * same config as the core kernel so the capacity-aware attention plea
+     * stays consistent whichever system reacts.
+     */
+    economy?: AttentionEconomyConfig;
 }
 
 export interface SparkNervousSystem {

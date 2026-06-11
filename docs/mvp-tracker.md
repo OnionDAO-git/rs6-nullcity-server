@@ -19,6 +19,11 @@
 
 ---
 
+## 2026-06-11 — launch fixes (Claude, `feat-launch-fixes`)
+- **Plea lead-time (real mortality):** no-floor attention plea is now capacity-aware — fires below `economy.attentionPleaThresholdFraction` × capacity (default 15%; absolute fallback 2000 AP when uncapped) instead of the last-second ≤10 AP. New knob: `economy.attentionPleaThresholdFraction`.
+
+---
+
 ## 2026-06-05 — live refresh + new findings (Claude, 3 subagents @ `agents/wip 0f6a6e37`)
 
 **🔴 URGENT live regression — Dashboard BFF (`:8787`) is DOWN** (crashed; nothing listening). This takes **Loop 2 (crowd screen `/api/projector/overview`)** + auth/session/inbox UI **offline right now**. SPA (`:5174`) + letters (`:43596`) are still up. The loop *code* is fine — the human-facing surface is just down. → **Ops: restart the dashboard BFF.**
