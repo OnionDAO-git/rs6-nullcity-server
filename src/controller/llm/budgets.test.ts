@@ -84,8 +84,13 @@ describe('planner budgets (S-PLAN-BUDGET-1)', () => {
     });
 
     it('resets the counter on a new calendar day', () => {
+        // admitPlannerCall compares LOCAL calendar days (toDateString), so the
+        // two instants must be >24h apart — that guarantees a calendar-day
+        // change in every fixed-offset timezone. The previous pair crossed
+        // only UTC midnight and stayed on the same local day west of UTC,
+        // making this test fail on any US-timezone machine.
         const day1 = new Date('2026-06-04T23:50:00.000Z');
-        const day2 = new Date('2026-06-05T00:05:00.000Z');
+        const day2 = new Date('2026-06-06T00:05:00.000Z');
         const state = stateAt(1, day1);
         // Exhaust day 1 budget
         for (let i = 0; i < 3; i++) admitPlannerCall(state, 3, day1);
