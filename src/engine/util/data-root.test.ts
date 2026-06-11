@@ -1,11 +1,4 @@
-import {
-    agentLogDir,
-    dataRoot,
-    gameCacheDir,
-    playerSaveDir,
-    residentSaveDir,
-    resolveDataDir,
-} from '@engine/util/data-root';
+import { agentLogDir, dataRoot, gameCacheDir, playerSaveDir, residentSaveDir, resolveDataDir } from '@engine/util/data-root';
 
 describe('data-root', () => {
     const ORIGINAL_ENV = { ...process.env };
