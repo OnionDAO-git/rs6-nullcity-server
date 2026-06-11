@@ -6,6 +6,7 @@ import type { SkillName } from '@engine/world/actor/skills';
 import { type Appearance, loadPlayerSaveResult, playerExists } from '@engine/world/actor/player/player-data';
 import { IdleBrain } from '@engine/world/actor/resident/brain/idle-brain';
 import { RESIDENT_SAVE_DIR, Resident } from '@engine/world/actor/resident/resident';
+import { playerSaveDir as defaultPlayerSaveDir } from '@engine/util/data-root';
 import type { Item } from '@engine/world/items/item';
 import { Position } from '@engine/world/position';
 import type { DisconnectPolicy, ResidentSummary } from './protocol/messages';
@@ -75,7 +76,7 @@ export class ResidentRegistry {
 
     public constructor(
         private readonly saveDir: string = RESIDENT_SAVE_DIR,
-        private readonly playerSaveDir: string = 'data/saves',
+        private readonly playerSaveDir: string = defaultPlayerSaveDir(),
     ) {
         mkdirSync(this.saveDir, { recursive: true });
     }

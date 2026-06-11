@@ -3,6 +3,7 @@ import { SocketServer, parseServerConfig } from '@runejs/common/net';
 import { Filestore } from '@runejs/filestore';
 
 import { loadCoreConfigurations, loadGameConfigurations, xteaRegions } from '@engine/config/config-handler';
+import { gameCacheDir } from '@engine/util/data-root';
 import { loadPackets } from '@engine/net/inbound-packet-handler';
 import { watchForChanges, watchSource } from '@engine/util/files';
 import { activateGameWorld } from '@engine/world';
@@ -34,7 +35,7 @@ export async function setupConfig(): Promise<boolean> {
     }
 
     await loadCoreConfigurations();
-    filestore = new Filestore('cache', { xteas: xteaRegions });
+    filestore = new Filestore(gameCacheDir(), { xteas: xteaRegions });
 
     await loadGameConfigurations();
     return true;
