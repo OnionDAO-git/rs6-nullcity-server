@@ -21,6 +21,7 @@
 
 ## 2026-06-11 — launch fixes (Claude, `feat-launch-fixes`)
 - **Plea lead-time (real mortality):** no-floor attention plea is now capacity-aware — fires below `economy.attentionPleaThresholdFraction` × capacity (default 15%; absolute fallback 2000 AP when uncapped) instead of the last-second ≤10 AP. New knob: `economy.attentionPleaThresholdFraction`.
+- **AP/GP exchange gate (SL-6):** new `economy.enableApGpExchange` flag (default true); when false, the exchange endpoint returns a clean 403 `ap_gp_exchange_disabled` before either side moves. → **Ops: set `enableApGpExchange: false` in the live controller.yml for launch.**
 
 ---
 

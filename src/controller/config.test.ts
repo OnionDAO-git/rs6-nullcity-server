@@ -79,6 +79,7 @@ describe('controller config', () => {
                 '  maxAttention: 180000',
                 '  startingAttention: 15000',
                 '  attentionPleaThresholdFraction: 0.2',
+                '  enableApGpExchange: false',
             ].join('\n'),
         );
 
@@ -96,6 +97,7 @@ describe('controller config', () => {
         expect(config.economy?.maxAttention).toBe(180000);
         expect(config.economy?.startingAttention).toBe(15000);
         expect(config.economy?.attentionPleaThresholdFraction).toBe(0.2);
+        expect(config.economy?.enableApGpExchange).toBe(false);
     });
 
     it('leaves the attention economy knobs undefined when absent (multiplier 1.0, uncapped)', () => {
@@ -109,6 +111,8 @@ describe('controller config', () => {
         expect(config.economy?.maxAttention).toBeUndefined();
         expect(config.economy?.startingAttention).toBeUndefined();
         expect(config.economy?.attentionPleaThresholdFraction).toBeUndefined();
+        // Absent flag = exchange stays enabled (historical behavior).
+        expect(config.economy?.enableApGpExchange).toBeUndefined();
     });
 
     it('loads Railgun-style knowledge paths from env interpolation', () => {

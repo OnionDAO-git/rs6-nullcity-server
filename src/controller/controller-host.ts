@@ -235,6 +235,9 @@ export class ControllerHost {
         this.economyEventLog = options.economyEventLog || new EconomyEventLog(config.memory.dir);
         this.cityIntegrationService = new CityIntegrationService({
             memoryRoot: config.memory.dir,
+            // SL-6: production gate for the uncapped AP<->GP exchange. Ops
+            // sets economy.enableApGpExchange: false in the live controller.yml.
+            enableApGpExchange: config.economy?.enableApGpExchange,
             getRuntime: resident => this.getRuntime(resident),
             inventory: {
                 inspectResidentGold: resident => this.inspectResidentGold(resident),

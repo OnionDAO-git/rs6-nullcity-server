@@ -1604,6 +1604,63 @@ describe('CityIntegrationService', () => {
         });
     });
 
+    // ── economy.enableApGpExchange production gate (SL-6) ────────────────────
+    // The AP<->GP exchange is an uncapped mint/burn pair — an exploit once
+    // onions are scarce. Ops sets economy.enableApGpExchange: false in the
+    // live controller.yml for launch; default (absent) preserves behavior.
+
+    describe('enableApGpExchange gate (SL-6)', () => {
+        function gatedService(enableApGpExchange: boolean | undefined): CityIntegrationService {
+            return new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-05-27T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => {
+                        burnCalls += 1;
+                        gold -= amount;
+                        return { resident, itemId: 995, burnedAmount: amount, remainingAmount: gold };
+                    },
+                },
+                birth: {
+                    birthResident: async input => ({ resident: input.residentName, created: true, connected: true }),
+                },
+                enableApGpExchange,
+            });
+        }
+
+        it('rejects the exchange with a clean disabled error when the flag is false', async () => {
+            const gated = gatedService(false);
+
+            await expect(gated.exchangeApForGp('res:test', { idempotencyKey: 'exch-gated', apAmount: 10, gpAmount: 20 })).rejects.toMatchObject({
+                status: 403,
+                code: 'ap_gp_exchange_disabled',
+            });
+            // Neither side moved: no GP burned, no AP credited.
+            expect(burnCalls).toBe(0);
+            expect(runtime.state.attention).toBe(10);
+        });
+
+        it('keeps the exchange working when the flag is explicitly true', async () => {
+            const enabled = gatedService(true);
+
+            const result = await enabled.exchangeApForGp('res:test', { idempotencyKey: 'exch-enabled', apAmount: 10, gpAmount: 20 });
+
+            expect(result.status).toBe('complete');
+            expect(burnCalls).toBe(1);
+            expect(runtime.state.attention).toBe(20);
+        });
+
+        it('keeps the exchange working when the flag is absent (default true behavior)', async () => {
+            const defaulted = gatedService(undefined);
+
+            const result = await defaulted.exchangeApForGp('res:test', { idempotencyKey: 'exch-default', apAmount: 10, gpAmount: 20 });
+
+            expect(result.status).toBe('complete');
+        });
+    });
+
     // ── soul proposal queue ──────────────────────────────────────────────────
 
     it('soul proposals: create, list, fund, approve, reject, and get through the service facade', async () => {

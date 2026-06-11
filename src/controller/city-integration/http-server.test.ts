@@ -354,6 +354,41 @@ describe('CityIntegration HTTP server', () => {
         expect(runtime.state.attention).toBe(10);
     });
 
+    it('POST /ap-gp-exchanges returns a clean 403 disabled error when economy.enableApGpExchange is false (SL-6)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-05-27T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => {
+                        gold -= amount;
+                        return { resident, itemId: 995, burnedAmount: amount, remainingAmount: gold };
+                    },
+                },
+                birth: {
+                    birthResident: async input => ({ resident: input.residentName, created: true, connected: true }),
+                },
+                enableApGpExchange: false,
+            }),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/residents/res%3Atest/ap-gp-exchanges`, token, {
+            idempotencyKey: 'exchange-http-disabled',
+            apAmount: 50,
+            gpAmount: 25,
+        });
+
+        expect(response.status).toBe(403);
+        expect(response.payload).toMatchObject({ error: 'ap_gp_exchange_disabled' });
+        // Neither side moved: no GP burned, no AP credited.
+        expect(gold).toBe(100);
+        expect(runtime.state.attention).toBe(10);
+    });
+
     it('GET /economy/digest returns AP and GP service activity for dashboard/storyteller readers', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),

@@ -188,6 +188,17 @@ export interface CityIntegrationOptions {
      * Best-effort: errors thrown by the callback are NOT propagated.
      */
     onMessageDelivered?: (event: MessageDeliveredEvent) => void;
+
+    /**
+     * Production gate for the AP<->GP exchange (SL-6). The exchange is an
+     * uncapped mint/burn pair — an exploit surface once onions are the
+     * scarce user-facing currency. Default (absent/true) preserves current
+     * behavior; `false` makes {@link CityIntegrationService.exchangeApForGp}
+     * throw a clean `ap_gp_exchange_disabled` error before either side
+     * moves. Wired from controller.yml `economy.enableApGpExchange`; ops
+     * should set it false in the live controller.yml for launch.
+     */
+    enableApGpExchange?: boolean;
 }
 
 /** Event fired by {@link CityIntegrationService.deliverMessage} after the message
@@ -383,6 +394,13 @@ export class CityIntegrationService {
      * without re-debiting either side.
      */
     async exchangeApForGp(resident: string, input: unknown): Promise<ApGpExchangeRecord> {
+        // SL-6 production gate: the exchange is an uncapped AP<->GP mint/burn
+        // pair. When disabled via economy.enableApGpExchange: false, fail
+        // cleanly BEFORE parsing/burning so neither side ever moves. Default
+        // (undefined) keeps the exchange enabled — current behavior.
+        if (this.options.enableApGpExchange === false) {
+            throw new CityIntegrationError(403, 'ap_gp_exchange_disabled', 'AP/GP exchange is disabled (economy.enableApGpExchange: false)');
+        }
         const residentName = parseResident(resident);
         const request = parseOrThrow(apGpExchangeRequestSchema, input);
         const exchangeId = makeExchangeId(residentName, request.idempotencyKey);

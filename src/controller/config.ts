@@ -79,6 +79,14 @@ export interface ControllerConfig {
          * `attentionPleaThreshold` in src/controller/spark/attention.ts.
          */
         attentionPleaThresholdFraction?: number;
+        /**
+         * Production gate for the AP<->GP exchange (SL-6): an uncapped
+         * mint/burn pair that becomes an exploit once onions are the scarce
+         * user-facing currency. Absent/true = exchange enabled (historical
+         * behavior). Ops should set this FALSE in the live controller.yml
+         * for launch.
+         */
+        enableApGpExchange?: boolean;
     };
 }
 
@@ -338,6 +346,7 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
             maxAttention: readOptionalNumber(readPath(source, ['economy', 'maxAttention'])),
             startingAttention: readOptionalNumber(readPath(source, ['economy', 'startingAttention'])),
             attentionPleaThresholdFraction: readOptionalNumber(readPath(source, ['economy', 'attentionPleaThresholdFraction'])),
+            enableApGpExchange: readOptionalBoolean(readPath(source, ['economy', 'enableApGpExchange'])),
         },
     };
 
