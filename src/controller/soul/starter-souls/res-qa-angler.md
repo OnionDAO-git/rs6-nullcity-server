@@ -16,7 +16,6 @@ aesthetic: damp rope, fish scales, campfire smoke near the river
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3240
   y: 3244

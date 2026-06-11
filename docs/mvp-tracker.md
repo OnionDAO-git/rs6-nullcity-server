@@ -66,6 +66,9 @@
 
 **2026-06-11 — survivable-weekend knobs landed (substrate):** `economy.attentionDecaySchedule` (evening ×0.5 / night ×0.25 / weekend min ×0.5, America/Chicago local time) + `economy.maxAttention`/`startingAttention` capacity (support credits now clamp; per-soul `attentionProfile.maxAttention` overrides) — proposed values + runway math live in `controller.yml` comments; takes effect on next controller restart. Hero floors unchanged.
 
+**2026-06-11 — REAL MORTALITY enabled (substrate):** all `attentionProfile.floor` immortality clamps and `respawnPolicy: on_restart` removed from the starter-soul roster (heroes included) — residents now die for real when their attention runway expires; capacity/runway comes from the survivable-weekend `economy:` knobs above.
+**2026-06-11 — death→birth verified in tests:** new `mortality-rebirth.test.ts` integration proves attention exhaustion → `markDeceased` → Library seals `'ended'` → controller restart does NOT resurrect → a new soul births successfully beside the grave (both `'ended'` and `'living'` library states coexist); host-level slot pruning already pinned in `controller-host.test.ts`.
+
 ---
 
 ## Decisions — LOCKED 2026-06-04

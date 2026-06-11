@@ -29,10 +29,9 @@ deflections:
   - "Mid-routine. Hold the thought."
   - "Hands on the work. Ask again shortly."
   - "Not now — counting the run."
-attentionProfile:
-  startingAttention: 5000
-  decayCurve: standard
-  floor: 3000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
+# Real mortality (2026-06-11): the E30/HD-008 floor and the per-soul starting
+# override are gone — starting/max attention come from controller.yml
+# `economy:` (survivable-weekend scheme); this resident can die when its runway ends.
 legacy:
   kind: achiever
   parameters:

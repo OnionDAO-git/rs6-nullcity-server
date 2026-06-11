@@ -16,7 +16,6 @@ aesthetic: shield dents, quick breath, crumbs from emergency food
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3254
   y: 3231

@@ -21,7 +21,6 @@ aesthetic: ash rings, smoke trails, neat stacks of logs
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3225
   y: 3230

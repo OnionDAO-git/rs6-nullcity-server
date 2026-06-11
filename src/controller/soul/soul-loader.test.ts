@@ -30,12 +30,36 @@ describe('SoulLoader', () => {
         expect(soul.frontmatter.attentionProfile?.decayCurve).toBe('gentle');
     });
 
-    it('loads the starter agent with restart respawn enabled for local QA', () => {
+    it('loads the starter agent without a restart respawn policy (real mortality)', () => {
         const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
 
         const soul = loader.load('res:agent');
 
-        expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+        expect(soul.frontmatter.respawnPolicy).toBeUndefined();
+    });
+
+    describe('real mortality roster sweep (2026-06-11 maintainer decision)', () => {
+        // "We should make agents actually die so new SOULs can be born."
+        // No cohort soul may carry an attention floor (immortality clamp) or
+        // an on_restart respawn policy (resurrection on controller restart).
+        // Capacity/runway now comes from the survivable-weekend economy
+        // knobs in controller.yml (decay schedule + startingAttention +
+        // maxAttention), not from per-soul immortality.
+        const loader = new SoulLoader(path.join(__dirname, 'starter-souls'));
+
+        it('no starter soul has an attentionProfile.floor', () => {
+            for (const name of loader.listResidentNames()) {
+                const soul = loader.load(name);
+                expect({ name, floor: soul.frontmatter.attentionProfile?.floor ?? 0 }).toEqual({ name, floor: 0 });
+            }
+        });
+
+        it('no starter soul respawns on controller restart', () => {
+            for (const name of loader.listResidentNames()) {
+                const soul = loader.load(name);
+                expect({ name, respawnPolicy: soul.frontmatter.respawnPolicy }).toEqual({ name, respawnPolicy: undefined });
+            }
+        });
     });
 
     it('lists resident names from valid soul files', () => {
@@ -133,7 +157,7 @@ describe('SoulLoader', () => {
                 const soul = loader.load(name);
                 expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
                 expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
-                expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+                expect(soul.frontmatter.respawnPolicy).toBeUndefined();
                 expect(soul.frontmatter.attentionProfile?.startingAttention).toBeGreaterThanOrEqual(30000);
             }
         });
@@ -191,7 +215,7 @@ describe('SoulLoader', () => {
             expect(planner?.timeoutMs).toBeGreaterThanOrEqual(90000);
             expect(soul.frontmatter.modules).toEqual([{ id: 'onion.runescape.standard', enabled: true }]);
             expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
-            expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+            expect(soul.frontmatter.respawnPolicy).toBeUndefined();
         });
 
         it('res:qa-firemaker starts with axe and tinderbox for the chop-fire loop', () => {
@@ -205,7 +229,7 @@ describe('SoulLoader', () => {
             const soul = loader.load('res:qa-survivor-foodless');
             expect(soul.frontmatter.name).toBe('res:qa-survivor-foodless');
             expect(soul.frontmatter.behavior?.kind).toBe('hybrid-agent');
-            expect(soul.frontmatter.respawnPolicy).toBe('on_restart');
+            expect(soul.frontmatter.respawnPolicy).toBeUndefined();
             const inventory = soul.frontmatter.initialInventory ?? [];
             expect(inventory).toEqual(expect.arrayContaining([expect.objectContaining({ itemId: 303 })])); // small net
             expect(inventory).not.toContainEqual(expect.objectContaining({ itemId: 315 })); // no cooked shrimp

@@ -16,7 +16,6 @@ aesthetic: coin clink, folded notes, stacked logs near the castle path
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3227
   y: 3230
