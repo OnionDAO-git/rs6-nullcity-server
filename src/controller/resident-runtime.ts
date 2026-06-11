@@ -54,7 +54,13 @@ import {
 import { produceBroadcastLetter, produceAttentionPleaLetter, type Letter } from './patron/letters-producer';
 import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
-import { initialAttention, spendAttention } from './spark/attention';
+import {
+    decayScheduleMultiplier,
+    initialAttention,
+    resolveAttentionCapacity,
+    spendAttention,
+    type AttentionEconomyConfig,
+} from './spark/attention';
 import { explorationGoal, isStandaloneFiremakingGoal } from './spark/runescape-brain-planner';
 import { scoreOrientationAction, OrientationStallTracker } from './spark/orientation-scorer';
 import { createSparkRuntimeFacets } from './spark/runtime-facets';
@@ -137,6 +143,17 @@ export interface ResidentRuntimeOptions {
         thinkingMs?: number;
         actionMs?: number;
     };
+    /**
+     * Survivable-weekend attention economy defaults from controller.yml
+     * `economy:` (decay schedule + capacity + starting default). Absent =
+     * historical behavior (multiplier 1.0, uncapped bar).
+     */
+    economy?: AttentionEconomyConfig;
+    /**
+     * Injectable wall clock (epoch ms) for the decay schedule. Defaults
+     * to Date.now. Tests pass a fixed clock to pin the schedule window.
+     */
+    now?: () => number;
     loreBus?: LoreBus;
     /**
      * Fired exactly once when this resident is first observed deceased (after
@@ -205,11 +222,14 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     private readonly gatewayActionResults = new Map<string, GatewayActionResultObservation>();
     private readonly gatewayActionResultWaiters = new Map<string, Set<(observation: GatewayActionResultObservation) => void>>();
     private readonly gatewayActionResultListener?: GatewayActionResultListener;
+    /** Injected wall clock — drives the survivable-weekend decay schedule. */
+    private readonly now: () => number;
 
     constructor(private readonly options: ResidentRuntimeOptions) {
         this.name = options.soul.frontmatter.name;
         this.evidence = options.evidence;
-        const startingAttention = initialAttention(options.soul.frontmatter.attentionProfile);
+        this.now = options.now || (() => Date.now());
+        const startingAttention = initialAttention(options.soul.frontmatter.attentionProfile, options.economy);
         this.state = options.stateStore.load(
             this.name,
             startingAttention,
@@ -262,6 +282,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 moduleTelemetry: entry => options.inferenceLog.append(this.name, { ...entry }),
                 patronRegistry: this.patronRegistry,
                 dispatchAttentionPlea,
+                // Survivable weekend: Spark.tick is the second per-tick decay
+                // site; it needs the same schedule + clock as handlePerception.
+                attentionDecaySchedule: options.economy?.attentionDecaySchedule,
+                now: this.now,
             });
             this.thinking = facets.thinking;
             this.thinkingSparkModule = facets.thinkingSparkModule;
@@ -356,7 +380,14 @@ export class ResidentRuntime implements RoutineCapableRuntime {
     incrementAttention(amount: number): void {
         const attentionBefore = this.state.attention;
         const wasAttentionExhausted = this.state.deceased?.cause === 'attention_exhausted';
-        addAttention(this.state, amount);
+        // Survivable weekend: support credits clamp to the attention-bar
+        // capacity (soul attentionProfile.maxAttention, else the
+        // economy.maxAttention config default, else uncapped).
+        addAttention(
+            this.state,
+            amount,
+            resolveAttentionCapacity(this.options.soul.frontmatter.attentionProfile, this.options.economy?.maxAttention),
+        );
         if (wasAttentionExhausted && this.state.attention > 0) {
             this.pendingEvents.push({
                 kind: 'attention_topup',
@@ -464,7 +495,10 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             this.state.attention = spendAttention(
                 this.state.attention,
                 this.options.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
-                1,
+                // Survivable weekend: scale idle decay by the local-time
+                // schedule (evening/night/weekend run slower). 1.0 when no
+                // schedule is configured.
+                decayScheduleMultiplier(this.options.economy?.attentionDecaySchedule, this.now()),
                 // E30 / HD-008: per-tick decay respects the optional soul floor
                 // so heroes never die from idle decay alone.
                 this.options.soul.frontmatter.attentionProfile?.floor,
@@ -800,7 +834,7 @@ export class ResidentRuntime implements RoutineCapableRuntime {
             return;
         }
 
-        const startingAttention = initialAttention(this.options.soul.frontmatter.attentionProfile);
+        const startingAttention = initialAttention(this.options.soul.frontmatter.attentionProfile, this.options.economy);
         const external = this.options.stateStore.load(
             this.name,
             startingAttention,

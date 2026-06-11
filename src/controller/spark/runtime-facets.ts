@@ -6,6 +6,7 @@ import type { PlanStore } from '../intelligence/plan-store';
 import { NervousSystem } from '../nervous-system';
 import type { Soul } from '../soul/soul-schema';
 import { createThinkingModuleSelection, type ThinkingModule } from '../thinking';
+import type { AttentionDecayScheduleConfig } from './attention';
 import { createSparkModuleTelemetry, type SparkModuleTelemetry, type SparkModuleTelemetryLogEntry } from './module-telemetry';
 import { PatronRegistry } from '../patron/patron-registry';
 import {
@@ -29,6 +30,10 @@ export interface SparkRuntimeFacetOptions {
     patronRegistry?: PatronRegistry;
     /** Forwarded to {@link NervousSystem} options (LB-H2R-4p77). */
     dispatchAttentionPlea?: () => void;
+    /** Survivable-weekend decay schedule, forwarded to the Spark thinking module. */
+    attentionDecaySchedule?: AttentionDecayScheduleConfig;
+    /** Injectable wall clock (epoch ms), forwarded to the Spark thinking module. */
+    now?: () => number;
 }
 
 export interface SparkRuntimeFacets {

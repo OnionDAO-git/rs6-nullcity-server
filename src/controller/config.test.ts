@@ -60,6 +60,54 @@ describe('controller config', () => {
         expect(config.economy?.onionsPerStandingPoint).toBe(10);
     });
 
+    it('loads the survivable-weekend attention knobs from economy config', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
+        const configPath = path.join(root, 'controller.yml');
+        fs.writeFileSync(
+            configPath,
+            [
+                'economy:',
+                '  onionsPerStandingPoint: 10',
+                '  attentionDecaySchedule:',
+                '    timezone: America/Chicago',
+                '    weekendMultiplier: 0.5',
+                '    eveningMultiplier: 0.5',
+                '    nightMultiplier: 0.25',
+                '    eveningStartHour: 18',
+                '    nightStartHour: 22',
+                '    nightEndHour: 8',
+                '  maxAttention: 180000',
+                '  startingAttention: 15000',
+            ].join('\n'),
+        );
+
+        const config = loadControllerConfig(configPath);
+
+        expect(config.economy?.attentionDecaySchedule).toEqual({
+            timezone: 'America/Chicago',
+            weekendMultiplier: 0.5,
+            eveningMultiplier: 0.5,
+            nightMultiplier: 0.25,
+            eveningStartHour: 18,
+            nightStartHour: 22,
+            nightEndHour: 8,
+        });
+        expect(config.economy?.maxAttention).toBe(180000);
+        expect(config.economy?.startingAttention).toBe(15000);
+    });
+
+    it('leaves the attention economy knobs undefined when absent (multiplier 1.0, uncapped)', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
+        const configPath = path.join(root, 'controller.yml');
+        fs.writeFileSync(configPath, ['economy:', '  onionsPerStandingPoint: 10'].join('\n'));
+
+        const config = loadControllerConfig(configPath);
+
+        expect(config.economy?.attentionDecaySchedule).toBeUndefined();
+        expect(config.economy?.maxAttention).toBeUndefined();
+        expect(config.economy?.startingAttention).toBeUndefined();
+    });
+
     it('loads Railgun-style knowledge paths from env interpolation', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-config-'));
         const configPath = path.join(root, 'controller.yml');

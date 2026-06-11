@@ -4013,6 +4013,80 @@ describe('ResidentRuntime modules', () => {
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
 
+    it('scales per-tick decay by the survivable-weekend schedule using the injected clock', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-decay-schedule-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 100;
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-noop' })),
+        } as unknown as ResidentBody;
+
+        // Sat 2026-06-13 23:00 CDT — weekend night → min(0.5, 0.25) = 0.25.
+        const weekendNight = Date.parse('2026-06-14T04:00:00Z');
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 100, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            economy: { attentionDecaySchedule: { timezone: 'America/Chicago' } },
+            now: () => weekendNight,
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [], skills: {} },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        // standard curve is 1/tick; weekend-night multiplier 0.25 → -0.25.
+        expect(state.attention).toBe(99.75);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('clamps patron support credits to the configured attention capacity', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-attention-capacity-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 100;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            economy: { maxAttention: 500 },
+        });
+
+        runtime.incrementAttention(10_000);
+
+        expect(state.attention).toBe(500);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
     it('submits an attention logout and skips thinking when attention is exhausted', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-attention-logout-memory-'));
 

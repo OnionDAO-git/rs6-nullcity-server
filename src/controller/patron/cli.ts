@@ -9,6 +9,7 @@ import { PatronGateway, type PatronEventOutcome } from './patron-gateway';
 import { LettersStore } from './letters-store';
 import { SoulLoader } from '../soul/soul-loader';
 import { RuntimeStateStore, addAttention, residentSlug } from '../memory/runtime-state';
+import { resolveAttentionCapacity } from '../spark/attention';
 import { LibraryUpdater } from '../evidence';
 import { STANDING_TIERS } from './standing-ledger';
 import { LoreBus } from '../lore/lore-bus';
@@ -495,7 +496,10 @@ function buildResidentBundle(
         }),
         getEvidence: () => evidence,
         incrementAttention: (amount: number) => {
-            addAttention(state, amount);
+            // Survivable weekend: offline grants respect the same attention
+            // capacity as the live runtime (soul maxAttention, else
+            // economy.maxAttention config default, else uncapped).
+            addAttention(state, amount, resolveAttentionCapacity(soul.frontmatter.attentionProfile, config.economy?.maxAttention));
             stateStore.save(state);
             console.log(`[patron:${verbTag}] Attention for "${residentName}" increased by ${amount}. New attention: ${state.attention}.`);
         },

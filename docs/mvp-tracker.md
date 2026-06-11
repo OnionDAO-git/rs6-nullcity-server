@@ -64,6 +64,8 @@
 | **MVP-5** | **Register test/real patron handles** so greetings + standing + letters attach to names (only 2 test patrons registered today; HD-011). | Ops / James | No (but needed for named demo) | S | `patron:bulk-register --file <handles>`; handle resolves in greeting + inbox | OPEN |
 | **MVP-6** | **Curate the live cohort.** 15 residents OFFLINE (test souls `restart-test`/`wf-verify-born`/`qa-angler` etc. + offline heroes) make the roster look half-dead on the crowd screen. Trim test souls from the active set. | Codex (config) | No (polish) | S | Crowd screen shows a clean roster of active residents + online heroes | OPEN |
 
+**2026-06-11 — survivable-weekend knobs landed (substrate):** `economy.attentionDecaySchedule` (evening ×0.5 / night ×0.25 / weekend min ×0.5, America/Chicago local time) + `economy.maxAttention`/`startingAttention` capacity (support credits now clamp; per-soul `attentionProfile.maxAttention` overrides) — proposed values + runway math live in `controller.yml` comments; takes effect on next controller restart. Hero floors unchanged.
+
 ---
 
 ## Decisions — LOCKED 2026-06-04

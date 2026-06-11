@@ -546,6 +546,10 @@ export class ControllerHost {
             loreBus: this.loreBus,
             factionStockpile: this.factionStockpile,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
+            // Survivable weekend: thread the attention economy knobs (decay
+            // schedule + capacity + starting default) from controller.yml
+            // `economy:` into every resident runtime.
+            economy: this.config.economy,
             onDeath: (name: string, cause: string) => this.handleResidentDeath(name, cause),
         };
         this.runtimes.set(
