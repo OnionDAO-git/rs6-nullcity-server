@@ -14,19 +14,21 @@
 #   nullcity-game         game server (SUPERVISED, 4GB heap, auto-restart)
 #   nullcity-controller   controller (SUPERVISED, auto-restart) + MCP + City API
 #   nullcity-storyteller  Storyteller scheduler (SUPERVISED, 30m by default)
-#   nullcity-dashboard-server / -web   the dashboard BFF + SPA
+#   nullcity-dashboard-server / -web   the dashboard BFF + SPA (SUPERVISED)
+#   nullcity-landing      landing-2026 dev server :5173 (SUPERVISED)
 #
 # Idempotent: quits any existing same-named screens first.
 set -uo pipefail
 SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DASH_DIR="$SERVER_DIR/../rs6-nullcity-residents-dashboard"
+LANDING_DIR="$SERVER_DIR/../landing-2026"
 LOG=/tmp/nullcity-runtime; mkdir -p "$LOG"
 
 quit() { screen -X -S "$1" quit >/dev/null 2>&1 || true; }
 up() { lsof -tiTCP:"$1" -sTCP:LISTEN -nP >/dev/null 2>&1; }
 
 echo "[bring-up] stopping any existing Null City screens…"
-for s in nullcity-infra nullcity-game nullcity-controller nullcity-storyteller nullcity-dashboard-server nullcity-dashboard-web; do quit "$s"; done
+for s in nullcity-infra nullcity-game nullcity-controller nullcity-storyteller nullcity-dashboard-server nullcity-dashboard-web nullcity-landing; do quit "$s"; done
 sleep 3
 # clear a stale controller lock if no process holds the port
 if [ -f "$SERVER_DIR/data/controller/memory/nullcity-controller.lock" ] && ! up 43596; then
@@ -56,13 +58,19 @@ else
   echo "[bring-up] 4/5 Storyteller scheduler disabled by NULLCITY_ENABLE_STORYTELLER_SCHEDULER=0"
 fi
 
-echo "[bring-up] 5/5 dashboard (BFF + web)…"
+echo "[bring-up] 5/5 dashboard (BFF + web, SUPERVISED) + landing…"
 if [ -d "$DASH_DIR" ]; then
-  screen -dmS nullcity-dashboard-server bash -lc "cd '$DASH_DIR/packages/server' && DASHBOARD_WEB_DEV_ORIGIN=http://127.0.0.1:5174 bun --watch src/index.ts >> '$LOG/dashboard-server.log' 2>&1"
-  screen -dmS nullcity-dashboard-web bash -lc "cd '$DASH_DIR' && bun run dev:web >> '$LOG/dashboard-web.log' 2>&1"
-  echo "[bring-up]   dashboard started (City API wiring comes from packages/server/.env)"
+  screen -dmS nullcity-dashboard-server bash -lc "cd '$SERVER_DIR' && bash scripts/runtime/start-dashboard-supervised.sh bff"
+  screen -dmS nullcity-dashboard-web bash -lc "cd '$SERVER_DIR' && bash scripts/runtime/start-dashboard-supervised.sh web"
+  echo "[bring-up]   dashboard started (supervised; City API wiring comes from packages/server/.env; logs in ~/nullcity-logs)"
 else
   echo "[bring-up]   WARN dashboard repo not found at $DASH_DIR — start it manually"
+fi
+if [ -d "$LANDING_DIR" ]; then
+  screen -dmS nullcity-landing bash -lc "cd '$SERVER_DIR' && bash scripts/runtime/start-dashboard-supervised.sh landing"
+  echo "[bring-up]   landing dev server started (supervised, :5173; logs in ~/nullcity-logs)"
+else
+  echo "[bring-up]   WARN landing repo not found at $LANDING_DIR — start it manually"
 fi
 
 echo "[bring-up] done. Verify:  bash scripts/post-restart-smoke.sh"

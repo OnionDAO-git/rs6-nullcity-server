@@ -167,5 +167,37 @@ curl -fsS http://127.0.0.1:8787/api/overview >/dev/null
 curl -fsS http://127.0.0.1:5174/ >/dev/null
 ```
 
+## Release-day bring-up (added 2026-06-11)
+
+Background (2026-06-11 SRE audit): a host reboot took the whole city down —
+nothing autostarts; the dashboard BFF (:8787) ran unsupervised and crashed
+unattended; runtime logs lived in /tmp (wiped on reboot); and there were NO
+backups of Postgres or `data/controller/memory`. The scripts below close those
+holes. Run the bring-up IN ORDER after any reboot or before doors open.
+
+1. **OrbStack** — make sure the docker daemon is up: `docker info >/dev/null` (open OrbStack if it fails).
+2. **Database** — `cd /Users/james/Code/OnionDAO/landing-2026 && docker compose up -d db`, then verify `docker exec landing-2026-db-1 pg_isready -U oniondao`.
+3. **Inference** — `curl -m5 http://inf.nullcity.ai:1234/v1/models` (must return a model list before residents wake).
+4. **Build** — `cd /Users/james/Code/OnionDAO/rs6-nullcity-server && npm run build` (dist/ must match the checked-out source).
+5. **Stack** — `bash scripts/runtime/start-all-supervised.sh` (now also supervises the dashboard BFF/SPA and the landing dev server :5173 via `scripts/runtime/start-dashboard-supervised.sh`).
+6. **Landing** — brought up by step 5 (screen `nullcity-landing`); verify `curl -fsS http://127.0.0.1:5173/ >/dev/null`.
+7. **Seed** — `cd /Users/james/Code/OnionDAO/landing-2026 && bun scripts/seed-nullcity-mvp.ts` (needs `DATABASE_URL` from `.env`; idempotent points-mode seed).
+8. **Smoke** — `bash scripts/post-restart-smoke.sh` and `bash scripts/runtime/healthcheck-nullcity.sh` (both must be green).
+
+Crons to install on the runtime host (`crontab -e`):
+
+```cron
+# hourly backup: pg_dump oniondao + nullcity_city, tar of data/controller/memory, keep last 48
+0 * * * * /bin/bash /Users/james/Code/OnionDAO/rs6-nullcity-server/scripts/runtime/backup-nullcity.sh >> "$HOME/nullcity-logs/backup.log" 2>&1
+# 2-minute health probe; HEAL=1 re-runs start-all-supervised.sh on failure (10-min heal cooldown)
+*/2 * * * * HEAL=1 /bin/bash /Users/james/Code/OnionDAO/rs6-nullcity-server/scripts/runtime/healthcheck-nullcity.sh >> "$HOME/nullcity-logs/healthcheck.log" 2>&1
+```
+
+Log locations: game/controller/storyteller supervised logs still live under
+`/tmp/nullcity-runtime` — **those die on reboot**. The new dashboard/landing
+supervisors, the backup script, and the healthcheck log to `~/nullcity-logs`
+(override with `NULLCITY_RUNTIME_LOG_DIR`), which survives reboots. Backups
+land in `~/nullcity-backups` (override `NULLCITY_BACKUP_DIR`).
+
 ## Deploy note (2026-06-01 00:40 CDT, claude)
 - Controller restarted from HEAD (f52209b6) to ship FIX-BORN-RESIDENT-PERSIST-1 + FIX-BIRTH-GOAL-CONTRACT-1 (James-authorized). Old controller (pid 58896, screen `nullcity-controller-codex`) gracefully stopped; new controller now runs in screen **`nullcity-controller`** (log `/tmp/nullcity-runtime/controller-claude-deploy.log`). Same flags: `--mcp-http-port=43610 --letters-http-port=43596 --wall-redact --city-http-port=43611 --city-http-token=operator-token`. Game/gateway (`nullcity-game-codex`, 43594/43595) untouched. Both fixes live-verified end-to-end (born resident survives reconcile + thinks; goal->Library saved moment fires).
