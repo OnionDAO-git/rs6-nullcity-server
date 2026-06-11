@@ -351,7 +351,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
     });
 
     describe('public-surface filters (PRE-MERGE-POLISH)', () => {
-        it('GET /v1/wall/snapshot drops res-qa-* residents from the public roster', async () => {
+        it('GET /v1/wall/snapshot drops benchmark synthetics but keeps the qa-* roster (HR-7)', async () => {
             server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
             writeRuntimeState(tmp, 'res-hans', { attention: 1000 });
             writeRuntimeState(tmp, 'res-qa-cook', { attention: 800 });
@@ -361,8 +361,9 @@ describe('letters HTTP server (EVENT-D2a)', () => {
 
             expect(response.status).toBe(200);
             const payload = JSON.parse(response.body);
-            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug);
-            expect(slugs).toEqual(['res-hans']);
+            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug).sort();
+            // qa-cook is a live roster resident; only the benchmark synthetic is hidden.
+            expect(slugs).toEqual(['res-hans', 'res-qa-cook']);
         });
 
         it('GET /v1/wall/snapshot dedupes recentLetters by subject', async () => {
@@ -398,7 +399,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(new Set(subjects).size).toBe(2);
         });
 
-        it('GET /v1/library drops res-qa-* portraits from the public list', async () => {
+        it('GET /v1/library drops benchmark portraits but keeps the qa-* roster (HR-7)', async () => {
             server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
             writePortraitJson(tmp, 'res-hans', {
                 residentName: 'res:hans',
@@ -418,13 +419,23 @@ describe('letters HTTP server (EVENT-D2a)', () => {
                 patrons: [],
                 wants: { current: [] },
             });
+            writePortraitJson(tmp, 'res-bmk_fire_5m_xxx', {
+                residentName: 'res:bmk_fire_5m_xxx',
+                currentState: 'deceased',
+                livesCount: 1,
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z' },
+                voice: { quotes: [] },
+                patrons: [],
+                wants: { current: [] },
+            });
 
             const response = await get(server.url.replace('/v1/inbox', '/v1/library'));
 
             expect(response.status).toBe(200);
             const payload = JSON.parse(response.body);
-            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug);
-            expect(slugs).toEqual(['res-hans']);
+            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug).sort();
+            // qa-cook is a live roster resident; only the benchmark synthetic is hidden.
+            expect(slugs).toEqual(['res-hans', 'res-qa-cook']);
         });
     });
 
@@ -781,6 +792,31 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.cause).toBe('attention_exhausted');
             expect(entry.diedAt).toBe('2026-05-26T10:00:00.000Z');
             expect(entry.livedTicks).toBe(1234);
+        });
+
+        it('hides dead test/benchmark souls but keeps the real roster, incl. qa-* (HR-7)', async () => {
+            const deceased = {
+                cause: 'attention_exhausted',
+                date: '2026-05-26T10:00:00.000Z',
+                tick: 99,
+                processed: true,
+            };
+            writeRuntimeState(tmp, 'res-qa-cook', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-bmk_fire_5m_002e9qp0', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-restart-test', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-wf-verify-born', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-e2e-letters-1', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-patron-loop-smoke', { attention: 0, tick: 99, deceased });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/graveyard'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { deceased: Array<{ slug: string }>; total: number };
+            // qa-cook is the live cast: its death is real and public. The
+            // benchmark/verification artifacts never reach the graveyard wall.
+            expect(payload.deceased.map(d => d.slug)).toEqual(['res-qa-cook']);
+            expect(payload.total).toBe(1);
         });
     });
 

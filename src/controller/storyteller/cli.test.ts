@@ -314,7 +314,7 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(revivedIdx).toBeLessThan(skillUpIdx);
     });
 
-    it('filters synthetic QA and benchmark residents from public-canon live digests', () => {
+    it('filters synthetic benchmark residents from public-canon live digests but keeps the qa-* roster (HR-7)', () => {
         writeRuntimeState(memoryRoot, 'res-hans', {
             resident: 'res:hans',
             attention: 5_000,
@@ -355,7 +355,7 @@ describe('storyteller:dry-run CLI live source', () => {
             { schemaVersion: 1, ts: '2026-05-30T00:03:00.000Z', tick: 10, kind: 'say', text: 'The courtyard is awake.' },
         ]);
         writeLibraryEvents(memoryRoot, 'res-qa-cook', [
-            { schemaVersion: 1, ts: '2026-05-30T00:04:00.000Z', tick: 20, kind: 'say', text: 'QA fixture should stay private.' },
+            { schemaVersion: 1, ts: '2026-05-30T00:04:00.000Z', tick: 20, kind: 'say', text: 'Stew is ready for the lunch rush.' },
         ]);
         writeLibraryEvents(memoryRoot, 'res-bmk_fire_5m_deadbeef', [
             { schemaVersion: 1, ts: '2026-05-30T00:05:00.000Z', tick: 30, kind: 'stuck_recovered' },
@@ -373,11 +373,13 @@ describe('storyteller:dry-run CLI live source', () => {
             { now: () => new Date('2026-05-30T00:10:00.000Z') },
         );
 
-        expect(result.digest.systemHealth.totalResidents).toBe(1);
-        expect(result.digest.residents.map(resident => resident.residentName)).toEqual(['res:hans']);
-        expect(result.digest.miscEvents.map(event => event.residentName)).toEqual(['res:hans']);
+        // HR-7: the qa-* roster (qa-cook, qa-woodcutter, ...) is the LIVE CAST
+        // and stays narratable; only clear test patterns (the benchmark
+        // synthetic here) are filtered from the public digest.
+        expect(result.digest.systemHealth.totalResidents).toBe(2);
+        expect(result.digest.residents.map(resident => resident.residentName)).toEqual(['res:hans', 'res:qa-cook']);
+        expect(result.digest.miscEvents.map(event => event.residentName).sort()).toEqual(['res:hans', 'res:qa-cook']);
         expect(result.digest.stuckEvents).toHaveLength(0);
-        expect(result.summary).not.toContain('res:qa-cook');
         expect(result.summary).not.toContain('res:bmk_fire_5m_deadbeef');
     });
 

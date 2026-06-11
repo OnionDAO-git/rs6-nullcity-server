@@ -247,9 +247,12 @@ async function handle(
     }
 
     if (isGraveyardRoute) {
+        // Public surface (HR-7) — a dead test/benchmark soul must never earn
+        // a public epitaph. Real roster residents (incl. qa-*) are retained.
         const deceased = readGraveyardEntries(options.lettersRoot as string, {
             residentIds: options.residentIds,
             soulsDir: options.soulsDir,
+            excludeSynthetic: true,
         });
         writeJson(response, 200, { deceased, total: deceased.length, asOf: new Date().toISOString() });
         return;

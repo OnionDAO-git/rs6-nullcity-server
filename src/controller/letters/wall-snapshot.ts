@@ -5,6 +5,7 @@ import { FACTIONS, type FactionId } from '../factions/factions';
 import { readFactionStockpileSnapshot } from '../factions/stockpile-ledger';
 import type { Letter } from '../patron/letters-producer';
 import { SoulLoader } from '../soul/soul-loader';
+import { isSyntheticSlug } from './synthetic-residents';
 
 /**
  * One deceased resident's data for the IRL graveyard wall (N4).
@@ -35,10 +36,15 @@ export interface GraveyardEntry {
  * Read all deceased residents from `lettersRoot` and return them sorted
  * most-recently-deceased first. Resilient: missing dirs, unreadable files,
  * and malformed JSON are skipped silently.
+ *
+ * @param options.excludeSynthetic When true, residents whose slug matches
+ *   {@link SYNTHETIC_SLUG_PATTERN} (benchmark/test artifacts) are omitted so
+ *   a dead test soul never earns a public epitaph (HR-7). Used by the public
+ *   `/v1/graveyard` route. Default `false` preserves operator/debug views.
  */
 export function readGraveyardEntries(
     lettersRoot: string,
-    options: { residentIds?: readonly string[]; soulsDir?: string },
+    options: { residentIds?: readonly string[]; soulsDir?: string; excludeSynthetic?: boolean },
 ): GraveyardEntry[] {
     let entries: fs.Dirent[];
     try {
@@ -62,6 +68,9 @@ export function readGraveyardEntries(
         }
         const slug = entry.name;
         if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
+        if (options.excludeSynthetic && isSyntheticSlug(slug)) {
             continue;
         }
         const statePath = path.join(lettersRoot, slug, 'runtime-state.json');
@@ -371,18 +380,10 @@ export interface BuildWallSnapshotOptions {
     dedupeBySubject?: boolean;
 }
 
-/**
- * Slug pattern for residents that should be hidden from public-facing surfaces.
- * Covers QA fixture residents (`res-qa-*`), benchmark synthetics (`res-bmk_*`),
- * and known test/verification residents that predate the qa- prefix convention.
- * Canonical demo residents like `res-agent` are intentionally NOT matched —
- * they're real demo souls, not fixtures.
- */
-export const SYNTHETIC_SLUG_PATTERN = /^res-(qa-|bmk_|loop-check|smoke-born|wf-verify-born|death-test|restart-test|verify-born)/;
-
-export function isSyntheticSlug(slug: string): boolean {
-    return SYNTHETIC_SLUG_PATTERN.test(slug);
-}
+// HR-7: the synthetic-resident predicate is shared across every public
+// surface (wall, library, graveyard, epitaph broadcast, storyteller digest).
+// Re-exported here for backward compatibility with existing importers.
+export { SYNTHETIC_SLUG_PATTERN, isSyntheticSlug } from './synthetic-residents';
 
 /** One resident's live status for the wall roster panel. */
 export interface ResidentSummary {

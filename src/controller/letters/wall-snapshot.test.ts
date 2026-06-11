@@ -678,8 +678,8 @@ describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
         });
     });
 
-    describe('excludeSynthetic (#3 QA/bench filter)', () => {
-        it('drops res-qa-* slugs from the residents roster when enabled', () => {
+    describe('excludeSynthetic (#3 QA/bench filter, HR-7)', () => {
+        it('keeps the real qa-* roster residents (live cast) when enabled', () => {
             writeRuntimeState(root, 'res-hans', { attention: 1000 });
             writeRuntimeState(root, 'res-qa-cook', { attention: 800 });
             writeRuntimeState(root, 'res-qa-woodcutter', { attention: 900 });
@@ -687,14 +687,27 @@ describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
                 now: new Date('2026-05-26T12:00:00.000Z'),
                 excludeSynthetic: true,
             });
-            const slugs = snap.residents.map(r => r.slug);
-            expect(slugs).toEqual(['res-hans']);
+            const slugs = snap.residents.map(r => r.slug).sort();
+            expect(slugs).toEqual(['res-hans', 'res-qa-cook', 'res-qa-woodcutter']);
         });
 
         it('drops res-bmk_* slugs from the residents roster when enabled', () => {
             writeRuntimeState(root, 'res-hans', { attention: 1000 });
             writeRuntimeState(root, 'res-bmk_fire_5m_002e9qp0', { attention: 5 });
             writeRuntimeState(root, 'res-bmk_fire_5m_01h3m5sy', { attention: 5 });
+            const snap = buildWallSnapshot(root, {
+                now: new Date('2026-05-26T12:00:00.000Z'),
+                excludeSynthetic: true,
+            });
+            expect(snap.residents.map(r => r.slug)).toEqual(['res-hans']);
+        });
+
+        it('drops restart-test / wf-verify / e2e- / *-smoke artifacts from the roster when enabled', () => {
+            writeRuntimeState(root, 'res-hans', { attention: 1000 });
+            writeRuntimeState(root, 'res-restart-test', { attention: 5 });
+            writeRuntimeState(root, 'res-wf-verify-cook', { attention: 5 });
+            writeRuntimeState(root, 'res-e2e-letters-1', { attention: 5 });
+            writeRuntimeState(root, 'res-patron-loop-smoke', { attention: 5 });
             const snap = buildWallSnapshot(root, {
                 now: new Date('2026-05-26T12:00:00.000Z'),
                 excludeSynthetic: true,
@@ -716,9 +729,9 @@ describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
 
         it('includes synthetic residents when option is omitted (backward compat)', () => {
             writeRuntimeState(root, 'res-hans', { attention: 1000 });
-            writeRuntimeState(root, 'res-qa-cook', { attention: 800 });
+            writeRuntimeState(root, 'res-bmk_fire_5m_002e9qp0', { attention: 5 });
             const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z') });
-            expect(snap.residents.map(r => r.slug).sort()).toEqual(['res-hans', 'res-qa-cook']);
+            expect(snap.residents.map(r => r.slug).sort()).toEqual(['res-bmk_fire_5m_002e9qp0', 'res-hans']);
         });
 
         it('excludes letters from res:loop-check (senderResident colon form) when excludeSynthetic is true', () => {
@@ -745,7 +758,7 @@ describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
             expect(snap.recentLetters[0].senderResident).toBe('res:fern');
         });
 
-        it('excludes letters from res:qa-* senders when excludeSynthetic is true', () => {
+        it('keeps letters from real res:qa-* roster senders when excludeSynthetic is true (HR-7)', () => {
             store.append({
                 kind: 'standing_tier_crossed',
                 recipient: 'charlie@onion',
@@ -762,7 +775,29 @@ describe('buildWallSnapshot — public polish (PRE-MERGE-POLISH)', () => {
                 dispatchedAt: '2026-05-26T11:01:00.000Z',
             });
             const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z'), excludeSynthetic: true });
-            expect(snap.recentLetters.every(l => l.senderResident !== 'res:qa-woodcutter')).toBe(true);
+            // qa-woodcutter is the live cast — its letters stay on the wall.
+            expect(snap.recentLetters.some(l => l.senderResident === 'res:qa-woodcutter')).toBe(true);
+            expect(snap.recentLetters).toHaveLength(2);
+        });
+
+        it('excludes letters from res:bmk_* benchmark senders when excludeSynthetic is true', () => {
+            store.append({
+                kind: 'standing_tier_crossed',
+                recipient: 'charlie@onion',
+                senderResident: 'res:bmk_fire_5m_002e9qp0',
+                subject: 'bench tier',
+                body: 'body',
+                dispatchedAt: '2026-05-26T11:00:00.000Z',
+                deliveryChannels: ['web-inbox'],
+            });
+            seedLetter({
+                recipient: 'alice@onion',
+                kind: 'standing_tier_crossed',
+                subject: 'real letter',
+                dispatchedAt: '2026-05-26T11:01:00.000Z',
+            });
+            const snap = buildWallSnapshot(root, { now: new Date('2026-05-26T12:00:00.000Z'), excludeSynthetic: true });
+            expect(snap.recentLetters.every(l => l.senderResident !== 'res:bmk_fire_5m_002e9qp0')).toBe(true);
             expect(snap.recentLetters).toHaveLength(1);
         });
 
@@ -810,13 +845,13 @@ describe('readLibraryEntries — public polish (PRE-MERGE-POLISH)', () => {
         );
     }
 
-    it('drops res-qa-* portraits when excludeSynthetic is enabled', () => {
+    it('keeps real qa-* roster portraits when excludeSynthetic is enabled (HR-7: live cast)', () => {
         writePortrait('res-hans', 'res:hans', 'living');
         writePortrait('res-qa-cook', 'res:qa-cook', 'living');
         writePortrait('res-qa-woodcutter', 'res:qa-woodcutter', 'deceased');
 
         const entries = readLibraryEntries(root, { excludeSynthetic: true });
-        expect(entries.map(e => e.slug)).toEqual(['res-hans']);
+        expect(entries.map(e => e.slug).sort()).toEqual(['res-hans', 'res-qa-cook', 'res-qa-woodcutter']);
     });
 
     it('drops res-bmk_* portraits when excludeSynthetic is enabled', () => {
@@ -827,12 +862,22 @@ describe('readLibraryEntries — public polish (PRE-MERGE-POLISH)', () => {
         expect(entries.map(e => e.slug)).toEqual(['res-hans']);
     });
 
+    it('drops wf-verify / e2e- / *-smoke portraits when excludeSynthetic is enabled', () => {
+        writePortrait('res-hans', 'res:hans', 'living');
+        writePortrait('res-wf-verify-born', 'res:wf-verify-born', 'deceased');
+        writePortrait('res-e2e-letters-1', 'res:e2e-letters-1', 'deceased');
+        writePortrait('res-patron-loop-smoke', 'res:patron-loop-smoke', 'deceased');
+
+        const entries = readLibraryEntries(root, { excludeSynthetic: true });
+        expect(entries.map(e => e.slug)).toEqual(['res-hans']);
+    });
+
     it('includes all portraits when option is omitted (backward compat)', () => {
         writePortrait('res-hans', 'res:hans', 'living');
-        writePortrait('res-qa-cook', 'res:qa-cook', 'living');
+        writePortrait('res-bmk_fire_5m_002e9qp0', 'res:bmk_fire_5m_002e9qp0', 'living');
 
         const entries = readLibraryEntries(root);
-        expect(entries.map(e => e.slug).sort()).toEqual(['res-hans', 'res-qa-cook']);
+        expect(entries.map(e => e.slug).sort()).toEqual(['res-bmk_fire_5m_002e9qp0', 'res-hans']);
     });
 
     it('keeps res-agent (canonical demo soul) when excludeSynthetic is enabled', () => {

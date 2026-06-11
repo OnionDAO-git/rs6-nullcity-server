@@ -22,6 +22,7 @@
 ## 2026-06-11 — launch fixes (Claude, `feat-launch-fixes`)
 - **Plea lead-time (real mortality):** no-floor attention plea is now capacity-aware — fires below `economy.attentionPleaThresholdFraction` × capacity (default 15%; absolute fallback 2000 AP when uncapped) instead of the last-second ≤10 AP. New knob: `economy.attentionPleaThresholdFraction`.
 - **AP/GP exchange gate (SL-6):** new `economy.enableApGpExchange` flag (default true); when false, the exchange endpoint returns a clean 403 `ap_gp_exchange_disabled` before either side moves. → **Ops: set `enableApGpExchange: false` in the live controller.yml for launch.**
+- **Test souls fenced off public surfaces (HR-7):** one shared `isSyntheticResident` predicate (`src/controller/letters/synthetic-residents.ts`) now filters bmk_/restart-test/wf-verify/e2e-/*-smoke artifacts from the wall, `/v1/library`, `/v1/graveyard`, the death-letter cascade, and the storyteller digest; the **qa-\* roster (qa-cook, qa-woodcutter, …) is the live cast and is no longer filtered anywhere**.
 
 ---
 

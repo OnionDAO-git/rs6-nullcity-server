@@ -3865,6 +3865,77 @@ describe('ResidentRuntime modules', () => {
         fs.rmSync(evidenceRoot, { recursive: true, force: true });
     });
 
+    it('does NOT dispatch epitaph or broadcast letters when a synthetic test resident dies (HR-7)', async () => {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-synthetic-death-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-synthetic-death-evidence-'));
+        const store = new EvidenceStore('res:bmk_fire_5m_x', evidenceRoot);
+        const memory = new MemoryStore(memoryRoot, '');
+
+        const state = stateFor('res:bmk_fire_5m_x');
+        state.deceased = {
+            date: '2026-05-23T16:00:00.000Z',
+            tick: 100,
+            cause: 'attention_exhausted',
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const onDeath = jest.fn();
+        const sealTrajectory = {
+            beginTick: jest.fn(),
+            endTick: jest.fn(),
+            recordDecision: jest.fn(),
+            recordLegacy: jest.fn((event: unknown) => ({ kind: 'legacy_event', event })),
+        };
+        const sealLibrary = {
+            getPatronHandles: jest.fn(() => ['patron:alice']),
+            observeTrajectory: jest.fn(),
+        };
+        const runtime = new ResidentRuntime({
+            soul: soul('res:bmk_fire_5m_x'),
+            gateway: {} as GatewayClient,
+            memory,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            onDeath,
+            evidence: {
+                store,
+                sessionId: 'session-1',
+                trajectory: sealTrajectory as unknown as TrajectoryBuilder,
+                library: sealLibrary as unknown as LibraryUpdater,
+            },
+        });
+
+        await runtime.onPerception({
+            tick: 101,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [], skills: {} },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        // Death still sticks: it is processed, the host is notified, and the
+        // library is sealed — only the public letter cascade is fenced.
+        expect(state.deceased.processed).toBe(true);
+        expect(onDeath).toHaveBeenCalledWith('res:bmk_fire_5m_x', 'attention_exhausted');
+        expect(sealTrajectory.recordLegacy).toHaveBeenCalled();
+
+        // No epitaph, ribbon, or broadcast letters land in any patron inbox.
+        const lettersStore = new LettersStore(evidenceRoot);
+        expect(lettersStore.readInbox('patron:alice')).toHaveLength(0);
+        expect(fs.existsSync(path.join(evidenceRoot, 'data', 'letters'))).toBe(false);
+
+        fs.rmSync(memoryRoot, { recursive: true, force: true });
+        fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    });
+
     it('triggers broadcast letter building and dispatching on onPerception when state.deceased is set, querying standing ledger and config patrons', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-broadcast-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-broadcast-evidence-'));

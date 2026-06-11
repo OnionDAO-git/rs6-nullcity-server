@@ -27,6 +27,7 @@ import type { GoalContract } from '../city-integration/goal-contract';
 import { GoalContractStore } from '../city-integration/goal-contract';
 import type { RuntimeState } from '../memory/runtime-state';
 import { residentSlug } from '../memory/runtime-state';
+import { isSyntheticResident } from '../letters/synthetic-residents';
 import { buildDigest, buildFixtureDigest, economyEventsToDigestBuckets, goalContractsToDigestGoalEvents } from './digest-builder';
 import { StorytellerStore, buildOperatorSummary } from './store';
 import type { CityEventDigest, ResidentSnapshot } from './types';
@@ -319,7 +320,10 @@ function inferResidentFromSlug(slug: string): string | undefined {
 }
 
 function isSyntheticResidentName(residentName: string): boolean {
-    return /^res-(qa-|bmk_)/.test(residentSlug(residentName));
+    // HR-7: delegate to the shared public-surface predicate. Note the
+    // qa-* roster (qa-cook, qa-woodcutter, ...) is the live cast and is
+    // intentionally narratable — only clear test patterns are filtered.
+    return isSyntheticResident(residentName);
 }
 
 function readLibraryDigestEvents(

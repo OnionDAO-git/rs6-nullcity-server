@@ -52,6 +52,7 @@ import {
     type DeceasedResidentSummary,
 } from './patron/epitaph-dispatcher';
 import { produceBroadcastLetter, produceAttentionPleaLetter, type Letter } from './patron/letters-producer';
+import { isSyntheticResident } from './letters/synthetic-residents';
 import { loadControllerConfig } from './config';
 import type { SparkModule, SparkModuleIdentity, SparkNervousSystem } from './spark/modules';
 import {
@@ -1345,7 +1346,12 @@ export class ResidentRuntime implements RoutineCapableRuntime {
                 preparedEpitaph: loadPreparedEpitaph(this.options.memory, this.name),
             };
             const lettersStoreDir = this.evidence?.store.root;
-            if (lettersStoreDir) {
+            // HR-7: a dying test/benchmark resident must never broadcast
+            // epitaph/death letters into real patron inboxes (the wall, the
+            // inbox pages, and /v1/letters/all all read these). Death still
+            // sticks (onDeath + library seal above run regardless) — only the
+            // public letter cascade is fenced for synthetic residents.
+            if (lettersStoreDir && !isSyntheticResident(this.name)) {
                 const store = new LettersStore(lettersStoreDir);
                 const senderResident = findLivingSibling(this.options.soul.frontmatter.siblings ?? [], r =>
                     this.options.stateStore.isAlive(r),
