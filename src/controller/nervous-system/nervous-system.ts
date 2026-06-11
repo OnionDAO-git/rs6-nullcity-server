@@ -539,7 +539,12 @@ export class NervousSystem {
         const floor = this.options.soul.frontmatter.attentionProfile?.floor ?? 0;
         const threshold = floor > 0 ? floor + LOW_ATTENTION_REQUEST_BUFFER : CRITICAL_ATTENTION_REQUEST_THRESHOLD;
         const attention = this.options.state.attention;
-        const shouldAppeal = floor > 0 ? attention < threshold : attention <= threshold;
+        // The appeal means "I am genuinely fading". The runtime clamp parks
+        // floor-protected residents AT the floor — they can never decline
+        // further, so a resident at (or, clamp aside, below) the floor must
+        // never plead: `attention > floor` is strict. Without it, immortal
+        // floor-parked heroes plead forever (one letter per cooldown window).
+        const shouldAppeal = floor > 0 ? attention > floor && attention < threshold : attention <= threshold;
         if (attention <= 0 || !shouldAppeal) {
             return undefined;
         }
