@@ -44,8 +44,9 @@ echo "[bring-up]   waiting for game gateway :43594…"
 for _ in $(seq 1 60); do up 43594 && break; sleep 2; done
 up 43594 && echo "[bring-up]   game gateway up ✓" || echo "[bring-up]   WARN game gateway not up yet (check $LOG/game-supervised.log)"
 
-echo "[bring-up] 3/4 controller (supervised, MCP + City API)…"
-screen -dmS nullcity-controller bash -lc "cd '$SERVER_DIR' && CONTROLLER_MCP_TOKENS=operator-token CONTROLLER_MCP_OPERATOR_FOR_operator_token=operator-codex bash scripts/start-controller-supervised.sh"
+CONTROLLER_CONFIG_PATH="${NULLCITY_CONTROLLER_CONFIG:-${CONTROLLER_CONFIG:-$SERVER_DIR/controller.yml}}"
+echo "[bring-up] 3/4 controller (supervised, MCP + City API, config=$CONTROLLER_CONFIG_PATH)…"
+screen -dmS nullcity-controller bash -lc "cd '$SERVER_DIR' && NULLCITY_CONTROLLER_CONFIG='$CONTROLLER_CONFIG_PATH' CONTROLLER_MCP_TOKENS=operator-token CONTROLLER_MCP_OPERATOR_FOR_operator_token=operator-codex bash scripts/start-controller-supervised.sh"
 echo "[bring-up]   waiting for controller :43596…"
 for _ in $(seq 1 40); do up 43596 && break; sleep 2; done
 up 43596 && echo "[bring-up]   controller up ✓" || echo "[bring-up]   WARN controller not up yet (check $LOG/controller-supervised.log)"

@@ -4,7 +4,7 @@
 #
 # Probes (each with a 5s budget; read-only, no side effects while healthy):
 #   game gateway        tcp  127.0.0.1:43594
-#   controller letters  GET  http://127.0.0.1:43596/v1/health
+#   controller letters  GET  http://127.0.0.1:43596/v1/wall/snapshot
 #   city API            GET  http://127.0.0.1:43611/api/nullcity/economy/heartbeat
 #                            (sends Authorization: Bearer $CITY_API_TOKEN if set;
 #                             without a token, any HTTP response — incl. 401 — counts as alive)
@@ -22,6 +22,10 @@
 #
 # Cron (every 2 minutes, self-healing):
 #   */2 * * * * HEAL=1 /bin/bash /Users/james/Code/OnionDAO/rs6-nullcity-server/scripts/runtime/healthcheck-nullcity.sh >> "$HOME/nullcity-logs/healthcheck.log" 2>&1
+#
+# Set NULLCITY_CHECK_INFERENCE=1 when you explicitly want the slower model
+# health probe to make the command fail. The default healthcheck is process
+# liveness so HEAL=1 does not restart the whole city for inference-only red.
 set -uo pipefail
 
 SERVER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -56,10 +60,14 @@ else
 fi
 
 # --- controller letters API ---------------------------------------------------
-# Controller /v1/health intentionally includes a real inference probe. Owned q4
-# models can take ~30s even when healthy, so keep the stack-liveness probes fast
-# while allowing this one route to fail accurately instead of timing out early.
-curl_ok "controller" "http://127.0.0.1:43596/v1/health" -m "${NULLCITY_CONTROLLER_HEALTH_MAX_TIME:-35}"
+# /v1/health intentionally includes a real inference probe. Owned models can be
+# slow or unavailable while the stack is still perfectly usable for dashboard,
+# support, wall, and observe flows. Probe a cheap controller route for liveness
+# by default; let operators opt into inference-failing health when needed.
+curl_ok "controller" "http://127.0.0.1:43596/v1/wall/snapshot"
+if [ "${NULLCITY_CHECK_INFERENCE:-0}" = "1" ]; then
+  curl_ok "inference" "http://127.0.0.1:43596/v1/health" -m "${NULLCITY_CONTROLLER_HEALTH_MAX_TIME:-35}"
+fi
 
 # --- city API heartbeat -------------------------------------------------------
 CITY_URL="http://127.0.0.1:43611/api/nullcity/economy/heartbeat"
