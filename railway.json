@@ -1,10 +1,13 @@
 {
     "$schema": "https://railway.com/railway.schema.json",
+    "_note": "DEFAULT config Railway reads on repo-connect: deploys the ALL-IN-ONE image (entire Null City stack in ONE service, ONE Volume at /data). The old 3-service game-trio config is preserved in railway.game.json. See docs/railway-deploy-for-dev.md.",
     "build": {
         "builder": "DOCKERFILE",
-        "dockerfilePath": "Dockerfile.railway"
+        "dockerfilePath": "Dockerfile.railway-allinone"
     },
     "deploy": {
+        "healthcheckPath": "/api/health",
+        "healthcheckTimeout": 300,
         "restartPolicyType": "ON_FAILURE",
         "restartPolicyMaxRetries": 10
     }
