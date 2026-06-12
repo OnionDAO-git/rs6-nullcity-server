@@ -12,6 +12,7 @@ This file tells humans and AI agents which docs are canonical today and which do
 | Deep AI onboarding | `docs/START-HERE-AGENTS.md` | Longer architecture and workstream context. |
 | Multi-agent worker | `docs/agent-coordination.md` | Branch workflow, file locks, status log, issue rules. |
 | Launch readiness | `docs/launch-blockers.md` | Canonical cross-repo registry of everything gating OnionDAO launch (P0/P1/P2), across all repos. |
+| Guided beta cutline | `docs/beta-known-issues.md` | What is safe to demo, what not to claim, and the final go/no-go checks for beta. |
 
 ## Precedence
 
@@ -38,6 +39,7 @@ Do not treat old sprint plans, audits, or evidence notes as task queues unless a
 | `docs/capability-evidence/` | Append-only CQA evidence notes that can later be folded into `resident-capabilities.md`. |
 | `docs/issue-register.md` | Open QA findings, defects, weak evidence, and process issues. |
 | `docs/release-qa-status.md` | QA Marshal merge/readiness gate for `agents/wip` -> `nullcity`. |
+| `docs/beta-known-issues.md` | Guided beta known issues, cut lines, and "what not to demo" list. |
 | `docs/agent-status.md` | Append-only live coordination log. Keep entries short. |
 | `docs/human-decisions.md` | Decisions that need James/Dev/OnionDAO input or later audit. |
 | `docs/launch-blockers.md` | Canonical cross-repo launch-blocker registry (P0/P1/P2). Source of truth for "what's left before OnionDAO launch" across all repos. |
