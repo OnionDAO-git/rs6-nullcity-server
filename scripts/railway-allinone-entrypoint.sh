@@ -149,7 +149,6 @@ echo "[allinone] wrote $CONFIG_DIR/server-config.json (game :$GAME_PORT, gateway
 # enforces this). Inference is REMOTE: base URL + bearer apiKey from env.
 export CONTROLLER_CONFIG="$DATA_ROOT/controller.yml"
 : "${CONTROLLER_INSTANCE_ID:=nullcity-allinone}"
-: "${CONTROLLER_RESIDENT:=res:agent}"
 : "${CONTROLLER_ID:=nullcity-controller}"
 : "${GATEWAY_URL:=ws://127.0.0.1:${AGENT_GATEWAY_PORT}}"
 : "${GATEWAY_AUTH_TOKEN:=${AGENT_GATEWAY_AUTH_TOKEN}}"
@@ -163,6 +162,31 @@ export CONTROLLER_CONFIG="$DATA_ROOT/controller.yml"
 : "${CONTROLLER_KNOWLEDGE_STORAGE_MODE:=persistent-volume}"
 : "${CONTROLLER_ENABLE_AP_GP_EXCHANGE:=false}"
 
+DEFAULT_CONTROLLER_RESIDENTS="res:hans,res:father-aereck,res:mother-anvil,res:wise-old-man,res:qa-woodcutter,res:qa-cook,res:qa-survivor,res:qa-trader,res:qa-scout"
+if [ -z "${CONTROLLER_RESIDENTS:-}" ]; then
+    if [ -n "${CONTROLLER_RESIDENT:-}" ]; then
+        CONTROLLER_RESIDENTS="$CONTROLLER_RESIDENT"
+    else
+        CONTROLLER_RESIDENTS="$DEFAULT_CONTROLLER_RESIDENTS"
+    fi
+fi
+
+CONTROLLER_RESIDENT_LINES=""
+CONTROLLER_RESIDENT_COUNT=0
+IFS=',' read -ra CONTROLLER_RESIDENT_ARRAY <<< "$CONTROLLER_RESIDENTS"
+for resident in "${CONTROLLER_RESIDENT_ARRAY[@]}"; do
+    resident="$(echo "$resident" | xargs)"
+    if [ -n "$resident" ]; then
+        CONTROLLER_RESIDENT_LINES="${CONTROLLER_RESIDENT_LINES}  - ${resident}"$'\n'
+        CONTROLLER_RESIDENT_COUNT=$((CONTROLLER_RESIDENT_COUNT + 1))
+    fi
+done
+
+if [ "$CONTROLLER_RESIDENT_COUNT" -eq 0 ]; then
+    echo "[allinone] ERROR: CONTROLLER_RESIDENTS resolved to an empty resident list." >&2
+    exit 1
+fi
+
 # Gateway auth line only when a token is present (loopback access is tokenless).
 GATEWAY_AUTH_LINE=""
 if [ -n "$GATEWAY_AUTH_TOKEN" ]; then
@@ -174,14 +198,14 @@ cat > "$CONTROLLER_CONFIG" <<EOF
 controller:
   instanceId: ${CONTROLLER_INSTANCE_ID}
 residents:
-  - ${CONTROLLER_RESIDENT}
+${CONTROLLER_RESIDENT_LINES%$'\n'}
 gateway:
   url: ${GATEWAY_URL}
   controllerId: ${CONTROLLER_ID}
 ${GATEWAY_AUTH_LINE}
 souls:
   dir: ${CONTROLLER_SOULS_DIR:-${APP_DIR}/src/controller/soul/starter-souls}
-  discoverResidents: true
+  discoverResidents: false
 memory:
   dir: ${DATA_ROOT}/controller/memory
   qmdBin: ${QMD_BIN:-qmd}
@@ -207,7 +231,7 @@ llm:
 economy:
   enableApGpExchange: ${CONTROLLER_ENABLE_AP_GP_EXCHANGE}
 EOF
-echo "[allinone] wrote $CONTROLLER_CONFIG (memory=$DATA_ROOT/controller/memory inference=${INFERENCE_BASE_URL:-<UNSET>})"
+echo "[allinone] wrote $CONTROLLER_CONFIG (residents=$CONTROLLER_RESIDENT_COUNT memory=$DATA_ROOT/controller/memory inference=${INFERENCE_BASE_URL:-<UNSET>})"
 
 if [ -z "$INFERENCE_BASE_URL" ]; then
     echo "[allinone] WARNING: INFERENCE_BASE_URL is unset — residents will have no brain. Set it (remote URL + INFERENCE_API_KEY)." >&2

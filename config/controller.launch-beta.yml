@@ -1,0 +1,76 @@
+# Launch beta cohort controller config.
+#
+# Use when the goal is a small, narratable resident surface instead of the full
+# development roster:
+#
+#   node dist/controller/index.js --config=config/controller.launch-beta.yml ...
+#
+# Root `controller.yml` is intentionally git-ignored for local/runtime secrets,
+# so this tracked file is the durable WIP source of truth for the launch roster.
+
+residents:
+  - res:hans
+  - res:father-aereck
+  - res:mother-anvil
+  - res:wise-old-man
+  - res:qa-woodcutter
+  - res:qa-cook
+  - res:qa-survivor
+  - res:qa-trader
+  - res:qa-scout
+
+gateway:
+  url: ws://127.0.0.1:43595
+  controllerId: nullcity-controller
+
+souls:
+  dir: ../src/controller/soul/starter-souls
+  discoverResidents: false
+
+memory:
+  dir: ../data/controller/memory
+  qmdBin: qmd
+
+logging:
+  dir: ../data/controller/logs
+  fullPerceptions: false
+
+knowledge:
+  runebenchWikiDir: ../docs/runescape-skill
+
+economy:
+  onionsPerStandingPoint: 10
+  enableApGpExchange: false
+  attentionDecaySchedule:
+    timezone: America/Chicago
+    weekendMultiplier: 0.5
+    eveningMultiplier: 0.5
+    nightMultiplier: 0.25
+    eveningStartHour: 18
+    nightStartHour: 22
+    nightEndHour: 8
+  maxAttention: 180000
+  startingAttention: 15000
+
+inference:
+  maxConcurrent: 2
+
+llm:
+  endpoints:
+    default:
+      baseUrl: http://inf.nullcity.ai:1234
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      maxTokens: 512
+      forceThinking: false
+    spacetower_qwopus_q4:
+      baseUrl: http://spacetower.nullcity.ai:8100
+      model: qwopus3.5-27b-v3
+      timeoutMs: 30000
+      maxTokens: 512
+      forceThinking: false
+    spacetower_qwen:
+      baseUrl: http://spacetower.nullcity.ai:8100
+      model: qwen/qwen3.6-27b
+      timeoutMs: 60000
+
