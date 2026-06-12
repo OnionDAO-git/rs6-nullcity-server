@@ -162,7 +162,7 @@ export CONTROLLER_CONFIG="$DATA_ROOT/controller.yml"
 : "${CONTROLLER_KNOWLEDGE_STORAGE_MODE:=persistent-volume}"
 : "${CONTROLLER_ENABLE_AP_GP_EXCHANGE:=false}"
 
-DEFAULT_CONTROLLER_RESIDENTS="res:hans,res:father-aereck,res:mother-anvil,res:wise-old-man,res:qa-woodcutter,res:qa-cook,res:qa-survivor,res:qa-trader,res:qa-scout"
+DEFAULT_CONTROLLER_RESIDENTS="res:hans,res:father-aereck,res:mother-anvil,res:wise-old-man,res:bramble-ash,res:mara-kettle,res:brom-breadshield,res:tally-copperpot,res:nix-lanternstep"
 if [ -z "${CONTROLLER_RESIDENTS:-}" ]; then
     if [ -n "${CONTROLLER_RESIDENT:-}" ]; then
         CONTROLLER_RESIDENTS="$CONTROLLER_RESIDENT"

@@ -13,11 +13,11 @@ residents:
   - res:father-aereck
   - res:mother-anvil
   - res:wise-old-man
-  - res:qa-woodcutter
-  - res:qa-cook
-  - res:qa-survivor
-  - res:qa-trader
-  - res:qa-scout
+  - res:bramble-ash
+  - res:mara-kettle
+  - res:brom-breadshield
+  - res:tally-copperpot
+  - res:nix-lanternstep
 
 gateway:
   url: ws://127.0.0.1:43595
@@ -73,4 +73,9 @@ llm:
       baseUrl: http://spacetower.nullcity.ai:8100
       model: qwen/qwen3.6-27b
       timeoutMs: 60000
-
+    body_q4:
+      baseUrl: http://inf.nullcity.ai:1234
+      model: qwopus3.5-27b-v3
+      timeoutMs: 240000
+      maxTokens: 512
+      forceThinking: false
