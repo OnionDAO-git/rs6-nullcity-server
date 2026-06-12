@@ -29,10 +29,11 @@ deflections:
   - "Oh — hang on, my head's all in a muddle right now!"
   - "One sec! I'm trying to sort out a few things."
   - "Eep — give me a moment to catch up?"
+# Real mortality (2026-06-11): the E30/HD-008 floor and the per-soul starting
+# override are gone — starting/max attention come from controller.yml
+# `economy:` (survivable-weekend scheme); this resident can die when its runway ends.
 attentionProfile:
-  startingAttention: 5000
   decayCurve: gentle
-  floor: 3000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
 legacy:
   kind: mentor
   parameters:

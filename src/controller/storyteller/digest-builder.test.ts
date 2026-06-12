@@ -349,6 +349,49 @@ describe('buildFixtureDigest', () => {
         expect(quiet).toBeDefined();
     });
 
+    it('contains an ap_granted event (S-STORY-DIGEST-BEATS-1 / S6a)', () => {
+        const { digest } = buildFixtureDigest();
+        const granted = digest.apEvents.find(e => e.kind === 'ap_granted');
+        expect(granted).toBeDefined();
+        expect(granted?.evidence?.apGranted).toBe(200);
+        expect(granted?.evidence?.patronHandle).toBe('james');
+        expect(granted?.importance).toBe('high');
+    });
+
+    it('contains a skill_level_up event (S-STORY-DIGEST-BEATS-1 / S6a)', () => {
+        const { digest } = buildFixtureDigest();
+        const levelUp = digest.miscEvents.find(e => e.kind === 'skill_level_up');
+        expect(levelUp).toBeDefined();
+        expect(levelUp?.evidence?.skill).toBe('Firemaking');
+        expect(levelUp?.importance).toBe('high');
+    });
+
+    it('contains a resident_revived event with critical importance (S-STORY-DIGEST-BEATS-1 / S6a)', () => {
+        const { digest } = buildFixtureDigest();
+        const revived = digest.miscEvents.find(e => e.kind === 'resident_revived');
+        expect(revived).toBeDefined();
+        expect(revived?.evidence?.lifeIndex).toBe(2);
+        expect(revived?.importance).toBe('critical');
+    });
+
+    it('contains a patron_gift event (S-STORY-DIGEST-BEATS-1 / S6a)', () => {
+        const { digest } = buildFixtureDigest();
+        const gift = digest.miscEvents.find(e => e.kind === 'patron_gift');
+        expect(gift).toBeDefined();
+        expect(gift?.evidence?.patronHandle).toBe('james');
+        expect(gift?.importance).toBe('high');
+    });
+
+    it('resident_revived ranks above skill_level_up in topEvents (KIND_BONUS 75 vs 50)', () => {
+        const { digest } = buildFixtureDigest();
+        const topKinds = digest.topEvents.map(e => e.kind);
+        const revivedIdx = topKinds.indexOf('resident_revived');
+        const skillUpIdx = topKinds.indexOf('skill_level_up');
+        expect(revivedIdx).toBeGreaterThanOrEqual(0);
+        expect(skillUpIdx).toBeGreaterThanOrEqual(0);
+        expect(revivedIdx).toBeLessThan(skillUpIdx);
+    });
+
     it('topEvents are sorted highest importance first', () => {
         const { digest } = buildFixtureDigest();
         const weights = digest.topEvents.map(e => IMPORTANCE_WEIGHT[e.importance]);
@@ -487,19 +530,20 @@ describe('economyEventsToDigestBuckets — NCRI events (S5b core)', () => {
 });
 
 describe('economyEventsToDigestBuckets — AP events', () => {
-    it('maps ap_grant to apEvents with kind ap_granted', () => {
+    it('maps ap_grant to apEvents with kind ap_granted and importance high', () => {
         const event = makeEconomyEvent({ kind: 'ap_grant', apDelta: 100 });
         const { apEvents } = economyEventsToDigestBuckets([event]);
         expect(apEvents).toHaveLength(1);
         expect(apEvents[0].kind).toBe('ap_granted');
-        expect(apEvents[0].importance).toBe('low');
+        expect(apEvents[0].importance).toBe('high');
     });
 
-    it('maps ap_topup to apEvents with kind ap_granted', () => {
+    it('maps ap_topup to apEvents with kind ap_granted and importance high', () => {
         const event = makeEconomyEvent({ kind: 'ap_topup', apDelta: 50 });
         const { apEvents } = economyEventsToDigestBuckets([event]);
         expect(apEvents).toHaveLength(1);
         expect(apEvents[0].kind).toBe('ap_granted');
+        expect(apEvents[0].importance).toBe('high');
     });
 
     it('maps ap_fade to apEvents with kind resident_faded and importance critical', () => {

@@ -1,0 +1,109 @@
+# syntax=docker/dockerfile:1
+#
+# All-in-one Railway image: the ENTIRE Null City runtime in ONE container.
+#   - game (:43594) + login/update (:43591/43592) + AgentGateway ws (:43595)
+#   - controller: letters (:43596) + MCP (:43610) + city API (:43611) + storyteller
+#   - dashboard BFF (public, binds $PORT/0.0.0.0) + the built dashboard SPA
+#
+# One Railway Volume mounts at /data; every runtime WRITE lands under $DATA_ROOT.
+# Inference is REMOTE (env: INFERENCE_BASE_URL + INFERENCE_API_KEY).
+#
+# DASHBOARD-IN-IMAGE MECHANISM (chosen: build-time git clone via build-args).
+#   The dashboard is a SEPARATE repo. Railway's Dockerfile builder only checks
+#   out THIS repo, and its cross-repo git-submodule support over the Dockerfile
+#   path is unreliable, so we clone the dashboard at build time:
+#     --build-arg DASHBOARD_REPO=https://<token>@github.com/OnionDAO/rs6-nullcity-residents-dashboard.git
+#     --build-arg DASHBOARD_REF=wip/spec
+#   For a PRIVATE repo, embed a short-lived PAT in DASHBOARD_REPO (it is a build
+#   ARG, not persisted in the final image layer because the clone stage is
+#   discarded). Alternatives (submodule / prebuilt-image-to-registry) are
+#   documented in docs/2026-06-11-railway-allinone.md.
+#
+# NOT build-verified: authored with the Docker daemon DOWN. Needs a real
+# `docker build` on Railway/Dev. `bash -n` clean; reasoned-through.
+
+# --------------------------------------------------------------------------
+# Stage 1: build the Node/SWC server
+# --------------------------------------------------------------------------
+FROM node:24-slim AS server-build
+WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libsdl-pango-dev python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY tsconfig.json .swcrc ./
+COPY src ./src
+RUN npm run build
+# NOTE: dev deps are intentionally KEPT. The Storyteller scheduler runs via
+# `npm run storyteller:scheduler` (ts-node + tsconfig-paths), and several admin
+# CLIs are ts-node-based, so pruning dev deps would break the storyteller loop.
+
+# --------------------------------------------------------------------------
+# Stage 2: clone + build the dashboard (Bun workspace -> SPA + BFF)
+# --------------------------------------------------------------------------
+FROM oven/bun:1 AS dashboard-build
+WORKDIR /dashboard
+ARG DASHBOARD_REPO=https://github.com/OnionDAO/rs6-nullcity-residents-dashboard.git
+ARG DASHBOARD_REF=wip/spec
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+# Shallow clone the pinned ref, then build all workspace packages (SPA -> web/dist).
+RUN git clone --depth 1 --branch "${DASHBOARD_REF}" "${DASHBOARD_REPO}" . \
+    && bun install --frozen-lockfile \
+    && bun run build
+
+# --------------------------------------------------------------------------
+# Stage 3: runtime — Node + Bun + the full stack
+# --------------------------------------------------------------------------
+# Start from the Bun image (Debian-based) and add Node so BOTH runtimes exist.
+FROM oven/bun:1 AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+ENV APP_DIR=/app
+ENV DATA_ROOT=/data
+
+# Node 24 + game-server runtime lib (libsdl-pango), git/curl for ops.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg libsdl-pango-dev \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_24.x nodistro main" > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# --- qmd (OPTIONAL) -------------------------------------------------------
+# The controller memory store spawns `qmd` for semantic recall but degrades
+# gracefully to markdown-only when it is absent (see
+# src/controller/memory/memory-store.ts). qmd is NOT an npm package and has no
+# pinned install recipe in this repo, so it is left UNINSTALLED here. To enable
+# richer recall, Dev should add the qmd binary to PATH (DEV ASK — see the doc)
+# e.g. `COPY --from=<qmd-image> /usr/local/bin/qmd /usr/local/bin/qmd`.
+
+# --- server: built dist + runtime assets ----------------------------------
+COPY --from=server-build /app/node_modules ./node_modules
+COPY --from=server-build /app/dist ./dist
+COPY package.json package-lock.json tsconfig.json .swcrc nodemon.json ./
+# Full src/ is kept: the Storyteller scheduler + admin CLIs run via ts-node, and
+# souls load from src/controller/soul/starter-souls/*.md at runtime.
+COPY src ./src
+# Game asset cache (read-mostly) + static config lookups; scripts for the
+# supervised storyteller runner; data/ seeds the volume on first boot.
+COPY cache ./cache
+COPY config ./config
+COPY scripts ./scripts
+COPY data ./data-seed
+
+# --- dashboard: cloned + built workspace (SPA dist + BFF source) -----------
+COPY --from=dashboard-build /dashboard ./dashboard
+
+# --- entrypoint -----------------------------------------------------------
+RUN chmod +x scripts/railway-allinone-entrypoint.sh scripts/runtime/*.sh scripts/*.sh 2>/dev/null || true
+
+# Public ingress is the BFF on $PORT (Railway injects it). The other ports are
+# in-container only and intentionally NOT exposed publicly.
+EXPOSE 8787
+
+ENTRYPOINT ["/app/scripts/railway-allinone-entrypoint.sh"]

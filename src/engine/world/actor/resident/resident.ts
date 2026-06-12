@@ -19,11 +19,18 @@ import { createNullSocket } from '@engine/world/actor/resident/null-socket';
 import { PerceptionBuilder } from '@engine/world/actor/resident/perception/perception-builder';
 import type { Perception } from '@engine/world/actor/resident/perception/perception-types';
 import { isResident } from '@engine/world/actor/util';
+import { residentSaveDir } from '@engine/util/data-root';
 import type { Item } from '@engine/world/items/item';
 import type { Chunk } from '@engine/world/map/chunk';
 
 export const RESIDENT_BRAND = Symbol.for('nullcity.resident');
-export const RESIDENT_SAVE_DIR = 'data/residents';
+/**
+ * Default resident-save directory. Computed from the active data root
+ * (`DATA_ROOT`, default legacy `data/`) so the all-in-one Railway container
+ * routes resident saves onto the mounted volume. See
+ * `@engine/util/data-root` and docs/2026-06-11-railway-allinone.md.
+ */
+export const RESIDENT_SAVE_DIR = residentSaveDir();
 
 export interface ResidentOptions {
     clientUuid?: number;

@@ -106,7 +106,7 @@ describe('buildProjectorStoryFrame', () => {
             goalText: 'Meet patron:james@example.com near the secret door.',
         };
 
-        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z'), maxEvents: 20 });
         const serialized = JSON.stringify(frame);
 
         const privateEvent = frame.events.find(item => item.ref === 'evt-private');
@@ -565,5 +565,219 @@ describe('buildProjectorStoryFrame', () => {
 
         expect(frame.watchNext).toHaveLength(4);
         expect(frame.watchNext).toEqual(['A', 'B', 'C', 'D']);
+    });
+
+    it('uses specific fallback copy for skill_level_up lead event', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const skillEvent = digest.miscEvents.find(e => e.ref === refs.skillLevelUp);
+        if (!skillEvent) throw new Error('skill_level_up fixture event missing');
+        digest.topEvents = [skillEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Skill level-up');
+        expect(frame.leadEvent?.ref).toBe(refs.skillLevelUp);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.narration.title).toBe('Bob hit a new milestone');
+        expect(frame.narration.body).toContain('leveled up');
+        expect(frame.narration.bullets[0]).toBe('What happened: Bob reached a new RuneScape skill level.');
+        expect(frame.watchNext[0]).toBe('What Bob does now that a new skill tier is available.');
+    });
+
+    it('uses specific fallback copy for resident_revived lead event', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const reviveEvent = digest.miscEvents.find(e => e.ref === refs.residentRevived);
+        if (!reviveEvent) throw new Error('resident_revived fixture event missing');
+        digest.topEvents = [reviveEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Resident revived');
+        expect(frame.leadEvent?.ref).toBe(refs.residentRevived);
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        expect(frame.narration.title).toBe('Carol returned after death');
+        expect(frame.narration.body).toContain('died and came back');
+        expect(frame.narration.bullets[0]).toBe('What happened: Carol died and came back to Null City.');
+        expect(frame.watchNext[0]).toBe("Whether Carol's next chapter changes the story after coming back.");
+    });
+
+    it('uses specific whatHappenedLine for patron_gift lead event', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const giftEvent = digest.miscEvents.find(e => e.ref === refs.patronGift);
+        if (!giftEvent) throw new Error('patron_gift fixture event missing');
+        digest.topEvents = [giftEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Patron gift');
+        expect(frame.narration.source).toBe('deterministic_fallback');
+        // patron_gift falls into 'Attention granted'/'Patron gift' case in fallbackLeadCopy
+        expect(frame.narration.title).toBe('Alice just got another chance');
+        expect(frame.narration.bullets[0]).toBe('What happened: Alice received patron attention.');
+    });
+
+    it('uses goal_completed lead event for deterministic fallback and deterministic watchNext', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const goalEvent = digest.goalEvents.find(e => e.ref === refs.goalCompleted);
+        if (!goalEvent) throw new Error('goal_completed fixture event missing');
+        digest.topEvents = [goalEvent];
+
+        const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.leadEvent?.label).toBe('Goal completed');
+        expect(frame.narration.title).toBe('Bob finished a bounded goal');
+        expect(frame.narration.body).toContain('tracked objective');
+        expect(frame.watchNext[0]).toBe("Whether Bob's completed goal becomes Library canon.");
+        expect(frame.actions.some(a => a.kind === 'witness' && a.residentName === 'res:bob')).toBe(true);
+    });
+
+    it('verified dispatch citing goalCompleted ref passes and uses dispatch narration', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            publicTitle: 'Bob completed his bounded goal',
+            publicBody: 'Bob wrapped up the Cook quest objective and delivered proof to the city.',
+            eventRefsUsed: [refs.goalCompleted],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+        expect(frame.source.dispatchId).toBe(dispatch.dispatchId);
+        expect(frame.narration.title).toBe(dispatch.publicTitle);
+    });
+
+    it('verified dispatch citing skillLevelUp and residentRevived refs passes', () => {
+        const { digest, refs } = buildFixtureDigest();
+        const dispatch = makeDispatch({
+            publicBody: 'Bob leveled up Firemaking and Carol returned after death.',
+            eventRefsUsed: [refs.skillLevelUp, refs.residentRevived],
+        });
+
+        const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+        expect(frame.narration.source).toBe('verified_dispatch');
+    });
+
+    describe('buildActions audience/priority/reason (S-STORY-CTA-1)', () => {
+        it('low-AP resident produces primary grant_attention targeting patrons with a reason', () => {
+            const { digest } = buildFixtureDigest();
+            // alice is isLowAp=true in the fixture
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            const primary = frame.actions.find(a => a.kind === 'grant_attention');
+            expect(primary).toBeDefined();
+            expect(primary?.priority).toBe('primary');
+            expect(primary?.audience).toBe('patrons');
+            expect(typeof primary?.reason).toBe('string');
+            expect(primary?.reason?.length).toBeGreaterThan(0);
+            expect(primary?.residentName).toBe('res:alice');
+        });
+
+        it('faded resident produces primary grant_attention targeting patrons with revival reason', () => {
+            const { digest } = buildFixtureDigest();
+            digest.residents = digest.residents.map(r => (r.residentName === 'res:alice' ? { ...r, isLowAp: false, isFaded: true } : r));
+
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            const primary = frame.actions.find(a => a.kind === 'grant_attention');
+            expect(primary).toBeDefined();
+            expect(primary?.priority).toBe('primary');
+            expect(primary?.audience).toBe('patrons');
+            expect(primary?.label).toContain('Revive');
+            expect(primary?.residentName).toBe('res:alice');
+        });
+
+        it('quiet city with no AP pressure produces primary operator_check targeting operators', () => {
+            const { digest } = buildFixtureDigest();
+            digest.residents = digest.residents.map(r => ({ ...r, isLowAp: false, isFaded: false }));
+            digest.topEvents = [];
+            digest.apEvents = [];
+            digest.gpEvents = [];
+            digest.exchangeEvents = [];
+            digest.ncriEvents = [];
+            digest.goalEvents = [];
+            digest.stuckEvents = [];
+            digest.miscEvents = [];
+
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            expect(frame.actions).toHaveLength(1);
+            expect(frame.actions[0].kind).toBe('operator_check');
+            expect(frame.actions[0].priority).toBe('primary');
+            expect(frame.actions[0].audience).toBe('operators');
+            expect(typeof frame.actions[0].reason).toBe('string');
+        });
+
+        it('skill_level_up lead event produces watch_resident with audience:anyone', () => {
+            const { digest, refs } = buildFixtureDigest();
+            const skillEvent = digest.miscEvents.find(e => e.ref === refs.skillLevelUp);
+            if (!skillEvent) throw new Error('skill_level_up fixture event missing');
+            digest.topEvents = [skillEvent];
+            digest.residents = digest.residents.map(r => ({ ...r, isLowAp: false, isFaded: false }));
+
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            const action = frame.actions.find(a => a.kind === 'watch_resident');
+            expect(action).toBeDefined();
+            expect(action?.priority).toBe('primary');
+            expect(action?.audience).toBe('anyone');
+            expect(typeof action?.reason).toBe('string');
+        });
+
+        it('patron_gift lead event produces watch_resident with audience:patrons', () => {
+            const { digest, refs } = buildFixtureDigest();
+            const giftEvent = digest.miscEvents.find(e => e.ref === refs.patronGift);
+            if (!giftEvent) throw new Error('patron_gift fixture event missing');
+            digest.topEvents = [giftEvent];
+            digest.residents = digest.residents.map(r => ({ ...r, isLowAp: false, isFaded: false }));
+
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            const action = frame.actions.find(a => a.kind === 'watch_resident');
+            expect(action).toBeDefined();
+            expect(action?.audience).toBe('patrons');
+        });
+
+        it('goal_completed lead event produces witness with audience:anyone', () => {
+            const { digest, refs } = buildFixtureDigest();
+            const goalEvent = digest.goalEvents.find(e => e.ref === refs.goalCompleted);
+            if (!goalEvent) throw new Error('goal_completed fixture event missing');
+            digest.topEvents = [goalEvent];
+            digest.residents = digest.residents.map(r => ({ ...r, isLowAp: false, isFaded: false }));
+
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            const action = frame.actions.find(a => a.kind === 'witness');
+            expect(action).toBeDefined();
+            expect(action?.priority).toBe('primary');
+            expect(action?.audience).toBe('anyone');
+            expect(action?.residentName).toBe('res:bob');
+        });
+
+        it('all actions have priority and audience fields set', () => {
+            const { digest, refs } = buildFixtureDigest();
+            const dispatch = makeDispatch({ eventRefsUsed: [refs.apLow, refs.gpEarned] });
+
+            const frame = buildProjectorStoryFrame(digest, { dispatch, now: new Date('2026-05-29T06:03:00.000Z') });
+
+            for (const action of frame.actions) {
+                expect(['primary', 'secondary']).toContain(action.priority);
+                expect(['anyone', 'nearby_humans', 'patrons', 'operators']).toContain(action.audience);
+            }
+        });
+
+        it('exactly one action has priority:primary when multiple actions exist', () => {
+            const { digest, refs } = buildFixtureDigest();
+            // alice is low-AP, and there's a lead event — should produce 2 actions
+            const skillEvent = digest.miscEvents.find(e => e.ref === refs.skillLevelUp);
+            if (!skillEvent) throw new Error('skill_level_up fixture event missing');
+            digest.topEvents = [skillEvent];
+
+            const frame = buildProjectorStoryFrame(digest, { now: new Date('2026-05-29T06:03:00.000Z') });
+
+            const primaryCount = frame.actions.filter(a => a.priority === 'primary').length;
+            expect(primaryCount).toBe(1);
+            expect(frame.actions.length).toBeGreaterThan(1);
+        });
     });
 });

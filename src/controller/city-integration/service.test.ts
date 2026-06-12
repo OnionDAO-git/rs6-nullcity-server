@@ -1,6 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { readRecentPatronMemories } from '../evidence/library-memories';
 import { residentSlug, type RuntimeState } from '../memory/runtime-state';
 import { buildProjectorStoryFrame } from '../storyteller/public-frame';
 import { runCityDigest } from './cli';
@@ -130,7 +131,12 @@ describe('CityIntegrationService', () => {
         });
 
         const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
-        const event = JSON.parse(fs.readFileSync(timelinePath, 'utf8').trim());
+        const events = fs
+            .readFileSync(timelinePath, 'utf8')
+            .trim()
+            .split('\n')
+            .map(line => JSON.parse(line) as Record<string, unknown>);
+        const event = events.find(entry => entry.kind === 'city_attention_credit');
         expect(event).toMatchObject({
             kind: 'city_attention_credit',
             amount: 50,
@@ -241,6 +247,91 @@ describe('CityIntegrationService', () => {
             });
 
             expect(result).toMatchObject({ ok: true, creditedAmount: 7, attentionAfter: 17 });
+        });
+    });
+
+    describe('dashboard patron recognition — patron_gift timeline event (D-RECOG)', () => {
+        const timelineEvents = (): Array<Record<string, unknown>> => {
+            const timelinePath = path.join(root, 'library', 'res-test', 'timeline.jsonl');
+            return fs
+                .readFileSync(timelinePath, 'utf8')
+                .trim()
+                .split('\n')
+                .map(line => JSON.parse(line) as Record<string, unknown>);
+        };
+
+        it('appends a patron_gift timeline event the patron-memory reader picks up when patronHandle is present', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-1',
+                amount: 25,
+                cityUserId: 'user-9',
+                patronHandle: 'alice',
+                sourceType: 'patron_checkin',
+                sourceId: 'checkin-77',
+                note: 'dashboard support',
+            });
+
+            const gift = timelineEvents().find(event => event.kind === 'patron_gift');
+            expect(gift).toMatchObject({
+                schemaVersion: 1,
+                kind: 'patron_gift',
+                patronHandle: 'alice',
+                amount: 25,
+                attentionDelta: 25,
+                tick: 7,
+                lifeIndex: 1,
+                significanceReasons: ['patron:patron_gift'],
+            });
+
+            // The resident's patron-awareness machinery (memory slice → prompt
+            // envelope, ack reflex, epitaph recipients) reads via the patron-kind
+            // filter — the dashboard supporter must show up there.
+            const memories = readRecentPatronMemories(root, 'res:test', 5);
+            expect(memories.join('\n')).toContain('alice');
+            expect(memories.join('\n')).toContain('25 AP');
+        });
+
+        it('falls back to cityUserId as the patron handle when patronHandle is absent', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-2',
+                amount: 10,
+                cityUserId: 'user-bob',
+            });
+
+            const gift = timelineEvents().find(event => event.kind === 'patron_gift');
+            expect(gift).toMatchObject({ kind: 'patron_gift', patronHandle: 'user-bob', amount: 10 });
+        });
+
+        it('appends exactly one patron_gift per support alongside the city_attention_credit audit event', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-3',
+                amount: 15,
+                cityUserId: 'user-9',
+                patronHandle: 'alice',
+            });
+
+            const events = timelineEvents();
+            expect(events.filter(event => event.kind === 'patron_gift')).toHaveLength(1);
+            expect(events.filter(event => event.kind === 'city_attention_credit')).toHaveLength(1);
+        });
+
+        it('does not append a patron_gift when neither patronHandle nor cityUserId is present', async () => {
+            await service.creditAttention('res:test', {
+                idempotencyKey: 'gift-recog-4',
+                amount: 5,
+            });
+
+            const events = timelineEvents();
+            expect(events.filter(event => event.kind === 'patron_gift')).toHaveLength(0);
+            expect(readRecentPatronMemories(root, 'res:test', 5)).toHaveLength(0);
+        });
+
+        it('does not re-append a patron_gift on an idempotent replay', async () => {
+            const payload = { idempotencyKey: 'gift-recog-5', amount: 8, cityUserId: 'user-9', patronHandle: 'alice' };
+            await service.creditAttention('res:test', payload);
+            await service.creditAttention('res:test', payload);
+
+            expect(timelineEvents().filter(event => event.kind === 'patron_gift')).toHaveLength(1);
         });
     });
 
@@ -466,6 +557,35 @@ describe('CityIntegrationService', () => {
             messageId: 'msg-1',
         });
     });
+
+    it('fires onMessageDelivered callback with correct fields after delivery', async () => {
+        const delivered: unknown[] = [];
+        const serviceWithCb = new CityIntegrationService({
+            memoryRoot: root,
+            getRuntime: () => runtime,
+            inventory: {
+                inspectResidentGold: async () => ({ resident: 'res:test', itemId: 995, amount: 0 }),
+                burnResidentGold: async () => ({ resident: 'res:test', itemId: 995, burnedAmount: 0, remainingAmount: 0 }),
+            },
+            birth: { birthResident: async () => ({ resident: 'res:test', created: true, connected: true }) },
+            onMessageDelivered: event => delivered.push(event),
+        });
+        await serviceWithCb.deliverMessage('res:test', {
+            messageId: 'msg-cb-1',
+            threadId: 'thread-cb-1',
+            cityUserId: 'user-cb',
+            senderDisplayName: 'Bob',
+            body: 'Where are you?',
+        });
+        expect(delivered).toHaveLength(1);
+        expect(delivered[0]).toMatchObject({
+            residentName: 'res:test',
+            cityUserId: 'user-cb',
+            senderDisplayName: 'Bob',
+        });
+        expect(typeof (delivered[0] as { ts: string }).ts).toBe('string');
+    });
+
     // ── AP-for-GP exchange ────────────────────────────────────────────────────
 
     it('exchangeApForGp: records failed_gp when resident has insufficient gold', async () => {
@@ -611,36 +731,40 @@ describe('CityIntegrationService', () => {
         });
     });
 
-    it('storytellerProjectorLatest returns an explicit latest-frame artifact when present', () => {
+    it('storytellerProjectorLatest recomputes freshnessMs dynamically — not frozen from cached latest-frame.json (QA-20260606-106)', () => {
+        // service.now() is 2026-05-27T12:00:00.000Z; digest builtAt is 1 hour earlier.
         const storytellerRoot = path.join(path.dirname(root), 'storyteller');
-        fs.mkdirSync(storytellerRoot, { recursive: true });
-        const frame = buildProjectorStoryFrame(
-            {
-                schemaVersion: 1,
-                digestId: 'digest-frame',
-                windowStart: '2026-05-27T11:50:00.000Z',
-                windowEnd: '2026-05-27T12:00:00.000Z',
-                builtAt: '2026-05-27T12:00:00.000Z',
-                apEvents: [],
-                gpEvents: [],
-                exchangeEvents: [],
-                ncriEvents: [],
-                goalEvents: [],
-                stuckEvents: [],
-                miscEvents: [],
-                topEvents: [],
-                residents: [],
-                systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
-            },
-            { now: new Date('2026-05-27T12:01:00.000Z') },
+        const runRoot = path.join(storytellerRoot, 'run-freshness-regression');
+        fs.mkdirSync(runRoot, { recursive: true });
+        const staleDigest = {
+            schemaVersion: 1 as const,
+            digestId: 'digest-freshness',
+            windowStart: '2026-05-27T10:50:00.000Z',
+            windowEnd: '2026-05-27T11:00:00.000Z',
+            builtAt: '2026-05-27T11:00:00.000Z',
+            apEvents: [],
+            gpEvents: [],
+            exchangeEvents: [],
+            ncriEvents: [],
+            goalEvents: [],
+            stuckEvents: [],
+            miscEvents: [],
+            topEvents: [],
+            residents: [],
+            systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
+        };
+        fs.writeFileSync(path.join(runRoot, 'digest.json'), JSON.stringify(staleDigest, null, 2));
+        // Write a cached latest-frame.json whose freshnessMs was frozen at write time (=0 when built).
+        const frozenFrame = buildProjectorStoryFrame(
+            { ...staleDigest },
+            { now: new Date('2026-05-27T11:00:00.000Z') }, // written right as digest was built → freshnessMs=0
         );
-        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frame, null, 2));
+        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frozenFrame, null, 2));
 
-        expect(service.storytellerProjectorLatest()).toMatchObject({
-            ok: true,
-            digestId: 'digest-frame',
-            narration: { source: 'deterministic_fallback' },
-        });
+        const frame = service.storytellerProjectorLatest();
+        // freshnessMs should reflect the true age at request time (~3600000 ms = 1 hour), not 0.
+        expect(frame.source.freshnessMs).toBeGreaterThanOrEqual(3600000);
+        expect(frame.source.freshnessStatus).toBe('stale');
     });
 
     it('storytellerProjectorLatest builds a fail-closed frame from the newest run when latest-frame is absent', () => {
@@ -1477,6 +1601,65 @@ describe('CityIntegrationService', () => {
         await expect(service.exchangeApForGp('bad name!', { idempotencyKey: 'k', apAmount: 1, gpAmount: 1 })).rejects.toMatchObject({
             status: 400,
             code: 'invalid_payload',
+        });
+    });
+
+    // ── economy.enableApGpExchange production gate (SL-6) ────────────────────
+    // The AP<->GP exchange is an uncapped mint/burn pair — an exploit once
+    // onions are scarce. Ops sets economy.enableApGpExchange: false in the
+    // live controller.yml for launch; default (absent) preserves behavior.
+
+    describe('enableApGpExchange gate (SL-6)', () => {
+        function gatedService(enableApGpExchange: boolean | undefined): CityIntegrationService {
+            return new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-05-27T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => {
+                        burnCalls += 1;
+                        gold -= amount;
+                        return { resident, itemId: 995, burnedAmount: amount, remainingAmount: gold };
+                    },
+                },
+                birth: {
+                    birthResident: async input => ({ resident: input.residentName, created: true, connected: true }),
+                },
+                enableApGpExchange,
+            });
+        }
+
+        it('rejects the exchange with a clean disabled error when the flag is false', async () => {
+            const gated = gatedService(false);
+
+            await expect(
+                gated.exchangeApForGp('res:test', { idempotencyKey: 'exch-gated', apAmount: 10, gpAmount: 20 }),
+            ).rejects.toMatchObject({
+                status: 403,
+                code: 'ap_gp_exchange_disabled',
+            });
+            // Neither side moved: no GP burned, no AP credited.
+            expect(burnCalls).toBe(0);
+            expect(runtime.state.attention).toBe(10);
+        });
+
+        it('keeps the exchange working when the flag is explicitly true', async () => {
+            const enabled = gatedService(true);
+
+            const result = await enabled.exchangeApForGp('res:test', { idempotencyKey: 'exch-enabled', apAmount: 10, gpAmount: 20 });
+
+            expect(result.status).toBe('complete');
+            expect(burnCalls).toBe(1);
+            expect(runtime.state.attention).toBe(20);
+        });
+
+        it('keeps the exchange working when the flag is absent (default true behavior)', async () => {
+            const defaulted = gatedService(undefined);
+
+            const result = await defaulted.exchangeApForGp('res:test', { idempotencyKey: 'exch-default', apAmount: 10, gpAmount: 20 });
+
+            expect(result.status).toBe('complete');
         });
     });
 

@@ -1,0 +1,22 @@
+{
+    "$schema": "https://railway.com/railway.schema.json",
+    "_deploy_notes": [
+        "ONE Railway service runs the ENTIRE Null City stack from this image.",
+        "Attach ONE Volume mounted at /data (the container sets DATA_ROOT=/data and routes every runtime write under it).",
+        "Public ingress is the dashboard BFF; Railway injects $PORT and the entrypoint binds it on 0.0.0.0. All other ports (game 43594, gateway 43595, login 43591, update 43592, letters 43596, mcp 43610, city 43611) are in-container only.",
+        "REQUIRED env: INFERENCE_BASE_URL, INFERENCE_API_KEY, INFERENCE_MODEL (remote inference).",
+        "RECOMMENDED env: CONTROLLER_INSTANCE_ID, CONTROLLER_CITY_HTTP_TOKEN, AGENT_GATEWAY_AUTH_TOKEN, NULLCITY_CITY_API_TOKEN, CONTROLLER_ENABLE_AP_GP_EXCHANGE=false.",
+        "Build-args for the dashboard clone: DASHBOARD_REPO (with token if private), DASHBOARD_REF (default wip/spec).",
+        "Plan: the full stack in one container needs ~8-16GB RAM (game heap 4GB + controller + BFF + bun). See docs/2026-06-11-railway-allinone.md."
+    ],
+    "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile.railway-allinone"
+    },
+    "deploy": {
+        "healthcheckPath": "/api/health",
+        "healthcheckTimeout": 120,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+    }
+}

@@ -16,7 +16,6 @@ aesthetic: coin stacks, bank ledgers, quiet castle stairs
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3242
   y: 3243

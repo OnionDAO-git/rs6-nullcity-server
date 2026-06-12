@@ -18,7 +18,6 @@ model:
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3222
   y: 3222

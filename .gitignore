@@ -13,6 +13,7 @@ node_modules
 /data/controller/storyteller/s-*/
 /data/controller/storyteller/canon/
 /data/controller/storyteller/review/
+/data/controller/storyteller/latest-frame.json
 /data/controller/storyteller/overseer-ledger.jsonl
 /data/runtime-logs
 /data/benchmarks/**
@@ -31,6 +32,9 @@ server-config.yaml
 !.env.example
 .env.local
 .env.*.local
+# Railway operator env file (holds inference + onion secrets) — NEVER commit it.
+railway.env
+!railway.env.example
 
 # Log files
 npm-debug.log*

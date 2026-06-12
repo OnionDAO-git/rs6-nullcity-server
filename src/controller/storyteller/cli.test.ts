@@ -252,7 +252,69 @@ describe('storyteller:dry-run CLI live source', () => {
         expect(result.summary).toContain('Misc events: 1');
     });
 
-    it('filters synthetic QA and benchmark residents from public-canon live digests', () => {
+    it('promotes first_xp Library events to skill_level_up miscEvents at importance high', () => {
+        writeRuntimeState(memoryRoot, 'res-hans', {
+            resident: 'res:hans',
+            attention: 5_000,
+            tick: 200,
+            legacy: { kind: 'runescape', progress: {}, complete: false },
+            budgets: {
+                minuteStartedAt: '2026-05-30T00:00:00.000Z',
+                dayStartedAt: '2026-05-30T00:00:00.000Z',
+                requestsThisMinute: 0,
+                requestsToday: 0,
+            },
+        });
+        writeLibraryEvents(memoryRoot, 'res-hans', [
+            { schemaVersion: 1, ts: '2026-05-30T00:03:00.000Z', tick: 10, kind: 'first_xp', skill: 'Firemaking' },
+            { schemaVersion: 1, ts: '2026-05-30T00:06:00.000Z', tick: 20, kind: 'revival', lifeIndex: 2 },
+            { schemaVersion: 1, ts: '2026-05-30T00:08:00.000Z', tick: 30, kind: 'patron_gift', patronHandle: 'james', amount: 500 },
+            { schemaVersion: 1, ts: '2026-05-30T00:09:00.000Z', tick: 35, kind: 'patron_witness', patronHandle: 'alice' },
+        ]);
+
+        const result = runStorytellerDryRun(
+            {
+                fixture: false,
+                memoryRoot,
+                outputDir,
+                since: '2026-05-30T00:00:00.000Z',
+                until: '2026-05-30T00:10:00.000Z',
+                digestId: 'beat-promotion-digest',
+            },
+            { now: () => new Date('2026-05-30T00:10:00.000Z') },
+        );
+
+        const skillUp = result.digest.miscEvents.find(e => e.kind === 'skill_level_up');
+        expect(skillUp).toBeDefined();
+        expect(skillUp?.importance).toBe('high');
+        expect(skillUp?.note).toContain('Firemaking');
+        expect(skillUp?.residentName).toBe('res:hans');
+
+        const revived = result.digest.miscEvents.find(e => e.kind === 'resident_revived');
+        expect(revived).toBeDefined();
+        expect(revived?.importance).toBe('critical');
+        expect(revived?.note).toContain('life #2');
+
+        const gift = result.digest.miscEvents.find(e => e.kind === 'patron_gift' && e.evidence?.['patronHandle'] === 'james');
+        expect(gift).toBeDefined();
+        expect(gift?.importance).toBe('high');
+        expect(gift?.note).toContain('james');
+        expect(gift?.note).toContain('500 AP');
+
+        const witness = result.digest.miscEvents.filter(e => e.kind === 'patron_gift');
+        // patron_witness also maps to patron_gift kind, importance medium
+        const witnessEvent = witness.find(e => e.evidence?.['patronHandle'] === 'alice');
+        expect(witnessEvent).toBeDefined();
+        expect(witnessEvent?.importance).toBe('medium');
+
+        // revival (critical) should beat skill_level_up (high) in topEvents
+        const topKinds = result.digest.topEvents.map(e => e.kind);
+        const revivedIdx = topKinds.indexOf('resident_revived');
+        const skillUpIdx = topKinds.indexOf('skill_level_up');
+        expect(revivedIdx).toBeLessThan(skillUpIdx);
+    });
+
+    it('filters synthetic benchmark residents from public-canon live digests but keeps the qa-* roster (HR-7)', () => {
         writeRuntimeState(memoryRoot, 'res-hans', {
             resident: 'res:hans',
             attention: 5_000,
@@ -293,7 +355,7 @@ describe('storyteller:dry-run CLI live source', () => {
             { schemaVersion: 1, ts: '2026-05-30T00:03:00.000Z', tick: 10, kind: 'say', text: 'The courtyard is awake.' },
         ]);
         writeLibraryEvents(memoryRoot, 'res-qa-cook', [
-            { schemaVersion: 1, ts: '2026-05-30T00:04:00.000Z', tick: 20, kind: 'say', text: 'QA fixture should stay private.' },
+            { schemaVersion: 1, ts: '2026-05-30T00:04:00.000Z', tick: 20, kind: 'say', text: 'Stew is ready for the lunch rush.' },
         ]);
         writeLibraryEvents(memoryRoot, 'res-bmk_fire_5m_deadbeef', [
             { schemaVersion: 1, ts: '2026-05-30T00:05:00.000Z', tick: 30, kind: 'stuck_recovered' },
@@ -311,11 +373,13 @@ describe('storyteller:dry-run CLI live source', () => {
             { now: () => new Date('2026-05-30T00:10:00.000Z') },
         );
 
-        expect(result.digest.systemHealth.totalResidents).toBe(1);
-        expect(result.digest.residents.map(resident => resident.residentName)).toEqual(['res:hans']);
-        expect(result.digest.miscEvents.map(event => event.residentName)).toEqual(['res:hans']);
+        // HR-7: the qa-* roster (qa-cook, qa-woodcutter, ...) is the LIVE CAST
+        // and stays narratable; only clear test patterns (the benchmark
+        // synthetic here) are filtered from the public digest.
+        expect(result.digest.systemHealth.totalResidents).toBe(2);
+        expect(result.digest.residents.map(resident => resident.residentName)).toEqual(['res:hans', 'res:qa-cook']);
+        expect(result.digest.miscEvents.map(event => event.residentName).sort()).toEqual(['res:hans', 'res:qa-cook']);
         expect(result.digest.stuckEvents).toHaveLength(0);
-        expect(result.summary).not.toContain('res:qa-cook');
         expect(result.summary).not.toContain('res:bmk_fire_5m_deadbeef');
     });
 

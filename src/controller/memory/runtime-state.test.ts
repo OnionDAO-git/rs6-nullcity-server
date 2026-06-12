@@ -1,7 +1,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { RuntimeStateStore } from './runtime-state';
+import { addAttention, RuntimeStateStore, type RuntimeState } from './runtime-state';
 
 describe('RuntimeStateStore', () => {
     afterEach(() => {
@@ -75,5 +75,65 @@ describe('RuntimeStateStore', () => {
         });
         expect(fs.existsSync(statePath)).toBe(false);
         expect(fs.existsSync(`${statePath}.corrupt-2026-05-25T01-38-00-000Z`)).toBe(true);
+    });
+});
+
+// Survivable-weekend capacity: support credits clamp to an optional
+// attention capacity (the "bar size") instead of stacking without bound.
+describe('addAttention', () => {
+    const baseState = (attention: number): RuntimeState => ({
+        resident: 'res:test',
+        attention,
+        tick: 0,
+        legacy: { kind: 'mentor', progress: {}, complete: false },
+        budgets: {
+            minuteStartedAt: '2026-06-12T23:00:00.000Z',
+            dayStartedAt: '2026-06-12T23:00:00.000Z',
+            requestsThisMinute: 0,
+            requestsToday: 0,
+        },
+        variables: {},
+        hookCooldowns: {},
+        shadowedHooks: [],
+    });
+
+    it("credits without bound when no capacity is given (today's behavior)", () => {
+        const state = baseState(100);
+        addAttention(state, 1000000);
+        expect(state.attention).toBe(1000100);
+    });
+
+    it('clamps a credit to the capacity', () => {
+        const state = baseState(170000);
+        addAttention(state, 50000, 180000);
+        expect(state.attention).toBe(180000);
+    });
+
+    it('does not slash a balance already above the capacity', () => {
+        const state = baseState(200000);
+        addAttention(state, 500, 180000);
+        expect(state.attention).toBe(200000);
+    });
+
+    it('still floors at 0 for negative amounts, capacity or not', () => {
+        const state = baseState(10);
+        addAttention(state, -50, 180000);
+        expect(state.attention).toBe(0);
+    });
+
+    it('ignores a non-finite or non-positive capacity', () => {
+        const state = baseState(100);
+        addAttention(state, 50, Number.NaN);
+        expect(state.attention).toBe(150);
+        addAttention(state, 50, 0);
+        expect(state.attention).toBe(200);
+    });
+
+    it('clears attention_exhausted death when the (clamped) credit revives', () => {
+        const state = baseState(0);
+        state.deceased = { date: '2026-06-12T23:00:00.000Z', tick: 5, cause: 'attention_exhausted' };
+        addAttention(state, 500000, 180000);
+        expect(state.attention).toBe(180000);
+        expect(state.deceased).toBeUndefined();
     });
 });

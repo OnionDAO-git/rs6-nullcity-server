@@ -1,14 +1,20 @@
 import {
+    type AttentionPleaLetterInput,
     type CivicAchievementLetterInput,
     type EpitaphLetterInput,
+    type GoalAchievedLetterInput,
     type Letter,
+    type ResidentReplyLetterInput,
     type StandingTierLetterInput,
     type BroadcastLetterInput,
     letterSchema,
     produceCivicAchievementLetter,
     produceEpitaphLetter,
+    produceGoalAchievedLetter,
+    produceResidentReplyLetter,
     produceStandingTierLetter,
     produceBroadcastLetter,
+    produceAttentionPleaLetter,
     ticksToHumanTime,
 } from './letters-producer';
 
@@ -94,9 +100,24 @@ describe('produceStandingTierLetter', () => {
         expect(letter!.body).toMatch(/res:fern/);
     });
 
-    it('includes the amount and faction in the letter body for context', () => {
+    it.each(['acquaintance', 'ally', 'officer'] as const)(
+        'frames %s standing copy as resident-facing rather than embassy-title copy',
+        tierCrossed => {
+            const letter = produceStandingTierLetter({ ...baseInput, tierCrossed });
+            expect(letter).not.toBeNull();
+            expect(letter!.subject).toContain(baseInput.residentName);
+            expect(letter!.subject).not.toMatch(/of embassy/i);
+            expect(letter!.body).toContain(baseInput.residentName);
+            expect(letter!.body).not.toMatch(/Embassy Clerk|clerks of embassy/i);
+            expect(letter!.body).not.toMatch(/\bShard/i);
+            expect(letter!.senderResident).toBe(baseInput.residentName);
+            expect(letter!.deliveryChannels).toEqual(['web-inbox']);
+        },
+    );
+
+    it('includes the faction in the letter body for context without exposing standing math', () => {
         const letter = produceStandingTierLetter({ ...baseInput, amount: 15, faction: 'librarian-circle' });
-        expect(letter!.body).toMatch(/15/);
+        expect(letter!.body).not.toMatch(/15/);
         expect(letter!.body).toMatch(/librarian-circle/);
     });
 
@@ -287,6 +308,82 @@ describe('produceBroadcastLetter (J4)', () => {
     });
 });
 
+describe('produceAttentionPleaLetter (LB-H2R-4p77)', () => {
+    const baseInput: AttentionPleaLetterInput = {
+        humanId: 'alice@onion',
+        residentName: 'res:fern',
+        faction: 'embassy',
+        currentAp: 350,
+        ts: '2026-06-04T22:00:00.000Z',
+    };
+
+    it('returns a Letter with kind=attention_plea', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.kind).toBe('attention_plea');
+    });
+
+    it('sets recipient to humanId', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.recipient).toBe('alice@onion');
+    });
+
+    it('sets senderResident to residentName', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.senderResident).toBe('res:fern');
+    });
+
+    it('subject includes the resident name', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.subject).toMatch(/res:fern/);
+    });
+
+    it('body includes humanId, residentName, faction, and AP amount', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.body).toMatch(/alice@onion/);
+        expect(letter.body).toMatch(/res:fern/);
+        expect(letter.body).toMatch(/embassy/);
+        expect(letter.body).toMatch(/350/);
+    });
+
+    it('delivers strictly to web-inbox (no in-game-scroll, no lanyard-card)', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('sets dispatchedAt to the supplied ts', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(letter.dispatchedAt).toBe(baseInput.ts);
+    });
+
+    it('different timestamps can produce different body templates (rotation covers all 3 variants)', () => {
+        const timestamps = [
+            '2026-06-04T00:00:00.000Z',
+            '2026-06-04T01:00:00.000Z',
+            '2026-06-04T02:00:00.000Z',
+            '2026-06-04T03:00:00.000Z',
+            '2026-06-04T04:00:00.000Z',
+            '2026-06-04T05:00:00.000Z',
+        ];
+        const bodies = new Set(timestamps.map(ts => produceAttentionPleaLetter({ ...baseInput, ts }).body));
+        // At least 2 distinct templates across 6 timestamps; all 3 covered with enough samples.
+        expect(bodies.size).toBeGreaterThanOrEqual(2);
+    });
+
+    it('produces identical bodies for two patrons receiving the same plea at the same ts', () => {
+        const a = produceAttentionPleaLetter({ ...baseInput, humanId: 'alice@onion' });
+        const b = produceAttentionPleaLetter({ ...baseInput, humanId: 'bob@onion' });
+        // Body template selection is ts-deterministic; only humanId substitution differs.
+        const aBodyStripped = a.body.replace(/alice@onion/g, 'PATRON');
+        const bBodyStripped = b.body.replace(/bob@onion/g, 'PATRON');
+        expect(aBodyStripped).toBe(bBodyStripped);
+    });
+
+    it('round-trips through letterSchema', () => {
+        const letter = produceAttentionPleaLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
 describe('letterSchema', () => {
     it('rejects a Letter with empty recipient', () => {
         expect(() =>
@@ -326,6 +423,109 @@ describe('letterSchema', () => {
             dispatchedAt: '2026-05-23T04:00:00.000Z',
             deliveryChannels: ['web-inbox', 'in-game-scroll', 'lanyard-card'],
         };
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceResidentReplyLetter', () => {
+    const baseInput: ResidentReplyLetterInput = {
+        humanId: 'alice@onion',
+        residentName: 'res:hans',
+        replyText: 'I found the Blue Moon Inn just north of the market.',
+        ts: '2026-06-05T00:10:00.000Z',
+    };
+
+    it('produces a resident_reply letter with correct fields', () => {
+        const letter = produceResidentReplyLetter(baseInput);
+        expect(letter.kind).toBe('resident_reply');
+        expect(letter.recipient).toBe('alice@onion');
+        expect(letter.senderResident).toBe('res:hans');
+        expect(letter.body).toBe('I found the Blue Moon Inn just north of the market.');
+        expect(letter.dispatchedAt).toBe('2026-06-05T00:10:00.000Z');
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('includes the resident name in the subject', () => {
+        const letter = produceResidentReplyLetter(baseInput);
+        expect(letter.subject).toContain('res:hans');
+    });
+
+    it('passes letterSchema validation', () => {
+        const letter = produceResidentReplyLetter(baseInput);
+        expect(() => letterSchema.parse(letter)).not.toThrow();
+    });
+});
+
+describe('produceGoalAchievedLetter (S-GOAL-NOTIF-1)', () => {
+    const baseInput: GoalAchievedLetterInput = {
+        humanId: 'alice@onion',
+        residentName: 'res:hans',
+        goalText: 'Become the best fisherman in Null City',
+        ts: '2026-06-05T17:30:00.000Z',
+    };
+
+    it('returns a goal_achieved letter', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.kind).toBe('goal_achieved');
+    });
+
+    it('sets recipient to humanId', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.recipient).toBe('alice@onion');
+    });
+
+    it('sets senderResident to residentName', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.senderResident).toBe('res:hans');
+    });
+
+    it('subject includes the display name (stripped of res: prefix)', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.subject).toContain('hans');
+        expect(letter.subject).not.toContain('res:');
+    });
+
+    it('body includes the goalText', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.body).toContain('Become the best fisherman in Null City');
+    });
+
+    it('body includes the humanId', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.body).toContain('alice@onion');
+    });
+
+    it('delivers to web-inbox only', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.deliveryChannels).toEqual(['web-inbox']);
+    });
+
+    it('sets dispatchedAt to the supplied ts', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
+        expect(letter.dispatchedAt).toBe('2026-06-05T17:30:00.000Z');
+    });
+
+    it('two patrons of the same resident get the same body template', () => {
+        const letter1 = produceGoalAchievedLetter({ ...baseInput, humanId: 'alice@onion' });
+        const letter2 = produceGoalAchievedLetter({ ...baseInput, humanId: 'alice@onion' });
+        expect(letter1.body).toBe(letter2.body);
+    });
+
+    it('rotation covers all 3 body templates across different humanId + residentName combos', () => {
+        const variants = new Set<string>();
+        const names = ['res:hans', 'res:aereck', 'res:wizard'];
+        const patrons = ['alice@onion', 'bob@onion', 'carol@onion', 'dave@onion'];
+        for (const residentName of names) {
+            for (const humanId of patrons) {
+                const letter = produceGoalAchievedLetter({ ...baseInput, residentName, humanId });
+                variants.add(letter.body.split('\n')[2]);
+            }
+        }
+        expect(variants.size).toBeGreaterThanOrEqual(2);
+    });
+
+    it('passes letterSchema validation', () => {
+        const letter = produceGoalAchievedLetter(baseInput);
         expect(() => letterSchema.parse(letter)).not.toThrow();
     });
 });

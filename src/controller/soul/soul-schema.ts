@@ -163,6 +163,13 @@ export interface SoulFrontmatter {
          * post through the IRL event without manual top-up.
          */
         floor?: number;
+        /**
+         * Survivable-weekend capacity: optional upper bound on the
+         * attention bar — support credits clamp to it. Overrides the
+         * `economy.maxAttention` config default per-resident. See
+         * `src/controller/spark/attention.ts`.
+         */
+        maxAttention?: number;
     };
     respawnPolicy?: RespawnPolicy;
     legacy?: {
@@ -393,6 +400,8 @@ export const soulFrontmatterSchema = z
                 decayCurve: decayCurveSchema.default('standard'),
                 // E30 / HD-008: optional accrual floor. See attention.ts.
                 floor: z.number().nonnegative().optional(),
+                // Survivable-weekend capacity: optional bar maximum. See attention.ts.
+                maxAttention: z.number().positive().optional(),
             })
             .default({ decayCurve: 'standard' }),
         respawnPolicy: respawnPolicySchema.optional(),

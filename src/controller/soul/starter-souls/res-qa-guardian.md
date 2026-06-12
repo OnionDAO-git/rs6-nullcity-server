@@ -16,7 +16,6 @@ aesthetic: scuffed training shield, packed food, chapel dust on boots
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3254
   y: 3230

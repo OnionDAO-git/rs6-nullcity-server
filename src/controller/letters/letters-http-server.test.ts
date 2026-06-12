@@ -351,7 +351,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
     });
 
     describe('public-surface filters (PRE-MERGE-POLISH)', () => {
-        it('GET /v1/wall/snapshot drops res-qa-* residents from the public roster', async () => {
+        it('GET /v1/wall/snapshot drops benchmark synthetics but keeps the qa-* roster (HR-7)', async () => {
             server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
             writeRuntimeState(tmp, 'res-hans', { attention: 1000 });
             writeRuntimeState(tmp, 'res-qa-cook', { attention: 800 });
@@ -361,8 +361,9 @@ describe('letters HTTP server (EVENT-D2a)', () => {
 
             expect(response.status).toBe(200);
             const payload = JSON.parse(response.body);
-            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug);
-            expect(slugs).toEqual(['res-hans']);
+            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug).sort();
+            // qa-cook is a live roster resident; only the benchmark synthetic is hidden.
+            expect(slugs).toEqual(['res-hans', 'res-qa-cook']);
         });
 
         it('GET /v1/wall/snapshot dedupes recentLetters by subject', async () => {
@@ -398,7 +399,7 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(new Set(subjects).size).toBe(2);
         });
 
-        it('GET /v1/library drops res-qa-* portraits from the public list', async () => {
+        it('GET /v1/library drops benchmark portraits but keeps the qa-* roster (HR-7)', async () => {
             server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
             writePortraitJson(tmp, 'res-hans', {
                 residentName: 'res:hans',
@@ -418,13 +419,23 @@ describe('letters HTTP server (EVENT-D2a)', () => {
                 patrons: [],
                 wants: { current: [] },
             });
+            writePortraitJson(tmp, 'res-bmk_fire_5m_xxx', {
+                residentName: 'res:bmk_fire_5m_xxx',
+                currentState: 'deceased',
+                livesCount: 1,
+                lastUpdated: { ts: '2026-05-26T12:00:00.000Z' },
+                voice: { quotes: [] },
+                patrons: [],
+                wants: { current: [] },
+            });
 
             const response = await get(server.url.replace('/v1/inbox', '/v1/library'));
 
             expect(response.status).toBe(200);
             const payload = JSON.parse(response.body);
-            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug);
-            expect(slugs).toEqual(['res-hans']);
+            const slugs = (payload.residents as Array<{ slug: string }>).map(r => r.slug).sort();
+            // qa-cook is a live roster resident; only the benchmark synthetic is hidden.
+            expect(slugs).toEqual(['res-hans', 'res-qa-cook']);
         });
     });
 
@@ -782,6 +793,31 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             expect(entry.diedAt).toBe('2026-05-26T10:00:00.000Z');
             expect(entry.livedTicks).toBe(1234);
         });
+
+        it('hides dead test/benchmark souls but keeps the real roster, incl. qa-* (HR-7)', async () => {
+            const deceased = {
+                cause: 'attention_exhausted',
+                date: '2026-05-26T10:00:00.000Z',
+                tick: 99,
+                processed: true,
+            };
+            writeRuntimeState(tmp, 'res-qa-cook', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-bmk_fire_5m_002e9qp0', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-restart-test', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-wf-verify-born', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-e2e-letters-1', { attention: 0, tick: 99, deceased });
+            writeRuntimeState(tmp, 'res-patron-loop-smoke', { attention: 0, tick: 99, deceased });
+            server = await startLettersHttpServer({ store, port: 0, lettersRoot: tmp });
+
+            const response = await get(server.url.replace('/v1/inbox', '/v1/graveyard'));
+
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { deceased: Array<{ slug: string }>; total: number };
+            // qa-cook is the live cast: its death is real and public. The
+            // benchmark/verification artifacts never reach the graveyard wall.
+            expect(payload.deceased.map(d => d.slug)).toEqual(['res-qa-cook']);
+            expect(payload.total).toBe(1);
+        });
     });
 
     describe('GET /v1/library (Pillar 3 — Library of Souls browse)', () => {
@@ -928,6 +964,77 @@ describe('letters HTTP server (EVENT-D2a)', () => {
             const oak = payload.residents.find(r => r.slug === 'res-oak');
             expect(oak?.currentState).toBe('deceased');
             expect(oak?.livesCount).toBe(2);
+        });
+    });
+
+    describe('GET /v1/letters/all (LB-H2R-1n55 dashboard polling bridge)', () => {
+        it('returns empty entries array when no letters exist', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { entries: unknown[]; total: number; asOf: string; since: null };
+            expect(payload.entries).toEqual([]);
+            expect(payload.total).toBe(0);
+            expect(typeof payload.asOf).toBe('string');
+            expect(payload.since).toBeNull();
+        });
+
+        it('returns all letters across all recipients', async () => {
+            seedLetter('alice@onion', 'welcome-alice', '2026-05-23T04:00:00.000Z');
+            seedLetter('bob@onion', 'welcome-bob', '2026-05-23T04:01:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { entries: Array<{ recipient: string; letters: unknown[] }>; total: number };
+            expect(payload.total).toBe(2);
+            const recipients = payload.entries.map(e => e.recipient).sort();
+            expect(recipients).toEqual(['alice@onion', 'bob@onion']);
+        });
+
+        it('filters by ?since= and returns only letters at or after the cutoff', async () => {
+            seedLetter('alice@onion', 'old-letter', '2026-05-23T03:00:00.000Z');
+            seedLetter('alice@onion', 'new-letter', '2026-05-23T05:00:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all?since=2026-05-23T04:00:00.000Z'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as {
+                entries: Array<{ recipient: string; letters: Array<{ subject: string }> }>;
+                total: number;
+                since: string;
+            };
+            expect(payload.total).toBe(1);
+            expect(payload.entries[0]?.letters[0]?.subject).toBe('new-letter');
+            expect(payload.since).toBe('2026-05-23T04:00:00.000Z');
+        });
+
+        it('returns 400 for a malformed ?since= value', async () => {
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all?since=not-a-date'));
+            expect(response.status).toBe(400);
+            const payload = JSON.parse(response.body) as { error: string };
+            expect(payload.error).toMatch(/since/i);
+        });
+
+        it('omits recipients with no letters after ?since= filtering', async () => {
+            seedLetter('alice@onion', 'alice-old', '2026-05-23T02:00:00.000Z');
+            seedLetter('bob@onion', 'bob-new', '2026-05-23T05:00:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0 });
+            const response = await get(server.url.replace('/v1/inbox', '/v1/letters/all?since=2026-05-23T04:00:00.000Z'));
+            expect(response.status).toBe(200);
+            const payload = JSON.parse(response.body) as { entries: Array<{ recipient: string }>; total: number };
+            expect(payload.total).toBe(1);
+            expect(payload.entries[0]?.recipient).toBe('bob@onion');
+        });
+
+        it('respects bearer-token auth when configured', async () => {
+            const auth = { bearerToken: 'test-secret' };
+            seedLetter('alice@onion', 'guarded', '2026-05-23T04:00:00.000Z');
+            server = await startLettersHttpServer({ store, port: 0, auth });
+            const urlAll = server.url.replace('/v1/inbox', '/v1/letters/all');
+            const unauthorized = await get(urlAll);
+            expect(unauthorized.status).toBe(401);
+            const authorized = await get(urlAll, { Authorization: 'Bearer test-secret' });
+            expect(authorized.status).toBe(200);
         });
     });
 });

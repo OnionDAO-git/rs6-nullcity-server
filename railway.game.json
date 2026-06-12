@@ -1,0 +1,12 @@
+{
+    "$schema": "https://railway.com/railway.schema.json",
+    "_note": "PRESERVED game-trio config (game/login/update, 3 services on Dockerfile.railway). This is the OLD default that railway.json carried before the all-in-one repoint. Deploy it with ./deploy-railway.sh, or point a service's config-file path at this file. The default railway.json now deploys the all-in-one image.",
+    "build": {
+        "builder": "DOCKERFILE",
+        "dockerfilePath": "Dockerfile.railway"
+    },
+    "deploy": {
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+    }
+}

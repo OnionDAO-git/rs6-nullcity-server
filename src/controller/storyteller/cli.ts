@@ -27,6 +27,7 @@ import type { GoalContract } from '../city-integration/goal-contract';
 import { GoalContractStore } from '../city-integration/goal-contract';
 import type { RuntimeState } from '../memory/runtime-state';
 import { residentSlug } from '../memory/runtime-state';
+import { isSyntheticResident } from '../letters/synthetic-residents';
 import { buildDigest, buildFixtureDigest, economyEventsToDigestBuckets, goalContractsToDigestGoalEvents } from './digest-builder';
 import { StorytellerStore, buildOperatorSummary } from './store';
 import type { CityEventDigest, ResidentSnapshot } from './types';
@@ -319,7 +320,10 @@ function inferResidentFromSlug(slug: string): string | undefined {
 }
 
 function isSyntheticResidentName(residentName: string): boolean {
-    return /^res-(qa-|bmk_)/.test(residentSlug(residentName));
+    // HR-7: delegate to the shared public-surface predicate. Note the
+    // qa-* roster (qa-cook, qa-woodcutter, ...) is the live cast and is
+    // intentionally narratable — only clear test patterns are filtered.
+    return isSyntheticResident(residentName);
 }
 
 function readLibraryDigestEvents(
@@ -371,6 +375,54 @@ function readLibraryDigestEvents(
                         source: 'library.timeline',
                         ...(tick !== undefined ? { tick } : {}),
                         reasons: Array.isArray(event['reasons']) ? event['reasons'] : undefined,
+                    },
+                });
+            } else if (kind === 'first_xp') {
+                const skill = typeof event['skill'] === 'string' ? event['skill'] : 'unknown';
+                miscEvents.push({
+                    ref: `library:${residentSlug(residentName)}:${ts}:first_xp:${skill}`,
+                    kind: 'skill_level_up',
+                    residentName,
+                    ts,
+                    note: `${residentName} gained their first ${skill} XP — a new skill begun.`,
+                    importance: 'high',
+                    evidence: {
+                        source: 'library.timeline',
+                        skill,
+                        ...(tick !== undefined ? { tick } : {}),
+                    },
+                });
+            } else if (kind === 'revival') {
+                const lifeIndex = typeof event['lifeIndex'] === 'number' ? event['lifeIndex'] : undefined;
+                miscEvents.push({
+                    ref: `library:${residentSlug(residentName)}:${ts}:revival:${lifeIndex ?? 'unknown'}`,
+                    kind: 'resident_revived',
+                    residentName,
+                    ts,
+                    note: `${residentName} was revived${lifeIndex !== undefined ? ` (life #${lifeIndex})` : ''}.`,
+                    importance: 'critical',
+                    evidence: {
+                        source: 'library.timeline',
+                        ...(lifeIndex !== undefined ? { lifeIndex } : {}),
+                        ...(tick !== undefined ? { tick } : {}),
+                    },
+                });
+            } else if (kind === 'patron_gift' || kind === 'patron_witness') {
+                const patronHandle = typeof event['patronHandle'] === 'string' ? event['patronHandle'] : 'a patron';
+                const amount = typeof event['amount'] === 'number' ? event['amount'] : undefined;
+                const verb = kind === 'patron_gift' ? 'gifted AP to' : 'witnessed';
+                miscEvents.push({
+                    ref: `library:${residentSlug(residentName)}:${ts}:${kind}:${hashRef(patronHandle)}`,
+                    kind: 'patron_gift',
+                    residentName,
+                    ts,
+                    note: `${patronHandle} ${verb} ${residentName}${amount !== undefined ? ` (${amount} AP)` : ''}.`,
+                    importance: kind === 'patron_gift' ? 'high' : 'medium',
+                    evidence: {
+                        source: 'library.timeline',
+                        patronHandle,
+                        ...(amount !== undefined ? { amount } : {}),
+                        ...(tick !== undefined ? { tick } : {}),
                     },
                 });
             } else if (kind === 'say') {
@@ -430,7 +482,13 @@ function readJsonLines(filePath: string): Record<string, unknown>[] {
 function latestByResidentKind(events: DigestEvent[]): DigestEvent[] {
     const byKey = new Map<string, DigestEvent>();
     for (const event of events) {
-        const key = `${event.residentName}:${event.kind}`;
+        // Patron events: each patron is a distinct actor, so include patronHandle in key
+        // to prevent a witness event from deduping away a gift from a different patron.
+        const patronSuffix =
+            event.kind === 'patron_gift' && typeof event.evidence?.['patronHandle'] === 'string'
+                ? `:${event.evidence['patronHandle'] as string}`
+                : '';
+        const key = `${event.residentName}:${event.kind}${patronSuffix}`;
         const existing = byKey.get(key);
         if (!existing || event.ts > existing.ts) {
             byKey.set(key, event);

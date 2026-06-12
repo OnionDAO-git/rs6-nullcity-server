@@ -16,7 +16,6 @@ aesthetic: chapel dust, folded hands, dry bones in a pouch
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3244
   y: 3208

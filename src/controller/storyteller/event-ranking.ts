@@ -3,7 +3,9 @@ import { IMPORTANCE_WEIGHT } from './types';
 
 const KIND_BONUS: Record<DigestEvent['kind'], number> = {
     resident_faded: 80,
+    resident_revived: 75,
     ap_zero: 70,
+    skill_level_up: 50,
     ap_for_gp_exchange: 45,
     ncri_created: 45,
     ncri_redeemed: 45,

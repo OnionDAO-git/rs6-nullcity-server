@@ -31,9 +31,14 @@ log_msg() {
   printf '%s\n' "$1" | bash scripts/runtime/rotating-log.sh "$LOG"
 }
 
+CONFIG_PATH="${NULLCITY_CONTROLLER_CONFIG:-${CONTROLLER_CONFIG:-$(pwd)/controller.yml}}"
+if [[ "$CONFIG_PATH" != /* ]]; then
+  CONFIG_PATH="$(pwd)/$CONFIG_PATH"
+fi
+
 # Flags must match the canonical launch (see docs/HUMANS.md / runtime-stewardship.md).
 CTRL_ARGS=(
-  "--config=$(pwd)/controller.yml"
+  "--config=$CONFIG_PATH"
   "--mcp-http-port=43610"
   "--letters-http-port=43596"
   "--wall-redact"
@@ -56,7 +61,7 @@ while true; do
     rm -f "$LOCK"
   fi
 
-  log_msg "[supervisor] starting controller at $(date)"
+  log_msg "[supervisor] starting controller at $(date) config=$CONFIG_PATH"
   start=$(date +%s)
   node dist/controller/index.js "${CTRL_ARGS[@]}" > >(bash scripts/runtime/rotating-log.sh "$LOG") 2>&1 &
   child=$!

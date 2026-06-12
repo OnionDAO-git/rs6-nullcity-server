@@ -12,6 +12,7 @@ export interface BrainPromptInput {
     commandPrefix: string;
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
     progress?: RuntimeProgressPromptInput;
+    attention?: RuntimeAttentionPromptInput;
     memories?: string[];
     /** RIQ-1-1-B: injected by runBrain when the planner tool loop is active. */
     toolInstructions?: string;
@@ -24,6 +25,7 @@ export interface BodyPromptInput {
     commandPrefix: string;
     gameSkill?: Pick<GameSkillContext, 'brainSection' | 'bodySection'>;
     progress?: RuntimeProgressPromptInput;
+    attention?: RuntimeAttentionPromptInput;
     memories?: string[];
     visibility: {
         anchor?: { x: number; y: number; level: number };
@@ -35,6 +37,13 @@ export interface RuntimeProgressPromptInput {
     tick: number;
     lastMeaningfulProgressAt?: number;
     stuckSince?: number;
+}
+
+export interface RuntimeAttentionPromptInput {
+    currentAttention: number;
+    attentionFloor: number;
+    runwayAboveFloor: number;
+    needsTier: 'survive' | 'earn' | 'pursue' | 'reflect';
 }
 
 export function buildBrainPrompt(input: BrainPromptInput): string {
@@ -58,6 +67,7 @@ export function buildBrainPrompt(input: BrainPromptInput): string {
         '',
         brainPlaybookPrompt(),
         input.gameSkill?.brainSection || '',
+        runtimeAttentionSection(input.attention, 'brain'),
         runtimeProgressSection(input.progress, 'brain'),
         memorySection(input.memories, 'brain'),
         soulIdentitySection(input.soul.frontmatter, 'brain'),
@@ -91,6 +101,7 @@ export function buildBodyPrompt(input: BodyPromptInput): string {
         '',
         bodyPlaybookPrompt(),
         input.gameSkill?.bodySection || '',
+        runtimeAttentionSection(input.attention, 'body'),
         runtimeProgressSection(input.progress, 'body'),
         memorySection(input.memories, 'body'),
         soulIdentitySection(input.soul.frontmatter, 'body'),
@@ -182,6 +193,36 @@ function runtimeProgressSection(progress: RuntimeProgressPromptInput | undefined
         );
     }
     return lines.join('\n');
+}
+
+function runtimeAttentionSection(attention: RuntimeAttentionPromptInput | undefined, role: 'brain' | 'body'): string {
+    if (!attention) {
+        return '';
+    }
+    const lines = [
+        'Attention state:',
+        `- Current AP / attention: ${formatAttentionNumber(attention.currentAttention)}`,
+        `- Attention floor: ${formatAttentionNumber(attention.attentionFloor)}`,
+        `- AP runway above floor: ${formatAttentionNumber(attention.runwayAboveFloor)}`,
+        `- Active needs tier: ${attention.needsTier}`,
+    ];
+    if (attention.needsTier === 'survive') {
+        lines.push(
+            role === 'brain'
+                ? '- AP runway is thin; choose survival, attention support, or a safer earning step before long Soul goals.'
+                : '- AP runway is thin; prefer safe, concrete actions that preserve attention or request support over risky progress.',
+        );
+    } else {
+        lines.push('- AP runway is available; preserve it while following the needs hierarchy.');
+    }
+    return lines.join('\n');
+}
+
+function formatAttentionNumber(value: number): string {
+    if (!Number.isFinite(value)) {
+        return 'unknown';
+    }
+    return Number.isInteger(value) ? String(value) : value.toFixed(2);
 }
 
 const BRAIN_ARCHETYPE_DIRECTIVES: Record<SoulArchetype, string> = {

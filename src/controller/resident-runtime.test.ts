@@ -3865,6 +3865,77 @@ describe('ResidentRuntime modules', () => {
         fs.rmSync(evidenceRoot, { recursive: true, force: true });
     });
 
+    it('does NOT dispatch epitaph or broadcast letters when a synthetic test resident dies (HR-7)', async () => {
+        const memoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-synthetic-death-memory-'));
+        const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-synthetic-death-evidence-'));
+        const store = new EvidenceStore('res:bmk_fire_5m_x', evidenceRoot);
+        const memory = new MemoryStore(memoryRoot, '');
+
+        const state = stateFor('res:bmk_fire_5m_x');
+        state.deceased = {
+            date: '2026-05-23T16:00:00.000Z',
+            tick: 100,
+            cause: 'attention_exhausted',
+        };
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+
+        const onDeath = jest.fn();
+        const sealTrajectory = {
+            beginTick: jest.fn(),
+            endTick: jest.fn(),
+            recordDecision: jest.fn(),
+            recordLegacy: jest.fn((event: unknown) => ({ kind: 'legacy_event', event })),
+        };
+        const sealLibrary = {
+            getPatronHandles: jest.fn(() => ['patron:alice']),
+            observeTrajectory: jest.fn(),
+        };
+        const runtime = new ResidentRuntime({
+            soul: soul('res:bmk_fire_5m_x'),
+            gateway: {} as GatewayClient,
+            memory,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            onDeath,
+            evidence: {
+                store,
+                sessionId: 'session-1',
+                trajectory: sealTrajectory as unknown as TrajectoryBuilder,
+                library: sealLibrary as unknown as LibraryUpdater,
+            },
+        });
+
+        await runtime.onPerception({
+            tick: 101,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [], skills: {} },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        // Death still sticks: it is processed, the host is notified, and the
+        // library is sealed — only the public letter cascade is fenced.
+        expect(state.deceased.processed).toBe(true);
+        expect(onDeath).toHaveBeenCalledWith('res:bmk_fire_5m_x', 'attention_exhausted');
+        expect(sealTrajectory.recordLegacy).toHaveBeenCalled();
+
+        // No epitaph, ribbon, or broadcast letters land in any patron inbox.
+        const lettersStore = new LettersStore(evidenceRoot);
+        expect(lettersStore.readInbox('patron:alice')).toHaveLength(0);
+        expect(fs.existsSync(path.join(evidenceRoot, 'data', 'letters'))).toBe(false);
+
+        fs.rmSync(memoryRoot, { recursive: true, force: true });
+        fs.rmSync(evidenceRoot, { recursive: true, force: true });
+    });
+
     it('triggers broadcast letter building and dispatching on onPerception when state.deceased is set, querying standing ledger and config patrons', async () => {
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-broadcast-memory-'));
         const evidenceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-broadcast-evidence-'));
@@ -4009,6 +4080,83 @@ describe('ResidentRuntime modules', () => {
         expect(state.attention).toBe(0);
         expect(state.deceased).toBeDefined();
         expect(state.deceased?.cause).toBe('attention_exhausted');
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('scales per-tick decay by the survivable-weekend schedule using the injected clock', async () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-decay-schedule-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 100;
+
+        const thinking: ThinkingModule = {
+            think: jest.fn(async () => ({ actions: [], cause: 'noop', nooped: true })),
+            considerInterrupt: jest.fn(() => false),
+            stop: jest.fn(),
+        };
+        const body = {
+            observePerception: jest.fn(),
+            observeEvent: jest.fn(),
+            submit: jest.fn(async () => ({ ok: true, requestId: 'request-noop' })),
+        } as unknown as ResidentBody;
+
+        // Sat 2026-06-13 23:00 CDT — weekend night → min(0.5, 0.25) = 0.25.
+        const weekendNight = Date.parse('2026-06-14T04:00:00Z');
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip', {
+                attentionProfile: { startingAttention: 100, decayCurve: 'standard' },
+            }),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking,
+            body,
+            // maxAttention keeps the capacity-aware plea threshold (15% → 75)
+            // below the test's attention of 100 so no plea say interferes
+            // with the decay math under inspection.
+            economy: { attentionDecaySchedule: { timezone: 'America/Chicago' }, maxAttention: 500 },
+            now: () => weekendNight,
+        });
+
+        await runtime.onPerception({
+            tick: 1,
+            resident: { position: { x: 3200, y: 3200, level: 0 }, inventory: [], skills: {} },
+            nearby: { players: [], npcs: [], worldItems: [], objects: [] },
+            events: [],
+            availableActions: [],
+        });
+
+        // standard curve is 1/tick; weekend-night multiplier 0.25 → -0.25.
+        expect(state.attention).toBe(99.75);
+
+        fs.rmSync(memoryDir, { recursive: true, force: true });
+    });
+
+    it('clamps patron support credits to the configured attention capacity', () => {
+        const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nullcity-runtime-attention-capacity-memory-'));
+
+        const state = stateFor('res:pip');
+        state.attention = 100;
+
+        const runtime = new ResidentRuntime({
+            soul: soul('res:pip'),
+            gateway: {} as GatewayClient,
+            memory: { ensureResident: jest.fn(() => memoryDir), retrieve: jest.fn(() => []), write: jest.fn() } as unknown as MemoryStore,
+            stateStore: { load: jest.fn(() => state), save: jest.fn() } as unknown as RuntimeStateStore,
+            llm: {} as LlmClient,
+            actionLog: {} as ActionLog,
+            inferenceLog: { append: jest.fn() } as unknown as InferenceLog,
+            thinking: thinkingModule(),
+            economy: { maxAttention: 500 },
+        });
+
+        runtime.incrementAttention(10_000);
+
+        expect(state.attention).toBe(500);
 
         fs.rmSync(memoryDir, { recursive: true, force: true });
     });
@@ -4829,7 +4977,9 @@ function stateFor(resident: string): RuntimeState {
     const now = new Date().toISOString();
     return {
         resident,
-        attention: 100,
+        // Above the capacity-aware attention-plea threshold so the nervous
+        // request-attention reflex stays quiet in tests that are not about it.
+        attention: 5000,
         tick: 0,
         legacy: { kind: 'mentor', progress: {}, complete: false },
         budgets: { minuteStartedAt: now, dayStartedAt: now, requestsThisMinute: 0, requestsToday: 0 },

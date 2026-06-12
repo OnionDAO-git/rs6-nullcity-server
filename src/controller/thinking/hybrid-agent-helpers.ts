@@ -1,6 +1,6 @@
 import type { AgentAction, Perception } from '../transport/message-codecs';
 import type { Soul, HybridAgentBehaviorDefinition } from '../soul/soul-schema';
-import { buildBodyPrompt, buildBrainPrompt } from './hybrid-agent-prompts';
+import { buildBodyPrompt, buildBrainPrompt, type RuntimeAttentionPromptInput } from './hybrid-agent-prompts';
 import { estimateTokens } from '../util/token-count';
 import { parseCompletion } from '../llm/completion-parser';
 import type { GameSkillContext } from '../knowledge/game-skill-context';
@@ -602,28 +602,54 @@ export function presenceBeaconAction(ctx: HelperContext, perception: HybridPerce
     const phase = presenceBeaconPhase(ctx);
     const includeNextStep = phase === 0;
     const includeGoal = phase !== 3;
+    const text = statusSpeech(ctx, perception, presenceBeaconPrefix(ctx, perception), includeNextStep, includeGoal);
+
+    // Suppress consecutive-identical PUBLIC beacons: the live audit saw the same
+    // beacon line repeated up to 94x in a row. Only emit when the spoken text
+    // changes (or after the timing gate's longer cooldown re-fires it later with
+    // a different phrase). Scoped to the presence/status beacon path only —
+    // combat/command/social-reply say-actions never flow through here.
+    if (cognition.lastPresenceBeaconText === text) {
+        return undefined;
+    }
+
     cognition.lastPresenceBeaconTick = ctx.options.state.tick;
     cognition.lastGoalShareTick = ctx.options.state.tick;
-    return { kind: 'say', text: statusSpeech(ctx, perception, presenceBeaconPrefix(ctx, perception), includeNextStep, includeGoal) };
+    cognition.lastPresenceBeaconText = text;
+    return { kind: 'say', text };
+}
+
+// Maps the presence-beacon phase to a phrasebook situation key. The nearby
+// perception read-out ("Nearby I see 17 trees and 8 items") is deliberately NOT
+// folded into the public say string — it read as debug telemetry in the live
+// chat feed, the same reason raw tile coords were dropped (see composeStatusLine).
+// presenceNearbySummary() stays available for the operator/digest/telemetry path.
+function presenceBeaconSituation(phase: 0 | 1 | 2 | 3): string {
+    switch (phase) {
+        case 1:
+            return 'presence_beacon.idle';
+        case 2:
+            return 'presence_beacon.scouting';
+        case 3:
+            return 'presence_beacon.route';
+        default:
+            return 'presence_beacon.online';
+    }
 }
 
 export function presenceBeaconPrefix(ctx: HelperContext, perception: HybridPerception): string {
-    if (ctx.options.state.tick < PRESENCE_BEACON_VARIETY_AFTER_TICKS) {
-        return 'I am online';
-    }
-
-    const phase = presenceBeaconPhase(ctx);
-    const nearby = presenceNearbySummary(perception);
-    if (phase === 1 && nearby) {
-        return `I see ${nearby} nearby`;
-    }
-    if (phase === 2) {
-        return nearby ? `I am scouting. Nearby I see ${nearby}` : 'I am scouting';
-    }
-    if (phase === 3) {
-        return nearby ? `I am working my route. Nearby I see ${nearby}` : 'I am working my route';
-    }
-    return nearby ? `I am checking this area. Nearby I see ${nearby}` : 'I am checking in';
+    const warmingUp = ctx.options.state.tick < PRESENCE_BEACON_VARIETY_AFTER_TICKS;
+    const phase = warmingUp ? 0 : presenceBeaconPhase(ctx);
+    const soul = ctx.options.soul;
+    const display = soul.frontmatter.display || soul.frontmatter.name;
+    // Deterministic, seeded by resident+tick — NO LLM call, no added latency.
+    const seed = `${soul.frontmatter.name}:${ctx.options.state.tick}`;
+    return pickPhrase({
+        soul,
+        situation: presenceBeaconSituation(phase),
+        seed,
+        params: { display },
+    });
 }
 
 export function presenceNearbySummary(perception: HybridPerception): string | undefined {
@@ -2757,6 +2783,23 @@ export function ensureBenchmarkGoal(ctx: HelperContext): void {
     cognition.lastBrainTick = ctx.options.state.tick;
 }
 
+export function runtimeAttentionPromptInput(ctx: HelperContext): RuntimeAttentionPromptInput {
+    const activeGoal = ctx.activeGoal();
+    const needsContext = buildResidentNeedsContext({
+        attention: ctx.options.state.attention,
+        attentionFloor: ctx.options.soul.frontmatter.attentionProfile?.floor,
+        hasActiveGoal: Boolean(activeGoal),
+        orientationGoal: ctx.options.soul.frontmatter.orientationGoal,
+        currentActiveGoalId: activeGoal?.id,
+    });
+    return {
+        currentAttention: needsContext.ap,
+        attentionFloor: needsContext.apFloor,
+        runwayAboveFloor: Math.max(0, needsContext.ap - needsContext.apFloor),
+        needsTier: currentTier(needsContext),
+    };
+}
+
 export function ensureFactionLandmarkGoal(ctx: HelperContext): void {
     if (ctx.options.soul.frontmatter.legacy?.parameters?.benchmarkTask) {
         return;
@@ -3418,23 +3461,23 @@ export async function maybeTriggerPlannerPass(ctx: HelperContext, thinkId?: numb
         stalledSinceLastPlan;
     if (!needsReplan) return;
 
+    // RIQ-5-3: global concurrency cap — acquire slot BEFORE admitting budget so
+    // residents denied a slot are never charged against their daily budget.
+    // At most MAX_CONCURRENT_PLANNER_CALLS in-flight; denied residents skip this
+    // tick and retry on the next brain cycle (natural stagger, no queue needed).
+    if (!acquireGlobalPlannerSlot()) return;
+
     // S-PLAN-BUDGET-1: guard the paid planner (planner_haiku ~$0.016/call) against
     // runaway re-planning loops. Deny and log when the daily limit is reached.
+    // Slot is released here so other residents can proceed on the same tick.
     const plannerBudget = admitPlannerCall(ctx.options.state);
     if (!plannerBudget.ok) {
+        releaseGlobalPlannerSlot();
         process.stderr.write(
             `[RIQ-3-2] Planner budget exhausted for ${residentId}: ` + `${plannerBudget.callsToday}/${plannerBudget.max} calls today\n`,
         );
         return;
     }
-
-    // RIQ-5-3: global concurrency cap — at most MAX_CONCURRENT_PLANNER_CALLS
-    // residents may be running a PlannerPass simultaneously (default 3). On
-    // controller restart all residents with stale plans need a replan at once;
-    // without this gate that means N simultaneous paid Haiku calls. Residents
-    // denied a slot skip this tick and retry on the next brain cycle, giving
-    // natural stagger without a queue or priority system.
-    if (!acquireGlobalPlannerSlot()) return;
 
     _plannerPassInFlight.add(residentId);
     const plannerLlmAdapter = {
@@ -3556,6 +3599,7 @@ export async function runBrain(
             lastMeaningfulProgressAt: ctx.options.state.lastMeaningfulProgressAt,
             stuckSince: ctx.options.state.stuckSince,
         },
+        attention: runtimeAttentionPromptInput(ctx),
         memories: ctx.promptMemories(perception as HybridPerception, 'brain'),
         toolInstructions,
     });
@@ -3708,6 +3752,7 @@ export async function runBody(
             lastMeaningfulProgressAt: ctx.options.state.lastMeaningfulProgressAt,
             stuckSince: ctx.options.state.stuckSince,
         },
+        attention: runtimeAttentionPromptInput(ctx),
         memories: ctx.promptMemories(bodyPerception, 'body'),
         visibility,
     });

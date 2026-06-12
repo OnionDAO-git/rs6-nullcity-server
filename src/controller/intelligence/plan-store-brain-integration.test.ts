@@ -978,3 +978,33 @@ describe('runBody — stage tick-budget timeout (RIQ-3-6)', () => {
         expect(library.observePlanStageDone).toHaveBeenCalledTimes(1);
     });
 });
+
+// ---------------------------------------------------------------------------
+// A4 — preInference short-circuit preserves PlanStore (RIQ-5-5)
+//
+// When preInferenceBodyAction fires (e.g. socialKeepaliveAction), runBody
+// returns before routeActivePlanStage is reached, so planStore is never
+// mutated — the durable plan survives the tick untouched.
+// ---------------------------------------------------------------------------
+
+describe('A4 — runBody preInference short-circuit preserves PlanStore (RIQ-5-5)', () => {
+    it('socialKeepaliveAction pre-inference fires and planStore.save/.clear are not called', async () => {
+        const plan = makeActivePlan();
+        const planStore = makePlanStore(plan);
+        const ctx = makeCtx({ planStore, tick: 100 });
+        // Trigger socialKeepaliveAction: commandPrefix='social', no players nearby,
+        // no prior keepalive tick — causes preInferenceBodyAction to short-circuit.
+        (ctx as any).commandPrefix = () => 'social';
+
+        const result = await runBody(ctx, {
+            tick: 100,
+            resident: { position: { x: 0, y: 0, level: 0 }, inventory: [] },
+            nearby: { objects: [], npcs: [], worldItems: [], players: [] },
+            events: [],
+        } as any);
+
+        expect(result.cause).toBe('social_keepalive');
+        expect(planStore.save).not.toHaveBeenCalled();
+        expect(planStore.clear).not.toHaveBeenCalled();
+    });
+});

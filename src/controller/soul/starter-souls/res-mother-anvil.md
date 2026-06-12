@@ -29,10 +29,9 @@ deflections:
   - "Later. Metal's turning."
 model:
   thinking: false
-attentionProfile:
-  startingAttention: 14000
-  decayCurve: standard
-  floor: 5000
+# Real mortality (2026-06-11): the E30/HD-008 floor and the per-soul starting
+# override are gone — starting/max attention come from controller.yml
+# `economy:` (survivable-weekend scheme); this resident can die when its runway ends.
 heroProfile:
   tier: hero
   publicName: Mother Anvil

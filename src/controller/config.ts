@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { PatronConfig } from './patron/patron-registry';
+import type { AttentionDecayScheduleConfig } from './spark/attention';
 
 export interface ControllerConfig {
     controller: {
@@ -48,6 +49,44 @@ export interface ControllerConfig {
      */
     economy?: {
         onionsPerStandingPoint?: number;
+        /**
+         * Survivable-weekend decay schedule: scales per-tick attention
+         * decay by local time of day (evening/night/weekend run slower).
+         * Absent = multiplier 1.0 everywhere (historical behavior). See
+         * `decayScheduleMultiplier` in src/controller/spark/attention.ts
+         * for the exact semantics and field defaults.
+         */
+        attentionDecaySchedule?: AttentionDecayScheduleConfig;
+        /**
+         * Config-level default attention-bar capacity. Support credits
+         * clamp to this value. A soul's `attentionProfile.maxAttention`
+         * overrides it per-resident. Absent = uncapped (historical
+         * behavior).
+         */
+        maxAttention?: number;
+        /**
+         * Config-level default starting attention for souls that do not
+         * set `attentionProfile.startingAttention`. Absent = the
+         * historical hardcoded 5000.
+         */
+        startingAttention?: number;
+        /**
+         * Fraction of a no-floor resident's attention capacity below which
+         * the attention-plea reflex fires (real-mortality lead time so a
+         * fading resident can summon patrons). Absent = 0.15 (15% of
+         * capacity). When no capacity is configured anywhere, an absolute
+         * fallback threshold of 2000 AP applies. See
+         * `attentionPleaThreshold` in src/controller/spark/attention.ts.
+         */
+        attentionPleaThresholdFraction?: number;
+        /**
+         * Production gate for the AP<->GP exchange (SL-6): an uncapped
+         * mint/burn pair that becomes an exploit once onions are the scarce
+         * user-facing currency. Absent/true = exchange enabled (historical
+         * behavior). Ops should set this FALSE in the live controller.yml
+         * for launch.
+         */
+        enableApGpExchange?: boolean;
     };
 }
 
@@ -301,6 +340,14 @@ export function loadControllerConfig(configPath = DEFAULT_CONFIG_PATH): Controll
             profiles: llmProfiles,
         },
         patrons: readPatronArray(source.patrons),
+        economy: {
+            onionsPerStandingPoint: readOptionalNumber(readPath(source, ['economy', 'onionsPerStandingPoint'])),
+            attentionDecaySchedule: readAttentionDecaySchedule(readPath(source, ['economy', 'attentionDecaySchedule'])),
+            maxAttention: readOptionalNumber(readPath(source, ['economy', 'maxAttention'])),
+            startingAttention: readOptionalNumber(readPath(source, ['economy', 'startingAttention'])),
+            attentionPleaThresholdFraction: readOptionalNumber(readPath(source, ['economy', 'attentionPleaThresholdFraction'])),
+            enableApGpExchange: readOptionalBoolean(readPath(source, ['economy', 'enableApGpExchange'])),
+        },
     };
 
     return config;
@@ -520,6 +567,21 @@ function readLlmCost(value: unknown): LlmCostConfig | undefined {
 
 function readOptionalNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readAttentionDecaySchedule(value: unknown): AttentionDecayScheduleConfig | undefined {
+    if (!isRecord(value)) {
+        return undefined;
+    }
+    return {
+        timezone: readOptionalString(value.timezone),
+        weekendMultiplier: readOptionalNumber(value.weekendMultiplier),
+        eveningMultiplier: readOptionalNumber(value.eveningMultiplier),
+        nightMultiplier: readOptionalNumber(value.nightMultiplier),
+        eveningStartHour: readOptionalNumber(value.eveningStartHour),
+        nightStartHour: readOptionalNumber(value.nightStartHour),
+        nightEndHour: readOptionalNumber(value.nightEndHour),
+    };
 }
 
 function readOptionalBoolean(value: unknown): boolean | undefined {

@@ -1,6 +1,8 @@
 import { BornResidentStore } from './born-resident-store';
 import { EconomyEventLog } from './city-integration/economy-event';
 import { CityIntegrationService, type BirthResidentRequest, cityInitialInventory, writeBirthSoulFile } from './city-integration/service';
+import { GoalContractStore } from './city-integration/goal-contract';
+import type { Plan } from './intelligence/planner-pass';
 import { ControllerConfig } from './config';
 import { EvidenceStore, LibraryUpdater, TrajectoryBuilder } from './evidence';
 import { FactionStockpileLedger } from './factions/stockpile-ledger';
@@ -16,6 +18,8 @@ import { type RuntimeState, RuntimeStateStore, residentSlug } from './memory/run
 import { CurrencyLedger } from './patron/currency-ledger';
 import { PlanStore } from './intelligence/plan-store';
 import { LettersStore } from './patron/letters-store';
+import { produceGoalAchievedLetter, produceResidentReplyLetter } from './patron/letters-producer';
+import { findTrajectoryReply } from './patron/reply-capture';
 import { recordSettledSupport } from './patron/settled-support';
 import { PatronGateway } from './patron/patron-gateway';
 import { PatronStore } from './patron/patron-store';
@@ -28,6 +32,8 @@ import { GatewayClient } from './transport/gateway-client';
 import type { PerceptionEvent } from './transport/message-codecs';
 
 const THINKING_WATCHDOG_ENDPOINT_GRACE_MS = 5_000;
+const REPLY_POLL_TIMEOUT_MS = 90_000;
+const REPLY_POLL_INTERVAL_MS = 500;
 
 export interface ControllerHostOptions {
     once?: boolean;
@@ -229,6 +235,9 @@ export class ControllerHost {
         this.economyEventLog = options.economyEventLog || new EconomyEventLog(config.memory.dir);
         this.cityIntegrationService = new CityIntegrationService({
             memoryRoot: config.memory.dir,
+            // SL-6: production gate for the uncapped AP<->GP exchange. Ops
+            // sets economy.enableApGpExchange: false in the live controller.yml.
+            enableApGpExchange: config.economy?.enableApGpExchange,
             getRuntime: resident => this.getRuntime(resident),
             inventory: {
                 inspectResidentGold: resident => this.inspectResidentGold(resident),
@@ -242,17 +251,13 @@ export class ControllerHost {
             // support grants so the dashboard "Support with AP" button produces
             // the same standing/letter effects as the patron:offer CLI path.
             onPatronSupport: event => {
-                // T0.0b: Shards-free settled-support seam. Keys on personId
-                // (=== landing users.id) when the caller resolved it (the same
-                // canonical id the ap_topup economy event records), else patronHandle,
-                // else cityUserId. When personId is present, standing aligns with the
-                // economy log. NOTE: not structurally enforced — if a grant arrives
-                // without personId, standing keys on a fallback while the log still
-                // records cityUserId; the upstream cityUserId->personId join is the
-                // real guard against fragmentation.
+                // T0.0b: Shards-free settled-support seam. Prefer the human-facing
+                // patron handle for standing + letters so /v1/inbox?human=<handle>
+                // sees the tier letter. Keep personId in the economy log above as
+                // the canonical audit join to landing users.id.
                 recordSettledSupport(
                     {
-                        patronId: event.personId ?? event.patronHandle ?? event.cityUserId,
+                        patronId: event.patronHandle ?? event.personId ?? event.cityUserId,
                         faction: event.faction,
                         residentName: event.residentName,
                         onionsSettled: event.amount,
@@ -267,7 +272,43 @@ export class ControllerHost {
                 );
                 this.persistPatronLedgers();
             },
+            // LB-H2R-8m13: when a human inbox message is delivered, poll the
+            // resident's trajectory for the next say action and store it as a
+            // resident_reply letter so the human sees it via GET /v1/letters/all.
+            onMessageDelivered: event => {
+                const { residentName, cityUserId, senderDisplayName, ts } = event;
+                const memoryDir = config.memory.dir;
+                const lettersStore = this.lettersStore;
+                void (async () => {
+                    const deadline = Date.now() + REPLY_POLL_TIMEOUT_MS;
+                    while (Date.now() < deadline) {
+                        const reply = findTrajectoryReply(memoryDir, residentName, ts);
+                        if (reply) {
+                            const letter = produceResidentReplyLetter({
+                                humanId: cityUserId,
+                                residentName,
+                                replyText: reply.text,
+                                ts: reply.ts,
+                            });
+                            try {
+                                lettersStore.append(letter);
+                            } catch {
+                                // best-effort; ignore filesystem errors
+                            }
+                            return;
+                        }
+                        await new Promise<void>(resolve => setTimeout(resolve, REPLY_POLL_INTERVAL_MS));
+                    }
+                    // No reply within the window — that is fine; the human can
+                    // still read the resident's say actions via the live stream.
+                })();
+            },
         });
+        // LB-LOOP-7e31: autonomous goal completion — when a plan's final stage
+        // is done, auto-mark the resident's active GoalContract achieved so the
+        // loop closes without requiring an operator POST /goals/:id/achieve.
+        this.planStore.onPlanCompleted = (residentId, plan) => this.handlePlanCompleted(residentId, plan);
+
         this.bindGatewayEvents();
     }
 
@@ -508,6 +549,10 @@ export class ControllerHost {
             loreBus: this.loreBus,
             factionStockpile: this.factionStockpile,
             watchdog: thinkingWatchdogMs === undefined ? undefined : { thinkingMs: thinkingWatchdogMs },
+            // Survivable weekend: thread the attention economy knobs (decay
+            // schedule + capacity + starting default) from controller.yml
+            // `economy:` into every resident runtime.
+            economy: this.config.economy,
             onDeath: (name: string, cause: string) => this.handleResidentDeath(name, cause),
         };
         this.runtimes.set(
@@ -623,6 +668,72 @@ export class ControllerHost {
      * graveyard. Authored cohort residents (config.residents) are left untouched
      * and keep their existing respawn behavior.
      */
+    /** LB-LOOP-7e31 + S-GOAL-NOTIF-1: fires when the resident's plan transitions to 'completed'. */
+    private handlePlanCompleted(residentId: string, plan: Plan): void {
+        const goalStore = new GoalContractStore(this.config.memory.dir);
+        const active = goalStore.listByResident(residentId).find(c => c.status === 'active');
+        if (!active) return;
+        try {
+            const doneSubgoals = plan.stages.filter(s => s.status === 'done').map(s => s.subgoal);
+            const evidence =
+                doneSubgoals.length > 0
+                    ? `Plan completed. Stages done: ${doneSubgoals.join('; ')}`
+                    : `Plan completed: goalId=${plan.goalId}`;
+            this.cityIntegrationService.markGoalAchieved(active.id, { evidence });
+        } catch (err) {
+            process.stderr.write(`[handlePlanCompleted] markGoalAchieved failed for ${residentId}: ${String(err)}\n`);
+        }
+
+        // S-GOAL-NOTIF-1: notify faction patrons that this resident achieved their goal.
+        try {
+            const runtime = this.runtimes.get(this.runtimeName(residentId));
+            const faction: string = (runtime?.getState() as { faction?: string } | undefined)?.faction ?? 'embassy';
+            const ts = new Date().toISOString();
+            const recipients = this.goalAchievedRecipients(faction);
+            for (const humanId of recipients) {
+                const letter = produceGoalAchievedLetter({
+                    humanId,
+                    residentName: residentId,
+                    goalText: active.goalText,
+                    ts,
+                });
+                try {
+                    this.lettersStore.append(letter);
+                } catch {
+                    // best-effort; never block plan completion for letter errors
+                }
+            }
+        } catch (err) {
+            process.stderr.write(`[handlePlanCompleted] goal-notif dispatch failed for ${residentId}: ${String(err)}\n`);
+        }
+    }
+
+    /**
+     * Collect humanIds to receive a goal_achieved notification.
+     * Includes all patrons who ever supported `faction` (standing ledger)
+     * plus all configured patrons — same recipient set as attention pleas.
+     */
+    private goalAchievedRecipients(faction: string): Set<string> {
+        const recipients = new Set<string>();
+        const snap = this.standingLedger.snapshot();
+        for (const key of Object.keys(snap.points)) {
+            const sepIdx = key.lastIndexOf('|');
+            if (sepIdx >= 0) {
+                const humanId = key.slice(0, sepIdx);
+                const entryFaction = key.slice(sepIdx + 1);
+                if (entryFaction === faction && humanId.length > 0) {
+                    recipients.add(humanId);
+                }
+            }
+        }
+        for (const p of this.config.patrons ?? []) {
+            if (p.handle && p.handle.trim().length > 0) {
+                recipients.add(p.handle.trim());
+            }
+        }
+        return recipients;
+    }
+
     private handleResidentDeath(name: string, cause: string): void {
         if (!this.cityBorn.has(name)) {
             return;
@@ -734,6 +845,12 @@ function resolveOnionsPerStandingPoint(config: ControllerConfig): number {
     const configured = config.economy?.onionsPerStandingPoint;
     if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
         return configured;
+    }
+    // Env fallback so the live run can set the real scale without a config change
+    // (e.g. CITY_ONIONS_PER_STANDING_POINT=100). Product decision; James chose ≥100.
+    const fromEnv = Number(process.env.CITY_ONIONS_PER_STANDING_POINT);
+    if (Number.isFinite(fromEnv) && fromEnv > 0) {
+        return fromEnv;
     }
     // eslint-disable-next-line no-console
     console.warn(

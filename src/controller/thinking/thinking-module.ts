@@ -15,6 +15,7 @@ import {
     type SparkModuleIdentity,
 } from '../spark/modules';
 import { noopSparkModuleTelemetry, type SparkModuleTelemetry } from '../spark/module-telemetry';
+import type { AttentionDecayScheduleConfig } from '../spark/attention';
 import { Spark, type SparkTickResult } from '../spark/spark';
 import { BasicAgentThinkingModule } from './basic-agent-thinking-module';
 import { HybridAgentThinkingModule } from './hybrid-agent-thinking-module';
@@ -39,6 +40,10 @@ export interface SparkThinkingModuleOptions {
     resolvedSparkModules?: ResolvedSparkModule[];
     moduleTelemetry?: (module: SparkModuleIdentity) => SparkModuleTelemetry;
     patronRegistry?: PatronRegistry;
+    /** Survivable-weekend decay schedule forwarded to {@link Spark}. */
+    attentionDecaySchedule?: AttentionDecayScheduleConfig;
+    /** Injectable wall clock (epoch ms) forwarded to {@link Spark}. */
+    now?: () => number;
 }
 
 export interface ThinkingModuleSelection {
@@ -92,7 +97,10 @@ export class SparkThinkingModule implements ThinkingModule {
     private readonly spark: Spark;
 
     constructor(options: SparkThinkingModuleOptions) {
-        this.spark = new Spark(options.soul, options.state, options.memory, options.llm);
+        this.spark = new Spark(options.soul, options.state, options.memory, options.llm, {
+            attentionDecaySchedule: options.attentionDecaySchedule,
+            now: options.now,
+        });
     }
 
     think(perception: Perception, _gameSkill?: GameSkillContext): Promise<ThoughtResult> {

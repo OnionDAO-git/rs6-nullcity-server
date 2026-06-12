@@ -66,3 +66,113 @@ describe('presence-beacon cadence — toned down for human viewers', () => {
         ).toBe(true);
     });
 });
+
+import { presenceBeaconPrefix, presenceBeaconAction, PRESENCE_BEACON_VARIETY_AFTER_TICKS } from './hybrid-agent-helpers';
+import type { HelperContext } from './hybrid-agent-helpers';
+import type { HybridPerception } from './hybrid-agent-utils';
+import type { Soul } from '../soul/soul-schema';
+
+function makeSoul(register = 'endurer', display = 'Hans'): Soul {
+    return {
+        frontmatter: { name: 'res:hans', display, archetype: 'endurer', voice: { register } },
+    } as unknown as Soul;
+}
+
+/**
+ * A nearby-rich perception: the OLD beacon prefix would inline
+ * "Nearby I see 17 trees and 8 items" — the debug read-out the live audit
+ * flagged. These tests assert the PUBLIC say string no longer carries it.
+ */
+function richPerception(): HybridPerception {
+    return {
+        tick: 1200,
+        resident: { position: { x: 3231, y: 3202, level: 0 }, inventory: [] },
+        nearby: {
+            players: [{ kind: 'player', id: 'p1' }],
+            npcs: [
+                { kind: 'npc', id: 'n1' },
+                { kind: 'npc', id: 'n2' },
+            ],
+            objects: [],
+            worldItems: [{ id: 'i1' }, { id: 'i2' }, { id: 'i3' }],
+        },
+    } as unknown as HybridPerception;
+}
+
+interface StubCtxOpts {
+    tick: number;
+    register?: string;
+    cognition: Record<string, unknown>;
+    hasGoal?: boolean;
+    interval?: number;
+}
+
+function makeCtx(opts: StubCtxOpts): HelperContext {
+    const cognition = opts.cognition;
+    return {
+        options: {
+            soul: makeSoul(opts.register ?? 'endurer'),
+            state: { tick: opts.tick, resident: 'res:hans' },
+        },
+        cognition: () => cognition,
+        activeGoal: () => (opts.hasGoal === false ? undefined : { description: 'Master woodcutting and supply logs.' }),
+        behavior: () => ({ shareGoalsEveryTicks: opts.interval ?? 600 }),
+        visibilityAnchor: () => undefined,
+    } as unknown as HelperContext;
+}
+
+describe('presenceBeaconPrefix — voice-skinned, telemetry stripped', () => {
+    it('does not leak the nearby perception read-out into the public string', () => {
+        const ctx = makeCtx({ tick: 1200, register: 'endurer', cognition: {} });
+        const prefix = presenceBeaconPrefix(ctx, richPerception());
+        expect(prefix).not.toMatch(/Nearby I see/i);
+        expect(prefix).not.toMatch(/\btrees?\b/i);
+        expect(prefix).not.toMatch(/\bNPCs?\b/i);
+        expect(prefix).not.toMatch(/\bitems?\b/i);
+        expect(prefix).not.toMatch(/\d+\s+(tree|item|NPC|player)/i);
+        expect(prefix.length).toBeGreaterThan(0);
+    });
+
+    it('reflects the soul register (endurer vs mentor differ)', () => {
+        const tick = PRESENCE_BEACON_VARIETY_AFTER_TICKS + 5;
+        const endurer = presenceBeaconPrefix(makeCtx({ tick, register: 'endurer', cognition: {} }), richPerception());
+        const mentor = presenceBeaconPrefix(makeCtx({ tick, register: 'mentor', cognition: {} }), richPerception());
+        expect(endurer).not.toBe(mentor);
+    });
+
+    it('uses the warm-up "online"-style line before the variety threshold', () => {
+        const ctx = makeCtx({ tick: 10, register: 'endurer', cognition: {} });
+        const prefix = presenceBeaconPrefix(ctx, richPerception());
+        expect(prefix).not.toMatch(/Nearby I see/i);
+        expect(prefix.length).toBeGreaterThan(0);
+    });
+});
+
+describe('presenceBeaconAction — consecutive-identical suppression', () => {
+    it('emits a beacon, then suppresses an identical one on the next due tick', () => {
+        const cognition: Record<string, unknown> = { lastGoalShareTick: 0 };
+        // Fixed tick window keeps the deterministic phrase identical between calls.
+        const first = presenceBeaconAction(makeCtx({ tick: 600, cognition, interval: 600 }), richPerception());
+        expect(first).toBeDefined();
+        expect(first?.kind).toBe('say');
+        const firstText = first?.kind === 'say' ? first.text : undefined;
+        expect(cognition.lastPresenceBeaconText).toBe(firstText);
+
+        // Same phase/seed window → identical text → must be suppressed.
+        const second = presenceBeaconAction(makeCtx({ tick: 600, cognition, interval: 600 }), richPerception());
+        expect(second).toBeUndefined();
+    });
+
+    it('emits again when the beacon text actually changes', () => {
+        const cognition: Record<string, unknown> = { lastPresenceBeaconText: '___never-matches___', lastGoalShareTick: 0 };
+        const action = presenceBeaconAction(makeCtx({ tick: 600, cognition, interval: 600 }), richPerception());
+        expect(action).toBeDefined();
+        expect(action?.kind).toBe('say');
+    });
+
+    it('still respects the timing gate (no goal → no beacon)', () => {
+        const cognition: Record<string, unknown> = { lastGoalShareTick: 0 };
+        const action = presenceBeaconAction(makeCtx({ tick: 600, cognition, interval: 600, hasGoal: false }), richPerception());
+        expect(action).toBeUndefined();
+    });
+});

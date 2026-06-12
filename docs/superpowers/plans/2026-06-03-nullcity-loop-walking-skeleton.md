@@ -424,3 +424,19 @@ Wire the three pieces so a settled support produces a letter, using `personId→
 - Swap the labelled stand-in debit (`attention-grant.ts`, the one marked block) for Dev's user-consent spend API once it lands (+ §10 Dev questions: receipt shape, burn-vs-transfer, refund).
 
 **LOOP COMPLETE — morning summary (2026-06-03):** All 4 in-our-control slices done, tested, pushed to origin. Commits: T0.ID `7495d30a`/`012a92d`, T0.0a `dff2ab9`, T0.0b `347dcdbf`, T0.4 `bba0b5a` (+ run-log commits). Branches integrated to `origin/agents/wip` (server) and `origin/main` (dashboard) via isolated worktrees, rebased past concurrent agent commits, explicit-file staging only — no collisions, `resident-runtime.ts` untouched. Two things need you: (1) the `onionsPerStandingPoint` scale value; (2) hand the §10 questions to Dev. Live verification is staged for the runtime-steward.
+
+---
+
+## REAL onion consent-spend shipped (2026-06-05) — Dev's API landed
+
+Dev shipped the real onion APIs (landing `API.md`: `POST /api/public/onions/requests` burn/transfer + approval, profile/read, machine `ONION_EXTERNAL_API_KEY`, HMAC callbacks; plus badge identity/Solana + a Lua app-store + MQTT). Built the **real burn adapter** behind `ONION_SPEND_MODE=real` (stand-in kept as fallback):
+- Dashboard (`origin/main`, `cb13aeb`): `landing-onions.ts` client + HMAC verify; `attention-grant.ts` `initiateOnionAttentionGrant` (create burn request → `awaiting_approval`) + `settleOnionAttentionGrant` (callback `completed` → credit City); states `awaiting_approval`/`denied` + `onion_request_id` (migration 004); callback route `/api/city/onion-callback` (CSRF-exempt, HMAC); onion client in services. 175/175 dashboard, tsc clean.
+- Server (`origin/agents/wip`): `CITY_ONIONS_PER_STANDING_POINT` env source for the scale (`6cd74e4c`); repaired a build-gate regression in `service.test.ts` (newer h2r mock had wrong shapes → tsc exit 2; fixed → tsc 0, 76/76) (`a54830c5`).
+
+**Verified 2026-06-05:** my work is intact + integrated at the latest origin tip; the team `mvp-tracker.md` marks the keystone gap **CLOSED** crediting `creditAttention → onPatronSupport → recordSettledSupport`. The economy decision "onions single currency + variable letter threshold" **keeps** the `onionsPerStandingPoint` knob (tracker sets it to **10** → Acquaintance at 100 onions; James said ≥100 — RECONCILE).
+
+**OPEN at archive (handoff):**
+- **Scale value:** team tracker uses **10** (letter visible at 100 onions); James said **≥100** (letter needs 1000). Pick one; set `CITY_ONIONS_PER_STANDING_POINT`.
+- **Live onion-spend smoke (MVP-9):** points-mode attendee → support → approve in `/portal/onions` → callback → letter. Needs `ONION_EXTERNAL_API_KEY` (Dev), the onion env vars, controller restart (steward). Engine/CLI path already verified (MVP-4); UI path pending.
+- **Dashboard branch:** work is on `origin/main` (dashboard has no `agents/wip`); awaiting James's call to keep on main vs move to a WIP branch.
+- **Stale blocker rows (for the launch-blockers.md owner):** `LB-IDENT-c08e` + `LB-H2R-q9k2` are still Open P0 but addressed by the personId/patronHandle join + the un-mocked support flow — cross-ref to MVP-9 and close.

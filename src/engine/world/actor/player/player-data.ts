@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'path';
 import type { PlayerQuest } from '@engine/config/quest-config';
 import { hasValueNotNull } from '@engine/util/data';
+import { playerSaveDir } from '@engine/util/data-root';
 import type { SkillValue } from '@engine/world/actor/skills';
 import type { Item } from '@engine/world/items/item';
 import { MusicPlayerLoopMode, MusicPlayerMode } from '@engine/world/sound/music';
@@ -90,7 +91,7 @@ export interface PlayerSaveOptions {
 
 const saveFilePath = (username: string, options?: PlayerSaveOptions): string => {
     const fileName = username.toLowerCase() + '.json';
-    return join(options?.saveDir || 'data/saves', fileName);
+    return join(options?.saveDir || playerSaveDir(), fileName);
 };
 
 export type PlayerSaveLoadResult =
@@ -173,7 +174,7 @@ export function savePlayerData(player: Player, options?: PlayerSaveOptions): boo
     }
 
     try {
-        mkdirSync(options?.saveDir || 'data/saves', { recursive: true });
+        mkdirSync(options?.saveDir || playerSaveDir(), { recursive: true });
         writeFileSync(filePath, JSON.stringify(playerSave, null, 4));
         return true;
     } catch (error) {

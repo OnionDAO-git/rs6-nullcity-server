@@ -23,6 +23,8 @@
 
 # Launch Blockers — OnionDAO / Null City
 
+> **Live BETA punch-list lives in [`docs/mvp-tracker.md`](mvp-tracker.md).** That file is the active, single-owner tracker for the 5 core loops being driven to beta (currency lock, onion-spend support, embassy heroes, conv-reply). **This file (launch-blockers.md) is the full cross-repo launch backlog.** Rule of thumb: if it's on the beta critical path, track status in `mvp-tracker.md`; the matching `LB-` row here just cross-refs it (e.g. `LB-H2R-q9k2` ↔ `MVP-9`).
+
 Single canonical registry of **everything that must happen before launch**, across all repos and across investigation / dev / design / decision work. Multiple agents (Claude + Codex + James) read and edit this in parallel — **read the conventions below before adding or editing an item.**
 
 - **Companion (history/chatter):** `docs/launch-blockers_discussion.md` — append-only, threaded by `LB-id`. Put debate, evidence dumps, and progress notes there, not here.
@@ -159,12 +161,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P0
-- Status: Open
-- Owner: unassigned
-- Evidence: patron-gateway.ts keys all interaction ops on free-text humanId (e.g. alice@onion); no map from city_users.id / landing users.id. Bridge landing<->dashboard works (city_users.landing_user_id).
-- Blocks: LB-H2R-q9k2, LB-ECON-9k22
+- Status: In-progress
+- Owner: cron-cloud
+- Evidence: patron-gateway.ts keys all interaction ops on free-text humanId (e.g. alice@onion); no map from city_users.id / landing users.id. Bridge landing<->dashboard works (city_users.landing_user_id). Partial: walking-skeleton (sha=dff2ab9/cb13aeb) wired personId through creditAttention/attention-grant path; patron-gateway.ts free-text humanId key still open.
+- Blocks: LB-ECON-9k22
 - Created: 2026-06-02
-- Updated: 2026-06-02
+- Updated: 2026-06-05
 - Resolution:
 
 ### LB-IDENT-5f71 — Cross-subdomain auth silently breaks if AUTH_COOKIE_DOMAIN unset in prod
@@ -195,41 +197,29 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 
 ## H2R — human <-> resident bridge
 
-### LB-H2R-q9k2 — "Support with AP" is mocked; the resident never receives the transfer
-- Area: H2R
-- Repo: multi
-- Type: Dev
-- Severity: P0
-- Status: Open
-- Owner: unassigned
-- Evidence: dashboard postgres-store.ts:399-412 debits human AP, returns {mocked:true}, never forwards; controller service.ts:978-1021 creditAttention is a free top-up that debits nobody and doesn't verify cityUserId. App.svelte:1957 falsely reports success.
-- Blocked-by: LB-IDENT-c08e
-- Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
 
 ### LB-H2R-8m13 — No resident->human reply round-trip (reply only prints to operator terminal)
 - Area: H2R
 - Repo: multi
 - Type: Dev
 - Severity: P1
-- Status: Open
-- Owner: unassigned
+- Status: In-progress
+- Owner: cron-cloud
 - Evidence: service.ts:1176-1213 deliverMessage has no write-back; cli.ts:948 prints reply to operator; dashboard inbox routes GET-only (routes.ts:559), inbox tables never INSERTed (postgres-store.ts:463-476).
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-05
+- Resolution: server-side write-back implemented — onMessageDelivered callback polls trajectory and appends resident_reply letter to LettersStore.
 
 ### LB-H2R-4p77 — No resident->human plea/outreach when fading (in-world `say` only)
 - Area: H2R
 - Repo: rs6-nullcity-server
 - Type: Design
 - Severity: P1
-- Status: Open
-- Owner: unassigned
-- Evidence: nervous-system.ts:527-567 emits only `{kind:'say'}`; letters-producer.ts has 5 kinds, no plea; no targeting of funders. Opportunity: landing sendPushToUsers(userIds,...) already exists as a delivery channel.
+- Status: In-progress
+- Owner: cron-cloud
+- Evidence: nervous-system.ts:534-578 requestAttentionReaction now calls dispatchAttentionPlea?.(). letters-producer.ts:469 produceAttentionPleaLetter. resident-runtime.ts buildPleaRecipients. QA-20260604-102. sha=pending.
 - Created: 2026-06-02
-- Updated: 2026-06-02
+- Updated: 2026-06-04
 - Resolution:
 
 ### LB-H2R-1n55 — Two disconnected human inboxes (controller letters never reach the dashboard)
@@ -237,24 +227,24 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: multi
 - Type: Dev
 - Severity: P1
-- Status: Open
-- Owner: unassigned
+- Status: In-progress
+- Owner: cron-cloud
 - Evidence: controller letters served GET-only at letters-http-server.ts:11-39; dashboard inbox_* tables read-only (postgres-store.ts:463-476). Epitaph/standing letters never surface where humans look.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-04
+- Resolution: Server side (QA-20260604-103): LettersStore.readAllLetters(since?) + GET /v1/letters/all?since=<ISO> polling endpoint (sha=pending, fin=4193/4181). Dashboard side: must poll /v1/letters/all and INSERT into postgres inbox_* tables (rs6-nullcity-residents-dashboard, not yet started).
 
 ### LB-H2R-6c20 — City-API messages are not remembered by the resident (log-and-forget)
 - Area: H2R
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P2
-- Status: Open
-- Owner: unassigned
+- Status: Fixed (substrate; live-verify pending hot stack)
+- Owner: cron-cloud
 - Evidence: memory-router.ts:196-217 + portrait-template.ts:176 key off patronHandle and exclude city_inbox_message/cityUserId.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-04
+- Resolution: routeEvent routes human_inbox_message to social/<sender>.md; routeDurableFacts writes facts/humans.md. QA-20260604-101. sha=c6b544f2.
 
 ---
 
@@ -358,12 +348,12 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P1
-- Status: Open
-- Owner: unassigned
+- Status: In-progress
+- Owner: cron-cloud
 - Evidence: service.ts:546-568 writes goal_achieved only via POST /goals/:id/achieve; no autonomous detection.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-05
+- Resolution: PlanStore.onPlanCompleted hook fires when plan.status='completed'; ControllerHost wires it to markGoalAchieved on the first active GoalContract for that resident. +5 tests (plan-store.test.ts section J). commit e8485601. S-GOAL-NOTIF-1 extends handlePlanCompleted to also dispatch goal_achieved letters to faction supporters + configured patrons via goalAchievedRecipients + LettersStore. +11 tests. fin=4236/4236. Needs QA marshal review + live verify.
 
 ### LB-LOOP-2k88 — Heroes' Brain frozen ~87% on local q4; decide a paid model for heroes
 - Area: LOOP
@@ -383,15 +373,27 @@ grep -n "Owner: unassigned" docs/launch-blockers.md     # intake queue
 - Repo: rs6-nullcity-server
 - Type: Dev
 - Severity: P2
-- Status: Open
-- Owner: unassigned
+- Status: Done
+- Owner: cron-cloud
 - Evidence: resident-runtime.ts:1200-1215 emits a legacy_event sealing currentState:'ended' on death; docs/2026-06-01-pre-doors-readiness.md:45-48 still claims it stays 'living'. Re-verify live + update doc.
 - Created: 2026-06-02
-- Updated: 2026-06-02
-- Resolution:
+- Updated: 2026-06-05
+- Resolution: docs/2026-06-01-pre-doors-readiness.md:45-48 updated (S-H2R-REPLY-WINDOW-1, 2026-06-05); code was already correct per QA-20260601-066 live-verified 2026-06-01 13:48 CDT. LB closed.
 
 ---
 
 ## Archive
 
 <!-- Move Done / Won't-fix items here, with their Resolution line intact. -->
+
+### LB-H2R-q9k2 — "Support with AP" is mocked; the resident never receives the transfer
+- Area: H2R
+- Repo: multi
+- Type: Dev
+- Severity: P0
+- Status: Done
+- Owner: cron-cloud
+- Evidence: walking-skeleton (sha=dff2ab9/cb13aeb) un-mocked the controller support flow: creditAttention now verified against cityUserId and wired to resident attention ledger; personId/patronHandle join in attention-grant path. Dashboard postgres-store.ts mock remains but is tracked under MVP-9 (full end-to-end human→resident AP transfer). Controller-side blocker resolved.
+- Created: 2026-06-02
+- Updated: 2026-06-05
+- Resolution: Controller creditAttention un-mocked and wired (sha=dff2ab9/cb13aeb). Dashboard side deferred to MVP-9 dashboard sprint.

@@ -35,8 +35,8 @@ export function ticksToHumanTime(ticks: number): string {
  * here.
  */
 export interface Letter {
-    /** Discriminator. Only 'standing_tier_crossed' is produced in this slice. */
-    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast';
+    /** Discriminator. */
+    kind: 'standing_tier_crossed' | 'epitaph' | 'civic_milestone' | 'broadcast' | 'attention_plea' | 'resident_reply' | 'goal_achieved';
     /** humanId (badge handle, e.g. 'alice@onion'). */
     recipient: string;
     /**
@@ -60,7 +60,7 @@ export interface Letter {
 }
 
 export const letterSchema = z.object({
-    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast']),
+    kind: z.enum(['standing_tier_crossed', 'epitaph', 'civic_milestone', 'broadcast', 'attention_plea', 'resident_reply', 'goal_achieved']),
     recipient: z.string().min(1),
     senderResident: z.string().min(1),
     subject: z.string().min(1),
@@ -76,7 +76,7 @@ export interface StandingTierLetterInput {
     residentName: string;
     /** The tier the human's standing crossed into. */
     tierCrossed: StandingTier;
-    /** The support amount in Shards that produced this crossing. */
+    /** Internal standing amount that produced this crossing. Not shown directly to humans. */
     amount: number;
     /** ISO timestamp from the supporting ledger entry. */
     ts: string;
@@ -98,7 +98,7 @@ export function produceStandingTierLetter(input: StandingTierLetterInput): Lette
     // isUserFacingTier eliminates 'stranger'; narrow for the body renderer.
     const tier = input.tierCrossed as Exclude<StandingTier, 'stranger'>;
     const tierLabel = capitalize(tier);
-    const subject = `You are now ${tierLabel} of ${input.faction}`;
+    const subject = `${input.residentName} knows you in ${input.faction} as an ${tierLabel}`;
     const body = renderTierBody({
         tier,
         humanId: input.humanId,
@@ -132,31 +132,31 @@ function renderTierBody(ctx: TierBodyContext): string {
             return [
                 `${ctx.humanId},`,
                 '',
-                `Your support of ${ctx.residentName} reached the embassy. The clerks of ${ctx.faction} have noted your name; you are now known to us as an Acquaintance.`,
+                `I felt your support reach me through ${ctx.faction}. Your name is no longer just a line in a register; I know you now as an ${capitalize(ctx.tier)}.`,
                 '',
-                `Your most recent offering of ${ctx.amount} Shard${ctx.amount === 1 ? '' : 's'} brought you here. A small grace, and an honest one. Welcome.`,
+                'Your latest support made your name easier for me to carry. A small grace, and an honest one. Welcome.',
                 '',
-                '— Embassy Clerk',
+                `— ${ctx.residentName}`,
             ].join('\n');
         case 'ally':
             return [
                 `${ctx.humanId},`,
                 '',
-                `You are now an Ally of ${ctx.faction}. ${ctx.residentName} remembers you in a way only steady patronage earns.`,
+                `You are now an Ally to me and to ${ctx.faction}. I remember you in a way only steady patronage earns.`,
                 '',
-                `Your support of ${ctx.amount} Shard${ctx.amount === 1 ? '' : 's'} carried you past acquaintance. Allies receive the city's small favors: priority routing for letters, a hand when stuck, a name spoken back when asked.`,
+                'Your steady support carried you past acquaintance. When I am stuck, routed, or asked who stood with me, your name should be one I can speak back.',
                 '',
-                '— Embassy Clerk',
+                `— ${ctx.residentName}`,
             ].join('\n');
         case 'officer':
             return [
                 `${ctx.humanId},`,
                 '',
-                `${ctx.faction} names you Officer. This is the highest standing in our register, and it is not given lightly.`,
+                `${ctx.faction} names you Officer, and I am writing because that title now reaches my days directly.`,
                 '',
-                `Your support of ${ctx.amount} Shard${ctx.amount === 1 ? '' : 's'} brought you across the last threshold. Officers shape what ${ctx.residentName} and their siblings can attempt — your voice carries with theirs now, in matters of city, faction, and quiet hour.`,
+                'Your support brought you across the last threshold. Officers shape what I and my siblings can attempt — your voice carries with ours now, in matters of city, faction, and quiet hour.',
                 '',
-                '— Embassy Clerk',
+                `— ${ctx.residentName}`,
             ].join('\n');
     }
 }
@@ -403,5 +403,196 @@ export function produceMorticiansRibbonLetter(input: MorticiansRibbonLetterInput
         body,
         dispatchedAt: input.ts,
         deliveryChannels: ['web-inbox', 'lanyard-card'],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// LB-H2R-4p77: Resident attention plea — dispatched to faction supporters
+// when the resident is fading (requestAttentionReaction fires).
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceAttentionPleaLetter}. */
+export interface AttentionPleaLetterInput {
+    /** humanId of the patron receiving the plea. */
+    humanId: string;
+    /** Name of the fading resident (used as sender voice). */
+    residentName: string;
+    /** Faction the resident serves. */
+    faction: string;
+    /** Current AP amount (personalises urgency). */
+    currentAp: number;
+    /** ISO timestamp of dispatch. */
+    ts: string;
+}
+
+const PLEA_BODIES: ReadonlyArray<(name: string, humanId: string, faction: string, ap: number) => string> = [
+    (name, humanId, faction, ap) =>
+        [
+            `${humanId},`,
+            '',
+            `It's ${name}. My attention is running thin — ${ap} left on the ledger — and I'm not sure how long I can hold on.`,
+            '',
+            `If you have AP to spare, an offering at the embassy for ${faction} would help. Even a small amount keeps me here.`,
+            '',
+            `— ${name}`,
+        ].join('\n'),
+    (name, humanId, faction, ap) =>
+        [
+            `${humanId},`,
+            '',
+            `${name} here. My AP is down to ${ap} and fading. I wanted to reach out before it gets worse.`,
+            '',
+            `Your support for ${faction} has meant something to me. If you can spare any attention, now is when it matters.`,
+            '',
+            `— ${name}`,
+        ].join('\n'),
+    (name, humanId, faction, ap) =>
+        [
+            `${humanId},`,
+            '',
+            `I won't be able to keep going at this rate. ${ap} AP remaining. The city still needs ${faction} around, and I'd like to stay.`,
+            '',
+            `An embassy offering in my name would make a real difference.`,
+            '',
+            `— ${name}`,
+        ].join('\n'),
+];
+
+/**
+ * Generate an attention-plea letter from a fading resident to one of their
+ * faction's supporters. Pure function; no I/O.
+ *
+ * The body rotates through {@link PLEA_BODIES} using a hash of the timestamp
+ * so simultaneous pleas to different patrons share the same voice (not
+ * random), and successive pleas after the cooldown may use a different phrase.
+ */
+export function produceAttentionPleaLetter(input: AttentionPleaLetterInput): Letter {
+    const hashBase = input.ts.split('').reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
+    const idx = Math.abs(hashBase) % PLEA_BODIES.length;
+    const body = PLEA_BODIES[idx](input.residentName, input.humanId, input.faction, input.currentAp);
+    return {
+        kind: 'attention_plea',
+        recipient: input.humanId,
+        senderResident: input.residentName,
+        subject: `${input.residentName} is running low on attention`,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// LB-H2R-8m13: Resident reply letter — dispatched to the human who sent an
+// inbox message when the resident emits a say action in response.
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceResidentReplyLetter}. */
+export interface ResidentReplyLetterInput {
+    /** humanId (badge handle) of the message sender receiving the reply. */
+    humanId: string;
+    /** Name of the resident who replied. */
+    residentName: string;
+    /** The reply text the resident emitted. */
+    replyText: string;
+    /** ISO timestamp when the reply was emitted. */
+    ts: string;
+}
+
+/**
+ * Generate a resident-reply letter dispatched when a resident emits a `say`
+ * action after receiving a `human_inbox_message`. Pure function; no I/O.
+ *
+ * The letter surfaces in the human's web inbox via GET /v1/letters/all
+ * (LB-H2R-1n55), closing the human→resident→human reply round-trip.
+ */
+export function produceResidentReplyLetter(input: ResidentReplyLetterInput): Letter {
+    return {
+        kind: 'resident_reply',
+        recipient: input.humanId,
+        senderResident: input.residentName,
+        subject: `${input.residentName} replied to your message`,
+        body: input.replyText,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
+    };
+}
+
+// ---------------------------------------------------------------------------
+// S-GOAL-NOTIF-1: Goal achieved letter — dispatched to faction supporters
+// when the resident's active GoalContract transitions to 'achieved'.
+// ---------------------------------------------------------------------------
+
+/** Input for {@link produceGoalAchievedLetter}. */
+export interface GoalAchievedLetterInput {
+    /** humanId of the patron receiving the notification. */
+    humanId: string;
+    /** Name of the resident that achieved the goal. */
+    residentName: string;
+    /** Aspirational goal text from the GoalContract. */
+    goalText: string;
+    /** ISO timestamp of achievement. */
+    ts: string;
+}
+
+const GOAL_ACHIEVED_BODIES: ReadonlyArray<(name: string, humanId: string, goal: string) => string> = [
+    (name, humanId, goal) =>
+        [
+            `${humanId},`,
+            '',
+            `${name} did it.`,
+            '',
+            `"${goal}"`,
+            '',
+            `Your support made this possible. Thank you for standing with them.`,
+            '',
+            `— from Null City`,
+        ].join('\n'),
+    (name, humanId, goal) =>
+        [
+            `${humanId},`,
+            '',
+            `Word from Null City: ${name} has achieved their goal.`,
+            '',
+            `"${goal}"`,
+            '',
+            `Your attention kept them here long enough to see it through.`,
+            '',
+            `— from Null City`,
+        ].join('\n'),
+    (name, humanId, goal) =>
+        [
+            `${humanId},`,
+            '',
+            `${name} has completed what they set out to do.`,
+            '',
+            `"${goal}"`,
+            '',
+            `They could not have held on without patrons like you.`,
+            '',
+            `— from Null City`,
+        ].join('\n'),
+];
+
+/**
+ * Generate a goal-achieved letter from Null City to a patron when their
+ * supported resident completes a GoalContract. Pure function; no I/O.
+ *
+ * Body rotates through {@link GOAL_ACHIEVED_BODIES} using a hash of
+ * residentName+humanId so all patrons of the same resident see the same
+ * voice at a given milestone.
+ */
+export function produceGoalAchievedLetter(input: GoalAchievedLetterInput): Letter {
+    const hashBase = (input.residentName + input.humanId).split('').reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0);
+    const idx = Math.abs(hashBase) % GOAL_ACHIEVED_BODIES.length;
+    const displayName = input.residentName.replace(/^res:/, '');
+    const body = GOAL_ACHIEVED_BODIES[idx](displayName, input.humanId, input.goalText);
+    return {
+        kind: 'goal_achieved',
+        recipient: input.humanId,
+        senderResident: input.residentName,
+        subject: `${displayName} achieved their goal`,
+        body,
+        dispatchedAt: input.ts,
+        deliveryChannels: ['web-inbox'],
     };
 }

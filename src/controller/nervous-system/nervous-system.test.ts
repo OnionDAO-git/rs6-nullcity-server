@@ -27,7 +27,7 @@ describe('NervousSystem', () => {
 
     it('does not repeat the same remembered patron gift after acknowledging it', () => {
         const state = runtimeState(42);
-        state.attention = 1000;
+        state.attention = 5000;
         const memory = memoryWith(['Patron gift from alice@onion: 10 Shards (2026-05-24 13:33:26)']);
         const system = new NervousSystem({ soul: soul(), state, memory });
 
@@ -41,7 +41,7 @@ describe('NervousSystem', () => {
 
     it('briefly throttles patron memory scans after all visible gifts were already acknowledged', () => {
         const state = runtimeState(42);
-        state.attention = 1000;
+        state.attention = 5000;
         const memory = memoryWith(['Patron gift from alice@onion: 10 Shards (2026-05-24 13:33:26)']);
         const system = new NervousSystem({ soul: soul(), state, memory });
 
@@ -59,7 +59,7 @@ describe('NervousSystem', () => {
 
     it('collapses a backlog of unacknowledged patron memories into one visible thanks', () => {
         const state = runtimeState(42);
-        state.attention = 1000;
+        state.attention = 5000;
         const memory = memoryWith([
             'Patron gift from alice@onion: 5 Shards (2026-05-24 13:00:00)',
             'Patron gift from bob@onion: 10 Shards (2026-05-24 13:33:26)',
@@ -183,9 +183,13 @@ describe('NervousSystem', () => {
     });
 
     it('does not treat raw starter fish as edible emergency food', () => {
+        const state = runtimeState(42);
+        // Above the capacity-aware plea threshold so the attention appeal
+        // does not fire — this test is about emergency food only.
+        state.attention = 5000;
         const system = new NervousSystem({
             soul: soul(),
-            state: runtimeState(42),
+            state,
             memory: memoryWith([]),
         });
 
@@ -319,7 +323,7 @@ describe('NervousSystem', () => {
 
     it('cooldowns repeated live patron:ask acknowledgements from the same human', () => {
         const state = runtimeState(42);
-        state.attention = 1000;
+        state.attention = 5000;
         const system = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
         const perception = {
             ...healthyPerception(42),
@@ -377,15 +381,45 @@ describe('NervousSystem', () => {
             expect(reaction?.suppressThinking).toBe(false);
         });
 
-        it('appeals for attention when attention is below floor + buffer', () => {
+        it('appeals for attention when attention is above the floor but below floor + buffer', () => {
             const state = runtimeState(100);
-            state.attention = 4000;
-            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+            state.attention = 5300; // (floor, floor+buffer): genuinely decaying toward the floor
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
 
             const reaction = sys.react(healthyPerception(100));
 
             expect(reaction?.action?.cause).toBe('nervous:request-attention');
             expect(reaction?.action?.kind).toBe('say');
+        });
+
+        it('never pleads when attention is parked exactly at the floor (floor-clamped resident cannot fade)', () => {
+            const state = runtimeState(100);
+            state.attention = 5000; // == floor: the clamp keeps this resident immortal
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            const first = sys.react(healthyPerception(100));
+            expect(first?.action?.cause).not.toBe('nervous:request-attention');
+
+            // Second tick: prepare-epitaph (which legitimately fires once in the
+            // [floor, floor+200) band) is now on its once-per-life cooldown, so a
+            // buggy appeal trigger would fire here and plead forever.
+            state.tick = 200;
+            const second = sys.react(healthyPerception(200));
+            expect(second?.action?.cause).not.toBe('nervous:request-attention');
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
+        it('pleads when attention is slightly above the floor and decaying toward it', () => {
+            const state = runtimeState(100);
+            state.attention = 5300; // strictly above floor: still has runway to lose
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect(dispatchAttentionPlea).toHaveBeenCalledTimes(1);
         });
 
         it('self-initiates AP-for-GP before asking humans when low AP and holding coins', () => {
@@ -630,8 +664,8 @@ describe('NervousSystem', () => {
 
         it('does not repeat the appeal within the cooldown window', () => {
             const state = runtimeState(100);
-            state.attention = 4000;
-            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
 
             const first = sys.react(healthyPerception(100));
             expect(first?.action?.cause).toBe('nervous:request-attention');
@@ -643,8 +677,8 @@ describe('NervousSystem', () => {
 
         it('does not repeat a newly written appeal cooldown when perception ticks restart below state tick', () => {
             const state = runtimeState(150_772);
-            state.attention = 4000;
-            const sys = new NervousSystem({ soul: heroSoulWithName('Hans', 5000), state, memory: memoryWith([]) });
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
 
             const first = sys.react(healthyPerception(33_300));
             expect(first?.action?.cause).toBe('nervous:request-attention');
@@ -653,10 +687,59 @@ describe('NervousSystem', () => {
             expect(second?.action?.cause).not.toBe('nervous:request-attention');
         });
 
+        it('calls dispatchAttentionPlea when the attention appeal fires (LB-H2R-4p77)', () => {
+            const state = runtimeState(100);
+            state.attention = 5300;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            const reaction = sys.react(healthyPerception(100));
+
+            expect(reaction?.action?.cause).toBe('nervous:request-attention');
+            expect(dispatchAttentionPlea).toHaveBeenCalledTimes(1);
+        });
+
+        it('does not call dispatchAttentionPlea when the cooldown is active', () => {
+            const state = runtimeState(100);
+            state.attention = 5300;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            sys.react(healthyPerception(100));
+            dispatchAttentionPlea.mockClear();
+
+            state.tick = 200;
+            sys.react(healthyPerception(200));
+
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
+        it('does not call dispatchAttentionPlea when AP is above the appeal threshold', () => {
+            const state = runtimeState(100);
+            state.attention = 10001;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            sys.react(healthyPerception(100));
+
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
+        it('does not call dispatchAttentionPlea when AP is exhausted (attention = 0)', () => {
+            const state = runtimeState(100);
+            state.attention = 0;
+            const dispatchAttentionPlea = jest.fn();
+            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]), dispatchAttentionPlea });
+
+            sys.react(healthyPerception(100));
+
+            expect(dispatchAttentionPlea).not.toHaveBeenCalled();
+        });
+
         it('re-appeals after the cooldown expires', () => {
             const state = runtimeState(100);
-            state.attention = 4000;
-            const sys = new NervousSystem({ soul: soulWithFloor(5000), state, memory: memoryWith([]) });
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
 
             sys.react(healthyPerception(100));
 
@@ -679,9 +762,11 @@ describe('NervousSystem', () => {
             expect((reaction?.action as { text?: string }).text).toContain('AP');
         });
 
-        it('does not appeal for residents without a declared attention floor while AP is above the critical threshold', () => {
+        it('does not appeal for residents without a declared attention floor while AP is above the plea threshold', () => {
             const state = runtimeState(100);
-            state.attention = 11;
+            // Above FALLBACK_ATTENTION_PLEA_THRESHOLD (2000) — the no-config
+            // fallback band for no-floor residents under real mortality.
+            state.attention = 2500;
             const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]) });
 
             const reaction = sys.react(healthyPerception(100));
@@ -691,8 +776,8 @@ describe('NervousSystem', () => {
 
         it('prefixes the message with the hero public name when available', () => {
             const state = runtimeState(100);
-            state.attention = 4000;
-            const sys = new NervousSystem({ soul: heroSoulWithName('Hans', 5000), state, memory: memoryWith([]) });
+            state.attention = 5300;
+            const sys = new NervousSystem({ soul: storySoulWithFloor(5000), state, memory: memoryWith([]) });
 
             const reaction = sys.react(healthyPerception(100));
             const text = (reaction?.action as { kind: string; text?: string; cause?: string }).text ?? '';
@@ -854,6 +939,88 @@ describe('NervousSystem', () => {
             // ...but it must NOT cancel a 40s in-flight brain deliberation.
             expect(reaction?.interruptThinking).toBe(false);
         });
+    });
+});
+
+describe('NervousSystem capacity-aware attention plea (no-floor residents)', () => {
+    // With real mortality (no floors / no respawn), the plea is the only
+    // patron-summoning signal a fading resident has. It must fire with real
+    // lead time: below economy.attentionPleaThresholdFraction of the
+    // resident's capacity (default 15%), not in the last ~10 AP.
+    const economy = { maxAttention: 180_000 }; // default fraction 0.15 → threshold 27_000
+
+    it('pleads when attention falls below the default fraction of configured capacity', () => {
+        const state = runtimeState(100);
+        state.attention = 26_000;
+        const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]), economy });
+
+        const reaction = sys.react(healthyPerception(100));
+
+        expect(reaction?.action?.cause).toBe('nervous:request-attention');
+    });
+
+    it('does not plead while attention is above the fraction-of-capacity threshold', () => {
+        const state = runtimeState(100);
+        state.attention = 28_000;
+        const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]), economy });
+
+        const reaction = sys.react(healthyPerception(100));
+
+        expect(reaction?.action?.cause).not.toBe('nervous:request-attention');
+    });
+
+    it('honors a configured attentionPleaThresholdFraction against capacity', () => {
+        const tuned = { maxAttention: 10_000, attentionPleaThresholdFraction: 0.5 }; // threshold 5_000
+        const below = runtimeState(100);
+        below.attention = 4_900;
+        const sysBelow = new NervousSystem({ soul: soul(), state: below, memory: memoryWith([]), economy: tuned });
+        expect(sysBelow.react(healthyPerception(100))?.action?.cause).toBe('nervous:request-attention');
+
+        const above = runtimeState(100);
+        above.attention = 5_100;
+        const sysAbove = new NervousSystem({ soul: soul(), state: above, memory: memoryWith([]), economy: tuned });
+        expect(sysAbove.react(healthyPerception(100))?.action?.cause).not.toBe('nervous:request-attention');
+    });
+
+    it('prefers the soul-level maxAttention capacity over the config default', () => {
+        const base = soul();
+        const soulWithCapacity: Soul = {
+            ...base,
+            frontmatter: {
+                ...base.frontmatter,
+                attentionProfile: { startingAttention: 100, decayCurve: 'standard', maxAttention: 4_000 }, // threshold 600
+            },
+        };
+        const below = runtimeState(100);
+        below.attention = 500;
+        const sysBelow = new NervousSystem({ soul: soulWithCapacity, state: below, memory: memoryWith([]), economy });
+        expect(sysBelow.react(healthyPerception(100))?.action?.cause).toBe('nervous:request-attention');
+
+        const above = runtimeState(100);
+        above.attention = 700;
+        const sysAbove = new NervousSystem({ soul: soulWithCapacity, state: above, memory: memoryWith([]), economy });
+        expect(sysAbove.react(healthyPerception(100))?.action?.cause).not.toBe('nervous:request-attention');
+    });
+
+    it('falls back to a sane absolute threshold (not 10) when no capacity is configured', () => {
+        const below = runtimeState(100);
+        below.attention = 1_500;
+        const sysBelow = new NervousSystem({ soul: soul(), state: below, memory: memoryWith([]) });
+        expect(sysBelow.react(healthyPerception(100))?.action?.cause).toBe('nervous:request-attention');
+
+        const above = runtimeState(100);
+        above.attention = 2_500;
+        const sysAbove = new NervousSystem({ soul: soul(), state: above, memory: memoryWith([]) });
+        expect(sysAbove.react(healthyPerception(100))?.action?.cause).not.toBe('nervous:request-attention');
+    });
+
+    it('keeps the existing plea cooldown cadence for the capacity-aware threshold', () => {
+        const state = runtimeState(100);
+        state.attention = 26_000;
+        const sys = new NervousSystem({ soul: soul(), state, memory: memoryWith([]), economy });
+
+        expect(sys.react(healthyPerception(100))?.action?.cause).toBe('nervous:request-attention');
+        expect(sys.react(healthyPerception(101))?.action?.cause).not.toBe('nervous:request-attention');
     });
 });
 

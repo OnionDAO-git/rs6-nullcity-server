@@ -58,6 +58,8 @@ export interface CognitiveState {
     lastDirectChatKey?: string;
     manualPauseSinceTick?: number;
     lastPresenceBeaconTick?: number;
+    /** Last PUBLIC presence-beacon say string emitted; used to suppress consecutive identical beacons. */
+    lastPresenceBeaconText?: string;
     lastSocialKeepaliveTick?: number;
     lastTradeKeepaliveTick?: number;
     lastAgentKeepaliveTick?: number;
@@ -270,8 +272,21 @@ export function markDeceased(state: RuntimeState, cause: string): void {
     };
 }
 
-export function addAttention(state: RuntimeState, amount: number): void {
-    state.attention = Math.max(0, state.attention + amount);
+/**
+ * Credits (or debits, for negative `amount`) attention. When `capacity`
+ * is a positive finite number (survivable-weekend bar size, see
+ * `resolveAttentionCapacity` in spark/attention.ts) a credit clamps to
+ * that capacity — but never slashes a balance that is already above it
+ * (legacy states / souls whose startingAttention exceeds the config
+ * default capacity keep what they have). No capacity = unbounded,
+ * which is the historical behavior.
+ */
+export function addAttention(state: RuntimeState, amount: number, capacity?: number): void {
+    let next = state.attention + amount;
+    if (amount > 0 && typeof capacity === 'number' && Number.isFinite(capacity) && capacity > 0 && next > capacity) {
+        next = Math.max(state.attention, capacity);
+    }
+    state.attention = Math.max(0, next);
     if (state.attention > 0 && state.deceased?.cause === 'attention_exhausted') {
         delete state.deceased;
     }

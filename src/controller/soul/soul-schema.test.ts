@@ -83,6 +83,32 @@ describe('validateSoulFrontmatter modules', () => {
         });
     });
 
+    it('accepts an attentionProfile maxAttention capacity (survivable weekend)', () => {
+        const frontmatter = validateSoulFrontmatter(
+            {
+                name: 'res:agent',
+                archetype: 'endurer',
+                attentionProfile: { startingAttention: 15000, decayCurve: 'gentle', floor: 5000, maxAttention: 180000 },
+            },
+            '/tmp/res-agent.md',
+        );
+        expect(frontmatter.attentionProfile?.maxAttention).toBe(180000);
+        expect(frontmatter.attentionProfile?.floor).toBe(5000);
+    });
+
+    it('rejects a non-positive attentionProfile maxAttention', () => {
+        expect(() =>
+            validateSoulFrontmatter(
+                {
+                    name: 'res:agent',
+                    archetype: 'endurer',
+                    attentionProfile: { decayCurve: 'gentle', maxAttention: 0 },
+                },
+                '/tmp/res-agent.md',
+            ),
+        ).toThrow('Invalid soul frontmatter');
+    });
+
     it('accepts explicit restart respawn policy for development residents', () => {
         const frontmatter = validateSoulFrontmatter(
             {

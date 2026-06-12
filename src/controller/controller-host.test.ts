@@ -272,7 +272,7 @@ describe('ControllerHost reconcile lifecycle', () => {
         await host.stop();
     });
 
-    it('keys patron standing + letters on personId (not cityUserId) when the grant supplies it', async () => {
+    it('keys patron standing + letters on patronHandle when the grant supplies one', async () => {
         const gateway = new FakeGateway();
         const memoryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'controller-host-personid-'));
         const runtimeState = {
@@ -313,11 +313,11 @@ describe('ControllerHost reconcile lifecycle', () => {
         });
 
         const standing = new PatronStore(memoryDir).loadStanding();
-        // Keyed on personId (the canonical id) — NOT cityUserId, NOT patronHandle.
-        expect(standing.points('landing-person-1', 'embassy')).toBe(10);
+        // Keyed on patronHandle so public and dashboard inbox lookups by handle see the letter.
+        expect(standing.points('aliceHandle', 'embassy')).toBe(10);
         expect(standing.points('usr_random_abc', 'embassy')).toBe(0);
-        expect(standing.points('aliceHandle', 'embassy')).toBe(0);
-        expect(new LettersStore(memoryDir).readInbox('landing-person-1')).toHaveLength(1);
+        expect(standing.points('landing-person-1', 'embassy')).toBe(0);
+        expect(new LettersStore(memoryDir).readInbox('aliceHandle')).toHaveLength(1);
         expect(new LettersStore(memoryDir).readInbox('usr_random_abc')).toHaveLength(0);
 
         await host.stop();

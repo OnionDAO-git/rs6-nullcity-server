@@ -119,4 +119,46 @@ describe('MemoryRouter durable facts', () => {
             }),
         ).toEqual([]);
     });
+
+    it('writes human_inbox_message to facts/humans.md', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'human_inbox_message',
+            text: 'Hello Hans, how are things going?',
+            from: { id: 'city-user:alice@dao', kind: 'human', name: 'Alice' },
+            threadId: 'thread-1',
+            messageId: 'msg-1',
+        });
+
+        expect(facts).toHaveLength(1);
+        expect(facts[0].path).toBe('facts/humans.md');
+        expect(facts[0].content).toContain('Alice sent: "Hello Hans, how are things going?"');
+    });
+
+    it('does not write human_inbox_message with empty text to facts/humans.md', () => {
+        const facts = router.routeDurableFacts('res:hans', {
+            kind: 'human_inbox_message',
+            text: '',
+            from: { id: 'city-user:alice@dao', kind: 'human', name: 'Alice' },
+        });
+
+        expect(facts).toHaveLength(0);
+    });
+});
+
+describe('MemoryRouter event routing', () => {
+    const router = new MemoryRouter(() => '2026-05-28T19:00:00.000Z');
+
+    it('routes human_inbox_message to social/<sender>.md', () => {
+        const result = router.routeEvent('res:hans', {
+            kind: 'human_inbox_message',
+            text: 'Can you meet me at the bank?',
+            from: { id: 'city-user:james@dao', kind: 'human', name: 'James' },
+            threadId: 'thread-2',
+            messageId: 'msg-2',
+        });
+
+        expect(result).toBeDefined();
+        expect(result!.path).toBe('social/james.md');
+        expect(result!.content).toContain('human_inbox_message');
+    });
 });

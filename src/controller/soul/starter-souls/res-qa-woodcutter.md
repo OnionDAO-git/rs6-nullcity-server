@@ -23,7 +23,6 @@ aesthetic: bark dust, flint sparks, boot tracks around fresh ash
 attentionProfile:
   startingAttention: 60000
   decayCurve: gentle
-respawnPolicy: on_restart
 spawnPosition:
   x: 3225
   y: 3230

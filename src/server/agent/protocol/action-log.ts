@@ -1,8 +1,9 @@
 import { appendFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { agentLogDir } from '@engine/util/data-root';
 
 export class ActionLog {
-    public constructor(private readonly rootDir: string = 'data/agent-logs') {}
+    public constructor(private readonly rootDir: string = agentLogDir()) {}
 
     public append(residentName: string, entry: Record<string, unknown>): void {
         const day = new Date().toISOString().slice(0, 10);

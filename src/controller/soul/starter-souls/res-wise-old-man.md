@@ -27,11 +27,11 @@ deflections:
   - "Not just now. The mind wanders at my age."
 model:
   thinking: false
+# Real mortality (2026-06-11): the E30/HD-008 floor and the per-soul starting
+# override are gone — starting/max attention come from controller.yml
+# `economy:` (survivable-weekend scheme); this resident can die when its runway ends.
 attentionProfile:
-  startingAttention: 14000
   decayCurve: gentle
-  floor: 5000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
-# bumped from 8000 → 14000 on 2026-05-24 after live-verification mass-die. See docs/live-verification-2026-05-24.md.
 heroProfile:
   tier: hero
   publicName: The Wise Old Man

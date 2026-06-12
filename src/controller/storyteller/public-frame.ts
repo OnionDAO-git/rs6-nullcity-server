@@ -189,7 +189,8 @@ function whatHappenedLine(leadEvent: ProjectorStoryFrameEvent): string {
         case 'Attention running low':
             return `Attention running low for ${name}.`;
         case 'Attention granted':
-            return `${name} received new attention.`;
+        case 'Patron gift':
+            return `${name} received patron attention.`;
         case 'Gold observed':
         case 'Gold earned':
             return `${name} showed new RuneScape gold evidence.`;
@@ -200,6 +201,14 @@ function whatHappenedLine(leadEvent: ProjectorStoryFrameEvent): string {
             return `${name} advanced a Null City item.`;
         case 'Goal completed':
             return `${name} completed a tracked goal.`;
+        case 'Skill level-up':
+            return `${name} reached a new RuneScape skill level.`;
+        case 'Resident revived':
+            return `${name} died and came back to Null City.`;
+        case 'Soul born':
+            return `${name} entered Null City.`;
+        case 'Quiet resident':
+            return `${name} was quiet this window.`;
         case 'Library updated':
             return libraryWritebackLine(leadEvent) ?? `${leadEvent.label} for ${name}.`;
         default:
@@ -257,6 +266,16 @@ function fallbackLeadCopy(leadEvent: ProjectorStoryFrameEvent): FallbackLeadCopy
             return {
                 title: `${name} finished a bounded goal`,
                 body: `${name} completed a tracked objective. That is the kind of proof the Library can turn into canon.`,
+            };
+        case 'Skill level-up':
+            return {
+                title: `${name} hit a new milestone`,
+                body: `${name} leveled up a RuneScape skill. That is a durable story beat — real progress inside the game that the city can reference.`,
+            };
+        case 'Resident revived':
+            return {
+                title: `${name} returned after death`,
+                body: `${name} died and came back. Revival is a chapter boundary — the resident is still here, and the arc continues.`,
             };
         case 'Recovered from being stuck':
             return {
@@ -351,31 +370,146 @@ function toProjectorResident(resident: CityEventDigest['residents'][number], dig
 
 function buildActions(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): ProjectorStoryFrameAction[] {
     const actions: ProjectorStoryFrameAction[] = [];
-    const lowResident = digest.residents.find(resident => resident.isLowAp && !resident.isFaded);
-    if (lowResident) {
+
+    const fadedResident = digest.residents.find(r => r.isFaded);
+    const lowResident = digest.residents.find(r => r.isLowAp && !r.isFaded);
+
+    if (fadedResident) {
+        const name = displayName(fadedResident.residentName);
         actions.push({
             kind: 'grant_attention',
-            label: `Keep ${displayName(lowResident.residentName)} alive`,
+            label: `Revive ${name}`,
+            detail: `${name} has faded — patron attention may bring them back.`,
+            residentName: fadedResident.residentName,
+            priority: 'primary',
+            audience: 'patrons',
+            reason: `${name} faded this window; a grant now is the fastest path to revival.`,
+        });
+    } else if (lowResident) {
+        const name = displayName(lowResident.residentName);
+        actions.push({
+            kind: 'grant_attention',
+            label: `Keep ${name} alive`,
             detail: 'Grant attention if humans want this resident to keep acting.',
             residentName: lowResident.residentName,
+            priority: 'primary',
+            audience: 'patrons',
+            reason: `${name} is near zero attention; a grant now prevents fading before the next window.`,
         });
     }
+
     if (leadEvent) {
-        actions.push({
-            kind: 'watch_resident',
-            label: `Watch ${displayName(leadEvent.residentName)}`,
-            detail: leadActionDetail(leadEvent),
-            residentName: leadEvent.residentName,
-        });
+        const secondaryAction = leadEventAction(leadEvent);
+        if (secondaryAction) {
+            actions.push({
+                ...secondaryAction,
+                priority: actions.length === 0 ? 'primary' : 'secondary',
+            });
+        }
     }
+
     if (!actions.length) {
         actions.push({
             kind: 'operator_check',
             label: 'Wait for the next meaningful beat',
             detail: 'The city is quiet; check the next Storyteller window.',
+            priority: 'primary',
+            audience: 'operators',
+            reason: 'No urgent AP situation or lead event this window; the city is between beats.',
         });
     }
+
     return actions.slice(0, 3);
+}
+
+function leadEventAction(leadEvent: ProjectorStoryFrameEvent): Omit<ProjectorStoryFrameAction, 'priority'> | null {
+    const name = displayName(leadEvent.residentName);
+    switch (leadEvent.label) {
+        case 'Goal completed':
+            return {
+                kind: 'witness',
+                label: `Witness ${name}'s completed goal`,
+                detail: 'Watch whether this completion gets written into Library canon.',
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} finished a bounded goal this window — the Library may record it as canon.`,
+            };
+        case 'Soul born':
+            return {
+                kind: 'witness',
+                label: `Welcome ${name} to the city`,
+                detail: `${name} entered Null City for the first time.`,
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} just crossed from proposal into the live world — human witnesses anchor the first chapter.`,
+            };
+        case 'Resident revived':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name} after revival`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} died and came back; the next chapter depends on what happens in this window.`,
+            };
+        case 'Skill level-up':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name}'s new skill`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} reached a new RuneScape skill tier — a durable story beat worth tracking.`,
+            };
+        case 'Patron gift':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name} after the gift`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'patrons',
+                reason: `${name} received patron attention; patrons can see whether it translates into action.`,
+            };
+        case 'Attention-for-gold exchange':
+        case 'Gold observed':
+        case 'Gold earned':
+            return {
+                kind: 'witness',
+                label: `Track ${name}'s RuneScape gold`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} has active RuneScape gold evidence — watching confirms the AP/GP loop is real.`,
+            };
+        case 'Special item created':
+        case 'Special item redeemed':
+            return {
+                kind: 'witness',
+                label: `Follow ${name}'s special item`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} advanced a special item this window; it may become a human-claimable artifact.`,
+            };
+        case 'Recovered from being stuck':
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name} keep moving`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'operators',
+                reason: `${name} just recovered from a stuck state — confirm pathing holds before the next window.`,
+            };
+        default:
+            return {
+                kind: 'watch_resident',
+                label: `Watch ${name}`,
+                detail: leadActionDetail(leadEvent),
+                residentName: leadEvent.residentName,
+                audience: 'anyone',
+                reason: `${name} has the lead story this window.`,
+            };
+    }
 }
 
 function buildWatchNext(digest: CityEventDigest, leadEvent: ProjectorStoryFrameEvent | null): string[] {
@@ -415,6 +549,12 @@ function leadActionDetail(leadEvent: ProjectorStoryFrameEvent): string {
             return 'Follow the item trail: this may become something a human can claim or print.';
         case 'Goal completed':
             return 'Watch whether this completion gets written into Library canon.';
+        case 'Skill level-up':
+            return 'A skill milestone is lasting evidence; watch what the resident does with the new ability.';
+        case 'Resident revived':
+            return 'Revival is a story reset; watch whether this new chapter changes the resident arc.';
+        case 'Patron gift':
+            return 'Patron attention is a commitment; watch whether the resident acts on it.';
         case 'Recovered from being stuck':
             return 'Watch whether recovery turns into movement instead of another loop.';
         default:
@@ -440,6 +580,10 @@ function leadWatchLine(leadEvent: ProjectorStoryFrameEvent): string {
             return `Whether ${name}'s special item crosses into a human claim.`;
         case 'Goal completed':
             return `Whether ${name}'s completed goal becomes Library canon.`;
+        case 'Skill level-up':
+            return `What ${name} does now that a new skill tier is available.`;
+        case 'Resident revived':
+            return `Whether ${name}'s next chapter changes the story after coming back.`;
         case 'Recovered from being stuck':
             return `Whether ${name} keeps moving after the recovery.`;
         default:
@@ -489,6 +633,10 @@ function eventLabel(kind: DigestEvent['kind']): string {
             return 'Library updated';
         case 'patron_gift':
             return 'Patron gift';
+        case 'resident_revived':
+            return 'Resident revived';
+        case 'skill_level_up':
+            return 'Skill level-up';
         case 'quiet_resident':
             return 'Quiet resident';
     }
@@ -518,6 +666,10 @@ function eventWhyItMatters(event: DigestEvent): string {
             return 'a human-backed soul entered the city';
         case 'library_writeback':
             return 'the city turned action into memory';
+        case 'resident_revived':
+            return 'revival marks a new life chapter in the resident arc';
+        case 'skill_level_up':
+            return 'a skill milestone is a durable story beat and economy signal';
         case 'quiet_resident':
             return 'quiet residents still need watching for drift or opportunity';
     }

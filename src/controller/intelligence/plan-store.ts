@@ -19,6 +19,9 @@ import type { Plan } from './planner-pass';
 import { residentSlug } from '../memory/runtime-state';
 
 export class PlanStore {
+    /** LB-LOOP-7e31: called once when a plan is first saved with status='completed'. */
+    onPlanCompleted?: (residentId: string, plan: Plan) => void;
+
     constructor(private readonly memoryRoot: string) {}
 
     private planPath(residentId: string): string {
@@ -35,6 +38,9 @@ export class PlanStore {
         const tmpPath = `${filePath}.tmp`;
         fs.writeFileSync(tmpPath, JSON.stringify(plan, null, 2), 'utf8');
         fs.renameSync(tmpPath, filePath);
+        if (plan.status === 'completed') {
+            this.onPlanCompleted?.(residentId, plan);
+        }
     }
 
     /**
@@ -86,5 +92,23 @@ export class PlanStore {
     /** True when an active plan file exists for the resident. */
     has(residentId: string): boolean {
         return fs.existsSync(this.planPath(residentId));
+    }
+
+    /** RIQ-5-5: return all residents that have a readable active plan. */
+    listAll(): Array<{ slug: string; plan: Plan }> {
+        if (!fs.existsSync(this.memoryRoot)) return [];
+        const entries = fs.readdirSync(this.memoryRoot, { withFileTypes: true });
+        const result: Array<{ slug: string; plan: Plan }> = [];
+        for (const entry of entries) {
+            if (!entry.isDirectory()) continue;
+            const planPath = path.join(this.memoryRoot, entry.name, 'active-plan.json');
+            if (!fs.existsSync(planPath)) continue;
+            try {
+                result.push({ slug: entry.name, plan: JSON.parse(fs.readFileSync(planPath, 'utf8')) as Plan });
+            } catch {
+                // corrupt plan — skip silently (listAll is read-only; no quarantine here)
+            }
+        }
+        return result;
     }
 }

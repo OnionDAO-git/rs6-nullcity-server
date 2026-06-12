@@ -354,6 +354,41 @@ describe('CityIntegration HTTP server', () => {
         expect(runtime.state.attention).toBe(10);
     });
 
+    it('POST /ap-gp-exchanges returns a clean 403 disabled error when economy.enableApGpExchange is false (SL-6)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: new CityIntegrationService({
+                memoryRoot: root,
+                now: () => new Date('2026-05-27T12:00:00.000Z'),
+                getRuntime: resident => (resident === 'res:test' ? runtime : undefined),
+                inventory: {
+                    inspectResidentGold: async resident => ({ resident, itemId: 995, amount: gold }),
+                    burnResidentGold: async (resident, amount) => {
+                        gold -= amount;
+                        return { resident, itemId: 995, burnedAmount: amount, remainingAmount: gold };
+                    },
+                },
+                birth: {
+                    birthResident: async input => ({ resident: input.residentName, created: true, connected: true }),
+                },
+                enableApGpExchange: false,
+            }),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('POST', `${started.url}/residents/res%3Atest/ap-gp-exchanges`, token, {
+            idempotencyKey: 'exchange-http-disabled',
+            apAmount: 50,
+            gpAmount: 25,
+        });
+
+        expect(response.status).toBe(403);
+        expect(response.payload).toMatchObject({ error: 'ap_gp_exchange_disabled' });
+        // Neither side moved: no GP burned, no AP credited.
+        expect(gold).toBe(100);
+        expect(runtime.state.attention).toBe(10);
+    });
+
     it('GET /economy/digest returns AP and GP service activity for dashboard/storyteller readers', async () => {
         started = await startCityIntegrationHttpServer({
             service: makeService(),
@@ -621,28 +656,26 @@ describe('CityIntegration HTTP server', () => {
 
     it('GET /storyteller/projector/latest returns the public projector frame', async () => {
         const storytellerRoot = path.join(path.dirname(root), 'storyteller');
-        fs.mkdirSync(storytellerRoot, { recursive: true });
-        const frame = buildProjectorStoryFrame(
-            {
-                schemaVersion: 1,
-                digestId: 'digest-projector',
-                windowStart: '2026-05-27T11:50:00.000Z',
-                windowEnd: '2026-05-27T12:00:00.000Z',
-                builtAt: '2026-05-27T12:00:00.000Z',
-                apEvents: [],
-                gpEvents: [],
-                exchangeEvents: [],
-                ncriEvents: [],
-                goalEvents: [],
-                stuckEvents: [],
-                miscEvents: [],
-                topEvents: [],
-                residents: [],
-                systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
-            },
-            { now: new Date('2026-05-27T12:01:00.000Z') },
-        );
-        fs.writeFileSync(path.join(storytellerRoot, 'latest-frame.json'), JSON.stringify(frame, null, 2));
+        const runRoot = path.join(storytellerRoot, 'run-projector');
+        fs.mkdirSync(runRoot, { recursive: true });
+        const digest = {
+            schemaVersion: 1 as const,
+            digestId: 'digest-projector',
+            windowStart: '2026-05-27T11:50:00.000Z',
+            windowEnd: '2026-05-27T12:00:00.000Z',
+            builtAt: '2026-05-27T12:00:00.000Z',
+            apEvents: [],
+            gpEvents: [],
+            exchangeEvents: [],
+            ncriEvents: [],
+            goalEvents: [],
+            stuckEvents: [],
+            miscEvents: [],
+            topEvents: [],
+            residents: [],
+            systemHealth: { totalResidents: 0, activeResidents: 0, fadedResidents: 0, lowApResidents: 0 },
+        };
+        fs.writeFileSync(path.join(runRoot, 'digest.json'), JSON.stringify(digest, null, 2));
         started = await startCityIntegrationHttpServer({
             service: makeService(),
             port: 0,
@@ -1190,6 +1223,60 @@ describe('CityIntegration HTTP server', () => {
         });
         expect(achievedAgain.status).toBe(200);
         expect(achievedAgain.payload).toMatchObject({ id: goalId, status: 'achieved' });
+    });
+
+    it('GET /plans returns empty list when no plans exist (RIQ-5-5)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const response = await requestJson('GET', `${started.url}/plans`, token);
+        expect(response.status).toBe(200);
+        expect(response.contentType).toMatch(/application\/json/);
+        expect(response.payload).toEqual({ ok: true, plans: [] });
+    });
+
+    it('GET /plans returns active plans written via PlanStore (RIQ-5-5)', async () => {
+        started = await startCityIntegrationHttpServer({
+            service: makeService(),
+            port: 0,
+            bearerToken: token,
+        });
+
+        const { PlanStore } = await import('../intelligence/plan-store');
+        const store = new PlanStore(root);
+        const fakePlan = {
+            goalId: 'goal-bulk',
+            goalDescription: 'Bulk test goal',
+            createdAtTick: 5,
+            status: 'active' as const,
+            stages: [
+                {
+                    id: 'stage-1',
+                    subgoal: 'do something',
+                    status: 'active' as const,
+                    requirements: [],
+                    successCriteria: 'done',
+                },
+            ],
+            currentStageIndex: 0,
+        };
+        store.save('res:bulk-tester', fakePlan as unknown as Parameters<typeof store.save>[1]);
+
+        const response = await requestJson('GET', `${started.url}/plans`, token);
+        expect(response.status).toBe(200);
+        expect(response.payload).toMatchObject({
+            ok: true,
+            plans: [
+                {
+                    residentSlug: 'res-bulk-tester',
+                    plan: { goalId: 'goal-bulk', status: 'active' },
+                    currentStage: { id: 'stage-1', status: 'active' },
+                },
+            ],
+        });
     });
 
     it('GET /residents/:id/plan returns plan null when no plan exists (RIQ-5-1)', async () => {

@@ -28,11 +28,9 @@ deflections:
   - "Pray pardon — a letter from the archive demands my eye."
 model:
   thinking: false
-attentionProfile:
-  startingAttention: 14000
-  decayCurve: standard
-  floor: 5000  # E30/HD-008: accrual floor — hero stays on-post for Chicago.
-# 14000 = ~2× the original 6500; calibrated 2026-05-24 after live-verification found 6 heroes mass-died from attention_exhaustion within 10 sec on an unattended overnight session. See docs/live-verification-2026-05-24.md.
+# Real mortality (2026-06-11): the E30/HD-008 floor and the per-soul starting
+# override are gone — starting/max attention come from controller.yml
+# `economy:` (survivable-weekend scheme); this resident can die when its runway ends.
 heroProfile:
   tier: hero
   publicName: Duke Horacio

@@ -32,3 +32,9 @@ Registry created and seeded with 22 items from a 5-subagent audit of the full re
 
 Root finding behind most items: Null City was built *alongside* the OnionDAO platform (landing-2026) instead of *on top of* it -> 3 currencies, 3 print pipelines, disjoint identity. The pivotal item is LB-STRAT-0a1c (build-on-platform vs keep-parallel); many ECON/PRINTS items are blocked on that decision. None are claimed yet; Owner=unassigned across the board.
 
+### 2026-06-04 19:48 | claude | meta | update
+Reconciliation review vs newest code (agents/wip @c9daef77, ~70 commits since seed) via expert subagent. Registry is healthy and actively driven by the swarm — NO status edits applied, because every changed item is either owned/in-flight or genuinely still open:
+- Owned/in-flight (leave to owner): cron-cloud owns H2R-8m13/4p77/1n55/6c20 (substrate commits landed); onion-agent/ops owns LB-H2R-q9k2 == MVP-9; the T0.ID identity-join (LB-IDENT-c08e) is in-flight under MVP-9; james owns STRAT/ECON/LOOP decisions.
+- Genuinely still open (no completed work): LB-IDENT-2a40 (is_banned filter absent), LB-LOOP-7e31 (still operator-marked — markGoalAchieved has only the HTTP caller; RIQ-4 advances plan stages, not the goal contract), LB-LOOP-5a09 (code seals on death at resident-runtime.ts:1276-1291 but the doc is still unedited), all PRINTS/BADGE/ECON-3d90/IDENT-5f71 (zero relevant commits).
+Economy decision LOCKED (onions single currency, c9daef77) — but LB-STRAT-0a1c left to owner=james (its identity+prints legs are still open; needs an HD row). Notable: LB-H2R-q9k2's underlying mock is already gone in dashboard origin/main (attention-grant.ts replaced grantResidentAttention + real creditAttention forward); remaining MVP-9 work is the onions-vs-AP rework. Only edit applied this pass: a header pointer in launch-blockers.md to docs/mvp-tracker.md as the live beta punch-list (anti-fragmentation).
+

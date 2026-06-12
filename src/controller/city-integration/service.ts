@@ -38,7 +38,7 @@ import {
     type LiveEconomySnapshot,
 } from './live-economy';
 import { PlanStore } from '../intelligence/plan-store';
-import type { Plan } from '../intelligence/planner-pass';
+import { currentStage, type Plan, type Stage } from '../intelligence/planner-pass';
 
 const reviewNcriSchema = z.object({ adminNotes: z.string().max(1000).optional() }).strict();
 export const STORYTELLER_QUEUE_DEFAULT_LIMIT = 20;
@@ -178,6 +178,37 @@ export interface CityIntegrationOptions {
      * standing/letter flow as the patron gateway CLI path (`patron:offer`).
      */
     onPatronSupport?: (event: PatronSupportEvent) => void;
+
+    /**
+     * Called synchronously after a human inbox message is successfully
+     * dispatched to the resident runtime. The host can poll for the resident's
+     * reply and store it as a `resident_reply` letter in `LettersStore` so the
+     * human sees it via GET /v1/letters/all (LB-H2R-8m13).
+     *
+     * Best-effort: errors thrown by the callback are NOT propagated.
+     */
+    onMessageDelivered?: (event: MessageDeliveredEvent) => void;
+
+    /**
+     * Production gate for the AP<->GP exchange (SL-6). The exchange is an
+     * uncapped mint/burn pair — an exploit surface once onions are the
+     * scarce user-facing currency. Default (absent/true) preserves current
+     * behavior; `false` makes {@link CityIntegrationService.exchangeApForGp}
+     * throw a clean `ap_gp_exchange_disabled` error before either side
+     * moves. Wired from controller.yml `economy.enableApGpExchange`; ops
+     * should set it false in the live controller.yml for launch.
+     */
+    enableApGpExchange?: boolean;
+}
+
+/** Event fired by {@link CityIntegrationService.deliverMessage} after the message
+ * is dispatched to the resident runtime. */
+export interface MessageDeliveredEvent {
+    residentName: string;
+    cityUserId: string;
+    senderDisplayName?: string;
+    /** ISO timestamp the message was dispatched. */
+    ts: string;
 }
 
 export interface CityStorytellerDispatchSummary {
@@ -363,6 +394,17 @@ export class CityIntegrationService {
      * without re-debiting either side.
      */
     async exchangeApForGp(resident: string, input: unknown): Promise<ApGpExchangeRecord> {
+        // SL-6 production gate: the exchange is an uncapped AP<->GP mint/burn
+        // pair. When disabled via economy.enableApGpExchange: false, fail
+        // cleanly BEFORE parsing/burning so neither side ever moves. Default
+        // (undefined) keeps the exchange enabled — current behavior.
+        if (this.options.enableApGpExchange === false) {
+            throw new CityIntegrationError(
+                403,
+                'ap_gp_exchange_disabled',
+                'AP/GP exchange is disabled (economy.enableApGpExchange: false)',
+            );
+        }
         const residentName = parseResident(resident);
         const request = parseOrThrow(apGpExchangeRequestSchema, input);
         const exchangeId = makeExchangeId(residentName, request.idempotencyKey);
@@ -1049,6 +1091,36 @@ export class CityIntegrationService {
                 lifeIndex: this.readLifeIndex(residentName),
                 significanceReasons: ['city:attention_credit'],
             });
+            // D-RECOG (launch fix #1): dashboard supports must enter the
+            // resident's mind. The `city_attention_credit` event above is an
+            // audit record, but the resident's patron-awareness machinery
+            // (readRecentPatronMemories memory slice → prompt envelope, the
+            // patron ack reflex, getPatronHandles epitaph recipients) filters
+            // on patron_* kinds carrying a `patronHandle`. Mirror the exact
+            // event shape PatronGateway.offerTo writes via
+            // LibraryUpdater.observePatron so every downstream consumer just
+            // works. No double-counting: the CLI path (PatronGateway.offerTo)
+            // never calls creditAttention, and the host's onPatronSupport
+            // callback (recordSettledSupport) writes standing + letters only —
+            // never library timeline events. This block is therefore the single
+            // patron_gift writer on the city-API support path, and the
+            // idempotency wrapper keeps replays from appending twice.
+            const patronHandle = request.patronHandle ?? request.cityUserId;
+            if (patronHandle) {
+                this.appendLibraryEvent(residentName, {
+                    schemaVersion: 1,
+                    ts,
+                    tick: runtime.getState().tick,
+                    sessionId: 'external',
+                    kind: 'patron_gift',
+                    patronHandle,
+                    note: request.note ?? 'city_attention_credit',
+                    amount: request.amount,
+                    attentionDelta: after - before,
+                    lifeIndex: this.readLifeIndex(residentName),
+                    significanceReasons: ['patron:patron_gift'],
+                });
+            }
             this.economyEventLog.append({
                 ts,
                 kind: 'ap_topup',
@@ -1273,6 +1345,18 @@ export class CityIntegrationService {
                 lifeIndex: this.readLifeIndex(residentName),
                 significanceReasons: ['city:inbox_message'],
             });
+            if (this.options.onMessageDelivered) {
+                try {
+                    this.options.onMessageDelivered({
+                        residentName,
+                        cityUserId: request.cityUserId,
+                        senderDisplayName: request.senderDisplayName,
+                        ts,
+                    });
+                } catch {
+                    // best-effort; never fail the delivery
+                }
+            }
             return { ok: true, resident: residentName, delivered: true, event };
         });
     }
@@ -1312,6 +1396,18 @@ export class CityIntegrationService {
         const residentName = parseResident(resident);
         const plan = this.planStore.load(residentName);
         return { ok: true, resident: residentName, plan };
+    }
+
+    /** RIQ-5-5: return all residents that have an active durable plan. */
+    allResidentPlans(): { ok: boolean; plans: Array<{ residentSlug: string; plan: Plan; currentStage: Stage | null }> } {
+        return {
+            ok: true,
+            plans: this.planStore.listAll().map(({ slug, plan }) => ({
+                residentSlug: slug,
+                plan,
+                currentStage: currentStage(plan) ?? null,
+            })),
+        };
     }
 
     economyDigest(options: { since?: string; until?: string } = {}): CityEventDigest {
@@ -1486,10 +1582,9 @@ export class CityIntegrationService {
             throw new CityIntegrationError(404, 'storyteller_not_found');
         }
 
-        const store = new StorytellerStore(storytellerRoot);
-        const latestFrame = store.readLatestProjectorFrame();
-        if (latestFrame) return latestFrame;
-
+        // Always rebuild from source so freshnessMs reflects the true age at request time.
+        // The cached latest-frame.json has a frozen freshnessMs baked in at write time; returning
+        // it directly causes stale digests to appear fresh indefinitely (QA-20260606-106).
         const source = this.readLatestStorytellerSource(storytellerRoot);
         if (!source) {
             throw new CityIntegrationError(404, 'storyteller_not_found');

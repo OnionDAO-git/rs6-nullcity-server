@@ -8,10 +8,10 @@ import { z } from 'zod';
 
 /** Importance tier for sorting digest events, highest first. */
 export type ImportanceTier =
-    | 'critical' // resident faded/died, lost all AP
-    | 'high' // AP-for-GP exchange, GP earned, soul born, NCRI minted/redeemed
+    | 'critical' // resident faded/died/revived — life-state change
+    | 'high' // AP grant by patron, AP-for-GP exchange, GP earned, skill level-up, patron gift, NCRI
     | 'medium' // low AP alert, goal completed, stuck-then-recovered
-    | 'low' // patron gift, Library writeback, routine activity
+    | 'low' // Library writeback (ambient speech), routine activity
     | 'minimal'; // quiet resident, no notable events
 
 /** A single notable event inside a digest window, referencing source evidence. */
@@ -23,7 +23,9 @@ export interface DigestEvent {
         | 'ap_low'
         | 'ap_zero'
         | 'resident_faded'
+        | 'resident_revived'
         | 'soul_born'
+        | 'skill_level_up'
         | 'gp_observed'
         | 'gp_earned'
         | 'ap_for_gp_exchange'
@@ -345,6 +347,12 @@ export interface ProjectorStoryFrameAction {
     label: string;
     detail: string;
     residentName?: string;
+    /** Whether this is the single most important action this window. */
+    priority?: 'primary' | 'secondary';
+    /** Who can usefully take this action. */
+    audience?: 'anyone' | 'nearby_humans' | 'patrons' | 'operators';
+    /** Why this action is surfaced now (one sentence). */
+    reason?: string;
 }
 
 export interface ProjectorStoryFrame {

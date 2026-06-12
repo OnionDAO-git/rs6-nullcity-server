@@ -5,6 +5,7 @@ import { FACTIONS, type FactionId } from '../factions/factions';
 import { readFactionStockpileSnapshot } from '../factions/stockpile-ledger';
 import type { Letter } from '../patron/letters-producer';
 import { SoulLoader } from '../soul/soul-loader';
+import { isSyntheticSlug } from './synthetic-residents';
 
 /**
  * One deceased resident's data for the IRL graveyard wall (N4).
@@ -35,10 +36,15 @@ export interface GraveyardEntry {
  * Read all deceased residents from `lettersRoot` and return them sorted
  * most-recently-deceased first. Resilient: missing dirs, unreadable files,
  * and malformed JSON are skipped silently.
+ *
+ * @param options.excludeSynthetic When true, residents whose slug matches
+ *   {@link SYNTHETIC_SLUG_PATTERN} (benchmark/test artifacts) are omitted so
+ *   a dead test soul never earns a public epitaph (HR-7). Used by the public
+ *   `/v1/graveyard` route. Default `false` preserves operator/debug views.
  */
 export function readGraveyardEntries(
     lettersRoot: string,
-    options: { residentIds?: readonly string[]; soulsDir?: string },
+    options: { residentIds?: readonly string[]; soulsDir?: string; excludeSynthetic?: boolean },
 ): GraveyardEntry[] {
     let entries: fs.Dirent[];
     try {
@@ -62,6 +68,9 @@ export function readGraveyardEntries(
         }
         const slug = entry.name;
         if (allowedSlugs !== undefined && !allowedSlugs.has(slug)) {
+            continue;
+        }
+        if (options.excludeSynthetic && isSyntheticSlug(slug)) {
             continue;
         }
         const statePath = path.join(lettersRoot, slug, 'runtime-state.json');
@@ -371,17 +380,10 @@ export interface BuildWallSnapshotOptions {
     dedupeBySubject?: boolean;
 }
 
-/**
- * Slug pattern for residents that should be hidden from public-facing surfaces.
- * Covers QA fixture residents (`res-qa-*`) and benchmark synthetics (`res-bmk_*`).
- * Canonical demo residents like `res-agent` are intentionally NOT matched —
- * they're real demo souls, not fixtures.
- */
-export const SYNTHETIC_SLUG_PATTERN = /^res-(qa-|bmk_)/;
-
-export function isSyntheticSlug(slug: string): boolean {
-    return SYNTHETIC_SLUG_PATTERN.test(slug);
-}
+// HR-7: the synthetic-resident predicate is shared across every public
+// surface (wall, library, graveyard, epitaph broadcast, storyteller digest).
+// Re-exported here for backward compatibility with existing importers.
+export { SYNTHETIC_SLUG_PATTERN, isSyntheticSlug } from './synthetic-residents';
 
 /** One resident's live status for the wall roster panel. */
 export interface ResidentSummary {
@@ -470,11 +472,18 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
         }
     }
 
+    // Strip letters from QA/test/verification residents before public display.
+    // senderResident uses colon notation (e.g. "res:loop-check"); normalise to
+    // slug form (first colon → dash) before testing against SYNTHETIC_SLUG_PATTERN.
+    const wallLetters = options.excludeSynthetic
+        ? allLetters.filter(l => !isSyntheticSlug(l.senderResident.replace(':', '-')))
+        : allLetters;
+
     // Newest first.
-    allLetters.sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : a.dispatchedAt > b.dispatchedAt ? -1 : 0));
+    wallLetters.sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : a.dispatchedAt > b.dispatchedAt ? -1 : 0));
     // Optional public-display dedup: collapse repeats by subject, keep newest
     // per subject. We dedup BEFORE limit so the wall shows N distinct subjects.
-    const dedupedLetters = options.dedupeBySubject ? dedupeLettersBySubject(allLetters) : allLetters;
+    const dedupedLetters = options.dedupeBySubject ? dedupeLettersBySubject(wallLetters) : wallLetters;
     const recentLetters = dedupedLetters.slice(0, limit);
 
     // Unique deceased residents whose epitaphs landed in the local-day
@@ -489,7 +498,7 @@ export function buildWallSnapshot(lettersRoot: string, options: BuildWallSnapsho
     const dayEndMs = dayEnd.getTime();
 
     const deceasedResidents = new Set<string>();
-    for (const letter of allLetters) {
+    for (const letter of wallLetters) {
         if (letter.kind !== 'epitaph') {
             continue;
         }

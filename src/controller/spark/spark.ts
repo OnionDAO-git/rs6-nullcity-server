@@ -12,7 +12,7 @@ import { retireNervousRulesMd, upsertNervousRulesMd } from '../nervous-system/ru
 import type { Soul } from '../soul/soul-schema';
 import type { AgentAction, Perception, PerceptionEvent } from '../transport/message-codecs';
 import { estimateTokens } from '../util/token-count';
-import { spendAttention, spendForAction, spendForLlm } from './attention';
+import { decayScheduleMultiplier, spendAttention, spendForAction, spendForLlm, type AttentionDecayScheduleConfig } from './attention';
 import { generateFirstStepCandidates } from './candidates';
 import { HookEvaluator } from './hook-evaluator';
 import { type HookDefinition, clampHookPriority, systemHooks } from './hooks';
@@ -67,6 +67,17 @@ export interface SparkOptions {
      * resolving the soul's selected module stack.
      */
     moduleIdentity?: { id: string; version: string };
+    /**
+     * Survivable-weekend decay schedule (controller.yml
+     * `economy.attentionDecaySchedule`). Scales the per-tick decay in
+     * {@link Spark.tick}. Absent = multiplier 1.0 (historical behavior).
+     */
+    attentionDecaySchedule?: AttentionDecayScheduleConfig;
+    /**
+     * Injectable wall clock (epoch ms) for the decay schedule. Defaults
+     * to Date.now. Tests pass a fixed clock to pin the schedule window.
+     */
+    now?: () => number;
 }
 
 export class Spark {
@@ -95,7 +106,9 @@ export class Spark {
             this.state.attention = spendAttention(
                 this.state.attention,
                 this.soul.frontmatter.attentionProfile?.decayCurve || 'standard',
-                1,
+                // Survivable weekend: scale idle decay by the local-time
+                // schedule. 1.0 when no schedule is configured.
+                decayScheduleMultiplier(this.options.attentionDecaySchedule, (this.options.now || Date.now)()),
                 this.soul.frontmatter.attentionProfile?.floor,
             );
             this.state.variables = recomputeVariables(this.variableDefinitions(), this.state.variables, {
