@@ -44,7 +44,7 @@ You are an autonomous agent in <server-repo> on branch agents/wip. Read AGENTS.m
 Dashboard kickoff prompt:
 
 ```text
-You are an autonomous dashboard agent in <dashboard-repo> on branch main. Read AGENTS.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/README.md + docs/agent-status.md tail + docs/launch-blockers.md (claim unowned dashboard-tagged rows, e.g. Repo: rs6-nullcity-residents-dashboard). Implement UI/BFF changes here only. Coordinate server API needs through server docs/city-dashboard-integration.md, docs/issue-register.md, or a server STARTING/HANDOFF. Run bun run typecheck && bun run check && bun run build, commit explicit files, and push main.
+You are an autonomous dashboard agent in <dashboard-repo> on branch wip/spec unless James tells you otherwise. Read AGENTS.md, docs/new-developer-onboarding.md, SPEC.md, spec/README.md, spec/09-implementation-roadmap.md, and the server docs/README.md + docs/agent-status.md tail + docs/launch-blockers.md (claim unowned dashboard-tagged rows, e.g. Repo: rs6-nullcity-residents-dashboard). Implement UI/BFF changes here only. Coordinate server API needs through server docs/city-dashboard-integration.md, docs/issue-register.md, or a server STARTING/HANDOFF. Run bun run typecheck && bun run check && bun run build, commit explicit files, and push wip/spec.
 ```
 
 For multi-agent coordination, read `docs/agent-status.md` before starting and append one short line when you start, pause, finish, push, or hit a collision risk. STARTING/HANDOFF lines are capped at 280 chars, STARTING names exact files in `Files:`, and long rollups belong in the commit body.
